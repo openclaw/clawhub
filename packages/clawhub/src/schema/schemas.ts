@@ -124,20 +124,48 @@ export const ApiSkillResolveResponseSchema = type({
   latestVersion: type({ version: "string" }).or("null"),
 });
 
-export const CliTelemetrySyncRequestSchema = type({
-  roots: type({
-    rootId: "string",
-    label: "string",
-    skills: type({
-      slug: "string",
-      ownerHandle: "string?",
-      version: "string|null?",
-    }).array(),
-  }).array(),
-});
-export type CliTelemetrySyncRequest = (typeof CliTelemetrySyncRequestSchema)[inferred];
+export const ApiV1SkillInstallResolveResponseSchema = type({
+  ok: "true",
+  slug: "string",
+  installKind: '"archive"',
+  archive: {
+    version: "string",
+    downloadUrl: "string",
+  },
+})
+  .or({
+    ok: "true",
+    slug: "string",
+    installKind: '"github"',
+    github: {
+      repo: "string",
+      path: "string",
+      commit: "string",
+      contentHash: "string",
+      sourceUrl: "string",
+    },
+  })
+  .or({
+    ok: "false",
+    slug: "string",
+    reason:
+      '"archive_version_missing"|"github_source_missing"|"github_upstream_removed"|"github_upstream_missing"|"github_upstream_unknown"|"github_verification_pending"|"github_scan_failed"',
+    message: "string",
+    status: "number",
+  });
+export type ApiV1SkillInstallResolveResponse =
+  (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
 
-export const ApiCliTelemetrySyncResponseSchema = type({
+export const CliTelemetryInstallRequestSchema = type({
+  event: '"install"',
+  slug: "string",
+  version: "string?",
+  rootId: "string?",
+  rootLabel: "string?",
+});
+export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
+
+export const ApiCliTelemetryInstallResponseSchema = type({
   ok: "true",
 });
 
@@ -199,6 +227,62 @@ export const ApiV1PublisherRemoveMemberResponseSchema = type({
 export type ApiV1PublisherRemoveMemberResponse =
   (typeof ApiV1PublisherRemoveMemberResponseSchema)[inferred];
 
+export const ApiV1PublisherDeleteResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  dryRun: "boolean",
+  deleted: "boolean",
+  activeSkills: "number",
+  activePackages: "number",
+  memberCount: "number",
+});
+export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
+
+export const ApiV1OfficialPublisherListResponseSchema = type({
+  ok: "true",
+  items: type({
+    officialPublisherId: "string",
+    publisherId: "string",
+    handle: "string|null",
+    displayName: "string|null",
+    kind: '"user"|"org"|null',
+    active: "boolean",
+    reason: "string|null",
+    createdByUserId: "string|null",
+    createdByHandle: "string|null",
+    createdAt: "number",
+    updatedAt: "number",
+  }).array(),
+});
+export type ApiV1OfficialPublisherListResponse =
+  (typeof ApiV1OfficialPublisherListResponseSchema)[inferred];
+
+export const ApiV1OfficialPublisherUpdateResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  "added?": "boolean",
+  "removed?": "boolean",
+  "officialPublisherId?": "string",
+});
+export type ApiV1OfficialPublisherUpdateResponse =
+  (typeof ApiV1OfficialPublisherUpdateResponseSchema)[inferred];
+
+export const ApiV1StaffEmailSendResponseSchema = type({
+  ok: "true",
+  sent: "true",
+  recipient: type({
+    email: "string",
+    "userId?": "string",
+    "handle?": "string|null",
+  }),
+  subject: "string",
+  template: "string",
+  providerId: "string|null",
+});
+export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSchema)[inferred];
+
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",
@@ -223,6 +307,7 @@ export const ApiV1SkillListResponseSchema = type({
     slug: "string",
     displayName: "string",
     summary: "string|null?",
+    description: "string|null?",
     tags: "unknown",
     stats: "unknown",
     createdAt: "number",
@@ -233,6 +318,16 @@ export const ApiV1SkillListResponseSchema = type({
       changelog: "string",
       license: '"MIT-0"|null?',
     }).optional(),
+    metadata: type({
+      setup: type({
+        key: "string",
+        required: "boolean",
+      }).array(),
+      os: "string[]|null?",
+      systems: "string[]|null?",
+    })
+      .or("null")
+      .optional(),
   }).array(),
   nextCursor: "string|null",
 });
@@ -242,6 +337,7 @@ export const ApiV1SkillResponseSchema = type({
     slug: "string",
     displayName: "string",
     summary: "string|null?",
+    description: "string|null?",
     tags: "unknown",
     stats: "unknown",
     createdAt: "number",
@@ -253,6 +349,16 @@ export const ApiV1SkillResponseSchema = type({
     changelog: "string",
     license: '"MIT-0"|null?',
   }).or("null"),
+  metadata: type({
+    setup: type({
+      key: "string",
+      required: "boolean",
+    }).array(),
+    os: "string[]|null?",
+    systems: "string[]|null?",
+  })
+    .or("null")
+    .optional(),
   owner: type({
     handle: "string|null",
     displayName: "string|null?",
@@ -450,6 +556,16 @@ export const ApiV1SkillScanSubmitRequestSchema = type({
 });
 export type ApiV1SkillScanSubmitRequest = (typeof ApiV1SkillScanSubmitRequestSchema)[inferred];
 
+export const ApiV1SkillScanQueueSchema = type({
+  queuedAhead: "number",
+  queuedAheadIsEstimate: "boolean?",
+  position: "number|null",
+  running: "number",
+  runningIsEstimate: "boolean?",
+  note: "string",
+});
+export type ApiV1SkillScanQueue = (typeof ApiV1SkillScanQueueSchema)[inferred];
+
 export const ApiV1SkillScanSubmitResponseSchema = type({
   ok: "true",
   scanId: "string",
@@ -458,6 +574,7 @@ export const ApiV1SkillScanSubmitResponseSchema = type({
   sourceKind: '"upload"|"published"',
   update: "boolean",
   alreadyQueued: "boolean?",
+  queue: ApiV1SkillScanQueueSchema.optional(),
 });
 export type ApiV1SkillScanSubmitResponse = (typeof ApiV1SkillScanSubmitResponseSchema)[inferred];
 
@@ -471,6 +588,7 @@ export const ApiV1SkillScanStatusResponseSchema = type({
   writtenBack: "boolean?",
   artifact: "unknown?",
   report: "unknown?",
+  queue: ApiV1SkillScanQueueSchema.optional(),
   lastError: "string?",
   createdAt: "number",
   updatedAt: "number",
@@ -741,20 +859,6 @@ export const ApiV1ReclassifyBanResponseSchema = type({
   previousReason: "string|null",
   nextReason: "string",
   changed: "boolean",
-});
-
-export const ApiV1RemediateAutobansResponseSchema = type({
-  ok: "true",
-  dryRun: "boolean",
-  scanned: "number",
-  wouldUnban: "number",
-  unbanned: "number",
-  skipped: "number",
-  restoredSkills: "number",
-  restoredPackages: "number",
-  items: "unknown[]",
-  "nextCursor?": "string|null",
-  "done?": "boolean",
 });
 
 export const ApiV1SetRoleResponseSchema = type({

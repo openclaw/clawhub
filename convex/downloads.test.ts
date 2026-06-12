@@ -21,6 +21,19 @@ const okRate = () => ({
   resetAt: Date.now() + 60_000,
 });
 
+function stubZipResponse() {
+  class MockResponse {
+    status: number;
+    headers: Headers;
+
+    constructor(_body?: BodyInit | null, init?: ResponseInit) {
+      this.status = init?.status ?? 200;
+      this.headers = new Headers(init?.headers);
+    }
+  }
+  vi.stubGlobal("Response", MockResponse as unknown as typeof Response);
+}
+
 describe("downloads helpers", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -63,16 +76,7 @@ describe("downloads helpers", () => {
   });
 
   it("schedules zip download stats outside the response path", async () => {
-    class MockResponse {
-      status: number;
-      headers: Headers;
-
-      constructor(_body?: BodyInit | null, init?: ResponseInit) {
-        this.status = init?.status ?? 200;
-        this.headers = new Headers(init?.headers);
-      }
-    }
-    vi.stubGlobal("Response", MockResponse as unknown as typeof Response);
+    stubZipResponse();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
@@ -127,9 +131,10 @@ describe("downloads helpers", () => {
       if (!args || typeof args !== "object") return false;
       const value = args as Record<string, unknown>;
       return (
-        value.skillId === "skills:1" &&
+        typeof value.target === "object" &&
         typeof value.identityHash === "string" &&
-        typeof value.hourStart === "number"
+        value.identityKind === "ip" &&
+        typeof value.dayStart === "number"
       );
     });
     expect(recordCalls).toHaveLength(1);
@@ -137,9 +142,11 @@ describe("downloads helpers", () => {
     expect(recordCalls[0]?.[0]).toBeGreaterThanOrEqual(0);
     expect(recordCalls[0]?.[0]).toBeLessThan(60_000);
     expect(recordCalls[0]?.[2]).toEqual({
-      skillId: "skills:1",
+      target: { kind: "skill", id: "skills:1" },
+      identityKind: "ip",
       identityHash: expect.any(String),
-      hourStart: expect.any(Number),
+      dayStart: expect.any(Number),
+      occurredAt: expect.any(Number),
     });
   });
 
@@ -279,5 +286,211 @@ describe("downloads helpers", () => {
     const body = await response.text();
     expect(body).toContain('Ambiguous skill slug "demo"');
     expect(body).toContain("/api/v1/download?slug=demo&ownerHandle=<owner>");
+  });
+
+  it("blocks the exact requested skill version when its ClawScan verdict is malicious", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:2",
+          },
+          moderationInfo: {
+            isMalwareBlocked: false,
+            isPendingScan: false,
+            isHiddenByMod: false,
+            isRemoved: false,
+          },
+        };
+      }
+      if ("skillId" in args && "version" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [{ path: "SKILL.md", storageId: "_storage:bad" }],
+          softDeletedAt: undefined,
+          llmAnalysis: {
+            status: "completed",
+            verdict: "malicious",
+            checkedAt: 4,
+          },
+        };
+      }
+      if (args.versionId === "skillVersions:2") {
+        return {
+          _id: "skillVersions:2",
+          skillId: "skills:1",
+          version: "1.0.1",
+          createdAt: 5,
+          files: [],
+          softDeletedAt: undefined,
+          llmAnalysis: {
+            status: "completed",
+            verdict: "clean",
+            checkedAt: 6,
+          },
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+    const storageGet = vi.fn();
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: storageGet },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo&version=1.0.0", {
+        headers: { "cf-connecting-ip": "1.2.3.4" },
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.text()).toBe(
+      "Blocked: this skill version has been flagged as malicious by ClawScan and cannot be downloaded.",
+    );
+    expect(storageGet).not.toHaveBeenCalled();
+  });
+
+  it("uses API token user identity for zip download stats when present", async () => {
+    stubZipResponse();
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("tokenHash" in args) {
+        return { _id: "apiTokens:1", revokedAt: undefined };
+      }
+      if ("tokenId" in args) {
+        return { _id: "users:token", deletedAt: undefined, deactivatedAt: undefined };
+      }
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return { tokenTouched: "tokenId" in args };
+    });
+    const runAfter = vi.fn();
+    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter },
+        storage: { get: storageGet },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo", {
+        headers: {
+          authorization: "Bearer clh_test",
+          "cf-connecting-ip": "1.2.3.4",
+        },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runAfter).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.anything(),
+      expect.objectContaining({
+        target: { kind: "skill", id: "skills:1" },
+        identityKind: "user",
+        identityHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
+  });
+
+  it("returns zip downloads when download metering is scheduled", async () => {
+    stubZipResponse();
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return { mutationRecorded: true };
+    });
+    const runAfter = vi.fn();
+    const storageGet = vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/markdown" }));
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter },
+        storage: { get: storageGet },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo", {
+        headers: { "cf-connecting-ip": "1.2.3.4" },
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runAfter).toHaveBeenCalledWith(
+      expect.any(Number),
+      expect.anything(),
+      expect.objectContaining({
+        target: { kind: "skill", id: "skills:1" },
+        identityKind: "ip",
+        identityHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    );
   });
 });

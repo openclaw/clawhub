@@ -34,7 +34,6 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
-import { mergeDepRegistryFinding } from "./lib/depRegistryScan";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
@@ -83,6 +82,10 @@ import {
   normalizePublisherHandle,
   requirePublisherRole,
 } from "./lib/publishers";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import {
   AUTO_HIDE_REPORT_THRESHOLD,
   MAX_ACTIVE_REPORTS_PER_USER,
@@ -146,7 +149,7 @@ const MAX_OWNER_SUMMARY_LENGTH = 500;
 
 export { publishVersionForUser } from "./lib/skillPublish";
 
-type ReadmeResult = { path: string; text: string };
+type ReadmeResult = { path: string; text: string; sourceBaseUrl?: string };
 type FileTextResult = {
   path: string;
   text: string;
@@ -188,11 +191,6 @@ const MAX_STAFF_AUDIT_LOG_LIMIT = 50;
 const USER_MODERATION_REASON = "user.moderation";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
-const skillAutobanRemediationInternalRefs = internal as unknown as {
-  skills: {
-    restoreOwnedSkillsForAutobanRemediationBatchInternal: never;
-  };
-};
 
 const vtEngineStatsValidator = v.object({
   malicious: v.optional(v.number()),
@@ -236,31 +234,6 @@ const skillSpectorAnalysisValidator = v.object({
   scannerVersion: v.optional(v.string()),
   summary: v.optional(v.string()),
   error: v.optional(v.string()),
-  checkedAt: v.number(),
-});
-
-const depRegistryStatusValidator = v.union(
-  v.literal("clean"),
-  v.literal("suspicious"),
-  v.literal("error"),
-);
-
-const depRegistryValidator = v.union(v.literal("pypi"), v.literal("npm"), v.literal("cargo"));
-
-const depRegistryAnalysisValidator = v.object({
-  status: depRegistryStatusValidator,
-  results: v.array(
-    v.object({
-      name: v.string(),
-      registry: depRegistryValidator,
-      source: v.string(),
-      exists: v.boolean(),
-      httpStatus: v.optional(v.number()),
-    }),
-  ),
-  notFoundPackages: v.array(v.string()),
-  unresolvedPackages: v.array(v.string()),
-  summary: v.string(),
   checkedAt: v.number(),
 });
 
@@ -498,7 +471,7 @@ async function patchStructuredModerationFromVersion(
   skill: Doc<"skills">,
   version: Pick<
     Doc<"skillVersions">,
-    "_id" | "staticScan" | "vtAnalysis" | "llmAnalysis" | "sha256hash"
+    "_id" | "version" | "staticScan" | "vtAnalysis" | "llmAnalysis" | "sha256hash"
   >,
 ) {
   const now = Date.now();
@@ -518,11 +491,17 @@ async function patchStructuredModerationFromVersion(
   const shouldPersistClawScanMalwareBlock =
     patch.moderationVerdict === "malicious" && isClawScanMaliciousAnalysis(version.llmAnalysis);
 
+  if (shouldPersistClawScanMalwareBlock) {
+    await scheduleClawScanMaliciousArtifactFinding(ctx, skill, version, patch);
+    await quarantineMaliciousLatestSkillVersion(ctx, skill, version, owner, now, patch);
+    return;
+  }
+
   // A ClawScan-malicious result is itself a security lock. Persist it even
   // when the skill was already hidden by a user or quality hold so a later
   // hold lift cannot restore a latest-version malware verdict.
-  if (shouldPreserveExistingModerationLock(skill) && !shouldPersistClawScanMalwareBlock) {
-    await scheduleClawScanAutobanForMalware(ctx, skill, version, patch);
+  if (shouldPreserveExistingModerationLock(skill)) {
+    await scheduleClawScanMaliciousArtifactFinding(ctx, skill, version, patch);
     return;
   }
 
@@ -530,13 +509,207 @@ async function patchStructuredModerationFromVersion(
   await ctx.db.patch(skill._id, patch);
   await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
 
-  await scheduleClawScanAutobanForMalware(ctx, skill, version, patch);
+  await scheduleClawScanMaliciousArtifactFinding(ctx, skill, version, patch);
 }
 
-async function scheduleClawScanAutobanForMalware(
+function latestVersionSummaryFromSkillVersion(
+  version: Pick<
+    Doc<"skillVersions">,
+    "version" | "createdAt" | "changelog" | "changelogSource" | "parsed" | "apiKeyRequired"
+  >,
+): NonNullable<Doc<"skills">["latestVersionSummary"]> {
+  return {
+    version: version.version,
+    createdAt: version.createdAt,
+    changelog: version.changelog,
+    changelogSource: version.changelogSource,
+    description: skillSummaryFromSkillVersion(version),
+    clawdis: version.parsed?.clawdis,
+    apiKeyRequired: version.apiKeyRequired,
+  };
+}
+
+function skillSummaryFromSkillVersion(
+  version: Pick<Doc<"skillVersions">, "parsed"> | null | undefined,
+) {
+  return version?.parsed?.frontmatter
+    ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim() || undefined
+    : undefined;
+}
+
+function skillDisplayNameFromSkillVersion(
+  version: Pick<Doc<"skillVersions">, "parsed"> | null | undefined,
+) {
+  return version?.parsed?.frontmatter
+    ? getFrontmatterValue(version.parsed.frontmatter, "name")?.trim() || undefined
+    : undefined;
+}
+
+function skillIconFromSkillVersion(version: Pick<Doc<"skillVersions">, "icon"> | null | undefined) {
+  return version && "icon" in version ? version.icon : undefined;
+}
+
+function isKnownMaliciousSkillVersion(
+  version: Pick<Doc<"skillVersions">, "_id" | "staticScan" | "vtAnalysis" | "llmAnalysis">,
+) {
+  const patch = buildStructuredModerationPatch({
+    staticScan: version.staticScan,
+    vtAnalysis: version.vtAnalysis,
+    llmAnalysis: version.llmAnalysis,
+    vtStatus: version.vtAnalysis?.status,
+    llmStatus: version.llmAnalysis?.status,
+    sourceVersionId: version._id,
+  });
+  return patch.moderationVerdict === "malicious";
+}
+
+function compareSkillVersionsForRestore(
+  left: Pick<Doc<"skillVersions">, "version" | "createdAt">,
+  right: Pick<Doc<"skillVersions">, "version" | "createdAt">,
+) {
+  const leftValid = semver.valid(left.version);
+  const rightValid = semver.valid(right.version);
+  if (leftValid && rightValid) return semver.rcompare(leftValid, rightValid);
+  if (leftValid) return -1;
+  if (rightValid) return 1;
+  return right.createdAt - left.createdAt;
+}
+
+async function findReplacementLatestSkillVersion(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  quarantinedVersionId: Id<"skillVersions">,
+) {
+  const versions = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .collect();
+  return (
+    versions
+      .filter(
+        (candidate) =>
+          candidate._id !== quarantinedVersionId &&
+          !candidate.softDeletedAt &&
+          !isKnownMaliciousSkillVersion(candidate),
+      )
+      .sort(compareSkillVersionsForRestore)[0] ?? null
+  );
+}
+
+async function clearSkillEmbeddingsLatestVersion(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  now: number,
+) {
+  const embeddings = await listSkillEmbeddingsForSkill(ctx, skillId);
+  for (const embedding of embeddings) {
+    if (
+      !embedding.isLatest &&
+      embedding.visibility === embeddingVisibilityFor(false, embedding.isApproved)
+    ) {
+      continue;
+    }
+    await ctx.db.patch(embedding._id, {
+      isLatest: false,
+      visibility: embeddingVisibilityFor(false, embedding.isApproved),
+      updatedAt: now,
+    });
+  }
+}
+
+async function quarantineMaliciousLatestSkillVersion(
   ctx: MutationCtx,
   skill: Doc<"skills">,
-  version: Pick<Doc<"skillVersions">, "llmAnalysis" | "sha256hash">,
+  version: Pick<Doc<"skillVersions">, "_id">,
+  owner: Doc<"users"> | null | undefined,
+  now: number,
+  maliciousPatch: SkillModerationPatch,
+) {
+  await ctx.db.patch(version._id, { softDeletedAt: now });
+
+  const replacement = await findReplacementLatestSkillVersion(ctx, skill._id, version._id);
+  const nextTags: Record<string, Id<"skillVersions">> = {};
+  for (const [tag, versionId] of Object.entries(skill.tags ?? {})) {
+    if (versionId === version._id || tag === "latest") continue;
+    nextTags[tag] = versionId;
+  }
+  if (replacement) {
+    nextTags.latest = replacement._id;
+  }
+
+  const patch: Partial<Doc<"skills">> = {
+    displayName: replacement
+      ? (skillDisplayNameFromSkillVersion(replacement) ?? skill.slug)
+      : skill.displayName,
+    summary: replacement ? skillSummaryFromSkillVersion(replacement) : skill.summary,
+    icon: replacement ? (skillIconFromSkillVersion(replacement) ?? skill.icon) : skill.icon,
+    latestVersionId: replacement?._id,
+    latestVersionSummary: replacement
+      ? latestVersionSummaryFromSkillVersion(replacement)
+      : undefined,
+    tags: nextTags,
+    capabilityTags: replacement?.capabilityTags,
+    updatedAt: now,
+  };
+
+  if (!shouldPreserveExistingModerationLock(skill)) {
+    const basePatch = replacement
+      ? buildScannerModerationPatchFromVersion({
+          owner,
+          version: replacement,
+          now,
+        })
+      : maliciousPatch;
+    Object.assign(
+      patch,
+      applySkillManualOverrideToSkillPatch({
+        skill,
+        basePatch,
+        now,
+        stripUpdatedAt: true,
+      }),
+    );
+  }
+
+  const nextSkill = { ...skill, ...patch } as Doc<"skills">;
+  await ctx.db.patch(skill._id, patch);
+  await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+
+  if (replacement) {
+    await setSkillEmbeddingsLatestVersion(ctx, skill._id, replacement._id, now);
+  } else {
+    await clearSkillEmbeddingsLatestVersion(ctx, skill._id, now);
+  }
+  await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
+}
+
+async function quarantineMaliciousNonLatestSkillVersion(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  versionId: Id<"skillVersions">,
+  now: number,
+) {
+  await ctx.db.patch(versionId, { softDeletedAt: now });
+  const nextTags = Object.fromEntries(
+    Object.entries(skill.tags ?? {}).filter(([, taggedVersionId]) => taggedVersionId !== versionId),
+  ) as Record<string, Id<"skillVersions">>;
+  if (Object.keys(nextTags).length === Object.keys(skill.tags ?? {}).length) return;
+
+  const patch: Partial<Doc<"skills">> = {
+    tags: nextTags,
+    updatedAt: now,
+  };
+  const nextSkill = { ...skill, ...patch } as Doc<"skills">;
+  await ctx.db.patch(skill._id, patch);
+  await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
+}
+
+async function scheduleClawScanMaliciousArtifactFinding(
+  ctx: MutationCtx,
+  skill: Doc<"skills">,
+  version: Pick<Doc<"skillVersions">, "llmAnalysis" | "sha256hash" | "version"> &
+    Partial<Pick<Doc<"skillVersions">, "createdBy">>,
   patch: SkillModerationPatch,
 ) {
   if (
@@ -544,10 +717,13 @@ async function scheduleClawScanAutobanForMalware(
     skill.ownerUserId &&
     isClawScanMaliciousAnalysis(version.llmAnalysis)
   ) {
-    await ctx.scheduler.runAfter(0, internal.users.autobanMalwareAuthorInternal, {
-      ownerUserId: skill.ownerUserId,
-      slug: skill.slug,
+    await ctx.scheduler.runAfter(0, internal.users.recordMaliciousArtifactFindingInternal, {
+      ownerUserId: version.createdBy ?? skill.ownerUserId,
+      artifactKind: "skill",
+      artifactName: skill.slug,
+      version: version.version,
       ...(version.sha256hash ? { sha256hash: version.sha256hash } : {}),
+      ...(version.llmAnalysis?.summary ? { findingSummary: version.llmAnalysis.summary } : {}),
       trigger:
         patch.moderationReasonCodes?.find((code) => code.startsWith("malicious.llm_")) ??
         "malicious.llm_malicious",
@@ -560,7 +736,7 @@ export const recomputeLatestSkillModerationInternal = internalMutation({
   handler: async (ctx, args) => {
     const skill = await ctx.db.get(args.skillId);
     if (!skill) return { ok: true as const, skipped: "missing" as const };
-    if (shouldPreserveAutobanRemediationModerationLock(skill)) {
+    if (shouldPreserveExistingModerationLock(skill)) {
       return { ok: true as const, skipped: "existing_lock" as const };
     }
     if (!skill.latestVersionId) return { ok: true as const, skipped: "missing_latest" as const };
@@ -637,7 +813,7 @@ const NEW_SKILL_RATE_LIMITS = {
 } as const;
 
 const SORT_INDEXES = {
-  recommended: "by_active_recommended_rank",
+  recommended: "by_active_recommended_score",
   newest: "by_active_created",
   updated: "by_active_updated",
   name: "by_active_name",
@@ -648,7 +824,7 @@ const SORT_INDEXES = {
 
 // Compound indexes on skillSearchDigest that filter isSuspicious at the index level.
 const NONSUSPICIOUS_SORT_INDEXES = {
-  recommended: "by_nonsuspicious_recommended_rank",
+  recommended: "by_nonsuspicious_recommended_score",
   newest: "by_nonsuspicious_created",
   updated: "by_nonsuspicious_updated",
   name: "by_nonsuspicious_name",
@@ -656,17 +832,29 @@ const NONSUSPICIOUS_SORT_INDEXES = {
   stars: "by_nonsuspicious_stars",
   installs: "by_nonsuspicious_installs",
 } as const;
+
+const RECOMMENDED_RANK_INDEXES = {
+  active: "by_active_recommended_rank",
+  nonSuspicious: "by_nonsuspicious_recommended_rank",
+} as const;
+
+const RECOMMENDED_RANK_INDEX_FIELD_COUNTS = {
+  active: 5,
+  nonSuspicious: 6,
+} as const;
 const MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES = 12;
 const MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS = 500;
 
+// Convex document IDs are opaque strings (e.g. "r97c0xws..."), not "table:id" —
+// so just confirm the schema-typed id is actually present before ctx.db.get.
 function isSkillVersionId(
   value: Id<"skillVersions"> | null | undefined,
 ): value is Id<"skillVersions"> {
-  return typeof value === "string" && value.startsWith("skillVersions:");
+  return typeof value === "string" && value.length > 0;
 }
 
 function isUserId(value: Id<"users"> | null | undefined): value is Id<"users"> {
-  return typeof value === "string" && value.startsWith("users:");
+  return typeof value === "string" && value.length > 0;
 }
 
 type OwnerTrustSignals = {
@@ -706,14 +894,6 @@ function shouldPreserveExistingModerationLock(
 ) {
   if (skill.moderationStatus !== "hidden") return false;
   if (isManualOverrideReason(skill.moderationReason)) return false;
-  return !isScannerManagedReason(skill.moderationReason);
-}
-
-function shouldPreserveAutobanRemediationModerationLock(
-  skill: Pick<Doc<"skills">, "moderationStatus" | "moderationReason">,
-) {
-  if (skill.moderationStatus !== "hidden") return false;
-  if (skill.moderationReason === "user.banned") return false;
   return !isScannerManagedReason(skill.moderationReason);
 }
 
@@ -845,7 +1025,7 @@ function buildSlugTakenErrorMessage(skill: Doc<"skills">, owner: SkillOwnerRef) 
   if (!owner || owner.deletedAt || owner.deactivatedAt) {
     return (
       "This slug is locked to a deleted or banned account. " +
-      "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it."
+      "If you believe you are the rightful owner, open a GitHub issue to reclaim it: https://github.com/openclaw/clawhub/issues/new."
     );
   }
   const base = "Slug is already taken. Choose a different slug.";
@@ -869,18 +1049,50 @@ function formatUnpublishedSlugReservationMessage(slug: string, expiresAt: number
   );
 }
 
-function getUnpublishedSlugReservationExpiresAt(
+async function getUnpublishedSlugReservationExpiresAt(
+  ctx: QueryCtx | MutationCtx,
   skill: Pick<
     Doc<"skills">,
-    "softDeletedAt" | "hiddenBy" | "ownerUserId" | "unpublishedSlugReservedUntil"
+    | "softDeletedAt"
+    | "hiddenBy"
+    | "ownerUserId"
+    | "ownerPublisherId"
+    | "moderationFlags"
+    | "moderationStatus"
+    | "moderationVerdict"
+    | "unpublishedSlugReservedUntil"
   >,
 ) {
   if (!skill.softDeletedAt) return null;
-  if (skill.hiddenBy !== skill.ownerUserId) return null;
+  if (!skill.hiddenBy) return null;
   if (typeof skill.unpublishedSlugReservedUntil === "number") {
+    if (skill.moderationStatus === "removed") return null;
+    if (skill.moderationVerdict === "malicious") return null;
+    if (skill.moderationFlags?.includes("blocked.malware")) return null;
+    if (await isKnownPlatformModeratorSkillHide(ctx, skill)) return null;
     return skill.unpublishedSlugReservedUntil;
   }
+  if (skill.hiddenBy !== skill.ownerUserId) return null;
   return skill.softDeletedAt + UNPUBLISHED_SLUG_RESERVATION_MS;
+}
+
+async function isKnownPlatformModeratorSkillHide(
+  ctx: QueryCtx | MutationCtx,
+  skill: Pick<Doc<"skills">, "hiddenBy">,
+) {
+  if (!skill.hiddenBy) return true;
+  const hiddenBy = await ctx.db.get(skill.hiddenBy);
+  return hiddenBy?.role === "admin" || hiddenBy?.role === "moderator";
+}
+
+async function canUserManageSkillOwner(
+  ctx: QueryCtx | MutationCtx,
+  skill: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
+  userId: Id<"users">,
+) {
+  const user = await ctx.db.get(userId);
+  if (!user || user.deletedAt || user.deactivatedAt) return false;
+  return canManageSkillOwnerForActor(ctx, user, skill);
 }
 
 function buildReleasedUnpublishedSkillSlug(skill: Pick<Doc<"skills">, "_id">, attempt = 0) {
@@ -1024,7 +1236,7 @@ async function releaseExpiredUnpublishedSkillSlug(
   now: number,
   actorUserId: Id<"users">,
 ) {
-  const reservedUntil = getUnpublishedSlugReservationExpiresAt(skill);
+  const reservedUntil = await getUnpublishedSlugReservationExpiresAt(ctx, skill);
   if (reservedUntil === null || reservedUntil > now) return false;
 
   let releasedSlug: string | null = null;
@@ -1273,6 +1485,15 @@ const HARD_DELETE_PHASES = [
 ] as const;
 
 type HardDeletePhase = (typeof HARD_DELETE_PHASES)[number];
+type HardDeleteSource = "admin" | "account.delete" | "publisher.delete";
+type HardDeleteScope = {
+  source?: HardDeleteSource;
+  ownerPublisherId?: Id<"publishers">;
+};
+
+const hardDeleteSourceValidator = v.optional(
+  v.union(v.literal("admin"), v.literal("account.delete"), v.literal("publisher.delete")),
+);
 
 function isHardDeletePhase(value: string | undefined): value is HardDeletePhase {
   if (!value) return false;
@@ -1284,11 +1505,14 @@ async function scheduleHardDelete(
   skillId: Id<"skills">,
   actorUserId: Id<"users">,
   phase: HardDeletePhase,
+  scope: HardDeleteScope = {},
 ) {
   await ctx.scheduler.runAfter(0, internal.skills.hardDeleteInternal, {
     skillId,
     actorUserId,
     phase,
+    source: scope.source,
+    ownerPublisherId: scope.ownerPublisherId,
   });
 }
 
@@ -1297,6 +1521,7 @@ async function hardDeleteSkillStep(
   skill: Doc<"skills">,
   actorUserId: Id<"users">,
   phase: HardDeletePhase,
+  scope: HardDeleteScope = {},
 ) {
   const now = Date.now();
   const patch: Partial<Doc<"skills">> = {};
@@ -1323,10 +1548,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(version._id);
       }
       if (versions.length === HARD_DELETE_VERSION_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "versions");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "versions", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
       return;
     }
     case "fingerprints": {
@@ -1338,10 +1563,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(fingerprint._id);
       }
       if (fingerprints.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
       return;
     }
     case "skillCardJobs": {
@@ -1353,10 +1578,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(job._id);
       }
       if (jobs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings", scope);
       return;
     }
     case "embeddings": {
@@ -1365,13 +1590,18 @@ async function hardDeleteSkillStep(
         .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
         .take(HARD_DELETE_BATCH_SIZE);
       for (const embedding of embeddings) {
+        const maps = await ctx.db
+          .query("embeddingSkillMap")
+          .withIndex("by_embedding", (q) => q.eq("embeddingId", embedding._id))
+          .collect();
+        for (const map of maps) await ctx.db.delete(map._id);
         await ctx.db.delete(embedding._id);
       }
       if (embeddings.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "comments");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "comments", scope);
       return;
     }
     case "comments": {
@@ -1383,10 +1613,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(comment._id);
       }
       if (comments.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "comments");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "comments", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports", scope);
       return;
     }
     case "commentReports": {
@@ -1398,10 +1628,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(report._id);
       }
       if (commentReports.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "reports");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
       return;
     }
     case "reports": {
@@ -1413,10 +1643,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(report._id);
       }
       if (reports.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "reports");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "stars");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "stars", scope);
       return;
     }
     case "stars": {
@@ -1428,10 +1658,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(star._id);
       }
       if (stars.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "stars");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "stars", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "badges");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "badges", scope);
       return;
     }
     case "badges": {
@@ -1443,10 +1673,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(badge._id);
       }
       if (badges.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "badges");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "badges", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats", scope);
       return;
     }
     case "dailyStats": {
@@ -1458,10 +1688,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(stat._id);
       }
       if (dailyStats.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "dailyStats", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents", scope);
       return;
     }
     case "statEvents": {
@@ -1473,10 +1703,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(statEvent._id);
       }
       if (statEvents.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "statEvents", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "installs");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
       return;
     }
     case "installs": {
@@ -1488,10 +1718,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(install._id);
       }
       if (installs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "installs");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
       return;
     }
     case "rootInstalls": {
@@ -1503,10 +1733,10 @@ async function hardDeleteSkillStep(
         await ctx.db.delete(rootInstall._id);
       }
       if (rootInstalls.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
       return;
     }
     case "leaderboards": {
@@ -1520,10 +1750,10 @@ async function hardDeleteSkillStep(
         }
       }
       if (leaderboards.length === HARD_DELETE_LEADERBOARD_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "canonical");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "canonical", scope);
       return;
     }
     case "canonical": {
@@ -1538,10 +1768,10 @@ async function hardDeleteSkillStep(
         });
       }
       if (canonicalRefs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "canonical");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "canonical", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "forks");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "forks", scope);
       return;
     }
     case "forks": {
@@ -1556,10 +1786,10 @@ async function hardDeleteSkillStep(
         });
       }
       if (forkRefs.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "forks");
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "forks", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "finalize");
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "finalize", scope);
       return;
     }
     case "finalize": {
@@ -1685,15 +1915,6 @@ type ManagementSkillEntry = {
   latestVersion: Doc<"skillVersions"> | null;
   owner: Doc<"users"> | null;
 };
-
-function omitLegacyClawScanNoteFields(version: Doc<"skillVersions">) {
-  const {
-    clawScanNote: _legacyClawScanNote,
-    clawScanNoteUpdatedAt: _legacyClawScanNoteUpdatedAt,
-    ...publicVersion
-  } = version;
-  return publicVersion;
-}
 
 type DashboardSkillListItem = {
   _id: Id<"skills">;
@@ -1992,7 +2213,13 @@ function toPublicSkillListVersionFromSummary(
     createdAt: summary.createdAt,
     changelog: summary.changelog,
     changelogSource: summary.changelogSource,
-    parsed: summary.clawdis ? { clawdis: summary.clawdis } : undefined,
+    parsed:
+      summary.description || summary.clawdis
+        ? {
+            ...(summary.description ? { description: summary.description } : {}),
+            ...(summary.clawdis ? { clawdis: summary.clawdis } : {}),
+          }
+        : undefined,
     apiKeyRequired: summary.apiKeyRequired,
   };
 }
@@ -2021,7 +2248,7 @@ async function buildManagementSkillEntries(ctx: QueryCtx, skills: Doc<"skills">[
       const badges = badgeMapBySkillId.get(skill._id) ?? {};
       return {
         skill: { ...skill, badges },
-        latestVersion: latestVersion ? omitLegacyClawScanNoteFields(latestVersion) : null,
+        latestVersion,
         owner,
       };
     }),
@@ -2277,6 +2504,8 @@ export const getBySlug = query({
 
     const forkOf = await loadPublicSkillReference(ctx, skill.forkOf?.skillId);
     const canonical = await loadPublicSkillReference(ctx, skill.canonicalSkillId);
+    const githubSource = skill.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+    const githubSourceRepo = githubSource?.repo;
 
     const publicSkill = toPublicSkill({ ...skill, badges });
 
@@ -2284,16 +2513,19 @@ export const getBySlug = query({
     const overrideActive = Boolean(skill.manualOverride);
     const isPendingScan =
       skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
-    const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
     const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
     const isReviewFlagged = isSkillReviewFlagged(skill);
     const isHiddenByMod =
       skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked;
     const isRemoved = skill.moderationStatus === "removed";
 
-    // Non-owners can see malware-blocked skills (transparency), but not other hidden states
-    // Owners can see all their moderated skills
-    if (!publicSkill && !isOwner && !isMalwareBlocked) return null;
+    if (isMalwareBlocked) return null;
+
+    // Owners can see their non-malicious moderated skills.
+    if (!publicSkill && !isOwner) return null;
 
     // For owners viewing their moderated skill, construct the response manually
     const skillData = publicSkill ?? {
@@ -2303,9 +2535,16 @@ export const getBySlug = query({
       displayName: skill.displayName,
       summary: skill.summary,
       ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
       canonicalSkillId: skill.canonicalSkillId,
       forkOf: skill.forkOf,
       latestVersionId: skill.latestVersionId,
+      installKind: skill.installKind,
+      githubPath: skill.githubPath,
+      githubCurrentCommit: skill.githubCurrentCommit,
+      githubCurrentStatus: skill.githubCurrentStatus,
+      githubScanStatus: skill.githubScanStatus,
+      githubHasSkillCard: skill.githubHasSkillCard,
       tags: skill.tags,
       badges,
       stats: skill.stats,
@@ -2316,6 +2555,7 @@ export const getBySlug = query({
       ...skillData,
       canonicalSkillId: canonical ? skillData.canonicalSkillId : undefined,
       forkOf: forkOf ? skillData.forkOf : undefined,
+      ...(githubSourceRepo ? { githubSourceRepo } : {}),
     };
 
     // Moderation info - visible to owners for all states, or anyone for flagged skills (transparency)
@@ -2339,6 +2579,7 @@ export const getBySlug = query({
           summary: publicModerationSummary,
           engineVersion: skill.moderationEngineVersion,
           updatedAt: skill.moderationEvaluatedAt,
+          sourceVersionId: skill.moderationSourceVersionId ?? null,
           reason: isOwner ? skill.moderationReason : undefined,
         }
       : null;
@@ -2378,6 +2619,70 @@ export const getBySlug = query({
           }
         : null,
       ambiguous: false as const,
+    };
+  },
+});
+
+export const getVerifyTargetBySlugInternal = internalQuery({
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
+    const skill = resolved.skill;
+    if (!skill) return null;
+
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
+    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
+
+    const owner = toPublicPublisher(
+      await getOwnerPublisher(ctx, {
+        ownerPublisherId: skill.ownerPublisherId,
+        ownerUserId: skill.ownerUserId,
+      }),
+    );
+    if (!owner) return null;
+
+    const isPendingScan =
+      skill.moderationStatus === "hidden" && skill.moderationReason === "pending.scan";
+    const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
+    const isReviewFlagged = isSkillReviewFlagged(skill);
+    const overrideActive = Boolean(skill.manualOverride);
+    const isHiddenByMod =
+      skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked;
+    const isRemoved = skill.moderationStatus === "removed";
+
+    return {
+      requestedSlug: resolved.requestedSlug,
+      resolvedSlug: resolved.resolvedSlug,
+      skill: {
+        _id: skill._id,
+        slug: skill.slug,
+        displayName: skill.displayName,
+        summary: skill.summary,
+        tags: skill.tags,
+        stats: skill.stats,
+        createdAt: skill.createdAt,
+        updatedAt: skill.updatedAt,
+        latestVersionId: skill.latestVersionId,
+      },
+      latestVersion: null,
+      owner,
+      moderationInfo: {
+        isPendingScan,
+        isMalwareBlocked,
+        isSuspicious,
+        isReviewFlagged,
+        isHiddenByMod,
+        isRemoved,
+        overrideActive,
+        verdict: skill.moderationVerdict,
+        reasonCodes: skill.moderationReasonCodes,
+        summary: skill.moderationSummary,
+        engineVersion: skill.moderationEngineVersion,
+        updatedAt: skill.moderationEvaluatedAt,
+        sourceVersionId: skill.moderationSourceVersionId ?? null,
+      },
     };
   },
 });
@@ -2469,11 +2774,17 @@ export const checkSlugAvailability = query({
       };
     }
 
-    const unpublishedReservationExpiresAt = getUnpublishedSlugReservationExpiresAt(skill);
+    const unpublishedReservationExpiresAt = await getUnpublishedSlugReservationExpiresAt(
+      ctx,
+      skill,
+    );
+    const viewerCanManageReservation = userId
+      ? await canUserManageSkillOwner(ctx, skill, userId)
+      : false;
     if (
       skill.softDeletedAt &&
       unpublishedReservationExpiresAt !== null &&
-      (!userId || skill.ownerUserId !== userId)
+      !viewerCanManageReservation
     ) {
       if (unpublishedReservationExpiresAt <= Date.now()) {
         try {
@@ -2560,7 +2871,7 @@ export const checkSlugAvailability = query({
         reason: "taken" as const,
         message:
           "This slug is locked to a deleted or banned account. " +
-          "If you believe you are the rightful owner, please contact security@openclaw.ai to reclaim it.",
+          "If you believe you are the rightful owner, open a GitHub issue to reclaim it: https://github.com/openclaw/clawhub/issues/new.",
         url: null,
       };
     }
@@ -2642,9 +2953,7 @@ export const getBySlugForStaff = query({
       requestedSlug: resolved.requestedSlug,
       resolvedSlug: resolved.resolvedSlug,
       skill: { ...skill, badges },
-      latestVersion: latestVersion
-        ? { ...omitLegacyClawScanNoteFields(latestVersion), generatedSkillCard }
-        : null,
+      latestVersion: latestVersion ? { ...latestVersion, generatedSkillCard } : null,
       owner,
       overrideReviewer,
       auditLogs,
@@ -2880,15 +3189,6 @@ function compactSecurityVerdictVersion(version: Doc<"skillVersions">) {
           },
         }
       : {}),
-    ...(version.depRegistryAnalysis
-      ? {
-          depRegistryAnalysis: {
-            status: version.depRegistryAnalysis.status,
-            summary: version.depRegistryAnalysis.summary,
-            checkedAt: version.depRegistryAnalysis.checkedAt,
-          },
-        }
-      : {}),
   };
 }
 
@@ -2899,11 +3199,13 @@ export const getSecurityVerdictTargetInternal = internalQuery({
     const skill = resolved.skill;
     if (!skill) return null;
 
-    const isMalwareBlocked = skill.moderationFlags?.includes("blocked.malware") ?? false;
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
     const isSuspicious = skill.moderationFlags?.includes("flagged.suspicious") ?? false;
     const isReviewFlagged = isSkillReviewFlagged(skill);
     const overrideActive = Boolean(skill.manualOverride);
-    if (!isPublicSkillDoc(skill) && !isMalwareBlocked) return null;
+    if (!isMalwareBlocked && !isPublicSkillDoc(skill)) return null;
 
     const owner = toPublicPublisher(
       await getOwnerPublisher(ctx, {
@@ -2954,6 +3256,7 @@ export const getSecurityVerdictTargetInternal = internalQuery({
             summary: publicModerationSummary,
             engineVersion: skill.moderationEngineVersion,
             updatedAt: skill.moderationEvaluatedAt,
+            sourceVersionId: skill.moderationSourceVersionId ?? null,
           }
         : null,
       version: version ? compactSecurityVerdictVersion(version) : null,
@@ -4690,9 +4993,13 @@ export const listPublicPageV3 = query({
 });
 
 type PublicListSort = keyof typeof SORT_INDEXES;
+type SkillSearchDigestSortIndexName =
+  | (typeof SORT_INDEXES)[keyof typeof SORT_INDEXES]
+  | (typeof NONSUSPICIOUS_SORT_INDEXES)[keyof typeof NONSUSPICIOUS_SORT_INDEXES]
+  | (typeof RECOMMENDED_RANK_INDEXES)[keyof typeof RECOMMENDED_RANK_INDEXES];
 
 const SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
-  recommended: 5,
+  recommended: 3,
   newest: 2,
   updated: 2,
   name: 2,
@@ -4702,7 +5009,7 @@ const SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
 };
 
 const NONSUSPICIOUS_SORT_INDEX_FIELD_COUNTS: Record<PublicListSort, number> = {
-  recommended: 6,
+  recommended: 4,
   newest: 3,
   updated: 3,
   name: 3,
@@ -4741,11 +5048,13 @@ function decodePublicListCursor({
   indexName,
   maxIndexKeyLength,
   eqPrefix,
+  allowLegacyArray = true,
 }: {
   cursor?: string;
   indexName: string;
   maxIndexKeyLength: number;
   eqPrefix: IndexKey;
+  allowLegacyArray?: boolean;
 }): IndexKey | null {
   if (!cursor) return null;
   try {
@@ -4757,11 +5066,12 @@ function decodePublicListCursor({
       (parsed as { v?: unknown }).v === 1 &&
       (parsed as { index?: unknown }).index === indexName &&
       Array.isArray((parsed as { key?: unknown }).key);
-    const arr = Array.isArray(parsed)
-      ? parsed
-      : isSelfDescribingCursor
-        ? (parsed as { key: unknown[] }).key
-        : null;
+    const arr =
+      Array.isArray(parsed) && allowLegacyArray
+        ? parsed
+        : isSelfDescribingCursor
+          ? (parsed as { key: unknown[] }).key
+          : null;
     if (!Array.isArray(arr)) return null;
     const key = arr.map(decodeIndexKeyValue);
     // Self-describing cursors include the index name, so they can safely carry
@@ -4783,12 +5093,14 @@ function getPublicListCursorKey({
   nonSuspiciousOnly,
   indexName,
   eqPrefix,
+  allowLegacyArray,
 }: {
   cursor?: string;
   sort: PublicListSort;
   nonSuspiciousOnly: boolean;
   indexName: string;
   eqPrefix: IndexKey;
+  allowLegacyArray?: boolean;
 }): IndexKey | null {
   const fieldCounts = nonSuspiciousOnly
     ? NONSUSPICIOUS_SORT_INDEX_FIELD_COUNTS
@@ -4798,6 +5110,7 @@ function getPublicListCursorKey({
     indexName,
     maxIndexKeyLength: fieldCounts[sort],
     eqPrefix,
+    allowLegacyArray,
   });
 }
 
@@ -4846,6 +5159,7 @@ export const listPublicPageV4 = query({
     const recommendedIndexName = args.nonSuspiciousOnly
       ? NONSUSPICIOUS_SORT_INDEXES.recommended
       : SORT_INDEXES.recommended;
+    const recommendedRankIndexName = getRecommendedRankIndexName(args.nonSuspiciousOnly ?? false);
     const updatedIndexName = args.nonSuspiciousOnly
       ? NONSUSPICIOUS_SORT_INDEXES.updated
       : SORT_INDEXES.updated;
@@ -4854,6 +5168,12 @@ export const listPublicPageV4 = query({
       sort: "recommended",
       nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       indexName: recommendedIndexName,
+      eqPrefix,
+      allowLegacyArray: false,
+    });
+    const recommendedRankCursor = getRecommendedRankCursorKey({
+      cursor: args.cursor,
+      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       eqPrefix,
     });
     const updatedCursor = getPublicListCursorKey({
@@ -4880,29 +5200,40 @@ export const listPublicPageV4 = query({
       });
     }
 
-    const sort =
+    const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
+    const hasMissingRecommendedScore =
       requestedSort === "recommended"
-        ? resolveRecommendedPublicListSort({
-            decodedCursor: recommendedCursor ?? updatedCursor,
-            hasMissingRankStats: await hasMissingRecommendedRankStats(
-              ctx,
-              args.nonSuspiciousOnly ?? false,
-              recommendedCursor ?? updatedCursor,
-            ),
+        ? await hasMissingRecommendedScores(
+            ctx,
+            args.nonSuspiciousOnly ?? false,
+            recommendedAnyCursor,
+          )
+        : false;
+    const recommendedResolution =
+      requestedSort === "recommended"
+        ? resolveRecommendedPublicListQuery({
+            scoreIndexName: recommendedIndexName,
+            rankIndexName: recommendedRankIndexName,
+            updatedIndexName,
+            scoreCursor: recommendedCursor,
+            rankCursor: recommendedRankCursor,
+            updatedCursor,
+            hasMissingScores: hasMissingRecommendedScore,
           })
-        : requestedSort;
-
-    const indexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES[sort]
-      : SORT_INDEXES[sort];
-
-    const decodedCursor = getPublicListCursorKey({
-      cursor: args.cursor,
-      sort,
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName,
-      eqPrefix,
-    });
+        : null;
+    const sort = recommendedResolution?.sort ?? requestedSort;
+    const indexName =
+      recommendedResolution?.indexName ??
+      (args.nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
+    const decodedCursor =
+      recommendedResolution?.decodedCursor ??
+      getPublicListCursorKey({
+        cursor: args.cursor,
+        sort,
+        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+        indexName,
+        eqPrefix,
+      });
     const isFirstPage = !decodedCursor;
     const startIndexKey: IndexKey = decodedCursor ?? eqPrefix;
 
@@ -5399,6 +5730,7 @@ export const listPublicApiPageV1 = query({
     const recommendedIndexName = args.nonSuspiciousOnly
       ? NONSUSPICIOUS_SORT_INDEXES.recommended
       : SORT_INDEXES.recommended;
+    const recommendedRankIndexName = getRecommendedRankIndexName(args.nonSuspiciousOnly ?? false);
     const updatedIndexName = args.nonSuspiciousOnly
       ? NONSUSPICIOUS_SORT_INDEXES.updated
       : SORT_INDEXES.updated;
@@ -5408,6 +5740,12 @@ export const listPublicApiPageV1 = query({
       nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
       indexName: recommendedIndexName,
       eqPrefix,
+      allowLegacyArray: false,
+    });
+    const recommendedRankCursor = getRecommendedRankCursorKey({
+      cursor: args.cursor,
+      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+      eqPrefix,
     });
     const updatedCursor = getPublicListCursorKey({
       cursor: args.cursor,
@@ -5416,27 +5754,40 @@ export const listPublicApiPageV1 = query({
       indexName: updatedIndexName,
       eqPrefix,
     });
-    const sort =
+    const recommendedAnyCursor = recommendedCursor ?? recommendedRankCursor ?? updatedCursor;
+    const hasMissingRecommendedScore =
       requestedSort === "recommended"
-        ? resolveRecommendedPublicListSort({
-            decodedCursor: recommendedCursor ?? updatedCursor,
-            hasMissingRankStats: await hasMissingRecommendedRankStats(
-              ctx,
-              args.nonSuspiciousOnly ?? false,
-              recommendedCursor ?? updatedCursor,
-            ),
+        ? await hasMissingRecommendedScores(
+            ctx,
+            args.nonSuspiciousOnly ?? false,
+            recommendedAnyCursor,
+          )
+        : false;
+    const recommendedResolution =
+      requestedSort === "recommended"
+        ? resolveRecommendedPublicListQuery({
+            scoreIndexName: recommendedIndexName,
+            rankIndexName: recommendedRankIndexName,
+            updatedIndexName,
+            scoreCursor: recommendedCursor,
+            rankCursor: recommendedRankCursor,
+            updatedCursor,
+            hasMissingScores: hasMissingRecommendedScore,
           })
-        : requestedSort;
-    const indexName = args.nonSuspiciousOnly
-      ? NONSUSPICIOUS_SORT_INDEXES[sort]
-      : SORT_INDEXES[sort];
-    const decodedCursor = getPublicListCursorKey({
-      cursor: args.cursor,
-      sort,
-      nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      indexName,
-      eqPrefix,
-    });
+        : null;
+    const sort = recommendedResolution?.sort ?? requestedSort;
+    const indexName =
+      recommendedResolution?.indexName ??
+      (args.nonSuspiciousOnly ? NONSUSPICIOUS_SORT_INDEXES[sort] : SORT_INDEXES[sort]);
+    const decodedCursor =
+      recommendedResolution?.decodedCursor ??
+      getPublicListCursorKey({
+        cursor: args.cursor,
+        sort,
+        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+        indexName,
+        eqPrefix,
+      });
     const isFirstPage = !decodedCursor;
     const result = await getPage(ctx, {
       table: "skillSearchDigest",
@@ -5477,6 +5828,7 @@ type PublicSkillCatalogItem = {
   capabilityTags: string[];
   executesCode: false;
   verificationTier: null;
+  stats: { downloads: number; installs: number; stars: number; versions: number };
 };
 
 type SkillCatalogCursorState = {
@@ -5570,6 +5922,12 @@ async function toPublicSkillCatalogItem(
     capabilityTags: digest.capabilityTags ?? [],
     executesCode: false,
     verificationTier: null,
+    stats: {
+      downloads: readDigestRankStat(digest, "downloads"),
+      installs: readDigestRankStat(digest, "installsAllTime"),
+      stars: readDigestRankStat(digest, "stars"),
+      versions: digest.stats.versions,
+    },
   };
 }
 
@@ -5663,6 +6021,7 @@ export const listPackageCatalogPage = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
+    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"))),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -5700,9 +6059,11 @@ export const listPackageCatalogPage = query({
       if (effectivePageSize <= 0) break;
       remainingScanBudget -= effectivePageSize;
       const pageCursor = cursor;
+      const indexName =
+        args.sort === "downloads" ? "by_active_stats_downloads" : "by_active_updated";
       const page = await paginator(ctx.db, schema)
         .query("skillSearchDigest")
-        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+        .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined))
         .order("desc")
         .paginate({ cursor: pageCursor, numItems: effectivePageSize });
 
@@ -5862,76 +6223,126 @@ function resolvePublicListDir(sort: SortKeyInput, dir: "asc" | "desc" | undefine
   return dir ?? (normalizedSort === "name" ? "asc" : "desc");
 }
 
-function resolveRecommendedPublicListSort({
-  decodedCursor,
-  hasMissingRankStats,
-}: {
-  decodedCursor: readonly unknown[] | null;
-  hasMissingRankStats: boolean;
-}): SortKey {
-  if (decodedCursor) {
-    return decodedCursor.length <= 5 ? "updated" : "recommended";
-  }
-  return hasMissingRankStats ? "updated" : "recommended";
+function getRecommendedRankIndexName(nonSuspiciousOnly: boolean) {
+  return nonSuspiciousOnly
+    ? RECOMMENDED_RANK_INDEXES.nonSuspicious
+    : RECOMMENDED_RANK_INDEXES.active;
 }
 
-async function hasMissingRecommendedRankStats(
+function getRecommendedRankCursorKey({
+  cursor,
+  nonSuspiciousOnly,
+  eqPrefix,
+}: {
+  cursor?: string;
+  nonSuspiciousOnly: boolean;
+  eqPrefix: IndexKey;
+}) {
+  const rankKey = nonSuspiciousOnly ? "nonSuspicious" : "active";
+  return decodePublicListCursor({
+    cursor,
+    indexName: RECOMMENDED_RANK_INDEXES[rankKey],
+    maxIndexKeyLength: RECOMMENDED_RANK_INDEX_FIELD_COUNTS[rankKey],
+    eqPrefix,
+  });
+}
+
+function resolveRecommendedPublicListQuery({
+  scoreIndexName,
+  rankIndexName,
+  updatedIndexName,
+  scoreCursor,
+  rankCursor,
+  updatedCursor,
+  hasMissingScores,
+}: {
+  scoreIndexName: SkillSearchDigestSortIndexName;
+  rankIndexName: SkillSearchDigestSortIndexName;
+  updatedIndexName: SkillSearchDigestSortIndexName;
+  scoreCursor: IndexKey | null;
+  rankCursor: IndexKey | null;
+  updatedCursor: IndexKey | null;
+  hasMissingScores: boolean;
+}): { sort: SortKey; indexName: SkillSearchDigestSortIndexName; decodedCursor: IndexKey | null } {
+  if (scoreCursor) {
+    return { sort: "recommended", indexName: scoreIndexName, decodedCursor: scoreCursor };
+  }
+  if (rankCursor) {
+    return { sort: "recommended", indexName: rankIndexName, decodedCursor: rankCursor };
+  }
+  if (updatedCursor) {
+    return { sort: "updated", indexName: updatedIndexName, decodedCursor: updatedCursor };
+  }
+  if (hasMissingScores) {
+    return { sort: "updated", indexName: updatedIndexName, decodedCursor: null };
+  }
+  return { sort: "recommended", indexName: scoreIndexName, decodedCursor: null };
+}
+
+async function hasMissingRecommendedScores(
   ctx: Pick<QueryCtx, "db">,
   nonSuspiciousOnly: boolean,
   decodedCursor: IndexKey | null,
 ) {
   if (decodedCursor) return false;
   if (nonSuspiciousOnly) {
-    const [missingStars, missingInstalls, missingDownloads] = await Promise.all([
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_nonsuspicious_stars", (q) =>
-          q.eq("softDeletedAt", undefined).eq("isSuspicious", false).eq("statsStars", undefined),
-        )
-        .first(),
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_nonsuspicious_installs", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isSuspicious", false)
-            .eq("statsInstallsAllTime", undefined),
-        )
-        .first(),
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_nonsuspicious_downloads", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isSuspicious", false)
-            .eq("statsDownloads", undefined),
-        )
-        .first(),
-    ]);
-    return Boolean(missingStars || missingInstalls || missingDownloads);
+    const missingScore = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_nonsuspicious_recommended_score", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isSuspicious", false)
+          .eq("recommendedScore", undefined),
+      )
+      .first();
+    if (missingScore) return true;
+
+    const missingVersion = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_nonsuspicious_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isSuspicious", false)
+          .eq("recommendedScoreVersion", undefined),
+      )
+      .first();
+    if (missingVersion) return true;
+
+    const staleVersion = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_nonsuspicious_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isSuspicious", false)
+          .lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+      )
+      .first();
+    return Boolean(staleVersion);
   }
 
-  const [missingStars, missingInstalls, missingDownloads] = await Promise.all([
-    ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_stats_stars", (q) =>
-        q.eq("softDeletedAt", undefined).eq("statsStars", undefined),
-      )
-      .first(),
-    ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_stats_installs_all_time", (q) =>
-        q.eq("softDeletedAt", undefined).eq("statsInstallsAllTime", undefined),
-      )
-      .first(),
-    ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_stats_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("statsDownloads", undefined),
-      )
-      .first(),
-  ]);
-  return Boolean(missingStars || missingInstalls || missingDownloads);
+  const missingScore = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_recommended_score", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScore", undefined),
+    )
+    .first();
+  if (missingScore) return true;
+
+  const missingVersion = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScoreVersion", undefined),
+    )
+    .first();
+  if (missingVersion) return true;
+
+  const staleVersion = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+    )
+    .first();
+  return Boolean(staleVersion);
 }
 
 function readDigestRankStat(
@@ -5941,6 +6352,19 @@ function readDigestRankStat(
   if (field === "downloads") return digest.statsDownloads ?? digest.stats.downloads ?? 0;
   if (field === "stars") return digest.statsStars ?? digest.stats.stars ?? 0;
   return digest.statsInstallsAllTime ?? digest.stats.installsAllTime ?? 0;
+}
+
+function readDigestRecommendationScore(digest: Doc<"skillSearchDigest">): number {
+  return (
+    (digest.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
+      ? digest.recommendedScore
+      : undefined) ??
+    computeRecommendationScore({
+      downloads: readDigestRankStat(digest, "downloads"),
+      installs: readDigestRankStat(digest, "installsAllTime"),
+      stars: readDigestRankStat(digest, "stars"),
+    })
+  );
 }
 
 /** Fetch highlighted skills via the skillBadges index, then sort in JS. */
@@ -5996,10 +6420,7 @@ async function fetchHighlightedPage(
         );
       case "recommended":
         return (
-          (readDigestRankStat(a, "stars") - readDigestRankStat(b, "stars")) * multiplier ||
-          (readDigestRankStat(a, "installsAllTime") - readDigestRankStat(b, "installsAllTime")) *
-            multiplier ||
-          (readDigestRankStat(a, "downloads") - readDigestRankStat(b, "downloads")) * multiplier ||
+          (readDigestRecommendationScore(a) - readDigestRecommendationScore(b)) * multiplier ||
           (a.updatedAt - b.updatedAt) * multiplier
         );
       case "stars":
@@ -6961,36 +7382,6 @@ export const updateSkillVersionStaticScanInternal = internalMutation({
   },
 });
 
-export const updateVersionDepRegistryAnalysisInternal = internalMutation({
-  args: {
-    versionId: v.id("skillVersions"),
-    depRegistryAnalysis: depRegistryAnalysisValidator,
-  },
-  handler: async (ctx, args) => {
-    const version = await ctx.db.get(args.versionId);
-    if (!version) return { ok: true as const, skipped: "missing" as const };
-
-    const staticScan = mergeDepRegistryFinding({
-      staticScan: version.staticScan,
-      analysis: args.depRegistryAnalysis,
-      statusFromCodes: verdictFromCodes,
-      summarizeCodes: summarizeReasonCodes,
-    });
-    const versionPatch = {
-      depRegistryAnalysis: args.depRegistryAnalysis,
-      depRegistryScanStatus: args.depRegistryAnalysis.status,
-      staticScan,
-    };
-
-    await ctx.db.patch(version._id, versionPatch);
-    await ctx.scheduler?.runAfter(0, internal.skillCards.enqueueForVersionInternal, {
-      versionId: version._id,
-      source: "scan",
-    });
-    return { ok: true as const, status: args.depRegistryAnalysis.status };
-  },
-});
-
 export const scanSkillVersionStaticallyInternal: ReturnType<typeof internalAction> = internalAction(
   {
     args: {
@@ -7482,6 +7873,87 @@ export const applyUserModerationToOwnedSkillsBatchInternal = internalMutation({
   },
 });
 
+export const applyPublisherDeletionToOwnedSkillsBatchInternal = internalMutation({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    actorUserId: v.id("users"),
+    deletedAt: v.number(),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const publisher = await ctx.db.get(args.ownerPublisherId);
+    if (publisher && publisher.deletedAt !== args.deletedAt) {
+      return { ok: true as const, hiddenCount: 0, scheduled: false, stale: true as const };
+    }
+
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", args.ownerPublisherId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: BAN_USER_SKILLS_BATCH_SIZE,
+      });
+
+    let hiddenCount = 0;
+    for (const skill of page) {
+      await hardDeleteSkillStep(ctx, skill, args.actorUserId, "versions", {
+        source: "publisher.delete",
+        ownerPublisherId: args.ownerPublisherId,
+      });
+      hiddenCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      internal.skills.applyPublisherDeletionToOwnedSkillsBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, hiddenCount, scheduled: !isDone };
+  },
+});
+
+export const applyAccountDeletionToOwnedSkillsBatchInternal = internalMutation({
+  args: {
+    ownerUserId: v.id("users"),
+    deletedAt: v.number(),
+    hiddenBy: v.optional(v.id("users")),
+    cursor: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { page, isDone, continueCursor } = await ctx.db
+      .query("skills")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
+      .order("desc")
+      .paginate({
+        cursor: args.cursor ?? null,
+        numItems: BAN_USER_SKILLS_BATCH_SIZE,
+      });
+
+    let hiddenCount = 0;
+    for (const skill of page) {
+      if (skill.ownerPublisherId) continue;
+      await hardDeleteSkillStep(ctx, skill, args.hiddenBy ?? args.ownerUserId, "versions", {
+        source: "account.delete",
+      });
+      hiddenCount += 1;
+    }
+
+    scheduleNextBatchIfNeeded(
+      ctx.scheduler,
+      internal.skills.applyAccountDeletionToOwnedSkillsBatchInternal,
+      args,
+      isDone,
+      continueCursor,
+    );
+
+    return { ok: true as const, hiddenCount, scheduled: !isDone };
+  },
+});
+
 export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
   args: {
     ownerUserId: v.id("users"),
@@ -7547,111 +8019,6 @@ export const restoreOwnedSkillsForUnbanBatchInternal = internalMutation({
     );
 
     return { ok: true as const, restoredCount, scheduled: !isDone };
-  },
-});
-
-export const restoreOwnedSkillsForAutobanRemediationBatchInternal = internalMutation({
-  args: {
-    actorUserId: v.id("users"),
-    ownerUserId: v.id("users"),
-    bannedAt: v.number(),
-    cursor: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const now = Date.now();
-    const owner = await ctx.db.get(args.ownerUserId);
-    if (!owner || owner.deletedAt || owner.deactivatedAt || owner.purgedAt) {
-      return {
-        ok: true as const,
-        restoredCount: 0,
-        skippedMalicious: 0,
-        scheduled: false,
-        aborted: true,
-      };
-    }
-
-    const { page, isDone, continueCursor } = await ctx.db
-      .query("skills")
-      .withIndex("by_owner", (q) => q.eq("ownerUserId", args.ownerUserId))
-      .order("desc")
-      .paginate({
-        cursor: args.cursor ?? null,
-        numItems: BAN_USER_SKILLS_BATCH_SIZE,
-      });
-
-    let restoredCount = 0;
-    let skippedMalicious = 0;
-    for (const skill of page) {
-      if (!skill.softDeletedAt || skill.softDeletedAt !== args.bannedAt) continue;
-
-      const existingFlags = skill.moderationFlags ?? [];
-      const reasonCodes = skill.moderationReasonCodes ?? [];
-      const isStillMalicious =
-        skill.moderationVerdict === "malicious" || existingFlags.includes("blocked.malware");
-      const hasFreshCleanVerdict =
-        skill.moderationVerdict === "clean" && (skill.moderationEvaluatedAt ?? 0) >= args.bannedAt;
-      const hasStaleVtMalwareFlag =
-        existingFlags.includes("blocked.malware") && reasonCodes.length > 0;
-      if (isStillMalicious && !(hasStaleVtMalwareFlag && hasFreshCleanVerdict)) {
-        skippedMalicious += 1;
-        continue;
-      }
-
-      const shouldReplaceReason = skill.moderationReason === "user.banned";
-      const nextReason = shouldReplaceReason
-        ? "restored.autoban_remediation"
-        : skill.moderationReason;
-      const moderationFlags = existingFlags.filter((flag) => flag !== "blocked.malware");
-      const moderationReasonCodes = (skill.moderationReasonCodes ?? []).filter(
-        (code) => !code.startsWith("malicious."),
-      );
-      const keepHiddenForExistingModeration = shouldPreserveAutobanRemediationModerationLock(skill);
-      const patch: Partial<Doc<"skills">> = {
-        softDeletedAt: undefined,
-        moderationStatus: keepHiddenForExistingModeration ? "hidden" : "active",
-        moderationReason: nextReason,
-        moderationFlags,
-        moderationReasonCodes: moderationReasonCodes.length ? moderationReasonCodes : undefined,
-        isSuspicious: computeIsSuspicious({
-          moderationFlags,
-          moderationReason: nextReason,
-        }),
-        hiddenAt: keepHiddenForExistingModeration ? skill.hiddenAt : undefined,
-        hiddenBy: keepHiddenForExistingModeration ? skill.hiddenBy : undefined,
-        lastReviewedAt: keepHiddenForExistingModeration ? skill.lastReviewedAt : now,
-        updatedAt: now,
-      };
-      const nextSkill = { ...skill, ...patch };
-      await ctx.db.patch(skill._id, patch);
-      await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-      await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-      await setSkillEmbeddingsSoftDeleted(ctx, skill._id, false, now);
-      await ctx.db.insert("auditLogs", {
-        actorUserId: args.actorUserId,
-        action: "skill.autoban_remediation.restore",
-        targetType: "skill",
-        targetId: skill._id,
-        metadata: {
-          slug: skill.slug,
-          ownerUserId: skill.ownerUserId,
-          bannedAt: args.bannedAt,
-          previousReason: skill.moderationReason,
-        },
-        createdAt: now,
-      });
-      restoredCount += 1;
-    }
-
-    scheduleNextBatchIfNeeded(
-      ctx.scheduler,
-      skillAutobanRemediationInternalRefs.skills
-        .restoreOwnedSkillsForAutobanRemediationBatchInternal,
-      args,
-      isDone,
-      continueCursor,
-    );
-
-    return { ok: true as const, restoredCount, skippedMalicious, scheduled: !isDone };
   },
 });
 
@@ -7988,7 +8355,30 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
     if (args.moderationMode === "preserve") return;
 
     const skill = await ctx.db.get(version.skillId);
-    if (!skill || skill.latestVersionId !== version._id) return;
+    if (!skill) return;
+    if (skill.latestVersionId !== version._id) {
+      const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
+      const now = Date.now();
+      const basePatch = buildScannerModerationPatchFromVersion({
+        owner,
+        version: nextVersion,
+        now,
+      });
+      const patch = applySkillManualOverrideToSkillPatch({
+        skill,
+        basePatch,
+        now,
+        stripUpdatedAt: true,
+      });
+      if (
+        patch.moderationVerdict === "malicious" &&
+        isClawScanMaliciousAnalysis(args.llmAnalysis)
+      ) {
+        await scheduleClawScanMaliciousArtifactFinding(ctx, skill, nextVersion, patch);
+        await quarantineMaliciousNonLatestSkillVersion(ctx, skill, version._id, now);
+      }
+      return;
+    }
     await patchStructuredModerationFromVersion(ctx, skill, nextVersion);
   },
 });
@@ -8452,6 +8842,82 @@ async function canReadSkillVersionFiles(ctx: ActionCtx, version: Doc<"skillVersi
   return Boolean(toPublicSkill(skill));
 }
 
+async function canReadGitHubSkillContent(ctx: QueryCtx, skill: Doc<"skills">) {
+  const authUserId = await getOptionalActiveAuthUserId(ctx);
+  if (authUserId) {
+    if (isDirectSkillOwner(skill, authUserId) && !skill.softDeletedAt) return true;
+    if (skill.ownerPublisherId && !skill.softDeletedAt) {
+      const canAccessOwnerScope = await canAccessPublisherOwnerScope(ctx, {
+        publisher: await ctx.db.get(skill.ownerPublisherId),
+        userId: authUserId,
+        legacyOwnerUserId: skill.ownerUserId,
+      });
+      if (canAccessOwnerScope) return true;
+    }
+    const actor = await ctx.db.get(authUserId);
+    if (actor?.role === "admin" || actor?.role === "moderator") return true;
+  }
+
+  if (skill.softDeletedAt) return false;
+  return Boolean(toPublicSkill(skill));
+}
+
+export const getGitHubSkillContent = query({
+  args: {
+    skillId: v.id("skills"),
+    kind: v.union(v.literal("readme"), v.literal("skill-card")),
+  },
+  handler: async (ctx, args): Promise<ReadmeResult | null> => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.installKind !== "github") return null;
+    if (skill.githubCurrentStatus !== "present") return null;
+    if (!(await canReadGitHubSkillContent(ctx, skill))) return null;
+
+    const content = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_skill", (q) => q.eq("skillId", args.skillId))
+      .unique();
+    if (!content) return null;
+    if (content.githubContentHash !== skill.githubCurrentContentHash) return null;
+
+    const source = await ctx.db.get(content.githubSourceId);
+    const resultSource = source
+      ? buildGitHubMarkdownSourceBaseUrl(source.repo, content.githubCommit, content.githubPath)
+      : undefined;
+
+    if (args.kind === "skill-card") {
+      if (!content.skillCardMarkdown || !content.skillCardMarkdownPath) return null;
+      return {
+        path: content.skillCardMarkdownPath,
+        text: content.skillCardMarkdown,
+        ...(resultSource ? { sourceBaseUrl: resultSource } : {}),
+      };
+    }
+
+    return {
+      path: content.skillMarkdownPath,
+      text: content.skillMarkdown,
+      ...(resultSource ? { sourceBaseUrl: resultSource } : {}),
+    };
+  },
+});
+
+function buildGitHubMarkdownSourceBaseUrl(repo: string, commit: string, githubPath: string) {
+  if (!repo || !commit) return undefined;
+  const encodedRepo = repo
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+  const normalizedPath = githubPath.replace(/^\/+|\/+$/g, "");
+  const encodedPath = normalizedPath
+    ? `/${normalizedPath
+        .split("/")
+        .map((segment) => encodeURIComponent(segment))
+        .join("/")}`
+    : "";
+  return `https://github.com/${encodedRepo}/blob/${encodeURIComponent(commit)}${encodedPath}`;
+}
+
 export const getReadme: ReturnType<typeof action> = action({
   args: { versionId: v.id("skillVersions") },
   handler: async (ctx, args): Promise<ReadmeResult> => {
@@ -8653,6 +9119,7 @@ export const updateTags = mutation({
         createdAt: version.createdAt,
         changelog: version.changelog,
         changelogSource: version.changelogSource,
+        description: skillSummaryFromSkillVersion(version),
         clawdis: version.parsed?.clawdis,
         apiKeyRequired: version.apiKeyRequired,
       };
@@ -9030,6 +9497,28 @@ export const mergeOwnedSkillIntoCanonical = mutation({
   },
 });
 
+export const setOwnedSkillSoftDeleted = mutation({
+  args: {
+    skillId: v.id("skills"),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill) throw new ConvexError("Skill not found");
+    await assertCanManageOwnedResource(ctx, {
+      actor: user,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowedPublisherRoles: ["admin"],
+    });
+    return setSkillSoftDeletedByActor(ctx, {
+      userId: user._id,
+      skillId: skill._id,
+      deleted: true,
+    });
+  },
+});
+
 export const renameOwnedSkillInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -9069,7 +9558,7 @@ export const mergeOwnedSkillIntoCanonicalInternal = internalMutation({
 });
 
 async function canManageSkillOwnerForActor(
-  ctx: MutationCtx,
+  ctx: QueryCtx | MutationCtx,
   actor: Doc<"users">,
   skill: Pick<Doc<"skills">, "ownerUserId" | "ownerPublisherId">,
 ) {
@@ -10146,15 +10635,33 @@ export const hardDeleteInternal = internalMutation({
     skillId: v.id("skills"),
     actorUserId: v.id("users"),
     phase: v.optional(v.string()),
+    source: hardDeleteSourceValidator,
+    ownerPublisherId: v.optional(v.id("publishers")),
   },
   handler: async (ctx, args) => {
     const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
-    assertAdmin(actor);
     const skill = await ctx.db.get(args.skillId);
     if (!skill) return;
+    const source = args.source ?? "admin";
+    if (source === "admin") {
+      if (!actor || actor.deletedAt || actor.deactivatedAt) throw new Error("User not found");
+      assertAdmin(actor);
+    } else if (source === "account.delete") {
+      if (!actor) throw new Error("User not found");
+      if (skill.ownerUserId !== args.actorUserId || skill.ownerPublisherId) {
+        throw new Error("Skill is outside account deletion scope");
+      }
+    } else {
+      if (!actor) throw new Error("User not found");
+      if (!args.ownerPublisherId || skill.ownerPublisherId !== args.ownerPublisherId) {
+        throw new Error("Skill is outside publisher deletion scope");
+      }
+    }
     const phase = isHardDeletePhase(args.phase) ? args.phase : "versions";
-    await hardDeleteSkillStep(ctx, skill, actor._id, phase);
+    await hardDeleteSkillStep(ctx, skill, args.actorUserId, phase, {
+      source,
+      ownerPublisherId: args.ownerPublisherId,
+    });
   },
 });
 
@@ -10346,8 +10853,11 @@ export const insertVersion = internalMutation({
       }
     }
 
-    if (skill && skill.softDeletedAt && skill.ownerUserId !== userId) {
-      const unpublishedReservationExpiresAt = getUnpublishedSlugReservationExpiresAt(skill);
+    if (skill && skill.softDeletedAt && !(await canUserManageSkillOwner(ctx, skill, userId))) {
+      const unpublishedReservationExpiresAt = await getUnpublishedSlugReservationExpiresAt(
+        ctx,
+        skill,
+      );
       if (unpublishedReservationExpiresAt !== null) {
         if (unpublishedReservationExpiresAt > now) {
           throw new ConvexError(
@@ -10725,13 +11235,16 @@ export const insertVersion = internalMutation({
     }
 
     if (!skill) throw new Error("Skill creation failed");
+    const versionIcon = args.icon !== undefined ? normalizeSkillIconValue(args.icon) : skill.icon;
 
     const existingVersion = await ctx.db
       .query("skillVersions")
       .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
       .unique();
     if (existingVersion) {
-      throw new ConvexError("Version already exists");
+      throw new ConvexError(
+        `Version ${args.version} already exists. Increment the version number and try again.`,
+      );
     }
 
     const versionId = await ctx.db.insert("skillVersions", {
@@ -10741,6 +11254,7 @@ export const insertVersion = internalMutation({
       sourceProvenance: args.sourceProvenance,
       changelog: args.changelog,
       changelogSource: args.changelogSource,
+      icon: versionIcon,
       files: args.files,
       parsed: args.parsed,
       capabilityTags: args.capabilityTags,
@@ -10799,8 +11313,7 @@ export const insertVersion = internalMutation({
     // displayName / summary so backport publishes can't surprise the card.
     // Only update when the publisher explicitly picked one this time —
     // omitting `args.icon` keeps the previously stored value.
-    const nextIcon =
-      isNewLatest && args.icon !== undefined ? normalizeSkillIconValue(args.icon) : skill.icon;
+    const nextIcon = isNewLatest ? versionIcon : skill.icon;
     const derivedFlags = deriveModerationFlags({
       skill: {
         slug: skill.slug,
@@ -10826,6 +11339,7 @@ export const insertVersion = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             changelogSource: args.changelogSource,
+            description: getFrontmatterValue(args.parsed.frontmatter, "description")?.trim(),
             clawdis: args.parsed.clawdis,
             // Filled later by the async analyser via
             // `updateVersionApiKeyRequiredInternal`.
@@ -10953,250 +11467,266 @@ export const setSkillSoftDeletedInternal = internalMutation({
     ownerHandle: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const user = await ctx.db.get(args.userId);
-    if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
-
-    const slug = args.slug.trim().toLowerCase();
-    if (!slug) throw new Error("Slug required");
-
-    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, slug, args.ownerHandle, {
-      includeSoftDeleted: true,
-    });
-    if (resolved.ambiguous) {
-      throw new ConvexError(
-        "Slug is used by multiple publishers. Use an owner-qualified skill URL.",
-      );
-    }
-    const skill = resolved.skill;
-    if (!skill) throw new Error("Skill not found");
-
-    const isModeratorOrAdmin = user.role === "admin" || user.role === "moderator";
-    let isOwner = skill.ownerUserId === args.userId;
-
-    if (!isOwner) {
-      try {
-        await assertCanManageOwnedResource(ctx, {
-          actor: user,
-          ownerUserId: skill.ownerUserId,
-          ownerPublisherId: skill.ownerPublisherId,
-          allowedPublisherRoles: ["admin"],
-        });
-        isOwner = true;
-      } catch {
-        if (!isModeratorOrAdmin) {
-          // Preserve legacy behavior: delegate to assertModerator to produce the
-          // standard "Forbidden" error for non-owners without elevated roles.
-          assertModerator(user);
-        }
-      }
-    }
-
-    // Owner-delete provenance guard: an owner must NOT be able to "re-delete"
-    // a skill that is currently in a non-owner-initiated hidden state. Such
-    // a re-delete would rewrite `hiddenBy` to the owner (and clear
-    // `moderationReason` via the data-hygiene reset below), erasing the
-    // moderator/system provenance of the current hide and letting a
-    // subsequent owner-undelete succeed — a privilege-escalation path where
-    // the owner reverses moderator actions in two calls (delete, then
-    // undelete).
-    //
-    // We only guard against hides whose current source is NOT the owner:
-    //   - skill.hiddenBy === owner: the current hide was owner-initiated
-    //     (e.g. a prior `clawhub delete`); re-delete is effectively a
-    //     no-op and must remain idempotent.
-    //   - skill.hiddenBy is some moderator/admin/system actor, OR is
-    //     undefined while the row is hidden (e.g. `auto.reports` does not
-    //     write hiddenBy): the hide is not owner-initiated, so block the
-    //     owner from re-delete. Moderators/admins keep full access via the
-    //     existing `isModeratorOrAdmin` branch.
-    //
-    // Staleness note: if a moderator previously restored the row
-    // (`setSoftDeleted(deleted=false)`), `hiddenBy` is cleared and
-    // `moderationStatus === "active"`, so this guard does NOT fire on
-    // active rows — the existing data-hygiene reset continues to handle
-    // stale `moderationReason` on active rows.
-    if (args.deleted && isOwner && !isModeratorOrAdmin) {
-      const isCurrentlyHidden = Boolean(skill.softDeletedAt) || skill.moderationStatus === "hidden";
-      const isOwnerInitiatedHide = await isOwnerInitiatedSkillHideForActor(ctx, skill, args.userId);
-      if (isCurrentlyHidden && !isOwnerInitiatedHide) {
-        // Prefix with "Forbidden:" so HTTP boundary mappers
-        // (softDeleteErrorToResponse) deterministically return 403 instead of
-        // falling through to 500.
-        throw new ConvexError(
-          "Forbidden: This skill is currently hidden by moderation and cannot be re-deleted by the owner. Please contact a moderator.",
-        );
-      }
-    }
-
-    // gate: when an owner (without moderator/admin privileges) attempts to
-    // undelete a skill, only allow it if the current hidden state was produced
-    // by the owner themselves (i.e. via `clawhub delete`). Any other hidden
-    // state originates from moderation, scanning, merges, bans, or security
-    // redaction — only moderators/admins may lift those.
-    //
-    // Authorization is based on the *source of the current hide* (`hiddenBy`),
-    // plus a small deny list of `moderationReason` values that are truly
-    // bound to a non-owner current hide and therefore cannot be stale from
-    // historical moderation metadata.
-    //
-    //   - `hiddenBy === args.userId` is the necessary baseline. A moderator
-    //     hiding via `setSoftDeleted` records `hiddenBy = mod._id`, so the
-    //     owner simply fails this check. A security redaction / auto-ban
-    //     likewise records an admin/system actor, so those naturally fail.
-    //   - The deny list below is intentionally narrow: each entry is a
-    //     reason that is *only* set atomically with the current hide it
-    //     describes, so it cannot be leftover historical metadata:
-    //       * "owner.merged": merge mutation writes moderationReason,
-    //         softDeletedAt, and hiddenBy as a single atomic patch; there
-    //         is no flow that later restores the row while leaving this
-    //         reason stale.
-    //       * "user.banned": only written by the ban batch with
-    //         hiddenBy = admin; unban clears softDeletedAt and rewrites
-    //         moderationReason to "restored.unban", so a banned row never
-    //         survives into an active state with this reason.
-    //       * "security.redaction": paired with hiddenBy = security-admin;
-    //         there is no owner-reachable path that lifts redaction while
-    //         leaving this reason in place.
-    //     Notably EXCLUDED:
-    //       * "auto.reports" / "manual.report" — set by auto-hide or the
-    //         moderator report-triage flow, but `setSoftDeleted(deleted=
-    //         false)` (moderator restore) does NOT clear moderationReason.
-    //         That means a row can be `moderationStatus="active"` with a
-    //         stale `"auto.reports"` reason; if the owner later does a
-    //         normal self-delete, `hiddenBy` becomes the owner and the
-    //         current hide is owner-initiated, but the stale reason would
-    //         still block self-undelete. These are therefore enforced
-    //         solely via `hiddenBy !== owner` (auto.reports does not write
-    //         hiddenBy; manual.report writes hiddenBy = mod._id).
-    //       * "pending.scan.stale" / "pending.scan" / "scanner.*.*" — these
-    //         describe the skill's moderation state, not the cause of the
-    //         current hide, and must never block owner self-restore.
-    //   - Benign scanner / pipeline reasons such as `pending.scan`,
-    //     `scanner.aggregate.clean`, or `scanner.<scanner>.clean` describe
-    //     the skill's moderation state, not the cause of the current hide,
-    //     so they must NOT block owner self-restore.
-    //   - If `hiddenBy` is somehow missing (legacy rows, manual override
-    //     pathways that cleared it), fail closed and route the caller to a
-    //     moderator.
-    if (!args.deleted && isOwner && !isModeratorOrAdmin) {
-      // Defense-in-depth: regardless of `hiddenBy`/`moderationReason`
-      // provenance, an owner must NEVER be able to restore a skill that any
-      // scanner has marked malicious. This closes a class of bugs where a
-      // stale owner-initiated hide is left in place while a later scanner
-      // escalation upgrades the verdict to malicious without rewriting
-      // provenance fields (e.g. the VT-only escalation path intentionally
-      // does not overwrite `moderationReason` to preserve the LLM verdict).
-      const moderationFlags = (skill.moderationFlags as string[] | undefined) ?? [];
-      const isMaliciousBlocked =
-        moderationFlags.includes("blocked.malware") || skill.moderationVerdict === "malicious";
-      if (isMaliciousBlocked) {
-        throw new ConvexError(
-          "Forbidden: This skill was blocked by automated malware detection and cannot be restored by the owner. Please contact a moderator.",
-        );
-      }
-
-      // Reasons that are atomically bound to a non-owner current hide and
-      // therefore cannot survive as stale historical metadata on an
-      // owner-initiated hide. See the block comment above for why each is
-      // included, and why report-related reasons are intentionally NOT.
-      const OWNER_UNDELETE_DENIED_REASONS = new Set<string>([
-        "owner.merged",
-        "user.banned",
-        "security.redaction",
-      ]);
-      const reason = skill.moderationReason as string | undefined;
-      const ownerInitiatedHide =
-        (await isOwnerInitiatedSkillHideForActor(ctx, skill, args.userId)) &&
-        (reason === undefined || !OWNER_UNDELETE_DENIED_REASONS.has(reason));
-      if (!ownerInitiatedHide) {
-        // Prefix with "Forbidden:" so HTTP boundary mappers
-        // (softDeleteErrorToResponse) deterministically return 403 instead of
-        // falling through to 500. The suffix is preserved for clients that
-        // surface a human-readable reason.
-        throw new ConvexError(
-          "Forbidden: This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
-        );
-      }
-    }
-
-    const now = Date.now();
-    const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
-    const slugReservedUntil =
-      args.deleted && isOwner ? now + UNPUBLISHED_SLUG_RESERVATION_MS : undefined;
-    const patch: Partial<Doc<"skills">> = {
-      softDeletedAt: args.deleted ? now : undefined,
-      moderationStatus: args.deleted ? "hidden" : "active",
-      hiddenAt: args.deleted ? now : undefined,
-      hiddenBy: args.deleted ? args.userId : undefined,
-      unpublishedSlugReservedUntil: slugReservedUntil,
-      unpublishedSlugReleasedAt: undefined,
-      unpublishedOriginalSlug: undefined,
-      lastReviewedAt: now,
-      updatedAt: now,
-    };
-    if (note) patch.moderationNotes = note;
-    if (!args.deleted && isModeratorOrAdmin && note) {
-      const manualOverride = buildManualOverrideRecord({
-        note,
-        reviewerUserId: user._id,
-        updatedAt: now,
-      });
-      Object.assign(
-        patch,
-        applyManualOverrideToSkillPatch({
-          basePatch: {
-            ...patch,
-            moderationReasonCodes: undefined,
-            moderationEvidence: undefined,
-            moderationSummary: undefined,
-            moderationEngineVersion: undefined,
-            moderationEvaluatedAt: undefined,
-            moderationSourceVersionId: undefined,
-          },
-          override: manualOverride,
-          now,
-        }),
-        {
-          manualOverride,
-          moderationNotes: note,
-        },
-      );
-    }
-    // Data hygiene: when the owner self-deletes (not a moderator/admin acting
-    // via this internal entry point), reset any stale `moderationReason`
-    // that may have survived from prior moderation metadata (e.g. an
-    // `auto.reports` or `manual.report` reason that a moderator restore
-    // never cleared). This keeps the row's provenance fields consistent
-    // with the current hide (owner-initiated) and prevents a future
-    // owner-undelete from tripping on historical reasons.
-    if (args.deleted && isOwner && !isModeratorOrAdmin) {
-      patch.moderationReason = undefined;
-    }
-    const nextSkill = { ...skill, ...patch };
-    await ctx.db.patch(skill._id, patch);
-    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-    await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
-
-    await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now);
-
-    await ctx.db.insert("auditLogs", {
-      actorUserId: args.userId,
-      action: args.deleted ? "skill.delete" : "skill.undelete",
-      targetType: "skill",
-      targetId: skill._id,
-      metadata: {
-        slug,
-        softDeletedAt: args.deleted ? now : null,
-        actorRole: user.role ?? "user",
-        ...(slugReservedUntil ? { slugReservedUntil } : {}),
-        ...(note ? { reason: note } : {}),
-      },
-      createdAt: now,
-    });
-
-    return slugReservedUntil ? { ok: true as const, slugReservedUntil } : { ok: true as const };
+    return setSkillSoftDeletedByActor(ctx, args);
   },
 });
+
+async function setSkillSoftDeletedByActor(
+  ctx: MutationCtx,
+  args: {
+    userId: Id<"users">;
+    slug?: string;
+    skillId?: Id<"skills">;
+    deleted: boolean;
+    reason?: string;
+    ownerHandle?: string;
+  },
+) {
+  const user = await ctx.db.get(args.userId);
+  if (!user || user.deletedAt || user.deactivatedAt) throw new Error("User not found");
+
+  const requestedSlug = args.slug?.trim().toLowerCase();
+  if (!args.skillId && !requestedSlug) throw new Error("Slug required");
+
+  const resolved = args.skillId
+    ? { skill: await ctx.db.get(args.skillId), ambiguous: false }
+    : await resolveSkillBySlugOrAliasForOwner(ctx, requestedSlug!, args.ownerHandle, {
+        includeSoftDeleted: true,
+      });
+  if (resolved.ambiguous) {
+    throw new ConvexError("Slug is used by multiple publishers. Use an owner-qualified skill URL.");
+  }
+  const skill = resolved.skill;
+  if (!skill) throw new Error("Skill not found");
+  const slug = skill.slug;
+
+  const isModeratorOrAdmin = user.role === "admin" || user.role === "moderator";
+  let isOwner = skill.ownerUserId === args.userId;
+
+  if (!isOwner) {
+    try {
+      await assertCanManageOwnedResource(ctx, {
+        actor: user,
+        ownerUserId: skill.ownerUserId,
+        ownerPublisherId: skill.ownerPublisherId,
+        allowedPublisherRoles: ["admin"],
+      });
+      isOwner = true;
+    } catch {
+      if (!isModeratorOrAdmin) {
+        // Preserve legacy behavior: delegate to assertModerator to produce the
+        // standard "Forbidden" error for non-owners without elevated roles.
+        assertModerator(user);
+      }
+    }
+  }
+  if (args.deleted && skill.moderationStatus === "removed") {
+    throw new ConvexError("Forbidden: Removed skills cannot be deleted.");
+  }
+
+  // Owner-delete provenance guard: an owner must NOT be able to "re-delete"
+  // a skill that is currently in a non-owner-initiated hidden state. Such
+  // a re-delete would rewrite `hiddenBy` to the owner (and clear
+  // `moderationReason` via the data-hygiene reset below), erasing the
+  // moderator/system provenance of the current hide and letting a
+  // subsequent owner-undelete succeed — a privilege-escalation path where
+  // the owner reverses moderator actions in two calls (delete, then
+  // undelete).
+  //
+  // We only guard against hides whose current source is NOT the owner:
+  //   - skill.hiddenBy === owner: the current hide was owner-initiated
+  //     (e.g. a prior `clawhub delete`); re-delete is effectively a
+  //     no-op and must remain idempotent.
+  //   - skill.hiddenBy is some moderator/admin/system actor, OR is
+  //     undefined while the row is hidden (e.g. `auto.reports` does not
+  //     write hiddenBy): the hide is not owner-initiated, so block the
+  //     owner from re-delete. Moderators/admins keep full access via the
+  //     existing `isModeratorOrAdmin` branch.
+  //
+  // Staleness note: if a moderator previously restored the row
+  // (`setSoftDeleted(deleted=false)`), `hiddenBy` is cleared and
+  // `moderationStatus === "active"`, so this guard does NOT fire on
+  // active rows — the existing data-hygiene reset continues to handle
+  // stale `moderationReason` on active rows.
+  if (args.deleted && isOwner && !isModeratorOrAdmin) {
+    const isCurrentlyHidden = Boolean(skill.softDeletedAt) || skill.moderationStatus === "hidden";
+    const isOwnerInitiatedHide = await isOwnerInitiatedSkillHideForActor(ctx, skill, args.userId);
+    if (isCurrentlyHidden && !isOwnerInitiatedHide) {
+      // Prefix with "Forbidden:" so HTTP boundary mappers
+      // (softDeleteErrorToResponse) deterministically return 403 instead of
+      // falling through to 500.
+      throw new ConvexError(
+        "Forbidden: This skill is currently hidden by moderation and cannot be re-deleted by the owner. Please contact a moderator.",
+      );
+    }
+  }
+
+  // gate: when an owner (without moderator/admin privileges) attempts to
+  // undelete a skill, only allow it if the current hidden state was produced
+  // by the owner themselves (i.e. via `clawhub delete`). Any other hidden
+  // state originates from moderation, scanning, merges, bans, or security
+  // redaction — only moderators/admins may lift those.
+  //
+  // Authorization is based on the *source of the current hide* (`hiddenBy`),
+  // plus a small deny list of `moderationReason` values that are truly
+  // bound to a non-owner current hide and therefore cannot be stale from
+  // historical moderation metadata.
+  //
+  //   - `hiddenBy === args.userId` is the necessary baseline. A moderator
+  //     hiding via `setSoftDeleted` records `hiddenBy = mod._id`, so the
+  //     owner simply fails this check. A security redaction / auto-ban
+  //     likewise records an admin/system actor, so those naturally fail.
+  //   - The deny list below is intentionally narrow: each entry is a
+  //     reason that is *only* set atomically with the current hide it
+  //     describes, so it cannot be leftover historical metadata:
+  //       * "owner.merged": merge mutation writes moderationReason,
+  //         softDeletedAt, and hiddenBy as a single atomic patch; there
+  //         is no flow that later restores the row while leaving this
+  //         reason stale.
+  //       * "user.banned": only written by the ban batch with
+  //         hiddenBy = admin; unban clears softDeletedAt and rewrites
+  //         moderationReason to "restored.unban", so a banned row never
+  //         survives into an active state with this reason.
+  //       * "security.redaction": paired with hiddenBy = security-admin;
+  //         there is no owner-reachable path that lifts redaction while
+  //         leaving this reason in place.
+  //     Notably EXCLUDED:
+  //       * "auto.reports" / "manual.report" — set by auto-hide or the
+  //         moderator report-triage flow, but `setSoftDeleted(deleted=
+  //         false)` (moderator restore) does NOT clear moderationReason.
+  //         That means a row can be `moderationStatus="active"` with a
+  //         stale `"auto.reports"` reason; if the owner later does a
+  //         normal self-delete, `hiddenBy` becomes the owner and the
+  //         current hide is owner-initiated, but the stale reason would
+  //         still block self-undelete. These are therefore enforced
+  //         solely via `hiddenBy !== owner` (auto.reports does not write
+  //         hiddenBy; manual.report writes hiddenBy = mod._id).
+  //       * "pending.scan.stale" / "pending.scan" / "scanner.*.*" — these
+  //         describe the skill's moderation state, not the cause of the
+  //         current hide, and must never block owner self-restore.
+  //   - Benign scanner / pipeline reasons such as `pending.scan`,
+  //     `scanner.aggregate.clean`, or `scanner.<scanner>.clean` describe
+  //     the skill's moderation state, not the cause of the current hide,
+  //     so they must NOT block owner self-restore.
+  //   - If `hiddenBy` is somehow missing (legacy rows, manual override
+  //     pathways that cleared it), fail closed and route the caller to a
+  //     moderator.
+  if (!args.deleted && isOwner && !isModeratorOrAdmin) {
+    // Defense-in-depth: regardless of `hiddenBy`/`moderationReason`
+    // provenance, an owner must NEVER be able to restore a skill that any
+    // scanner has marked malicious. This closes a class of bugs where a
+    // stale owner-initiated hide is left in place while a later scanner
+    // escalation upgrades the verdict to malicious without rewriting
+    // provenance fields (e.g. the VT-only escalation path intentionally
+    // does not overwrite `moderationReason` to preserve the LLM verdict).
+    const moderationFlags = (skill.moderationFlags as string[] | undefined) ?? [];
+    const isMaliciousBlocked =
+      moderationFlags.includes("blocked.malware") || skill.moderationVerdict === "malicious";
+    if (isMaliciousBlocked) {
+      throw new ConvexError(
+        "Forbidden: This skill was blocked by automated malware detection and cannot be restored by the owner. Please contact a moderator.",
+      );
+    }
+
+    // Reasons that are atomically bound to a non-owner current hide and
+    // therefore cannot survive as stale historical metadata on an
+    // owner-initiated hide. See the block comment above for why each is
+    // included, and why report-related reasons are intentionally NOT.
+    const OWNER_UNDELETE_DENIED_REASONS = new Set<string>([
+      "owner.merged",
+      "user.banned",
+      "security.redaction",
+    ]);
+    const reason = skill.moderationReason as string | undefined;
+    const ownerInitiatedHide =
+      (await isOwnerInitiatedSkillHideForActor(ctx, skill, args.userId)) &&
+      (reason === undefined || !OWNER_UNDELETE_DENIED_REASONS.has(reason));
+    if (!ownerInitiatedHide) {
+      // Prefix with "Forbidden:" so HTTP boundary mappers
+      // (softDeleteErrorToResponse) deterministically return 403 instead of
+      // falling through to 500. The suffix is preserved for clients that
+      // surface a human-readable reason.
+      throw new ConvexError(
+        "Forbidden: This skill was hidden by moderation and cannot be restored by the owner. Please contact a moderator.",
+      );
+    }
+  }
+
+  const now = Date.now();
+  const note = args.reason ? trimManualOverrideNote(args.reason) : undefined;
+  const slugReservedUntil =
+    args.deleted && isOwner ? now + UNPUBLISHED_SLUG_RESERVATION_MS : undefined;
+  const patch: Partial<Doc<"skills">> = {
+    softDeletedAt: args.deleted ? now : undefined,
+    moderationStatus: args.deleted ? "hidden" : "active",
+    hiddenAt: args.deleted ? now : undefined,
+    hiddenBy: args.deleted ? args.userId : undefined,
+    unpublishedSlugReservedUntil: slugReservedUntil,
+    unpublishedSlugReleasedAt: undefined,
+    unpublishedOriginalSlug: undefined,
+    lastReviewedAt: now,
+    updatedAt: now,
+  };
+  if (note) patch.moderationNotes = note;
+  if (!args.deleted && isModeratorOrAdmin && note) {
+    const manualOverride = buildManualOverrideRecord({
+      note,
+      reviewerUserId: user._id,
+      updatedAt: now,
+    });
+    Object.assign(
+      patch,
+      applyManualOverrideToSkillPatch({
+        basePatch: {
+          ...patch,
+          moderationReasonCodes: undefined,
+          moderationEvidence: undefined,
+          moderationSummary: undefined,
+          moderationEngineVersion: undefined,
+          moderationEvaluatedAt: undefined,
+          moderationSourceVersionId: undefined,
+        },
+        override: manualOverride,
+        now,
+      }),
+      {
+        manualOverride,
+        moderationNotes: note,
+      },
+    );
+  }
+  // Data hygiene: when an owner/org manager deletes, reset any stale
+  // `moderationReason` that may have survived from prior moderation metadata.
+  // This keeps the row's provenance fields consistent with the current hide
+  // (owner-initiated) and prevents future restore/reservation checks from
+  // tripping on historical reasons.
+  if (args.deleted && isOwner) {
+    patch.moderationReason = undefined;
+  }
+  const nextSkill = { ...skill, ...patch };
+  await ctx.db.patch(skill._id, patch);
+  await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+
+  await setSkillEmbeddingsSoftDeleted(ctx, skill._id, args.deleted, now);
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: args.userId,
+    action: args.deleted ? "skill.delete" : "skill.undelete",
+    targetType: "skill",
+    targetId: skill._id,
+    metadata: {
+      slug,
+      softDeletedAt: args.deleted ? now : null,
+      actorRole: user.role ?? "user",
+      ...(slugReservedUntil ? { slugReservedUntil } : {}),
+      ...(note ? { reason: note } : {}),
+    },
+    createdAt: now,
+  });
+
+  return slugReservedUntil ? { ok: true as const, slugReservedUntil } : { ok: true as const };
+}
 
 export const hideSkillForSecurityRedactionInternal = internalMutation({
   args: {
@@ -11384,6 +11914,7 @@ export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutati
             createdAt: version.createdAt,
             changelog: version.changelog,
             changelogSource: version.changelogSource,
+            description: skillSummaryFromSkillVersion(version),
             clawdis: version.parsed?.clawdis,
             apiKeyRequired: version.apiKeyRequired,
           },
@@ -11409,6 +11940,6 @@ export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutati
 
 export const __test = {
   normalizePublicListSort,
-  resolveRecommendedPublicListSort,
+  resolveRecommendedPublicListQuery,
   resolvePublicListDir,
 };

@@ -4,7 +4,7 @@ import { ConvexError } from "convex/values";
 // - Lowercase letters, digits, and single hyphens only.
 // - Must start and end with a letter or digit.
 // - No consecutive hyphens ("--", "---", ...).
-// - Length 3..48 (URL/SEO friendly, aligned with publisher handle).
+// - Length 3..96 (URL-friendly, but long enough for source-backed upstream slugs).
 //
 // The pattern enforces first/last char class and forbids consecutive hyphens
 // via a negative lookahead. Length bounds are checked separately so we can
@@ -12,7 +12,7 @@ import { ConvexError } from "convex/values";
 const SLUG_PATTERN = /^[a-z0-9](?:(?!--)[a-z0-9-])*[a-z0-9]$/;
 
 const MIN_SLUG_LENGTH = 3;
-const MAX_SLUG_LENGTH = 48;
+const MAX_SLUG_LENGTH = 96;
 
 // Reserved slugs. These are blocked because they would:
 // 1. Clash semantically with top-level routes under src/routes/*.
@@ -25,6 +25,7 @@ const MAX_SLUG_LENGTH = 48;
 const RESERVED_SKILL_SLUGS: ReadonlySet<string> = new Set([
   // Current top-level route segments under src/routes/.
   "about",
+  "account-banned",
   "admin",
   "cli",
   "dashboard",

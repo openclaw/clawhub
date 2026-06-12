@@ -132,6 +132,7 @@ type TestPackage = {
   sourceRepo: string | null;
   summary: string;
   latestVersion: string;
+  inspectorWarningCount?: number;
   updatedAt: number;
   stats: {
     downloads: number;
@@ -212,6 +213,7 @@ function createPackage(overrides?: Partial<TestPackage>): TestPackage {
     sourceRepo: null,
     summary: "Flagged plugin fixture.",
     latestVersion: "1.0.0",
+    inspectorWarningCount: 0,
     updatedAt: 1,
     stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
     verification: null,
@@ -307,6 +309,33 @@ describe("Dashboard rows", () => {
     expect(
       screen.queryByRole("link", { name: "Open settings for Local Flagged Runtime Plugin" }),
     ).toBeNull();
+  });
+
+  it("links public plugin finding counts to the plugin validation tab", () => {
+    arrangeDashboard({
+      packages: [
+        createPackage({
+          inspectorWarningCount: 2,
+          scanStatus: "clean",
+          latestRelease: {
+            version: "1.0.0",
+            createdAt: 1,
+            vtStatus: "clean",
+            llmStatus: "clean",
+            staticScanStatus: "clean",
+          },
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    const validationLink = screen.getByRole("link", {
+      name: "View 2 validation findings for Local Flagged Runtime Plugin",
+    });
+    expect(validationLink.getAttribute("href")).toBe(
+      "/plugins/local-flagged-runtime-plugin#validation",
+    );
   });
 
   it("shows a publisher selector and loads org packages when switching publishers", async () => {

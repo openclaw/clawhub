@@ -1,5 +1,9 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+}));
 
 vi.mock("./_generated/api", () => ({
   internal: {
@@ -11,6 +15,9 @@ vi.mock("./_generated/api", () => ({
       getUserOwnedSkillsBackfillPageInternal: Symbol("getUserOwnedSkillsBackfillPageInternal"),
       applyUserStatsBackfillPatchInternal: Symbol("applyUserStatsBackfillPatchInternal"),
       backfillUserStatsInternal: Symbol("backfillUserStatsInternal"),
+      getPublisherStatsBackfillPageInternal: Symbol("getPublisherStatsBackfillPageInternal"),
+      recomputePublisherStatsInternal: Symbol("recomputePublisherStatsInternal"),
+      backfillPublisherStatsInternal: Symbol("backfillPublisherStatsInternal"),
       getSkillFingerprintBackfillPageInternal: Symbol("getSkillFingerprintBackfillPageInternal"),
       applySkillFingerprintBackfillPatchInternal: Symbol(
         "applySkillFingerprintBackfillPatchInternal",
@@ -18,7 +25,9 @@ vi.mock("./_generated/api", () => ({
       backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
       applySkillCapabilityTagsInternal: Symbol("applySkillCapabilityTagsInternal"),
       backfillSkillCapabilityTagsInternal: Symbol("backfillSkillCapabilityTagsInternal"),
-      backfillDigestVersionSummary: Symbol("backfillDigestVersionSummary"),
+      backfillSkillSearchDigestModerationVerdictsInternal: Symbol(
+        "backfillSkillSearchDigestModerationVerdictsInternal",
+      ),
       getEmptySkillCleanupPageInternal: Symbol("getEmptySkillCleanupPageInternal"),
       applyEmptySkillCleanupInternal: Symbol("applyEmptySkillCleanupInternal"),
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
@@ -42,131 +51,497 @@ vi.mock("./lib/skillSummary", () => ({
 
 const {
   applySkillCapabilityTagsInternal,
-  backfillDigestVersionSummary,
   backfillLatestVersionSummaryInternal,
-  backfillSkillSearchDigestInternal,
+  backfillSkillSearchDigestModerationVerdictsInternal,
+  backfillPublisherStatsInternalHandler,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
+  repairLegacyPublisherOwnershipForUserHandler,
   upsertSkillBadgeRecordInternal,
 } = await import("./maintenance");
 const { internal } = await import("./_generated/api");
 const { generateSkillSummary } = await import("./lib/skillSummary");
+const { getAuthUserId } = await import("@convex-dev/auth/server");
+
+beforeEach(() => {
+  vi.mocked(getAuthUserId).mockReset();
+  vi.mocked(getAuthUserId).mockResolvedValue(null);
+});
 
 function makeBlob(text: string) {
   return { text: () => Promise.resolve(text) } as unknown as Blob;
 }
 
-describe("maintenance backfill", () => {
-  it("patches stale skill search digest rank stats from legacy skill stats", async () => {
-    const existingDigest = {
-      _id: "skillSearchDigest:1",
-      skillId: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "Old summary",
-      ownerUserId: "users:owner",
-      tags: {},
-      stats: {
-        downloads: 3,
-        stars: 2,
-        installsCurrent: 4,
-        installsAllTime: 5,
-        versions: 1,
-        comments: 0,
-      },
-      softDeletedAt: undefined,
-      createdAt: 100,
-      updatedAt: 200,
-    };
-    const skill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      summary: "New summary",
-      ownerUserId: "users:owner",
-      tags: {},
-      stats: {
-        downloads: 42,
-        stars: 7,
-        installsCurrent: 9,
-        installsAllTime: 100,
-        versions: 1,
-        comments: 0,
-      },
-      softDeletedAt: undefined,
-      createdAt: 100,
-      updatedAt: 300,
-    };
-    const paginate = vi.fn().mockResolvedValue({
-      page: [skill],
-      continueCursor: null,
-      isDone: true,
-    });
-    const unique = vi.fn().mockResolvedValue(existingDigest);
-    class TestEqBuilder {
-      eq(_field: string, _value: unknown) {
-        return this;
-      }
-    }
-    const withIndex = vi.fn((_indexName: string, build: (q: TestEqBuilder) => unknown) => {
-      build(new TestEqBuilder());
-      return { unique };
-    });
-    const query = vi.fn((table: string) => {
-      if (table === "skills") return { paginate };
-      if (table === "skillSearchDigest") return { withIndex };
-      throw new Error(`unexpected table ${table}`);
-    });
-    const patch = vi.fn().mockResolvedValue(undefined);
-    const insert = vi.fn().mockResolvedValue("skillSearchDigest:inserted");
-    const replace = vi.fn().mockResolvedValue(undefined);
-    const deleteDoc = vi.fn().mockResolvedValue(undefined);
+type QueryEq = {
+  eq: (field: string, value: unknown) => QueryEq;
+};
 
-    const result = await (
-      backfillSkillSearchDigestInternal as unknown as { _handler: Function }
-    )._handler(
+function makeLegacyPublisherOwnershipDb() {
+  const now = 1_717_456_000_000;
+  let nextPublisherId = 2;
+  let nextMemberId = 1;
+  const users = new Map<string, Record<string, unknown>>([
+    [
+      "users:legacy",
       {
-        db: {
-          get: vi.fn(),
-          query,
-          patch,
-          insert,
-          replace,
-          delete: deleteDoc,
-          normalizeId: vi.fn(),
+        _id: "users:legacy",
+        _creationTime: now - 1000,
+        handle: "legacy-owner",
+        name: "Legacy Owner",
+        displayName: "Legacy Owner",
+        deletedAt: undefined,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+      },
+    ],
+    [
+      "users:deleted",
+      {
+        _id: "users:deleted",
+        _creationTime: now - 1000,
+        handle: "deleted-owner",
+        deletedAt: now - 10,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+      },
+    ],
+  ]);
+  const publishers = new Map<string, Record<string, unknown>>([
+    [
+      "publishers:existing",
+      {
+        _id: "publishers:existing",
+        _creationTime: now - 500,
+        kind: "user",
+        handle: "existing-owner",
+        displayName: "Existing Owner",
+        linkedUserId: "users:existing",
+        publishedSkills: 0,
+        publishedPackages: 0,
+        totalInstalls: 0,
+        totalDownloads: 0,
+        totalStars: 0,
+        skillTotalInstalls: 0,
+        skillTotalDownloads: 0,
+        skillTotalStars: 0,
+        createdAt: now - 500,
+        updatedAt: now - 500,
+      },
+    ],
+  ]);
+  const publisherMembers = new Map<string, Record<string, unknown>>();
+  const skills = new Map<string, Record<string, unknown>>([
+    [
+      "skills:legacy",
+      {
+        _id: "skills:legacy",
+        _creationTime: now - 400,
+        slug: "legacy-skill",
+        displayName: "Legacy Skill",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        latestVersionId: "skillVersions:legacy",
+        tags: { latest: "skillVersions:legacy" },
+        stats: {
+          downloads: 10,
+          stars: 3,
+          installsCurrent: 2,
+          installsAllTime: 5,
+          comments: 0,
+          versions: 1,
         },
-        scheduler: {
-          runAfter: vi.fn(),
+        statsDownloads: 10,
+        statsStars: 3,
+        statsInstallsCurrent: 2,
+        statsInstallsAllTime: 5,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+    [
+      "skills:deleted-owner",
+      {
+        _id: "skills:deleted-owner",
+        _creationTime: now - 400,
+        slug: "deleted-owner-skill",
+        displayName: "Deleted Owner Skill",
+        ownerUserId: "users:deleted",
+        ownerPublisherId: undefined,
+        latestVersionId: "skillVersions:deleted-owner",
+        tags: { latest: "skillVersions:deleted-owner" },
+        stats: {
+          downloads: 1,
+          stars: 0,
+          installsCurrent: 0,
+          installsAllTime: 0,
+          comments: 0,
+          versions: 1,
         },
-      } as never,
-      { batchSize: 10 },
-    );
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const skillVersions = new Map<string, Record<string, unknown>>([
+    [
+      "skillVersions:legacy",
+      {
+        _id: "skillVersions:legacy",
+        skillId: "skills:legacy",
+        version: "1.0.0",
+        softDeletedAt: undefined,
+      },
+    ],
+    [
+      "skillVersions:deleted-owner",
+      {
+        _id: "skillVersions:deleted-owner",
+        skillId: "skills:deleted-owner",
+        version: "1.0.0",
+        softDeletedAt: undefined,
+      },
+    ],
+  ]);
+  const skillSlugAliases = new Map<string, Record<string, unknown>>([
+    [
+      "skillSlugAliases:legacy",
+      {
+        _id: "skillSlugAliases:legacy",
+        slug: "old-legacy-skill",
+        skillId: "skills:legacy",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        createdAt: now - 250,
+        updatedAt: now - 250,
+      },
+    ],
+  ]);
+  const skillEmbeddings = new Map<string, Record<string, unknown>>([
+    [
+      "skillEmbeddings:legacy",
+      {
+        _id: "skillEmbeddings:legacy",
+        skillId: "skills:legacy",
+        versionId: "skillVersions:legacy",
+        ownerId: "users:legacy",
+        ownerPublisherId: undefined,
+        embedding: [0.1, 0.2],
+        isLatest: true,
+        isApproved: true,
+        visibility: "public",
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const skillSearchDigest = new Map<string, Record<string, unknown>>([
+    [
+      "skillSearchDigest:legacy",
+      {
+        _id: "skillSearchDigest:legacy",
+        skillId: "skills:legacy",
+        slug: "legacy-skill",
+        displayName: "Legacy Skill",
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        ownerHandle: "legacy-owner",
+        ownerKind: "user",
+        stats: {
+          downloads: 10,
+          stars: 3,
+          installsCurrent: 2,
+          installsAllTime: 5,
+          comments: 0,
+          versions: 1,
+        },
+        statsDownloads: 10,
+        statsStars: 3,
+        statsInstallsCurrent: 2,
+        statsInstallsAllTime: 5,
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packages = new Map<string, Record<string, unknown>>([
+    [
+      "packages:legacy",
+      {
+        _id: "packages:legacy",
+        _creationTime: now - 400,
+        name: "@legacy-owner/demo-plugin",
+        normalizedName: "@legacy-owner/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        channel: "community",
+        isOfficial: false,
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        summary: "Demo package",
+        latestReleaseId: undefined,
+        tags: {},
+        compatibility: undefined,
+        capabilities: undefined,
+        verification: undefined,
+        scanStatus: "clean",
+        stats: { downloads: 7, installs: 4, stars: 2, versions: 1 },
+        softDeletedAt: undefined,
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packageSearchDigest = new Map<string, Record<string, unknown>>([
+    [
+      "packageSearchDigest:legacy",
+      {
+        _id: "packageSearchDigest:legacy",
+        packageId: "packages:legacy",
+        name: "@legacy-owner/demo-plugin",
+        normalizedName: "@legacy-owner/demo-plugin",
+        displayName: "Demo Plugin",
+        family: "bundle-plugin",
+        channel: "community",
+        isOfficial: false,
+        ownerUserId: "users:legacy",
+        ownerPublisherId: undefined,
+        ownerHandle: "legacy-owner",
+        ownerKind: "user",
+        summary: "Demo package",
+        scanStatus: "clean",
+        softDeletedAt: undefined,
+        createdAt: now - 300,
+        updatedAt: now - 200,
+      },
+    ],
+  ]);
+  const packageCapabilitySearchDigest = new Map<string, Record<string, unknown>>();
+  const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
 
-    expect(result).toEqual({ upserted: 1, isDone: true, scanned: 1 });
-    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 10 });
-    expect(withIndex).toHaveBeenCalledWith("by_skill", expect.any(Function));
-    expect(insert).not.toHaveBeenCalled();
-    expect(patch).toHaveBeenCalledWith(
-      "skillSearchDigest:1",
-      expect.objectContaining({
-        summary: "New summary",
-        statsDownloads: 42,
-        statsStars: 7,
-        statsInstallsCurrent: 9,
-        statsInstallsAllTime: 100,
-        stats: expect.objectContaining({
-          downloads: 42,
-          stars: 7,
-          installsCurrent: 9,
-          installsAllTime: 100,
-        }),
-      }),
-    );
+  const tableMap: Record<string, Map<string, Record<string, unknown>>> = {
+    users,
+    publishers,
+    publisherMembers,
+    skills,
+    skillVersions,
+    skillSlugAliases,
+    skillEmbeddings,
+    skillSearchDigest,
+    packages,
+    packageSearchDigest,
+    packageCapabilitySearchDigest,
+    packagePluginCategorySearchDigest,
+  };
+  const patchCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const insertCalls: Array<{ table: string; value: Record<string, unknown> }> = [];
+
+  const getRows = (table: string) => Array.from(tableMap[table]?.values() ?? []);
+  const getTableForId = (id: string) => id.split(":")[0];
+  const readField = (row: Record<string, unknown>, field: string) =>
+    field.split(".").reduce<unknown>((value, part) => {
+      if (!value || typeof value !== "object") return undefined;
+      return (value as Record<string, unknown>)[part];
+    }, row);
+  const makeQuery = (table: string, rows: Record<string, unknown>[]) => ({
+    collect: vi.fn(async () => rows),
+    unique: vi.fn(async () => rows[0] ?? null),
+    take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+    order: vi.fn(() => ({
+      take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+      paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) =>
+        paginateRows(rows, cursor, numItems),
+      ),
+    })),
+    paginate: vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) =>
+      paginateRows(rows, cursor, numItems),
+    ),
+    withIndex: vi.fn((indexName: string, build?: (q: QueryEq) => unknown) => {
+      const filters: Array<{ field: string; value: unknown }> = [];
+      const q: QueryEq = {
+        eq: (field, value) => {
+          filters.push({ field, value });
+          return q;
+        },
+      };
+      build?.(q);
+      let indexedRows = getRows(table).filter((row) =>
+        filters.every((filter) => readField(row, filter.field) === filter.value),
+      );
+      if (table === "users" && indexName === "by_active_handle") {
+        indexedRows = indexedRows.filter(
+          (row) => row.deletedAt === undefined && row.deactivatedAt === undefined,
+        );
+      }
+      return makeQuery(table, indexedRows);
+    }),
   });
 
+  const db = {
+    get: vi.fn(async (id: string) => tableMap[getTableForId(id)]?.get(id) ?? null),
+    query: vi.fn((table: string) => makeQuery(table, getRows(table))),
+    patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
+      patchCalls.push({ id, patch });
+      const row = tableMap[getTableForId(id)]?.get(id);
+      if (row) Object.assign(row, patch);
+    }),
+    insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+      const id =
+        table === "publishers"
+          ? `publishers:created${nextPublisherId++}`
+          : table === "publisherMembers"
+            ? `publisherMembers:created${nextMemberId++}`
+            : `${table}:created`;
+      insertCalls.push({ table, value });
+      tableMap[table].set(id, { _id: id, _creationTime: now, ...value });
+      return id;
+    }),
+    delete: vi.fn(async (id: string) => {
+      tableMap[getTableForId(id)]?.delete(id);
+    }),
+    normalizeId: vi.fn(),
+  };
+
+  return {
+    db,
+    patchCalls,
+    insertCalls,
+    tableMap,
+  };
+}
+
+function paginateRows(rows: Record<string, unknown>[], cursor: string | null, numItems: number) {
+  const start = cursor ? Number(cursor) : 0;
+  const page = rows.slice(start, start + numItems);
+  const next = start + page.length;
+  return {
+    page,
+    continueCursor: next >= rows.length ? null : String(next),
+    isDone: next >= rows.length,
+  };
+}
+
+describe("maintenance legacy publisher ownership repair", () => {
+  it("repairs legacy owner projections for one targeted user by handle", async () => {
+    const { db, tableMap } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    const skillsResult = await repairLegacyPublisherOwnershipForUserHandler(
+      { db, scheduler } as never,
+      {
+        handle: "legacy-owner",
+        phase: "skills",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      },
+    );
+    const createdPublisher = Array.from(tableMap.publishers.values()).find(
+      (publisher) => publisher.handle === "legacy-owner",
+    );
+    expect(skillsResult).toMatchObject({
+      phase: "skills",
+      dryRun: false,
+      userId: "users:legacy",
+      publisherId: createdPublisher?._id,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(tableMap.skills.get("skills:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.skills.get("skills:deleted-owner")).toMatchObject({
+      ownerPublisherId: undefined,
+    });
+    expect(tableMap.skillSlugAliases.get("skillSlugAliases:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+    expect(tableMap.skillEmbeddings.get("skillEmbeddings:legacy")).not.toHaveProperty(
+      "ownerPublisherId",
+      createdPublisher?._id,
+    );
+
+    const packagesResult = await repairLegacyPublisherOwnershipForUserHandler(
+      { db, scheduler } as never,
+      {
+        handle: "legacy-owner",
+        phase: "packages",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      },
+    );
+    expect(packagesResult).toMatchObject({
+      phase: "packages",
+      dryRun: false,
+      userId: "users:legacy",
+      publisherId: createdPublisher?._id,
+      scanned: 1,
+      repaired: 1,
+      skipped: 0,
+      isDone: true,
+    });
+    expect(tableMap.packages.get("packages:legacy")).toMatchObject({
+      ownerPublisherId: createdPublisher?._id,
+    });
+  });
+
+  it("does not touch skill embeddings during apply-mode skill repair", async () => {
+    const { db } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    const patch = db.patch;
+    db.patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      if (id === "skillEmbeddings:legacy") throw new Error("embedding sync failed");
+      await patch(id, value);
+    });
+
+    await expect(
+      repairLegacyPublisherOwnershipForUserHandler({ db, scheduler } as never, {
+        handle: "legacy-owner",
+        phase: "skills",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      }),
+    ).resolves.toMatchObject({
+      phase: "skills",
+      repaired: 1,
+    });
+  });
+
+  it("propagates apply-mode package patch failures", async () => {
+    const { db } = makeLegacyPublisherOwnershipDb();
+    const scheduler = { runAfter: vi.fn() };
+
+    const patch = db.patch;
+    db.patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      if (id === "packages:legacy") throw new Error("package patch failed");
+      await patch(id, value);
+    });
+
+    await expect(
+      repairLegacyPublisherOwnershipForUserHandler({ db, scheduler } as never, {
+        handle: "legacy-owner",
+        phase: "packages",
+        dryRun: false,
+        batchSize: 10,
+        scheduleNext: false,
+      }),
+    ).rejects.toThrow("package patch failed");
+  });
+});
+
+describe("maintenance backfill", () => {
   it("repairs summary + parsed by reparsing SKILL.md", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [
@@ -330,6 +705,7 @@ describe("maintenance backfill", () => {
             changelog: "Same changelog",
             changelogSource: "user",
             clawdis: undefined,
+            apiKeyRequired: true,
           },
         },
       ],
@@ -343,6 +719,7 @@ describe("maintenance backfill", () => {
       changelog: "Same changelog",
       changelogSource: "auto",
       parsed: { clawdis: { emoji: "lobster" } },
+      apiKeyRequired: true,
     });
     const patch = vi.fn().mockResolvedValue(undefined);
     const runAfter = vi.fn();
@@ -374,83 +751,10 @@ describe("maintenance backfill", () => {
         changelog: "Same changelog",
         changelogSource: "auto",
         clawdis: { emoji: "lobster" },
+        apiKeyRequired: true,
       },
     });
     expect(runAfter).not.toHaveBeenCalled();
-  });
-
-  it("backfills digest capability tags even when version summary already matches", async () => {
-    const digest = {
-      _id: "skillSearchDigest:1",
-      skillId: "skills:1",
-      latestVersionId: "skillVersions:1",
-      latestVersionSkillId: "skills:1",
-      latestVersionSummary: {
-        version: "1.0.0",
-        createdAt: 123,
-        changelog: "Same changelog",
-        changelogSource: "user",
-        clawdis: undefined,
-      },
-      capabilityTags: ["old"],
-    };
-    const skill = {
-      _id: "skills:1",
-      slug: "demo",
-      displayName: "Demo",
-      stats: {
-        downloads: 0,
-        stars: 0,
-        installsCurrent: 0,
-        installsAllTime: 0,
-        versions: 1,
-        comments: 0,
-      },
-      latestVersionId: "skillVersions:1",
-      latestVersionSummary: digest.latestVersionSummary,
-      capabilityTags: ["read-files"],
-    };
-    const version = {
-      _id: "skillVersions:1",
-      skillId: "skills:1",
-      softDeletedAt: undefined,
-      version: "1.0.0",
-    };
-    const paginate = vi.fn().mockResolvedValue({
-      page: [digest],
-      continueCursor: null,
-      isDone: true,
-    });
-    const patch = vi.fn().mockResolvedValue(undefined);
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({ paginate })),
-        get: vi.fn(async (id: string) => {
-          if (id === "skills:1") return skill;
-          if (id === "skillVersions:1") return version;
-          return null;
-        }),
-        patch,
-        normalizeId: vi.fn(),
-      },
-      scheduler: {
-        runAfter: vi.fn(),
-      },
-    } as never;
-
-    const result = await (
-      backfillDigestVersionSummary as unknown as { _handler: Function }
-    )._handler(ctx, {
-      batchSize: 10,
-    });
-
-    expect(result).toEqual({ patched: 1, isDone: true, scanned: 1 });
-    expect(patch).toHaveBeenCalledWith("skillSearchDigest:1", {
-      latestVersionId: "skillVersions:1",
-      latestVersionSkillId: "skills:1",
-      latestVersionSummary: digest.latestVersionSummary,
-      capabilityTags: ["read-files"],
-    });
   });
 
   it("backfills denormalized user hover stats from indexed owner pages", async () => {
@@ -511,6 +815,54 @@ describe("maintenance backfill", () => {
         publishedSkills: 2,
         totalStars: 5,
         totalDownloads: 35,
+      },
+    );
+  });
+
+  it("backfills denormalized publisher stats through the recompute mutation", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      items: [{ _id: "publishers:1" }, { _id: "publishers:2" }],
+      cursor: "next",
+      isDone: false,
+    });
+    const runMutation = vi.fn().mockResolvedValue({ ok: true });
+
+    const result = await backfillPublisherStatsInternalHandler({ runQuery, runMutation } as never, {
+      dryRun: true,
+      batchSize: 2,
+      maxBatches: 1,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      stats: {
+        publishersScanned: 2,
+        publishersPatched: 0,
+      },
+      isDone: false,
+      cursor: "next",
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.maintenance.getPublisherStatsBackfillPageInternal,
+      {
+        cursor: undefined,
+        batchSize: 2,
+      },
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.recomputePublisherStatsInternal,
+      {
+        publisherId: "publishers:1",
+        dryRun: true,
+      },
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.recomputePublisherStatsInternal,
+      {
+        publisherId: "publishers:2",
+        dryRun: true,
       },
     );
   });
@@ -776,6 +1128,125 @@ describe("maintenance capability tag backfill", () => {
       capabilityTags: ["financial-authority", "can-make-purchases"],
       updatedAt: 987,
     });
+  });
+});
+
+describe("skill search digest moderation verdict backfill", () => {
+  it("patches digest moderation verdicts from canonical skill rows and schedules the next page", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:malicious",
+          skillId: "skills:malicious",
+          moderationVerdict: undefined,
+        },
+        {
+          _id: "skillSearchDigest:clean",
+          skillId: "skills:clean",
+          moderationVerdict: "clean",
+        },
+        {
+          _id: "skillSearchDigest:missing",
+          skillId: "skills:missing",
+          moderationVerdict: undefined,
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce({
+        _id: "skills:malicious",
+        moderationVerdict: "malicious",
+        updatedAt: 123,
+      })
+      .mockResolvedValueOnce({
+        _id: "skills:clean",
+        moderationVerdict: "clean",
+        updatedAt: 456,
+      })
+      .mockResolvedValueOnce(null);
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestModerationVerdictsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { cursor: "start", batchSize: 25 },
+    );
+
+    expect(result).toEqual({
+      scanned: 3,
+      patched: 1,
+      missingSkills: 1,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: false,
+    });
+    expect(query).toHaveBeenCalledWith("skillSearchDigest");
+    expect(paginate).toHaveBeenCalledWith({ cursor: "start", numItems: 25 });
+    expect(patch).toHaveBeenCalledWith("skillSearchDigest:malicious", {
+      moderationVerdict: "malicious",
+      updatedAt: 123,
+    });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.maintenance.backfillSkillSearchDigestModerationVerdictsInternal,
+      {
+        cursor: "next-page",
+        batchSize: 25,
+        dryRun: false,
+      },
+    );
+  });
+
+  it("reports would-be patches without writing or scheduling in dry run mode", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "skillSearchDigest:malicious",
+          skillId: "skills:malicious",
+          moderationVerdict: undefined,
+        },
+      ],
+      continueCursor: "next-page",
+      isDone: false,
+    });
+    const query = vi.fn().mockReturnValue({ paginate });
+    const get = vi.fn().mockResolvedValue({
+      _id: "skills:malicious",
+      moderationVerdict: "malicious",
+      updatedAt: 123,
+    });
+    const patch = vi.fn().mockResolvedValue(undefined);
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await (
+      backfillSkillSearchDigestModerationVerdictsInternal as unknown as { _handler: Function }
+    )._handler(
+      {
+        db: { query, get, patch, normalizeId: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 25, dryRun: true },
+    );
+
+    expect(result).toEqual({
+      scanned: 1,
+      patched: 1,
+      missingSkills: 0,
+      cursor: "next-page",
+      isDone: false,
+      dryRun: true,
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
   });
 });
 

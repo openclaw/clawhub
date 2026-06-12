@@ -69,6 +69,22 @@ function buildSkillDownloadHref(convexSiteUrl: string, slug: string, ownerHandle
   return `${convexSiteUrl}/api/v1/download?${params.toString()}`;
 }
 
+function getGitHubRepositoryLink(skill: Doc<"skills"> | PublicSkill) {
+  const repo = "githubSourceRepo" in skill ? skill.githubSourceRepo : undefined;
+  if (skill.installKind !== "github" || !repo) return null;
+
+  return (
+    <a
+      href={`https://github.com/${repo}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="plugin-external-link"
+    >
+      {repo}
+    </a>
+  );
+}
+
 type SkillHeaderProps = {
   skill: Doc<"skills"> | PublicSkill;
   owner: PublicPublisher | null;
@@ -103,6 +119,7 @@ type SkillHeaderProps = {
   securityAuditSummary?: ReactNode;
   newVersionHref?: string | null;
   settingsHref?: string | null;
+  showArchiveMetadata?: boolean;
   children?: ReactNode;
 };
 
@@ -137,6 +154,7 @@ export function SkillHeader({
   securityAuditSummary,
   newVersionHref,
   settingsHref,
+  showArchiveMetadata = true,
   children,
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
@@ -201,6 +219,7 @@ export function SkillHeader({
               ownerHandle={ownerHandle}
               formattedStats={formattedStats}
               latestVersion={latestVersion}
+              showArchiveMetadata={showArchiveMetadata}
               securityAuditSummary={securityAuditSummary}
             />
             {hasSidebarActions ? (
@@ -448,6 +467,7 @@ function SkillSidebarStats({
   ownerHandle,
   formattedStats,
   latestVersion,
+  showArchiveMetadata,
   securityAuditSummary,
 }: {
   skill: Doc<"skills"> | PublicSkill;
@@ -455,14 +475,18 @@ function SkillSidebarStats({
   ownerHandle: string | null;
   formattedStats: ReturnType<typeof formatSkillStatsTriplet>;
   latestVersion: SkillHeaderLatestVersion;
+  showArchiveMetadata: boolean;
   securityAuditSummary?: ReactNode;
 }) {
+  const githubRepositoryLink = getGitHubRepositoryLink(skill);
+
   return (
     <SidebarMetadata
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
         { label: "Downloads", value: formattedStats.downloads, large: true },
+        { label: "Repository", value: githubRepositoryLink },
         {
           label: "Owner",
           value: (
@@ -485,15 +509,19 @@ function SkillSidebarStats({
             }
           : { label: "", value: null },
         { label: "Last updated", value: timeAgo(skill.updatedAt) },
-        {
-          grid: [
-            {
-              label: "Current version",
-              value: latestVersion?.version ? `v${latestVersion.version}` : "None",
-            },
-            { label: "License", value: PLATFORM_SKILL_LICENSE },
-          ],
-        },
+        ...(showArchiveMetadata
+          ? [
+              {
+                grid: [
+                  {
+                    label: "Current version",
+                    value: latestVersion?.version ? `v${latestVersion.version}` : "None",
+                  },
+                  { label: "License", value: PLATFORM_SKILL_LICENSE },
+                ],
+              },
+            ]
+          : []),
       ]}
     />
   );

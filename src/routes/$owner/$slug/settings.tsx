@@ -1,13 +1,12 @@
 import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import { SkillDetailPage } from "../../../components/SkillDetailPage";
 import { buildSkillMeta } from "../../../lib/og";
+import { isOwnerRouteHandleOrIdSegment } from "../../../lib/ownerRoute";
 import { fetchSkillPageData } from "../../../lib/skillPage";
 
 export const Route = createFileRoute("/$owner/$slug/settings")({
   beforeLoad: ({ params }) => {
-    const isHandle = /^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
-    const isOwnerId = params.owner.startsWith("users:") || params.owner.startsWith("publishers:");
-    if (!isHandle && !isOwnerId) {
+    if (!isOwnerRouteHandleOrIdSegment(params.owner)) {
       throw notFound();
     }
   },

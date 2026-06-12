@@ -52,6 +52,13 @@ describe("publisher stat maintenance", () => {
               return {
                 collect: vi.fn(async () => [
                   makeSkill({ statsDownloads: 11, statsStars: 2, statsInstallsAllTime: 5 }),
+                  makeSkill({
+                    _id: "skills:hidden",
+                    moderationStatus: "hidden",
+                    statsDownloads: 100,
+                    statsStars: 100,
+                    statsInstallsAllTime: 100,
+                  }),
                 ]),
               };
             }
@@ -133,6 +140,26 @@ describe("publisher stat maintenance", () => {
       skillTotalDownloads: 11,
       skillTotalStars: 2,
     });
+    expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("does not count hidden skills in public publisher aggregates", async () => {
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        patch: vi.fn(),
+        query: vi.fn(),
+      },
+    };
+
+    await adjustPublisherStatsForSkillChange(
+      ctx as never,
+      null,
+      makeSkill({ moderationStatus: "hidden", moderationReason: "pending.scan" }),
+    );
+
+    expect(ctx.db.get).not.toHaveBeenCalled();
+    expect(ctx.db.patch).not.toHaveBeenCalled();
     expect(ctx.db.query).not.toHaveBeenCalled();
   });
 

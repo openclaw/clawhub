@@ -195,6 +195,31 @@ describe("MarkdownPreview — standard markdown still renders", () => {
     expect(code).not.toBeNull();
     expect(code?.textContent).toContain("const x = 1;");
   });
+
+  it("renders mermaid fenced code blocks as diagrams instead of plain code", () => {
+    const container = renderMarkdown("```mermaid\ngraph TD\n  A --> B\n```");
+
+    expect(container.querySelector("[data-mermaid-diagram]")).not.toBeNull();
+    expect(container.querySelector("pre code.language-mermaid")).toBeNull();
+  });
+
+  it("cleans up temporary Mermaid nodes when rendering falls back", async () => {
+    const { container } = render(
+      <MarkdownPreview highlight={false}>{"```mermaid\nnot a diagram\n```"}</MarkdownPreview>,
+    );
+
+    await waitFor(
+      () => {
+        expect(container.querySelector(".mermaid-diagram-error")).not.toBeNull();
+      },
+      { timeout: 8000 },
+    );
+    expect(
+      document.body.querySelector(
+        '[id^="clawhub-mermaid-"], [id^="dclawhub-mermaid-"], [id^="iclawhub-mermaid-"]',
+      ),
+    ).toBeNull();
+  });
 });
 
 describe("MarkdownPreview — syntax highlighting", () => {

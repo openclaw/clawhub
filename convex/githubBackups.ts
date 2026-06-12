@@ -1,8 +1,9 @@
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery } from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { isPublicSkillDoc } from "./lib/globalStats";
 
 const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
@@ -104,16 +105,13 @@ export const getGitHubBackupPageInternal = internalQuery({
   },
 });
 
-function isPubliclyAvailableSkill(skill: {
-  softDeletedAt?: number;
-  moderationStatus?: string | null;
-}) {
-  if (skill.softDeletedAt) return false;
-  return (
-    skill.moderationStatus === undefined ||
-    skill.moderationStatus === null ||
-    skill.moderationStatus === "active"
-  );
+function isPubliclyAvailableSkill(
+  skill: Pick<
+    Doc<"skillSearchDigest">,
+    "softDeletedAt" | "moderationStatus" | "moderationFlags" | "moderationVerdict"
+  >,
+) {
+  return isPublicSkillDoc(skill);
 }
 
 function isStaleCursorError(error: unknown) {

@@ -23,15 +23,20 @@ const {
   list,
   searchInternal,
   banUserInternal,
+  autobanMalwareAuthorInternal,
+  recordMaliciousArtifactFindingInternal,
   unbanUserForBanAppealServiceInternal,
   reclassifyBanInternal,
   me,
   placeUserUnderModerationInternal,
   liftModerationHoldInternal,
+  purgeSelfDeletedAccountRecoveryBatchInternal,
+  ensurePublisherHandleInternal,
   reserveHandleInternal,
   syncGitHubProfileInternal,
   updateProfile,
   deleteAccount,
+  upsertDevPersonaInternal,
 } = await import("./users");
 
 type WrappedHandler<TArgs, TResult> = {
@@ -46,6 +51,18 @@ const updateProfileHandler = (
 )._handler;
 const deleteAccountHandler = (
   deleteAccount as unknown as WrappedHandler<Record<string, never>, void>
+)._handler;
+const purgeSelfDeletedAccountRecoveryBatchInternalHandler = (
+  purgeSelfDeletedAccountRecoveryBatchInternal as unknown as WrappedHandler<
+    { cursor?: string; limit?: number; dryRun?: boolean; mode?: "deactivated" | "legacyDeleted" },
+    unknown
+  >
+)._handler;
+const upsertDevPersonaInternalHandler = (
+  upsertDevPersonaInternal as unknown as WrappedHandler<
+    { persona: "owner" | "user" | "admin" | "officialOrgMember" | "abusePublisher" },
+    unknown
+  >
 )._handler;
 
 function makeCtx() {
@@ -131,6 +148,203 @@ function makeCtx() {
   };
 }
 
+function makeDevPersonaCtx() {
+  const users = new Map<string, Record<string, unknown>>();
+  const publishers = new Map<string, Record<string, unknown>>();
+  const publisherMembers: Array<Record<string, unknown>> = [];
+  const officialPublishers: Array<Record<string, unknown>> = [];
+  const auditLogs: Array<Record<string, unknown>> = [];
+  const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+  const patches: Array<{ id: string; value: Record<string, unknown> }> = [];
+
+  const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+    const id = `${table}:${inserts.length + 1}`;
+    const row = { _id: id, _creationTime: 1, ...value };
+    inserts.push({ table, value: row });
+    if (table === "users") users.set(id, row);
+    if (table === "publishers") publishers.set(id, row);
+    if (table === "publisherMembers") publisherMembers.push(row);
+    if (table === "officialPublishers") officialPublishers.push(row);
+    return id;
+  });
+
+  const get = vi.fn(async (...args: string[]) => {
+    const id = args.length === 2 ? args[1] : args[0];
+    return users.get(id) ?? publishers.get(id) ?? null;
+  });
+
+  const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+    patches.push({ id, value });
+    const current = users.get(id) ?? publishers.get(id);
+    if (current) Object.assign(current, value);
+  });
+
+  const query = vi.fn((table: string) => {
+    if (table === "users") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          if (name !== "handle") throw new Error(`Unexpected users index ${name}`);
+          let handle = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(
+              async () => [...users.values()].find((user) => user.handle === handle) ?? null,
+            ),
+          };
+        }),
+      };
+    }
+    if (table === "publishers") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          let handle = "";
+          let linkedUserId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "handle") handle = value;
+              if (field === "linkedUserId") linkedUserId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          if (name === "by_handle") {
+            return {
+              unique: vi.fn(
+                async () =>
+                  [...publishers.values()].find((publisher) => publisher.handle === handle) ?? null,
+              ),
+            };
+          }
+          if (name === "by_linked_user") {
+            return {
+              unique: vi.fn(
+                async () =>
+                  [...publishers.values()].find(
+                    (publisher) => publisher.linkedUserId === linkedUserId,
+                  ) ?? null,
+              ),
+            };
+          }
+          throw new Error(`Unexpected publishers index ${name}`);
+        }),
+      };
+    }
+    if (table === "publisherMembers") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          if (name !== "by_publisher_user") {
+            throw new Error(`Unexpected publisherMembers index ${name}`);
+          }
+          let publisherId = "";
+          let userId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "publisherId") publisherId = value;
+              if (field === "userId") userId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(
+              async () =>
+                publisherMembers.find(
+                  (member) => member.publisherId === publisherId && member.userId === userId,
+                ) ?? null,
+            ),
+          };
+        }),
+      };
+    }
+    if (table === "reservedHandles") {
+      return {
+        withIndex: vi.fn((name: string) => {
+          if (name !== "by_handle_active_updatedAt") {
+            throw new Error(`Unexpected reservedHandles index ${name}`);
+          }
+          return { order: () => ({ take: vi.fn(async () => []) }) };
+        }),
+      };
+    }
+    if (table === "officialPublishers") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          if (name !== "by_publisher")
+            throw new Error(`Unexpected officialPublishers index ${name}`);
+          let publisherId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "publisherId") publisherId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            unique: vi.fn(
+              async () =>
+                officialPublishers.find((entry) => entry.publisherId === publisherId) ?? null,
+            ),
+          };
+        }),
+      };
+    }
+    if (table === "auditLogs") {
+      return {
+        withIndex: vi.fn((name: string, builder?: (q: unknown) => unknown) => {
+          if (name !== "by_target") throw new Error(`Unexpected auditLogs index ${name}`);
+          let targetType = "";
+          let targetId = "";
+          const q = {
+            eq: (field: string, value: string) => {
+              if (field === "targetType") targetType = value;
+              if (field === "targetId") targetId = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          return {
+            collect: vi.fn(async () =>
+              auditLogs.filter(
+                (entry) => entry.targetType === targetType && entry.targetId === targetId,
+              ),
+            ),
+          };
+        }),
+      };
+    }
+    if (table === "packages" || table === "skills") {
+      return {
+        withIndex: vi.fn((name: string) => {
+          if (name !== "by_owner") throw new Error(`Unexpected ${table} index ${name}`);
+          return {
+            collect: vi.fn(async () => []),
+            paginate: vi.fn(async () => ({
+              page: [],
+              continueCursor: null,
+              isDone: true,
+            })),
+          };
+        }),
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
+
+  return {
+    ctx: { db: { patch, get, insert, query, normalizeId: vi.fn() } } as never,
+    auditLogs,
+    inserts,
+    patches,
+    users,
+  };
+}
+
 function makeListCtx(
   users: Array<Record<string, unknown>>,
   options?: {
@@ -200,10 +414,14 @@ function makeListCtx(
 
 function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}) {
   const patch = vi.fn();
-  const insert = vi.fn();
+  const auditLogs = options.auditLogs ?? [];
+  const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+    if (table === "auditLogs") auditLogs.unshift(value);
+    return `${table}:inserted`;
+  });
   const get = vi.fn();
   const runMutation = vi.fn();
-  const auditLogs = options.auditLogs ?? [];
+  const runAfter = vi.fn();
   const apiTokens = [{ _id: "apiTokens:1", revokedAt: undefined }];
   const userComments = [
     {
@@ -219,15 +437,6 @@ function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}
       softDeletedAt: 123,
     },
   ];
-  const soulComments = [
-    {
-      _id: "soulComments:active",
-      userId: "users:target",
-      soulId: "souls:1",
-      softDeletedAt: undefined,
-    },
-  ];
-
   const query = vi.fn((table: string) => ({
     withIndex: (_index: string, _cb: unknown) => {
       if (table === "auditLogs") {
@@ -235,13 +444,16 @@ function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}
       }
       if (table === "apiTokens") return { collect: vi.fn().mockResolvedValue(apiTokens) };
       if (table === "comments") return { collect: vi.fn().mockResolvedValue(userComments) };
-      if (table === "soulComments") return { collect: vi.fn().mockResolvedValue(soulComments) };
       throw new Error(`Unexpected table ${table}`);
     },
   }));
 
-  const ctx = { db: { patch, insert, get, query, normalizeId: vi.fn() }, runMutation } as never;
-  return { ctx, patch, insert, get, runMutation };
+  const ctx = {
+    db: { patch, insert, get, query, normalizeId: vi.fn() },
+    runMutation,
+    scheduler: { runAfter },
+  } as never;
+  return { ctx, patch, insert, get, runMutation, runAfter };
 }
 
 function makeBanAppealContextCtx(options: {
@@ -487,29 +699,32 @@ describe("ensureHandler", () => {
     });
   });
 
-  it("skips public route owner handles when deriving a handle", async () => {
-    const { ctx, patch } = makeCtx();
-    vi.mocked(requireUser).mockResolvedValue({
-      userId: "users:skills",
-      user: {
-        _creationTime: 1,
-        handle: undefined,
-        displayName: undefined,
-        name: "skills",
-        email: undefined,
-        role: "user",
-        createdAt: 1,
-      },
-    } as never);
+  it.each(["docs", "skills"])(
+    "skips public route owner handle %s when deriving a handle",
+    async (handle) => {
+      const { ctx, patch } = makeCtx();
+      vi.mocked(requireUser).mockResolvedValue({
+        userId: `users:${handle}`,
+        user: {
+          _creationTime: 1,
+          handle: undefined,
+          displayName: undefined,
+          name: handle,
+          email: undefined,
+          role: "user",
+          createdAt: 1,
+        },
+      } as never);
 
-    await ensureHandler(ctx);
+      await ensureHandler(ctx);
 
-    expect(patch).toHaveBeenCalledWith("users:skills", {
-      handle: "skills-2",
-      displayName: "skills-2",
-      updatedAt: expect.any(Number),
-    });
-  });
+      expect(patch).toHaveBeenCalledWith(`users:${handle}`, {
+        handle: `${handle}-2`,
+        displayName: `${handle}-2`,
+        updatedAt: expect.any(Number),
+      });
+    },
+  );
 
   it("repairs an existing handle that is no longer claimable", async () => {
     const { ctx, patch, query } = makeCtx();
@@ -834,6 +1049,111 @@ describe("ensureHandler", () => {
   });
 });
 
+describe("users.upsertDevPersonaInternal", () => {
+  it("rejects a dev persona sign-in when the persona is banned", async () => {
+    process.env.DEV_AUTH_ENABLED = "1";
+    process.env.CONVEX_DEPLOYMENT = "local:dev";
+    process.env.CONVEX_SITE_URL = "http://localhost:3210";
+    const { auditLogs, ctx, patches, users } = makeDevPersonaCtx();
+    users.set("users:banned", {
+      _id: "users:banned",
+      _creationTime: 1,
+      handle: "local-abuse",
+      displayName: "Local Abuse Test Publisher",
+      deletedAt: 1_700_000_000_000,
+    });
+    auditLogs.push({
+      action: "user.autoban.malware",
+      targetType: "user",
+      targetId: "users:banned",
+    });
+
+    await expect(
+      upsertDevPersonaInternalHandler(ctx, {
+        persona: "abusePublisher",
+      }),
+    ).rejects.toThrow(/account has been banned/i);
+    expect(patches).toEqual([]);
+  });
+
+  it("keeps the abuse persona auth name aligned with its stable handle", async () => {
+    process.env.DEV_AUTH_ENABLED = "1";
+    process.env.CONVEX_DEPLOYMENT = "local:dev";
+    process.env.CONVEX_SITE_URL = "http://localhost:3210";
+    const { ctx, inserts } = makeDevPersonaCtx();
+
+    await upsertDevPersonaInternalHandler(ctx, {
+      persona: "abusePublisher",
+    });
+
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "users",
+        value: expect.objectContaining({
+          handle: "local-abuse",
+          name: "local-abuse",
+          displayName: "Local Abuse Test Publisher",
+        }),
+      }),
+    );
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "publishers",
+        value: expect.objectContaining({
+          handle: "local-abuse",
+          displayName: "Local Abuse Test Publisher",
+        }),
+      }),
+    );
+  });
+
+  it("seeds a non-platform-admin user who manages an official org", async () => {
+    process.env.DEV_AUTH_ENABLED = "1";
+    process.env.CONVEX_DEPLOYMENT = "local:dev";
+    process.env.CONVEX_SITE_URL = "http://localhost:3210";
+    const { ctx, inserts } = makeDevPersonaCtx();
+
+    const userId = await upsertDevPersonaInternalHandler(ctx, {
+      persona: "officialOrgMember",
+    });
+
+    expect(userId).toBe("users:1");
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "users",
+        value: expect.objectContaining({
+          handle: "local-official-member",
+          displayName: "Local Official Org Member",
+          role: "user",
+        }),
+      }),
+    );
+    const orgInsert = inserts.find(
+      (entry) => entry.table === "publishers" && entry.value.handle === "local-official-org",
+    );
+    expect(orgInsert).toBeTruthy();
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "officialPublishers",
+        value: expect.objectContaining({
+          publisherId: orgInsert?.value._id,
+          reason: "dev-persona.official-org-member",
+        }),
+      }),
+    );
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "publisherMembers",
+        value: expect.objectContaining({
+          publisherId: orgInsert?.value._id,
+          userId,
+          role: "admin",
+        }),
+      }),
+    );
+  });
+});
+
 describe("me", () => {
   afterEach(() => {
     vi.mocked(getAuthUserId).mockReset();
@@ -1022,6 +1342,30 @@ describe("users.getByHandle", () => {
     expect(publisherUnique).toHaveBeenCalledOnce();
     expect(get).not.toHaveBeenCalled();
     expect(result).toBeNull();
+  });
+});
+
+describe("users.ensurePublisherHandleInternal", () => {
+  it("rejects public route owner handles", async () => {
+    const { ctx, get, insert } = makeCtx();
+    get.mockResolvedValue({ _id: "users:admin", role: "admin" });
+    const handler = (
+      ensurePublisherHandleInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; handle: string; displayName?: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(ctx, {
+        actorUserId: "users:admin",
+        handle: "docs",
+        displayName: "Docs",
+      }),
+    ).rejects.toThrow('Handle "@docs" is reserved for ClawHub routes');
+    expect(insert).not.toHaveBeenCalled();
   });
 });
 
@@ -1382,6 +1726,13 @@ describe("users profile audit logs", () => {
           }),
         };
       }
+      if (table === "authAccounts" || table === "authSessions") {
+        return {
+          withIndex: () => ({
+            collect: vi.fn(async () => []),
+          }),
+        };
+      }
       throw new Error(`Unexpected table ${table}`);
     }) as never);
 
@@ -1403,6 +1754,607 @@ describe("users profile audit logs", () => {
         }),
       }),
     );
+  });
+});
+
+describe("users.purgeSelfDeletedAccountRecoveryBatchInternal", () => {
+  it("dry-runs eligible self-deleted account candidates with reviewable metadata", async () => {
+    const users = [
+      {
+        _id: "users:self-deleted",
+        _creationTime: 1,
+        deactivatedAt: 1_700_000_000_000,
+        purgedAt: 1_700_000_000_000,
+        deletedAt: undefined,
+        handle: undefined,
+        displayName: undefined,
+        email: undefined,
+        personalPublisherId: "publishers:self-deleted",
+      },
+      {
+        _id: "users:banned",
+        _creationTime: 2,
+        deactivatedAt: 1_700_000_000_001,
+        purgedAt: 1_700_000_000_001,
+        deletedAt: undefined,
+        banReason: "bulk publishing spam",
+      },
+    ];
+    const logsByUser = new Map([
+      [
+        "users:self-deleted",
+        [
+          {
+            _id: "auditLogs:self-delete",
+            _creationTime: 3,
+            actorUserId: "users:self-deleted",
+            action: "user.delete",
+            targetType: "user",
+            targetId: "users:self-deleted",
+            createdAt: 1_700_000_000_000,
+            metadata: {
+              previous: {
+                handle: "octo",
+                displayName: "Octo User",
+                emailPresent: true,
+                personalPublisherId: "publishers:self-deleted",
+              },
+            },
+          },
+        ],
+      ],
+      [
+        "users:banned",
+        [
+          {
+            _id: "auditLogs:ban",
+            actorUserId: "users:admin",
+            action: "user.ban",
+            targetType: "user",
+            targetId: "users:banned",
+          },
+        ],
+      ],
+    ]);
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const runMutation = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_deactivated_purged_at") {
+              throw new Error(`Unexpected users index ${indexName}`);
+            }
+            return {
+              paginate: vi.fn(async () => ({
+                page: users,
+                isDone: true,
+                continueCursor: "",
+              })),
+            };
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
+            };
+          }),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await purgeSelfDeletedAccountRecoveryBatchInternalHandler(
+      {
+        db: { query, patch, insert, delete: vi.fn(), get: vi.fn(), normalizeId: vi.fn() },
+        runMutation,
+      } as never,
+      { dryRun: true, mode: "deactivated", limit: 10 },
+    )) as {
+      dryRun: boolean;
+      eligible: number;
+      purged: number;
+      candidates: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+    };
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      eligible: 1,
+      purged: 0,
+      candidates: [
+        {
+          userId: "users:self-deleted",
+          handle: "octo",
+          displayName: "Octo User",
+          emailPresent: true,
+          personalPublisherId: "publishers:self-deleted",
+          deactivatedAt: 1_700_000_000_000,
+          purgedAt: 1_700_000_000_000,
+          selfDeleteAuditLogId: "auditLogs:self-delete",
+        },
+      ],
+      skipped: [{ userId: "users:banned", reason: "not_self_deleted_or_security_blocked" }],
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("skips already-cleaned self-delete tombstones without auth locks", async () => {
+    const users = [
+      {
+        _id: "users:recovery-purged",
+        _creationTime: 1,
+        deactivatedAt: 1_700_000_000_000,
+        purgedAt: 1_700_000_000_000,
+        deletedAt: undefined,
+        banReason: undefined,
+        handle: undefined,
+        displayName: undefined,
+        name: undefined,
+        email: undefined,
+        personalPublisherId: undefined,
+      },
+      {
+        _id: "users:modern-cleanup",
+        _creationTime: 2,
+        deactivatedAt: 1_700_000_000_001,
+        purgedAt: 1_700_000_000_001,
+        deletedAt: undefined,
+        banReason: undefined,
+        handle: undefined,
+        displayName: undefined,
+        name: undefined,
+        email: undefined,
+        personalPublisherId: undefined,
+      },
+    ];
+    const logsByUser = new Map([
+      [
+        "users:recovery-purged",
+        [
+          {
+            _id: "auditLogs:self-delete",
+            actorUserId: "users:recovery-purged",
+            action: "user.delete",
+            targetType: "user",
+            targetId: "users:recovery-purged",
+            metadata: { previous: { handle: "gone" } },
+          },
+          {
+            _id: "auditLogs:recovery-purge",
+            actorUserId: "users:recovery-purged",
+            action: "user.recovery_purge",
+            targetType: "user",
+            targetId: "users:recovery-purged",
+            metadata: { source: "backfill" },
+          },
+        ],
+      ],
+      [
+        "users:modern-cleanup",
+        [
+          {
+            _id: "auditLogs:modern-delete",
+            actorUserId: "users:modern-cleanup",
+            action: "user.delete",
+            targetType: "user",
+            targetId: "users:modern-cleanup",
+            metadata: { cleanup: { authAccounts: 1 } },
+          },
+        ],
+      ],
+    ]);
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_deactivated_purged_at") {
+              throw new Error(`Unexpected users index ${indexName}`);
+            }
+            return {
+              paginate: vi.fn(async () => ({
+                page: users,
+                isDone: true,
+                continueCursor: "",
+              })),
+            };
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
+            };
+          }),
+        };
+      }
+      if (table === "authAccounts") {
+        return {
+          withIndex: vi.fn((_indexName: string) => ({
+            collect: vi.fn(async () => []),
+          })),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await purgeSelfDeletedAccountRecoveryBatchInternalHandler(
+      {
+        db: {
+          query,
+          patch: vi.fn(),
+          insert: vi.fn(),
+          delete: vi.fn(),
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        runMutation: vi.fn(),
+      } as never,
+      { dryRun: true, mode: "deactivated", limit: 10 },
+    )) as {
+      dryRun: boolean;
+      eligible: number;
+      candidates: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+    };
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      eligible: 0,
+      candidates: [],
+      skipped: [
+        { userId: "users:recovery-purged", reason: "not_self_deleted_or_security_blocked" },
+        { userId: "users:modern-cleanup", reason: "not_self_deleted_or_security_blocked" },
+      ],
+    });
+  });
+
+  it("dry-runs auth-locked purged users without self-delete audit proof", async () => {
+    const users = [
+      {
+        _id: "users:auth-locked",
+        _creationTime: 1,
+        deactivatedAt: 1_700_000_000_000,
+        purgedAt: 1_700_000_000_000,
+        deletedAt: undefined,
+        banReason: undefined,
+        handle: undefined,
+        displayName: undefined,
+        name: undefined,
+        email: undefined,
+        personalPublisherId: undefined,
+      },
+      {
+        _id: "users:active-publisher",
+        _creationTime: 2,
+        deactivatedAt: 1_700_000_000_001,
+        purgedAt: 1_700_000_000_001,
+        deletedAt: undefined,
+        banReason: undefined,
+        handle: undefined,
+        displayName: undefined,
+        name: undefined,
+        email: undefined,
+        personalPublisherId: "publishers:active",
+      },
+    ];
+    const authAccountsByUser = new Map([
+      [
+        "users:auth-locked",
+        [
+          {
+            _id: "authAccounts:github",
+            userId: "users:auth-locked",
+            provider: "github",
+            providerAccountId: "550978",
+          },
+        ],
+      ],
+      [
+        "users:active-publisher",
+        [
+          {
+            _id: "authAccounts:active-publisher",
+            userId: "users:active-publisher",
+            provider: "github",
+            providerAccountId: "123",
+          },
+        ],
+      ],
+    ]);
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const runMutation = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_deactivated_purged_at") {
+              throw new Error(`Unexpected users index ${indexName}`);
+            }
+            return {
+              paginate: vi.fn(async () => ({
+                page: users,
+                isDone: true,
+                continueCursor: "",
+              })),
+            };
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: vi.fn((_indexName: string) => ({
+            collect: vi.fn(async () => []),
+          })),
+        };
+      }
+      if (table === "authAccounts") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => authAccountsByUser.get(fields.userId) ?? []),
+            };
+          }),
+        };
+      }
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn((_indexName: string) => ({
+            unique: vi.fn(async () => null),
+          })),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await purgeSelfDeletedAccountRecoveryBatchInternalHandler(
+      {
+        db: {
+          query,
+          patch,
+          insert,
+          delete: vi.fn(),
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        runMutation,
+      } as never,
+      { dryRun: true, mode: "deactivated", limit: 10 },
+    )) as {
+      dryRun: boolean;
+      eligible: number;
+      purged: number;
+      candidates: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+    };
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      eligible: 2,
+      purged: 0,
+      candidates: [
+        {
+          userId: "users:auth-locked",
+          eligibilityReason: "auth_locked_purged_user",
+          authAccountCount: 1,
+          handle: null,
+          displayName: null,
+          emailPresent: false,
+          personalPublisherId: null,
+          deactivatedAt: 1_700_000_000_000,
+          purgedAt: 1_700_000_000_000,
+          selfDeleteAuditLogId: null,
+        },
+        {
+          userId: "users:active-publisher",
+          eligibilityReason: "auth_locked_purged_user",
+          authAccountCount: 1,
+          personalPublisherId: "publishers:active",
+          deactivatedAt: 1_700_000_000_001,
+          purgedAt: 1_700_000_000_001,
+          selfDeleteAuditLogId: null,
+        },
+      ],
+      skipped: [],
+    });
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("dry-runs auth-locked legacy deleted users without ban evidence", async () => {
+    const users = [
+      {
+        _id: "users:legacy-deleted",
+        _creationTime: 1,
+        deletedAt: 1_700_000_000_000,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+        banReason: undefined,
+        handle: "legacy-user",
+        displayName: "Legacy User",
+        name: "Legacy User",
+        email: "legacy@example.test",
+        personalPublisherId: undefined,
+      },
+      {
+        _id: "users:legacy-banned",
+        _creationTime: 2,
+        deletedAt: 1_700_000_000_001,
+        deactivatedAt: undefined,
+        purgedAt: undefined,
+        banReason: undefined,
+        handle: "legacy-banned",
+        displayName: "Legacy Banned",
+        name: "Legacy Banned",
+        email: "legacy-banned@example.test",
+        personalPublisherId: undefined,
+      },
+    ];
+    const logsByUser = new Map([
+      [
+        "users:legacy-banned",
+        [
+          {
+            _id: "auditLogs:ban",
+            actorUserId: "users:admin",
+            action: "user.ban",
+            targetType: "user",
+            targetId: "users:legacy-banned",
+          },
+        ],
+      ],
+    ]);
+    const authAccountsByUser = new Map([
+      [
+        "users:legacy-deleted",
+        [
+          {
+            _id: "authAccounts:legacy",
+            userId: "users:legacy-deleted",
+            provider: "github",
+            providerAccountId: "1175050",
+          },
+        ],
+      ],
+      [
+        "users:legacy-banned",
+        [
+          {
+            _id: "authAccounts:banned",
+            userId: "users:legacy-banned",
+            provider: "github",
+            providerAccountId: "2",
+          },
+        ],
+      ],
+    ]);
+    const query = vi.fn((table: string) => {
+      if (table === "users") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_ban_reason_deleted_at") {
+              throw new Error(`Unexpected users index ${indexName}`);
+            }
+            return {
+              paginate: vi.fn(async () => ({
+                page: users,
+                isDone: true,
+                continueCursor: "",
+              })),
+            };
+          }),
+        };
+      }
+      if (table === "auditLogs") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => logsByUser.get(fields.targetId) ?? []),
+            };
+          }),
+        };
+      }
+      if (table === "authAccounts") {
+        return {
+          withIndex: vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, string> = {};
+            const q = {
+              eq: (field: string, value: string) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery(q);
+            return {
+              collect: vi.fn(async () => authAccountsByUser.get(fields.userId) ?? []),
+            };
+          }),
+        };
+      }
+      throw new Error(`Unexpected table ${table}`);
+    });
+
+    const result = (await purgeSelfDeletedAccountRecoveryBatchInternalHandler(
+      {
+        db: {
+          query,
+          patch: vi.fn(),
+          insert: vi.fn(),
+          delete: vi.fn(),
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+        },
+        runMutation: vi.fn(),
+      } as never,
+      { dryRun: true, mode: "legacyDeleted", limit: 10 },
+    )) as {
+      dryRun: boolean;
+      eligible: number;
+      purged: number;
+      candidates: Array<Record<string, unknown>>;
+      skipped: Array<Record<string, unknown>>;
+    };
+
+    expect(result).toMatchObject({
+      dryRun: true,
+      eligible: 1,
+      purged: 0,
+      candidates: [
+        {
+          userId: "users:legacy-deleted",
+          eligibilityReason: "auth_locked_legacy_deleted_user",
+          authAccountCount: 1,
+          handle: "legacy-user",
+          displayName: "Legacy User",
+          emailPresent: true,
+          deletedAt: 1_700_000_000_000,
+          selfDeleteAuditLogId: null,
+        },
+      ],
+      skipped: [{ userId: "users:legacy-banned", reason: "not_self_deleted_or_security_blocked" }],
+    });
   });
 });
 
@@ -1914,14 +2866,13 @@ describe("users.banUserInternal", () => {
     vi.restoreAllMocks();
   });
 
-  it("soft-deletes target user comments (skill + soul) during ban", async () => {
+  it("soft-deletes target user skill comments during ban", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const { ctx, get, patch, insert, runMutation } = makeBanCtx();
 
     get.mockImplementation(async (id: string) => {
       if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
       if (id === "users:target") return { _id: "users:target", role: "user" };
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
 
@@ -1945,26 +2896,18 @@ describe("users.banUserInternal", () => {
     })) as {
       ok: boolean;
       alreadyBanned: boolean;
-      deletedComments: { skillComments: number; soulComments: number };
+      deletedSkillComments: number;
     };
 
     expect(result).toMatchObject({
       ok: true,
       alreadyBanned: false,
-      deletedComments: { skillComments: 1, soulComments: 1 },
+      deletedSkillComments: 1,
     });
 
     expect(patch).toHaveBeenCalledWith("comments:active", {
       softDeletedAt: 1_700_000_000_000,
       deletedBy: "users:actor",
-    });
-    expect(patch).toHaveBeenCalledWith("soulComments:active", {
-      softDeletedAt: 1_700_000_000_000,
-      deletedBy: "users:actor",
-    });
-    expect(patch).toHaveBeenCalledWith("souls:1", {
-      stats: { comments: 2 },
-      updatedAt: 1_700_000_000_000,
     });
 
     expect(insertStatEvent).toHaveBeenCalledWith(expect.anything(), {
@@ -1977,10 +2920,57 @@ describe("users.banUserInternal", () => {
         action: "user.ban",
         metadata: expect.objectContaining({
           deletedSkillComments: 1,
-          deletedSoulComments: 1,
         }),
       }),
     );
+  });
+
+  it("schedules a public-safe ban notification email when the target has email", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, runMutation, runAfter } = makeBanCtx();
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      return null;
+    });
+
+    runMutation
+      .mockResolvedValueOnce({ hiddenCount: 2, scheduled: false })
+      .mockResolvedValueOnce({ deletedCount: 0, revokedTokenCount: 0, scheduled: false })
+      .mockResolvedValueOnce(undefined);
+
+    const handler = (
+      banUserInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { actorUserId: string; targetUserId: string; reason?: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      actorUserId: "users:actor",
+      targetUserId: "users:target",
+      reason: "rate limit triggered by automated CLI publishing",
+    });
+
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      userId: "users:target",
+      bannedAt: 1_700_000_000_000,
+      to: "target@example.com",
+      handle: "target-user",
+      source: "manual",
+      reason: "rate limit triggered by automated CLI publishing",
+      hiddenArtifacts: 2,
+    });
   });
 
   it("re-ban of already banned user still cleans lingering comments", async () => {
@@ -1991,7 +2981,6 @@ describe("users.banUserInternal", () => {
       if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
       if (id === "users:target")
         return { _id: "users:target", role: "user", deletedAt: 1_600_000_000_000 };
-      if (id === "souls:1") return { _id: "souls:1", stats: { comments: 3 } };
       return null;
     });
 
@@ -2011,7 +3000,7 @@ describe("users.banUserInternal", () => {
     })) as {
       ok: boolean;
       alreadyBanned: boolean;
-      deletedComments: { skillComments: number; soulComments: number };
+      deletedSkillComments: number;
       deletedSkills: number;
     };
 
@@ -2019,7 +3008,7 @@ describe("users.banUserInternal", () => {
       ok: true,
       alreadyBanned: true,
       deletedSkills: 0,
-      deletedComments: { skillComments: 1, soulComments: 1 },
+      deletedSkillComments: 1,
     });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -2037,6 +3026,335 @@ describe("users.banUserInternal", () => {
   });
 });
 
+describe("users.autobanMalwareAuthorInternal", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("schedules a malicious skill notification with trigger context", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, runMutation, runAfter } = makeBanCtx();
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      return null;
+    });
+    runMutation
+      .mockResolvedValueOnce({ hiddenCount: 1, scheduled: false })
+      .mockResolvedValueOnce({ deletedCount: 0, revokedTokenCount: 0, scheduled: false })
+      .mockResolvedValueOnce(undefined);
+
+    const handler = (
+      autobanMalwareAuthorInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            ownerUserId: string;
+            sha256hash?: string;
+            slug: string;
+            trigger?: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await handler(ctx, {
+      ownerUserId: "users:target",
+      sha256hash: "abc123",
+      slug: "gingiris-launch",
+      trigger: "malicious.llm_malicious",
+    });
+
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      userId: "users:target",
+      bannedAt: 1_700_000_000_000,
+      to: "target@example.com",
+      handle: "target-user",
+      source: "autoban",
+      reason: "malicious.llm_malicious",
+      trigger: "malicious.llm_malicious",
+      artifact: { kind: "skill", name: "gingiris-launch" },
+      hiddenArtifacts: 1,
+    });
+  });
+});
+
+describe("users.recordMaliciousArtifactFindingInternal", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("emails artifact-level remediation without banning on the first malicious finding", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, insert, runMutation, runAfter } = makeBanCtx();
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      return null;
+    });
+
+    const handler = (
+      recordMaliciousArtifactFindingInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            ownerUserId: string;
+            artifactKind: "skill" | "plugin";
+            artifactName: string;
+            version?: string;
+            trigger?: string;
+            sha256hash?: string;
+            findingSummary?: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      ownerUserId: "users:target",
+      artifactKind: "skill",
+      artifactName: "demo-skill",
+      version: "1.0.0",
+      trigger: "malicious.llm_malicious",
+      sha256hash: "abc123",
+      findingSummary: "Attempts to exfiltrate credentials.",
+    });
+
+    expect(result).toMatchObject({ ok: true, escalated: false });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:target",
+        action: "user.malicious_artifact.finding",
+        targetType: "user",
+        targetId: "users:target",
+        metadata: expect.objectContaining({
+          artifactKind: "skill",
+          artifactName: "demo-skill",
+          version: "1.0.0",
+          trigger: "malicious.llm_malicious",
+          sha256hash: "abc123",
+          findingSummary: "Attempts to exfiltrate credentials.",
+        }),
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      userId: "users:target",
+      findingAt: 1_700_000_000_000,
+      to: "target@example.com",
+      handle: "target-user",
+      artifact: { kind: "skill", name: "demo-skill" },
+      version: "1.0.0",
+      trigger: "malicious.llm_malicious",
+      findingSummary: "Attempts to exfiltrate credentials.",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("escalates to account ban on the third malicious attempt for one artifact", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, runMutation, runAfter } = makeBanCtx({
+      auditLogs: [
+        {
+          action: "user.malicious_artifact.finding",
+          targetType: "user",
+          targetId: "users:target",
+          metadata: { artifactKind: "skill", artifactName: "demo-skill" },
+          createdAt: 1_699_999_000_000,
+        },
+        {
+          action: "user.malicious_artifact.finding",
+          targetType: "user",
+          targetId: "users:target",
+          metadata: { artifactKind: "skill", artifactName: "demo-skill" },
+          createdAt: 1_699_998_000_000,
+        },
+      ],
+    });
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      return null;
+    });
+    runMutation.mockResolvedValue({ ok: true, alreadyBanned: false });
+
+    const handler = (
+      recordMaliciousArtifactFindingInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            ownerUserId: string;
+            artifactKind: "skill" | "plugin";
+            artifactName: string;
+            version?: string;
+            trigger?: string;
+            sha256hash?: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      ownerUserId: "users:target",
+      artifactKind: "skill",
+      artifactName: "demo-skill",
+      version: "1.0.2",
+      trigger: "malicious.llm_malicious",
+    });
+
+    expect(result).toMatchObject({ ok: true, escalated: true, reason: "attempt_threshold" });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      ownerUserId: "users:target",
+      slug: "demo-skill",
+      trigger: "malicious.llm_malicious",
+      artifactKind: "skill",
+      artifactName: "demo-skill",
+    });
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("does not escalate on the second malicious attempt for one artifact", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, runMutation } = makeBanCtx({
+      auditLogs: [
+        {
+          action: "user.malicious_artifact.finding",
+          targetType: "user",
+          targetId: "users:target",
+          metadata: { artifactKind: "skill", artifactName: "demo-skill" },
+          createdAt: 1_699_999_000_000,
+        },
+      ],
+    });
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      return null;
+    });
+
+    const handler = (
+      recordMaliciousArtifactFindingInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            ownerUserId: string;
+            artifactKind: "skill" | "plugin";
+            artifactName: string;
+            version?: string;
+            trigger?: string;
+            sha256hash?: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      ownerUserId: "users:target",
+      artifactKind: "skill",
+      artifactName: "demo-skill",
+      version: "1.0.1",
+      trigger: "malicious.llm_malicious",
+    });
+
+    expect(result).toMatchObject({ ok: true, escalated: false });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("escalates to account ban on the second distinct malicious artifact", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, runMutation, runAfter } = makeBanCtx({
+      auditLogs: [
+        {
+          action: "user.malicious_artifact.finding",
+          targetType: "user",
+          targetId: "users:target",
+          metadata: { artifactKind: "skill", artifactName: "first-skill" },
+          createdAt: 1_699_999_000_000,
+        },
+      ],
+    });
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      return null;
+    });
+    runMutation.mockResolvedValue({ ok: true, alreadyBanned: false });
+
+    const handler = (
+      recordMaliciousArtifactFindingInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            ownerUserId: string;
+            artifactKind: "skill" | "plugin";
+            artifactName: string;
+            version?: string;
+            trigger?: string;
+            sha256hash?: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    const result = await handler(ctx, {
+      ownerUserId: "users:target",
+      artifactKind: "plugin",
+      artifactName: "@scope/second-plugin",
+      version: "1.0.0",
+      trigger: "malicious.llm_malicious",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      escalated: true,
+      reason: "distinct_artifact_threshold",
+    });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      ownerUserId: "users:target",
+      slug: "@scope/second-plugin",
+      trigger: "malicious.llm_malicious",
+      artifactKind: "plugin",
+      artifactName: "@scope/second-plugin",
+    });
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+});
+
 describe("users.unbanUserForBanAppealServiceInternal", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -2044,7 +3362,7 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
 
   it("restores ban-hidden skills and packages for accepted appeals", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
-    const { ctx, get, patch, insert, runMutation } = makeBanCtx({
+    const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx({
       auditLogs: [
         {
           _id: "auditLogs:ban",
@@ -2060,6 +3378,8 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
         return {
           _id: "users:target",
           role: "user",
+          handle: "target-user",
+          email: "target@example.com",
           deletedAt: 1_700_000_000_000,
           deactivatedAt: undefined,
           banReason: "malware auto-ban",
@@ -2118,6 +3438,15 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
         }),
       }),
     );
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      userId: "users:target",
+      restoredAt: 1_700_000_100_000,
+      to: "target@example.com",
+      handle: "target-user",
+      restoredListings: undefined,
+      skillsRestored: 5,
+      packagesRestored: undefined,
+    });
     expect(result).toEqual({
       ok: true,
       alreadyUnbanned: false,

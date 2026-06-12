@@ -1,9 +1,9 @@
 import {
   ApiCliSkillDeleteResponseSchema,
-  ApiCliTelemetrySyncResponseSchema,
+  ApiCliTelemetryInstallResponseSchema,
+  CliTelemetryInstallRequestSchema,
   CliPublishRequestSchema,
   CliSkillDeleteRequestSchema,
-  CliTelemetrySyncRequestSchema,
   parseArk,
 } from "clawhub-schema";
 import { api, internal } from "./_generated/api";
@@ -292,7 +292,7 @@ export const cliSkillUndeleteHttp = httpAction((ctx, request) =>
   cliSkillDeleteHandler(ctx, request, false),
 );
 
-async function cliTelemetrySyncHandler(ctx: ActionCtx, request: Request) {
+async function cliTelemetryInstallHandler(ctx: ActionCtx, request: Request) {
   let body: unknown;
   try {
     body = await request.json();
@@ -302,23 +302,15 @@ async function cliTelemetrySyncHandler(ctx: ActionCtx, request: Request) {
 
   try {
     const { userId } = await requireApiTokenUser(ctx, request);
-    const args = parseArk(CliTelemetrySyncRequestSchema, body, "Telemetry payload");
-    await ctx.runMutation(internal.telemetry.reportCliSyncInternal, {
+    const args = parseArk(CliTelemetryInstallRequestSchema, body, "Install telemetry payload");
+    await ctx.runMutation(internal.telemetry.reportCliInstallInternal, {
       userId,
-      roots: args.roots.map((root) => ({
-        rootId: root.rootId,
-        label: root.label,
-        skills: root.skills.map((skill) => ({
-          slug: skill.slug,
-          ownerHandle:
-            typeof skill.ownerHandle === "string"
-              ? skill.ownerHandle.trim().replace(/^@+/, "") || undefined
-              : undefined,
-          version: skill.version ?? undefined,
-        })),
-      })),
+      slug: args.slug,
+      version: args.version,
+      rootId: args.rootId,
+      rootLabel: args.rootLabel,
     });
-    const ok = parseArk(ApiCliTelemetrySyncResponseSchema, { ok: true }, "Telemetry response");
+    const ok = parseArk(ApiCliTelemetryInstallResponseSchema, { ok: true }, "Telemetry response");
     return json(ok);
   } catch (error) {
     const message = error instanceof Error ? error.message : "Telemetry failed";
@@ -327,7 +319,7 @@ async function cliTelemetrySyncHandler(ctx: ActionCtx, request: Request) {
   }
 }
 
-export const cliTelemetrySyncHttp = httpAction(cliTelemetrySyncHandler);
+export const cliTelemetryInstallHttp = httpAction(cliTelemetryInstallHandler);
 
 async function cliDeviceCodeHandler(ctx: ActionCtx, request: Request) {
   if (request.method !== "POST") return text("Method not allowed", 405);
@@ -465,7 +457,7 @@ export const __handlers = {
   cliUploadUrlHandler,
   cliPublishHandler,
   cliSkillDeleteHandler,
-  cliTelemetrySyncHandler,
+  cliTelemetryInstallHandler,
   cliDeviceCodeHandler,
   cliDeviceTokenHandler,
 };

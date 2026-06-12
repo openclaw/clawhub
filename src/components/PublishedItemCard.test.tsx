@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { PublishedItemCard } from "../routes/user/$handle";
+import { PublishedCatalogSections, PublishedItemCard } from "../routes/user/$handle";
 
 // PublishedItemCard uses <Link> from TanStack Router; stub it to a plain <a>.
 vi.mock("@tanstack/react-router", () => ({
@@ -78,6 +78,22 @@ describe("PublishedItemCard", () => {
       expect(screen.getByLabelText("Official")).toBeTruthy();
       expect(screen.queryByText("Official")).toBeNull();
     });
+
+    it("does not add source-backed chrome to GitHub-backed skill cards", () => {
+      render(
+        <PublishedItemCard
+          item={{
+            ...baseSkill,
+            icon: null,
+            sourceBacked: true,
+            sourceRepo: "NVIDIA/skills",
+          }}
+          view="grid"
+        />,
+      );
+
+      expect(screen.queryByText("Source-backed")).toBeNull();
+    });
   });
 
   describe("list view", () => {
@@ -98,5 +114,79 @@ describe("PublishedItemCard", () => {
       expect(screen.getByLabelText("Official")).toBeTruthy();
       expect(screen.queryByText("Official")).toBeNull();
     });
+
+    it("does not render artifact-kind prefixes as owner handles", () => {
+      render(<PublishedItemCard item={{ ...baseSkill, icon: null }} view="list" />);
+
+      expect(screen.queryByText("@skill")).toBeNull();
+      expect(screen.queryByText("/")).toBeNull();
+      expect(screen.getByText("Test Skill")).toBeTruthy();
+    });
+
+    it("does not render plugin artifact-kind prefixes as owner handles", () => {
+      render(<PublishedItemCard item={{ ...basePlugin, icon: null }} view="list" />);
+
+      expect(screen.queryByText("@plugin")).toBeNull();
+      expect(screen.queryByText("/")).toBeNull();
+      expect(screen.getByText("Test Plugin")).toBeTruthy();
+    });
+  });
+});
+
+describe("PublishedCatalogSections", () => {
+  it("renders manifest groups without source-backed catalog chrome", () => {
+    render(
+      <PublishedCatalogSections
+        view="list"
+        display={{
+          mode: "grouped",
+          sourceRepos: ["NVIDIA/skills"],
+          sections: [
+            {
+              key: "agentic",
+              title: "Agentic AI",
+              description: "Agentic AI skills.",
+              sourceRepo: "NVIDIA/skills",
+              items: [
+                {
+                  ...baseSkill,
+                  _id: "skills:aiq-deploy",
+                  displayName: "AIQ Deploy",
+                  href: "/nvidia/aiq-deploy",
+                  icon: null,
+                  sourceBacked: true,
+                  sourceRepo: "NVIDIA/skills",
+                },
+              ],
+            },
+            {
+              key: "other",
+              title: "Other skills",
+              description: null,
+              sourceRepo: null,
+              items: [
+                {
+                  ...baseSkill,
+                  _id: "skills:other",
+                  displayName: "Other Skill",
+                  href: "/nvidia/other",
+                  icon: null,
+                  sourceBacked: true,
+                  sourceRepo: "NVIDIA/skills",
+                },
+              ],
+            },
+          ],
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Agentic AI" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Other skills" })).toBeTruthy();
+    expect(screen.getByText("AIQ Deploy")).toBeTruthy();
+    expect(screen.getByText("Other Skill")).toBeTruthy();
+    expect(screen.queryByText("Source-backed from NVIDIA/skills")).toBeNull();
+    expect(screen.queryByText("Source-backed")).toBeNull();
+    expect(screen.queryByText("NVIDIA/skills")).toBeNull();
   });
 });

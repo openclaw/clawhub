@@ -1,11 +1,12 @@
 /* @vitest-environment jsdom */
 
 import { render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { useAuthStatus } from "./useAuthStatus";
 
 const useConvexAuthMock = vi.fn();
 const useQueryMock = vi.fn();
+const originalDevAuth = process.env.VITE_ENABLE_DEV_AUTH;
 
 vi.mock("convex/react", () => ({
   useConvexAuth: () => useConvexAuthMock(),
@@ -29,6 +30,15 @@ describe("useAuthStatus", () => {
   beforeEach(() => {
     useConvexAuthMock.mockReset();
     useQueryMock.mockReset();
+    delete process.env.VITE_ENABLE_DEV_AUTH;
+  });
+
+  afterAll(() => {
+    if (originalDevAuth === undefined) {
+      delete process.env.VITE_ENABLE_DEV_AUTH;
+    } else {
+      process.env.VITE_ENABLE_DEV_AUTH = originalDevAuth;
+    }
   });
 
   it("skips the current-user query while auth is still resolving", () => {
@@ -82,6 +92,44 @@ describe("useAuthStatus", () => {
 
     expect(
       screen.getByText(JSON.stringify({ isAuthenticated: true, isLoading: false, me })),
+    ).toBeTruthy();
+  });
+
+  it("resolves local dev auth from the current-user query", () => {
+    const me = { _id: "users:1", handle: "local-admin" };
+    process.env.VITE_ENABLE_DEV_AUTH = "1";
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+    });
+    useQueryMock.mockReturnValue(me);
+
+    render(<Probe />);
+
+    expect(useQueryMock.mock.calls[0]?.[1]).toEqual({});
+    expect(
+      screen.getByText(JSON.stringify({ isAuthenticated: true, isLoading: false, me })),
+    ).toBeTruthy();
+  });
+
+  it("treats a resolved dev profile as an authenticated user", () => {
+    process.env.VITE_ENABLE_DEV_AUTH = "1";
+    useConvexAuthMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: true,
+    });
+    useQueryMock.mockReturnValue({
+      _id: "users:local-admin",
+      handle: "local-admin",
+      role: "admin",
+    });
+
+    render(<Probe />);
+
+    expect(
+      screen.getByText(
+        '{"isAuthenticated":true,"isLoading":false,"me":{"_id":"users:local-admin","handle":"local-admin","role":"admin"}}',
+      ),
     ).toBeTruthy();
   });
 });

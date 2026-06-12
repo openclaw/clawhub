@@ -25,6 +25,10 @@ export function buildPluginSecurityAuditHref(name: string) {
   return `${buildPluginDetailHref(name)}/security-audit`;
 }
 
+export function buildPluginValidationHref(name: string) {
+  return `${buildPluginDetailHref(name)}#validation`;
+}
+
 export function packageNameFromScopedRoute(scope: string, name: string) {
   if (!scope.startsWith("@") || !name || name.includes("/")) return null;
   return `${scope}/${name}`;

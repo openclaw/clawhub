@@ -94,8 +94,6 @@ const GOOGLE_SHEETS_SPREADSHEET_URL_PATTERN =
   /https?:\/\/[^\s"'`]*\/spreadsheets\/([A-Za-z0-9_-]{20,})\/[^\s"'`]*/i;
 const DESTRUCTIVE_DELETE_PATTERN =
   /\brm\s+-[A-Za-z]*r[A-Za-z]*f[A-Za-z]*\s+(["']?)(\/root\/\.openclaw\/|\/home\/[^/\s"'`]+\/\.openclaw\/|\/Users\/[^/\s"'`]+\/\.openclaw\/|~\/\.openclaw\/|\$HOME\/\.openclaw\/|\$\{HOME\}\/\.openclaw\/|\/etc\/|\/usr\/|\/opt\/|\/Library\/|\/Applications\/)[^\s"'`;|&)]*\1/i;
-const SHELL_POSITIONAL_ASSIGNMENT_PATTERN =
-  /^\s*([A-Z_][A-Z0-9_]*)=(["']?)\$(?:[1-9][0-9]*|@|\*)\2\s*(?:#.*)?$/gm;
 const SECRET_ASSIGNMENT_PATTERN =
   /\b(?:[A-Za-z0-9]+[_\s-]+)*(?:(?:api|client|consumer)[_\s-]?(?:secret|key|token)|secret[_\s-]?key|access[_\s-]?(?:token|key|secret|grant)|auth[_\s-]?token|bearer(?:[_\s-]?token)?|private[_\s-]?key|service[_\s-]?role[_\s-]?key|github[_\s-]?(?:pat|token)|(?:openrouter|supabase|storj)[_\s-]?(?:key|token|secret|access[_\s-]?grant)|password)\b\s*[:=]\s*["'`]?([A-Za-z0-9][A-Za-z0-9._~+/=-]{15,})["'`]?/i;
 const AUTH_HEADER_SECRET_PATTERN =
@@ -111,12 +109,6 @@ const HOST_PLATFORM_SOURCE_CONTEXT_PATTERN =
 const HOST_PLATFORM_PATCH_COMMAND_PATTERN =
   /\b(?:sed\s+-i|perl\s+-0?pi|cp\s+|cat\s+>|python3?\b.{0,120}(?:write|replace))/i;
 const HOST_PLATFORM_REBUILD_PATTERN = /\b(?:pnpm\s+build|npm\s+run\s+build|bun\s+run\s+build)\b/i;
-const BROWSER_USE_PASSWORD_ARGV_PATTERN =
-  /\bbrowser-use\s+input\b[^\n]*(?:password|passwd|\$[A-Z_]*(?:PASSWORD|PASS|PWD)[A-Z0-9_]*|<password>|\{password\})/i;
-const BROWSER_USE_AUTH_EVAL_PATTERN = /\bbrowser-use\s+(?:eval|python)\b/i;
-const AUTHENTICATED_MAIL_CONTEXT_PATTERN = /\b(?:mail\.google\.com|gmail|webmail|mailbox|inbox)\b/i;
-const PERSISTENCE_SCHEDULER_PATTERN =
-  /\b(?:launchctl\s+load|crontab\b|LaunchAgents\/|systemctl\s+(?:--user\s+)?enable)\b/i;
 const SECRET_ARGV_WARNING_PATTERN =
   /\b(?:do\s+not|don't|avoid|never|reject)\b[^\n]{0,120}\b(?:argv|argument|from-mnemonic|private[-_\s]?key|seed[-\s]?phrase|mnemonic)\b/i;
 const FROM_MNEMONIC_ARGV_PATTERN =
@@ -135,17 +127,6 @@ const PYTHON_BASE64_FILE_READ_PATTERN =
   /base64\.b64encode\s*\(\s*(?:[A-Za-z_][A-Za-z0-9_]*\.read_bytes\s*\(\s*\)|Path\s*\([^)]*\)\.read_bytes\s*\(\s*\)|open\s*\([^)]*["']rb["'][\s\S]{0,120}\.read\s*\(\s*\))/i;
 const PYTHON_NETWORK_UPLOAD_PATTERN =
   /\b(?:requests|session|self\.session|client|httpx\.(?:post|request))\.post\s*\([\s\S]{0,1600}(?:json\s*=|data\s*=|files\s*=|headers\s*=|Authorization)/i;
-const PLAYWRIGHT_CHROMIUM_PATTERN = /\b(?:playwright\.)?chromium\.launch\s*\(/i;
-const FILE_URL_BROWSER_NAVIGATION_PATTERN = /\bpage\.goto\s*\([^)]*file:\/\//i;
-const SVG_HTML_INTERPOLATION_PATTERN =
-  /(?:<body>[\s\S]{0,240}\$\{[^}]*svg[^}]*\}|writeFile(?:Sync)?\s*\([^)]*\.html[^)]*\$\{[^}]*svg[^}]*\}|\$\{[^}]*svg[^}]*\}[\s\S]{0,240}<\/body>)/i;
-const BROWSER_JS_DISABLED_PATTERN =
-  /javaScriptEnabled\s*:\s*false|Content-Security-Policy|script-src\s+['"]?none/i;
-const STEALTH_BROWSER_CONTEXT_PATTERN =
-  /\b(?:stealth|anti[-\s]?detect|undetected|fingerprint spoof|navigator\.webdriver)\b/i;
-const BOT_PROTECTION_BYPASS_PATTERN = /\b(?:captcha|cloudflare|turnstile|bot detection|waf)\b/i;
-const BROWSER_SESSION_PERSISTENCE_PATTERN =
-  /\b(?:persistent_context|userDataDir|storageState|session persistence|persist(?:ed)? cookies?)\b/i;
 const AGENT_OUTPUT_DIR_ARGUMENT_PATTERN =
   /add_argument\s*\(\s*["']--outdir["']|args\.outdir|output_path\s*=\s*Path\s*\(\s*args\.outdir\s*\)/i;
 const FFMPEG_FORCE_OUTPUT_PATTERN =
@@ -268,31 +249,6 @@ function findCredentialExposureInstruction(content: string) {
   return null;
 }
 
-function findBrowserCredentialAutomation(content: string) {
-  const lines = content.split("\n");
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i] ?? "";
-    if (BROWSER_USE_PASSWORD_ARGV_PATTERN.test(line)) {
-      return { line: i + 1, text: line };
-    }
-  }
-
-  if (
-    BROWSER_USE_AUTH_EVAL_PATTERN.test(content) &&
-    AUTHENTICATED_MAIL_CONTEXT_PATTERN.test(content) &&
-    PERSISTENCE_SCHEDULER_PATTERN.test(content)
-  ) {
-    for (let i = 0; i < lines.length; i += 1) {
-      const line = lines[i] ?? "";
-      if (BROWSER_USE_AUTH_EVAL_PATTERN.test(line) || PERSISTENCE_SCHEDULER_PATTERN.test(line)) {
-        return { line: i + 1, text: line };
-      }
-    }
-  }
-
-  return null;
-}
-
 function redactSecretArgvEvidence(line: string) {
   return line.replace(SECRET_ARGV_REDACTION_PATTERN, "$1$2[REDACTED]$2");
 }
@@ -399,49 +355,6 @@ function isScopedOpenClawDelete(line: string, slug?: string) {
     return true;
   }
   return false;
-}
-
-function hasShellVariableValidation(content: string, variable: string, useIndex: number) {
-  const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const beforeUse = content.slice(0, useIndex);
-  const variableReference = String.raw`(?:\$\{${escaped}\}|\$${escaped})`;
-  const lengthCheck = new RegExp(
-    String.raw`\$\{#${escaped}\}\s*(?:-[a-z]\s+)?(?:[<>!=]=?|-[gl][te])`,
-    "m",
-  );
-  const controlCharStrip = new RegExp(
-    String.raw`(?:tr\s+-d\s+["']?\\(?:000|x00).{0,80}\\(?:037|x1[fF]|177|x7[fF])|${escaped}\s*=.*tr\s+-d)`,
-    "s",
-  );
-  const explicitValidation = new RegExp(
-    String.raw`(?:validate|sanitize|strip|clean)[A-Za-z0-9_ -]{0,60}${variableReference}|${variableReference}.{0,60}(?:validate|sanitize|strip|clean)`,
-    "is",
-  );
-
-  return (
-    lengthCheck.test(beforeUse) ||
-    controlCharStrip.test(beforeUse) ||
-    explicitValidation.test(beforeUse)
-  );
-}
-
-function findUnsafeBrowserTextInput(content: string) {
-  for (const assignment of content.matchAll(SHELL_POSITIONAL_ASSIGNMENT_PATTERN)) {
-    const variable = assignment[1];
-    if (!variable) continue;
-
-    const escaped = variable.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-    const browserTextPattern = new RegExp(
-      String.raw`\bbrowser\s+action=act\b[^\n]*\bkind=["']?type["']?[^\n]*\btext=(?:"\$${escaped}"|'\$${escaped}'|\$${escaped})(?![A-Za-z0-9_])`,
-      "i",
-    );
-    const match = content.match(browserTextPattern);
-    if (!match || match.index === undefined) continue;
-    if (hasShellVariableValidation(content, variable, match.index)) continue;
-
-    return findLineAtIndex(content, match.index);
-  }
-  return null;
 }
 
 function addFinding(
@@ -600,21 +513,6 @@ function findJsSensitiveFileNetworkSend(content: string) {
   }
 
   return null;
-}
-
-function findUnsafeBrowserFileRender(content: string) {
-  if (!PLAYWRIGHT_CHROMIUM_PATTERN.test(content)) return null;
-  if (!FILE_URL_BROWSER_NAVIGATION_PATTERN.test(content)) return null;
-  if (!SVG_HTML_INTERPOLATION_PATTERN.test(content)) return null;
-  if (BROWSER_JS_DISABLED_PATTERN.test(content)) return null;
-  return findFirstLine(content, FILE_URL_BROWSER_NAVIGATION_PATTERN);
-}
-
-function findStealthBrowserAbuse(content: string) {
-  if (!STEALTH_BROWSER_CONTEXT_PATTERN.test(content)) return null;
-  if (!BOT_PROTECTION_BYPASS_PATTERN.test(content)) return null;
-  if (!BROWSER_SESSION_PERSISTENCE_PATTERN.test(content)) return null;
-  return findFirstLine(content, STEALTH_BROWSER_CONTEXT_PATTERN);
 }
 
 function findUnsafeAgentControlledFileWrite(content: string) {
@@ -836,18 +734,6 @@ function scanCodeFile(
     });
   }
 
-  const unsafeBrowserTextInput = findUnsafeBrowserTextInput(content);
-  if (unsafeBrowserTextInput) {
-    addFinding(findings, {
-      code: REASON_CODES.UNSAFE_BROWSER_TEXT_INPUT,
-      severity: "warn",
-      file: path,
-      line: unsafeBrowserTextInput.line,
-      message: "Shell positional input is typed into browser automation without validation.",
-      evidence: unsafeBrowserTextInput.text,
-    });
-  }
-
   const hostPlatformSourcePatch = findHostPlatformSourcePatch(content);
   if (hostPlatformSourcePatch) {
     addFinding(findings, {
@@ -857,32 +743,6 @@ function scanCodeFile(
       line: hostPlatformSourcePatch.line,
       message: "Install code patches host platform source and rebuilds without confirmation.",
       evidence: hostPlatformSourcePatch.text,
-    });
-  }
-
-  const unsafeBrowserFileRender = findUnsafeBrowserFileRender(content);
-  if (unsafeBrowserFileRender) {
-    addFinding(findings, {
-      code: REASON_CODES.BROWSER_FILE_RENDER,
-      severity: "critical",
-      file: path,
-      line: unsafeBrowserFileRender.line,
-      message:
-        "Browser automation renders interpolated SVG/HTML from a file URL with JavaScript enabled.",
-      evidence: unsafeBrowserFileRender.text,
-    });
-  }
-
-  const stealthBrowserAbuse = findStealthBrowserAbuse(content);
-  if (stealthBrowserAbuse) {
-    addFinding(findings, {
-      code: REASON_CODES.STEALTH_BROWSER_ABUSE,
-      severity: "critical",
-      file: path,
-      line: stealthBrowserAbuse.line,
-      message:
-        "Browser automation advertises stealth/anti-detection behavior with bot-protection bypass and persistent sessions.",
-      evidence: stealthBrowserAbuse.text,
     });
   }
 
@@ -1085,18 +945,6 @@ function scanMarkdownFile(
     });
   }
 
-  const browserCredentialAutomation = findBrowserCredentialAutomation(content);
-  if (browserCredentialAutomation) {
-    addFinding(findings, {
-      code: REASON_CODES.BROWSER_CREDENTIAL_AUTOMATION,
-      severity: "critical",
-      file: path,
-      line: browserCredentialAutomation.line,
-      message: "Browser automation instructions expose credentials or persist authenticated eval.",
-      evidence: browserCredentialAutomation.text,
-    });
-  }
-
   const secretArgvExposure = findSecretArgvExposure(content);
   if (secretArgvExposure) {
     addFinding(findings, {
@@ -1119,19 +967,6 @@ function scanMarkdownFile(
       message:
         "Hardcoded operator endpoint combines OAuth credentials with Lightning billing calls.",
       evidence: hardcodedOperatorBilling.text,
-    });
-  }
-
-  const stealthBrowserAbuse = findStealthBrowserAbuse(content);
-  if (stealthBrowserAbuse) {
-    addFinding(findings, {
-      code: REASON_CODES.STEALTH_BROWSER_ABUSE,
-      severity: "critical",
-      file: path,
-      line: stealthBrowserAbuse.line,
-      message:
-        "Browser automation advertises stealth/anti-detection behavior with bot-protection bypass and persistent sessions.",
-      evidence: stealthBrowserAbuse.text,
     });
   }
 
@@ -1160,18 +995,6 @@ function scanMarkdownFile(
       message:
         "Documentation contains a destructive delete command without an explicit confirmation gate.",
       evidence: destructiveDelete.text,
-    });
-  }
-
-  const unsafeBrowserTextInput = findUnsafeBrowserTextInput(content);
-  if (unsafeBrowserTextInput) {
-    addFinding(findings, {
-      code: REASON_CODES.UNSAFE_BROWSER_TEXT_INPUT,
-      severity: "warn",
-      file: path,
-      line: unsafeBrowserTextInput.line,
-      message: "Shell positional input is typed into browser automation without validation.",
-      evidence: unsafeBrowserTextInput.text,
     });
   }
 

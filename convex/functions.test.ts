@@ -9,11 +9,14 @@ import {
   repointPackageLatestRelease,
   scheduleGitHubBackupDeletionForSkill,
   scheduleOwnerPublisherDigestSync,
+  shouldScheduleOwnerPublisherDigestSyncForPublisherChange,
+  shouldScheduleOwnerUserPackageDigestSyncForUserChange,
   syncPackageSearchDigestForPackageId,
   syncPackageSearchDigestsForOwnerPublisherId,
   syncPackageSearchDigestsForOwnerUserId,
   syncSkillSearchDigestsForOwnerPublisherId,
 } from "./functions";
+import { computeRecommendationScore } from "./lib/recommendationScore";
 
 type WrappedHandler = {
   _handler: (ctx: unknown, args: Record<string, never>) => Promise<unknown>;
@@ -53,6 +56,20 @@ describe("package digest sync", () => {
         moderationStatus: "active",
       }),
     ).toBe(true);
+    expect(
+      isGitHubMirrorEligibleSkillDoc({
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationVerdict: "malicious",
+      }),
+    ).toBe(false);
+    expect(
+      isGitHubMirrorEligibleSkillDoc({
+        softDeletedAt: undefined,
+        moderationStatus: "active",
+        moderationFlags: ["blocked.malware"],
+      }),
+    ).toBe(false);
     expect(
       isGitHubMirrorEligibleSkillDoc({
         softDeletedAt: undefined,
@@ -614,7 +631,92 @@ describe("package digest sync", () => {
   });
 });
 
+describe("user package digest scheduling", () => {
+  const user = {
+    _id: "users:owner",
+    handle: "owner",
+    deletedAt: undefined,
+    deactivatedAt: undefined,
+  };
+
+  it("schedules package digest sync when an active user's handle changes", () => {
+    expect(
+      shouldScheduleOwnerUserPackageDigestSyncForUserChange({
+        id: "users:owner",
+        operation: "update",
+        oldDoc: user,
+        newDoc: { ...user, handle: "renamed" },
+      } as never),
+    ).toBe(true);
+  });
+
+  it("skips redundant package digest sync when a user becomes deactivated", () => {
+    expect(
+      shouldScheduleOwnerUserPackageDigestSyncForUserChange({
+        id: "users:owner",
+        operation: "update",
+        oldDoc: user,
+        newDoc: { ...user, handle: null, deactivatedAt: 1_700_000_000_000 },
+      } as never),
+    ).toBe(false);
+  });
+
+  it("skips unchanged user updates", () => {
+    expect(
+      shouldScheduleOwnerUserPackageDigestSyncForUserChange({
+        id: "users:owner",
+        operation: "update",
+        oldDoc: user,
+        newDoc: { ...user },
+      } as never),
+    ).toBe(false);
+  });
+});
+
 describe("publisher digest scheduling", () => {
+  const publisherChangeDoc = {
+    _id: "publishers:demo",
+    kind: "org",
+    handle: "demo",
+    displayName: "Demo",
+    image: null,
+    deletedAt: undefined,
+    deactivatedAt: undefined,
+  };
+
+  it("schedules digest sync when an active publisher's profile changes", () => {
+    expect(
+      shouldScheduleOwnerPublisherDigestSyncForPublisherChange({
+        id: "publishers:demo",
+        operation: "update",
+        oldDoc: publisherChangeDoc,
+        newDoc: { ...publisherChangeDoc, displayName: "Renamed Demo" },
+      } as never),
+    ).toBe(true);
+  });
+
+  it("skips redundant digest sync when a publisher becomes deactivated", () => {
+    expect(
+      shouldScheduleOwnerPublisherDigestSyncForPublisherChange({
+        id: "publishers:demo",
+        operation: "update",
+        oldDoc: publisherChangeDoc,
+        newDoc: { ...publisherChangeDoc, handle: null, deactivatedAt: 1_700_000_000_000 },
+      } as never),
+    ).toBe(false);
+  });
+
+  it("skips unchanged publisher updates", () => {
+    expect(
+      shouldScheduleOwnerPublisherDigestSyncForPublisherChange({
+        id: "publishers:demo",
+        operation: "update",
+        oldDoc: publisherChangeDoc,
+        newDoc: { ...publisherChangeDoc },
+      } as never),
+    ).toBe(false);
+  });
+
   it("schedules package and skill digest sync in separate background mutations", async () => {
     const ctx = {
       scheduler: {
@@ -855,6 +957,7 @@ describe("publisher digest scheduling", () => {
         statsDownloads: 13,
         statsStars: 7,
         statsInstallsAllTime: 11,
+        recommendedScore: computeRecommendationScore({ downloads: 13, installs: 11, stars: 7 }),
         stats: expect.objectContaining({
           downloads: 13,
           stars: 7,

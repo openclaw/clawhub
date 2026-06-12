@@ -51,6 +51,8 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - Tests live in `src/**` and `convex/lib/**`.
 - Coverage threshold: 80% global (lines/functions/branches/statements).
 - Example: `convex/lib/skills.test.ts`.
+- When adding or changing Convex functions, do not rely only on mocked `ctx` tests for behavior that depends on Convex runtime semantics such as pagination, indexes, validators, auth identity, internal/public function boundaries, scheduler/cron behavior, actions calling queries/mutations, HTTP actions, storage, or OCC/transaction behavior. Add or run a real Convex validation path, such as `convex dev --once`, `convex run`, an HTTP action smoke, or a local-auth Playwright flow, covering the changed behavior. Mocked `ctx.db` / `ctx.runQuery` tests are still fine for pure business logic, but they do not count as Convex runtime validation.
+- For local UI state testing, prefer creating realistic backend state through seed logic plus a DevPersonaFab entry for the associated test user. Avoid one-off manual DB edits when the state is likely to be reused, such as org membership, official publisher access, moderation holds, or publishing permissions.
 
 ## Commit & Pull Request Guidelines
 
@@ -60,9 +62,9 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - Before commit/PR handoff for non-trivial code changes, use `$autoreview` until no accepted/actionable findings remain, unless equivalent manual review already happened, the change is trivial/docs-only, or the user opts out.
 - Before opening a PR for source or test changes, run the targeted tests for the touched behavior and `bun run ci:unit` (`VITE_CONVEX_URL=https://example.invalid bun run coverage`) unless the change is docs/config-only or the user explicitly asks to rely on CI. For runtime, build, or package changes, also run the matching broader gate when it covers the touched surface: `bun run ci:types-build`, `bun run ci:packages`, `bun run ci:e2e-http`, or `bun run ci:playwright-smoke`.
 - PRs: include summary + test commands run. Add screenshots for UI changes.
+- Screenshot proof MUST come from a real running ClawHub instance in a real browser. Do not use generated HTML mockups, synthetic terminal cards, or manually composed images as proof. For route/status/backend visibility bugs, run ClawHub locally with the relevant Convex code and fixture state, capture the actual browser page, and state the local URL and fixture used.
 - Before merging any PR, verify TypeScript cleanly with `bunx tsc -p packages/schema/tsconfig.json --noEmit` and `bunx tsc -p packages/clawhub/tsconfig.json --noEmit`; if Convex code changed, also run the repo typecheck path used by deploy so `bunx convex deploy` will not fail on `tsc`.
 - GitHub comments: for multiline `gh` comments/close messages, use `--body-file`, `--input`, or stdin/heredoc with real newlines; never pass literal `\\n` in shell strings.
-- Reject PRs that add skills into source code/repo content directly (for example under `skills/` or seed-only additions intended as published skills). Skills must be uploaded/published via CLI.
 - Repo-local developer skills under `.agents/skills/` are allowed only when they are ClawHub-specific, such as Convex, moderation, PR maintainer, or UI proof workflows. Keep generic shared skills such as `crabbox` and `autoreview` in the global `agent-skills` install, not this repo. Keep top-level `skills/` reserved for installed/published skill content and ignored by git.
 
 ## Production Release
@@ -100,6 +102,11 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 - New Convex functions must be pushed before `convex run`: use `bunx convex dev --once` (dev) or `bunx convex deploy` (prod).
 - For non-interactive prod deploys, use `bunx convex deploy -y` to skip confirmation.
 - If `bunx convex run --env-file .env.local ...` returns `401 MissingAccessToken` despite `bunx convex login`, workaround: omit `--env-file` and use `--deployment-name <name>` / `--prod`.
+
+## Convex Migrations & Backfills
+
+- Any Convex production data migration, backfill, destructive cleanup, schema narrowing, or table reshaping must start with the `convex-migration-helper` skill. Default to `@convex-dev/migrations` for production data changes because it provides batching, dry runs, resume/progress tracking, and safer operator UX. Exceptions require an explicit note explaining why the component is unnecessary, plus equivalent dry-run support, cursor batching, resume/progress behavior, confirmation for destructive writes, and real Convex runtime validation.
+- After a migration or cleanup is verified complete, remove temporary migration functions/code in a follow-up PR unless they are intentionally retained as ongoing maintenance tooling.
 
 ## Convex Query & Bandwidth Rules
 

@@ -9,6 +9,8 @@ import {
   enqueueBulkSkillRescanBatchForAdminInternal,
   failCodexScanJob,
   getBulkSkillRescanBatchStatusForAdminInternal,
+  getSkillScanRequestForUserInternal,
+  getStoredScanReportForUserInternal,
   pruneExpiredSkillScanRequestsInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
@@ -102,6 +104,7 @@ type ScanJob = {
   targetKind: string;
   skillVersionId?: string;
   packageReleaseId?: string;
+  skillScanRequestId?: string;
   source: string;
   priority: number;
   hasMaliciousSignal: boolean;
@@ -195,6 +198,48 @@ const getBulkSkillRescanBatchStatusForAdminInternalHandler = (
       terminal: number;
       done: boolean;
       failedJobIds: string[];
+    }
+  >
+)._handler;
+
+const getSkillScanRequestForUserInternalHandler = (
+  getSkillScanRequestForUserInternal as unknown as WrappedHandler<
+    { actorUserId: string; scanId: string },
+    {
+      ok: true;
+      scanId: string;
+      jobId?: string;
+      status: string;
+      queue: {
+        queuedAhead: number;
+        queuedAheadIsEstimate?: boolean;
+        position: number | null;
+        running: number;
+        runningIsEstimate?: boolean;
+        note: string;
+      };
+    }
+  >
+)._handler;
+
+const getStoredScanReportForUserInternalHandler = (
+  getStoredScanReportForUserInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      kind: "skill" | "plugin";
+      name: string;
+      version: string;
+    },
+    {
+      ok: true;
+      status: string;
+      artifact: Record<string, unknown>;
+      report: {
+        clawscan: Record<string, unknown> | null;
+        skillspector: Record<string, unknown> | null;
+        staticAnalysis: Record<string, unknown> | null;
+        virustotal: Record<string, unknown> | null;
+      };
     }
   >
 )._handler;
@@ -609,6 +654,154 @@ function makeClaimCtx(jobs: ScanJob[]) {
   };
 }
 
+function makeSkillScanStatusCtx(options: {
+  actor: Record<string, unknown>;
+  request: Record<string, unknown>;
+  jobs: ScanJob[];
+}) {
+  const docs = new Map<string, Record<string, unknown>>([
+    [String(options.actor._id), options.actor],
+    [String(options.request._id), options.request],
+    ...options.jobs.map((job) => [job._id, job] as const),
+  ]);
+  const get = vi.fn(async (id: string) => docs.get(id) ?? null);
+  const query = vi.fn((tableName: string) => {
+    expect(tableName).toBe("securityScanJobs");
+    return {
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          buildRange: (q: {
+            eq: (field: string, value: unknown) => unknown;
+            lte: (field: string, value: number) => unknown;
+          }) => unknown,
+        ) => {
+          const eqFilters = new Map<string, unknown>();
+          const lteFilters = new Map<string, number>();
+          const indexBuilder = {
+            eq(field: string, value: unknown) {
+              eqFilters.set(field, value);
+              return indexBuilder;
+            },
+            lte(field: string, value: number) {
+              lteFilters.set(field, value);
+              return indexBuilder;
+            },
+          };
+          buildRange(indexBuilder);
+          const select = () =>
+            options.jobs
+              .filter((job) => {
+                for (const [field, value] of eqFilters) {
+                  if ((job as unknown as Record<string, unknown>)[field] !== value) return false;
+                }
+                for (const [field, value] of lteFilters) {
+                  const fieldValue = (job as unknown as Record<string, unknown>)[field];
+                  if (typeof fieldValue !== "number" || fieldValue > value) return false;
+                }
+                return true;
+              })
+              .sort((a, b) => {
+                if (indexName.includes("next_run_at")) {
+                  if (a.nextRunAt !== b.nextRunAt) return a.nextRunAt - b.nextRunAt;
+                  if (a._creationTime !== b._creationTime) {
+                    return a._creationTime - b._creationTime;
+                  }
+                  return a._id.localeCompare(b._id);
+                }
+                return a.createdAt - b.createdAt;
+              });
+          const collect = vi.fn(async () => select());
+          const take = vi.fn(async (limit: number) => select().slice(0, limit));
+          return {
+            collect,
+            take,
+            order: vi.fn(() => ({ collect, take })),
+          };
+        },
+      ),
+    };
+  });
+
+  return {
+    db: {
+      get,
+      query,
+    },
+  };
+}
+
+function makeStoredScanReportCtx(options: {
+  actor: Record<string, unknown>;
+  docs: Record<string, Record<string, unknown>>;
+  membership?: Record<string, unknown> | null;
+}) {
+  const docs = new Map<string, Record<string, unknown>>([
+    [String(options.actor._id), options.actor],
+    ...Object.entries(options.docs),
+  ]);
+  const get = vi.fn(async (id: string) => docs.get(id) ?? null);
+  const query = vi.fn((table: string) => ({
+    withIndex: vi.fn((_indexName: string, buildRange: (q: { eq: typeof eq }) => unknown) => {
+      const equals = new Map<string, unknown>();
+      function eq(field: string, value: unknown) {
+        equals.set(field, value);
+        return { eq };
+      }
+      buildRange({ eq });
+      return {
+        unique: vi.fn(async () => {
+          if (table === "publisherMembers") return options.membership ?? null;
+          if (table === "skills") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) => String(doc._id).startsWith("skills:") && doc.slug === equals.get("slug"),
+              ) ?? null
+            );
+          }
+          if (table === "skillVersions") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  String(doc._id).startsWith("skillVersions:") &&
+                  doc.skillId === equals.get("skillId") &&
+                  doc.version === equals.get("version"),
+              ) ?? null
+            );
+          }
+          if (table === "packages") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  String(doc._id).startsWith("packages:") &&
+                  doc.normalizedName === equals.get("normalizedName"),
+              ) ?? null
+            );
+          }
+          if (table === "packageReleases") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  String(doc._id).startsWith("packageReleases:") &&
+                  doc.packageId === equals.get("packageId") &&
+                  doc.version === equals.get("version"),
+              ) ?? null
+            );
+          }
+          return null;
+        }),
+      };
+    }),
+  }));
+
+  return {
+    db: {
+      get,
+      query,
+    },
+  };
+}
+
 describe("securityScan", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -665,6 +858,269 @@ describe("securityScan", () => {
         }),
       ]),
     );
+  });
+
+  it("returns stored scan reports for hidden skill versions to the owner", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:owner", role: "user" },
+      docs: {
+        "skills:hidden": {
+          _id: "skills:hidden",
+          slug: "hidden-skill",
+          displayName: "Hidden Skill",
+          ownerUserId: "users:owner",
+        },
+        "skillVersions:hidden": {
+          _id: "skillVersions:hidden",
+          skillId: "skills:hidden",
+          version: "1.2.3",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          sha256hash: "abc123",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Attempts to exfiltrate credentials.",
+            checkedAt: 1_700_000_000_000,
+          },
+          staticScan: {
+            status: "malicious",
+            reasonCodes: ["network.exfiltration"],
+            findings: [],
+            summary: "Credential exfiltration pattern.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      kind: "skill",
+      name: "hidden-skill",
+      version: "1.2.3",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      status: "succeeded",
+      artifact: {
+        kind: "skill",
+        slug: "hidden-skill",
+        displayName: "Hidden Skill",
+        version: "1.2.3",
+      },
+      report: {
+        clawscan: {
+          status: "malicious",
+          summary: "Attempts to exfiltrate credentials.",
+        },
+        staticAnalysis: {
+          status: "malicious",
+          summary: "Credential exfiltration pattern.",
+        },
+      },
+    });
+  });
+
+  it("returns stored scan reports for hidden org skill versions to publisher-role uploaders", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:member", role: "user" },
+      membership: {
+        _id: "publisherMembers:member",
+        publisherId: "publishers:org",
+        userId: "users:member",
+        role: "publisher",
+      },
+      docs: {
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+        },
+        "skills:hidden": {
+          _id: "skills:hidden",
+          slug: "hidden-skill",
+          displayName: "Hidden Skill",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+        },
+        "skillVersions:hidden": {
+          _id: "skillVersions:hidden",
+          skillId: "skills:hidden",
+          version: "1.2.3",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          sha256hash: "abc123",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Attempts to exfiltrate credentials.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:member",
+      kind: "skill",
+      name: "hidden-skill",
+      version: "1.2.3",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      artifact: {
+        kind: "skill",
+        slug: "hidden-skill",
+        displayName: "Hidden Skill",
+        version: "1.2.3",
+      },
+    });
+  });
+
+  it("denies stored scan reports to non-owners", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:intruder", role: "user" },
+      docs: {
+        "skills:hidden": {
+          _id: "skills:hidden",
+          slug: "hidden-skill",
+          displayName: "Hidden Skill",
+          ownerUserId: "users:owner",
+        },
+        "skillVersions:hidden": {
+          _id: "skillVersions:hidden",
+          skillId: "skills:hidden",
+          version: "1.2.3",
+          softDeletedAt: 1,
+          files: [],
+          llmAnalysis: { status: "malicious", checkedAt: 1 },
+          createdAt: 1,
+        },
+      },
+    });
+
+    await expect(
+      getStoredScanReportForUserInternalHandler(ctx, {
+        actorUserId: "users:intruder",
+        kind: "skill",
+        name: "hidden-skill",
+        version: "1.2.3",
+      }),
+    ).rejects.toThrow("Forbidden");
+  });
+
+  it("returns stored scan reports for hidden plugin releases to platform moderators", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:moderator", role: "moderator" },
+      docs: {
+        "packages:plugin": {
+          _id: "packages:plugin",
+          name: "@scope/demo",
+          normalizedName: "@scope/demo",
+          displayName: "Demo Plugin",
+          ownerUserId: "users:owner",
+        },
+        "packageReleases:hidden": {
+          _id: "packageReleases:hidden",
+          packageId: "packages:plugin",
+          version: "2.0.0",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          integritySha256: "def456",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Runs unexpected shell commands.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:moderator",
+      kind: "plugin",
+      name: "@scope/demo",
+      version: "2.0.0",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      status: "succeeded",
+      artifact: {
+        kind: "plugin",
+        name: "@scope/demo",
+        displayName: "Demo Plugin",
+        version: "2.0.0",
+      },
+      report: {
+        clawscan: {
+          status: "malicious",
+          summary: "Runs unexpected shell commands.",
+        },
+      },
+    });
+  });
+
+  it("returns stored scan reports for hidden org plugin releases to publisher-role uploaders", async () => {
+    const ctx = makeStoredScanReportCtx({
+      actor: { _id: "users:member", role: "user" },
+      membership: {
+        _id: "publisherMembers:member",
+        publisherId: "publishers:org",
+        userId: "users:member",
+        role: "publisher",
+      },
+      docs: {
+        "publishers:org": {
+          _id: "publishers:org",
+          kind: "org",
+          handle: "org",
+        },
+        "packages:plugin": {
+          _id: "packages:plugin",
+          name: "@org/demo",
+          normalizedName: "@org/demo",
+          displayName: "Org Plugin",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+        },
+        "packageReleases:hidden": {
+          _id: "packageReleases:hidden",
+          packageId: "packages:plugin",
+          version: "2.0.0",
+          softDeletedAt: 1_700_000_100_000,
+          files: [],
+          integritySha256: "def456",
+          llmAnalysis: {
+            status: "malicious",
+            summary: "Runs unexpected shell commands.",
+            checkedAt: 1_700_000_000_000,
+          },
+          createdAt: 1_700_000_000_000,
+        },
+      },
+    });
+
+    const report = await getStoredScanReportForUserInternalHandler(ctx, {
+      actorUserId: "users:member",
+      kind: "plugin",
+      name: "@org/demo",
+      version: "2.0.0",
+    });
+
+    expect(report).toMatchObject({
+      ok: true,
+      artifact: {
+        kind: "plugin",
+        name: "@org/demo",
+        displayName: "Org Plugin",
+        version: "2.0.0",
+      },
+    });
   });
 
   it("lets skill owners request skill rescans through the API helper", async () => {
@@ -1439,7 +1895,7 @@ describe("securityScan", () => {
     );
   });
 
-  it("claims manual rescans and malicious signals before older publish backlog", async () => {
+  it("claims manual rescans and malicious signals before ordinary backlog", async () => {
     const { ctx, patches } = makeClaimCtx([
       makeScanJob({
         _id: "securityScanJobs:old-publish",
@@ -1459,12 +1915,6 @@ describe("securityScan", () => {
         hasMaliciousSignal: true,
         createdAt: 30,
         nextRunAt: 30,
-      }),
-      makeScanJob({
-        _id: "securityScanJobs:clawscan-note",
-        source: "clawscan-note",
-        createdAt: 40,
-        nextRunAt: 40,
       }),
       makeScanJob({
         _id: "securityScanJobs:backfill",
@@ -1490,13 +1940,13 @@ describe("securityScan", () => {
     expect(claimed.map((job) => job._id)).toEqual([
       "securityScanJobs:manual",
       "securityScanJobs:malicious-publish",
-      "securityScanJobs:clawscan-note",
       "securityScanJobs:backfill",
+      "securityScanJobs:old-publish",
     ]);
     expect(patches.map((entry) => entry.id)).toEqual(claimed.map((job) => job._id));
   });
 
-  it("claims bulk rescans after every existing source", async () => {
+  it("claims bulk rescans after every supported source", async () => {
     const { ctx } = makeClaimCtx([
       makeScanJob({
         _id: "securityScanJobs:bulk-rescan",
@@ -1515,12 +1965,6 @@ describe("securityScan", () => {
         source: "vt-update",
         createdAt: 30,
         nextRunAt: 30,
-      }),
-      makeScanJob({
-        _id: "securityScanJobs:clawscan-note",
-        source: "clawscan-note",
-        createdAt: 40,
-        nextRunAt: 40,
       }),
       makeScanJob({
         _id: "securityScanJobs:backfill",
@@ -1545,7 +1989,6 @@ describe("securityScan", () => {
 
     expect(claimed.map((job) => job._id)).toEqual([
       "securityScanJobs:manual",
-      "securityScanJobs:clawscan-note",
       "securityScanJobs:backfill",
       "securityScanJobs:publish",
       "securityScanJobs:vt-update",
@@ -1606,6 +2049,177 @@ describe("securityScan", () => {
       "securityScanJobs:manual-1",
       "securityScanJobs:manual-2",
     ]);
+  });
+
+  it("reports queued scan position for manual scan requests", async () => {
+    const targetJob = makeScanJob({
+      _id: "securityScanJobs:target",
+      targetKind: "skillScanRequest",
+      skillScanRequestId: "skillScanRequests:target",
+      source: "manual",
+      createdAt: 300,
+      nextRunAt: 300,
+    });
+    const ctx = makeSkillScanStatusCtx({
+      actor: { _id: "users:owner", role: "user" },
+      request: {
+        _id: "skillScanRequests:target",
+        actorUserId: "users:owner",
+        sourceKind: "upload",
+        update: false,
+        writtenBack: false,
+        status: "queued",
+        securityScanJobId: targetJob._id,
+        files: [],
+        expiresAt: 1000,
+        createdAt: 300,
+        updatedAt: 300,
+      },
+      jobs: [
+        makeScanJob({
+          _id: "securityScanJobs:older",
+          source: "manual",
+          createdAt: 100,
+          nextRunAt: 100,
+        }),
+        makeScanJob({
+          _id: "securityScanJobs:running",
+          status: "running",
+          source: "manual",
+          createdAt: 200,
+          nextRunAt: 200,
+        }),
+        targetJob,
+        makeScanJob({
+          _id: "securityScanJobs:bulk",
+          source: "bulk-rescan",
+          createdAt: 1,
+          nextRunAt: 1,
+        }),
+      ],
+    });
+
+    const status = await getSkillScanRequestForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      scanId: "skillScanRequests:target",
+    });
+
+    expect(status.queue).toEqual({
+      queuedAhead: 1,
+      queuedAheadIsEstimate: false,
+      position: 2,
+      running: 1,
+      runningIsEstimate: false,
+      note: "Scans are asynchronous and may take time to complete.",
+    });
+  });
+
+  it("uses claim-order tie-breaks for same-timestamp queued scan positions", async () => {
+    const targetJob = makeScanJob({
+      _id: "securityScanJobs:target",
+      _creationTime: 2,
+      targetKind: "skillScanRequest",
+      skillScanRequestId: "skillScanRequests:target",
+      source: "manual",
+      createdAt: 300,
+      nextRunAt: 300,
+    });
+    const ctx = makeSkillScanStatusCtx({
+      actor: { _id: "users:owner", role: "user" },
+      request: {
+        _id: "skillScanRequests:target",
+        actorUserId: "users:owner",
+        sourceKind: "upload",
+        update: false,
+        writtenBack: false,
+        status: "queued",
+        securityScanJobId: targetJob._id,
+        files: [],
+        expiresAt: 1000,
+        createdAt: 300,
+        updatedAt: 300,
+      },
+      jobs: [
+        makeScanJob({
+          _id: "securityScanJobs:first",
+          _creationTime: 1,
+          source: "manual",
+          createdAt: 300,
+          nextRunAt: 300,
+        }),
+        targetJob,
+        makeScanJob({
+          _id: "securityScanJobs:last",
+          _creationTime: 3,
+          source: "manual",
+          createdAt: 300,
+          nextRunAt: 300,
+        }),
+      ],
+    });
+
+    const status = await getSkillScanRequestForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      scanId: "skillScanRequests:target",
+    });
+
+    expect(status.queue).toMatchObject({
+      queuedAhead: 1,
+      queuedAheadIsEstimate: false,
+      position: 2,
+    });
+  });
+
+  it("bounds large queue position scans and marks the count as estimated", async () => {
+    const targetJob = makeScanJob({
+      _id: "securityScanJobs:target",
+      targetKind: "skillScanRequest",
+      skillScanRequestId: "skillScanRequests:target",
+      source: "manual",
+      createdAt: 1_000,
+      nextRunAt: 1_000,
+    });
+    const ctx = makeSkillScanStatusCtx({
+      actor: { _id: "users:owner", role: "user" },
+      request: {
+        _id: "skillScanRequests:target",
+        actorUserId: "users:owner",
+        sourceKind: "upload",
+        update: false,
+        writtenBack: false,
+        status: "queued",
+        securityScanJobId: targetJob._id,
+        files: [],
+        expiresAt: 1000,
+        createdAt: 1_000,
+        updatedAt: 1_000,
+      },
+      jobs: [
+        ...Array.from({ length: 300 }, (_, index) =>
+          makeScanJob({
+            _id: `securityScanJobs:older-${index}`,
+            source: "manual",
+            createdAt: index,
+            nextRunAt: index,
+          }),
+        ),
+        targetJob,
+      ],
+    });
+
+    const status = await getSkillScanRequestForUserInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      scanId: "skillScanRequests:target",
+    });
+
+    expect(status.queue).toEqual({
+      queuedAhead: 250,
+      queuedAheadIsEstimate: true,
+      position: null,
+      running: 0,
+      runningIsEstimate: false,
+      note: "Scans are asynchronous and may take time to complete.",
+    });
   });
 
   it("caps SkillSpector findings before storing completed scan results", async () => {
@@ -1942,7 +2556,6 @@ describe("securityScan", () => {
       makeScanJob({ _id: "securityScanJobs:no-llm" }),
       makeScanJob({ _id: "securityScanJobs:publish", source: "publish" }),
       makeScanJob({ _id: "securityScanJobs:manual", source: "manual" }),
-      makeScanJob({ _id: "securityScanJobs:clawscan-note", source: "clawscan-note" }),
       makeScanJob({ _id: "securityScanJobs:backfill", source: "backfill" }),
       makeScanJob({ _id: "securityScanJobs:running", status: "running" }),
     ];
@@ -1973,12 +2586,12 @@ describe("securityScan", () => {
     expect(get).toHaveBeenCalled();
     expect(result).toMatchObject({
       dryRun: false,
-      scanned: 10,
+      scanned: 9,
       matched: 3,
       wouldDelete: 3,
       deleted: 3,
       skippedByReason: {
-        "not-vt-update": 4,
+        "not-vt-update": 3,
         "not-queued-vt-update": 1,
         "malicious-signal": 1,
         "missing-llm-analysis": 1,

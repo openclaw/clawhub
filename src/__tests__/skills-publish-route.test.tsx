@@ -21,7 +21,6 @@ const generateChangelogPreview = vi.fn();
 const fetchMock = vi.fn();
 const useQueryMock = vi.fn();
 const useAuthStatusMock = vi.fn();
-const getSiteModeMock = vi.fn();
 // Allows individual test cases to drive the value `useSearch` returns.
 // The `updateSlug` search param triggers the form's "update existing"
 // branch and is required by the F1 regression cases below.
@@ -42,10 +41,6 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-vi.mock("../lib/site", () => ({
-  getSiteMode: () => getSiteModeMock(),
-}));
-
 describe("Upload route", () => {
   beforeEach(() => {
     generateUploadUrl.mockReset();
@@ -54,8 +49,6 @@ describe("Upload route", () => {
     fetchMock.mockReset();
     useQueryMock.mockReset();
     useAuthStatusMock.mockReset();
-    getSiteModeMock.mockReset();
-    getSiteModeMock.mockReturnValue("skills");
     useSearchMock.mockReset();
     useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: undefined });
     useActionCallCount = 0;
@@ -98,17 +91,6 @@ describe("Upload route", () => {
 
     const guideLink = screen.getByRole("link", { name: /Skill publishing guide/i });
     expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/skill-format");
-    expect(guideLink.getAttribute("target")).toBe("_blank");
-  });
-
-  it("links to the soul publishing guide in SoulHub mode", () => {
-    getSiteModeMock.mockReturnValue("souls");
-    render(<Upload />);
-
-    expect(screen.getByRole("heading", { name: /Publish a soul/i })).toBeTruthy();
-    expect(screen.getByText("Drop or select a soul folder")).toBeTruthy();
-    const guideLink = screen.getByRole("link", { name: /Soul publishing guide/i });
-    expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/soul-format");
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
 
@@ -239,7 +221,6 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
       target: { value: "latest" },
     });
-    expect(screen.queryByLabelText("ClawScan note")).toBeNull();
 
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     Object.defineProperty(file, "webkitRelativePath", { value: "ynab/SKILL.md" });
@@ -269,7 +250,6 @@ describe("Upload route", () => {
       .map((call) => call[0] as { files?: Array<{ path: string }> })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
-    expect(args).not.toHaveProperty("clawScanNote");
   });
 
   it("blocks non-text folder uploads (png)", async () => {

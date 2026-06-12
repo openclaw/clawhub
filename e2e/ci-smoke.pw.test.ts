@@ -4,7 +4,6 @@ import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
 test("public navigation routes render without runtime errors", async ({ browser }) => {
   const routes = [
     { path: "/skills", heading: "Skills" },
-    { path: "/souls", heading: "SOUL.md discovery is on deck" },
     { path: "/plugins", heading: "Plugins" },
   ];
 

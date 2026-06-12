@@ -331,6 +331,12 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     capabilityTags?: string[] | undefined;
     executesCode?: boolean | undefined;
     verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+    stats?: {
+        downloads: number;
+        installs: number;
+        stars: number;
+        versions: number;
+    } | undefined;
 }, {}>;
 export type PackageListItem = (typeof PackageListItemSchema)[inferred];
 export declare const ApiV1PackageListResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -349,6 +355,12 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         capabilityTags?: string[] | undefined;
         executesCode?: boolean | undefined;
         verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+        stats?: {
+            downloads: number;
+            installs: number;
+            stars: number;
+            versions: number;
+        } | undefined;
     }[];
     nextCursor: string | null;
 }, {}>;
@@ -371,6 +383,12 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             capabilityTags?: string[] | undefined;
             executesCode?: boolean | undefined;
             verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
+            stats?: {
+                downloads: number;
+                installs: number;
+                stars: number;
+                versions: number;
+            } | undefined;
         };
     }[];
 }, {}>;
@@ -798,21 +816,6 @@ export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype
     } | null;
 }, {}>;
 export type ApiV1PackageModerationStatusResponse = (typeof ApiV1PackageModerationStatusResponseSchema)[inferred];
-export declare const PackageArtifactBackfillRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    cursor?: string | null | undefined;
-    batchSize?: number | undefined;
-    dryRun?: boolean | undefined;
-}, {}>;
-export type PackageArtifactBackfillRequest = (typeof PackageArtifactBackfillRequestSchema)[inferred];
-export declare const ApiV1PackageArtifactBackfillResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    ok: true;
-    scanned: number;
-    updated: number;
-    nextCursor: string | null;
-    done: boolean;
-    dryRun: boolean;
-}, {}>;
-export type ApiV1PackageArtifactBackfillResponse = (typeof ApiV1PackageArtifactBackfillResponseSchema)[inferred];
 export declare const PackageReadinessCheckSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     id: string;
     label: string;
@@ -1032,6 +1035,20 @@ export declare const ApiV1PackagePublishResponseSchema: import("arktype/internal
     ok: true;
     packageId: string;
     releaseId: string;
+    inspectorFindings?: {
+        findingKind: "error" | "warning";
+        code: string;
+        message: string;
+        severity?: string | undefined;
+        level?: string | undefined;
+        issueClass?: string | undefined;
+        authorRemediation?: {
+            summary: string;
+            docsUrl?: string | undefined;
+        } | undefined;
+        inspectorVersion?: string | undefined;
+        targetOpenClawVersion?: string | undefined;
+    }[] | undefined;
 }, {}>;
 export type ApiV1PackagePublishResponse = (typeof ApiV1PackagePublishResponseSchema)[inferred];
 export declare const PackageTrustedPublisherUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{

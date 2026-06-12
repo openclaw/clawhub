@@ -73,14 +73,21 @@ describe("assertValidSkillSlug", () => {
     expect(() => assertValidSkillSlug(slug)).toThrow(new RegExp(hint, "i"));
   });
 
-  it.each(["admin", "settings", "api", "openclaw", "clawhub", "souls", "packages", "publishers"])(
-    "rejects reserved slug %s",
-    (slug) => {
-      // Some short reserved entries (e.g. "u") are also blocked by the
-      // length rule; we only assert that a throw happens for every entry.
-      expect(() => assertValidSkillSlug(slug)).toThrow();
-    },
-  );
+  it.each([
+    "account-banned",
+    "admin",
+    "settings",
+    "api",
+    "openclaw",
+    "clawhub",
+    "souls",
+    "packages",
+    "publishers",
+  ])("rejects reserved slug %s", (slug) => {
+    // Some short reserved entries (e.g. "u") are also blocked by the
+    // length rule; we only assert that a throw happens for every entry.
+    expect(() => assertValidSkillSlug(slug)).toThrow();
+  });
 
   it.each(["openclaw", "publishers"])(
     "emits the reserved-specific error for long reserved slug %s",

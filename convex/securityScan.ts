@@ -33,6 +33,9 @@ const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const DEFAULT_SKILL_SCAN_REQUEST_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const MAX_SKILL_SCAN_QUEUE_POSITION_READS = 250;
+const MAX_SKILL_SCAN_RUNNING_COUNT_READS = 512;
+const SKILL_SCAN_ASYNC_NOTE = "Scans are asynchronous and may take time to complete.";
 
 const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
 const artifactBackedLlmAnalysisStatuses = new Set(["clean", "benign", "suspicious", "malicious"]);
@@ -109,25 +112,19 @@ async function resolveSkillForRescan(ctx: MutationCtx, slug: string, ownerHandle
   return resolved.skill;
 }
 
+type StoredScanArtifactKind = "skill" | "plugin";
+
 const jobSourceValidator = v.union(
   v.literal("publish"),
-  v.literal("clawscan-note"),
   v.literal("vt-update"),
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
 );
 
-type SecurityScanJobSource =
-  | "publish"
-  | "clawscan-note"
-  | "vt-update"
-  | "backfill"
-  | "bulk-rescan"
-  | "manual";
+type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
-  "clawscan-note",
   "backfill",
   "publish",
   "vt-update",
@@ -806,6 +803,54 @@ function skillScanReportFromRequest(request: Doc<"skillScanRequests">) {
   };
 }
 
+function storedScanReportFromArtifact(
+  artifact: Pick<
+    Doc<"skillVersions"> | Doc<"packageReleases">,
+    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+  >,
+) {
+  return {
+    clawscan: artifact.llmAnalysis ?? null,
+    skillspector: artifact.skillSpectorAnalysis ?? null,
+    staticAnalysis: artifact.staticScan ?? null,
+    virustotal: artifact.vtAnalysis
+      ? {
+          ...artifact.vtAnalysis,
+          ...artifact.vtAnalysis.engineStats,
+        }
+      : null,
+  };
+}
+
+function hasStoredScanReport(
+  artifact: Pick<
+    Doc<"skillVersions"> | Doc<"packageReleases">,
+    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+  >,
+) {
+  return Boolean(
+    artifact.llmAnalysis ||
+    artifact.skillSpectorAnalysis ||
+    artifact.staticScan ||
+    artifact.vtAnalysis,
+  );
+}
+
+function completedAtFromStoredScanReport(
+  artifact: Pick<
+    Doc<"skillVersions"> | Doc<"packageReleases">,
+    "llmAnalysis" | "skillSpectorAnalysis" | "staticScan" | "vtAnalysis"
+  >,
+) {
+  const checkedAtValues = [
+    artifact.llmAnalysis?.checkedAt,
+    artifact.skillSpectorAnalysis?.checkedAt,
+    artifact.staticScan?.checkedAt,
+    artifact.vtAnalysis?.checkedAt,
+  ].filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  return checkedAtValues.length > 0 ? Math.max(...checkedAtValues) : undefined;
+}
+
 function skillScanArtifactFromRequest(request: Doc<"skillScanRequests">) {
   return {
     ...(request.slug ? { slug: request.slug } : {}),
@@ -816,7 +861,84 @@ function skillScanArtifactFromRequest(request: Doc<"skillScanRequests">) {
   };
 }
 
-function skillScanStatusResponse(
+async function countSecurityScanJobs(
+  ctx: QueryCtx | MutationCtx,
+  status: Doc<"securityScanJobs">["status"],
+  source: SecurityScanJobSource,
+) {
+  const jobs = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_status_source_created_at", (q) => q.eq("status", status).eq("source", source))
+    .take(MAX_SKILL_SCAN_RUNNING_COUNT_READS + 1);
+  return {
+    count: Math.min(jobs.length, MAX_SKILL_SCAN_RUNNING_COUNT_READS),
+    isEstimate: jobs.length > MAX_SKILL_SCAN_RUNNING_COUNT_READS,
+  };
+}
+
+function compareQueuedScanClaimOrder(a: Doc<"securityScanJobs">, b: Doc<"securityScanJobs">) {
+  if (a.nextRunAt !== b.nextRunAt) return a.nextRunAt - b.nextRunAt;
+  if (a._creationTime !== b._creationTime) return a._creationTime - b._creationTime;
+  return a._id.localeCompare(b._id);
+}
+
+async function countQueuedJobsAhead(ctx: QueryCtx | MutationCtx, job: Doc<"securityScanJobs">) {
+  const candidates = await ctx.db
+    .query("securityScanJobs")
+    .withIndex("by_status_source_next_run_at", (q) =>
+      q.eq("status", "queued").eq("source", job.source).lte("nextRunAt", job.nextRunAt),
+    )
+    .order("asc")
+    .take(MAX_SKILL_SCAN_QUEUE_POSITION_READS + 1);
+
+  const queuedAhead = candidates.reduce((count, candidate) => {
+    if (candidate._id === job._id) return count;
+    return compareQueuedScanClaimOrder(candidate, job) < 0 ? count + 1 : count;
+  }, 0);
+  const sawTarget = candidates.some((candidate) => candidate._id === job._id);
+  const isEstimate =
+    !sawTarget ||
+    candidates.length > MAX_SKILL_SCAN_QUEUE_POSITION_READS ||
+    queuedAhead > MAX_SKILL_SCAN_QUEUE_POSITION_READS;
+
+  return {
+    queuedAhead: Math.min(queuedAhead, MAX_SKILL_SCAN_QUEUE_POSITION_READS),
+    isEstimate,
+  };
+}
+
+async function skillScanQueueState(
+  ctx: QueryCtx | MutationCtx,
+  job: Doc<"securityScanJobs"> | null,
+) {
+  if (!job) {
+    return {
+      queuedAhead: 0,
+      position: null,
+      running: 0,
+      note: SKILL_SCAN_ASYNC_NOTE,
+    };
+  }
+
+  const running = await countSecurityScanJobs(ctx, "running", job.source);
+  const queuedAhead =
+    job.status === "queued"
+      ? await countQueuedJobsAhead(ctx, job)
+      : { queuedAhead: 0, isEstimate: false };
+
+  return {
+    queuedAhead: queuedAhead.queuedAhead,
+    queuedAheadIsEstimate: queuedAhead.isEstimate,
+    position:
+      job.status === "queued" && !queuedAhead.isEstimate ? queuedAhead.queuedAhead + 1 : null,
+    running: running.count,
+    runningIsEstimate: running.isEstimate,
+    note: SKILL_SCAN_ASYNC_NOTE,
+  };
+}
+
+async function skillScanStatusResponse(
+  ctx: QueryCtx | MutationCtx,
   request: Doc<"skillScanRequests">,
   job: Doc<"securityScanJobs"> | null,
 ) {
@@ -834,6 +956,7 @@ function skillScanStatusResponse(
     writtenBack: request.writtenBack,
     artifact: skillScanArtifactFromRequest(request),
     report: skillScanReportFromRequest(request),
+    queue: await skillScanQueueState(ctx, job),
     lastError: request.lastError ?? job?.lastError,
     createdAt: request.createdAt,
     updatedAt: Math.max(request.updatedAt, job?.updatedAt ?? request.updatedAt),
@@ -920,6 +1043,7 @@ export const createUploadedSkillScanRequestInternal = internalMutation({
       sourceKind: "upload" as const,
       update: false,
       alreadyQueued: false,
+      queue: await skillScanQueueState(ctx, await ctx.db.get(jobId)),
     };
   },
 });
@@ -1022,6 +1146,7 @@ export const createPublishedSkillScanRequestInternal = internalMutation({
       sourceKind: "published" as const,
       update,
       alreadyQueued: false,
+      queue: await skillScanQueueState(ctx, await ctx.db.get(jobId)),
     };
   },
 });
@@ -1040,9 +1165,149 @@ export const getSkillScanRequestForUserInternal = internalQuery({
       throw new ConvexError("Forbidden");
     }
     const job = request.securityScanJobId ? await ctx.db.get(request.securityScanJobId) : null;
-    return skillScanStatusResponse(request, job);
+    return await skillScanStatusResponse(ctx, request, job);
   },
 });
+
+export const getStoredScanReportForUserInternal = internalQuery({
+  args: {
+    actorUserId: v.id("users"),
+    kind: v.union(v.literal("skill"), v.literal("plugin")),
+    name: v.string(),
+    version: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const name = args.name.trim();
+    const versionLabel = args.version.trim();
+    if (!name) throw new ConvexError("Name required");
+    if (!versionLabel) throw new ConvexError("Version required");
+
+    return args.kind === "plugin"
+      ? await getStoredPackageScanReportForUser(ctx, {
+          actor,
+          kind: args.kind,
+          name,
+          version: versionLabel,
+        })
+      : await getStoredSkillScanReportForUser(ctx, {
+          actor,
+          kind: args.kind,
+          name,
+          version: versionLabel,
+        });
+  },
+});
+
+async function getStoredSkillScanReportForUser(
+  ctx: QueryCtx,
+  args: {
+    actor: Doc<"users">;
+    kind: StoredScanArtifactKind;
+    name: string;
+    version: string;
+  },
+) {
+  const slug = args.name.toLowerCase();
+  const skill = await ctx.db
+    .query("skills")
+    .withIndex("by_slug", (q) => q.eq("slug", slug))
+    .unique();
+  if (!skill) throw new ConvexError("Skill not found");
+
+  await assertCanManageOwnedResource(ctx, {
+    actor: args.actor,
+    ownerUserId: skill.ownerUserId,
+    ownerPublisherId: skill.ownerPublisherId,
+    allowedPublisherRoles: ["publisher"],
+    allowPlatformModerator: true,
+  });
+
+  const version = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", args.version))
+    .unique();
+  if (!version) throw new ConvexError("Skill version not found");
+  if (!hasStoredScanReport(version)) throw new ConvexError("Scan results not found");
+
+  const completedAt = completedAtFromStoredScanReport(version);
+  return {
+    ok: true as const,
+    scanId: `skill:${skill.slug}:${version.version}`,
+    status: "succeeded" as const,
+    sourceKind: "published" as const,
+    update: false,
+    writtenBack: true,
+    artifact: {
+      kind: args.kind,
+      slug: skill.slug,
+      displayName: skill.displayName,
+      version: version.version,
+      ...(version.sha256hash ? { sha256hash: version.sha256hash } : {}),
+      fileCount: version.files.length,
+    },
+    report: storedScanReportFromArtifact(version),
+    createdAt: version.createdAt,
+    updatedAt: Math.max(version.createdAt, completedAt ?? version.createdAt),
+    completedAt,
+  };
+}
+
+async function getStoredPackageScanReportForUser(
+  ctx: QueryCtx,
+  args: {
+    actor: Doc<"users">;
+    kind: StoredScanArtifactKind;
+    name: string;
+    version: string;
+  },
+) {
+  const normalizedName = normalizePackageName(args.name);
+  const pkg = await ctx.db
+    .query("packages")
+    .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+    .unique();
+  if (!pkg || pkg.family === "skill") throw new ConvexError("Plugin not found");
+
+  await assertCanManageOwnedResource(ctx, {
+    actor: args.actor,
+    ownerUserId: pkg.ownerUserId,
+    ownerPublisherId: pkg.ownerPublisherId,
+    allowedPublisherRoles: ["publisher"],
+    allowPlatformModerator: true,
+  });
+
+  const release = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", args.version))
+    .unique();
+  if (!release) throw new ConvexError("Plugin version not found");
+  if (!hasStoredScanReport(release)) throw new ConvexError("Scan results not found");
+
+  const completedAt = completedAtFromStoredScanReport(release);
+  return {
+    ok: true as const,
+    scanId: `plugin:${pkg.normalizedName}:${release.version}`,
+    status: "succeeded" as const,
+    sourceKind: "published" as const,
+    update: false,
+    writtenBack: true,
+    artifact: {
+      kind: args.kind,
+      name: pkg.name,
+      displayName: pkg.displayName,
+      version: release.version,
+      ...(release.integritySha256 ? { sha256hash: release.integritySha256 } : {}),
+      fileCount: release.files.length,
+    },
+    report: storedScanReportFromArtifact(release),
+    createdAt: release.createdAt,
+    updatedAt: Math.max(release.createdAt, completedAt ?? release.createdAt),
+    completedAt,
+  };
+}
 
 export const recordSkillScanRequestSucceededInternal = internalMutation({
   args: {

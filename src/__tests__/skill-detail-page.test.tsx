@@ -1,5 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import { SkillDetailPage } from "../components/SkillDetailPage";
@@ -40,6 +42,13 @@ vi.mock("convex/react", () => ({
   useAction: () => getReadmeMock,
 }));
 
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
+}));
+
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
@@ -71,6 +80,7 @@ describe("SkillDetailPage", () => {
     useAuthStatusMock.mockReset();
     getReadmeMock.mockResolvedValue({ text: "" });
     useMutationMock.mockReturnValue(vi.fn());
+    vi.mocked(toast.success).mockReset();
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -167,6 +177,258 @@ describe("SkillDetailPage", () => {
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
+  });
+
+  it("does not spin forever when a source-backed skill has no stored version", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "kind" in args) return null;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              installKind: "github",
+              githubScanStatus: "pending",
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installsCurrent: 0,
+                installsAllTime: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Pending")).toBeTruthy();
+    expect(screen.getByText("Security audit")).toBeTruthy();
+    expect(screen.queryByText("Loading README...")).toBeNull();
+  });
+
+  it("clears stale README content when navigating to a skill with no stored version", async () => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    const { rerender } = render(
+      <SkillDetailPage
+        slug="weather"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installsCurrent: 5,
+                installsAllTime: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# Weather\n\nOnly old body.",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Only old body.")).toBeTruthy();
+
+    rerender(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installsCurrent: 0,
+                installsAllTime: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("No README available")).toBeTruthy();
+    expect(screen.queryByText("Only old body.")).toBeNull();
+  });
+
+  it("renders GitHub-backed SKILL.md and skill-card.md from cached source content", async () => {
+    getReadmeMock.mockResolvedValue({ text: "unexpected archive read" });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: unknown }).kind === "readme"
+      ) {
+        return { path: "skills/aiq-deploy/SKILL.md", text: "# AIQ Deploy\n\nDeploy it." };
+      }
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: unknown }).kind === "skill-card"
+      ) {
+        return { path: "skills/aiq-deploy/skill-card.md", text: "# AIQ Card\n\nRisk details." };
+      }
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="aiq-deploy"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              installKind: "github",
+              githubHasSkillCard: true,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 0,
+                downloads: 0,
+                installsCurrent: 0,
+                installsAllTime: 0,
+                versions: 0,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "org",
+              handle: "local",
+              displayName: "Local Dev",
+            },
+            latestVersion: null,
+            moderationInfo: null,
+            forkOf: null,
+            canonical: null,
+          },
+          readme: null,
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText("Deploy it.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "Skill Card" }));
+    expect(await screen.findByText("Risk details.")).toBeTruthy();
+    expect(getReadmeMock).not.toHaveBeenCalled();
   });
 
   it("does not show a Skill Card tab for publisher-supplied card files", async () => {
@@ -1308,6 +1570,158 @@ describe("SkillDetailPage", () => {
     );
     expect(screen.getByText("Rename slug")).toBeTruthy();
     expect(screen.getByText("Merge listing")).toBeTruthy();
+  });
+
+  it("lets owners confirm skill deletion from settings", async () => {
+    const deleteSkill = vi.fn().mockResolvedValue({
+      ok: true,
+      slugReservedUntil: Date.UTC(2026, 6, 7),
+    });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "skills:setOwnedSkillSoftDeleted" ? deleteSkill : vi.fn(),
+    );
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:1", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (
+        args &&
+        typeof args === "object" &&
+        ("ownerUserId" in args || "ownerPublisherId" in args)
+      ) {
+        return [{ _id: "skills:1", slug: "weather", displayName: "Weather" }];
+      }
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
+
+    expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Delete skill" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Delete skill" }));
+
+    expect(deleteSkill).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Delete skill" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete skill" }));
+
+    await waitFor(() => {
+      expect(deleteSkill).toHaveBeenCalledWith({ skillId });
+    });
+    expect(toast.success).toHaveBeenCalledWith(
+      expect.stringMatching(/^Deleted weather\. Slug reserved until /),
+    );
+    expect(navigateMock).toHaveBeenCalledWith({ to: "/", replace: true });
+  });
+
+  it("does not show the owner delete action to staff-only settings viewers", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:moderator", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
+
+    expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
+    expect(screen.getByText("Rename slug")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete skill" })).toBeNull();
+  });
+
+  it("does not show the owner delete action to org skill creators without org admin access", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:creator", role: "user" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      if (args && typeof args === "object" && "skillId" in args) return [];
+      if (args && typeof args === "object" && "slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:creator",
+            ownerPublisherId: "publishers:org",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:org",
+            _creationTime: 0,
+            kind: "org",
+            handle: "weather-org",
+            displayName: "Weather Org",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0", parsed: {}, files: [] },
+        };
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" mode="settings" />);
+
+    expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
+    expect(screen.getByText("Rename slug")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete skill" })).toBeNull();
   });
 
   it("does not expose settings to publisher members without admin access", async () => {

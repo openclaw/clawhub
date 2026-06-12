@@ -32,8 +32,20 @@ describe("DetailSecuritySummary", () => {
     expect(
       screen.queryByText("Security checks across malware telemetry and agentic risk"),
     ).toBeNull();
-    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
-    expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(4);
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("3");
+    expect(document.querySelectorAll(".security-audit-meter span")).toHaveLength(3);
+  });
+
+  it("renders GitHub-backed scan status when no version-backed scan exists", () => {
+    render(
+      <DetailSecuritySummary
+        auditHref="/nvidia/aiq-deploy/security-audit"
+        githubScanStatus="pending"
+      />,
+    );
+
+    expect(screen.getByText("Pending")).toBeTruthy();
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("0");
   });
 
   it("shows staff-cleared public scan summaries as cleared", () => {
@@ -113,7 +125,8 @@ describe("DetailSecuritySummary", () => {
       />,
     );
 
-    expect(screen.getAllByText("Warn").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
+    expect(screen.queryByText("Warn")).toBeNull();
     expect(screen.queryByText("Suspicious")).toBeNull();
   });
 
@@ -128,7 +141,7 @@ describe("DetailSecuritySummary", () => {
 
     expect(screen.getByText("Pass")).toBeTruthy();
     expect(screen.queryByText("Benign")).toBeNull();
-    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("4");
+    expect(document.querySelector(".security-audit-meter")?.getAttribute("data-level")).toBe("3");
   });
 
   it("renders malicious ClawScan outcomes with the lowest safety meter level", () => {

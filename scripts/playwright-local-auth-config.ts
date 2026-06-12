@@ -1,6 +1,7 @@
 const DEFAULT_CONVEX_URL = "http://127.0.0.1:3210";
 const DEFAULT_CONVEX_SITE_URL = "http://127.0.0.1:3211";
 const DEFAULT_PLAYWRIGHT_ARGS = ["--project=chromium", "e2e/local-auth"];
+const DEFAULT_PLAYWRIGHT_RETRIES = "1";
 
 type RunnerEnv = Record<string, string | undefined>;
 
@@ -15,6 +16,13 @@ function stripPackageManagerSeparator(args: string[]) {
   return args[0] === "--" ? args.slice(1) : args;
 }
 
+function withDefaultRetries(args: string[]) {
+  if (args.some((arg) => arg === "--retries" || arg.startsWith("--retries="))) {
+    return args;
+  }
+  return [`--retries=${DEFAULT_PLAYWRIGHT_RETRIES}`, ...args];
+}
+
 export function resolveLocalAuthRunnerConfig(
   env: RunnerEnv = process.env,
   argv: string[] = process.argv.slice(2),
@@ -24,6 +32,8 @@ export function resolveLocalAuthRunnerConfig(
     convexDeployment: env.PLAYWRIGHT_LOCAL_AUTH_CONVEX_DEPLOYMENT,
     convexSiteUrl: env.PLAYWRIGHT_LOCAL_AUTH_CONVEX_SITE_URL ?? DEFAULT_CONVEX_SITE_URL,
     convexUrl: env.PLAYWRIGHT_LOCAL_AUTH_CONVEX_URL ?? DEFAULT_CONVEX_URL,
-    playwrightArgs: playwrightArgs.length > 0 ? playwrightArgs : DEFAULT_PLAYWRIGHT_ARGS,
+    playwrightArgs: withDefaultRetries(
+      playwrightArgs.length > 0 ? playwrightArgs : DEFAULT_PLAYWRIGHT_ARGS,
+    ),
   };
 }

@@ -1,6 +1,7 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { AnchorHTMLAttributes, ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
@@ -17,6 +18,7 @@ const isRateLimitedPackageApiErrorMock = vi.fn(
 );
 const useQueryMock = vi.fn();
 const useAuthStatusMock = vi.fn();
+let pathnameMock = "/plugins/demo-plugin";
 
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
@@ -63,10 +65,8 @@ vi.mock("@tanstack/react-router", () => ({
     select,
   }: {
     select?: (state: { location: { pathname: string } }) => string;
-  }) =>
-    select
-      ? select({ location: { pathname: `/plugins/${paramsMock.name}` } })
-      : `/plugins/${paramsMock.name}`,
+  }) => (select ? select({ location: { pathname: pathnameMock } }) : pathnameMock),
+  Outlet: () => <div data-testid="nested-plugin-route" />,
   Link: ({
     children,
     to,
@@ -128,6 +128,8 @@ async function loadRoute() {
 describe("plugin detail route", () => {
   beforeEach(() => {
     paramsMock = { name: "demo-plugin" };
+    pathnameMock = "/plugins/demo-plugin";
+    window.location.hash = "";
     vi.mocked(fetchPackageDetail).mockReset();
     vi.mocked(fetchPackageReadme).mockReset();
     vi.mocked(fetchPackageVersion).mockReset();
@@ -419,14 +421,13 @@ describe("plugin detail route", () => {
       sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
       (label) => label.textContent?.trim(),
     );
-    const capabilitiesTab = screen.getByRole("tab", { name: "Capabilities" });
     const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
       label?.startsWith("Security audit"),
     );
     expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
     expect(securityAuditLabelIndex).toBeGreaterThan(sidebarLabels.indexOf("Downloads"));
-    fireEvent.click(capabilitiesTab);
-    expect(screen.getByText("Tags")).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: "Capabilities" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Verification" })).toBeNull();
   });
 
   it("does not render owner-only plugin scanner rerun state in the detail security summary", async () => {
@@ -594,6 +595,224 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/download?version=1.0.0",
     );
+  });
+
+  it("shows a public incompatibility alert without exposing validation outputs", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: false,
+      isLoading: false,
+      me: null,
+    });
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "packages:getPackageInspectorValidationSummaryPublic") {
+        return {
+          findingCount: 1,
+          errorCount: 1,
+          warningCount: 0,
+          incompatibleAfterOpenClawVersion: "0.9.0",
+        };
+      }
+      return null;
+    });
+    loaderDataMock = {
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+        },
+        owner: null,
+      },
+      version: {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Initial release",
+          distTags: ["latest"],
+          files: [],
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+          artifact: null,
+          sha256hash: null,
+          vtAnalysis: null,
+          llmAnalysis: null,
+          staticScan: null,
+        },
+      },
+      readme: null,
+      rateLimited: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(
+      screen.getByText("This plugin is incompatible with OpenClaw versions greater than 0.9.0."),
+    ).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
+    expect(screen.queryByText("missing-expected-seam")).toBeNull();
+  });
+
+  it("shows validation outputs to plugin managers on the validation tab", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:owner" },
+    });
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "packages:getManageContext") {
+        return {
+          package: { name: "demo-plugin", displayName: "Demo Plugin" },
+          latestRelease: { version: "1.0.0" },
+        };
+      }
+      if (name === "packages:getPackageInspectorValidationSummaryPublic") {
+        return {
+          findingCount: 2,
+          errorCount: 1,
+          warningCount: 1,
+          incompatibleAfterOpenClawVersion: "0.9.0",
+        };
+      }
+      if (name === "packages:listPackageInspectorWarningsForManager") {
+        return [
+          {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            severity: "P2",
+            message: "legacy before_agent_start hook is deprecated",
+            evidence: ["src/index.ts:4"],
+            inspectorVersion: "0.4.0",
+            targetOpenClawVersion: "0.9.0",
+            scanSource: "nightly",
+            authorRemediation: {
+              summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
+            createdAt: 1,
+          },
+          {
+            packageName: "demo-plugin",
+            version: "1.0.0",
+            findingKind: "error",
+            code: "missing-expected-seam",
+            issueClass: "compatibility-error",
+            severity: "P0",
+            message: "registerTool is no longer available",
+            evidence: ["dist/index.js:2"],
+            inspectorVersion: "0.4.0",
+            targetOpenClawVersion: "0.9.0",
+            scanSource: "nightly",
+            createdAt: 2,
+          },
+        ];
+      }
+      return null;
+    });
+    loaderDataMock = {
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+        },
+        owner: null,
+      },
+      version: {
+        package: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Initial release",
+          distTags: ["latest"],
+          files: [],
+          compatibility: null,
+          capabilities: null,
+          verification: null,
+          artifact: null,
+          sha256hash: null,
+          vtAnalysis: null,
+          llmAnalysis: null,
+          staticScan: null,
+        },
+      },
+      readme: null,
+      rateLimited: null,
+    };
+    window.location.hash = "#validation";
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("tab", { name: "Validation (1)" })).toBeTruthy();
+    expect(screen.queryByRole("link", { name: "2 warnings" })).toBeNull();
+    expect(
+      screen.getByText(
+        /Validation outputs are only visible to plugin owners and admins. Run locally using the CLI:/,
+      ),
+    ).toBeTruthy();
+    expect(screen.getByText("clawhub package validate <path-to-plugin>")).toBeTruthy();
+    expect(screen.getByText("legacy-before-agent-start")).toBeTruthy();
+    expect(screen.queryByText("missing-expected-seam")).toBeNull();
+    expect(screen.queryByText("registerTool is no longer available")).toBeNull();
+    expect(screen.queryByText("Inspector")).toBeNull();
+    expect(screen.queryByText("Scan")).toBeNull();
+    expect(screen.getByText("Fix")).toBeTruthy();
+    expect(
+      screen.getByText("Replace the legacy before_agent_start hook with current prompt hooks."),
+    ).toBeTruthy();
+    expect(
+      screen
+        .getByRole("link", {
+          name: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+        })
+        .getAttribute("href"),
+    ).toBe("https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start");
+    expect(screen.getByText("Docs")).toBeTruthy();
+    expect(screen.getAllByText("OpenClaw 0.9.0").length).toBeGreaterThan(0);
+  });
+
+  it("does not show validation outputs to signed-out viewers when the hash changes", async () => {
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "packages:getPackageInspectorValidationSummaryPublic") {
+        return {
+          findingCount: 1,
+          errorCount: 0,
+          warningCount: 1,
+          incompatibleAfterOpenClawVersion: null,
+        };
+      }
+      return null;
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    expect(screen.queryByText("legacy-before-agent-start")).toBeNull();
+
+    await act(async () => {
+      window.location.hash = "#validation";
+      window.dispatchEvent(new HashChangeEvent("hashchange"));
+    });
+
+    expect(screen.queryByText("legacy-before-agent-start")).toBeNull();
   });
 
   it("shows a retryable empty state when the detail lookup is rate limited", async () => {

@@ -248,12 +248,29 @@ function getFlaggedSkillSpectorPatternCategories(issues: SkillSpectorIssue[]) {
   );
 }
 
+const UTC_MONTH_LABELS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+] as const;
+
 function formatTime(value?: number | null) {
   if (!value) return "Not checked yet";
-  return new Intl.DateTimeFormat(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  }).format(new Date(value));
+  const date = new Date(value);
+  const hour = date.getUTCHours();
+  const hour12 = hour % 12 || 12;
+  const minute = date.getUTCMinutes().toString().padStart(2, "0");
+  const period = hour >= 12 ? "PM" : "AM";
+  return `${UTC_MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()} at ${hour12}:${minute} ${period} UTC`;
 }
 
 function extractDetailPathParts(detailPath: string) {

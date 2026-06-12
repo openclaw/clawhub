@@ -280,6 +280,7 @@ export const PackageListItemSchema = type({
     capabilityTags: "string[]?",
     executesCode: "boolean?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
+    stats: PackageStatsSchema.optional(),
 });
 export const ApiV1PackageListResponseSchema = type({
     items: PackageListItemSchema.array(),
@@ -531,19 +532,6 @@ export const ApiV1PackageModerationStatusResponseSchema = type({
         createdAt: "number",
     }).or("null"),
 });
-export const PackageArtifactBackfillRequestSchema = type({
-    cursor: "string|null?",
-    batchSize: "number?",
-    dryRun: "boolean?",
-});
-export const ApiV1PackageArtifactBackfillResponseSchema = type({
-    ok: "true",
-    scanned: "number",
-    updated: "number",
-    nextCursor: "string|null",
-    done: "boolean",
-    dryRun: "boolean",
-});
 export const PackageReadinessCheckSchema = type({
     id: "string",
     label: "string",
@@ -685,6 +673,22 @@ export const ApiV1PackagePublishResponseSchema = type({
     ok: "true",
     packageId: "string",
     releaseId: "string",
+    inspectorFindings: type({
+        findingKind: '"warning"|"error"',
+        code: "string",
+        severity: "string?",
+        level: "string?",
+        issueClass: "string?",
+        message: "string",
+        authorRemediation: type({
+            summary: "string",
+            docsUrl: "string?",
+        }).optional(),
+        inspectorVersion: "string?",
+        targetOpenClawVersion: "string?",
+    })
+        .array()
+        .optional(),
 });
 export const PackageTrustedPublisherUpsertRequestSchema = type({
     repository: "string",

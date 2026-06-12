@@ -9,6 +9,7 @@ import { Settings } from "./settings";
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
+const useActionMock = vi.fn();
 const useAuthActionsMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const { navigateMock, searchMock } = vi.hoisted(() => ({
@@ -19,6 +20,7 @@ const { navigateMock, searchMock } = vi.hoisted(() => ({
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
+  useAction: (...args: unknown[]) => useActionMock(...args),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -61,6 +63,20 @@ const orgMembership = {
     kind: "org",
     image: null,
     bio: "OpenClaw publisher",
+    official: true,
+  },
+  role: "owner",
+};
+
+const personalMembership = {
+  publisher: {
+    _id: "publisher_patrick",
+    handle: "patrick",
+    displayName: "Patrick",
+    kind: "user",
+    image: null,
+    bio: null,
+    official: false,
   },
   role: "owner",
 };
@@ -84,10 +100,50 @@ function mockSignedInSettings({
   search = {},
   memberships = [orgMembership],
   members = orgMembers,
+  githubSources = [],
 }: {
   search?: Record<string, unknown>;
-  memberships?: Array<typeof orgMembership>;
+  memberships?: Array<typeof orgMembership | typeof personalMembership>;
   members?: typeof orgMembers;
+  githubSources?: Array<{
+    _id: string;
+    repo: string;
+    ownerPublisher?: {
+      _id: string;
+      handle: string;
+      displayName: string;
+    } | null;
+    defaultBranch?: string;
+    lastSyncStatus?: "ok" | "failed" | "skipped";
+    lastSyncError?: string;
+    lastSyncErrorAt?: number;
+    displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
+    displayManifestFetchedAt?: number;
+    displayManifestCommit?: string;
+    lastSyncIssues?: Array<{
+      slug: string;
+      path: string;
+      displayName: string;
+      kind: "invalid_slug" | "slug_conflict";
+      severity: "error" | "warning";
+      message: string;
+      existingOwnerHandle?: string;
+    }>;
+    lastSyncInvalidSkills?: Array<{
+      slug: string;
+      path: string;
+      displayName: string;
+      error: string;
+    }>;
+    skills: Array<{
+      _id: string;
+      slug: string;
+      displayName: string;
+      githubPath?: string;
+      githubCurrentStatus?: "present" | "missing" | "unknown";
+    }>;
+    updatedAt: number;
+  }>;
 } = {}) {
   useAuthStatusMock.mockReturnValue({
     isAuthenticated: true,
@@ -96,11 +152,16 @@ function mockSignedInSettings({
   });
   searchMock.mockReturnValue(search);
   useQueryMock.mockImplementation((query, args) => {
+    const queryName = query ? getFunctionName(query) : "";
+    if (queryName === "users:me") return signedInUser;
     if (args === "skip") return undefined;
-    const name = getFunctionName(query);
-    if (name === "tokens:listMine") return [];
-    if (name === "publishers:listMine") return memberships;
-    if (name === "publishers:listMembers") return members;
+    if (queryName === "tokens:listMine") return [];
+    if (queryName === "publishers:listMine") return memberships;
+    if (queryName === "publishers:listMembers") return members;
+    if (queryName === "githubSkillSources:listForManageableOfficialPublishers")
+      return githubSources;
+    if (args && typeof args === "object" && "publisherHandle" in args) return members;
+    if (args && typeof args === "object") return [];
     return memberships;
   });
 }
@@ -110,12 +171,14 @@ describe("Settings", () => {
     window.history.replaceState(null, "", "/settings");
     useQueryMock.mockReset();
     useMutationMock.mockReset();
+    useActionMock.mockReset();
     useAuthActionsMock.mockReset();
     useAuthStatusMock.mockReset();
     navigateMock.mockReset();
     searchMock.mockReset();
     searchMock.mockReturnValue({});
     useMutationMock.mockReturnValue(vi.fn());
+    useActionMock.mockReturnValue(vi.fn());
     vi.mocked(toast.error).mockReset();
     vi.mocked(toast.success).mockReset();
     useAuthActionsMock.mockReturnValue({
@@ -195,6 +258,185 @@ describe("Settings", () => {
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
       publisherHandle: "openclaw",
     });
+  });
+
+  it("lets organization owners confirm org deletion", async () => {
+    const deleteOrg = vi.fn().mockResolvedValue({ deleted: true });
+    useMutationMock.mockReturnValue(deleteOrg);
+    mockSignedInSettings({ search: { view: "organizations" } });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
+
+    expect(await screen.findByText(/Permanently delete @openclaw/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Permanently delete organization" }));
+
+    await waitFor(() =>
+      expect(deleteOrg).toHaveBeenCalledWith({ publisherId: "publisher_openclaw" }),
+    );
+  });
+
+  it("lets official publisher owners configure a public GitHub sync source", async () => {
+    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
+    useActionMock.mockReturnValue(configureSource);
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership, orgMembership],
+    });
+
+    render(<Settings />);
+
+    expect(
+      screen.getByRole("button", { name: "GitHub Skill Sync" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(screen.getByRole("heading", { name: "Sync GitHub skills repo" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Synced repositories" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "No synced repositories" })).toBeTruthy();
+    expect(screen.getByLabelText("Publisher")).toBeTruthy();
+    expect(screen.getByPlaceholderText("https://github.com/owner/repo")).toBeTruthy();
+    expect(screen.queryByText(/Publishing as/i)).toBeNull();
+    expect(screen.queryByText(/skills\.sh\.json/i)).toBeNull();
+
+    fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
+      target: { value: "https://github.com/NVIDIA/skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenCalledWith({
+        ownerPublisherId: "publisher_openclaw",
+        repo: "NVIDIA/skills",
+      });
+    });
+    expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/GitHub source synced/i));
+  });
+
+  it("shows synced repos as separate cards and lets owners delete a source", async () => {
+    const deleteSource = vi.fn().mockResolvedValue({ ok: true, deletedSkills: 0 });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "githubSkillSources:deleteForPublisher"
+        ? deleteSource
+        : vi.fn(),
+    );
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [orgMembership],
+      githubSources: [
+        {
+          _id: "githubSkillSources:matt",
+          repo: "mattpocock/skills",
+          ownerPublisher: {
+            _id: "publisher_openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw Team",
+          },
+          defaultBranch: "main",
+          lastSyncStatus: "ok",
+          displayManifestStatus: "ok",
+          displayManifestFetchedAt: Date.now() - 4 * 60 * 1000,
+          displayManifestCommit: "aaf2453",
+          lastSyncIssues: [
+            {
+              slug: "too-long-skill-slug",
+              path: "skills/too-long-skill-slug",
+              displayName: "Too Long Skill Slug",
+              kind: "invalid_slug",
+              severity: "error",
+              message: "Slug must be at most 96 characters.",
+            },
+            {
+              slug: "rag-eval",
+              path: "skills/rag-eval",
+              displayName: "RAG Eval",
+              kind: "slug_conflict",
+              severity: "error",
+              message: "Slug already exists on ClawHub under @jonathanjing.",
+              existingOwnerHandle: "jonathanjing",
+            },
+          ],
+          skills: [
+            {
+              _id: "skills:agent-browser",
+              slug: "agent-browser",
+              displayName: "Agent Browser",
+              githubPath: "skills/agent-browser",
+              githubCurrentStatus: "present",
+            },
+          ],
+          updatedAt: new Date("2026-06-04T19:01:00Z").getTime(),
+        },
+      ],
+    });
+
+    render(<Settings />);
+
+    expect(screen.getByRole("heading", { name: "Synced repositories" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "mattpocock/skills" })).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Add a public repo URL. ClawHub syncs metadata and scan results every 15 minutes. Users install your skills directly from your GitHub repo.",
+      ),
+    ).toBeTruthy();
+    const repoLink = screen.getByRole("link", { name: "https://github.com/mattpocock/skills" });
+    expect(repoLink.getAttribute("href")).toBe("https://github.com/mattpocock/skills");
+    expect(screen.queryByText(/Updated 06\/04\/2026/i)).toBeNull();
+    expect(screen.getByText("Status")).toBeTruthy();
+    expect(screen.getByText("Healthy")).toBeTruthy();
+    expect(screen.queryByText("Last checked")).toBeNull();
+    expect(screen.getByText("Last synced")).toBeTruthy();
+    expect(screen.getByText("Current commit")).toBeTruthy();
+    expect(screen.getAllByText("aaf2453").length).toBeGreaterThan(0);
+    expect(screen.getByText("Synced skills")).toBeTruthy();
+    expect(screen.getByText("Agent Browser")).toBeTruthy();
+    expect(screen.getByText("skills/agent-browser")).toBeTruthy();
+    expect(screen.getByText("Sync issues")).toBeTruthy();
+    expect(screen.getByText("Too Long Skill Slug")).toBeTruthy();
+    expect(screen.getByText("skills/too-long-skill-slug")).toBeTruthy();
+    expect(screen.getByText("Slug must be at most 96 characters.")).toBeTruthy();
+    expect(screen.getByText("RAG Eval")).toBeTruthy();
+    expect(screen.getByText("skills/rag-eval")).toBeTruthy();
+    expect(screen.getByText("Slug conflict")).toBeTruthy();
+    expect(screen.getByText("Slug already exists on ClawHub under @jonathanjing.")).toBeTruthy();
+    expect(screen.queryByText("Ungrouped")).toBeNull();
+    expect(screen.queryByRole("heading", { name: "No synced repositories" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Delete synced repo & skills" })).toBeTruthy();
+    expect(screen.getByText(/This will delete the sync job for this repo/i)).toBeTruthy();
+    const deleteButton = screen.getByRole("button", { name: "Delete" });
+    expect(deleteButton.className).toMatch(/border-red/);
+
+    fireEvent.click(deleteButton);
+
+    expect(deleteSource).not.toHaveBeenCalled();
+    expect(screen.getByRole("heading", { name: "Delete mattpocock/skills" })).toBeTruthy();
+    expect(screen.getByText("Skills to delete")).toBeTruthy();
+    expect(screen.getAllByText("Agent Browser").length).toBeGreaterThan(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete synced repo & skills" }));
+
+    await waitFor(() => {
+      expect(deleteSource).toHaveBeenCalledWith({
+        ownerPublisherId: "publisher_openclaw",
+        sourceId: "githubSkillSources:matt",
+      });
+    });
+    expect(toast.success).toHaveBeenCalledWith("GitHub sync deleted (0 skills deleted)");
+  });
+
+  it("does not let non-official publishers access GitHub sync sources", () => {
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership],
+    });
+
+    render(<Settings />);
+
+    expect(screen.queryByRole("button", { name: "GitHub Skill Sync" })).toBeNull();
+    expect(
+      screen.getByRole("button", { name: "Account & Preferences" }).getAttribute("aria-current"),
+    ).toBe("true");
+    expect(screen.queryByRole("heading", { name: "GitHub Skill Sync" })).toBeNull();
+    expect(screen.queryByPlaceholderText("Enter a public repo")).toBeNull();
   });
 
   it("shows create organization mutation errors to the user", async () => {

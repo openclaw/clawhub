@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { Box, Loader2, Package, Plus, Settings } from "lucide-react";
+import { AlertTriangle, Box, Loader2, Package, Plus, Settings } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -17,7 +17,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "../components/ui/select";
-import { buildPluginDetailHref } from "../lib/pluginRoutes";
+import { buildPluginDetailHref, buildPluginValidationHref } from "../lib/pluginRoutes";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
 const emptyPluginPublishSearch = {
@@ -78,6 +78,7 @@ type DashboardPackage = {
   sourceRepo?: string | null;
   summary?: string | null;
   latestVersion?: string | null;
+  inspectorWarningCount?: number;
   updatedAt: number;
   stats: {
     downloads: number;
@@ -341,6 +342,7 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
 function PackageRow({ pkg }: { pkg: DashboardPackage }) {
   const status = packageArtifactStatus(pkg);
   const detailHref = buildPluginDetailHref(pkg.name);
+  const validationCount = pkg.inspectorWarningCount ?? 0;
   const titleId = `dashboard-package-title-${pkg._id}`;
   const stats = [
     { label: "Downloads", value: formatCompactNumber(pkg.stats.downloads ?? 0) },
@@ -356,6 +358,22 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
       icon={<Package className="h-5 w-5" />}
       status={status}
       stats={stats}
+      actions={
+        validationCount > 0 ? (
+          <div className="dashboard-row-action">
+            <Button asChild variant="ghost" size="sm">
+              <a
+                href={buildPluginValidationHref(pkg.name)}
+                aria-label={`View ${validationCount} validation findings for ${pkg.displayName}`}
+                title="Validation"
+              >
+                <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+                {validationCount}
+              </a>
+            </Button>
+          </div>
+        ) : null
+      }
     />
   );
 }

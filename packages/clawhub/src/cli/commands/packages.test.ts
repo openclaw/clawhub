@@ -19,6 +19,18 @@ const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
 const httpMocks = createHttpModuleMocks();
 const uiMocks = createUiModuleMocks();
+const inspectorMocks = {
+  pluginRoot: {
+    runCheck: vi.fn(),
+  },
+  reports: {
+    renderTextSummary: vi.fn((report: { status?: string }) => `Plugin Inspector: ${report.status}`),
+    sanitizeArtifact: vi.fn((report: unknown) => report),
+  },
+  ci: {
+    writeOutputs: vi.fn(),
+  },
+};
 const originalOidcRequestUrl = process.env.ACTIONS_ID_TOKEN_REQUEST_URL;
 const originalOidcRequestToken = process.env.ACTIONS_ID_TOKEN_REQUEST_TOKEN;
 
@@ -26,9 +38,11 @@ vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => uiMocks.moduleFactory());
+vi.mock("@openclaw/plugin-inspector", () => inspectorMocks);
 
 const {
   cmdDeletePackage,
+  cmdDeletePackageTrustedPublisher,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
@@ -39,21 +53,20 @@ const {
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdSetPackageTrustedPublisher,
   cmdTransferPackage,
   cmdUndeletePackage,
+  cmdValidatePackage,
   cmdVerifyPackage,
 } = await import("./packages");
 const {
-  cmdBackfillPackageArtifacts,
-  cmdDeletePackageTrustedPublisher,
   cmdListPackageMigrations,
   cmdListPackageReports,
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
-  cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdUpsertPackageMigration,
-} = await import("../../../../clawhub-mod/src/commands/packages");
+} = await import("../../../../clawhub-admin/src/commands/packages");
 const { parseClawPack } = await import("../../clawpack");
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
@@ -214,6 +227,271 @@ afterEach(() => {
 });
 
 describe("package commands", () => {
+  it("validates a local plugin package with bundled Plugin Inspector offline", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "package.json"), '{"name":"demo-plugin","version":"1.0.0"}\n');
+
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report: { status: "pass", summary: { breakageCount: 0 } },
+        paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
+      });
+
+      await cmdValidatePackage(makeOpts(workdir), "demo-plugin", {});
+
+      expect(inspectorMocks.pluginRoot.runCheck).toHaveBeenCalledWith(
+        expect.objectContaining({
+          allowExecution: false,
+          capture: false,
+          configPath: expect.stringContaining("plugin-inspector.config.json"),
+          mockSdk: true,
+          openclawPath: false,
+          outDir: "reports",
+          pluginRoot: folder,
+          authorFacing: true,
+        }),
+      );
+      expect(inspectorMocks.ci.writeOutputs).toHaveBeenCalledWith(
+        { status: "pass", summary: { breakageCount: 0 } },
+        { cwd: join(folder, "reports"), outDir: "." },
+      );
+      const output = mockLog.mock.calls.join("\n");
+      expect(output).toContain("Plugin Inspector: PASS");
+      expect(output).toContain("Findings: none");
+      expect(output).toContain("Reports written:");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails package validation when Plugin Inspector reports hard breakages", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "broken-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "package.json"), '{"name":"broken-plugin","version":"1.0.0"}\n');
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report: { status: "fail", summary: { breakageCount: 1 } },
+        paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
+      });
+
+      await expect(cmdValidatePackage(makeOpts(workdir), "broken-plugin", {})).rejects.toThrow(
+        "Plugin Inspector found 1 hard error",
+      );
+
+      expect(mockLog.mock.calls.join("\n")).toContain("Plugin Inspector: FAIL");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails package validation for legacy author-facing hard breakages without remediation metadata", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "legacy-broken-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        '{"name":"legacy-broken-plugin","version":"1.0.0"}\n',
+      );
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report: {
+          status: "fail",
+          summary: { breakageCount: 1, warningCount: 0, issueCount: 1 },
+          issues: [
+            {
+              code: "package-entrypoint-missing",
+              level: "breakage",
+              message: "declared OpenClaw entrypoint does not exist",
+            },
+            {
+              code: "runtime-tool-capture",
+              level: "warning",
+              message: "internal capture coverage gap",
+            },
+          ],
+        },
+        paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
+      });
+
+      await expect(
+        cmdValidatePackage(makeOpts(workdir), "legacy-broken-plugin", {}),
+      ).rejects.toThrow("Plugin Inspector found 1 hard error");
+
+      const output = mockLog.mock.calls.join("\n");
+      expect(output).toContain("Plugin Inspector: FAIL");
+      expect(output).toContain("ERROR package-entrypoint-missing");
+      expect(output).toContain("Fix: Publish the entrypoint declared in OpenClaw package metadata");
+      expect(output).not.toContain("runtime-tool-capture");
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("prints author-facing package validation findings before report paths by default", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "warning-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        '{"name":"warning-plugin","version":"1.0.0"}\n',
+      );
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report: {
+          status: "pass",
+          summary: {
+            breakageCount: 0,
+            warningCount: 2,
+            issueCount: 2,
+          },
+          issues: [
+            {
+              code: "legacy-hook",
+              level: "warning",
+              issueClass: "deprecation-warning",
+              severity: "P2",
+              title: "legacy hook is deprecated",
+              evidence: ["src/index.ts:4", { hook: "before_agent_start" }],
+              authorRemediation: {
+                summary: "Move the hook to before_prompt_build.",
+                docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+              },
+            },
+            {
+              code: "runtime-tool-capture",
+              level: "warning",
+              message: "internal capture coverage gap",
+            },
+          ],
+        },
+        paths: {
+          jsonPath: join(folder, "reports", "plugin-inspector-report.json"),
+          markdownPath: join(folder, "reports", "plugin-inspector-report.md"),
+          issuesPath: join(folder, "reports", "plugin-inspector-issues.md"),
+        },
+      });
+
+      await cmdValidatePackage(makeOpts(workdir), "warning-plugin", {});
+
+      const output = mockLog.mock.calls.join("\n");
+      expect(output).toContain("Plugin Inspector: PASS");
+      expect(output).toContain("Breakages: 0");
+      expect(output).toContain("Warnings: 1");
+      expect(output).toContain("Findings:");
+      expect(output).toContain(
+        "WARNING legacy-hook (deprecation-warning) P2: legacy hook is deprecated",
+      );
+      expect(output).toContain("Fix: Move the hook to before_prompt_build.");
+      expect(output).toContain(
+        "Docs: https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+      );
+      expect(output).toContain("Evidence:");
+      expect(output).toContain("- src/index.ts:4");
+      expect(output).not.toContain("runtime-tool-capture");
+      expect(output).not.toContain("undefined");
+      expect(output.trim()).toMatch(
+        /Reports written: json=.*plugin-inspector-report\.json, markdown=.*plugin-inspector-report\.md, issues=.*plugin-inspector-issues\.md$/,
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("prints package validation JSON from the sanitized Plugin Inspector report", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "warning-plugin");
+      await mkdir(folder, { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        '{"name":"warning-plugin","version":"1.0.0"}\n',
+      );
+      const report = {
+        status: "pass",
+        summary: {
+          breakageCount: 0,
+          warningCount: 3,
+          issueCount: 3,
+          inspectorGapCount: 1,
+        },
+        issues: [
+          {
+            code: "legacy-hook",
+            level: "warning",
+            message: "legacy hook is deprecated",
+            authorRemediation: {
+              summary: "Move the hook to before_prompt_build.",
+              docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+            },
+          },
+          {
+            code: "runtime-tool-capture",
+            level: "warning",
+            message: "runtime tools need capture before contract judgment",
+          },
+          {
+            code: "package-plugin-api-compat-missing",
+            level: "warning",
+            message: "package.json is missing openclaw.compat.pluginApi",
+          },
+        ],
+      };
+      inspectorMocks.pluginRoot.runCheck.mockResolvedValueOnce({
+        report,
+        paths: { jsonPath: join(folder, "reports", "plugin-inspector-report.json") },
+      });
+
+      await cmdValidatePackage(makeOpts(workdir), "warning-plugin", { json: true });
+
+      const stdoutReport = JSON.parse(String(mockWrite.mock.calls[0]?.[0]));
+      expect(stdoutReport).toEqual({
+        status: "pass",
+        summary: {
+          breakageCount: 0,
+          warningCount: 2,
+          deprecationWarningCount: 0,
+          issueCount: 2,
+        },
+        issues: [
+          {
+            code: "legacy-hook",
+            level: "warning",
+            message: "legacy hook is deprecated",
+            authorRemediation: {
+              summary: "Move the hook to before_prompt_build.",
+              docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+            },
+          },
+          {
+            code: "package-plugin-api-compat-missing",
+            level: "warning",
+            message: "package.json is missing openclaw.compat.pluginApi",
+            authorRemediation: {
+              summary: "Declare the OpenClaw plugin API range this package supports.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-plugin-api-compat-missing",
+            },
+          },
+        ],
+      });
+      expect(mockWrite.mock.calls.join("\n")).not.toContain("runtime-tool-capture");
+      expect(mockWrite.mock.calls.join("\n")).not.toContain("inspectorGapCount");
+      const artifactReport = await readFile(
+        join(folder, "reports", "plugin-inspector-report.json"),
+        "utf8",
+      );
+      expect(artifactReport).toContain("package-plugin-api-compat-missing");
+      expect(artifactReport).not.toContain("runtime-tool-capture");
+      expect(artifactReport).not.toContain("inspectorGapCount");
+      expect(mockLog).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("searches package catalog via /api/v1/packages/search", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       results: [
@@ -745,71 +1023,6 @@ describe("package commands", () => {
     expect(mockLog).toHaveBeenCalledWith("Next cursor: cursor-1");
   });
 
-  it("dry-runs package artifact metadata backfill by default", async () => {
-    httpMocks.apiRequest.mockResolvedValueOnce({
-      ok: true,
-      scanned: 20,
-      updated: 3,
-      nextCursor: "cursor-1",
-      done: false,
-      dryRun: true,
-    });
-
-    await cmdBackfillPackageArtifacts(makeOpts(), { batchSize: 20 });
-
-    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
-      "https://clawhub.ai",
-      {
-        method: "POST",
-        path: "/api/v1/packages/backfill/artifacts",
-        token: "tkn",
-        body: {
-          cursor: null,
-          batchSize: 20,
-          dryRun: true,
-        },
-      },
-      expect.anything(),
-    );
-    expect(mockLog).toHaveBeenCalledWith(
-      "Dry run package artifact backfill: scanned 20, would update 3.",
-    );
-    expect(mockLog).toHaveBeenCalledWith("Next cursor: cursor-1");
-  });
-
-  it("can apply package artifact backfill across all pages", async () => {
-    httpMocks.apiRequest
-      .mockResolvedValueOnce({
-        ok: true,
-        scanned: 100,
-        updated: 8,
-        nextCursor: "cursor-2",
-        done: false,
-        dryRun: false,
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        scanned: 5,
-        updated: 1,
-        nextCursor: null,
-        done: true,
-        dryRun: false,
-      });
-
-    await cmdBackfillPackageArtifacts(makeOpts(), { apply: true, all: true, batchSize: 100 });
-
-    expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
-    expect(httpMocks.apiRequest.mock.calls[0]?.[1]).toMatchObject({
-      body: { cursor: null, batchSize: 100, dryRun: false },
-    });
-    expect(httpMocks.apiRequest.mock.calls[1]?.[1]).toMatchObject({
-      body: { cursor: "cursor-2", batchSize: 100, dryRun: false },
-    });
-    expect(mockLog).toHaveBeenCalledWith(
-      "Applied package artifact backfill: scanned 105, updated 9.",
-    );
-  });
-
   it("prints package readiness checks", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       package: {
@@ -1014,8 +1227,7 @@ describe("package commands", () => {
         sourceRepo: "openclaw/demo-plugin",
         sourceCommit: "abc123",
         sourceRef: "refs/tags/v1.0.0",
-        clawscanNote: "This plugin shells out only to the bundled helper binary.",
-      } as Parameters<typeof cmdPublishPackage>[2] & { clawscanNote?: string };
+      } as Parameters<typeof cmdPublishPackage>[2];
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", options);
 
@@ -2175,6 +2387,110 @@ describe("package commands", () => {
     }
   });
 
+  it("fails CLI publish on server Plugin Inspector hard errors", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "broken-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "broken-plugin",
+          displayName: "Broken Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "broken.plugin" }),
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      httpMocks.apiRequestForm.mockRejectedValueOnce(
+        new Error(
+          "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+        ),
+      );
+
+      await expect(
+        cmdPublishPackage(makeOpts(workdir), "broken-plugin", {
+          sourceRepo: "openclaw/broken-plugin",
+          sourceCommit: "deadbeef",
+        }),
+      ).rejects.toThrow("Plugin Inspector blocked publish");
+
+      expect(uiMocks.spinner.fail).toHaveBeenCalledWith(
+        "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+      );
+      expect(uiMocks.spinner.succeed).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("prints Plugin Inspector warnings for successful CLI publishes", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "warning-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "warning-plugin",
+          displayName: "Warning Plugin",
+          version: "1.0.0",
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "warning.plugin" }),
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+        inspectorFindings: [
+          {
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            message: "legacy before_agent_start hook is deprecated",
+            authorRemediation: {
+              summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+            },
+          },
+        ],
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "warning-plugin", {
+        sourceRepo: "openclaw/warning-plugin",
+        sourceCommit: "abc123",
+      });
+
+      expect(uiMocks.spinner.succeed).toHaveBeenCalledWith(
+        "OK. Published warning-plugin@1.0.0 (rel_1)",
+      );
+      expect(mockLog).toHaveBeenCalledWith("Plugin Inspector findings: 1 warning");
+      expect(mockLog).toHaveBeenCalledWith(
+        "- WARNING legacy-before-agent-start (deprecation-warning): legacy before_agent_start hook is deprecated",
+      );
+      expect(mockLog).toHaveBeenCalledWith(
+        "  Fix: Replace the legacy before_agent_start hook with current prompt hooks.",
+      );
+      expect(mockLog).toHaveBeenCalledWith(
+        "  Docs: https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+      );
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("auto-detects local git source metadata and matches the explicit payload", async () => {
     const workdir = await makeTmpWorkdir();
     const dateSpy = vi.spyOn(Date, "now").mockReturnValue(987_654_321);
@@ -2621,6 +2937,23 @@ describe("package commands", () => {
     expect(mockLog).not.toHaveBeenCalledWith(expect.stringContaining("Environment:"));
   });
 
+  it("owns trusted publisher set and delete commands in the public package CLI", async () => {
+    const testSource = await readFile(new URL("./packages.test.ts", import.meta.url), "utf8");
+    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
+    const modImportPrefix = testSource.split(
+      '} = await import("../../../../clawhub-mod/src/commands/packages");',
+    )[0];
+    const modImportBlock = modImportPrefix ? (modImportPrefix.split("const {").at(-1) ?? "") : "";
+
+    expect(modImportBlock).not.toEqual("");
+    expect(modImportBlock).not.toContain("cmdSetPackageTrustedPublisher");
+    expect(modImportBlock).not.toContain("cmdDeletePackageTrustedPublisher");
+    expect(cliSource).toContain('["package", "trusted-publisher", "set"]');
+    expect(cliSource).toContain('["package", "trusted-publisher", "delete"]');
+    expect(cliSource).toContain("cmdSetPackageTrustedPublisher(opts, name, options)");
+    expect(cliSource).toContain("cmdDeletePackageTrustedPublisher(opts, name, options)");
+  });
+
   it("sets trusted publisher config for a package", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       trustedPublisher: {
@@ -2655,6 +2988,11 @@ describe("package commands", () => {
       }),
       expect.anything(),
     );
+    expect(mockLog).toHaveBeenCalledWith("Trusted publisher saved for @openclaw/zalo.");
+    expect(mockLog).toHaveBeenCalledWith("Provider: github-actions");
+    expect(mockLog).toHaveBeenCalledWith("Repository: openclaw/openclaw");
+    expect(mockLog).toHaveBeenCalledWith("Workflow: plugin-clawhub-release.yml");
+    expect(mockLog).toHaveBeenCalledWith("Environment: clawhub-release");
   });
 
   it("sets trusted publisher config for a package without environment", async () => {
@@ -2703,8 +3041,9 @@ describe("package commands", () => {
         path: "/api/v1/packages/%40openclaw%2Fzalo/trusted-publisher",
         token: "tkn",
       }),
-      undefined,
+      expect.anything(),
     );
+    expect(mockLog).toHaveBeenCalledWith("Trusted publisher deleted for @openclaw/zalo.");
   });
 
   it("soft-deletes a package with confirmation bypass", async () => {

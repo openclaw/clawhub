@@ -322,10 +322,10 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText(/Confidence/i)).toBeNull();
   });
 
-  it("shows the ClawScan verdict without a rolled-up risk level in the scan panel", () => {
+  it("shows suspicious ClawScan verdicts as review without a rolled-up risk level", () => {
     render(<SecurityScanResults llmAnalysis={clawScanAnalysis} />);
 
-    expect(screen.getByText("Warn")).toBeTruthy();
+    expect(screen.getByText("Review")).toBeTruthy();
     expect(screen.queryByText("High")).toBeNull();
     expect(screen.queryByText(/high confidence/i)).toBeNull();
     expect(screen.queryByText(/Suspicious/i)).toBeNull();
@@ -465,7 +465,7 @@ describe("SecurityScanResults static guidance", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Todo Guard" })).toBeTruthy();
-    expect(screen.getAllByText("Warn").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Review").length).toBeGreaterThan(0);
     expect(screen.queryByText("Risk")).toBeNull();
     expect(screen.queryByText("ClawScan risk")).toBeNull();
     expect(
@@ -816,6 +816,26 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("link", { name: /View on VirusTotal/i }).getAttribute("href")).toBe(
       "https://www.virustotal.com/gui/file/seeded-plugin-hash",
     );
+  });
+
+  it("renders latest audit timestamps deterministically for hydration", () => {
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "skill",
+          title: "Hydration Guard",
+          name: "hydration-guard",
+          version: "1.0.0",
+          detailPath: "/local/hydration-guard",
+        }}
+        llmAnalysis={{
+          ...clawScanAnalysis,
+          checkedAt: Date.UTC(2024, 0, 2, 3, 4),
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Jan 2, 2024 at 3:04 AM UTC")).toBeTruthy();
   });
 
   it("shows VirusTotal reports in the shared scanner report shell", () => {

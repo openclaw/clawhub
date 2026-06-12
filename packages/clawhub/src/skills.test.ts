@@ -7,6 +7,7 @@ import { describe, expect, it } from "vitest";
 import type { SkillOrigin } from "./skills";
 import {
   buildSkillFingerprint,
+  extractGitHubZipPathToDir,
   extractZipToDir,
   hashSkillFiles,
   hashSkillZip,
@@ -33,6 +34,40 @@ describe("skills", () => {
 
     expect((await readFile(join(dir, "SKILL.md"), "utf8")).trim()).toBe("hello");
     await expect(stat(join(parent, evilName))).rejects.toBeTruthy();
+  });
+
+  it("extracts only the resolved GitHub skill folder from a repo zip", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "clawhub-github-zip-"));
+    const dir = join(parent, "skill");
+    const zip = zipSync({
+      "skills-main/README.md": strToU8("repo readme"),
+      "skills-main/skills/aiq-deploy/SKILL.md": strToU8("# AIQ Deploy"),
+      "skills-main/skills/aiq-deploy/references/install.md": strToU8("install"),
+      "skills-main/skills/other/SKILL.md": strToU8("# Other"),
+    });
+
+    await extractGitHubZipPathToDir(new Uint8Array(zip), dir, "skills/aiq-deploy");
+
+    expect((await readFile(join(dir, "SKILL.md"), "utf8")).trim()).toBe("# AIQ Deploy");
+    expect((await readFile(join(dir, "references/install.md"), "utf8")).trim()).toBe("install");
+    await expect(stat(join(dir, "README.md"))).rejects.toBeTruthy();
+    await expect(stat(join(dir, "skills/other/SKILL.md"))).rejects.toBeTruthy();
+  });
+
+  it("preserves GitHub skill filenames containing dot-dot text", async () => {
+    const parent = await mkdtemp(join(tmpdir(), "clawhub-github-zip-"));
+    const dir = join(parent, "skill");
+    const zip = zipSync({
+      "skills-main/skills/aiq-deploy/SKILL.md": strToU8("# AIQ Deploy"),
+      "skills-main/skills/aiq-deploy/payload..sh": strToU8("echo safe"),
+      "skills-main/skills/aiq-deploy/../payload.sh": strToU8("echo unsafe"),
+    });
+
+    await extractGitHubZipPathToDir(new Uint8Array(zip), dir, "skills/aiq-deploy");
+
+    expect((await readFile(join(dir, "payload..sh"), "utf8")).trim()).toBe("echo safe");
+    await expect(stat(join(parent, "payload.sh"))).rejects.toBeTruthy();
+    await expect(stat(join(dir, "payload.sh"))).rejects.toBeTruthy();
   });
 
   it("writes and reads lockfile", async () => {

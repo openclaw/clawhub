@@ -1,4 +1,4 @@
-const RESERVED_PUBLIC_OWNER_HANDLES = new Set(["plugins", "skills"]);
+const RESERVED_PUBLIC_OWNER_HANDLES = new Set(["admin", "clawhub", "docs", "plugins", "skills"]);
 const RESERVED_UNSCOPED_PACKAGE_NAMES = new Set(["publish"]);
 
 export function isReservedPublicOwnerHandle(handle: string | undefined | null) {

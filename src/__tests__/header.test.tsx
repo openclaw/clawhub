@@ -12,7 +12,6 @@ type HeaderAuthStatus = {
   me: Record<string, unknown> | null;
 };
 
-const siteModeMock = vi.fn(() => "souls");
 const navigateMock = vi.fn();
 const { signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
   signInMock: vi.fn(),
@@ -113,21 +112,12 @@ vi.mock("../lib/theme-transition", () => ({
 }));
 
 vi.mock("../lib/useAuthError", () => ({
+  clearAuthError: vi.fn(),
   setAuthError: vi.fn(),
-  useAuthError: () => ({
-    error: null,
-    clear: vi.fn(),
-  }),
-}));
-
-vi.mock("../lib/roles", () => ({
-  isModerator: () => false,
 }));
 
 vi.mock("../lib/site", () => ({
-  getClawHubSiteUrl: () => "https://clawhub.ai",
-  getSiteMode: () => siteModeMock(),
-  getSiteName: () => "OnlyCrabs",
+  SITE_NAME: "ClawHub",
 }));
 
 vi.mock("../lib/gravatar", () => ({
@@ -203,22 +193,12 @@ describe("Header", () => {
       isLoading: false,
       me: null,
     });
-    siteModeMock.mockReturnValue("souls");
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
     signInMock.mockReset();
     signInMock.mockResolvedValue({ signingIn: true });
   });
 
-  it("hides Packages navigation in soul mode on mobile and desktop", () => {
-    siteModeMock.mockReturnValue("souls");
-
-    render(<Header />);
-
-    expect(screen.queryByText("Packages")).toBeNull();
-  });
-
   it("renders restored desktop nav rows and segmented theme controls", () => {
-    siteModeMock.mockReturnValue("skills");
     setModeMock.mockClear();
 
     render(<Header />);
@@ -239,6 +219,8 @@ describe("Header", () => {
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
     expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
+    expect(document.querySelector(".navbar-tabs")?.textContent).toContain("Publishers");
+    expect(document.querySelector(".navbar-tabs-secondary")?.textContent).toBe("Docs");
 
     fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
     expect(setModeMock).toHaveBeenCalledWith("light");
@@ -254,8 +236,6 @@ describe("Header", () => {
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {
-    siteModeMock.mockReturnValue("skills");
-
     render(<Header />);
 
     const signInButton = screen.getByRole("button", { name: "Sign in with GitHub" });
@@ -269,7 +249,6 @@ describe("Header", () => {
 
   it("shows an auth error when the GitHub sign-in request does not start", async () => {
     const { setAuthError } = await import("../lib/useAuthError");
-    siteModeMock.mockReturnValue("skills");
     signInMock.mockResolvedValue({ signingIn: false });
 
     render(<Header />);
@@ -284,7 +263,6 @@ describe("Header", () => {
 
   it("does not show an auth error when GitHub sign-in starts a redirect", async () => {
     const { setAuthError } = await import("../lib/useAuthError");
-    siteModeMock.mockReturnValue("skills");
     signInMock.mockResolvedValue({
       signingIn: false,
       redirect: new URL("https://github.com/login/oauth/authorize"),
@@ -326,8 +304,22 @@ describe("Header", () => {
     expect(css).not.toContain(".navbar-inner,\n  .section.detail-page-section");
   });
 
+  it("routes plain search-form submits to the search page", () => {
+    navigateMock.mockReset();
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.submit(screen.getByRole("search", { name: "Site search" }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "weather", type: undefined },
+    });
+  });
+
   it("shows grouped skills and plugins typeahead without users", () => {
-    siteModeMock.mockReturnValue("skills");
     navigateMock.mockReset();
 
     render(<Header />);
@@ -361,7 +353,6 @@ describe("Header", () => {
   });
 
   it("falls back to typed skill search when a typeahead skill has no owner handle", () => {
-    siteModeMock.mockReturnValue("skills");
     navigateMock.mockReset();
     useUnifiedSearchMock.mockReturnValue({
       ...defaultUnifiedSearchResult,
@@ -399,7 +390,6 @@ describe("Header", () => {
   });
 
   it("shows a single no-results state without section footers", () => {
-    siteModeMock.mockReturnValue("skills");
     useUnifiedSearchMock.mockReturnValue({
       results: [],
       skillResults: [],
@@ -426,8 +416,6 @@ describe("Header", () => {
   });
 
   it("shows Home above Skills in the mobile menu", () => {
-    siteModeMock.mockReturnValue("skills");
-
     render(<Header />);
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
@@ -438,12 +426,11 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
-    expect(labels.slice(3, 5)).toEqual(["Publishers", "Docs"]);
+    expect(labels.slice(0, 4)).toEqual(["Home", "Skills", "Plugins", "Publishers"]);
+    expect(labels[4]).toBe("Docs");
   });
 
   it("links starred skills from the signed-in avatar menu", () => {
-    siteModeMock.mockReturnValue("skills");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -461,28 +448,5 @@ describe("Header", () => {
     expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
-  });
-
-  it("routes soul-mode header searches to the souls browse page", () => {
-    siteModeMock.mockReturnValue("souls");
-    navigateMock.mockReset();
-
-    render(<Header />);
-
-    fireEvent.change(screen.getByPlaceholderText("Search souls..."), {
-      target: { value: "angler" },
-    });
-    fireEvent.submit(screen.getByRole("search", { name: "Site search" }));
-
-    expect(navigateMock).toHaveBeenCalledWith({
-      to: "/souls",
-      search: {
-        q: "angler",
-        sort: undefined,
-        dir: undefined,
-        view: undefined,
-        focus: undefined,
-      },
-    });
   });
 });

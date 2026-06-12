@@ -237,65 +237,15 @@ export function toOptionalNumber(value: string | null) {
   return Number.isFinite(parsed) ? parsed : undefined;
 }
 
-/**
- * Batch resolve soul version tags to version strings.
- * Collects all version IDs, fetches them in a single query, then maps back.
- * Reduces N sequential queries to 1 batch query.
- */
-export async function resolveSoulTagsBatch(
-  ctx: ActionCtx,
-  tagsList: Array<Record<string, Id<"soulVersions">>>,
-  latestVersions?: Array<LatestVersionTag<"soulVersions">>,
-): Promise<Array<Record<string, string>>> {
-  return resolveVersionTagsBatch(
-    ctx,
-    tagsList,
-    internal.souls.getVersionsByIdsInternal,
-    latestVersions,
-  );
-}
-
-export async function resolveTagsBatch(
-  ctx: ActionCtx,
-  tagsList: Array<Record<string, Id<"skillVersions">>>,
-  latestVersions?: Array<LatestVersionTag<"skillVersions">>,
-  skillIds?: Array<Id<"skills"> | undefined>,
-): Promise<Array<Record<string, string>>> {
-  return resolveVersionTagsBatch(
-    ctx,
-    tagsList,
-    internal.skills.getVersionsByIdsInternal,
-    latestVersions,
-    skillIds,
-  );
-}
-
-type LatestVersionTag<TTable extends "skillVersions" | "soulVersions"> =
+type LatestVersionTag =
   | {
-      _id: Id<TTable>;
+      _id: Id<"skillVersions">;
       version?: string;
       softDeletedAt?: unknown;
       skillId?: Id<"skills">;
-      soulId?: Id<"souls">;
     }
   | null
   | undefined;
-
-type TagResourceId = Id<"skills"> | Id<"souls">;
-
-function versionBelongsToResource(
-  version:
-    | {
-        skillId?: Id<"skills">;
-        soulId?: Id<"souls">;
-      }
-    | null
-    | undefined,
-  resourceId: TagResourceId | undefined,
-) {
-  if (!resourceId) return true;
-  return version?.skillId === resourceId || version?.soulId === resourceId;
-}
 
 /**
  * Batch resolve version tags to version strings.
@@ -305,24 +255,23 @@ function versionBelongsToResource(
  * - Uses `internal.*` queries to avoid expanding the public Convex API surface.
  * - Sorts ids for stable query args (helps caching/log diffs).
  */
-export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "soulVersions">(
+export async function resolveTagsBatch(
   ctx: ActionCtx,
-  tagsList: Array<Record<string, Id<TTable>>>,
-  getVersionsByIdsQuery: unknown,
-  latestVersions?: Array<LatestVersionTag<TTable>>,
-  resourceIds?: Array<TagResourceId | undefined>,
+  tagsList: Array<Record<string, Id<"skillVersions">>>,
+  latestVersions: Array<LatestVersionTag>,
+  skillIds: Array<Id<"skills">>,
 ): Promise<Array<Record<string, string>>> {
-  const allVersionIds = new Set<Id<TTable>>();
+  const allVersionIds = new Set<Id<"skillVersions">>();
   const preResolvedTags = tagsList.map((tags, idx) => {
     const resolved: Record<string, string> = {};
-    const latest = latestVersions?.[idx];
-    const resourceId = resourceIds?.[idx];
+    const latest = latestVersions[idx];
+    const skillId = skillIds[idx];
     for (const [tag, versionId] of Object.entries(tags)) {
       if (
         latest?._id === versionId &&
         latest.version &&
         !latest.softDeletedAt &&
-        versionBelongsToResource(latest, resourceId)
+        latest.skillId === skillId
       ) {
         resolved[tag] = latest.version;
       } else {
@@ -336,36 +285,28 @@ export async function resolveVersionTagsBatch<TTable extends "skillVersions" | "
     return preResolvedTags;
   }
 
-  const versionIds = [...allVersionIds].sort() as Array<Id<TTable>>;
+  const versionIds = [...allVersionIds].sort();
   const versions =
-    ((await ctx.runQuery(getVersionsByIdsQuery as never, { versionIds } as never)) as Array<{
-      _id: Id<TTable>;
-      version: string;
-      softDeletedAt?: unknown;
-      skillId?: Id<"skills">;
-      soulId?: Id<"souls">;
-    }> | null) ?? [];
+    (await ctx.runQuery(internal.skills.getVersionsByIdsInternal, { versionIds })) ?? [];
 
   const versionMap = new Map<
-    Id<TTable>,
+    Id<"skillVersions">,
     {
       version: string;
       skillId?: Id<"skills">;
-      soulId?: Id<"souls">;
     }
   >();
   for (const v of versions) {
-    if (!v?.softDeletedAt)
-      versionMap.set(v._id, { version: v.version, skillId: v.skillId, soulId: v.soulId });
+    if (!v?.softDeletedAt) versionMap.set(v._id, { version: v.version, skillId: v.skillId });
   }
 
   return tagsList.map((tags, idx) => {
     const resolved = { ...preResolvedTags[idx] };
-    const resourceId = resourceIds?.[idx];
+    const skillId = skillIds[idx];
     for (const [tag, versionId] of Object.entries(tags)) {
       if (resolved[tag]) continue;
       const version = versionMap.get(versionId);
-      if (version && versionBelongsToResource(version, resourceId)) resolved[tag] = version.version;
+      if (version?.skillId === skillId) resolved[tag] = version.version;
     }
     return resolved;
   });
@@ -572,7 +513,7 @@ const SOFT_DELETE_BAD_REQUEST_HINTS = [
 ] as const;
 
 export function softDeleteErrorToResponse(
-  entity: "skill" | "soul" | "package",
+  entity: "skill" | "package",
   error: unknown,
   headers: HeadersInit,
 ) {

@@ -4,12 +4,6 @@ export type SkillStatsTriplet = {
   installsAllTime?: number | null;
 };
 
-export type SoulStatsTriplet = {
-  stars: number;
-  downloads: number;
-  versions: number;
-};
-
 const THOUSAND = 1_000;
 const MILLION = 1_000_000;
 
@@ -38,14 +32,6 @@ export function formatSkillStatsTriplet(stats: SkillStatsTriplet) {
     stars: formatCompactStat(stats.stars),
     downloads: formatCompactStat(stats.downloads),
     installsAllTime: formatCompactStat(stats.installsAllTime ?? 0),
-  };
-}
-
-export function formatSoulStatsTriplet(stats: SoulStatsTriplet) {
-  return {
-    stars: formatCompactStat(stats.stars),
-    downloads: formatCompactStat(stats.downloads),
-    versions: stats.versions,
   };
 }
 

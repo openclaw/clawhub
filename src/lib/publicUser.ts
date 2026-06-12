@@ -49,6 +49,24 @@ export type PublicPublisherCatalogItem = {
   stars: number;
   isOfficial: boolean;
   updatedAt: number;
+  sourceBacked?: boolean;
+  sourceRepo?: string | null;
+  sourcePath?: string | null;
+  sourceVerifiedCommit?: string | null;
+};
+
+type PublicPublisherCatalogSection = {
+  key: string;
+  title: string;
+  description: string | null;
+  sourceRepo: string | null;
+  items: PublicPublisherCatalogItem[];
+};
+
+export type PublicPublisherCatalogDisplay = {
+  mode: "grouped";
+  sourceRepos: string[];
+  sections: PublicPublisherCatalogSection[];
 };
 
 export type PublicSkill = Pick<
@@ -64,6 +82,12 @@ export type PublicSkill = Pick<
   | "canonicalSkillId"
   | "forkOf"
   | "latestVersionId"
+  | "installKind"
+  | "githubPath"
+  | "githubCurrentCommit"
+  | "githubCurrentStatus"
+  | "githubScanStatus"
+  | "githubHasSkillCard"
   | "tags"
   | "capabilityTags"
   | "badges"
@@ -71,20 +95,6 @@ export type PublicSkill = Pick<
   | "isSuspicious"
   | "createdAt"
   | "updatedAt"
->;
-
-export type PublicSoul = Pick<
-  Doc<"souls">,
-  | "_id"
-  | "_creationTime"
-  | "slug"
-  | "displayName"
-  | "summary"
-  | "ownerUserId"
-  | "ownerPublisherId"
-  | "latestVersionId"
-  | "tags"
-  | "stats"
-  | "createdAt"
-  | "updatedAt"
->;
+> & {
+  githubSourceRepo?: string;
+};

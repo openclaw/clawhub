@@ -6,7 +6,7 @@ export declare const LegacyApiRoutes: {
     readonly cliWhoami: "/api/cli/whoami";
     readonly cliUploadUrl: "/api/cli/upload-url";
     readonly cliPublish: "/api/cli/publish";
-    readonly cliTelemetrySync: "/api/cli/telemetry/sync";
+    readonly cliTelemetryInstall: "/api/cli/telemetry/install";
     readonly cliSkillDelete: "/api/cli/skill/delete";
     readonly cliSkillUndelete: "/api/cli/skill/undelete";
 };
@@ -18,13 +18,13 @@ export declare const ApiRoutes: {
     readonly skills: "/api/v1/skills";
     readonly skillScans: "/api/v1/skills/-/scan";
     readonly plugins: "/api/v1/plugins";
+    readonly pluginsExport: "/api/v1/plugins/export";
     readonly packages: "/api/v1/packages";
     readonly codePlugins: "/api/v1/code-plugins";
     readonly bundlePlugins: "/api/v1/bundle-plugins";
     readonly stars: "/api/v1/stars";
     readonly transfers: "/api/v1/transfers";
     readonly publishers: "/api/v1/publishers";
-    readonly souls: "/api/v1/souls";
     readonly users: "/api/v1/users";
     readonly whoami: "/api/v1/whoami";
     readonly skillsExport: "/api/v1/skills/export";

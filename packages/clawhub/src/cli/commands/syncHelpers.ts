@@ -6,7 +6,7 @@ import semver from "semver";
 import { resolveHome } from "../../homedir.js";
 import { apiRequest, downloadZip, registryUrl } from "../../http.js";
 import {
-  ApiCliTelemetrySyncResponseSchema,
+  ApiCliTelemetryInstallResponseSchema,
   ApiRoutes,
   ApiV1SkillResolveResponseSchema,
   ApiV1SkillResponseSchema,
@@ -20,46 +20,37 @@ import type { GlobalOpts } from "../types.js";
 import { fail, formatError } from "../ui.js";
 import type { Candidate, LocalSkill } from "./syncTypes.js";
 
-export async function reportTelemetryIfEnabled(params: {
-  token: string;
+export async function reportInstalledSkillsTelemetryIfEnabled(params: {
+  token: string | undefined;
   registry: string;
-  scan: { roots: string[]; skillsByRoot: Record<string, SkillFolder[]> };
-  candidates: Candidate[];
+  root: string;
+  slug: string;
+  version?: string | null;
 }) {
-  if (isTelemetryDisabled()) return;
-  const versionBySlug = new Map<string, string | null>();
-  const ownerHandleBySlug = new Map<string, string>();
-  for (const candidate of params.candidates) {
-    versionBySlug.set(candidate.slug, candidate.matchVersion ?? null);
-    const ownerHandle = candidate.origin?.ownerHandle?.trim().replace(/^@+/, "");
-    if (ownerHandle) ownerHandleBySlug.set(candidate.slug, ownerHandle);
-  }
-
-  const roots = params.scan.roots.map((root) => ({
-    rootId: rootTelemetryId(root),
-    label: formatRootLabel(root),
-    skills: (params.scan.skillsByRoot[root] ?? []).map((skill) => ({
-      slug: skill.slug,
-      ...(ownerHandleBySlug.get(skill.slug)
-        ? { ownerHandle: ownerHandleBySlug.get(skill.slug) }
-        : {}),
-      version: versionBySlug.get(skill.slug) ?? null,
-    })),
-  }));
+  if (!params.token || isTelemetryDisabled()) return;
+  const slug = params.slug.trim();
+  if (!slug) return;
 
   try {
     await apiRequest(
       params.registry,
       {
         method: "POST",
-        path: LegacyApiRoutes.cliTelemetrySync,
+        path: LegacyApiRoutes.cliTelemetryInstall,
         token: params.token,
-        body: { roots },
+        body: {
+          event: "install",
+          slug,
+          version: params.version ?? undefined,
+          rootId: rootTelemetryId(params.root),
+          rootLabel: formatRootLabel(params.root),
+        },
       },
-      ApiCliTelemetrySyncResponseSchema,
+      ApiCliTelemetryInstallResponseSchema,
     );
   } catch {
-    // ignore telemetry failures
+    // Install telemetry is best-effort; local installs must not fail because
+    // metrics reporting is unavailable.
   }
 }
 
@@ -240,37 +231,6 @@ export async function scanRootsWithLabels(roots: string[], labels?: Record<strin
     rootsWithSkills,
     rootLabels,
   };
-}
-
-export function mergeScan(
-  left: {
-    roots: string[];
-    skillsByRoot: Record<string, SkillFolder[]>;
-    skills: SkillFolder[];
-    rootsWithSkills: string[];
-    rootLabels: Record<string, string>;
-  },
-  right: {
-    roots: string[];
-    skillsByRoot: Record<string, SkillFolder[]>;
-    skills: SkillFolder[];
-    rootsWithSkills: string[];
-    rootLabels: Record<string, string>;
-  },
-) {
-  const mergedRoots = Array.from(new Set([...left.roots, ...right.roots]));
-  const skillsByRoot: Record<string, SkillFolder[]> = {};
-  for (const root of mergedRoots) {
-    skillsByRoot[root] = right.skillsByRoot[root] ?? left.skillsByRoot[root] ?? [];
-  }
-  const rootLabels: Record<string, string> = { ...left.rootLabels, ...right.rootLabels };
-  const byFolder = new Map<string, SkillFolder>();
-  for (const entry of [...left.skills, ...right.skills]) {
-    byFolder.set(entry.folder, entry);
-  }
-  const skills = Array.from(byFolder.values());
-  const rootsWithSkills = mergedRoots.filter((root) => (skillsByRoot[root]?.length ?? 0) > 0);
-  return { roots: mergedRoots, skillsByRoot, skills, rootsWithSkills, rootLabels };
 }
 
 async function dedupeRoots(roots: string[]) {

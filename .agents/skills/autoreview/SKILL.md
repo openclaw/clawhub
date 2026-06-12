@@ -55,7 +55,7 @@ Pick the smallest proof that matches the touched surface:
 | Formatting/lint/static repo health | `bun run ci:static`                                                                                                     |
 | Unit-tested source behavior        | focused `bunx vitest run ...`, then `bun run ci:unit` when PR-ready                                                     |
 | Convex code                        | read `convex/_generated/ai/guidelines.md` first; run focused tests and the deploy/typecheck path that covers the change |
-| Packages/CLI/mod tool              | `bun run ci:packages` or the package-specific `verify` script                                                           |
+| Packages/CLI/admin tool            | `bun run ci:packages` or the package-specific `verify` script                                                           |
 | Runtime/build/package surface      | `bun run ci:types-build`, `bun run ci:e2e-http`, or the matching broader gate                                           |
 | UI behavior                        | use `clawhub-ui-proof` with `proof:ui`; publish proof before final PR comments when needed                              |
 | Linux/CI-parity validation         | use `crabbox`, normally through the repo scripts                                                                        |

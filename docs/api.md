@@ -89,7 +89,7 @@ Public read:
   - Optional filter: `nonSuspiciousOnly=true`
   - Legacy alias: `nonSuspicious=true`
   - With `nonSuspiciousOnly=true`, cursor-based pages may contain fewer than `limit` items; use `nextCursor` to continue.
-  - `recommended` ranks by stars, then all-time installs, then downloads, then `updatedAt`.
+  - `recommended` ranks by stars, then downloads, then `updatedAt`.
 - `GET /api/v1/skills/{slug}`
 - `GET /api/v1/skills/{slug}/moderation`
 - `GET /api/v1/skills/{slug}/versions?limit=&cursor=`
@@ -118,6 +118,7 @@ Auth required:
 - `POST /api/v1/skills/{slug}/transfer/accept`
 - `POST /api/v1/skills/{slug}/transfer/reject`
 - `POST /api/v1/skills/{slug}/transfer/cancel`
+- `GET /api/v1/plugins/export?startDate=&endDate=&limit=&cursor=&family=`
 - `GET /api/v1/transfers/incoming`
 - `GET /api/v1/transfers/outgoing`
 - `GET /api/v1/whoami`

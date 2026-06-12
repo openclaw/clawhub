@@ -105,6 +105,80 @@ async function scanReadmeRelativeAssets(files: File[]): Promise<RelativeReadmeAs
   }
 }
 
+type ParsedInspectorPublishError = {
+  summary: string;
+  findings: Array<{ code: string; message: string }>;
+};
+
+const PLUGIN_INSPECTOR_BLOCKED_PREFIX = "Plugin Inspector blocked publish:";
+
+function parsePluginInspectorPublishError(message: string): ParsedInspectorPublishError | null {
+  if (!message.startsWith(PLUGIN_INSPECTOR_BLOCKED_PREFIX)) return null;
+  const body = message.slice(PLUGIN_INSPECTOR_BLOCKED_PREFIX.length).trim();
+  if (!body) return { summary: "Hard findings blocked this publish.", findings: [] };
+  const [summaryPart, ...detailParts] = body.split(". ");
+  const summary = summaryPart?.trim() || "Hard findings blocked this publish.";
+  const details = detailParts.join(". ").trim();
+  if (!details) return { summary, findings: [] };
+  const findings = details
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) => {
+      const match = part.match(/^([a-z0-9._-]+):\s+(.+)$/i);
+      return match
+        ? { code: match[1]!, message: match[2]! }
+        : { code: "plugin-inspector", message: part };
+    });
+  return { summary, findings };
+}
+
+function isPluginInspectorPublishError(message: string) {
+  return Boolean(parsePluginInspectorPublishError(message));
+}
+
+function PluginPublishError({ message }: { message: string }) {
+  const inspectorError = parsePluginInspectorPublishError(message);
+  if (!inspectorError) {
+    return (
+      <div className="plugin-publish-error-text" role="alert">
+        {message}
+      </div>
+    );
+  }
+
+  return (
+    <div className="plugin-publish-error-panel" role="alert">
+      <div className="plugin-publish-error-heading">
+        <strong>Plugin Inspector blocked publish</strong>
+        <span>{inspectorError.summary}</span>
+      </div>
+      {inspectorError.findings.length > 0 ? (
+        <div className="plugin-publish-error-table-wrap">
+          <table className="plugin-publish-error-table">
+            <thead>
+              <tr>
+                <th scope="col">Code</th>
+                <th scope="col">Message</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inspectorError.findings.map((finding) => (
+                <tr key={`${finding.code}:${finding.message}`}>
+                  <td>
+                    <code>{finding.code}</code>
+                  </td>
+                  <td>{finding.message}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
@@ -636,11 +710,7 @@ export function PublishPluginRoute() {
 
           <div className="mt-5 flex items-center justify-between gap-4">
             <div className="flex flex-col gap-2">
-              {error ? (
-                <div className="text-sm font-medium text-red-600 dark:text-red-400" role="alert">
-                  {error}
-                </div>
-              ) : null}
+              {error ? <PluginPublishError message={error} /> : null}
               {status ? <div className="text-sm text-[color:var(--ink-soft)]">{status}</div> : null}
               {!status ? (
                 <div className="text-sm text-[color:var(--ink-soft)]">
@@ -727,7 +797,11 @@ export function PublishPluginRoute() {
                         "Published. Pending security checks and verification before public listing.",
                       );
                     } catch (publishError) {
-                      toast.error(formatPublishError(publishError));
+                      const message = formatPublishError(publishError);
+                      setError(message);
+                      if (!isPluginInspectorPublishError(message)) {
+                        toast.error(message);
+                      }
                       setStatus(null);
                     } finally {
                       setIsSubmitting(false);

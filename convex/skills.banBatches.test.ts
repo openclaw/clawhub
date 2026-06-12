@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   applyBanToOwnedSkillsBatchInternal,
+  applyPublisherDeletionToOwnedSkillsBatchInternal,
   restoreOwnedSkillsForUnbanBatchInternal,
 } from "./skills";
 
@@ -22,6 +23,13 @@ const applyBanHandler = (
   >
 )._handler;
 
+const applyPublisherDeletionHandler = (
+  applyPublisherDeletionToOwnedSkillsBatchInternal as unknown as WrappedHandler<
+    { ownerPublisherId: string; actorUserId: string; deletedAt: number; cursor?: string },
+    { hiddenCount: number; scheduled: boolean; stale?: boolean }
+  >
+)._handler;
+
 function makeCtx({
   user,
   skills = [],
@@ -40,10 +48,24 @@ function makeCtx({
         }),
       };
     }
+    if (table === "skillVersions") {
+      return {
+        withIndex: () => ({
+          take: async () => [],
+        }),
+      };
+    }
     if (table === "skillEmbeddings") {
       return {
         withIndex: () => ({
           collect: async () => [],
+        }),
+      };
+    }
+    if (table === "skillVersions") {
+      return {
+        withIndex: () => ({
+          take: async () => [],
         }),
       };
     }
@@ -53,7 +75,11 @@ function makeCtx({
   return {
     ctx: {
       db: {
-        get: vi.fn(async (id: string) => (id === "users:owner" ? user : null)),
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return user;
+          if (id === "publishers:org") return { _id: id, kind: "org", deletedAt: 3_000 };
+          return null;
+        }),
         insert: vi.fn(),
         patch,
         replace: vi.fn(),
@@ -70,6 +96,64 @@ function makeCtx({
 }
 
 describe("skills ban/unban batches", () => {
+  it("starts hard-delete cleanup for active skills owned by a deleted publisher", async () => {
+    const { ctx, patch, scheduler } = makeCtx({
+      user: { _id: "users:owner", deletedAt: undefined, deactivatedAt: undefined },
+      skills: [
+        {
+          _id: "skills:org-skill",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+          softDeletedAt: undefined,
+          hiddenAt: undefined,
+          moderationStatus: "active",
+          moderationFlags: undefined,
+          stats: {
+            downloads: 0,
+            stars: 0,
+            comments: 0,
+            versions: 1,
+            installsCurrent: 0,
+            installsAllTime: 0,
+          },
+        },
+      ],
+    });
+
+    await expect(
+      applyPublisherDeletionHandler(ctx, {
+        ownerPublisherId: "publishers:org",
+        actorUserId: "users:owner",
+        deletedAt: 3_000,
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      hiddenCount: 1,
+      scheduled: false,
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:org-skill",
+      expect.objectContaining({
+        softDeletedAt: expect.any(Number),
+        hiddenAt: expect.any(Number),
+        moderationStatus: "removed",
+        hiddenBy: "users:owner",
+      }),
+    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:org-skill",
+        actorUserId: "users:owner",
+        phase: "fingerprints",
+        source: "publisher.delete",
+        ownerPublisherId: "publishers:org",
+      }),
+    );
+  });
+
   it("retimestamps earlier ban-hidden skills during a later ban", async () => {
     const { ctx, patch, scheduler } = makeCtx({
       user: { _id: "users:owner", deletedAt: 2_000 },

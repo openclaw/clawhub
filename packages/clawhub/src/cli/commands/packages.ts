@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { ci, pluginRoot, reports } from "@openclaw/plugin-inspector";
 import ignore from "ignore";
 import mime from "mime";
 import semver from "semver";
@@ -25,6 +26,7 @@ import {
   ApiV1PackageListResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
   ApiV1PackagePublishResponseSchema,
+  type ApiV1PackagePublishResponse,
   ApiV1PackageReadinessResponseSchema,
   ApiV1PackageReportResponseSchema,
   ApiV1PackageResponseSchema,
@@ -65,6 +67,47 @@ const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
+const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
+const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
+  "channel-env-vars":
+    "Move legacy channel environment variable metadata into the current setup/config metadata.",
+  "legacy-before-agent-start":
+    "Replace the legacy before_agent_start hook with the current prompt/model hooks.",
+  "legacy-root-sdk-import":
+    "Prefer focused public plugin SDK subpath imports instead of the legacy root barrel.",
+  "manifest-name-missing": "Add a display name to the plugin manifest.",
+  "manifest-unknown-contracts":
+    "Remove unsupported manifest contract keys or move them to a documented OpenClaw contract field.",
+  "manifest-unknown-fields":
+    "Move unsupported top-level manifest fields into supported package metadata or remove them.",
+  "package-entrypoint-missing":
+    "Publish the entrypoint declared in OpenClaw package metadata or update the metadata to point at an existing file.",
+  "package-install-metadata-incomplete":
+    "Complete the OpenClaw install metadata so ClawHub can identify the install target.",
+  "package-json-missing": "Add a package.json to the plugin package.",
+  "package-manifest-version-drift":
+    "Align the plugin version declared in package.json and openclaw.plugin.json.",
+  "package-min-host-version-drift":
+    "Set the package minimum host version to the OpenClaw version range the plugin was built and tested against.",
+  "package-npm-pack-entrypoint-missing":
+    "Include the declared OpenClaw entrypoints in the npm-packed artifact.",
+  "package-npm-pack-metadata-missing":
+    "Include OpenClaw metadata files in the npm-packed artifact.",
+  "package-npm-pack-unavailable": "Make the package packable before publishing it through ClawHub.",
+  "package-openclaw-entry-missing":
+    "Declare the plugin runtime entrypoint in package.json OpenClaw metadata.",
+  "package-openclaw-metadata-missing": "Add the package.json openclaw metadata block.",
+  "package-openclaw-unsupported-metadata": "Remove unsupported OpenClaw package metadata fields.",
+  "package-plugin-api-compat-missing":
+    "Declare the OpenClaw plugin API range this package supports.",
+  "provider-auth-env-vars":
+    "Move legacy provider authentication environment variables into current provider setup metadata.",
+  "reserved-sdk-import": "Stop importing reserved bundled-plugin SDK compatibility paths.",
+  "security-manifest-schema-unavailable":
+    "Remove or update the unsupported security manifest schema reference.",
+  "unrecognized-security-manifest":
+    "Remove unsupported security manifest files until OpenClaw documents a versioned security manifest schema.",
+} as const;
 
 type PackageInspectOptions = {
   version?: string;
@@ -121,6 +164,15 @@ type PackagePackOptions = {
   json?: boolean;
 };
 
+type PackageValidateOptions = {
+  out?: string;
+  openclaw?: string;
+  runtime?: boolean;
+  allowExecute?: boolean;
+  mockSdk?: boolean;
+  json?: boolean;
+};
+
 type PackageDownloadOptions = {
   version?: string;
   tag?: string;
@@ -156,6 +208,17 @@ type PackageReadinessOptions = {
 type PackageMigrationStatusOptions = PackageReadinessOptions;
 
 type PackageTrustedPublisherGetOptions = {
+  json?: boolean;
+};
+
+type PackageTrustedPublisherSetOptions = {
+  repository?: string;
+  workflowFilename?: string;
+  environment?: string;
+  json?: boolean;
+};
+
+type PackageTrustedPublisherDeleteOptions = {
   json?: boolean;
 };
 
@@ -499,6 +562,82 @@ export async function cmdGetPackageTrustedPublisher(
   }
 }
 
+export async function cmdSetPackageTrustedPublisher(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageTrustedPublisherSetOptions,
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const repository = options.repository?.trim();
+  const workflowFilename = options.workflowFilename?.trim();
+  const environment = options.environment?.trim() || undefined;
+  if (!repository) fail("--repository required");
+  if (!workflowFilename) fail("--workflow-filename required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner("Saving trusted publisher");
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
+        token,
+        body: {
+          repository,
+          workflowFilename,
+          ...(environment ? { environment } : {}),
+        },
+      },
+      ApiV1PackageTrustedPublisherResponseSchema,
+    );
+    spinner.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`Trusted publisher saved for ${trimmed}.`);
+    if (result.trustedPublisher) {
+      printTrustedPublisher(result.trustedPublisher);
+    }
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdDeletePackageTrustedPublisher(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageTrustedPublisherDeleteOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = createSpinner("Deleting trusted publisher");
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "DELETE",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/trusted-publisher`,
+        token,
+      },
+      ApiV1DeleteResponseSchema,
+    );
+    spinner.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+    console.log(`Trusted publisher deleted for ${trimmed}.`);
+  } catch (error) {
+    spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
 export async function cmdPackPackage(
   opts: GlobalOpts,
   sourceArg: string,
@@ -573,6 +712,128 @@ export async function cmdPackPackage(
     spinner?.fail(formatError(error));
     throw error;
   }
+}
+
+export async function cmdValidatePackage(
+  opts: GlobalOpts,
+  sourceArg: string,
+  options: PackageValidateOptions = {},
+) {
+  if (!sourceArg?.trim()) fail("Path required");
+  const resolvedSource = await resolveSourceInput(sourceArg, {
+    workdir: opts.workdir,
+    localWorkdirs: [process.cwd(), opts.workdir],
+  });
+  if (resolvedSource.kind !== "local") fail("Path must be a package folder");
+  const sourcePath = resolvedSource.path;
+  const sourceStat = await stat(sourcePath).catch(() => null);
+  if (!sourceStat?.isDirectory()) fail("Path must be a package folder");
+
+  const outDir = options.out?.trim() || "reports";
+  const openclawPath = options.openclaw?.trim() ? resolve(opts.workdir, options.openclaw) : false;
+  const generatedConfig = await createPluginInspectorConfigIfNeeded(sourcePath);
+  let report: Awaited<ReturnType<typeof pluginRoot.runCheck>>["report"];
+  let paths: Awaited<ReturnType<typeof pluginRoot.runCheck>>["paths"];
+  try {
+    const runCheckOptions = {
+      allowExecution: options.allowExecute === true,
+      authorFacing: true,
+      capture: options.runtime === true,
+      configPath: generatedConfig?.path,
+      mockSdk: options.mockSdk !== false,
+      openclawPath,
+      outDir,
+      pluginRoot: sourcePath,
+    } as Parameters<typeof pluginRoot.runCheck>[0] & { authorFacing: true };
+    const result = await pluginRoot.runCheck(runCheckOptions);
+    paths = result.paths;
+    report = filterAuthorFacingInspectorReport(result.report);
+    await mkdir(dirname(paths.jsonPath), { recursive: true });
+    await writeFile(paths.jsonPath, `${JSON.stringify(report, null, 2)}\n`, "utf8");
+  } finally {
+    if (generatedConfig) {
+      await rm(generatedConfig.dir, { recursive: true, force: true });
+    }
+  }
+
+  await ci.writeOutputs(report, {
+    cwd: dirname(paths.jsonPath),
+    outDir: ".",
+  });
+
+  if (options.json) {
+    process.stdout.write(`${JSON.stringify(reports.sanitizeArtifact(report), null, 2)}\n`);
+  } else {
+    console.log(renderPackageValidateTextSummary(report, paths));
+  }
+
+  if (reportStatus(report) !== "pass") {
+    const breakageCount = reportBreakageCount(report);
+    throw new Error(
+      `Plugin Inspector found ${breakageCount} hard error${breakageCount === 1 ? "" : "s"}`,
+    );
+  }
+}
+
+async function createPluginInspectorConfigIfNeeded(sourcePath: string) {
+  if (
+    (await fileExists(join(sourcePath, "plugin-inspector.config.json"))) ||
+    (await fileExists(join(sourcePath, ".plugin-inspector.json")))
+  ) {
+    return null;
+  }
+
+  const packageJson = await readJsonFile(join(sourcePath, "package.json"));
+  const pluginManifest = await readJsonFile(join(sourcePath, "openclaw.plugin.json"));
+  if (!packageJson && !pluginManifest) {
+    return null;
+  }
+  if (hasPackagePluginInspectorConfig(packageJson)) {
+    return null;
+  }
+
+  const rawName =
+    packageJsonString(packageJson, "name") ??
+    packageJsonString(pluginManifest, "id") ??
+    basename(sourcePath);
+  const configDir = await mkdtemp(join(tmpdir(), "clawhub-plugin-inspector-config-"));
+  const configPath = join(configDir, "plugin-inspector.config.json");
+  await writeFile(
+    configPath,
+    `${JSON.stringify(
+      {
+        version: 1,
+        plugin: {
+          id: pluginInspectorFixtureId(rawName),
+        },
+      },
+      null,
+      2,
+    )}\n`,
+  );
+  return { dir: configDir, path: configPath };
+}
+
+async function fileExists(path: string) {
+  return Boolean(await stat(path).catch(() => null));
+}
+
+function hasPackagePluginInspectorConfig(packageJson: Record<string, unknown> | null) {
+  if (!packageJson) return false;
+  return (
+    isPlainRecord(packageJson.pluginInspector) || isPlainRecord(packageJson["plugin-inspector"])
+  );
+}
+
+function pluginInspectorFixtureId(rawName: string) {
+  return (
+    rawName
+      .split("/")
+      .pop()
+      ?.toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "published-plugin"
+  );
 }
 
 async function createClawPackFromFolder(options: {
@@ -726,12 +987,21 @@ export async function cmdPublishPackage(
 
       if (options.json) {
         process.stdout.write(
-          `${JSON.stringify({ ...plan.output, releaseId: result.releaseId }, null, 2)}\n`,
+          `${JSON.stringify(
+            {
+              ...plan.output,
+              releaseId: result.releaseId,
+              inspectorFindings: result.inspectorFindings,
+            },
+            null,
+            2,
+          )}\n`,
         );
       } else {
         spinner?.succeed(
           `OK. Published ${plan.payload.name}@${plan.payload.version} (${result.releaseId})`,
         );
+        printPackageInspectorFindings(result);
       }
     } catch (error) {
       spinner?.fail(formatError(error));
@@ -740,6 +1010,155 @@ export async function cmdPublishPackage(
   } finally {
     await plan?.cleanup?.();
   }
+}
+
+function printPackageInspectorFindings(result: ApiV1PackagePublishResponse) {
+  const findings = result.inspectorFindings ?? [];
+  if (findings.length === 0) return;
+  const errorCount = findings.filter((finding) => finding.findingKind === "error").length;
+  const warningCount = findings.length - errorCount;
+  const parts = [
+    warningCount > 0 ? `${warningCount} warning${warningCount === 1 ? "" : "s"}` : null,
+    errorCount > 0 ? `${errorCount} error${errorCount === 1 ? "" : "s"}` : null,
+  ].filter((part): part is string => Boolean(part));
+  console.log(`Plugin Inspector findings: ${parts.join(", ")}`);
+  for (const finding of findings.slice(0, 10)) {
+    const label = finding.issueClass ? `${finding.code} (${finding.issueClass})` : finding.code;
+    console.log(`- ${finding.findingKind.toUpperCase()} ${label}: ${finding.message}`);
+    if (finding.authorRemediation?.summary) {
+      console.log(`  Fix: ${finding.authorRemediation.summary}`);
+      if (finding.authorRemediation.docsUrl) {
+        console.log(`  Docs: ${finding.authorRemediation.docsUrl}`);
+      }
+    }
+  }
+  if (findings.length > 10) {
+    console.log(`- ...and ${findings.length - 10} more findings`);
+  }
+}
+
+function renderPackageValidateTextSummary(report: unknown, paths: Record<string, unknown>) {
+  const status = reportStatus(report)?.toUpperCase() ?? "UNKNOWN";
+  const breakageCount = reportBreakageCount(report);
+  const findings = collectInspectorFindings(report);
+  const warningCount = findings.filter((finding) => !isInspectorBreakage(finding)).length;
+  const lines = [
+    `Plugin Inspector: ${status}`,
+    `Breakages: ${breakageCount}`,
+    `Warnings: ${warningCount}`,
+    `Findings: ${findings.length === 0 ? "none" : findings.length}`,
+  ];
+
+  if (findings.length > 0) {
+    lines.push("", "Findings:");
+    for (const finding of findings) {
+      lines.push(formatValidateFinding(finding));
+      const remediation = readAuthorRemediation(finding);
+      if (remediation?.summary) {
+        lines.push(`  Fix: ${remediation.summary}`);
+      }
+      if (remediation?.docsUrl) {
+        lines.push(`  Docs: ${remediation.docsUrl}`);
+      }
+      const evidenceLines = formatFindingEvidence(finding);
+      if (evidenceLines.length > 0) {
+        lines.push("  Evidence:", ...evidenceLines.map((line) => `  - ${line}`));
+      }
+    }
+  }
+
+  const reportPaths = formatReportPaths(paths);
+  if (reportPaths) {
+    lines.push("", `Reports written: ${reportPaths}`);
+  }
+
+  return lines.join("\n");
+}
+
+function collectInspectorFindings(report: unknown): Record<string, unknown>[] {
+  if (!isPlainRecord(report)) return [];
+  const keys = ["issues", "breakages", "warnings", "suggestions"] as const;
+  const findings: Record<string, unknown>[] = [];
+  for (const key of keys) {
+    const value = report[key];
+    if (!Array.isArray(value)) continue;
+    for (const finding of value) {
+      if (isPlainRecord(finding)) findings.push(finding);
+    }
+  }
+  return findings;
+}
+
+function formatValidateFinding(finding: Record<string, unknown>) {
+  const level = isInspectorBreakage(finding) ? "ERROR" : "WARNING";
+  const code =
+    typeof finding.code === "string" && finding.code.trim() ? finding.code.trim() : "unknown";
+  const issueClass =
+    typeof finding.issueClass === "string" && finding.issueClass.trim()
+      ? ` (${finding.issueClass.trim()})`
+      : "";
+  const severity =
+    typeof finding.severity === "string" && finding.severity.trim()
+      ? ` ${finding.severity.trim()}`
+      : "";
+  const message =
+    typeof finding.message === "string" && finding.message.trim()
+      ? finding.message.trim()
+      : typeof finding.title === "string" && finding.title.trim()
+        ? finding.title.trim()
+        : "see generated report";
+  return `- ${level} ${code}${issueClass}${severity}: ${message}`;
+}
+
+function readAuthorRemediation(finding: Record<string, unknown>) {
+  if (!isPlainRecord(finding.authorRemediation)) return null;
+  const summary =
+    typeof finding.authorRemediation.summary === "string"
+      ? finding.authorRemediation.summary.trim()
+      : "";
+  const docsUrl =
+    typeof finding.authorRemediation.docsUrl === "string"
+      ? finding.authorRemediation.docsUrl.trim()
+      : "";
+  return {
+    summary: summary || null,
+    docsUrl: docsUrl || null,
+  };
+}
+
+function formatFindingEvidence(finding: Record<string, unknown>) {
+  const evidence = finding.evidence;
+  if (!Array.isArray(evidence)) return [];
+  return evidence.map(formatEvidenceValue).filter((line): line is string => Boolean(line));
+}
+
+function formatEvidenceValue(value: unknown) {
+  if (typeof value === "string") return value.trim() || null;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (isPlainRecord(value)) {
+    return Object.entries(value)
+      .map(([key, entry]) => {
+        if (typeof entry === "string" || typeof entry === "number" || typeof entry === "boolean") {
+          return `${key}: ${entry}`;
+        }
+        return null;
+      })
+      .filter((entry): entry is string => Boolean(entry))
+      .join(", ");
+  }
+  return null;
+}
+
+function formatReportPaths(paths: Record<string, unknown>) {
+  const labels: Array<[string, unknown]> = [
+    ["json", paths.jsonPath],
+    ["markdown", paths.markdownPath],
+    ["issues", paths.issuesPath],
+  ];
+  const rendered = labels
+    .filter(([, filePath]) => typeof filePath === "string" && filePath.trim().length > 0)
+    .map(([label, filePath]) => `${label}=${String(filePath)}`);
+  return rendered.length > 0 ? rendered.join(", ") : null;
 }
 
 export async function cmdDownloadPackage(
@@ -1241,6 +1660,92 @@ function normalizePackageNameOrFail(raw: string) {
   const trimmed = raw.trim();
   if (!trimmed) fail("Package name required");
   return trimmed;
+}
+
+function reportStatus(report: unknown): string | null {
+  return isPlainRecord(report) && typeof report.status === "string" ? report.status : null;
+}
+
+function reportBreakageCount(report: unknown): number {
+  if (!isPlainRecord(report) || !isPlainRecord(report.summary)) return 0;
+  const value = report.summary.breakageCount;
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function filterAuthorFacingInspectorReport<T>(report: T): T {
+  if (!isPlainRecord(report)) return report;
+  const findingKeys = ["issues", "breakages", "warnings", "suggestions"] as const;
+  if (!findingKeys.some((key) => Array.isArray(report[key]))) return report;
+
+  const next: Record<string, unknown> = { ...report };
+  const rawIssues = Array.isArray(report.issues) ? report.issues : null;
+  if (rawIssues) {
+    next.issues = rawIssues
+      .map(normalizeAuthorFacingInspectorFinding)
+      .filter((finding): finding is Record<string, unknown> => Boolean(finding));
+    delete next.breakages;
+    delete next.warnings;
+    delete next.suggestions;
+  } else {
+    for (const key of findingKeys) {
+      if (Array.isArray(report[key])) {
+        next[key] = report[key]
+          .map(normalizeAuthorFacingInspectorFinding)
+          .filter((finding): finding is Record<string, unknown> => Boolean(finding));
+      }
+    }
+  }
+
+  const authorFindings = findingKeys.flatMap((key) => {
+    const value = next[key];
+    return Array.isArray(value) ? value : [];
+  });
+  const breakageCount = authorFindings.filter(isInspectorBreakage).length;
+  const warningCount = authorFindings.length - breakageCount;
+  next.status = breakageCount > 0 ? "fail" : "pass";
+  next.summary = {
+    breakageCount,
+    warningCount,
+    deprecationWarningCount: authorFindings.filter(
+      (finding) => isPlainRecord(finding) && finding.issueClass === "deprecation-warning",
+    ).length,
+    issueCount: authorFindings.length,
+  };
+  return next as T;
+}
+
+function hasAuthorRemediation(value: unknown) {
+  return (
+    isPlainRecord(value) &&
+    isPlainRecord(value.authorRemediation) &&
+    typeof value.authorRemediation.summary === "string" &&
+    value.authorRemediation.summary.trim().length > 0
+  );
+}
+
+function normalizeAuthorFacingInspectorFinding(value: unknown) {
+  if (!isPlainRecord(value)) return null;
+  if (hasAuthorRemediation(value)) return value;
+  const code = typeof value.code === "string" ? value.code : "";
+  const summary =
+    LEGACY_AUTHOR_REMEDIATION_SUMMARIES[code as keyof typeof LEGACY_AUTHOR_REMEDIATION_SUMMARIES];
+  if (!summary) return null;
+  return {
+    ...value,
+    authorRemediation: {
+      summary,
+      docsUrl: `${AUTHOR_REMEDIATION_DOCS_BASE}#${code}`,
+    },
+  };
+}
+
+function isInspectorBreakage(value: unknown) {
+  if (!isPlainRecord(value)) return false;
+  return value.level === "breakage" || value.level === "error" || value.severity === "P0";
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
 function spinnerText(spinner: ReturnType<typeof createSpinner> | null, text: string) {

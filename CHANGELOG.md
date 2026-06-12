@@ -1,6 +1,35 @@
 # Changelog
 
-## Unreleased
+## 0.21.0 - 2026-06-11
+
+### Changes
+
+- CLI/API: add public `clawhub package trusted-publisher set` and `clawhub package trusted-publisher delete` commands so package managers can configure or remove GitHub Actions OIDC trusted publishing for existing packages.
+
+## 0.20.2 - 2026-06-11
+
+### Changes
+
+- CLI packages now require Node.js 22 or newer, dropping the EOL Node 20 runtime floor.
+- CLI: add `clawhub package validate <source>` for local plugin validation with author-facing Plugin Inspector findings, remediation text, and report artifacts.
+
+## 0.20.0 - 2026-06-06
+
+### Changes
+
+- CLI/API: replace local `clawhub scan` uploads with stored submitted-version scan report downloads, including owner-authorized `clawhub scan download <name> --version <version>` support for blocked skill and plugin submissions.
+
+## 0.19.2 - 2026-06-05
+
+### Fixes
+
+- CLI: accept the legacy `clawhub skill verify --json` flag as a hidden compatibility no-op while continuing to print JSON by default.
+
+## 0.19.1 - 2026-06-05
+
+### Fixes
+
+- CLI: install source-backed GitHub skills from the deployed `/api/v1/skills/:slug/install` resolver so `clawhub install` works for skills without hosted ClawHub versions.
 
 ## 0.19.0 - 2026-06-03
 

@@ -5,7 +5,8 @@ vi.mock("@convex-dev/auth/server", () => ({
   authTables: {},
 }));
 
-import { setSkillSoftDeletedInternal } from "./skills";
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { setOwnedSkillSoftDeleted, setSkillSoftDeletedInternal } from "./skills";
 
 type WrappedHandler<TArgs> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<unknown>;
@@ -17,6 +18,11 @@ const setSkillSoftDeletedInternalHandler = (
     slug: string;
     deleted: boolean;
     reason?: string;
+  }>
+)._handler;
+const setOwnedSkillSoftDeletedHandler = (
+  setOwnedSkillSoftDeleted as unknown as WrappedHandler<{
+    skillId: string;
   }>
 )._handler;
 
@@ -59,6 +65,7 @@ function makeCtx({
     get: vi.fn(async (id: string) => {
       if (id === actor._id) return actor;
       if (hiddenBy && id === hiddenBy._id) return hiddenBy;
+      if (skill && id === skill._id) return skill;
       return null;
     }),
     query: vi.fn((table: string) => {
@@ -105,6 +112,97 @@ function makeCtx({
 }
 
 describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
+  it("allows direct owners to delete through the public owner settings mutation", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const skill = makeSkill({
+      moderationStatus: "active",
+      softDeletedAt: undefined,
+      hiddenAt: undefined,
+      hiddenBy: undefined,
+      moderationReason: undefined,
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:owner", role: "user" },
+    });
+
+    await expect(
+      setOwnedSkillSoftDeletedHandler(ctx, {
+        skillId: "skills:1",
+      }),
+    ).resolves.toEqual({ ok: true, slugReservedUntil: now + 30 * 24 * 60 * 60 * 1000 });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        hiddenBy: "users:owner",
+        unpublishedSlugReservedUntil: now + 30 * 24 * 60 * 60 * 1000,
+      }),
+    );
+  });
+
+  it("rejects non-owner moderators through the public owner settings mutation", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:mod" as never);
+    const skill = makeSkill({
+      moderationStatus: "active",
+      softDeletedAt: undefined,
+      hiddenAt: undefined,
+      hiddenBy: undefined,
+      moderationReason: undefined,
+    });
+    const { ctx, patch, insert } = makeCtx({
+      skill,
+      actor: { _id: "users:mod", role: "moderator" },
+    });
+
+    await expect(
+      setOwnedSkillSoftDeletedHandler(ctx, {
+        skillId: "skills:1",
+      }),
+    ).rejects.toThrow(/forbidden/i);
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("allows org admins to delete org-owned skills through the public owner settings mutation", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:org-admin" as never);
+    const skill = makeSkill({
+      ownerUserId: "users:creator",
+      ownerPublisherId: "publishers:org",
+      moderationStatus: "active",
+      softDeletedAt: undefined,
+      hiddenAt: undefined,
+      hiddenBy: undefined,
+      moderationReason: undefined,
+    });
+    const { ctx, patch } = makeCtx({
+      skill,
+      actor: { _id: "users:org-admin", role: "user" },
+      membership: { _id: "publisherMembers:1", role: "admin" },
+    });
+
+    await expect(
+      setOwnedSkillSoftDeletedHandler(ctx, {
+        skillId: "skills:1",
+      }),
+    ).resolves.toEqual({ ok: true, slugReservedUntil: now + 30 * 24 * 60 * 60 * 1000 });
+
+    expect(patch).toHaveBeenCalledWith(
+      "skills:1",
+      expect.objectContaining({
+        moderationStatus: "hidden",
+        hiddenBy: "users:org-admin",
+        unpublishedSlugReservedUntil: now + 30 * 24 * 60 * 60 * 1000,
+      }),
+    );
+  });
+
   it("allows org publisher admins to restore org-admin hidden skills", async () => {
     const skill = makeSkill({
       ownerUserId: "users:creator",
@@ -744,6 +842,58 @@ describe("setSkillSoftDeletedInternal B1 undelete gate", () => {
         unpublishedSlugReservedUntil: now + 30 * 24 * 60 * 60 * 1000,
       }),
     );
+  });
+
+  it("rejects delete attempts for removed skills without downgrading them to hidden", async () => {
+    const skill = makeSkill({
+      moderationStatus: "removed",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:mod",
+      moderationReason: "user.banned",
+    });
+    const { ctx, patch, insert } = makeCtx({
+      skill,
+      actor: { _id: "users:mod", role: "moderator" },
+      hiddenBy: { _id: "users:mod", role: "moderator" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:mod",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).rejects.toThrow(/removed skills cannot be deleted/i);
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("does not reveal removed-skill state before authorization", async () => {
+    const skill = makeSkill({
+      moderationStatus: "removed",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:mod",
+      moderationReason: "user.banned",
+    });
+    const { ctx, patch, insert } = makeCtx({
+      skill,
+      actor: { _id: "users:stranger", role: "user" },
+      hiddenBy: { _id: "users:mod", role: "moderator" },
+    });
+
+    await expect(
+      setSkillSoftDeletedInternalHandler(ctx, {
+        userId: "users:stranger",
+        slug: "demo",
+        deleted: true,
+      }),
+    ).rejects.toThrow(/forbidden/i);
+
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 
   // BLOCKER regression: the owner MUST NOT be able to "re-delete" a skill

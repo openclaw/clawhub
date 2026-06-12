@@ -223,7 +223,7 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
-  it("flags browser automation that puts passwords in argv", () => {
+  it("does not duplicate SkillSpector credential-browser automation analysis", () => {
     const result = runStaticModerationScan({
       slug: "email-daily-summary",
       displayName: "Email Daily Summary",
@@ -242,11 +242,11 @@ describe("moderationEngine", () => {
       ],
     });
 
-    expect(result.reasonCodes).toContain("suspicious.browser_credential_automation");
-    expect(result.status).toBe("suspicious");
+    expect(result.reasonCodes).not.toContain("suspicious.browser_credential_automation");
+    expect(result.status).toBe("clean");
   });
 
-  it("flags persisted browser-use eval against authenticated mail contexts", () => {
+  it("does not duplicate SkillSpector persisted browser eval analysis", () => {
     const result = runStaticModerationScan({
       slug: "email-daily-summary",
       displayName: "Email Daily Summary",
@@ -266,8 +266,8 @@ describe("moderationEngine", () => {
       ],
     });
 
-    expect(result.reasonCodes).toContain("suspicious.browser_credential_automation");
-    expect(result.status).toBe("suspicious");
+    expect(result.reasonCodes).not.toContain("suspicious.browser_credential_automation");
+    expect(result.status).toBe("clean");
   });
 
   it("does not flag ordinary browser-use navigation docs", () => {
@@ -290,7 +290,7 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
-  it("blocks stealth browser automation that advertises bot-protection bypass and persistent sessions", () => {
+  it("does not duplicate SkillSpector browser automation analysis in the static scanner", () => {
     const result = runStaticModerationScan({
       slug: "stealth-browser",
       displayName: "Stealth Browser",
@@ -311,8 +311,8 @@ describe("moderationEngine", () => {
       ],
     });
 
-    expect(result.reasonCodes).toContain("malicious.stealth_browser_abuse");
-    expect(result.status).toBe("malicious");
+    expect(result.reasonCodes).not.toContain("malicious.stealth_browser_abuse");
+    expect(result.status).toBe("clean");
   });
 
   it("flags wallet mnemonics passed as CLI argv", () => {
@@ -497,7 +497,7 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("suspicious");
   });
 
-  it("flags Playwright file URL renders of interpolated SVG", () => {
+  it("does not duplicate SkillSpector browser file-render analysis", () => {
     const result = runStaticModerationScan({
       slug: "office-quotes",
       displayName: "Office Quotes",
@@ -520,8 +520,8 @@ describe("moderationEngine", () => {
       ],
     });
 
-    expect(result.reasonCodes).toContain("suspicious.browser_file_render");
-    expect(result.status).toBe("suspicious");
+    expect(result.reasonCodes).not.toContain("suspicious.browser_file_render");
+    expect(result.status).toBe("clean");
   });
 
   it("does not flag Playwright file renders with JavaScript disabled", () => {
@@ -1754,7 +1754,7 @@ describe("moderationEngine", () => {
     expect(result.status).toBe("clean");
   });
 
-  it("flags shell positional input passed directly to browser typing", () => {
+  it("does not duplicate SkillSpector browser typing analysis", () => {
     const result = runStaticModerationScan({
       slug: "wechat-helper",
       displayName: "WeChat Helper",
@@ -1775,11 +1775,11 @@ describe("moderationEngine", () => {
       ],
     });
 
-    expect(result.reasonCodes).toContain("suspicious.unsafe_browser_text_input");
-    expect(result.status).toBe("suspicious");
+    expect(result.reasonCodes).not.toContain("suspicious.unsafe_browser_text_input");
+    expect(result.status).toBe("clean");
   });
 
-  it("checks every positional shell assignment before browser typing", () => {
+  it("does not inspect shell positional assignments for browser typing", () => {
     const result = runStaticModerationScan({
       slug: "wechat-helper",
       displayName: "WeChat Helper",
@@ -1799,8 +1799,8 @@ describe("moderationEngine", () => {
       ],
     });
 
-    expect(result.reasonCodes).toContain("suspicious.unsafe_browser_text_input");
-    expect(result.status).toBe("suspicious");
+    expect(result.reasonCodes).not.toContain("suspicious.unsafe_browser_text_input");
+    expect(result.status).toBe("clean");
   });
 
   it("allows browser typing after basic shell input validation", () => {

@@ -16,6 +16,7 @@ const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { getSkillBadgeMap } = await import("./lib/badges");
 const {
   getBySlug,
+  getVerifyTargetBySlugInternal,
   listSkillReportsInternal,
   resolveVersionByHash,
   resolveSkillAppealForUserInternal,
@@ -71,6 +72,23 @@ const getBySlugHandler = (
           handle: string | null;
           userId: string | null;
         };
+      } | null;
+    } | null
+  >
+)._handler;
+
+const getVerifyTargetBySlugInternalHandler = (
+  getVerifyTargetBySlugInternal as unknown as WrappedHandler<
+    {
+      slug: string;
+    },
+    {
+      skill?: {
+        slug: string;
+        displayName: string;
+      } | null;
+      moderationInfo?: {
+        isMalwareBlocked: boolean;
       } | null;
     } | null
   >
@@ -729,6 +747,54 @@ describe("skills.getBySlug", () => {
     const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
 
     expect(result?.latestVersion).toBeNull();
+  });
+
+  it("hides malware-blocked skills from the public detail query", async () => {
+    const ctx = makeCtx({
+      skill: makeSkill({
+        moderationStatus: "hidden",
+        moderationVerdict: "malicious",
+        moderationFlags: ["blocked.malware"],
+      }),
+      owner: makeOwner("users:1", "demo-owner"),
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result).toBeNull();
+  });
+
+  it("hides active skills with a malicious moderation verdict from owners too", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:1" as never);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        moderationStatus: "active",
+        moderationVerdict: "malicious",
+      }),
+      owner: makeOwner("users:1", "demo-owner"),
+      ownersById: {
+        "users:1": makeOwner("users:1", "demo-owner"),
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result).toBeNull();
+  });
+
+  it("keeps malware-blocked skills available to verification lookups", async () => {
+    const ctx = makeCtx({
+      skill: makeSkill({
+        moderationStatus: "active",
+        moderationVerdict: "malicious",
+      }),
+      owner: makeOwner("users:1", "demo-owner"),
+    });
+
+    const result = await getVerifyTargetBySlugInternalHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.skill?.slug).toBe("demo");
+    expect(result?.moderationInfo?.isMalwareBlocked).toBe(true);
   });
 });
 

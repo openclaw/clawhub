@@ -1,9 +1,10 @@
 import { mkdir, rm, stat } from "node:fs/promises";
 import { join } from "node:path";
 import semver from "semver";
-import { apiRequest, downloadZip, registryUrl } from "../../http.js";
+import { apiRequest, downloadZip, fetchBinary, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
+  ApiV1SkillInstallResolveResponseSchema,
   ApiV1SearchResponseSchema,
   ApiV1SkillListResponseSchema,
   ApiV1SkillReportListResponseSchema,
@@ -12,11 +13,13 @@ import {
   ApiV1SkillResolveResponseSchema,
   ApiV1SkillResponseSchema,
   ApiV1SkillVersionResponseSchema,
+  type ApiV1SkillInstallResolveResponse,
   type SkillReportFinalAction,
   type SkillReportListStatus,
   type SkillReportStatus,
 } from "../../schema/index.js";
 import {
+  extractGitHubZipPathToDir,
   extractZipToDir,
   hashSkillFiles,
   listManualSkills,
@@ -31,6 +34,7 @@ import { getRegistry } from "../registry.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 import { presentModerationPlan, reportModerationPlan } from "./moderationPlan.js";
+import { reportInstalledSkillsTelemetryIfEnabled } from "./syncHelpers.js";
 
 type SkillReportOptions = {
   version?: string;
@@ -67,6 +71,11 @@ function normalizeOwnerHandle(raw: string | null | undefined) {
   }
   return handle;
 }
+
+type GitHubInstallResolution = Extract<
+  ApiV1SkillInstallResolveResponse,
+  { ok: true; installKind: "github" }
+>;
 
 function normalizeSkillSlugOrFail(raw: string) {
   const slug = raw.trim();
@@ -216,6 +225,7 @@ export async function cmdInstall(
   slug: string,
   versionFlag?: string,
   force = false,
+  forceInstall = false,
 ) {
   const requested = parseSkillRefOrFail(slug);
   const trimmed = requested.slug;
@@ -272,13 +282,29 @@ export async function cmdInstall(
       }
     }
 
-    const resolvedVersion = versionFlag ?? skillMeta.latestVersion?.version ?? null;
-    if (!resolvedVersion) fail("Could not resolve latest version");
+    let resolvedVersion = versionFlag ?? skillMeta.latestVersion?.version ?? null;
+    let githubInstall: GitHubInstallResolution | null = null;
+    if (!resolvedVersion && !versionFlag) {
+      const resolvedInstall = await resolveLatestSkillInstall(
+        registry,
+        remoteSlug,
+        resolvedOwnerHandle,
+        token,
+        { forceInstall },
+      );
+      if (!resolvedInstall.ok) fail(resolvedInstall.message);
+      if (resolvedInstall.installKind === "github") {
+        githubInstall = resolvedInstall;
+      } else {
+        resolvedVersion = resolvedInstall.archive.version;
+      }
+    }
+    if (!resolvedVersion && !githubInstall) fail("Could not resolve latest version");
 
     if (versionFlag) {
       await apiRequest(
         registry,
-        skillVersionRequestArgs(registry, remoteSlug, resolvedVersion, resolvedOwnerHandle, token),
+        skillVersionRequestArgs(registry, remoteSlug, versionFlag, resolvedOwnerHandle, token),
         ApiV1SkillVersionResponseSchema,
       );
     }
@@ -287,35 +313,51 @@ export async function cmdInstall(
       await rm(target, { recursive: true, force: true });
     }
 
-    spinner.text = `Downloading ${trimmed}@${resolvedVersion}`;
-    const zip = await downloadZip(registry, {
-      slug: remoteSlug,
-      ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
-      version: resolvedVersion,
-      token,
-    });
-    await extractZipToDir(zip, target);
+    if (githubInstall) {
+      spinner.text = `Downloading ${trimmed}@${formatGitHubVersion(githubInstall.github.commit)}`;
+      await installGitHubSkill(registry, githubInstall, target);
+      resolvedVersion = githubInstall.github.commit;
+    } else {
+      const archiveVersion = resolvedVersion;
+      if (!archiveVersion) fail("Could not resolve latest version");
+      spinner.text = `Downloading ${trimmed}@${archiveVersion}`;
+      const zip = await downloadZip(registry, {
+        slug: remoteSlug,
+        ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
+        version: archiveVersion,
+        token,
+      });
+      await extractZipToDir(zip, target);
+    }
     const installedFiles = await listTextFiles(target);
     const installedFingerprint =
       installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
+    const installedAt = Date.now();
     await writeSkillOrigin(target, {
       version: 1,
       registry,
       slug: remoteSlug,
       ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
-      installedVersion: resolvedVersion,
-      installedAt: Date.now(),
+      installedVersion: resolvedVersion!,
+      installedAt,
       fingerprint: installedFingerprint,
     });
 
     lock.skills[trimmed] = withOwnerMetadata(
-      resolvedVersion,
-      Date.now(),
+      resolvedVersion!,
+      installedAt,
       resolvedOwnerHandle,
       existingEntry,
     );
     await writeLockfile(opts.workdir, lock);
+    await reportInstalledSkillsTelemetryIfEnabled({
+      token,
+      registry,
+      root: opts.dir,
+      slug: skillMeta.skill?.slug ?? trimmed,
+      version: resolvedVersion,
+    });
     spinner.succeed(`OK. Installed ${trimmed} -> ${target}`);
   } catch (error) {
     spinner.fail(formatError(error));
@@ -326,7 +368,7 @@ export async function cmdInstall(
 export async function cmdUpdate(
   opts: GlobalOpts,
   slugArg: string | undefined,
-  options: { all?: boolean; version?: string; force?: boolean },
+  options: { all?: boolean; version?: string; force?: boolean; forceInstall?: boolean },
   inputAllowed: boolean,
 ) {
   const requestedRef = slugArg ? parseSkillRefOrFail(slugArg) : null;
@@ -421,6 +463,99 @@ export async function cmdUpdate(
         }
       }
 
+      let latestInstall: ApiV1SkillInstallResolveResponse | null = null;
+      if (!skillMeta.latestVersion && !options.version) {
+        latestInstall = await resolveLatestSkillInstall(
+          registry,
+          remoteSlug,
+          resolvedOwnerHandle,
+          token,
+          {
+            forceInstall: Boolean(options.forceInstall),
+          },
+        );
+        if (!latestInstall.ok) {
+          spinner.fail(`${entry}: ${latestInstall.message}`);
+          continue;
+        }
+        if (latestInstall.installKind === "github") {
+          const targetVersion = latestInstall.github.commit;
+          const originFingerprint =
+            existingOrigin?.slug === entry ? existingOrigin.fingerprint : undefined;
+          const hasLocalChanges = Boolean(
+            exists &&
+            localFingerprint &&
+            (!originFingerprint || originFingerprint !== localFingerprint),
+          );
+          const matched =
+            existingOrigin?.slug === entry &&
+            originFingerprint &&
+            localFingerprint &&
+            originFingerprint === localFingerprint
+              ? existingOrigin.installedVersion
+              : null;
+
+          if (hasLocalChanges && !options.force) {
+            spinner.stop();
+            if (!allowPrompt) {
+              console.log(`${entry}: local changes (no match). Use --force to overwrite.`);
+              continue;
+            }
+            const confirm = await promptConfirm(
+              `${entry}: local changes (no match). Overwrite with ${formatGitHubVersion(targetVersion)}?`,
+            );
+            if (!confirm) {
+              console.log(`${entry}: skipped`);
+              continue;
+            }
+            spinner.start(`Updating ${entry} -> ${formatGitHubVersion(targetVersion)}`);
+          }
+
+          if (matched === targetVersion && !options.force && !hasLocalChanges) {
+            if (lock.skills[entry]?.version !== targetVersion) {
+              lock.skills[entry] = withPinnedMetadata(
+                targetVersion,
+                lock.skills[entry]?.installedAt ?? Date.now(),
+                lock.skills[entry],
+              );
+            }
+            spinner.succeed(`${entry}: up to date (${formatGitHubVersion(targetVersion)})`);
+            continue;
+          }
+
+          if (spinner.isSpinning) {
+            spinner.text = `Updating ${entry} -> ${formatGitHubVersion(targetVersion)}`;
+          } else {
+            spinner.start(`Updating ${entry} -> ${formatGitHubVersion(targetVersion)}`);
+          }
+          await rm(target, { recursive: true, force: true });
+          await installGitHubSkill(registry, latestInstall, target);
+          const installedFiles = await listTextFiles(target);
+          const installedFingerprint =
+            installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
+
+          const installedAt = existingOrigin?.installedAt ?? Date.now();
+          await writeSkillOrigin(target, {
+            version: 1,
+            registry: existingOrigin?.registry ?? registry,
+            slug: entry,
+            installedVersion: targetVersion,
+            installedAt,
+            fingerprint: installedFingerprint,
+          });
+
+          lock.skills[entry] = withPinnedMetadata(targetVersion, installedAt, lock.skills[entry]);
+          spinner.succeed(`${entry}: updated -> ${formatGitHubVersion(targetVersion)}`);
+          continue;
+        }
+      }
+
+      const latestVersion =
+        skillMeta.latestVersion ??
+        (latestInstall?.ok && latestInstall.installKind === "archive"
+          ? { version: latestInstall.archive.version }
+          : null);
+
       let resolveResult: ResolveResult;
       if (localFingerprint) {
         resolveResult = await resolveSkillVersion(
@@ -431,7 +566,7 @@ export async function cmdUpdate(
           token,
         );
       } else {
-        resolveResult = { match: null, latestVersion: skillMeta.latestVersion ?? null };
+        resolveResult = { match: null, latestVersion };
       }
 
       const originOwnerMatches =
@@ -510,19 +645,20 @@ export async function cmdUpdate(
       const installedFingerprint =
         installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
 
+      const installedAt = existingOrigin?.installedAt ?? Date.now();
       await writeSkillOrigin(target, {
         version: 1,
         registry: existingOrigin?.registry ?? registry,
         slug: remoteSlug,
         ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
         installedVersion: targetVersion,
-        installedAt: existingOrigin?.installedAt ?? Date.now(),
+        installedAt,
         fingerprint: installedFingerprint,
       });
 
       lock.skills[entry] = withOwnerMetadata(
         targetVersion,
-        Date.now(),
+        installedAt,
         resolvedOwnerHandle,
         lock.skills[entry],
       );
@@ -910,6 +1046,69 @@ async function resolveSkillVersion(
     { method: "GET", url: url.toString(), token },
     ApiV1SkillResolveResponseSchema,
   );
+}
+
+async function resolveLatestSkillInstall(
+  registry: string,
+  slug: string,
+  ownerHandle?: string,
+  token?: string,
+  options: { forceInstall?: boolean } = {},
+) {
+  const path = `${ApiRoutes.skills}/${encodeURIComponent(slug)}/install`;
+  const url = ownerScopedUrl(registry, path, ownerHandle);
+  const requestUrl = url ? new URL(url) : null;
+  if (options.forceInstall) {
+    if (requestUrl) requestUrl.searchParams.set("forceInstall", "1");
+  }
+  return await apiRequest(
+    registry,
+    requestUrl
+      ? {
+          method: "GET",
+          url: requestUrl.toString(),
+          token,
+          acceptedStatuses: [403, 409, 410, 423],
+        }
+      : {
+          method: "GET",
+          path: `${path}${options.forceInstall ? "?forceInstall=1" : ""}`,
+          token,
+          acceptedStatuses: [403, 409, 410, 423],
+        },
+    ApiV1SkillInstallResolveResponseSchema,
+  );
+}
+
+async function installGitHubSkill(
+  registry: string,
+  resolution: GitHubInstallResolution,
+  target: string,
+) {
+  const zip = await fetchBinary(registry, {
+    url: gitHubZipUrl(resolution.github.repo, resolution.github.commit),
+  });
+  await extractGitHubZipPathToDir(zip, target, resolution.github.path);
+}
+
+function gitHubZipUrl(repo: string, commit: string) {
+  const base = (
+    process.env.CLAWHUB_GITHUB_CODELOAD_BASE_URL ||
+    process.env.OPENCLAW_CLAWHUB_GITHUB_CODELOAD_BASE_URL ||
+    "https://codeload.github.com"
+  ).replace(/\/+$/, "");
+  return `${base}/${encodeGitHubRepo(repo)}/zip/${encodeURIComponent(commit)}`;
+}
+
+function encodeGitHubRepo(repo: string) {
+  return repo
+    .split("/")
+    .map((segment) => encodeURIComponent(segment))
+    .join("/");
+}
+
+function formatGitHubVersion(commit: string) {
+  return commit.length > 12 ? commit.slice(0, 12) : commit;
 }
 
 async function fileExists(path: string) {

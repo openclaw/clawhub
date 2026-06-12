@@ -7,8 +7,23 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - needs-cli-release
+    allow:
+      - dependency-name: "@openclaw/plugin-inspector"
+
+  - package-ecosystem: "bun"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "09:00"
+      timezone: "America/Los_Angeles"
     open-pull-requests-limit: 10
     ignore:
+      - dependency-name: "@openclaw/plugin-inspector"
       - dependency-name: "@auth/core"
         update-types:
           - "version-update:semver-minor"

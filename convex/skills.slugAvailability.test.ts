@@ -22,7 +22,9 @@ type SkillDoc = {
   hiddenBy?: string;
   unpublishedSlugReservedUntil?: number;
   moderationStatus?: "active" | "hidden" | "removed";
+  moderationReason?: string;
   moderationFlags?: string[];
+  moderationVerdict?: "clean" | "suspicious" | "malicious";
 };
 
 type ReservationDoc = {
@@ -74,6 +76,7 @@ function createCtx(options: {
   } | null;
   ownerProviderAccountId?: string | null;
   callerProviderAccountId?: string | null;
+  usersById?: Record<string, Record<string, unknown>>;
 }) {
   const callerId = options.callerId ?? "users:caller";
   let authAccountLookupCount = 0;
@@ -136,6 +139,7 @@ function createCtx(options: {
     get: vi.fn(async (id: string) => {
       if (options.publisher && id === options.publisher._id) return options.publisher;
       if (options.owner && id === options.owner._id) return options.owner;
+      if (options.usersById?.[id]) return options.usersById[id];
       if (id === callerId) {
         return { _id: callerId, deletedAt: undefined, deactivatedAt: undefined };
       }
@@ -272,16 +276,16 @@ function createCtx(options: {
               throw new Error(`unexpected authAccounts index ${name}`);
             }
             return {
-              unique: async () => {
+              take: async () => {
                 authAccountLookupCount += 1;
                 if (authAccountLookupCount === 1) {
                   return options.ownerProviderAccountId
-                    ? { providerAccountId: options.ownerProviderAccountId }
-                    : null;
+                    ? [{ providerAccountId: options.ownerProviderAccountId }]
+                    : [];
                 }
                 return options.callerProviderAccountId
-                  ? { providerAccountId: options.callerProviderAccountId }
-                  : null;
+                  ? [{ providerAccountId: options.callerProviderAccountId }]
+                  : [];
               },
             };
           },
@@ -420,7 +424,7 @@ describe("skills.checkSlugAvailability", () => {
     });
   });
 
-  it("returns taken when a stale owner reservation remains on a moderation hide", async () => {
+  it("returns taken when a moderation hide has no unpublished reservation", async () => {
     const now = 1_700_000_000_000;
     vi.spyOn(Date, "now").mockReturnValue(now);
     vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
@@ -433,6 +437,43 @@ describe("skills.checkSlugAvailability", () => {
           ownerUserId: "users:owner",
           softDeletedAt: now - 120_000,
           hiddenBy: undefined,
+          moderationStatus: "hidden",
+          moderationFlags: ["blocked.malware"],
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
+      }) as never,
+      { slug: "moderated-skill", ownerHandle: "owner" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: false,
+      reason: "taken",
+      message: "Slug is already taken. Choose a different slug.",
+      url: null,
+    });
+  });
+
+  it("returns taken when moderation owns a stale unpublished reservation", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "moderated-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 120_000,
+          hiddenBy: "users:owner",
           unpublishedSlugReservedUntil: now - 60_000,
           moderationStatus: "hidden",
           moderationFlags: ["blocked.malware"],
@@ -454,6 +495,210 @@ describe("skills.checkSlugAvailability", () => {
       available: false,
       reason: "taken",
       message: "Slug is already taken. Choose a different slug.",
+      url: null,
+    });
+  });
+
+  it("returns taken when a moderator re-hides a skill with a stale unpublished reservation", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "moderated-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 120_000,
+          hiddenBy: "users:mod",
+          unpublishedSlugReservedUntil: now - 60_000,
+          moderationStatus: "hidden",
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
+        usersById: {
+          "users:mod": { _id: "users:mod", role: "moderator" },
+        },
+      }) as never,
+      { slug: "moderated-skill", ownerHandle: "owner" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: false,
+      reason: "taken",
+      message: "Slug is already taken. Choose a different slug.",
+      url: null,
+    });
+  });
+
+  it("returns taken when a malicious verdict owns a stale unpublished reservation", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "malicious-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 120_000,
+          hiddenBy: "users:owner",
+          unpublishedSlugReservedUntil: now - 60_000,
+          moderationStatus: "hidden",
+          moderationVerdict: "malicious",
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
+      }) as never,
+      { slug: "malicious-skill", ownerHandle: "owner" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: false,
+      reason: "taken",
+      message: "Slug is already taken. Choose a different slug.",
+      url: null,
+    });
+  });
+
+  it("returns available when an owner-deleted reservation with non-blocking flags expires", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "reviewed-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 120_000,
+          hiddenBy: "users:owner",
+          unpublishedSlugReservedUntil: now - 60_000,
+          moderationStatus: "hidden",
+          moderationFlags: ["flagged.suspicious"],
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
+      }) as never,
+      { slug: "reviewed-skill", ownerHandle: "owner" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string | null;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: true,
+      reason: "available",
+      message: null,
+      url: null,
+    });
+  });
+
+  it("returns available when an owner-deleted reservation with a stale benign reason expires", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "reviewed-skill",
+          ownerUserId: "users:owner",
+          softDeletedAt: now - 120_000,
+          hiddenBy: "users:owner",
+          unpublishedSlugReservedUntil: now - 60_000,
+          moderationStatus: "hidden",
+          moderationReason: "scanner.aggregate.clean",
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
+      }) as never,
+      { slug: "reviewed-skill", ownerHandle: "owner" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string | null;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: true,
+      reason: "available",
+      message: null,
+      url: null,
+    });
+  });
+
+  it("returns available when an org-owner reservation expires after the deleting admin is removed", async () => {
+    const now = 1_700_000_000_000;
+    vi.spyOn(Date, "now").mockReturnValue(now);
+    vi.mocked(getAuthUserId).mockResolvedValue("users:caller" as never);
+
+    const result = (await checkSlugAvailabilityHandler(
+      createCtx({
+        skill: {
+          _id: "skills:1",
+          slug: "org-skill",
+          ownerUserId: "users:owner",
+          ownerPublisherId: "publishers:org",
+          softDeletedAt: now - 120_000,
+          hiddenBy: "users:former-admin",
+          unpublishedSlugReservedUntil: now - 60_000,
+          moderationStatus: "hidden",
+        },
+        owner: {
+          _id: "users:owner",
+          handle: "owner",
+        },
+        publisher: {
+          _id: "publishers:org",
+          handle: "org",
+          kind: "org",
+        },
+        usersById: {
+          "users:former-admin": {
+            _id: "users:former-admin",
+            role: "user",
+            deactivatedAt: now - 30_000,
+          },
+        },
+      }) as never,
+      { slug: "org-skill", ownerHandle: "org" } as never,
+    )) as {
+      available: boolean;
+      reason: string;
+      message: string | null;
+      url: string | null;
+    };
+
+    expect(result).toEqual({
+      available: true,
+      reason: "available",
+      message: null,
       url: null,
     });
   });

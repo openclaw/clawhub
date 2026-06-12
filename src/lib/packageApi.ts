@@ -23,6 +23,12 @@ export type PackageListItem = {
   capabilityTags?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
+  stats?: {
+    downloads: number;
+    installs: number;
+    stars: number;
+    versions: number;
+  };
 };
 
 export type PackageDetailResponse = ApiV1PackageResponse;
@@ -161,15 +167,18 @@ export type PackageVersionDetail = {
 };
 
 type PluginFamily = "code-plugin" | "bundle-plugin";
+type PackageCatalogSort = "updated" | "downloads" | "recommended";
 
 type PluginCatalogResult = {
   items: PackageListItem[];
   nextCursor: string | null;
+  totalCount?: number | null;
 };
 
 type PackageCatalogBrowseResponse = {
   items: PackageListItem[];
   nextCursor: string | null;
+  totalCount?: number | null;
 };
 
 type PackageApiErrorOptions = {
@@ -359,6 +368,7 @@ export async function fetchPackages(params: {
   executesCode?: boolean;
   capabilityTag?: string;
   category?: string;
+  sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
 }) {
@@ -403,6 +413,7 @@ export async function fetchPackages(params: {
   }
   if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
   if (params.category) url.searchParams.set("category", params.category);
+  if (params.sort) url.searchParams.set("sort", params.sort);
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
     url,
     params.signal,
@@ -417,6 +428,7 @@ export async function fetchPluginCatalog(params: {
   featured?: boolean;
   executesCode?: boolean;
   category?: string;
+  sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
 }): Promise<PluginCatalogResult> {
@@ -429,6 +441,7 @@ export async function fetchPluginCatalog(params: {
       featured: params.featured,
       executesCode: params.executesCode,
       category: params.category,
+      sort: params.sort,
       limit: params.limit,
       signal: params.signal,
     });
@@ -443,6 +456,7 @@ export async function fetchPluginCatalog(params: {
     return {
       items: browseResponse?.items ?? [],
       nextCursor: browseResponse?.nextCursor ?? null,
+      totalCount: browseResponse?.totalCount ?? null,
     };
   }
 
@@ -481,10 +495,12 @@ export async function fetchPluginCatalog(params: {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
   if (params.category) url.searchParams.set("category", params.category);
+  if (params.sort) url.searchParams.set("sort", params.sort);
   const result = await fetchJson<PluginCatalogResult>(url, params.signal);
   return {
     items: result?.items ?? [],
     nextCursor: result?.nextCursor ?? null,
+    totalCount: result?.totalCount ?? null,
   };
 }
 

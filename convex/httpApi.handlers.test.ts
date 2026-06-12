@@ -276,7 +276,7 @@ describe("httpApi handlers", () => {
   it("cliWhoamiHttp returns 401 on auth failure", async () => {
     vi.mocked(requireApiTokenUser).mockRejectedValueOnce(
       new Error(
-        "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, contact security@openclaw.ai.",
+        "Unauthorized: This ClawHub account is not in good standing and cannot use API tokens. If you believe this is a mistake, open a GitHub issue: https://github.com/openclaw/clawhub/issues/new.",
       ),
     );
     const response = await __handlers.cliWhoamiHandler(
@@ -300,49 +300,40 @@ describe("httpApi handlers", () => {
     expect(json.user.handle).toBe("p");
   });
 
-  it("cliTelemetrySyncHttp forwards roots and returns ok", async () => {
+  it("cliTelemetryInstallHttp forwards one install event and returns ok", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
     const runMutation = vi.fn().mockResolvedValue(null);
-    const response = await __handlers.cliTelemetrySyncHandler(
+    const response = await __handlers.cliTelemetryInstallHandler(
       makeCtx({ runMutation }),
-      new Request("https://x/api/cli/telemetry/sync", {
+      new Request("https://x/api/cli/telemetry/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          roots: [
-            {
-              rootId: "abc",
-              label: "~/skills",
-              skills: [{ slug: "weather", ownerHandle: "openclaw", version: null }],
-            },
-          ],
+          event: "install",
+          slug: "weather",
+          version: "1.0.0",
+          rootId: "abc",
+          rootLabel: "~/skills",
         }),
       }),
     );
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ ok: true });
-    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      userId: "users:1",
+      slug: "weather",
+      version: "1.0.0",
+      rootId: "abc",
+      rootLabel: "~/skills",
+    });
   });
 
-  it("cliTelemetrySyncHttp returns 400 on invalid payload", async () => {
-    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
-    const response = await __handlers.cliTelemetrySyncHandler(
-      makeCtx({ runMutation: vi.fn() }),
-      new Request("https://x/api/cli/telemetry/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roots: "nope" }),
-      }),
-    );
-    expect(response.status).toBe(400);
-  });
-
-  it("cliTelemetrySyncHttp forwards skill versions when provided", async () => {
+  it("cliTelemetryInstallHttp rejects sync-shaped roots snapshots", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
     const runMutation = vi.fn().mockResolvedValue(null);
-    await __handlers.cliTelemetrySyncHandler(
+    const response = await __handlers.cliTelemetryInstallHandler(
       makeCtx({ runMutation }),
-      new Request("https://x/api/cli/telemetry/sync", {
+      new Request("https://x/api/cli/telemetry/install", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -356,35 +347,8 @@ describe("httpApi handlers", () => {
         }),
       }),
     );
-    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      userId: "users:1",
-      roots: [
-        {
-          rootId: "abc",
-          label: "~/skills",
-          skills: [{ slug: "weather", ownerHandle: "openclaw", version: "1.0.0" }],
-        },
-      ],
-    });
-  });
-
-  it("cliTelemetrySyncHttp returns 400 on invalid json", async () => {
-    const request = new Request("https://x/api/cli/telemetry/sync", { method: "POST", body: "{" });
-    const response = await __handlers.cliTelemetrySyncHandler(makeCtx({}), request);
     expect(response.status).toBe(400);
-  });
-
-  it("cliTelemetrySyncHttp returns 401 when unauthorized", async () => {
-    vi.mocked(requireApiTokenUser).mockRejectedValueOnce(new Error("Unauthorized"));
-    const response = await __handlers.cliTelemetrySyncHandler(
-      makeCtx({}),
-      new Request("https://x/api/cli/telemetry/sync", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ roots: [] }),
-      }),
-    );
-    expect(response.status).toBe(401);
+    expect(runMutation).not.toHaveBeenCalled();
   });
 
   it("cliDeviceCodeHttp rate limits and creates a device code", async () => {

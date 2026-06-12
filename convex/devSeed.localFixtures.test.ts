@@ -4,7 +4,10 @@ import {
   currentUserSeedPackageName,
   currentUserSeedSkillSlug,
   seedFeaturedPluginPackagesMutation,
+  seedGitHubBackedSkillSourceMutation,
+  seedLocalFixtures,
   seedLocalModerationFixturesHandler,
+  seedPublicCorpusBatchMutation,
   seedSkillMutation,
 } from "./devSeed";
 
@@ -17,6 +20,15 @@ const seedSkillMutationHandler = (
 )._handler;
 const seedFeaturedPluginPackagesHandler = (
   seedFeaturedPluginPackagesMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedGitHubBackedSkillSourceHandler = (
+  seedGitHubBackedSkillSourceMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const seedLocalFixturesHandler = (
+  seedLocalFixtures as unknown as WrappedHandler<{ reset?: boolean }>
+)._handler;
+const seedPublicCorpusBatchHandler = (
+  seedPublicCorpusBatchMutation as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
 
 function chainEq(constraints: Record<string, unknown>) {
@@ -146,6 +158,33 @@ function seedSkillArgs(storageId: string) {
 }
 
 describe("devSeed local fixtures", () => {
+  it("does not preconfigure GitHub-backed source fixtures in the local seed action", async () => {
+    const mutationCalls: Array<{ args: Record<string, unknown> }> = [];
+    let storageCounter = 0;
+    const ctx = {
+      storage: {
+        store: async () => `storage:${++storageCounter}`,
+      },
+      runMutation: async (_ref: unknown, args: Record<string, unknown>) => {
+        mutationCalls.push({ args });
+        return { ok: true, seeded: ["local-moderation-fixtures"], skipped: [] };
+      },
+    };
+
+    const result = await seedLocalFixturesHandler(ctx as never, { reset: true });
+
+    expect(mutationCalls).toHaveLength(1);
+    expect(mutationCalls[0]?.args).toMatchObject({
+      reset: true,
+    });
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        results: [expect.objectContaining({ slug: "local-moderation-fixtures" })],
+      }),
+    );
+  });
+
   it("seeds core skill fixtures for an explicit local user without creating @local", async () => {
     const { db, tables } = createDb();
     const userId = (await db.insert("users", {
@@ -187,6 +226,210 @@ describe("devSeed local fixtures", () => {
         ownerUserId: userId,
         ownerPublisherId: tables.publishers?.[0]?._id,
       }),
+    );
+  });
+
+  it("does not copy publisher ownership onto public corpus skill embeddings", async () => {
+    const { db, tables } = createDb();
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "skill",
+            slug: "corpus-demo",
+            displayName: "Corpus Demo",
+            version: "0.1.0",
+            skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+            storageId: "storage:corpus-demo",
+            embedding: [0, 1, 2],
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    expect(tables.skills?.[0]).toEqual(
+      expect.objectContaining({
+        slug: "corpus-demo",
+        ownerPublisherId: tables.publishers?.[0]?._id,
+      }),
+    );
+    expect(tables.skillEmbeddings?.[0]).not.toHaveProperty("ownerPublisherId");
+  });
+
+  it("seeds a GitHub-backed source and skills without creating mirrored versions", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "nvidia-dev",
+      displayName: "NVIDIA Dev",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+
+    const result = await seedGitHubBackedSkillSourceHandler(
+      createMutationCtx(db) as never,
+      {
+        ownerUserId: userId,
+        repo: "NVIDIA/skills",
+        defaultBranch: "main",
+        displayManifestKind: "skills.sh",
+        displayManifestHash: "manifest-sha256",
+        displayManifestCommit: "0".repeat(40),
+        displayManifestFetchedAt: 123,
+        displayManifestStatus: "ok",
+        displayManifest: {
+          notGrouped: "bottom",
+          groupings: [
+            {
+              title: "Agentic AI",
+              description: "Agentic AI skills.",
+              skills: ["aiq-deploy", "nemoclaw-user-configure-security"],
+            },
+          ],
+        },
+        skills: [
+          {
+            slug: "aiq-deploy",
+            displayName: "AIQ Deploy",
+            summary: "Deploy AgentIQ workflows.",
+            githubPath: "skills/aiq-deploy",
+            githubCurrentCommit: "1".repeat(40),
+            githubCurrentContentHash: "hash-aiq-deploy",
+            githubScanStatus: "clean",
+            githubCurrentCheckedAt: 456,
+          },
+          {
+            slug: "nemoclaw-user-configure-security",
+            displayName: "NeMoClaw User Configure Security",
+            summary: "Configure NeMoClaw user security.",
+            githubPath: "skills/nemoclaw-user-configure-security",
+            githubCurrentCommit: "2".repeat(40),
+            githubCurrentContentHash: "hash-nemoclaw",
+            githubScanStatus: "clean",
+            githubCurrentCheckedAt: 789,
+            githubRemovedAt: 900,
+          },
+        ],
+      } as never,
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      seeded: ["aiq-deploy", "nemoclaw-user-configure-security"],
+      skipped: [],
+    });
+    expect(tables.githubSkillSources).toHaveLength(1);
+    expect(tables.githubSkillSources?.[0]).toEqual(
+      expect.objectContaining({
+        repo: "NVIDIA/skills",
+        ownerPublisherId: tables.publishers?.[0]?._id,
+        defaultBranch: "main",
+        displayManifestKind: "skills.sh",
+        displayManifestHash: "manifest-sha256",
+        displayManifestCommit: "0".repeat(40),
+        displayManifestFetchedAt: 123,
+        displayManifestStatus: "ok",
+        displayManifest: {
+          notGrouped: "bottom",
+          groupings: [
+            {
+              title: "Agentic AI",
+              description: "Agentic AI skills.",
+              skills: ["aiq-deploy", "nemoclaw-user-configure-security"],
+            },
+          ],
+        },
+      }),
+    );
+    expect(tables.skills).toHaveLength(2);
+    expect(tables.skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "aiq-deploy",
+          installKind: "github",
+          githubSourceId: tables.githubSkillSources?.[0]?._id,
+          githubPath: "skills/aiq-deploy",
+          githubCurrentCommit: "1".repeat(40),
+          githubCurrentContentHash: "hash-aiq-deploy",
+          githubScanStatus: "clean",
+          githubCurrentCheckedAt: 456,
+          latestVersionId: undefined,
+          latestVersionSummary: undefined,
+          tags: {},
+          stats: expect.objectContaining({ versions: 0 }),
+        }),
+        expect.objectContaining({
+          slug: "nemoclaw-user-configure-security",
+          installKind: "github",
+          githubSourceId: tables.githubSkillSources?.[0]?._id,
+          githubPath: "skills/nemoclaw-user-configure-security",
+          githubCurrentContentHash: "hash-nemoclaw",
+          githubRemovedAt: 900,
+          moderationStatus: "hidden",
+          moderationReason: "github.upstream.removed",
+          moderationVerdict: undefined,
+          isSuspicious: false,
+          latestVersionId: undefined,
+          tags: {},
+        }),
+      ]),
+    );
+    expect(tables.skillVersions ?? []).toHaveLength(0);
+  });
+
+  it("keeps unscanned GitHub-backed skills hidden from public listings", async () => {
+    const { db, tables } = createDb();
+
+    await seedGitHubBackedSkillSourceHandler(
+      createMutationCtx(db) as never,
+      {
+        repo: "NVIDIA/skills",
+        displayManifestStatus: "ok",
+        skills: [
+          {
+            slug: "pending-github-skill",
+            displayName: "Pending GitHub Skill",
+            githubPath: "skills/pending-github-skill",
+            githubCurrentCommit: "1".repeat(40),
+            githubCurrentContentHash: "hash-pending",
+            githubScanStatus: "pending",
+          },
+          {
+            slug: "failed-scan-github-skill",
+            displayName: "Failed Scan GitHub Skill",
+            githubPath: "skills/failed-scan-github-skill",
+            githubCurrentCommit: "2".repeat(40),
+            githubCurrentContentHash: "hash-failed-scan",
+            githubScanStatus: "failed",
+          },
+        ],
+      } as never,
+    );
+
+    expect(tables.skills).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          slug: "pending-github-skill",
+          moderationStatus: "hidden",
+          moderationReason: "pending.scan",
+          moderationVerdict: undefined,
+          isSuspicious: false,
+        }),
+        expect.objectContaining({
+          slug: "failed-scan-github-skill",
+          moderationStatus: "hidden",
+          moderationReason: "scanner.failed",
+          moderationVerdict: undefined,
+          isSuspicious: false,
+        }),
+      ]),
     );
   });
 
@@ -258,6 +501,21 @@ describe("devSeed local fixtures", () => {
       scannedPluginName,
     ]);
     expect(tables.packages?.every((pkg) => pkg.ownerUserId === userId)).toBe(true);
+    expect(tables.packageInspectorWarnings).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packageName: scannedPluginName,
+          findingKind: "warning",
+          code: "legacy-before-agent-start",
+        }),
+        expect.objectContaining({
+          packageName: scannedPluginName,
+          findingKind: "error",
+          code: "missing-expected-seam",
+          scanSource: "nightly",
+        }),
+      ]),
+    );
   });
 
   it("retires legacy @local-owner seed publishers so dev-auth users can claim the handle", async () => {

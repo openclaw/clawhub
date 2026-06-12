@@ -3,7 +3,7 @@
     "src",
     "convex",
     "packages/clawhub/src",
-    "packages/clawhub-mod/src",
+    "packages/clawhub-admin/src",
     "packages/schema/src"
   ],
   "compilerOptions": {

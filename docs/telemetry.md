@@ -1,5 +1,5 @@
 ---
-summary: "Install telemetry collected via `clawhub sync` + opt-out."
+summary: "Install telemetry collected by the ClawHub CLI and how to opt out."
 read_when:
   - Working on telemetry / privacy controls
   - Questions about what data is collected
@@ -7,76 +7,52 @@ read_when:
 
 # Telemetry
 
-ClawHub uses **minimal telemetry** to compute **install counts** (what’s actually in use) and to power better sorting/filtering.
-This is based on the CLI `clawhub sync` command.
+ClawHub uses minimal CLI telemetry to compute aggregate install counts.
 
 ## When telemetry is collected
 
 Telemetry is only sent when:
 
-- You are **logged in** in the CLI (we already require auth for sync/publish flows).
-- You run `clawhub sync`.
+- You are logged in in the CLI.
+- You run `clawhub install <slug>`.
 - Telemetry is **not disabled** (see “How to disable” below).
 
 If you are not logged in, nothing is reported.
 
 ## What we collect
 
-On each `clawhub sync`, the CLI reports a **full snapshot** of what it found, grouped by scan root (“folder/root”).
+On each reported `clawhub install`, the CLI sends one best-effort install event.
 
-For each root we store:
+The event includes:
 
 - `rootId`: a **SHA-256 hash** of the canonical root path (server never sees the raw path).
-- `label`: a human-readable label derived from the last two path segments (home paths are shown with `~`).
-- `firstSeenAt`, `lastSeenAt`, optional `expiredAt`.
-
-For each skill found under a root we store:
-
-- `skillId` (resolved by slug; only skills that exist in the registry are tracked).
-- `firstSeenAt`, `lastSeenAt`.
-- `lastVersion` (best-effort; currently the registry-matched version if known).
-- optional `removedAt` when a previously-reported install disappears from a root.
+- `rootLabel`: a short label derived from the last two path segments (home paths are shown with `~`).
+- `slug`: the installed skill slug.
+- `version`: the installed version, when known.
 
 ### What we do _not_ collect
 
 - No raw absolute folder paths (only hashed `rootId` + a short display label).
 - No file contents.
 - No per-run logs, prompts, or other CLI output.
-- No tracking for skills that aren’t uploaded to the registry (unknown slugs are ignored).
 
 ## Install counts
 
-We maintain two counters per skill:
+ClawHub maintains aggregate counters per skill:
 
-- `installsCurrent`: unique users who currently have the skill installed in at least one active root.
-- `installsAllTime`: unique users who have ever reported the skill installed.
-
-### Multiple roots
-
-If you sync from multiple folders, we treat each scan root independently. A skill is “currently installed” if it exists in **any** active root.
-
-### Uninstall detection
-
-Because `sync` reports the full set per root:
-
-- If a skill disappears from a root on the next sync, we mark it removed for that root.
-- If the skill is removed from all of your roots, it no longer counts toward `installsCurrent`.
-- `installsAllTime` never decreases unless you delete telemetry (see below).
-
-### Staleness (120 days)
-
-Roots that don’t report telemetry for **120 days** are marked stale and their installs stop counting toward `installsCurrent`.
-This is evaluated lazily (on the next telemetry report) to avoid background jobs.
+- `installsAllTime`: unique users who have reported at least one CLI install for the skill.
+- `installsCurrent`: unique users who have reported an install and have not deleted their
+  telemetry.
 
 ## Transparency + user controls
 
 ClawHub provides a private “Installed” tab on your own profile:
 
-- Shows the exact roots + installed skills we store.
+- Shows install telemetry associated with your account.
 - Includes a **JSON export** view.
 - Includes a **Delete telemetry** action to remove all stored telemetry for your account.
 
-Everyone else only sees **aggregated install counters**; no one else can see your roots/folders.
+Everyone else only sees **aggregated install counters**.
 
 Deleting your account also deletes your telemetry data.
 
@@ -88,4 +64,4 @@ Set the environment variable:
 export CLAWHUB_DISABLE_TELEMETRY=1
 ```
 
-With this set, the CLI will not send telemetry during `clawhub sync`.
+With this set, the CLI will not send install telemetry.

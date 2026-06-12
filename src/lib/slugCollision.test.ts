@@ -5,7 +5,6 @@ describe("getPublicSlugCollision", () => {
   it("returns null when availability result is missing", () => {
     expect(
       getPublicSlugCollision({
-        isSoulMode: false,
         slug: "demo",
         result: undefined,
       }),
@@ -15,7 +14,6 @@ describe("getPublicSlugCollision", () => {
   it("returns null when slug is available", () => {
     expect(
       getPublicSlugCollision({
-        isSoulMode: false,
         slug: "demo",
         result: {
           available: true,
@@ -30,7 +28,6 @@ describe("getPublicSlugCollision", () => {
   it("returns collision with link when query reports unavailable with URL", () => {
     expect(
       getPublicSlugCollision({
-        isSoulMode: false,
         slug: "demo",
         result: {
           available: false,
@@ -48,7 +45,6 @@ describe("getPublicSlugCollision", () => {
   it("does not duplicate the conflicting skill URL in the public message", () => {
     expect(
       getPublicSlugCollision({
-        isSoulMode: false,
         slug: "demo",
         result: {
           available: false,
@@ -66,7 +62,6 @@ describe("getPublicSlugCollision", () => {
   it("returns generic collision message when backend message is empty", () => {
     expect(
       getPublicSlugCollision({
-        isSoulMode: false,
         slug: "demo",
         result: {
           available: false,

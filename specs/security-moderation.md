@@ -12,7 +12,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
-- user: upload skills/souls (subject to GitHub age gate), report skills/comments/packages.
+- user: upload skills (subject to GitHub age gate), report skills/comments/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
@@ -25,6 +25,33 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   restoring skills or scheduling another page.
 - Restore pages only clear the exact `softDeletedAt` timestamp from the ban
   being lifted and only for skills hidden with `moderationReason = "user.banned"`.
+
+## Account and publisher deletion
+
+- User and org deletion are soft-delete flows. They must not hard-delete users,
+  publishers, memberships, skills, packages/plugins, reports, or audit rows.
+- Deleting a personal account hides personal publisher resources and any orgs
+  where that user is the sole owner. Multi-owner orgs stay active.
+- Deleting an org publisher marks the publisher deleted/deactivated and hides
+  resources owned by that publisher. Skills are hidden with
+  `moderationReason = "publisher.deleted"` and packages/plugins with
+  `softDeletedReason = "publisher.deleted"`.
+- Public/user-facing browse, detail, install, raw-file, and package download
+  paths must continue to exclude soft-deleted resources regardless of whether
+  the deletion came from moderation, account deletion, or org deletion.
+
+## Publisher abuse scoring
+
+- Publisher abuse scoring is a staff review signal for bulk-publishing abuse.
+  It must not directly ban users; staff action goes through the publisher abuse
+  nomination review path.
+- Official org publishers are excluded from publisher abuse scoring and
+  enforcement. An excluded publisher must not contribute to score-run cohort
+  statistics, receive a score label/rank, open or update a nomination, appear in
+  the dashboard/detail state, or be actionable through a stale nomination id.
+- The exclusion is backend-enforced. The management UI must derive its publisher
+  abuse list from the filtered backend dashboard state instead of applying a
+  separate client-side official-org filter.
 
 ## Reporting + auto-hide
 
@@ -48,7 +75,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - soft-delete comment (`softDeletedAt`)
     - decrement comment stat via `uncomment` stat event
     - audit log entry: `comment.auto_hide`
-- Package reports feed `clawhub-mod package moderation-queue` and audit `package.report`,
+- Package reports feed `clawhub-admin package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators can review a formal report
   with an explicit final action to quarantine or revoke the affected release.
 - Package reports can be moved to `confirmed` or `dismissed` with a moderator
@@ -81,19 +108,19 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   compatibility, but the first-class CLI and docs surface is deprecated.
   Publisher recovery for false positives should use reports or out-of-band
   support, while account bans require out-of-band support.
-- Any ClawScan path that determines a skill is malicious must hide the skill and
-  schedule the same account-level autoban/token-revocation workflow. Static
-  scan findings are ClawScan input context only and must not schedule autobans
-  or set public/install-blocking trust by themselves.
+- Any ClawScan path that determines a skill or plugin release is malicious must
+  block that candidate version and notify the publisher with local
+  `clawhub scan` remediation guidance. Scanner-triggered emails are
+  artifact-level and must not link to account appeals. Account-level autoban,
+  token revocation, and appeal email only happen after the silent escalation
+  thresholds: two distinct malicious artifacts or three malicious attempts on
+  the same artifact. Static scan findings are ClawScan input context only and
+  must not schedule account autobans or set public/install-blocking trust by
+  themselves.
 - Pending skill ownership transfers must not be accepted when the requesting
   owner is deleted/deactivated or when the skill is malicious, hidden, or
   removed. The accept path is the final shared gate before ownership changes,
   so it must cancel the pending transfer before reporting the rejection.
-- Publisher-authored scan notes are no longer part of the ClawScan input
-  contract. ClawScan decisions must be based on submitted artifacts, scanner
-  signals, and staff moderation state, not publisher-supplied explanatory text.
-  Legacy persisted note fields may exist on old rows for schema compatibility,
-  but publish, rescan, API, UI, and prompt paths must ignore them.
 - User-submitted `POST /api/v1/skills/-/scan` upload scans are authenticated but
   ephemeral. They store uploaded files only on `skillScanRequests`, feed the
   normal ClawScan worker, and must never create or patch public `skills`,
@@ -110,11 +137,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   publisher set/unset. Personal publisher sync should log meaningful create,
   change, link, or membership events, not routine login refreshes.
 - Public queries hide non-active moderation statuses; moderators can still access via
-  moderator-only queries and unhide/restore/delete/ban.
+  admin-only queries and unhide/restore/delete/ban.
 - Public skill raw-file, README, package-compat file, and zip download reads must
   honor the same malware/pending/hidden/removed download block. Metadata routes
   may keep exposing malware-blocked skill summaries for transparency, but they
-  must not serve the blocked artifact payload to public callers.
+  must not serve the blocked artifact payload to public callers. Exact-version
+  skill and package metadata routes must also block when the requested version is
+  the moderated source version.
 - Skill version tags and `latestVersionId` are only valid when the referenced
   `skillVersions` row belongs to the same skill and is not soft-deleted. Writers
   must reject cross-skill tag targets, and public readers should treat stale
@@ -189,7 +218,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   post-Codex veto. The release worker must not downgrade a benign Codex verdict
   solely from regex telemetry.
 - Artifacts remain visible while Codex runs unless another non-scanner moderation
-  hold applies. Codex malicious verdicts hide/block.
+  hold applies. Codex malicious verdicts block the candidate version. On updates,
+  the previous clean/current public version remains live; on first versions,
+  nothing public is promoted.
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.
@@ -222,7 +253,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   - user-directed provider uploads are not exfiltration unless the source is broad/private/sensitive, automatic, or sent to an unrelated/hidden destination.
   - Basic Auth/base64 credential encoding and provider-response base64 decoding are normal integration behavior.
   - scoped uninstall cleanup under a skill-owned `.openclaw` path is not a destructive-delete finding unless it deletes a broad/protected path or hides impact.
-  - stealth/anti-detection browser automation becomes malicious only when paired with bot-protection bypass and persistent sessions.
+  - Browser automation, stealth browsing, and anti-bot/crawling behavior are not classified by ClawHub's static scanner. SkillSpector owns that browser-automation analysis lane; ClawHub static rules should only preserve non-browser-specific concrete source/sink evidence.
 - Static malware detection still records deterministic findings such as
   obfuscated shell payload prompts, but those findings are context for ClawScan,
   not a standalone hard block or uploader moderation trigger.
@@ -254,7 +285,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
       current ban so the next matching unban can restore them
   - retimestamps already ban-hidden owned skills to the current ban marker so
     a later matching unban can restore them
-  - soft-deletes all authored skill comments + soul comments
+  - soft-deletes all authored skill comments
   - revokes API tokens
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
@@ -271,6 +302,13 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   on the restored user's package audit rows.
   Ban context lookup must tolerate duplicate Convex Auth account rows by
   selecting the currently banned user with matching ban audit evidence.
+- Ban notification emails must be public-safe: include the high-level action
+  reason, affected skill/plugin when known, the external appeals link, and
+  scanner context when the account was escalated from repeated malicious
+  artifacts. Artifact-level scanner emails must instead say the version was
+  blocked, keep appeals out of the copy, and link existing CLI scan docs. Emails
+  must not expose raw moderator notes, reporter identifiers, internal finding
+  ids, or other staff-only ban reason text.
 - Unban restore batches only restore packages/plugins hidden by the matching
   ban timestamp and must stop if the user has been banned again.
 - Stale unban restore batches must stop if the user was banned again before a
@@ -296,8 +334,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Upload gate (GitHub account age)
 
-- Skill + soul publish actions require GitHub account age ≥ 14 days.
-- Skill + soul comment creation also requires GitHub account age ≥ 14 days.
+- Skill publish actions require GitHub account age ≥ 14 days.
+- Skill comment creation also requires GitHub account age ≥ 14 days.
 - Lookup uses GitHub `created_at` fetched by the immutable GitHub numeric ID (`providerAccountId`)
   and caches on the user:
   - `githubCreatedAt` (source of truth)

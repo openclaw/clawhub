@@ -90,7 +90,6 @@ export function ImportGitHub() {
   const slugCollision = useMemo(
     () =>
       getPublicSlugCollision({
-        isSoulMode: false,
         slug: trimmedSlug,
         result: slugAvailability,
       }),

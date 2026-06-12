@@ -21,10 +21,8 @@ import {
   formatSyncedSummary,
   getRegistryWithAuth,
   mapWithConcurrency,
-  mergeScan,
   normalizeConcurrency,
   printSection,
-  reportTelemetryIfEnabled,
   resolvePublishMeta,
   scanRootsWithLabels,
   selectToUpload,
@@ -54,7 +52,6 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   const spinner = jsonMode ? null : createSpinner("Scanning for local skills");
   const primaryScan = await scanRootsWithLabels(combinedRoots, clawdbotRoots.labels);
   let scan = primaryScan;
-  let telemetryScan = primaryScan;
   if (primaryScan.skills.length === 0) {
     if (!includeClawdbotRoots) {
       fail("No skills found (checked configured roots)");
@@ -62,7 +59,6 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     const fallback = getFallbackSkillRoots(opts.workdir);
     const fallbackScan = await scanRootsWithLabels(fallback);
     spinner?.stop();
-    telemetryScan = mergeScan(primaryScan, fallbackScan);
     scan = fallbackScan;
     if (fallbackScan.skills.length === 0)
       fail("No skills found (checked workdir and known Clawdis/Clawd locations)");
@@ -135,15 +131,6 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     throw error;
   } finally {
     candidatesSpinner?.stop();
-  }
-
-  if (token) {
-    await reportTelemetryIfEnabled({
-      token,
-      registry,
-      scan: telemetryScan,
-      candidates,
-    });
   }
 
   const synced = candidates.filter((candidate) => candidate.status === "synced");

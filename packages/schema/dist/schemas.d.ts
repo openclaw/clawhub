@@ -126,19 +126,42 @@ export declare const ApiSkillResolveResponseSchema: import("arktype/internal/var
         version: string;
     } | null;
 }, {}>;
-export declare const CliTelemetrySyncRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    roots: {
-        rootId: string;
-        label: string;
-        skills: {
-            slug: string;
-            ownerHandle?: string | undefined;
-            version?: string | null | undefined;
-        }[];
-    }[];
+export declare const ApiV1SkillInstallResolveResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    slug: string;
+    installKind: "archive";
+    archive: {
+        version: string;
+        downloadUrl: string;
+    };
+} | {
+    ok: true;
+    slug: string;
+    installKind: "github";
+    github: {
+        repo: string;
+        path: string;
+        commit: string;
+        contentHash: string;
+        sourceUrl: string;
+    };
+} | {
+    ok: false;
+    slug: string;
+    reason: "archive_version_missing" | "github_source_missing" | "github_upstream_removed" | "github_upstream_missing" | "github_upstream_unknown" | "github_verification_pending" | "github_scan_failed";
+    message: string;
+    status: number;
 }, {}>;
-export type CliTelemetrySyncRequest = (typeof CliTelemetrySyncRequestSchema)[inferred];
-export declare const ApiCliTelemetrySyncResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+export type ApiV1SkillInstallResolveResponse = (typeof ApiV1SkillInstallResolveResponseSchema)[inferred];
+export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    event: "install";
+    slug: string;
+    version?: string | undefined;
+    rootId?: string | undefined;
+    rootLabel?: string | undefined;
+}, {}>;
+export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
+export declare const ApiCliTelemetryInstallResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
 }, {}>;
 export declare const ApiV1WhoamiResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -167,6 +190,30 @@ export declare const ApiV1PublisherCreateResponseSchema: import("arktype/interna
     trusted: false;
 }, {}>;
 export type ApiV1PublisherCreateResponse = (typeof ApiV1PublisherCreateResponseSchema)[inferred];
+export declare const ApiV1PublisherDeleteResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    publisherId: string;
+    handle: string;
+    dryRun: boolean;
+    deleted: boolean;
+    activeSkills: number;
+    activePackages: number;
+    memberCount: number;
+}, {}>;
+export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
+export declare const ApiV1StaffEmailSendResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    sent: true;
+    recipient: {
+        email: string;
+        userId?: string | undefined;
+        handle?: string | null | undefined;
+    };
+    subject: string;
+    template: string;
+    providerId: string | null;
+}, {}>;
+export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSchema)[inferred];
 export declare const ApiV1SearchResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     results: {
         score: number;
@@ -192,12 +239,21 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
         createdAt: number;
         updatedAt: number;
         summary?: string | null | undefined;
+        description?: string | null | undefined;
         latestVersion?: {
             version: string;
             createdAt: number;
             changelog: string;
             license?: "MIT-0" | null | undefined;
         } | undefined;
+        metadata?: {
+            setup: {
+                key: string;
+                required: boolean;
+            }[];
+            os?: string[] | null | undefined;
+            systems?: string[] | null | undefined;
+        } | null | undefined;
     }[];
     nextCursor: string | null;
 }, {}>;
@@ -210,6 +266,7 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         createdAt: number;
         updatedAt: number;
         summary?: string | null | undefined;
+        description?: string | null | undefined;
     } | null;
     latestVersion: {
         version: string;
@@ -222,6 +279,14 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         displayName?: string | null | undefined;
         image?: string | null | undefined;
     } | null;
+    metadata?: {
+        setup: {
+            key: string;
+            required: boolean;
+        }[];
+        os?: string[] | null | undefined;
+        systems?: string[] | null | undefined;
+    } | null | undefined;
     moderation?: {
         isSuspicious: boolean;
         isMalwareBlocked: boolean;
@@ -397,6 +462,15 @@ export declare const ApiV1SkillScanSubmitRequestSchema: import("arktype/internal
     update?: boolean | undefined;
 }, {}>;
 export type ApiV1SkillScanSubmitRequest = (typeof ApiV1SkillScanSubmitRequestSchema)[inferred];
+export declare const ApiV1SkillScanQueueSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    queuedAhead: number;
+    position: number | null;
+    running: number;
+    note: string;
+    queuedAheadIsEstimate?: boolean | undefined;
+    runningIsEstimate?: boolean | undefined;
+}, {}>;
+export type ApiV1SkillScanQueue = (typeof ApiV1SkillScanQueueSchema)[inferred];
 export declare const ApiV1SkillScanSubmitResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     scanId: string;
@@ -405,6 +479,14 @@ export declare const ApiV1SkillScanSubmitResponseSchema: import("arktype/interna
     update: boolean;
     jobId?: string | undefined;
     alreadyQueued?: boolean | undefined;
+    queue?: {
+        queuedAhead: number;
+        position: number | null;
+        running: number;
+        note: string;
+        queuedAheadIsEstimate?: boolean | undefined;
+        runningIsEstimate?: boolean | undefined;
+    } | undefined;
 }, {}>;
 export type ApiV1SkillScanSubmitResponse = (typeof ApiV1SkillScanSubmitResponseSchema)[inferred];
 export declare const ApiV1SkillScanStatusResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -419,6 +501,14 @@ export declare const ApiV1SkillScanStatusResponseSchema: import("arktype/interna
     writtenBack?: boolean | undefined;
     artifact?: unknown;
     report?: unknown;
+    queue?: {
+        queuedAhead: number;
+        position: number | null;
+        running: number;
+        note: string;
+        queuedAheadIsEstimate?: boolean | undefined;
+        runningIsEstimate?: boolean | undefined;
+    } | undefined;
     lastError?: string | undefined;
     completedAt?: number | undefined;
 }, {}>;
@@ -665,19 +755,6 @@ export declare const ApiV1ReclassifyBanResponseSchema: import("arktype/internal/
     previousReason: string | null;
     nextReason: string;
     changed: boolean;
-}, {}>;
-export declare const ApiV1RemediateAutobansResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    ok: true;
-    dryRun: boolean;
-    scanned: number;
-    wouldUnban: number;
-    unbanned: number;
-    skipped: number;
-    restoredSkills: number;
-    restoredPackages: number;
-    items: unknown[];
-    nextCursor?: string | null | undefined;
-    done?: boolean | undefined;
 }, {}>;
 export declare const ApiV1StarResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;

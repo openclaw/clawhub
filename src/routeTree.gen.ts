@@ -20,17 +20,16 @@ import { Route as ImportRouteImport } from './routes/import'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuditsRouteImport } from './routes/audits'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AccountBannedRouteImport } from './routes/account-banned'
 import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as UsersIndexRouteImport } from './routes/users/index'
-import { Route as SoulsIndexRouteImport } from './routes/souls/index'
 import { Route as SkillsIndexRouteImport } from './routes/skills/index'
 import { Route as PublishersIndexRouteImport } from './routes/publishers/index'
 import { Route as PluginsIndexRouteImport } from './routes/plugins/index'
 import { Route as PackagesIndexRouteImport } from './routes/packages/index'
 import { Route as UserHandleRouteImport } from './routes/user/$handle'
 import { Route as UHandleRouteImport } from './routes/u/$handle'
-import { Route as SoulsSlugRouteImport } from './routes/souls/$slug'
 import { Route as SkillsPublishRouteImport } from './routes/skills/publish'
 import { Route as PluginsPublishRouteImport } from './routes/plugins/publish'
 import { Route as PluginsNewRouteImport } from './routes/plugins/new'
@@ -44,12 +43,10 @@ import { Route as CliDeviceRouteImport } from './routes/cli/device'
 import { Route as CliAuthRouteImport } from './routes/cli/auth'
 import { Route as OwnerSlugRouteImport } from './routes/$owner/$slug'
 import { Route as PluginsScopeNameRouteImport } from './routes/plugins/$scope/$name'
-import { Route as PluginsNameSettingsRouteImport } from './routes/plugins/$name/settings'
 import { Route as PluginsNameSecurityAuditRouteImport } from './routes/plugins/$name/security-audit'
 import { Route as PackagesScopeNameRouteImport } from './routes/packages/$scope/$name'
 import { Route as OwnerSlugSettingsRouteImport } from './routes/$owner/$slug/settings'
 import { Route as OwnerSlugSecurityAuditRouteImport } from './routes/$owner/$slug/security-audit'
-import { Route as PluginsScopeNameSettingsRouteImport } from './routes/plugins/$scope/$name/settings'
 import { Route as PluginsScopeNameSecurityAuditRouteImport } from './routes/plugins/$scope/$name/security-audit'
 import { Route as PluginsNameSecurityScannerRouteImport } from './routes/plugins/$name/security/$scanner'
 import { Route as OwnerSlugSecurityScannerRouteImport } from './routes/$owner/$slug/security/$scanner'
@@ -110,6 +107,11 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountBannedRoute = AccountBannedRouteImport.update({
+  id: '/account-banned',
+  path: '/account-banned',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SlugRoute = SlugRouteImport.update({
   id: '/$slug',
   path: '/$slug',
@@ -123,11 +125,6 @@ const IndexRoute = IndexRouteImport.update({
 const UsersIndexRoute = UsersIndexRouteImport.update({
   id: '/users/',
   path: '/users/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SoulsIndexRoute = SoulsIndexRouteImport.update({
-  id: '/souls/',
-  path: '/souls/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkillsIndexRoute = SkillsIndexRouteImport.update({
@@ -158,11 +155,6 @@ const UserHandleRoute = UserHandleRouteImport.update({
 const UHandleRoute = UHandleRouteImport.update({
   id: '/u/$handle',
   path: '/u/$handle',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SoulsSlugRoute = SoulsSlugRouteImport.update({
-  id: '/souls/$slug',
-  path: '/souls/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkillsPublishRoute = SkillsPublishRouteImport.update({
@@ -230,11 +222,6 @@ const PluginsScopeNameRoute = PluginsScopeNameRouteImport.update({
   path: '/plugins/$scope/$name',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PluginsNameSettingsRoute = PluginsNameSettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => PluginsNameRoute,
-} as any)
 const PluginsNameSecurityAuditRoute =
   PluginsNameSecurityAuditRouteImport.update({
     id: '/security-audit',
@@ -256,12 +243,6 @@ const OwnerSlugSecurityAuditRoute = OwnerSlugSecurityAuditRouteImport.update({
   path: '/security-audit',
   getParentRoute: () => OwnerSlugRoute,
 } as any)
-const PluginsScopeNameSettingsRoute =
-  PluginsScopeNameSettingsRouteImport.update({
-    id: '/settings',
-    path: '/settings',
-    getParentRoute: () => PluginsScopeNameRoute,
-  } as any)
 const PluginsScopeNameSecurityAuditRoute =
   PluginsScopeNameSecurityAuditRouteImport.update({
     id: '/security-audit',
@@ -290,6 +271,7 @@ const PluginsScopeNameSecurityScannerRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
+  '/account-banned': typeof AccountBannedRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
@@ -313,30 +295,27 @@ export interface FileRoutesByFullPath {
   '/plugins/new': typeof PluginsNewRoute
   '/plugins/publish': typeof PluginsPublishRoute
   '/skills/publish': typeof SkillsPublishRoute
-  '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
   '/skills/': typeof SkillsIndexRoute
-  '/souls/': typeof SoulsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
-  '/plugins/$name/settings': typeof PluginsNameSettingsRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
-  '/plugins/$scope/$name/settings': typeof PluginsScopeNameSettingsRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
+  '/account-banned': typeof AccountBannedRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
@@ -360,31 +339,28 @@ export interface FileRoutesByTo {
   '/plugins/new': typeof PluginsNewRoute
   '/plugins/publish': typeof PluginsPublishRoute
   '/skills/publish': typeof SkillsPublishRoute
-  '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
   '/packages': typeof PackagesIndexRoute
   '/plugins': typeof PluginsIndexRoute
   '/publishers': typeof PublishersIndexRoute
   '/skills': typeof SkillsIndexRoute
-  '/souls': typeof SoulsIndexRoute
   '/users': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
-  '/plugins/$name/settings': typeof PluginsNameSettingsRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
-  '/plugins/$scope/$name/settings': typeof PluginsScopeNameSettingsRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
+  '/account-banned': typeof AccountBannedRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
@@ -408,25 +384,21 @@ export interface FileRoutesById {
   '/plugins/new': typeof PluginsNewRoute
   '/plugins/publish': typeof PluginsPublishRoute
   '/skills/publish': typeof SkillsPublishRoute
-  '/souls/$slug': typeof SoulsSlugRoute
   '/u/$handle': typeof UHandleRoute
   '/user/$handle': typeof UserHandleRoute
   '/packages/': typeof PackagesIndexRoute
   '/plugins/': typeof PluginsIndexRoute
   '/publishers/': typeof PublishersIndexRoute
   '/skills/': typeof SkillsIndexRoute
-  '/souls/': typeof SoulsIndexRoute
   '/users/': typeof UsersIndexRoute
   '/$owner/$slug/security-audit': typeof OwnerSlugSecurityAuditRoute
   '/$owner/$slug/settings': typeof OwnerSlugSettingsRoute
   '/packages/$scope/$name': typeof PackagesScopeNameRoute
   '/plugins/$name/security-audit': typeof PluginsNameSecurityAuditRoute
-  '/plugins/$name/settings': typeof PluginsNameSettingsRoute
   '/plugins/$scope/$name': typeof PluginsScopeNameRouteWithChildren
   '/$owner/$slug/security/$scanner': typeof OwnerSlugSecurityScannerRoute
   '/plugins/$name/security/$scanner': typeof PluginsNameSecurityScannerRoute
   '/plugins/$scope/$name/security-audit': typeof PluginsScopeNameSecurityAuditRoute
-  '/plugins/$scope/$name/settings': typeof PluginsScopeNameSettingsRoute
   '/plugins/$scope/$name/security/$scanner': typeof PluginsScopeNameSecurityScannerRoute
 }
 export interface FileRouteTypes {
@@ -434,6 +406,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/$slug'
+    | '/account-banned'
     | '/admin'
     | '/audits'
     | '/dashboard'
@@ -457,30 +430,27 @@ export interface FileRouteTypes {
     | '/plugins/new'
     | '/plugins/publish'
     | '/skills/publish'
-    | '/souls/$slug'
     | '/u/$handle'
     | '/user/$handle'
     | '/packages/'
     | '/plugins/'
     | '/publishers/'
     | '/skills/'
-    | '/souls/'
     | '/users/'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
-    | '/plugins/$name/settings'
     | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
-    | '/plugins/$scope/$name/settings'
     | '/plugins/$scope/$name/security/$scanner'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/$slug'
+    | '/account-banned'
     | '/admin'
     | '/audits'
     | '/dashboard'
@@ -504,30 +474,27 @@ export interface FileRouteTypes {
     | '/plugins/new'
     | '/plugins/publish'
     | '/skills/publish'
-    | '/souls/$slug'
     | '/u/$handle'
     | '/user/$handle'
     | '/packages'
     | '/plugins'
     | '/publishers'
     | '/skills'
-    | '/souls'
     | '/users'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
-    | '/plugins/$name/settings'
     | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
-    | '/plugins/$scope/$name/settings'
     | '/plugins/$scope/$name/security/$scanner'
   id:
     | '__root__'
     | '/'
     | '/$slug'
+    | '/account-banned'
     | '/admin'
     | '/audits'
     | '/dashboard'
@@ -551,31 +518,28 @@ export interface FileRouteTypes {
     | '/plugins/new'
     | '/plugins/publish'
     | '/skills/publish'
-    | '/souls/$slug'
     | '/u/$handle'
     | '/user/$handle'
     | '/packages/'
     | '/plugins/'
     | '/publishers/'
     | '/skills/'
-    | '/souls/'
     | '/users/'
     | '/$owner/$slug/security-audit'
     | '/$owner/$slug/settings'
     | '/packages/$scope/$name'
     | '/plugins/$name/security-audit'
-    | '/plugins/$name/settings'
     | '/plugins/$scope/$name'
     | '/$owner/$slug/security/$scanner'
     | '/plugins/$name/security/$scanner'
     | '/plugins/$scope/$name/security-audit'
-    | '/plugins/$scope/$name/settings'
     | '/plugins/$scope/$name/security/$scanner'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SlugRoute: typeof SlugRoute
+  AccountBannedRoute: typeof AccountBannedRoute
   AdminRoute: typeof AdminRoute
   AuditsRoute: typeof AuditsRoute
   DashboardRoute: typeof DashboardRoute
@@ -599,14 +563,12 @@ export interface RootRouteChildren {
   PluginsNewRoute: typeof PluginsNewRoute
   PluginsPublishRoute: typeof PluginsPublishRoute
   SkillsPublishRoute: typeof SkillsPublishRoute
-  SoulsSlugRoute: typeof SoulsSlugRoute
   UHandleRoute: typeof UHandleRoute
   UserHandleRoute: typeof UserHandleRoute
   PackagesIndexRoute: typeof PackagesIndexRoute
   PluginsIndexRoute: typeof PluginsIndexRoute
   PublishersIndexRoute: typeof PublishersIndexRoute
   SkillsIndexRoute: typeof SkillsIndexRoute
-  SoulsIndexRoute: typeof SoulsIndexRoute
   UsersIndexRoute: typeof UsersIndexRoute
   PackagesScopeNameRoute: typeof PackagesScopeNameRoute
   PluginsScopeNameRoute: typeof PluginsScopeNameRouteWithChildren
@@ -691,6 +653,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account-banned': {
+      id: '/account-banned'
+      path: '/account-banned'
+      fullPath: '/account-banned'
+      preLoaderRoute: typeof AccountBannedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$slug': {
       id: '/$slug'
       path: '/$slug'
@@ -710,13 +679,6 @@ declare module '@tanstack/react-router' {
       path: '/users'
       fullPath: '/users/'
       preLoaderRoute: typeof UsersIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/souls/': {
-      id: '/souls/'
-      path: '/souls'
-      fullPath: '/souls/'
-      preLoaderRoute: typeof SoulsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/skills/': {
@@ -759,13 +721,6 @@ declare module '@tanstack/react-router' {
       path: '/u/$handle'
       fullPath: '/u/$handle'
       preLoaderRoute: typeof UHandleRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/souls/$slug': {
-      id: '/souls/$slug'
-      path: '/souls/$slug'
-      fullPath: '/souls/$slug'
-      preLoaderRoute: typeof SoulsSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/skills/publish': {
@@ -859,13 +814,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PluginsScopeNameRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/plugins/$name/settings': {
-      id: '/plugins/$name/settings'
-      path: '/settings'
-      fullPath: '/plugins/$name/settings'
-      preLoaderRoute: typeof PluginsNameSettingsRouteImport
-      parentRoute: typeof PluginsNameRoute
-    }
     '/plugins/$name/security-audit': {
       id: '/plugins/$name/security-audit'
       path: '/security-audit'
@@ -893,13 +841,6 @@ declare module '@tanstack/react-router' {
       fullPath: '/$owner/$slug/security-audit'
       preLoaderRoute: typeof OwnerSlugSecurityAuditRouteImport
       parentRoute: typeof OwnerSlugRoute
-    }
-    '/plugins/$scope/$name/settings': {
-      id: '/plugins/$scope/$name/settings'
-      path: '/settings'
-      fullPath: '/plugins/$scope/$name/settings'
-      preLoaderRoute: typeof PluginsScopeNameSettingsRouteImport
-      parentRoute: typeof PluginsScopeNameRoute
     }
     '/plugins/$scope/$name/security-audit': {
       id: '/plugins/$scope/$name/security-audit'
@@ -950,13 +891,11 @@ const OwnerSlugRouteWithChildren = OwnerSlugRoute._addFileChildren(
 
 interface PluginsNameRouteChildren {
   PluginsNameSecurityAuditRoute: typeof PluginsNameSecurityAuditRoute
-  PluginsNameSettingsRoute: typeof PluginsNameSettingsRoute
   PluginsNameSecurityScannerRoute: typeof PluginsNameSecurityScannerRoute
 }
 
 const PluginsNameRouteChildren: PluginsNameRouteChildren = {
   PluginsNameSecurityAuditRoute: PluginsNameSecurityAuditRoute,
-  PluginsNameSettingsRoute: PluginsNameSettingsRoute,
   PluginsNameSecurityScannerRoute: PluginsNameSecurityScannerRoute,
 }
 
@@ -966,13 +905,11 @@ const PluginsNameRouteWithChildren = PluginsNameRoute._addFileChildren(
 
 interface PluginsScopeNameRouteChildren {
   PluginsScopeNameSecurityAuditRoute: typeof PluginsScopeNameSecurityAuditRoute
-  PluginsScopeNameSettingsRoute: typeof PluginsScopeNameSettingsRoute
   PluginsScopeNameSecurityScannerRoute: typeof PluginsScopeNameSecurityScannerRoute
 }
 
 const PluginsScopeNameRouteChildren: PluginsScopeNameRouteChildren = {
   PluginsScopeNameSecurityAuditRoute: PluginsScopeNameSecurityAuditRoute,
-  PluginsScopeNameSettingsRoute: PluginsScopeNameSettingsRoute,
   PluginsScopeNameSecurityScannerRoute: PluginsScopeNameSecurityScannerRoute,
 }
 
@@ -982,6 +919,7 @@ const PluginsScopeNameRouteWithChildren =
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SlugRoute: SlugRoute,
+  AccountBannedRoute: AccountBannedRoute,
   AdminRoute: AdminRoute,
   AuditsRoute: AuditsRoute,
   DashboardRoute: DashboardRoute,
@@ -1005,14 +943,12 @@ const rootRouteChildren: RootRouteChildren = {
   PluginsNewRoute: PluginsNewRoute,
   PluginsPublishRoute: PluginsPublishRoute,
   SkillsPublishRoute: SkillsPublishRoute,
-  SoulsSlugRoute: SoulsSlugRoute,
   UHandleRoute: UHandleRoute,
   UserHandleRoute: UserHandleRoute,
   PackagesIndexRoute: PackagesIndexRoute,
   PluginsIndexRoute: PluginsIndexRoute,
   PublishersIndexRoute: PublishersIndexRoute,
   SkillsIndexRoute: SkillsIndexRoute,
-  SoulsIndexRoute: SoulsIndexRoute,
   UsersIndexRoute: UsersIndexRoute,
   PackagesScopeNameRoute: PackagesScopeNameRoute,
   PluginsScopeNameRoute: PluginsScopeNameRouteWithChildren,

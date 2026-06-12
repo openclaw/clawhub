@@ -21,13 +21,25 @@ import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenA
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
+import {
+  buildSkillInstallResolution,
+  type InstallResolverSkill,
+  type InstallResolverSource,
+  type SkillInstallResolution,
+} from "../lib/installResolver";
 import type {
   LlmAgenticRiskFinding,
   LlmEvalDimension,
   LlmRiskSummary,
 } from "../lib/securityPrompt";
 import { selectGeneratedSkillCardFile, sourceSkillVersionFiles } from "../lib/skillCards";
-import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
+import {
+  getPublicSkillFileAccessBlock,
+  getPublicSkillVersionAccessBlock,
+  getPublicSkillVersionDownloadBlock,
+  getSkillFileModerationInfoFromSkill,
+  isSkillVersionForSkill,
+} from "../lib/skillFileAccess";
 import {
   buildDeterministicZip,
   buildMergedExportZip,
@@ -44,7 +56,6 @@ import {
   getPathSegments,
   json,
   parseJsonPayload,
-  parseMultipartSkillScan,
   parseMultipartPublish,
   parsePublishBody,
   publicApiOrigin,
@@ -98,10 +109,7 @@ type ListSkillsResult = {
       version: string;
       createdAt: number;
       changelog: string;
-      parsed?: {
-        license?: "MIT-0";
-        clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } };
-      };
+      parsed?: PublicSkillVersionParsed;
     } | null;
   }>;
   nextCursor: string | null;
@@ -115,8 +123,19 @@ type PublicSkillVersionFile = {
 };
 
 type PublicSkillVersionParsed = {
+  description?: string;
   license?: "MIT-0";
-  clawdis?: { os?: string[]; nix?: { plugin?: boolean; systems?: string[] } };
+  clawdis?: {
+    os?: string[];
+    nix?: { plugin?: boolean; systems?: string[] };
+    requires?: { env?: string[]; config?: string[] };
+    envVars?: Array<{ name: string; required?: boolean; description?: string }>;
+  };
+};
+
+type SkillSetupEntry = {
+  key: string;
+  required: boolean;
 };
 
 type PublicSkillVersionStaticScan = Pick<
@@ -188,6 +207,7 @@ type GetBySlugResult = {
     summary?: string;
     engineVersion?: string;
     updatedAt?: number;
+    sourceVersionId?: Id<"skillVersions"> | null;
     reason?: string;
   } | null;
   ambiguous?: boolean;
@@ -295,10 +315,13 @@ type SkillSecuritySnapshot = {
 };
 
 const internalRefs = internal as unknown as {
+  githubSkillSources: {
+    getByIdInternal: unknown;
+  };
   securityScan: {
-    createUploadedSkillScanRequestInternal: unknown;
     createPublishedSkillScanRequestInternal: unknown;
     enqueueBulkSkillRescanBatchForAdminInternal: unknown;
+    getStoredScanReportForUserInternal: unknown;
     getSkillScanRequestForUserInternal: unknown;
     getBulkSkillRescanBatchStatusForAdminInternal: unknown;
     requestSkillRescanForUserInternal: unknown;
@@ -308,6 +331,10 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     getSecurityVerdictTargetInternal: unknown;
+    getVerifyTargetBySlugInternal: unknown;
+    getSkillBySlugInternal: unknown;
+    getVersionByIdInternal: unknown;
+    getVersionBySkillAndVersionInternal: unknown;
     reportSkillForUserInternal: unknown;
     listSkillReportsInternal: unknown;
     triageSkillReportForUserInternal: unknown;
@@ -333,10 +360,6 @@ function isMultipartRequest(request: Request) {
   return (
     request.headers.get("content-type")?.toLowerCase().includes("multipart/form-data") === true
   );
-}
-
-async function deleteStoredScanFiles(ctx: ActionCtx, files: Array<{ storageId: Id<"_storage"> }>) {
-  await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
 }
 
 function encodeJsonEntry(value: unknown) {
@@ -373,14 +396,26 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     `Scan ID: ${scanIdText}`,
     `Status: ${statusText}`,
     "",
-    "This archive uses the ClawHub security-audit export shape:",
+    "This archive contains the stored security scan results for the submitted ClawHub version.",
     "",
-    "- manifest.json",
-    "- clawscan.json",
-    "- skillspector.json",
-    "- static-analysis.json",
-    "- virustotal.json",
-    "- README.md",
+    "## How to read this report",
+    "",
+    "Start with `clawscan.json`. ClawScan is the primary security verdict for the submitted artifact. Its `summary` field is the short explanation of what triggered the result, and `guidance` explains what to change before uploading a fixed version.",
+    "",
+    "- `malicious` means ClawHub blocked the submitted version from public install surfaces.",
+    "- `suspicious` means ClawHub found behavior that needs review before users should rely on it.",
+    "- `clean` means ClawHub did not find blocking security issues in this scan.",
+    "",
+    "VirusTotal results are supporting reputation telemetry. They can help explain a risk signal, but they are not the sole source of ClawHub's final verdict.",
+    "",
+    "## Files",
+    "",
+    "- `manifest.json`: artifact identity, scan status, timestamps, and writeback state.",
+    "- `clawscan.json`: final ClawScan verdict, summary, guidance, and findings.",
+    "- `skillspector.json`: SkillSpector structure and agentic-risk signals when available.",
+    "- `static-analysis.json`: deterministic scanner findings, reason codes, and static summary.",
+    "- `virustotal.json`: external reputation counts and status when available.",
+    "- `README.md`: this interpretation guide.",
     "",
   ].join("\n");
 
@@ -395,6 +430,16 @@ function buildSkillScanReportZip(status: Record<string, unknown>) {
     { path: "virustotal.json", bytes: encodeJsonEntry(scanReportPart(status, "virustotal")) },
     { path: "README.md", bytes: encodeTextEntry(readme) },
   ]);
+}
+
+function safeScanReportFilenamePart(value: string) {
+  return (
+    value
+      .replace(/^@/, "")
+      .replaceAll("/", "-")
+      .replaceAll(/[^a-zA-Z0-9._-]+/g, "-")
+      .replace(/^-+|-+$/g, "") || "artifact"
+  );
 }
 
 async function handleSkillScanBatchSubmit(ctx: ActionCtx, request: Request, headers: HeadersInit) {
@@ -640,16 +685,6 @@ type VerifySecurityVersion = {
     | "checkedAt"
   > &
     Partial<Pick<NonNullable<Doc<"skillVersions">["skillSpectorAnalysis"]>, "summary" | "error">>;
-  depRegistryAnalysis?: Pick<
-    NonNullable<Doc<"skillVersions">["depRegistryAnalysis"]>,
-    "status" | "summary" | "checkedAt"
-  > &
-    Partial<
-      Pick<
-        NonNullable<Doc<"skillVersions">["depRegistryAnalysis"]>,
-        "notFoundPackages" | "unresolvedPackages"
-      >
-    >;
 };
 
 type SecurityVerdictTargetResult = {
@@ -698,9 +733,6 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
     : null;
   const skillSpectorStatus = version.skillSpectorAnalysis
     ? normalizeVerificationStatus(version.skillSpectorAnalysis.status)
-    : null;
-  const depStatus = version.depRegistryAnalysis
-    ? normalizeVerificationStatus(version.depRegistryAnalysis.status)
     : null;
   const status = clawStatus;
 
@@ -757,16 +789,7 @@ function buildVerifySecurity(version: VerifySecurityVersion) {
             checkedAt: version.skillSpectorAnalysis.checkedAt ?? null,
           }
         : null,
-      dependencyRegistry: version.depRegistryAnalysis
-        ? {
-            status: depStatus ?? "pending",
-            rawStatus: version.depRegistryAnalysis.status,
-            summary: version.depRegistryAnalysis.summary ?? null,
-            notFoundPackages: version.depRegistryAnalysis.notFoundPackages ?? [],
-            unresolvedPackages: version.depRegistryAnalysis.unresolvedPackages ?? [],
-            checkedAt: version.depRegistryAnalysis.checkedAt ?? null,
-          }
-        : null,
+      dependencyRegistry: null,
     },
   };
 }
@@ -805,7 +828,7 @@ function buildVerifyReasons(args: {
   securityStatus: NormalizedSecurityStatus;
 }) {
   const reasons: string[] = [];
-  if (!args.cardAvailable) reasons.push("card.missing");
+  if (!args.cardAvailable && !args.isMalwareBlocked) reasons.push("card.missing");
   reasons.push(
     ...buildSecurityVerdictReasons({
       isMalwareBlocked: args.isMalwareBlocked,
@@ -839,7 +862,6 @@ function getVerifySecurityCheckedAt(security: ReturnType<typeof buildVerifySecur
     security.signals.staticScan?.checkedAt,
     security.signals.virusTotal?.checkedAt,
     security.signals.skillSpector?.checkedAt,
-    security.signals.dependencyRegistry?.checkedAt,
   ].filter((value): value is number => typeof value === "number");
   return candidates.length > 0 ? Math.max(...candidates) : null;
 }
@@ -886,14 +908,7 @@ function buildSecurityVerdictSummary(security: ReturnType<typeof buildVerifySecu
             checkedAt: security.signals.skillSpector.checkedAt,
           }
         : null,
-      dependencyRegistry: security.signals.dependencyRegistry
-        ? {
-            status: security.signals.dependencyRegistry.status,
-            rawStatus: security.signals.dependencyRegistry.rawStatus,
-            summary: security.signals.dependencyRegistry.summary,
-            checkedAt: security.signals.dependencyRegistry.checkedAt,
-          }
-        : null,
+      dependencyRegistry: null,
     },
   };
 }
@@ -1010,6 +1025,74 @@ function buildSecurityAuditUrl(
   );
   url.searchParams.set("version", version);
   return url.toString();
+}
+
+function addSetupEntry(
+  entries: SkillSetupEntry[],
+  seen: Set<string>,
+  key: string,
+  options: { required?: boolean } = {},
+) {
+  const normalizedKey = key.trim();
+  if (!normalizedKey) return;
+  if (seen.has(normalizedKey)) return;
+  seen.add(normalizedKey);
+  entries.push({
+    key: normalizedKey,
+    required: options.required ?? true,
+  });
+}
+
+function buildSkillSetup(parsed: PublicSkillVersionParsed | undefined): SkillSetupEntry[] {
+  const clawdis = parsed?.clawdis;
+  if (!clawdis) return [];
+
+  const entries: SkillSetupEntry[] = [];
+  const seen = new Set<string>();
+
+  for (const key of clawdis.requires?.env ?? []) {
+    addSetupEntry(entries, seen, key, { required: true });
+  }
+  for (const key of clawdis.requires?.config ?? []) {
+    addSetupEntry(entries, seen, key, { required: true });
+  }
+  for (const entry of clawdis.envVars ?? []) {
+    addSetupEntry(entries, seen, entry.name, { required: entry.required ?? true });
+  }
+
+  return entries;
+}
+
+function selectSkillReadmeFile(version: Doc<"skillVersions"> | null | undefined) {
+  return version?.files.find((file) => {
+    const path = file.path.trim().toLowerCase();
+    return path === "skill.md" || path === "skills.md";
+  });
+}
+
+async function readSkillDescriptionMarkdown(
+  ctx: ActionCtx,
+  skillId: Id<"skills">,
+  versionId: Id<"skillVersions"> | undefined,
+) {
+  if (versionId) {
+    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+      versionId,
+    })) as Doc<"skillVersions"> | null;
+    if (version && isSkillVersionForSkill(version, skillId) && !version.softDeletedAt) {
+      const file = selectSkillReadmeFile(version);
+      if (file && file.size <= MAX_RAW_FILE_BYTES) {
+        const blob = await ctx.storage.get(file.storageId);
+        if (blob) return await blob.text();
+      }
+    }
+  }
+
+  const githubContent = (await ctx.runQuery(api.skills.getGitHubSkillContent, {
+    skillId,
+    kind: "readme",
+  })) as { text?: string } | null;
+  return githubContent?.text ?? null;
 }
 
 function buildSecurityVerdictError(
@@ -1130,35 +1213,11 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
 
   try {
     if (isMultipartRequest(request)) {
-      const multipart = await parseMultipartSkillScan(ctx, request, (payload) => {
-        const parsed = parseArk(
-          ApiV1SkillScanSubmitRequestSchema,
-          payload,
-          "Skill scan payload",
-        ) as {
-          source: { kind: "upload" } | { kind: "published"; slug: string; version?: string };
-          update?: boolean;
-        };
-        if (parsed.source.kind !== "upload") {
-          throw new Error("multipart scan payload must use source.kind=upload");
-        }
-        if (parsed.update === true) {
-          throw new Error("update is not valid for uploaded scans");
-        }
-        return parsed;
-      });
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.securityScan.createUploadedSkillScanRequestInternal,
-        {
-          actorUserId: auth.userId,
-          files: multipart.files,
-        },
-      ).catch(async (error) => {
-        await deleteStoredScanFiles(ctx, multipart.files);
-        throw error;
-      });
-      return json(result, 202, rate.headers);
+      return text(
+        "Local upload scans are no longer supported. Upload a version, then use `clawhub scan download <slug> --version <version>` to retrieve stored scan results.",
+        410,
+        rate.headers,
+      );
     }
 
     const body = parseArk(
@@ -1170,7 +1229,11 @@ export async function skillScanSubmitV1Handler(ctx: ActionCtx, request: Request)
       update?: boolean;
     };
     if (body.source.kind === "upload") {
-      return text("uploaded scans must use multipart/form-data", 400, rate.headers);
+      return text(
+        "Local upload scans are no longer supported. Upload a version, then use `clawhub scan download <slug> --version <version>` to retrieve stored scan results.",
+        410,
+        rate.headers,
+      );
     }
     const result = await runMutationRef(
       ctx,
@@ -1204,6 +1267,32 @@ export async function skillScanGetRouterV1Handler(ctx: ActionCtx, request: Reque
   if (!scanId) return text("scanId required", 400, rate.headers);
 
   try {
+    if (segments.length === 2 && scanId === "download") {
+      const name = (segments[1] ?? "").trim();
+      const url = new URL(request.url);
+      const version = url.searchParams.get("version")?.trim() ?? "";
+      const kind = url.searchParams.get("kind")?.trim() === "plugin" ? "plugin" : "skill";
+      if (!name) return text("name required", 400, rate.headers);
+      if (!version) return text("version required", 400, rate.headers);
+
+      const status = (await runQueryRef(
+        ctx,
+        internalRefs.securityScan.getStoredScanReportForUserInternal,
+        {
+          actorUserId: auth.userId,
+          kind,
+          name,
+          version,
+        },
+      )) as Record<string, unknown>;
+      const zip = buildSkillScanReportZip(status);
+      const headers = mergeHeaders(rate.headers, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="clawhub-scan-${safeScanReportFilenamePart(name)}-${safeScanReportFilenamePart(version)}.zip"`,
+      });
+      return new Response(zip, { status: 200, headers });
+    }
+
     const status = (await runQueryRef(
       ctx,
       internalRefs.securityScan.getSkillScanRequestForUserInternal,
@@ -1421,6 +1510,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     slug: item.skill.slug,
     displayName: item.skill.displayName,
     summary: item.skill.summary ?? null,
+    description: item.latestVersion?.parsed?.description ?? null,
     tags: resolvedTagsList[idx],
     stats: item.skill.stats,
     createdAt: item.skill.createdAt,
@@ -1435,6 +1525,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
       : null,
     metadata: item.latestVersion?.parsed?.clawdis
       ? {
+          setup: buildSkillSetup(item.latestVersion.parsed),
           os: item.latestVersion.parsed.clawdis.os ?? null,
           systems: item.latestVersion.parsed.clawdis.nix?.systems ?? null,
         }
@@ -1561,6 +1652,81 @@ function skillNotFoundOrAmbiguousResponse(
     : text("Skill not found", 404, headers);
 }
 
+function shouldExposeHiddenGitHubInstallBlock(
+  skill: InstallResolverSkill & {
+    installKind?: "github";
+    moderationStatus?: "active" | "hidden" | "removed";
+    moderationReason?: string;
+  },
+  resolution: SkillInstallResolution,
+) {
+  if (skill.installKind !== "github" || resolution.ok) return false;
+  if (skill.moderationStatus !== "hidden") return false;
+  const reason = skill.moderationReason ?? "";
+  return (
+    reason === "pending.scan" ||
+    reason === "scanner.failed" ||
+    reason === "scanner.llm.malicious" ||
+    reason.startsWith("github.")
+  );
+}
+
+type ExactVersionModeratedSkill = Pick<
+  Doc<"skills">,
+  | "_id"
+  | "softDeletedAt"
+  | "latestVersionId"
+  | "tags"
+  | "moderationStatus"
+  | "moderationReason"
+  | "moderationFlags"
+  | "moderationVerdict"
+  | "moderationSourceVersionId"
+>;
+
+async function getUnavailableSkillVersionBlock(
+  ctx: ActionCtx,
+  slug: string,
+  ownerHandle?: string,
+  selector?: { versionName?: string; tagName?: string },
+) {
+  const skill = await runQueryRef<ExactVersionModeratedSkill | null>(
+    ctx,
+    internalRefs.skills.getSkillBySlugInternal,
+    { slug, ...(ownerHandle ? { ownerHandle } : {}) },
+  );
+  if (!skill || skill.softDeletedAt) return null;
+
+  const latestVersionId = skill.latestVersionId ?? skill.tags?.latest;
+  const selectedVersionId = selector?.tagName ? skill.tags?.[selector.tagName] : latestVersionId;
+  if (!selector?.versionName && !selectedVersionId) return null;
+
+  const version = selector?.versionName
+    ? await runQueryRef<PublicSkillVersionResponse | null>(
+        ctx,
+        internalRefs.skills.getVersionBySkillAndVersionInternal,
+        {
+          skillId: skill._id,
+          version: selector.versionName,
+        },
+      )
+    : await runQueryRef<PublicSkillVersionResponse | null>(
+        ctx,
+        internalRefs.skills.getVersionByIdInternal,
+        {
+          versionId: selectedVersionId,
+        },
+      );
+  if (!version || !isSkillVersionForSkill(version, skill._id)) return null;
+  if (version.softDeletedAt) return { status: 410, message: "Version not available" };
+
+  return getPublicSkillVersionAccessBlock(
+    getSkillFileModerationInfoFromSkill(skill),
+    version._id,
+    skill.latestVersionId ?? skill.tags?.latest,
+  );
+}
+
 export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request) {
   const rate = await applyRateLimit(ctx, request, "read");
   if (!rate.ok) return rate.response;
@@ -1634,6 +1800,60 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     return json(result, 200, rate.headers);
   }
 
+  if (second === "install" && segments.length === 2) {
+    const url = new URL(request.url);
+    const forceInstall = parseBooleanQueryParam(url.searchParams.get("forceInstall"));
+    const skill = (await runQueryRef<
+      | (InstallResolverSkill & {
+          _id: Id<"skills">;
+          githubSourceId?: Id<"githubSkillSources">;
+          softDeletedAt?: number;
+          moderationStatus?: "active" | "hidden" | "removed";
+          moderationReason?: string;
+          moderationFlags?: string[];
+        })
+      | null
+    >(ctx, internalRefs.skills.getSkillBySlugInternal, { slug })) as
+      | (InstallResolverSkill & {
+          _id: Id<"skills">;
+          githubSourceId?: Id<"githubSkillSources">;
+          softDeletedAt?: number;
+          moderationStatus?: "active" | "hidden" | "removed";
+          moderationReason?: string;
+          moderationFlags?: string[];
+        })
+      | null;
+    if (!skill || skill.softDeletedAt || skill.moderationStatus === "removed") {
+      return text("Skill not found", 404, rate.headers);
+    }
+
+    const source =
+      skill.installKind === "github" && skill.githubSourceId
+        ? ((await runQueryRef(ctx, internalRefs.githubSkillSources.getByIdInternal, {
+            sourceId: skill.githubSourceId,
+          })) as InstallResolverSource | null)
+        : null;
+    const resolution = buildSkillInstallResolution({
+      origin: publicApiOrigin(request),
+      skill,
+      source,
+      forceInstall,
+    });
+
+    const publicSkillResult = (await ctx.runQuery(api.skills.getBySlug, {
+      slug,
+    })) as GetBySlugResult;
+    const publiclyVisible = publicSkillResult?.skill?._id === skill._id;
+    if (!publiclyVisible) {
+      if (!resolution.ok && shouldExposeHiddenGitHubInstallBlock(skill, resolution)) {
+        return json(resolution, resolution.status, rate.headers);
+      }
+      return text("Skill not found", 404, rate.headers);
+    }
+
+    return json(resolution, resolution.ok ? 200 : resolution.status, rate.headers);
+  }
+
   if (segments.length === 1) {
     const result = (await ctx.runQuery(api.skills.getBySlug, skillLookupArgs)) as GetBySlugResult;
     if (!result?.skill) {
@@ -1654,12 +1874,27 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       [result.latestVersion],
       [result.skill._id],
     );
+    const latestVersionId =
+      result.skill.latestVersionId ?? result.skill.tags?.latest ?? result.latestVersion?._id;
+    const descriptionAccessBlock = result.latestVersion
+      ? getPublicSkillVersionAccessBlock(
+          result.moderationInfo,
+          result.latestVersion._id,
+          latestVersionId,
+        )
+      : getPublicSkillFileAccessBlock(result.moderationInfo);
+    const description = descriptionAccessBlock
+      ? null
+      : await readSkillDescriptionMarkdown(ctx, result.skill._id, latestVersionId);
+    const setup = buildSkillSetup(result.latestVersion?.parsed);
+
     return json(
       {
         skill: {
           slug: result.skill.slug,
           displayName: result.skill.displayName,
           summary: result.skill.summary ?? null,
+          description: description ?? result.latestVersion?.parsed?.description ?? null,
           tags,
           stats: result.skill.stats,
           createdAt: result.skill.createdAt,
@@ -1675,6 +1910,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           : null,
         metadata: result.latestVersion?.parsed?.clawdis
           ? {
+              setup,
               os: result.latestVersion.parsed.clawdis.os ?? null,
               systems: result.latestVersion.parsed.clawdis.nix?.systems ?? null,
             }
@@ -1835,6 +2071,12 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       skillLookupArgs,
     )) as GetBySlugResult;
     if (!skillResult?.skill) {
+      const moderationBlock = await getUnavailableSkillVersionBlock(ctx, slug, ownerHandle, {
+        versionName: third,
+      });
+      if (moderationBlock) {
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
+      }
       return skillNotFoundOrAmbiguousResponse(
         request,
         skillResult,
@@ -1850,6 +2092,16 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     })) as PublicSkillVersionResponse | null;
     if (!version) return text("Version not found", 404, rate.headers);
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    const effectiveLatestVersionId =
+      skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
+    const moderationBlock = getPublicSkillVersionAccessBlock(
+      skillResult.moderationInfo,
+      version._id,
+      effectiveLatestVersionId,
+    );
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
     const security = buildSkillSecuritySnapshot(version);
 
     return json(
@@ -1881,6 +2133,13 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
 
     const result = (await ctx.runQuery(api.skills.getBySlug, skillLookupArgs)) as GetBySlugResult;
     if (!result?.skill) {
+      const moderationBlock = await getUnavailableSkillVersionBlock(ctx, slug, ownerHandle, {
+        versionName: versionParam,
+        tagName: tagParam,
+      });
+      if (moderationBlock) {
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
+      }
       const hidden = await describeOwnerVisibleSkillState(ctx, request, slug, ownerHandle);
       if (hidden) return text(hidden.message, hidden.status, rate.headers);
       return skillNotFoundOrAmbiguousResponse(
@@ -1912,9 +2171,33 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
 
+    const effectiveLatestVersionId = result.skill.latestVersionId ?? result.skill.tags?.latest;
+    const moderationBlock = getPublicSkillVersionAccessBlock(
+      result.moderationInfo,
+      version._id,
+      effectiveLatestVersionId,
+    );
+    if (moderationBlock) {
+      return text(moderationBlock.message, moderationBlock.status, rate.headers);
+    }
+
+    let moderationSourceVersion: PublicSkillVersionResponse | null = result.latestVersion;
+    const moderationSourceVersionId = result.moderationInfo?.sourceVersionId;
+    if (moderationSourceVersionId) {
+      if (version._id === moderationSourceVersionId) {
+        moderationSourceVersion = version;
+      } else if (result.latestVersion?._id !== moderationSourceVersionId) {
+        const sourceVersion = (await ctx.runQuery(api.skills.getVersionById, {
+          versionId: moderationSourceVersionId,
+        })) as PublicSkillVersionResponse | null;
+        moderationSourceVersion = isSkillVersionForSkill(sourceVersion, result.skill._id)
+          ? sourceVersion
+          : null;
+      }
+    }
     const security = buildSkillSecuritySnapshot(version);
     const moderationMatchesRequestedVersion = Boolean(
-      result.latestVersion && result.latestVersion._id === version._id,
+      moderationSourceVersion && moderationSourceVersion._id === version._id,
     );
 
     return json(
@@ -1931,10 +2214,10 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         moderation: result.moderationInfo
           ? {
               scope: "skill",
-              sourceVersion: result.latestVersion
+              sourceVersion: moderationSourceVersion
                 ? {
-                    version: result.latestVersion.version,
-                    createdAt: result.latestVersion.createdAt,
+                    version: moderationSourceVersion.version,
+                    createdAt: moderationSourceVersion.createdAt,
                   }
                 : null,
               matchesRequestedVersion: moderationMatchesRequestedVersion,
@@ -1958,8 +2241,9 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const tagParam = verifyUrl.searchParams.get("tag")?.trim();
     if (versionParam && tagParam) return text("Use either version or tag", 400, rate.headers);
 
-    const skillResult = (await ctx.runQuery(
-      api.skills.getBySlug,
+    const skillResult = (await runQueryRef<GetBySlugResult>(
+      ctx,
+      internalRefs.skills.getVerifyTargetBySlugInternal,
       skillLookupArgs,
     )) as GetBySlugResult;
     if (!skillResult?.skill) {
@@ -2006,11 +2290,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
     const bundleFingerprints = fingerprintEntries
       .filter((entry) => entry.kind === "generated-bundle")
       .map((entry) => entry.fingerprint);
-    const generatedCardFile = await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
+    const isMalwareBlocked = skillResult.moderationInfo?.isMalwareBlocked ?? false;
+    const generatedCardFile = isMalwareBlocked
+      ? null
+      : await selectGeneratedSkillCardFile(version.files, bundleFingerprints);
     const security = buildVerifySecurity(version);
     const reasons = buildVerifyReasons({
       cardAvailable: Boolean(generatedCardFile),
-      isMalwareBlocked: skillResult.moderationInfo?.isMalwareBlocked ?? false,
+      isMalwareBlocked,
       securityPassed: security.passed,
       securityStatus: security.status,
     });
@@ -2054,12 +2341,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           : {
               available: false,
               path: "skill-card.md",
-              url: buildCardUrl(
-                request,
-                skillResult.skill.slug,
-                version.version,
-                publisherOwnerHandle,
-              ),
+              url: isMalwareBlocked
+                ? null
+                : buildCardUrl(
+                    request,
+                    skillResult.skill.slug,
+                    version.version,
+                    publisherOwnerHandle,
+                  ),
               sha256: null,
               size: null,
               contentType: null,
@@ -2108,10 +2397,6 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         rate.headers,
       );
     }
-    const moderationBlock = getPublicSkillFileAccessBlock(skillResult.moderationInfo);
-    if (moderationBlock) {
-      return text(moderationBlock.message, moderationBlock.status, rate.headers);
-    }
 
     let version: Doc<"skillVersions"> | null = skillResult.skill.latestVersionId
       ? await ctx.runQuery(internal.skills.getVersionByIdInternal, {
@@ -2134,6 +2419,16 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       return text("Version not found", 404, rate.headers);
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    const effectiveLatestVersionId =
+      skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
+    const versionDownloadBlock = getPublicSkillVersionDownloadBlock(
+      skillResult.moderationInfo,
+      version,
+      effectiveLatestVersionId,
+    );
+    if (versionDownloadBlock) {
+      return text(versionDownloadBlock.message, versionDownloadBlock.status, rate.headers);
+    }
 
     const fingerprintEntries = ((await ctx.runQuery(
       internal.skills.listVersionFingerprintsInternal,
@@ -2203,6 +2498,16 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       return text("Version not found", 404, rate.headers);
     }
     if (version.softDeletedAt) return text("Version not available", 410, rate.headers);
+    const effectiveLatestVersionId =
+      skillResult.skill.latestVersionId ?? skillResult.skill.tags?.latest;
+    const versionDownloadBlock = getPublicSkillVersionDownloadBlock(
+      skillResult.moderationInfo,
+      version,
+      effectiveLatestVersionId,
+    );
+    if (versionDownloadBlock) {
+      return text(versionDownloadBlock.message, versionDownloadBlock.status, rate.headers);
+    }
 
     const normalized = path.trim();
     const normalizedLower = normalized.toLowerCase();

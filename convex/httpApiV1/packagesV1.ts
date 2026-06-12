@@ -1,5 +1,4 @@
 import {
-  PackageArtifactBackfillRequestSchema,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
@@ -27,8 +26,9 @@ import {
 import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
+import { buildDownloadMetricArgs, getDownloadIdentity } from "../downloadMetrics";
 import { getOptionalActiveAuthUserIdFromAction } from "../lib/access";
-import { getOptionalApiTokenUserId } from "../lib/apiTokenAuth";
+import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
 import { parseClawPack, sha256Base64, sha256Hex } from "../lib/clawpack";
 import {
   fetchGitHubRepositoryIdentity,
@@ -53,9 +53,20 @@ import {
   MAX_PUBLISH_FILE_BYTES,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "../lib/publishLimits";
-import { getPublicSkillFileAccessBlock, isSkillVersionForSkill } from "../lib/skillFileAccess";
+import { compareRecommendationStats } from "../lib/recommendationScore";
+import {
+  getPublicSkillVersionAccessBlock,
+  getPublicSkillVersionDownloadBlock,
+  getSkillFileModerationInfoFromSkill,
+  isSkillVersionForSkill,
+} from "../lib/skillFileAccess";
 import { isMacJunkPath, isTextFile } from "../lib/skills";
-import { buildDeterministicPackageZip } from "../lib/skillZip";
+import {
+  buildDeterministicPackageZip,
+  buildMergedExportZip,
+  validateFilePath,
+  type MergedExportManifestEntry,
+} from "../lib/skillZip";
 import { generateToken, hashToken } from "../lib/tokens";
 import {
   MAX_RAW_FILE_BYTES,
@@ -89,7 +100,10 @@ const apiRefs = api as unknown as {
 };
 const internalRefs = internal as unknown as {
   packages: {
+    countPublicPluginsInternal: unknown;
     getByNameForViewerInternal: unknown;
+    hasMissingRecommendationScoresInternal: unknown;
+    listPluginExportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
     listVersionsForViewerInternal: unknown;
@@ -122,8 +136,10 @@ const internalRefs = internal as unknown as {
     resolvePackageAppealForUserInternal: unknown;
     listOfficialPluginMigrationsInternal: unknown;
     upsertOfficialPluginMigrationForUserInternal: unknown;
-    backfillPackageArtifactKindsInternal: unknown;
     listPackageModerationQueueInternal: unknown;
+  };
+  downloadMetrics: {
+    recordDownloadMetricInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -206,6 +222,20 @@ async function runMutationRef<T>(ctx: ActionCtx, ref: unknown, args: unknown): P
   return (await ctx.runMutation(ref as never, args as never)) as T;
 }
 
+async function chunkedParallel<T, R>(
+  items: T[],
+  chunkSize: number,
+  fn: (item: T) => Promise<R>,
+): Promise<R[]> {
+  const results: R[] = [];
+  for (let i = 0; i < items.length; i += chunkSize) {
+    const chunk = items.slice(i, i + chunkSize);
+    const chunkResults = await Promise.all(chunk.map(fn));
+    results.push(...chunkResults);
+  }
+  return results;
+}
+
 async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Request) {
   const apiTokenUserId = await getOptionalApiTokenUserId(ctx, request);
   if (apiTokenUserId) return apiTokenUserId;
@@ -228,7 +258,13 @@ function normalizeCapabilityTagSegment(value: string) {
 }
 
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
+const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
+const PACKAGE_LIST_SORT_VALUES = ["updated", "downloads", "recommended"] as const;
+const MAX_PLUGIN_EXPORT_FILE_COUNT = 10_000;
+const MAX_PLUGIN_EXPORT_PAGE_LIMIT = 250;
+const DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT = 250;
+const MAX_PLUGIN_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 
 function invalidQueryParamMessage(name: string) {
   return `Invalid ${name} query parameter`;
@@ -390,6 +426,7 @@ type PackageListQueryArgs = {
   executesCode?: boolean;
   capabilityTag?: string;
   category?: string;
+  sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
 };
@@ -425,6 +462,7 @@ type SkillVersionLike = {
 
 type ReleaseLike = {
   _id: Id<"packageReleases">;
+  packageId: Id<"packages">;
   version: string;
   createdAt: number;
   changelog: string;
@@ -458,6 +496,23 @@ type ReleaseLike = {
   npmUnpackedSize?: number;
   npmFileCount?: number;
   softDeletedAt?: number;
+};
+
+type PluginExportFamily = (typeof PLUGIN_EXPORT_FAMILY_VALUES)[number];
+
+type PluginExportDigest = {
+  packageId: Id<"packages">;
+  name: string;
+  displayName: string;
+  family: PluginExportFamily;
+  latestReleaseId?: Id<"packageReleases">;
+  latestVersion?: string | null;
+  createdAt: number;
+  updatedAt: number;
+  stats?: Record<string, unknown> | null;
+  ownerUserId: Id<"users">;
+  ownerHandle?: string | null;
+  ownerDisplayName?: string | null;
 };
 
 type PackageTrustedPublisherLike = {
@@ -645,9 +700,11 @@ function releaseArtifactUrls(request: Request, packageName: string, release: Rel
 
 async function streamClawPackRelease(
   ctx: ActionCtx,
+  request: Request,
   rateHeaders: HeadersInit,
   pkg: PublicPackageDocLike,
   release: ReleaseLike,
+  viewerUserId: Id<"users"> | null,
   statKind: "download" | "install" = "download",
 ) {
   const securityBlock = getReleaseSecurityBlock(release);
@@ -658,13 +715,24 @@ async function streamClawPackRelease(
   const blob = await ctx.storage.get(release.clawpackStorageId);
   if (!blob) return text("ClawPack artifact not found", 404, rateHeaders);
   try {
-    const statMutation =
-      statKind === "install"
-        ? internalRefs.packages.recordPackageInstallInternal
-        : internalRefs.packages.recordPackageDownloadInternal;
-    await runMutationRef(ctx, statMutation, {
-      packageId: pkg._id,
-    });
+    if (statKind === "install") {
+      await runMutationRef(ctx, internalRefs.packages.recordPackageInstallInternal, {
+        packageId: pkg._id,
+      });
+    }
+
+    const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
+    if (identity) {
+      await runMutationRef(
+        ctx,
+        internalRefs.downloadMetrics.recordDownloadMetricInternal,
+        await buildDownloadMetricArgs({
+          target: { kind: "package", id: pkg._id },
+          identity,
+          now: Date.now(),
+        }),
+      );
+    }
   } catch {
     // Best-effort metric path; never fail package downloads.
   }
@@ -721,6 +789,7 @@ type CatalogListItem = {
   capabilityTags?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
+  stats?: { downloads: number; installs: number; stars: number; versions: number };
 };
 
 type CatalogSearchEntry = {
@@ -744,6 +813,7 @@ type UnifiedCatalogCursorState = {
 type PluginCatalogCursorState = {
   codePlugins: CatalogSourceCursorState;
   bundlePlugins: CatalogSourceCursorState;
+  recommendedFallback?: "updated";
 };
 
 type CatalogPageResult<T> = {
@@ -849,6 +919,7 @@ function decodeMultiPluginCursor(
     return {
       codePlugins: normalize(parsed.codePlugins),
       bundlePlugins: normalize(parsed.bundlePlugins),
+      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
     };
   } catch {
     return {
@@ -924,6 +995,33 @@ function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
   if (a.createdAt !== b.createdAt) return b.createdAt - a.createdAt;
   if (a.family !== b.family) return a.family.localeCompare(b.family);
   return a.name.localeCompare(b.name);
+}
+
+function compareCatalogItemsForSort(
+  a: CatalogListItem,
+  b: CatalogListItem,
+  sort: (typeof PACKAGE_LIST_SORT_VALUES)[number] | undefined,
+) {
+  if (sort === "recommended") {
+    const score = compareRecommendationStats(
+      {
+        downloads: a.stats?.downloads ?? 0,
+        installs: a.stats?.installs ?? 0,
+        stars: a.stats?.stars ?? 0,
+      },
+      {
+        downloads: b.stats?.downloads ?? 0,
+        installs: b.stats?.installs ?? 0,
+        stars: b.stats?.stars ?? 0,
+      },
+    );
+    if (score !== 0) return score;
+  }
+  if (sort === "downloads") {
+    const downloads = (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0);
+    if (downloads !== 0) return downloads;
+  }
+  return compareCatalogItems(a, b);
 }
 
 function compareCatalogSearchEntries(a: CatalogSearchEntry, b: CatalogSearchEntry) {
@@ -1337,6 +1435,8 @@ async function listPackages(
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
   const executesCode = parseBooleanQueryParam(url.searchParams, "executesCode");
   if (!executesCode.ok) return text(executesCode.message, 400, rate.headers);
+  const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
+  if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
   const category = url.searchParams.get("category")?.trim() || undefined;
   if (category && !isPluginCategorySlug(category)) {
     return text("Invalid plugin category", 400, rate.headers);
@@ -1363,6 +1463,7 @@ async function listPackages(
       highlightedOnly: highlightedOnly || undefined,
       executesCode: executesCode.value,
       capabilityTag,
+      sort: sortParam.value,
       paginationOpts: { cursor, numItems: limit },
     });
     return json(
@@ -1396,6 +1497,7 @@ async function listPackages(
             executesCode: executesCode.value,
             capabilityTag,
             category,
+            sort: sortParam.value,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1416,6 +1518,7 @@ async function listPackages(
             highlightedOnly: highlightedOnly || undefined,
             executesCode: executesCode.value,
             capabilityTag,
+            sort: sortParam.value,
             paginationOpts: { cursor: pageCursor, numItems },
           });
           return {
@@ -1429,7 +1532,8 @@ async function listPackages(
       if (!packageCandidate && !skillCandidate) break;
       if (
         !skillCandidate ||
-        (packageCandidate && compareCatalogItems(packageCandidate, skillCandidate) <= 0)
+        (packageCandidate &&
+          compareCatalogItemsForSort(packageCandidate, skillCandidate, sortParam.value) <= 0)
       ) {
         items.push(packageCandidate!);
         packageSource.index += 1;
@@ -1459,9 +1563,35 @@ async function listPackages(
   }
 
   if (!effectiveFamily && options?.pluginFamilies?.length) {
+    const includeTotalCount =
+      !includeSkills &&
+      !category &&
+      !channelParam.value &&
+      typeof isOfficial.value !== "boolean" &&
+      !highlightedOnly &&
+      typeof executesCode.value !== "boolean" &&
+      !capabilityTag;
+    const totalCount = includeTotalCount
+      ? await runQueryRef<number | null>(ctx, internalRefs.packages.countPublicPluginsInternal, {})
+      : null;
     const decodedCursor = decodePluginCatalogCursor(cursor);
     const codePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.codePlugins);
     const bundlePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.bundlePlugins);
+    const isFreshRecommendedRequest = sortParam.value === "recommended" && !cursor;
+    const hasMissingRecommendationScores = isFreshRecommendedRequest
+      ? await runQueryRef<boolean>(
+          ctx,
+          internalRefs.packages.hasMissingRecommendationScoresInternal,
+          {
+            families: options.pluginFamilies,
+          },
+        )
+      : false;
+    const useUpdatedRecommendationFallback =
+      sortParam.value === "recommended" &&
+      (decodedCursor.recommendedFallback === "updated" ||
+        (isFreshRecommendedRequest && hasMissingRecommendationScores));
+    const pluginListSort = useUpdatedRecommendationFallback ? "updated" : sortParam.value;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1481,6 +1611,7 @@ async function listPackages(
         executesCode: executesCode.value,
         capabilityTag,
         category,
+        sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
       });
@@ -1509,7 +1640,8 @@ async function listPackages(
       if (
         !bundlePluginCandidate ||
         (codePluginCandidate &&
-          compareCatalogItems(codePluginCandidate, bundlePluginCandidate) <= 0)
+          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, pluginListSort) <=
+            0)
       ) {
         items.push(codePluginCandidate!);
         codePluginSource.index += 1;
@@ -1522,6 +1654,7 @@ async function listPackages(
     const nextState = {
       codePlugins: finalizeCatalogSource(codePluginSource),
       bundlePlugins: finalizeCatalogSource(bundlePluginSource),
+      recommendedFallback: useUpdatedRecommendationFallback ? ("updated" as const) : undefined,
     };
     const isDoneAll =
       nextState.codePlugins.done &&
@@ -1532,6 +1665,7 @@ async function listPackages(
       {
         items,
         nextCursor: isDoneAll ? null : encodePluginCatalogCursor(nextState),
+        ...(totalCount !== null ? { totalCount } : {}),
       },
       200,
       rate.headers,
@@ -1550,6 +1684,7 @@ async function listPackages(
     executesCode: executesCode.value,
     capabilityTag,
     category,
+    sort: sortParam.value,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
   } satisfies PackageListQueryArgs);
@@ -1562,6 +1697,388 @@ async function listPackages(
 
 export async function listPackagesV1Handler(ctx: ActionCtx, request: Request) {
   return await listPackages(ctx, request, undefined, { includeSkills: true });
+}
+
+type PluginsExportPhase =
+  | "list_plugins"
+  | "build_empty_zip"
+  | "load_releases"
+  | "plan_blobs"
+  | "load_blobs"
+  | "assemble_entries"
+  | "build_zip";
+
+type PluginsExportLogContext = {
+  phase: PluginsExportPhase;
+  startDate: number;
+  endDate: number;
+  family: PluginExportFamily | null;
+  limit: number;
+  cursorPresent: boolean;
+  pageLength: number;
+  hasMore: boolean | null;
+  nextCursorPresent: boolean | null;
+  releaseCount: number;
+  blobTaskCount: number;
+  blobCount: number;
+  zipEntryCount: number;
+  manifestCount: number;
+  exportErrorCount: number;
+  totalExportBytes: number;
+};
+
+function logPluginsExportFailure(context: PluginsExportLogContext, error: unknown) {
+  console.error("plugins_export_failed", {
+    ...context,
+    errorName: error instanceof Error ? error.name : typeof error,
+    errorMessage:
+      error instanceof Error ? error.message.slice(0, 500) : String(error).slice(0, 500),
+  });
+}
+
+function parsePluginExportFamily(value: string | null) {
+  const family = value?.trim();
+  if (!family) return undefined;
+  return PLUGIN_EXPORT_FAMILY_VALUES.includes(family as PluginExportFamily)
+    ? (family as PluginExportFamily)
+    : null;
+}
+
+function isReleaseForPackage(release: ReleaseLike, digest: PluginExportDigest) {
+  return release.packageId === digest.packageId;
+}
+
+function pluginExportRoot(digest: PluginExportDigest) {
+  return `${digest.family}/${digest.name}`;
+}
+
+function pluginExportMetaPath(digest: PluginExportDigest) {
+  return `__clawhub_export/${pluginExportRoot(digest)}/plugin_meta.json`;
+}
+
+export async function exportPluginsV1Handler(ctx: ActionCtx, request: Request) {
+  try {
+    await requireApiTokenUser(ctx, request);
+  } catch (err) {
+    return text(err instanceof Error ? err.message : "Unauthorized", 401);
+  }
+
+  const rate = await applyRateLimit(ctx, request, "export");
+  if (!rate.ok) return rate.response;
+
+  const url = new URL(request.url);
+  const startDate = toOptionalNumber(url.searchParams.get("startDate"));
+  const endDate = toOptionalNumber(url.searchParams.get("endDate"));
+  const requestedLimit = toOptionalNumber(url.searchParams.get("limit"));
+  const cursor = url.searchParams.get("cursor")?.trim() || undefined;
+  const family = parsePluginExportFamily(url.searchParams.get("family"));
+
+  if (family === null) {
+    return text("family must be code-plugin or bundle-plugin", 400, rate.headers);
+  }
+  if (startDate == null || endDate == null) {
+    return text(
+      "startDate and endDate query parameters are required (Unix milliseconds)",
+      400,
+      rate.headers,
+    );
+  }
+  if (startDate > endDate) {
+    return text("startDate must be <= endDate", 400, rate.headers);
+  }
+  if (requestedLimit != null && requestedLimit > MAX_PLUGIN_EXPORT_PAGE_LIMIT) {
+    return text(`limit must be <= ${MAX_PLUGIN_EXPORT_PAGE_LIMIT}`, 400, rate.headers);
+  }
+  const limit = Math.max(1, requestedLimit ?? DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT);
+
+  const logContext: PluginsExportLogContext = {
+    phase: "list_plugins",
+    startDate,
+    endDate,
+    family: family ?? null,
+    limit,
+    cursorPresent: Boolean(cursor),
+    pageLength: 0,
+    hasMore: null,
+    nextCursorPresent: null,
+    releaseCount: 0,
+    blobTaskCount: 0,
+    blobCount: 0,
+    zipEntryCount: 0,
+    manifestCount: 0,
+    exportErrorCount: 0,
+    totalExportBytes: 0,
+  };
+
+  let result: {
+    page: PluginExportDigest[];
+    nextCursor: string | null;
+    hasMore: boolean;
+  };
+  try {
+    result = await runQueryRef(ctx, internalRefs.packages.listPluginExportPageInternal, {
+      startDate,
+      endDate,
+      cursor,
+      numItems: limit,
+      family,
+    });
+  } catch (err) {
+    if (err instanceof Error && err.message.includes("Invalid cursor format")) {
+      return text("Invalid cursor format", 400, rate.headers);
+    }
+    logPluginsExportFailure(logContext, err);
+    throw err;
+  }
+  logContext.pageLength = result.page.length;
+  logContext.hasMore = result.hasMore;
+  logContext.nextCursorPresent = Boolean(result.nextCursor);
+
+  const familyLabel = family ?? "all";
+  if (result.page.length === 0) {
+    try {
+      logContext.phase = "build_empty_zip";
+      const emptyZip = buildMergedExportZip([], []);
+      return new Response(emptyZip as unknown as BodyInit, {
+        status: 200,
+        headers: mergeHeaders(rate.headers, {
+          "Content-Type": "application/zip",
+          "Content-Disposition": `attachment; filename="plugins-export-${familyLabel}-${startDate}-${endDate}-empty.zip"`,
+          "X-Next-Cursor": result.nextCursor ?? "",
+          "X-Has-More": String(result.hasMore),
+          "X-Total-Returned": "0",
+          "X-Date-Range": `${startDate}-${endDate}`,
+          "X-Export-Errors": "0",
+        }),
+      });
+    } catch (err) {
+      logPluginsExportFailure(logContext, err);
+      throw err;
+    }
+  }
+
+  const exportErrors: Array<{ package: string; error: string }> = [];
+
+  try {
+    logContext.phase = "load_releases";
+    const releases = await chunkedParallel(result.page, 100, (digest) =>
+      digest.latestReleaseId
+        ? runQueryRef<ReleaseLike | null>(ctx, internalRefs.packages.getReleaseByIdInternal, {
+            releaseId: digest.latestReleaseId,
+          })
+        : Promise.resolve(null),
+    );
+    logContext.releaseCount = releases.filter(Boolean).length;
+    const exportableReleases: Array<ReleaseLike | null> = Array.from(
+      { length: result.page.length },
+      () => null,
+    );
+
+    type BlobTask = { digestIndex: number; fileIndex: number; storageId: Id<"_storage"> };
+    const blobTasks: BlobTask[] = [];
+
+    logContext.phase = "plan_blobs";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const release = releases[i] ?? null;
+
+      if (!digest.latestReleaseId || !release) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release not found (latestReleaseId: ${digest.latestReleaseId ?? "null"})`,
+        });
+        continue;
+      }
+      if (!isReleaseForPackage(release, digest)) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release not found (latestReleaseId: ${digest.latestReleaseId})`,
+        });
+        continue;
+      }
+      if (release.softDeletedAt) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release not available (latestReleaseId: ${digest.latestReleaseId})`,
+        });
+        continue;
+      }
+      const securityBlock = getReleaseSecurityBlock(release);
+      if (securityBlock) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release blocked: ${securityBlock.message}`,
+        });
+        continue;
+      }
+      if (!release.files || release.files.length === 0) {
+        exportErrors.push({
+          package: digest.name,
+          error: `release has no files (latestReleaseId: ${digest.latestReleaseId})`,
+        });
+        continue;
+      }
+      if (!validateFilePath(pluginExportRoot(digest))) {
+        exportErrors.push({
+          package: digest.name,
+          error: "invalid package export path (fails Zip Slip validation)",
+        });
+        continue;
+      }
+      exportableReleases[i] = release;
+
+      for (let j = 0; j < release.files.length; j++) {
+        if (blobTasks.length >= MAX_PLUGIN_EXPORT_FILE_COUNT) {
+          exportErrors.push({
+            package: digest.name,
+            error: `file count cap exceeded (${MAX_PLUGIN_EXPORT_FILE_COUNT})`,
+          });
+          break;
+        }
+        blobTasks.push({
+          digestIndex: i,
+          fileIndex: j,
+          storageId: release.files[j].storageId,
+        });
+      }
+    }
+    logContext.blobTaskCount = blobTasks.length;
+    logContext.exportErrorCount = exportErrors.length;
+
+    logContext.phase = "load_blobs";
+    const blobs = await chunkedParallel(blobTasks, 50, (task) => ctx.storage.get(task.storageId));
+    logContext.blobCount = blobs.length;
+
+    const zipEntries: Array<{ path: string; bytes: Uint8Array }> = [];
+    const manifest: Array<
+      MergedExportManifestEntry & {
+        family: PluginExportFamily;
+        packageName: string;
+        latestReleaseId: string | null;
+        artifactKind: ReleaseLike["artifactKind"] | null;
+      }
+    > = [];
+    let totalExportBytes = 0;
+
+    const blobsByDigest = new Map<number, Map<number, Blob | null>>();
+    for (let k = 0; k < blobTasks.length; k++) {
+      const task = blobTasks[k];
+      if (!blobsByDigest.has(task.digestIndex)) {
+        blobsByDigest.set(task.digestIndex, new Map());
+      }
+      blobsByDigest.get(task.digestIndex)!.set(task.fileIndex, blobs[k]);
+    }
+
+    logContext.phase = "assemble_entries";
+    for (let i = 0; i < result.page.length; i++) {
+      const digest = result.page[i];
+      const release = exportableReleases[i];
+      if (!release?.files) continue;
+      const exportRoot = pluginExportRoot(digest);
+      if (!validateFilePath(exportRoot)) continue;
+      const digestBlobs = blobsByDigest.get(i);
+      if (!digestBlobs) continue;
+
+      let fileCount = 0;
+      for (let j = 0; j < release.files.length; j++) {
+        const filePath = release.files[j].path;
+
+        if (!validateFilePath(filePath)) {
+          exportErrors.push({
+            package: digest.name,
+            error: `invalid file path: "${filePath}" (fails Zip Slip validation)`,
+          });
+          continue;
+        }
+
+        const blob = digestBlobs.get(j);
+        if (!blob) {
+          exportErrors.push({
+            package: digest.name,
+            error: `blob not found for file "${filePath}" (storageId: ${release.files[j].storageId})`,
+          });
+          continue;
+        }
+
+        const buffer = new Uint8Array(await blob.arrayBuffer());
+        if (totalExportBytes + buffer.byteLength > MAX_PLUGIN_EXPORT_TOTAL_BYTES) {
+          exportErrors.push({
+            package: digest.name,
+            error: `byte cap exceeded (${MAX_PLUGIN_EXPORT_TOTAL_BYTES}) at file "${filePath}"`,
+          });
+          continue;
+        }
+        totalExportBytes += buffer.byteLength;
+        zipEntries.push({ path: `${exportRoot}/${filePath}`, bytes: buffer });
+        fileCount++;
+      }
+
+      const pluginMeta = {
+        name: digest.name,
+        displayName: digest.displayName,
+        family: digest.family,
+        version: release.version ?? digest.latestVersion ?? null,
+        latestReleaseId: digest.latestReleaseId ?? null,
+        artifactKind: release.artifactKind ?? null,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: digest.stats ?? null,
+        owner: {
+          handle: digest.ownerHandle ?? null,
+          displayName: digest.ownerDisplayName ?? null,
+        },
+      };
+      zipEntries.push({
+        path: pluginExportMetaPath(digest),
+        bytes: new TextEncoder().encode(JSON.stringify(pluginMeta, null, 2)),
+      });
+
+      manifest.push({
+        publisher: digest.ownerHandle ?? String(digest.ownerUserId),
+        slug: digest.name,
+        packageName: digest.name,
+        family: digest.family,
+        version: release.version ?? digest.latestVersion ?? null,
+        displayName: digest.displayName,
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+        stats: digest.stats ?? null,
+        fileCount,
+        latestReleaseId: digest.latestReleaseId ?? null,
+        artifactKind: release.artifactKind ?? null,
+      });
+    }
+
+    if (exportErrors.length > 0) {
+      zipEntries.push({
+        path: "_errors.json",
+        bytes: new TextEncoder().encode(JSON.stringify(exportErrors, null, 2)),
+      });
+    }
+    logContext.zipEntryCount = zipEntries.length;
+    logContext.manifestCount = manifest.length;
+    logContext.exportErrorCount = exportErrors.length;
+    logContext.totalExportBytes = totalExportBytes;
+
+    logContext.phase = "build_zip";
+    const zipBytes = buildMergedExportZip(zipEntries, manifest);
+
+    return new Response(zipBytes as unknown as BodyInit, {
+      status: 200,
+      headers: mergeHeaders(rate.headers, {
+        "Content-Type": "application/zip",
+        "Content-Disposition": `attachment; filename="plugins-export-${familyLabel}-${startDate}-${endDate}.zip"`,
+        "X-Next-Cursor": result.nextCursor ?? "",
+        "X-Has-More": String(result.hasMore),
+        "X-Total-Returned": String(manifest.length),
+        "X-Date-Range": `${startDate}-${endDate}`,
+        "X-Export-Errors": String(exportErrors.length),
+      }),
+    });
+  } catch (err) {
+    logPluginsExportFailure(logContext, err);
+    throw err;
+  }
 }
 
 export async function listPluginsV1Handler(ctx: ActionCtx, request: Request) {
@@ -1736,42 +2253,6 @@ export async function mintPublishTokenV1Handler(ctx: ActionCtx, request: Request
 
 export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Request) {
   const segments = getPathSegments(request, "/api/v1/packages/");
-  if (segments[0] === "backfill" && segments[1] === "artifacts" && segments.length === 2) {
-    const rate = await applyRateLimit(ctx, request, "write");
-    if (!rate.ok) return rate.response;
-    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
-    if (!auth.ok) return auth.response;
-
-    try {
-      const body = parseArk(
-        PackageArtifactBackfillRequestSchema,
-        await request.json().catch(() => ({})),
-        "Package artifact backfill payload",
-      ) as {
-        cursor?: string | null;
-        batchSize?: number;
-        dryRun?: boolean;
-      };
-      const result = await runMutationRef(
-        ctx,
-        internalRefs.packages.backfillPackageArtifactKindsInternal,
-        {
-          actorUserId: auth.userId,
-          ...(body.cursor !== undefined ? { cursor: body.cursor } : {}),
-          ...(typeof body.batchSize === "number" ? { batchSize: body.batchSize } : {}),
-          ...(typeof body.dryRun === "boolean" ? { dryRun: body.dryRun } : {}),
-        },
-      );
-      return json(result, 200, rate.headers);
-    } catch (error) {
-      return text(
-        error instanceof Error ? error.message : "Package artifact backfill failed",
-        400,
-        rate.headers,
-      );
-    }
-  }
-
   if (segments[0] === "migrations" && segments.length === 1) {
     const rate = await applyRateLimit(ctx, request, "write");
     if (!rate.ok) return rate.response;
@@ -2422,6 +2903,7 @@ async function getSkillDetailForRequest(ctx: ActionCtx, slug: string, ownerHandl
       isMalwareBlocked?: boolean | null;
       isHiddenByMod?: boolean | null;
       isRemoved?: boolean | null;
+      sourceVersionId?: Id<"skillVersions"> | null;
     } | null;
   } | null;
 }
@@ -2447,6 +2929,46 @@ function ambiguousSkillChoicesForPackageRequest(
       },
     ];
   });
+}
+
+type PackageExactVersionModeratedSkill = Pick<
+  Doc<"skills">,
+  | "_id"
+  | "softDeletedAt"
+  | "latestVersionId"
+  | "tags"
+  | "moderationStatus"
+  | "moderationReason"
+  | "moderationFlags"
+  | "moderationVerdict"
+  | "moderationSourceVersionId"
+>;
+
+async function getUnavailableSkillPackageVersionBlock(
+  ctx: ActionCtx,
+  slug: string,
+  ownerHandle: string | undefined,
+  versionName: string,
+) {
+  const skill = await runQueryRef<PackageExactVersionModeratedSkill | null>(
+    ctx,
+    internalRefs.skills.getSkillBySlugInternal,
+    { slug, ...(ownerHandle ? { ownerHandle } : {}) },
+  );
+  if (!skill || skill.softDeletedAt) return null;
+
+  const version = (await runQueryRef(ctx, internalRefs.skills.getVersionBySkillAndVersionInternal, {
+    skillId: skill._id,
+    version: versionName,
+  })) as SkillVersionLike | null;
+  if (!version || !isSkillVersionForSkill(version, skill._id)) return null;
+  if (version.softDeletedAt) return { status: 410, message: "Version not available" };
+
+  return getPublicSkillVersionAccessBlock(
+    getSkillFileModerationInfoFromSkill(skill),
+    version._id,
+    skill.latestVersionId ?? skill.tags?.latest,
+  );
 }
 
 async function getSkillVersionForRequest(
@@ -2797,6 +3319,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return json(parsed, 200, rate.headers);
   }
 
+  const ownerHandle = getOwnerHandleParam(request);
+  const isExactVersionRequest =
+    packageSegments[0] === "versions" && packageSegments[1] && packageSegments.length === 2;
   const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
     name: normalizedPackageName,
     viewerUserId: viewerUserId ?? undefined,
@@ -2807,8 +3332,19 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   } | null;
   const skillDetail = detail?.package
     ? null
-    : await getSkillDetailForRequest(ctx, normalizedPackageName, getOwnerHandleParam(request));
+    : await getSkillDetailForRequest(ctx, normalizedPackageName, ownerHandle);
   if (!detail?.package && !skillDetail?.skill) {
+    if (isExactVersionRequest) {
+      const moderationBlock = await getUnavailableSkillPackageVersionBlock(
+        ctx,
+        normalizedPackageName,
+        ownerHandle,
+        packageSegments[1],
+      );
+      if (moderationBlock) {
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
+      }
+    }
     if (skillDetail?.ambiguous) {
       return ambiguousSkillSlugResponse(
         normalizedPackageName,
@@ -2952,7 +3488,14 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (!release) return text("Version not found", 404, rate.headers);
     if (packageSegments[3] === "download") {
       if (release.artifactKind === "npm-pack") {
-        return await streamClawPackRelease(ctx, rate.headers, publicPackage!, release);
+        return await streamClawPackRelease(
+          ctx,
+          request,
+          rate.headers,
+          publicPackage!,
+          release,
+          viewerUserId ?? null,
+        );
       }
       const url = new URL(
         `/api/v1/packages/${encodePackagePath(publicPackage!.name)}/download`,
@@ -2993,6 +3536,15 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         },
       )) as SkillVersionLike | null;
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
+      const effectiveLatestVersionId =
+        skillDetail.skill.latestVersionId ?? skillDetail.skill.tags?.latest;
+      const moderationBlock = getPublicSkillVersionAccessBlock(
+        skillDetail.moderationInfo,
+        version._id,
+        effectiveLatestVersionId,
+      );
+      if (moderationBlock)
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
       const tags = await resolveSkillTags(ctx, skillDetail.skill._id, skillDetail.skill.tags);
       return json(
         {
@@ -3074,11 +3626,17 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const path = new URL(request.url).searchParams.get("path")?.trim();
     if (!path) return text("Missing path", 400, rate.headers);
     if (skillDetail?.skill) {
-      const moderationBlock = getPublicSkillFileAccessBlock(skillDetail.moderationInfo);
-      if (moderationBlock)
-        return text(moderationBlock.message, moderationBlock.status, rate.headers);
       const version = await getSkillVersionForRequest(ctx, skillDetail.skill, request);
       if (!version || version.softDeletedAt) return text("Version not found", 404, rate.headers);
+      const effectiveLatestVersionId =
+        skillDetail.skill.latestVersionId ?? skillDetail.skill.tags?.latest;
+      const moderationBlock = getPublicSkillVersionDownloadBlock(
+        skillDetail.moderationInfo,
+        version,
+        effectiveLatestVersionId,
+      );
+      if (moderationBlock)
+        return text(moderationBlock.message, moderationBlock.status, rate.headers);
       const file = resolveSkillFilePath(version, path);
       if (!file) return text("File not found", 404, rate.headers);
       if (!("storageId" in file) || !file.storageId)
@@ -3154,9 +3712,18 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     const zip = buildDeterministicPackageZip(entries);
     const [zipSha256, zipSha256Base64] = await Promise.all([sha256Hex(zip), sha256Base64(zip)]);
     try {
-      await runMutationRef(ctx, internalRefs.packages.recordPackageDownloadInternal, {
-        packageId: publicPackage!._id,
-      });
+      const identity = getDownloadIdentity(request, viewerUserId ? String(viewerUserId) : null);
+      if (identity) {
+        await runMutationRef(
+          ctx,
+          internalRefs.downloadMetrics.recordDownloadMetricInternal,
+          await buildDownloadMetricArgs({
+            target: { kind: "package", id: publicPackage!._id },
+            identity,
+            now: Date.now(),
+          }),
+        );
+      }
     } catch {
       // Best-effort metric path; never fail package downloads.
     }
@@ -3302,7 +3869,15 @@ export async function npmMirrorGetHandler(ctx: ActionCtx, request: Request) {
     const tarballName = path.rest[1]!;
     const release = releases.find((candidate) => candidate.npmTarballName === tarballName);
     if (!release) return text("ClawPack artifact not found", 404, rate.headers);
-    return await streamClawPackRelease(ctx, rate.headers, detail.package, release, "install");
+    return await streamClawPackRelease(
+      ctx,
+      request,
+      rate.headers,
+      detail.package,
+      release,
+      viewerUserId ?? null,
+      "install",
+    );
   }
   if (path.rest.length > 0) return text("Not found", 404, rate.headers);
 

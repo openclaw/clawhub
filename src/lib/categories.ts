@@ -152,12 +152,6 @@ export function getSkillCategoryBySlug(slug: string | null | undefined) {
   return SKILL_CATEGORIES.find((category) => category.slug === slug) ?? null;
 }
 
-export function getSkillCategoryByKeyword(keyword: string | null | undefined) {
-  const normalizedKeyword = keyword?.trim().toLowerCase();
-  if (!normalizedKeyword) return null;
-  return SKILL_CATEGORIES.find((category) => category.keywords.includes(normalizedKeyword)) ?? null;
-}
-
 export function buildSkillCategoryBrowseHref(category: SkillCategory) {
   const params = new URLSearchParams({ category: category.slug });
   return `/skills?${params.toString()}`;

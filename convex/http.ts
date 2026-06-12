@@ -8,7 +8,7 @@ import {
   cliDeviceTokenHttp,
   cliSkillDeleteHttp,
   cliSkillUndeleteHttp,
-  cliTelemetrySyncHttp,
+  cliTelemetryInstallHttp,
   cliUploadUrlHttp,
   cliWhoamiHttp,
   getSkillHttp,
@@ -17,12 +17,12 @@ import {
 } from "./httpApi";
 import {
   exportSkillsV1Http,
+  exportPluginsV1Http,
   listBundlePluginsV1Http,
   listCodePluginsV1Http,
   listPackagesV1Http,
   listPluginsV1Http,
   listSkillsV1Http,
-  listSoulsV1Http,
   mintPublishTokenV1Http,
   npmMirrorGetHttp,
   packagesDeleteRouterV1Http,
@@ -32,7 +32,6 @@ import {
   createPublisherV1Http,
   publishPackageV1Http,
   publishSkillV1Http,
-  publishSoulV1Http,
   resolveSkillVersionV1Http,
   searchSkillsV1Http,
   skillScanBatchStatusV1Http,
@@ -43,19 +42,22 @@ import {
   skillsDeleteRouterV1Http,
   skillsGetRouterV1Http,
   skillsPostRouterV1Http,
-  soulsDeleteRouterV1Http,
-  soulsGetRouterV1Http,
-  soulsPostRouterV1Http,
   starsDeleteRouterV1Http,
   starsPostRouterV1Http,
   transfersGetRouterV1Http,
   banAppealContextV1Http,
+  usersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
   verifyDocsSessionV1Http,
   whoamiV1Http,
 } from "./httpApiV1";
 import { preflightHandler } from "./httpPreflight";
+import {
+  packageInspectorArtifactHttp,
+  packageInspectorClaimHttp,
+  packageInspectorResultsHttp,
+} from "./packageInspectorHttp";
 
 const http = httpRouter();
 
@@ -107,6 +109,12 @@ http.route({
   path: ApiRoutes.plugins,
   method: "GET",
   handler: listPluginsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.pluginsExport,
+  method: "GET",
+  handler: exportPluginsV1Http,
 });
 
 http.route({
@@ -179,6 +187,24 @@ http.route({
   path: ApiRoutes.publishTokenMint,
   method: "POST",
   handler: mintPublishTokenV1Http,
+});
+
+http.route({
+  path: "/api/v1/package-inspector/claim",
+  method: "POST",
+  handler: packageInspectorClaimHttp,
+});
+
+http.route({
+  path: "/api/v1/package-inspector/artifact",
+  method: "GET",
+  handler: packageInspectorArtifactHttp,
+});
+
+http.route({
+  path: "/api/v1/package-inspector/results",
+  method: "POST",
+  handler: packageInspectorResultsHttp,
 });
 
 http.route({
@@ -272,39 +298,15 @@ http.route({
 });
 
 http.route({
+  pathPrefix: `${ApiRoutes.users}/`,
+  method: "GET",
+  handler: usersGetRouterV1Http,
+});
+
+http.route({
   path: ApiRoutes.users,
   method: "GET",
   handler: usersListV1Http,
-});
-
-http.route({
-  path: ApiRoutes.souls,
-  method: "GET",
-  handler: listSoulsV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.souls}/`,
-  method: "GET",
-  handler: soulsGetRouterV1Http,
-});
-
-http.route({
-  path: ApiRoutes.souls,
-  method: "POST",
-  handler: publishSoulV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.souls}/`,
-  method: "POST",
-  handler: soulsPostRouterV1Http,
-});
-
-http.route({
-  pathPrefix: `${ApiRoutes.souls}/`,
-  method: "DELETE",
-  handler: soulsDeleteRouterV1Http,
 });
 
 http.route({
@@ -356,9 +358,9 @@ http.route({
 });
 
 http.route({
-  path: LegacyApiRoutes.cliTelemetrySync,
+  path: LegacyApiRoutes.cliTelemetryInstall,
   method: "POST",
-  handler: cliTelemetrySyncHttp,
+  handler: cliTelemetryInstallHttp,
 });
 
 http.route({

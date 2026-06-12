@@ -1,7 +1,8 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { Check, Shield, User, UserCog, Wrench } from "lucide-react";
+import { Building2, Check, Shield, User, UserCog, Wrench } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
+import { isBannedAccountAuthError, routeToBannedAccountPage } from "../lib/authErrorMessage";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import {
@@ -13,7 +14,7 @@ import {
 } from "./ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
-type DevPersona = "owner" | "user" | "admin";
+type DevPersona = "owner" | "user" | "admin" | "officialOrgMember" | "abusePublisher";
 
 const DEV_PERSONA_AUTH_TIMEOUT_MS = 10_000;
 
@@ -40,6 +41,18 @@ const PERSONAS: Array<{
     label: "Use Admin",
     description: "@local-admin",
     icon: Shield,
+  },
+  {
+    value: "officialOrgMember",
+    label: "Use Org Member",
+    description: "@local-official-member",
+    icon: Building2,
+  },
+  {
+    value: "abusePublisher",
+    label: "Use Abuse Publisher",
+    description: "@local-abuse",
+    icon: Wrench,
   },
 ];
 
@@ -68,6 +81,24 @@ async function withDevAuthTimeout<T>(operation: Promise<T>) {
   }
 }
 
+async function getLocalDevAuthSecret() {
+  try {
+    const response = await fetch("/dev-auth/secret", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (!response.ok) return undefined;
+    const payload: unknown = await response.json();
+    if (!payload || typeof payload !== "object" || !("devAuthSecret" in payload)) {
+      return undefined;
+    }
+    const secret = payload.devAuthSecret;
+    return typeof secret === "string" && secret.trim() ? secret.trim() : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function DevPersonaFab() {
   const [busyPersona, setBusyPersona] = useState<DevPersona | "sign-out" | null>(null);
   const [section, setSection] = useState("auth");
@@ -82,13 +113,21 @@ export function DevPersonaFab() {
       if (isAuthenticated) {
         await withDevAuthTimeout(signOut());
       }
-      const result = await withDevAuthTimeout(signIn("dev-persona", { persona }));
+      const devAuthSecret = await getLocalDevAuthSecret();
+      const result = await withDevAuthTimeout(
+        signIn("dev-persona", devAuthSecret ? { persona, devAuthSecret } : { persona }),
+      );
       if (result.signingIn === false) {
         throw new Error("Dev persona sign-in did not create a session");
       }
       toast.success(`Using ${persona} persona`);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Dev persona sign-in failed");
+      const message = error instanceof Error ? error.message : "Dev persona sign-in failed";
+      if (isBannedAccountAuthError(message)) {
+        routeToBannedAccountPage();
+        return;
+      }
+      toast.error(message);
     } finally {
       setBusyPersona(null);
     }

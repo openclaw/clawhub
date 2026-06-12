@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer, type IncomingMessage } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
@@ -10,9 +10,10 @@ import {
   ApiRoutes,
   ApiV1SearchResponseSchema,
   ApiV1WhoamiResponseSchema,
+  LegacyApiRoutes,
   parseArk,
 } from "clawhub-schema";
-import { unzipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { describe, expect, it } from "vitest";
 import { readGlobalConfig } from "../packages/clawhub/src/config";
 import { hashSkillFiles } from "../packages/clawhub/src/skills";
@@ -44,10 +45,77 @@ async function readRequestBody(req: IncomingMessage) {
   return Buffer.concat(chunks).toString("utf8");
 }
 
+async function startPackagePublishRegistry(
+  handler: (req: IncomingMessage, body: string) => { status: number; body: unknown; text?: true },
+) {
+  const server = createServer(async (req, res) => {
+    const body = await readRequestBody(req);
+    if (req.method !== "POST" || !req.url?.startsWith(ApiRoutes.packages)) {
+      res.writeHead(404, { "Content-Type": "text/plain" });
+      res.end("not found");
+      return;
+    }
+    const response = handler(req, body);
+    res.writeHead(response.status, {
+      "Content-Type": response.text ? "text/plain" : "application/json",
+    });
+    res.end(response.text ? String(response.body) : JSON.stringify(response.body));
+  });
+  await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+  const address = server.address() as AddressInfo;
+  return {
+    registry: `http://127.0.0.1:${address.port}`,
+    close: () =>
+      new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve())),
+      ),
+  };
+}
+
+async function writeCodePluginFixture(root: string, name: string) {
+  const folder = join(root, name);
+  await mkdir(join(folder, "dist"), { recursive: true });
+  await writeFile(
+    join(folder, "package.json"),
+    `${JSON.stringify(
+      {
+        name,
+        version: "1.0.0",
+        type: "module",
+        main: "dist/index.js",
+        openclaw: {
+          extensions: ["./dist/index.js"],
+          compat: { pluginApi: ">=2026.3.24-beta.2" },
+          build: { openclawVersion: "2026.3.24-beta.2" },
+          configSchema: { type: "object", additionalProperties: false },
+        },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await writeFile(
+    join(folder, "openclaw.plugin.json"),
+    `${JSON.stringify(
+      {
+        id: name,
+        name,
+        configSchema: { type: "object", additionalProperties: false },
+      },
+      null,
+      2,
+    )}\n`,
+    "utf8",
+  );
+  await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+  return folder;
+}
+
 async function spawnCommand(
   command: string,
   args: string[],
-  options: { cwd: string; env: NodeJS.ProcessEnv },
+  options: { cwd: string; env: NodeJS.ProcessEnv; encoding?: BufferEncoding; timeoutMs?: number },
 ) {
   return await new Promise<{
     status: number | null;
@@ -55,6 +123,7 @@ async function spawnCommand(
     stdout: string;
     stderr: string;
   }>((resolve, reject) => {
+    let settled = false;
     const child = spawn(command, args, {
       cwd: options.cwd,
       env: options.env,
@@ -70,8 +139,22 @@ async function spawnCommand(
     child.stderr.on("data", (chunk: string) => {
       stderr += chunk;
     });
-    child.on("error", reject);
+    const timeout =
+      options.timeoutMs && options.timeoutMs > 0
+        ? setTimeout(() => {
+            if (settled) return;
+            child.kill("SIGTERM");
+            reject(new Error(`${command} ${args.join(" ")} timed out`));
+          }, options.timeoutMs)
+        : null;
+    child.on("error", (error) => {
+      settled = true;
+      if (timeout) clearTimeout(timeout);
+      reject(error);
+    });
     child.on("close", (status, signal) => {
+      settled = true;
+      if (timeout) clearTimeout(timeout);
       resolve({ status, signal, stdout, stderr });
     });
   });
@@ -110,7 +193,7 @@ describe("clawhub e2e", () => {
     const cfg = await makeTempConfig(registry, token);
     try {
       const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-workdir-"));
-      const result = spawnSync(
+      const result = await spawnCommand(
         "bun",
         [
           "clawhub",
@@ -133,9 +216,138 @@ describe("clawhub e2e", () => {
       );
       await rm(workdir, { recursive: true, force: true });
 
-      expect(result.status).toBe(0);
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
       expect(result.stderr).not.toMatch(/API response:/);
     } finally {
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("cli scan rejects local folders before submitting a scan", async () => {
+    let requestCount = 0;
+    const server = createServer(async (_req, res) => {
+      requestCount += 1;
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const cfg = await makeTempConfig(registry, "test-token");
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-scan-"));
+    try {
+      const skillDir = join(workdir, "my-skill");
+      await mkdir(skillDir, { recursive: true });
+      await writeFile(join(skillDir, "SKILL.md"), "# Local Skill\n", "utf8");
+
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "scan",
+          "./my-skill",
+          "--workdir",
+          workdir,
+          "--site",
+          registry,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+          },
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(requestCount).toBe(0);
+      expect(result.stderr).toContain("Local folder scans are no longer supported");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(workdir, { recursive: true, force: true });
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  });
+
+  it("cli scan download fetches a stored submitted-version scan report", async () => {
+    const reportZip = zipSync({
+      "manifest.json": strToU8(
+        `${JSON.stringify({
+          scanId: "skill:demo-skill:1.2.3",
+          sourceKind: "published",
+          status: "succeeded",
+        })}\n`,
+      ),
+      "clawscan.json": strToU8(`${JSON.stringify({ status: "malicious" })}\n`),
+    });
+    let requestedAuthorization = "";
+    let requestedPath = "";
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      requestedPath = `${url.pathname}${url.search}`;
+      if (
+        req.method === "GET" &&
+        url.pathname === `${ApiRoutes.skillScans}/download/demo-skill` &&
+        url.searchParams.get("version") === "1.2.3" &&
+        url.searchParams.get("kind") === "skill"
+      ) {
+        requestedAuthorization = req.headers.authorization ?? "";
+        res.writeHead(200, { "Content-Type": "application/zip" });
+        res.end(Buffer.from(reportZip));
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const cfg = await makeTempConfig(registry, "test-token");
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-scan-download-"));
+    try {
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "scan",
+          "download",
+          "demo-skill",
+          "--version",
+          "1.2.3",
+          "--output",
+          "report.zip",
+          "--workdir",
+          workdir,
+          "--site",
+          registry,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+          },
+        },
+      );
+
+      expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
+      expect(requestedAuthorization).toBe("Bearer test-token");
+      expect(requestedPath).toBe(
+        `${ApiRoutes.skillScans}/download/demo-skill?version=1.2.3&kind=skill`,
+      );
+      expect(result.stdout).toContain("Report ZIP:");
+      const downloaded = await readFile(join(workdir, "report.zip"));
+      expect(unzipSync(downloaded)).toHaveProperty("manifest.json");
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(workdir, { recursive: true, force: true });
       await rm(cfg.dir, { recursive: true, force: true });
     }
   });
@@ -178,7 +390,7 @@ describe("clawhub e2e", () => {
     }
   });
 
-  itIfAdminAndUserTokens("shows moderator CLI commands only in admin help", async () => {
+  itIfAdminAndUserTokens("does not expose removed admin compatibility aliases", async () => {
     const registry = getRegistry();
     const site = getSite();
     const { adminToken, userToken } = await resolveRoleHelpTokens(registry);
@@ -224,9 +436,9 @@ describe("clawhub e2e", () => {
       );
 
       expect(adminResult.status).toBe(0);
-      expect(adminResult.stdout).toContain("ban-user");
-      expect(adminResult.stdout).toContain("unban-user");
-      expect(adminResult.stdout).toContain("set-role");
+      expect(adminResult.stdout).not.toContain("ban-user");
+      expect(adminResult.stdout).not.toContain("unban-user");
+      expect(adminResult.stdout).not.toContain("set-role");
       expect(userResult.status).toBe(0);
       expect(userResult.stdout).not.toContain("ban-user");
       expect(userResult.stdout).not.toContain("unban-user");
@@ -461,6 +673,128 @@ describe("clawhub e2e", () => {
     }
   });
 
+  it("installs a GitHub-backed skill through the install resolver and reports install telemetry", async () => {
+    const commit = "b".repeat(40);
+    const telemetryBodies: unknown[] = [];
+    const requestLog: string[] = [];
+    const githubZipBytes = zipSync({
+      "skills-main/skills/aiq-deploy/SKILL.md": strToU8("# AIQ Deploy\n"),
+      "skills-main/skills/aiq-deploy/skill-card.md": strToU8("# Card\n"),
+      "skills-main/skills/other/SKILL.md": strToU8("# Other\n"),
+    });
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      requestLog.push(`${req.method ?? "GET"} ${url.pathname}`);
+      if (req.method === "GET" && url.pathname === `${ApiRoutes.skills}/aiq-deploy`) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            skill: {
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              summary: "Deploy AgentIQ workflows.",
+              tags: {},
+              stats: {},
+              createdAt: 1,
+              updatedAt: 1,
+            },
+            latestVersion: null,
+            owner: null,
+            moderation: null,
+          }),
+        );
+        return;
+      }
+      if (req.method === "GET" && url.pathname === `${ApiRoutes.skills}/aiq-deploy/install`) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            ok: true,
+            slug: "aiq-deploy",
+            installKind: "github",
+            github: {
+              repo: "NVIDIA/skills",
+              path: "skills/aiq-deploy",
+              commit,
+              contentHash: "hash-aiq-deploy",
+              sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+            },
+          }),
+        );
+        return;
+      }
+      if (req.method === "GET" && url.pathname === `/NVIDIA/skills/zip/${commit}`) {
+        res.writeHead(200, { "Content-Type": "application/zip" });
+        res.end(Buffer.from(githubZipBytes));
+        return;
+      }
+      if (req.method === "POST" && url.pathname === LegacyApiRoutes.cliTelemetryInstall) {
+        telemetryBodies.push(JSON.parse(await readRequestBody(req)) as unknown);
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ ok: true }));
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const cfg = await makeTempConfig(registry, "test-token");
+    const workdir = await mkdtemp(join(tmpdir(), "clawhub-e2e-github-install-"));
+    try {
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "install",
+          "aiq-deploy",
+          "--workdir",
+          workdir,
+          "--site",
+          registry,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "",
+            CLAWDHUB_DISABLE_TELEMETRY: "",
+            CLAWHUB_GITHUB_CODELOAD_BASE_URL: registry,
+          },
+        },
+      );
+
+      expect(result.status).toBe(0);
+      await expect(
+        readFile(join(workdir, "skills", "aiq-deploy", "SKILL.md"), "utf8"),
+      ).resolves.toContain("# AIQ Deploy");
+      await expect(
+        readFile(join(workdir, "skills", "aiq-deploy", "skill-card.md"), "utf8"),
+      ).resolves.toContain("# Card");
+      await expect(
+        readFile(join(workdir, "skills", "aiq-deploy", "other", "SKILL.md")),
+      ).rejects.toThrow();
+      if (telemetryBodies.length !== 1) {
+        throw new Error(`Expected one install telemetry request, saw: ${requestLog.join(", ")}`);
+      }
+      expect(telemetryBodies[0]).toMatchObject({
+        roots: [
+          {
+            skills: [{ slug: "aiq-deploy", version: commit }],
+          },
+        ],
+      });
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(workdir, { recursive: true, force: true });
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  });
+
   it("sync dry-run finds skills from clawdbot.json roots", async () => {
     const registry = getRegistry();
     const site = getSite();
@@ -578,6 +912,115 @@ describe("clawhub e2e", () => {
     expect(output).not.toHaveProperty("releaseId");
   }, 30_000);
 
+  it("package publish exits non-zero when Plugin Inspector hard errors block publish", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawhub-cli-inspector-hard-"));
+    const registry = await startPackagePublishRegistry(() => ({
+      status: 400,
+      text: true,
+      body: "Plugin Inspector blocked publish: missing-expected-seam: missing expected registration registerTool",
+    }));
+    const cfg = await makeTempConfig(registry.registry, "test-token");
+    try {
+      const plugin = await writeCodePluginFixture(root, "cli-inspector-hard-plugin");
+      const result = await spawnCommand(
+        "node",
+        [
+          join(process.cwd(), "packages/clawhub/dist/cli.js"),
+          "package",
+          "publish",
+          plugin,
+          "--registry",
+          registry.registry,
+          "--site",
+          registry.registry,
+          "--source-repo",
+          "openclaw/cli-inspector-hard-plugin",
+          "--source-commit",
+          "deadbeef",
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+            NO_COLOR: "1",
+          },
+          timeoutMs: 25_000,
+        },
+      );
+
+      expect(result.status).not.toBe(0);
+      expect(`${result.stdout}\n${result.stderr}`).toMatch(/Plugin Inspector blocked publish/);
+      expect(`${result.stdout}\n${result.stderr}`).toMatch(/missing-expected-seam/);
+    } finally {
+      await registry.close();
+      await rm(root, { recursive: true, force: true });
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  it("package publish exits zero and prints Plugin Inspector warnings", async () => {
+    const root = await mkdtemp(join(tmpdir(), "clawhub-cli-inspector-warning-"));
+    const registry = await startPackagePublishRegistry(() => ({
+      status: 200,
+      body: {
+        ok: true,
+        packageId: "pkg_cli_warning",
+        releaseId: "rel_cli_warning",
+        inspectorFindings: [
+          {
+            findingKind: "warning",
+            code: "legacy-before-agent-start",
+            issueClass: "deprecation-warning",
+            message: "legacy before_agent_start hook is deprecated",
+          },
+        ],
+      },
+    }));
+    const cfg = await makeTempConfig(registry.registry, "test-token");
+    try {
+      const plugin = await writeCodePluginFixture(root, "cli-inspector-warning-plugin");
+      const result = await spawnCommand(
+        "node",
+        [
+          join(process.cwd(), "packages/clawhub/dist/cli.js"),
+          "package",
+          "publish",
+          plugin,
+          "--registry",
+          registry.registry,
+          "--site",
+          registry.registry,
+          "--source-repo",
+          "openclaw/cli-inspector-warning-plugin",
+          "--source-commit",
+          "abc123",
+        ],
+        {
+          cwd: process.cwd(),
+          env: {
+            ...process.env,
+            CLAWHUB_CONFIG_PATH: cfg.path,
+            CLAWHUB_DISABLE_TELEMETRY: "1",
+            NO_COLOR: "1",
+          },
+          timeoutMs: 25_000,
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stdout).toMatch(/Plugin Inspector findings: 1 warning/);
+      expect(result.stdout).toMatch(
+        /WARNING legacy-before-agent-start \(deprecation-warning\): legacy before_agent_start hook is deprecated/,
+      );
+    } finally {
+      await registry.close();
+      await rm(root, { recursive: true, force: true });
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   it("package publish help shows the new source argument and flags", async () => {
     const result = spawnSync("bun", ["clawhub", "package", "publish", "--help"], {
       cwd: process.cwd(),
@@ -601,6 +1044,126 @@ describe("clawhub e2e", () => {
     expect(result.stdout).toMatch(/--tag/);
     expect(result.stdout).toMatch(/--card/);
     expect(result.stdout).not.toMatch(/--json/);
+  });
+
+  it("skill verify accepts the legacy json flag with flattened verification responses", async () => {
+    const requestLog: string[] = [];
+    const server = createServer(async (req, res) => {
+      const url = new URL(req.url ?? "/", "http://127.0.0.1");
+      requestLog.push(`${req.method ?? "GET"} ${url.pathname}${url.search}`);
+      if (req.method === "GET" && url.pathname === `${ApiRoutes.skills}/fulcra-context/verify`) {
+        res.writeHead(200, { "Content-Type": "application/json" });
+        res.end(
+          JSON.stringify({
+            schema: "clawhub.skill.verify.v1",
+            ok: true,
+            decision: "pass",
+            reasons: [],
+            slug: "fulcra-context",
+            displayName: "Fulcra Context",
+            pageUrl: "https://clawhub.ai/arc-claw-bot/fulcra-context",
+            publisherHandle: "arc-claw-bot",
+            publisherDisplayName: "Arc Claw Bot",
+            publisherProfileUrl: "https://clawhub.ai/user/arc-claw-bot",
+            version: "1.4.10",
+            resolvedFrom: "version",
+            tag: null,
+            createdAt: 1780075196459,
+            card: {
+              available: true,
+              path: "skill-card.md",
+              url: `${registry}/api/v1/skills/fulcra-context/card?version=1.4.10`,
+              sha256: "f6d6dc3701e5fea5116526261c73031030b06a6110e57fdc3ed4de7df8f315dd",
+              size: 3285,
+              contentType: "text/markdown",
+            },
+            artifact: {
+              sourceFingerprint: "source-fingerprint",
+              bundleFingerprints: ["generated-bundle-fingerprint"],
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 5929,
+                  sha256: "db813e41699340098840b6ba2ed958f1ae53fb620e4cc1cb0aa03aabfd1a4dbc",
+                },
+              ],
+            },
+            provenance: { source: "unavailable" },
+            security: {
+              status: "clean",
+              passed: true,
+              rawStatus: "clean",
+              verdict: "benign",
+              confidence: "high",
+              summary: "Docs-only skill with bounded Fulcra read workflows.",
+              model: "gpt-5.5",
+              checkedAt: 1780082252374,
+              signals: {
+                staticScan: { status: "clean", rawStatus: "clean", reasonCodes: [] },
+                virusTotal: { status: "clean", rawStatus: "clean", source: "engines" },
+                skillSpector: {
+                  status: "clean",
+                  rawStatus: "clean",
+                  score: 0,
+                  severity: "LOW",
+                  recommendation: "SAFE",
+                  issueCount: 0,
+                },
+                dependencyRegistry: null,
+              },
+            },
+            signature: { status: "unsigned" },
+          }),
+        );
+        return;
+      }
+      res.writeHead(404, { "Content-Type": "text/plain; charset=utf-8" });
+      res.end("not found");
+    });
+    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));
+
+    const registry = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const cfg = await makeTempConfig(registry, "test-token");
+    try {
+      const result = await spawnCommand(
+        "bun",
+        [
+          "clawhub",
+          "skill",
+          "verify",
+          "fulcra-context",
+          "--version",
+          "1.4.10",
+          "--json",
+          "--site",
+          registry,
+          "--registry",
+          registry,
+        ],
+        {
+          cwd: process.cwd(),
+          env: { ...process.env, CLAWHUB_CONFIG_PATH: cfg.path, CLAWHUB_DISABLE_TELEMETRY: "1" },
+        },
+      );
+
+      expect(result.status).toBe(0);
+      expect(result.stderr).not.toMatch(/unknown option|API response:/i);
+      const output = JSON.parse(result.stdout) as Record<string, unknown>;
+      expect(output).toMatchObject({
+        ok: true,
+        decision: "pass",
+        reasons: [],
+        slug: "fulcra-context",
+        publisherHandle: "arc-claw-bot",
+        version: "1.4.10",
+      });
+      expect(output).not.toHaveProperty("skill");
+      expect(output).not.toHaveProperty("publisher");
+      expect(requestLog).toEqual(["GET /api/v1/skills/fulcra-context/verify?version=1.4.10"]);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+      await rm(cfg.dir, { recursive: true, force: true });
+    }
   });
 
   itIfLiveMutations(

@@ -7,6 +7,10 @@ import { internalAction, internalMutation } from "./functions";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 import { generateToken, hashToken } from "./lib/tokens";
 
@@ -30,6 +34,86 @@ type SeedActionResult = {
 };
 
 type SeedMutationResult = Record<string, unknown>;
+
+function seededPackageRecommendationScore(stats: {
+  downloads: number;
+  installs: number;
+  stars: number;
+}) {
+  return computeRecommendationScore(stats);
+}
+
+function seededPackageRecommendationPatch(stats: {
+  downloads: number;
+  installs: number;
+  stars: number;
+}) {
+  return {
+    recommendedScore: seededPackageRecommendationScore(stats),
+    recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+  };
+}
+
+const displayManifestStatusValidator = v.union(
+  v.literal("ok"),
+  v.literal("missing"),
+  v.literal("invalid"),
+  v.literal("failed"),
+);
+
+const displayManifestValidator = v.object({
+  notGrouped: v.optional(v.union(v.literal("top"), v.literal("bottom"))),
+  groupings: v.array(
+    v.object({
+      title: v.string(),
+      description: v.optional(v.string()),
+      skills: v.array(v.string()),
+    }),
+  ),
+});
+
+const githubSkillScanStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("pending"),
+  v.literal("failed"),
+);
+
+type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
+
+type SeedGitHubBackedSkillSourceArgs = {
+  reset?: boolean;
+  ownerUserId?: Id<"users">;
+  repo: string;
+  defaultBranch?: string;
+  displayManifestKind?: "skills.sh";
+  displayManifestHash?: string;
+  displayManifestCommit?: string;
+  displayManifestFetchedAt?: number;
+  displayManifestStatus?: "ok" | "missing" | "invalid" | "failed";
+  displayManifest?: {
+    notGrouped?: "top" | "bottom";
+    groupings: Array<{
+      title: string;
+      description?: string;
+      skills: string[];
+    }>;
+  };
+  skills: Array<{
+    slug: string;
+    displayName: string;
+    summary?: string;
+    githubPath: string;
+    githubCurrentCommit: string;
+    githubCurrentContentHash: string;
+    githubCurrentStatus?: "present" | "missing" | "unknown";
+    githubCurrentCheckedAt?: number;
+    githubScanStatus: GitHubSkillScanStatus;
+    githubRemovedAt?: number;
+    capabilityTags?: string[];
+  }>;
+};
 
 type PublicCorpusDummyOwner = {
   handle: string;
@@ -625,12 +709,6 @@ async function retireLegacyLocalOwnerPublishers(
       .collect();
     for (const alias of aliases) await ctx.db.patch(alias._id, ownerPatch);
 
-    const souls = await ctx.db
-      .query("souls")
-      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
-      .collect();
-    for (const soul of souls) await ctx.db.patch(soul._id, ownerPatch);
-
     const packages = await ctx.db
       .query("packages")
       .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisher._id))
@@ -734,7 +812,10 @@ async function seedLocalFixturesHandler(
     },
   );
 
-  return { ok: true, results: [{ slug: "local-moderation-fixtures", ...fixtureResult }] };
+  return {
+    ok: true,
+    results: [{ slug: "local-moderation-fixtures", ...fixtureResult }],
+  };
 }
 
 export const seedLocalFixtures: ReturnType<typeof internalAction> = internalAction({
@@ -869,7 +950,6 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           skillId,
           versionId,
           ownerId: userId,
-          ownerPublisherId: publisherId,
           embedding: row.embedding,
           isLatest: true,
           isApproved: true,
@@ -946,6 +1026,7 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           verification,
           scanStatus: "clean",
           stats: { ...stats, versions: 0 },
+          ...seededPackageRecommendationPatch(stats),
           softDeletedAt: undefined,
           createdAt,
           updatedAt: now,
@@ -1128,6 +1209,68 @@ async function ensureLocalSeedOwner(ctx: MutationCtx) {
   if (!user) throw new Error("Local seed user was not created");
   const publisher = await ensurePersonalPublisherForUser(ctx, user);
   if (!publisher) throw new Error("Local seed publisher was not created");
+  return { userId: ensuredUserId, publisherId: publisher._id };
+}
+
+async function ensureLocalSeedUser(ctx: MutationCtx) {
+  const now = Date.now();
+  const handle = "local-user";
+  const existingUsers = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", handle))
+    .collect();
+
+  let userId = existingUsers[0]?._id;
+  if (!userId) {
+    const localPublishers = await ctx.db
+      .query("publishers")
+      .withIndex("by_handle", (q) => q.eq("handle", handle))
+      .collect();
+    for (const publisher of localPublishers) {
+      if (publisher.kind !== "user" || !publisher.linkedUserId) continue;
+      const linkedUser = await ctx.db.get(publisher.linkedUserId);
+      if (linkedUser && !linkedUser.deletedAt && !linkedUser.deactivatedAt) {
+        userId = linkedUser._id;
+        break;
+      }
+      await ctx.db.patch(publisher._id, {
+        handle: `legacy-${handle}-${Math.floor(publisher._creationTime)}`,
+        deletedAt: publisher.deletedAt ?? now,
+        deactivatedAt: publisher.deactivatedAt ?? now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  const ensuredUserId =
+    userId ??
+    (await ctx.db.insert("users", {
+      handle,
+      displayName: "Local User",
+      name: "Local User",
+      role: "user",
+      githubCreatedAt: LOCAL_SEED_GITHUB_CREATED_AT,
+      createdAt: now,
+      updatedAt: now,
+    }));
+  if (userId) {
+    await ctx.db.patch(userId, {
+      handle,
+      displayName: "Local User",
+      name: "Local User",
+      githubCreatedAt: LOCAL_SEED_GITHUB_CREATED_AT,
+      role: "user" as const,
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+      purgedAt: undefined,
+      banReason: undefined,
+      updatedAt: now,
+    });
+  }
+  const user = await ctx.db.get(ensuredUserId);
+  if (!user) throw new Error("Local user seed was not created");
+  const publisher = await ensurePersonalPublisherForUser(ctx, user);
+  if (!publisher) throw new Error("Local user seed publisher was not created");
   return { userId: ensuredUserId, publisherId: publisher._id };
 }
 
@@ -1328,10 +1471,17 @@ async function deleteSeedPluginFixtureByName(ctx: MutationCtx, name: string) {
     .query("packageReleases")
     .withIndex("by_package", (q) => q.eq("packageId", existing._id))
     .collect();
+  const inspectorFindings = await ctx.db
+    .query("packageInspectorWarnings")
+    .withIndex("by_package_created", (q) => q.eq("packageId", existing._id))
+    .collect();
   await deletePackageBadgesForPackage(ctx, existing._id);
   await ctx.db.delete(existing._id);
   for (const release of releases) {
     await ctx.db.delete(release._id);
+  }
+  for (const finding of inspectorFindings) {
+    await ctx.db.delete(finding._id);
   }
 }
 
@@ -2191,6 +2341,7 @@ export async function seedLocalModerationFixturesHandler(
     },
     scanStatus: "malicious",
     stats: { downloads: 2, installs: 0, stars: 0, versions: 0 },
+    ...seededPackageRecommendationPatch({ downloads: 2, installs: 0, stars: 0 }),
     softDeletedAt: undefined,
     createdAt: now,
     updatedAt: now,
@@ -2276,6 +2427,7 @@ export async function seedLocalModerationFixturesHandler(
     },
     tags: { latest: packageReleaseId },
     stats: { downloads: 2, installs: 0, stars: 0, versions: 1 },
+    ...seededPackageRecommendationPatch({ downloads: 2, installs: 0, stars: 0 }),
     updatedAt: now,
   });
   const scannedPackageId = await ctx.db.insert("packages", {
@@ -2311,6 +2463,7 @@ export async function seedLocalModerationFixturesHandler(
     },
     scanStatus: "suspicious",
     stats: { downloads: 7, installs: 1, stars: 1, versions: 0 },
+    ...seededPackageRecommendationPatch({ downloads: 7, installs: 1, stars: 1 }),
     softDeletedAt: undefined,
     createdAt: now,
     updatedAt: now,
@@ -2388,7 +2541,50 @@ export async function seedLocalModerationFixturesHandler(
     },
     tags: { latest: scannedPackageReleaseId },
     stats: { downloads: 7, installs: 1, stars: 1, versions: 1 },
+    ...seededPackageRecommendationPatch({ downloads: 7, installs: 1, stars: 1 }),
     updatedAt: now,
+  });
+  await ctx.db.insert("packageInspectorWarnings", {
+    packageId: scannedPackageId,
+    releaseId: scannedPackageReleaseId,
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    packageName: scannedPluginName,
+    version: "0.1.0",
+    findingKind: "warning",
+    scanSource: "publish",
+    inspectorVersion: "0.3.11",
+    targetOpenClawVersion: "2026.3.24-beta.2",
+    code: "legacy-before-agent-start",
+    severity: "P2",
+    level: "warning",
+    issueClass: "deprecation-warning",
+    compatStatus: "deprecated",
+    deprecated: true,
+    message: "legacy before_agent_start hook is deprecated for the current OpenClaw plugin API",
+    evidence: ["src/index.ts:4", "hook:before_agent_start"],
+    inspectorFindingId: "local-scanned-runtime-plugin:legacy-before-agent-start",
+    createdAt: now,
+  });
+  await ctx.db.insert("packageInspectorWarnings", {
+    packageId: scannedPackageId,
+    releaseId: scannedPackageReleaseId,
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    packageName: scannedPluginName,
+    version: "0.1.0",
+    findingKind: "error",
+    scanSource: "nightly",
+    inspectorVersion: "0.4.0",
+    targetOpenClawVersion: "2026.4.0",
+    code: "missing-expected-seam",
+    severity: "P0",
+    level: "breakage",
+    issueClass: "compatibility-error",
+    message: "registerTool is no longer available on the target OpenClaw compatibility surface",
+    evidence: ["src/index.ts:12", "target:OpenClaw 2026.4.0"],
+    inspectorFindingId: "local-scanned-runtime-plugin:missing-expected-seam",
+    createdAt: now + 1,
   });
   await ctx.db.patch(userId, {
     publishedSkills: 6,
@@ -2430,6 +2626,278 @@ export const seedLocalModerationFixturesMutation = internalMutation({
     scannedPluginReadme: v.string(),
   },
   handler: seedLocalModerationFixturesHandler,
+});
+
+function githubBackedSkillModeration(scanStatus: GitHubSkillScanStatus, removedAt?: number) {
+  if (typeof removedAt === "number") {
+    return {
+      moderationStatus: "hidden" as const,
+      moderationReason: "github.upstream.removed",
+      moderationVerdict: undefined,
+      moderationFlags: [],
+      isSuspicious: false,
+    };
+  }
+  if (scanStatus === "pending") {
+    return {
+      moderationStatus: "hidden" as const,
+      moderationReason: "pending.scan",
+      moderationVerdict: undefined,
+      moderationFlags: [],
+      isSuspicious: false,
+    };
+  }
+  if (scanStatus === "failed") {
+    return {
+      moderationStatus: "hidden" as const,
+      moderationReason: "scanner.failed",
+      moderationVerdict: undefined,
+      moderationFlags: [],
+      isSuspicious: false,
+    };
+  }
+  if (scanStatus === "malicious") {
+    return {
+      moderationStatus: "hidden" as const,
+      moderationReason: "scanner.llm.malicious",
+      moderationVerdict: "malicious" as const,
+      moderationFlags: ["blocked.malware"],
+      isSuspicious: true,
+    };
+  }
+  if (scanStatus === "suspicious") {
+    return {
+      moderationStatus: "active" as const,
+      moderationReason: "scanner.llm.suspicious",
+      moderationVerdict: "suspicious" as const,
+      moderationFlags: ["flagged.suspicious"],
+      isSuspicious: true,
+    };
+  }
+  return {
+    moderationStatus: "active" as const,
+    moderationReason: undefined,
+    moderationVerdict: "clean" as const,
+    moderationFlags: [],
+    isSuspicious: false,
+  };
+}
+
+export async function seedGitHubBackedSkillSourceHandler(
+  ctx: MutationCtx,
+  args: SeedGitHubBackedSkillSourceArgs,
+) {
+  const now = Date.now();
+  const { userId, publisherId } = await ensureSeedOwner(ctx, args.ownerUserId);
+  const existingSource = await ctx.db
+    .query("githubSkillSources")
+    .withIndex("by_repo", (q) => q.eq("repo", args.repo))
+    .unique();
+  const sourcePatch = {
+    repo: args.repo,
+    ownerPublisherId: publisherId,
+    defaultBranch: args.defaultBranch,
+    displayManifestKind: args.displayManifestKind,
+    displayManifestHash: args.displayManifestHash,
+    displayManifestCommit: args.displayManifestCommit,
+    displayManifestFetchedAt: args.displayManifestFetchedAt,
+    displayManifestStatus: args.displayManifestStatus,
+    displayManifest: args.displayManifest,
+    updatedAt: now,
+  };
+  const sourceId =
+    existingSource?._id ??
+    (await ctx.db.insert("githubSkillSources", {
+      ...sourcePatch,
+      createdAt: now,
+    }));
+  if (existingSource) await ctx.db.patch(existingSource._id, sourcePatch);
+
+  const seeded: string[] = [];
+  const skipped: string[] = [];
+
+  for (const spec of args.skills) {
+    const existing = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", spec.slug))
+      .unique();
+    if (existing && !args.reset) {
+      skipped.push(spec.slug);
+      continue;
+    }
+    if (existing && args.reset) await deleteSkillAndVersions(ctx, existing._id);
+
+    const moderation = githubBackedSkillModeration(spec.githubScanStatus, spec.githubRemovedAt);
+    const skillId = await ctx.db.insert("skills", {
+      slug: spec.slug,
+      displayName: spec.displayName,
+      summary: spec.summary,
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      installKind: "github",
+      githubSourceId: sourceId,
+      githubPath: spec.githubPath,
+      githubCurrentCommit: spec.githubCurrentCommit,
+      githubCurrentContentHash: spec.githubCurrentContentHash,
+      githubCurrentStatus:
+        spec.githubCurrentStatus ?? (spec.githubRemovedAt ? "missing" : "present"),
+      githubCurrentCheckedAt: spec.githubCurrentCheckedAt,
+      githubScanStatus: spec.githubScanStatus,
+      githubRemovedAt: spec.githubRemovedAt,
+      latestVersionId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: spec.capabilityTags ?? [],
+      softDeletedAt: undefined,
+      badges: { highlighted: { byUserId: userId, at: now }, redactionApproved: undefined },
+      moderationStatus: moderation.moderationStatus,
+      moderationReason: moderation.moderationReason,
+      moderationVerdict: moderation.moderationVerdict,
+      moderationFlags: moderation.moderationFlags,
+      isSuspicious: moderation.isSuspicious,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 0,
+        comments: 0,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ensureHighlightedSkillBadge(ctx, skillId, userId, now);
+    seeded.push(spec.slug);
+  }
+
+  return {
+    ok: true,
+    sourceId,
+    ownerUserId: userId,
+    ownerPublisherId: publisherId,
+    seeded,
+    skipped,
+  };
+}
+
+export const seedGitHubBackedSkillSourceMutation = internalMutation({
+  args: {
+    reset: v.optional(v.boolean()),
+    ownerUserId: v.optional(v.id("users")),
+    repo: v.string(),
+    defaultBranch: v.optional(v.string()),
+    displayManifestKind: v.optional(v.literal("skills.sh")),
+    displayManifestHash: v.optional(v.string()),
+    displayManifestCommit: v.optional(v.string()),
+    displayManifestFetchedAt: v.optional(v.number()),
+    displayManifestStatus: v.optional(displayManifestStatusValidator),
+    displayManifest: v.optional(displayManifestValidator),
+    skills: v.array(
+      v.object({
+        slug: v.string(),
+        displayName: v.string(),
+        summary: v.optional(v.string()),
+        githubPath: v.string(),
+        githubCurrentCommit: v.string(),
+        githubCurrentContentHash: v.string(),
+        githubCurrentStatus: v.optional(
+          v.union(v.literal("present"), v.literal("missing"), v.literal("unknown")),
+        ),
+        githubCurrentCheckedAt: v.optional(v.number()),
+        githubScanStatus: githubSkillScanStatusValidator,
+        githubRemovedAt: v.optional(v.number()),
+        capabilityTags: v.optional(v.array(v.string())),
+      }),
+    ),
+  },
+  handler: seedGitHubBackedSkillSourceHandler,
+});
+
+export const seedGitHubSourceInvalidSkillsPreviewMutation = internalMutation({
+  args: {
+    repo: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const source = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_repo", (q) => q.eq("repo", args.repo))
+      .unique();
+
+    if (!source) {
+      return { ok: false as const, reason: "source_not_found" as const };
+    }
+
+    const overlongSlug = "preview-" + "x".repeat(97);
+    await ctx.db.patch(source._id, {
+      lastSyncIssues: [
+        {
+          slug: overlongSlug,
+          path: `skills/${overlongSlug}`,
+          displayName: "Preview Invalid Skill",
+          kind: "invalid_slug",
+          severity: "error",
+          message: "Slug must be at most 96 characters.",
+        },
+      ],
+      lastSyncInvalidSkills: [
+        {
+          slug: overlongSlug,
+          path: `skills/${overlongSlug}`,
+          displayName: "Preview Invalid Skill",
+          error: "Slug must be at most 96 characters.",
+        },
+      ],
+      updatedAt: Date.now(),
+    });
+
+    return { ok: true as const, sourceId: source._id };
+  },
+});
+
+export const deleteGitHubBackedSkillSourceSeedMutation = internalMutation({
+  args: {
+    repo: v.optional(v.string()),
+    sourceId: v.optional(v.id("githubSkillSources")),
+  },
+  handler: async (ctx, args) => {
+    const source = args.sourceId
+      ? await ctx.db.get(args.sourceId)
+      : args.repo
+        ? await ctx.db
+            .query("githubSkillSources")
+            .withIndex("by_repo", (q) => q.eq("repo", args.repo as string))
+            .unique()
+        : null;
+    const sourceId = source?._id ?? args.sourceId;
+    if (!sourceId) {
+      return { ok: true as const, deletedSource: false, deletedSkills: 0, deletedContents: 0 };
+    }
+
+    const contents = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", sourceId))
+      .collect();
+    for (const content of contents) await ctx.db.delete(content._id);
+
+    const skills = await ctx.db
+      .query("skills")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", sourceId))
+      .collect();
+    for (const skill of skills) await deleteSkillAndVersions(ctx, skill._id);
+
+    if (source) await ctx.db.delete(source._id);
+
+    return {
+      ok: true as const,
+      deletedSource: Boolean(source),
+      deletedSkills: skills.length,
+      deletedContents: contents.length,
+    };
+  },
 });
 
 export const seedFeaturedPluginPackagesMutation = internalMutation({
@@ -2512,6 +2980,7 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
         verification,
         scanStatus: "clean",
         stats: { ...spec.stats, versions: 0 },
+        ...seededPackageRecommendationPatch(spec.stats),
         softDeletedAt: undefined,
         createdAt: now,
         updatedAt: now,
@@ -2763,6 +3232,594 @@ export const seedCliRoleHelpFixtures = rawInternalMutation({
     };
   },
 });
+
+type OrgDeletionFixtureArgs = {
+  handle: string;
+  displayName: string;
+  skillSlug: string;
+  skillDisplayName: string;
+  packageName: string;
+  packageDisplayName: string;
+};
+
+type OrgDeletionFixtureResult = {
+  ok: true;
+  publisherId: Id<"publishers">;
+  skillId: Id<"skills">;
+  skillVersionId: Id<"skillVersions">;
+  packageId: Id<"packages">;
+  packageReleaseId: Id<"packageReleases">;
+  handle: string;
+  skillSlug: string;
+  packageName: string;
+};
+
+export const seedOrgDeletionFixture: ReturnType<typeof rawInternalMutation> = rawInternalMutation({
+  args: {
+    handle: v.string(),
+    displayName: v.string(),
+    skillSlug: v.string(),
+    skillDisplayName: v.string(),
+    packageName: v.string(),
+    packageDisplayName: v.string(),
+  },
+  handler: async (ctx, args): Promise<OrgDeletionFixtureResult> => {
+    return (await ctx.runMutation(
+      internal.devSeed.seedOrgDeletionFixtureMutation,
+      args as OrgDeletionFixtureArgs,
+    )) as OrgDeletionFixtureResult;
+  },
+});
+
+export const seedOrgDeletionFixtureMutation = internalMutation({
+  args: {
+    handle: v.string(),
+    displayName: v.string(),
+    skillSlug: v.string(),
+    skillDisplayName: v.string(),
+    packageName: v.string(),
+    packageDisplayName: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const { userId } = await ensureLocalSeedOwner(ctx);
+    const normalizedName = normalizePackageName(args.packageName);
+    const existingSkill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", args.skillSlug))
+      .unique();
+    const existingPackage = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+      .unique();
+
+    if (existingSkill || existingPackage) {
+      throw new Error("Org deletion fixture names must be unique per run");
+    }
+
+    const publisherId = await ctx.db.insert("publishers", {
+      kind: "org",
+      handle: args.handle,
+      displayName: args.displayName,
+      bio: "Disposable local-auth fixture for org deletion e2e proof.",
+      image: undefined,
+      trustedPublisher: false,
+      publishedSkills: 1,
+      publishedPackages: 1,
+      totalInstalls: 0,
+      totalDownloads: 0,
+      totalStars: 0,
+      skillTotalInstalls: 0,
+      skillTotalDownloads: 0,
+      skillTotalStars: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.insert("publisherMembers", {
+      publisherId,
+      userId,
+      role: "owner",
+      createdAt: now,
+      updatedAt: now,
+    });
+
+    const skillId = await ctx.db.insert("skills", {
+      slug: args.skillSlug,
+      displayName: args.skillDisplayName,
+      summary: "Disposable local-auth fixture skill owned by an organization.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      latestVersionId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: ["dev-tools"],
+      softDeletedAt: undefined,
+      badges: { highlighted: undefined, redactionApproved: undefined },
+      moderationStatus: "active",
+      moderationReason: "clean",
+      isSuspicious: false,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 0,
+        comments: 0,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+    const skillVersionId = await ctx.db.insert("skillVersions", {
+      skillId,
+      version: "1.0.0",
+      changelog: "Seeded local-auth org deletion fixture.",
+      changelogSource: "user",
+      files: [],
+      parsed: {
+        frontmatter: {
+          name: args.skillSlug,
+          description: "Disposable local-auth org deletion fixture skill.",
+        },
+        metadata: {},
+      },
+      capabilityTags: ["dev-tools"],
+      createdBy: userId,
+      createdAt: now,
+      softDeletedAt: undefined,
+    });
+    await ctx.db.patch(skillId, {
+      latestVersionId: skillVersionId,
+      latestVersionSummary: {
+        version: "1.0.0",
+        createdAt: now,
+        changelog: "Seeded local-auth org deletion fixture.",
+        changelogSource: "user",
+      },
+      tags: { latest: skillVersionId },
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      updatedAt: now,
+    });
+
+    const compatibility = { pluginApiRange: ">=0.1.0" };
+    const capabilities = {
+      executesCode: true,
+      runtimeId: normalizedName,
+      pluginKind: "runtime",
+      capabilityTags: ["dev-tools"],
+    };
+    const verification = {
+      tier: "structural" as const,
+      scope: "artifact-only" as const,
+      summary: "Seeded local-auth org deletion fixture.",
+      scanStatus: "clean" as const,
+    };
+    const packageId = await ctx.db.insert("packages", {
+      name: args.packageName,
+      normalizedName,
+      displayName: args.packageDisplayName,
+      summary: "Disposable local-auth fixture plugin owned by an organization.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      runtimeId: normalizedName,
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: ["dev-tools"],
+      executesCode: true,
+      compatibility,
+      capabilities,
+      verification,
+      scanStatus: "clean",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      ...seededPackageRecommendationPatch({ downloads: 0, installs: 0, stars: 0 }),
+      softDeletedAt: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const packageReleaseId = await ctx.db.insert("packageReleases", {
+      packageId,
+      version: "1.0.0",
+      changelog: "Seeded local-auth org deletion fixture.",
+      summary: "Disposable local-auth fixture plugin release.",
+      distTags: ["latest"],
+      files: [],
+      integritySha256: `org-delete-fixture-${normalizedName}`,
+      extractedPackageJson: {
+        name: args.packageName,
+        version: "1.0.0",
+      },
+      compatibility,
+      capabilities,
+      verification,
+      sha256hash: `org-delete-fixture-${normalizedName}`,
+      createdBy: userId,
+      publishActor: { kind: "user", userId },
+      createdAt: now,
+      softDeletedAt: undefined,
+    });
+    await ctx.db.patch(packageId, {
+      latestReleaseId: packageReleaseId,
+      latestVersionSummary: {
+        version: "1.0.0",
+        createdAt: now,
+        changelog: "Seeded local-auth org deletion fixture.",
+        compatibility,
+        capabilities,
+        verification,
+      },
+      tags: { latest: packageReleaseId },
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      updatedAt: now,
+    });
+    return {
+      ok: true,
+      publisherId,
+      skillId,
+      skillVersionId,
+      packageId,
+      packageReleaseId,
+      handle: args.handle,
+      skillSlug: args.skillSlug,
+      packageName: args.packageName,
+    };
+  },
+});
+
+type AccountDeletionFixtureArgs = {
+  skillSlug: string;
+  skillDisplayName: string;
+  packageName: string;
+  packageDisplayName: string;
+};
+
+type AccountDeletionFixtureResult = {
+  ok: true;
+  userId: Id<"users">;
+  publisherId: Id<"publishers">;
+  handle: string;
+  skillId: Id<"skills">;
+  skillVersionId: Id<"skillVersions">;
+  packageId: Id<"packages">;
+  packageReleaseId: Id<"packageReleases">;
+  skillSlug: string;
+  packageName: string;
+};
+
+export const seedAccountDeletionFixture: ReturnType<typeof rawInternalMutation> =
+  rawInternalMutation({
+    args: {
+      skillSlug: v.string(),
+      skillDisplayName: v.string(),
+      packageName: v.string(),
+      packageDisplayName: v.string(),
+    },
+    handler: async (ctx, args): Promise<AccountDeletionFixtureResult> => {
+      return (await ctx.runMutation(
+        internal.devSeed.seedAccountDeletionFixtureMutation,
+        args as AccountDeletionFixtureArgs,
+      )) as AccountDeletionFixtureResult;
+    },
+  });
+
+export const seedAccountDeletionFixtureMutation = internalMutation({
+  args: {
+    skillSlug: v.string(),
+    skillDisplayName: v.string(),
+    packageName: v.string(),
+    packageDisplayName: v.string(),
+  },
+  handler: async (ctx, args): Promise<AccountDeletionFixtureResult> => {
+    const now = Date.now();
+    const { userId, publisherId } = await ensureLocalSeedUser(ctx);
+    const normalizedName = normalizePackageName(args.packageName);
+    const existingSkill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", args.skillSlug))
+      .unique();
+    const existingPackage = await ctx.db
+      .query("packages")
+      .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+      .unique();
+
+    if (existingSkill || existingPackage) {
+      throw new Error("Account deletion fixture names must be unique per run");
+    }
+
+    const skillId = await ctx.db.insert("skills", {
+      slug: args.skillSlug,
+      displayName: args.skillDisplayName,
+      summary: "Disposable local-auth fixture skill owned by a personal publisher.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      latestVersionId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: ["dev-tools"],
+      softDeletedAt: undefined,
+      badges: { highlighted: undefined, redactionApproved: undefined },
+      moderationStatus: "active",
+      moderationReason: "clean",
+      isSuspicious: false,
+      statsDownloads: 0,
+      statsStars: 0,
+      statsInstallsCurrent: 0,
+      statsInstallsAllTime: 0,
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 0,
+        comments: 0,
+      },
+      createdAt: now,
+      updatedAt: now,
+    });
+    const skillVersionId = await ctx.db.insert("skillVersions", {
+      skillId,
+      version: "1.0.0",
+      changelog: "Seeded local-auth account deletion fixture.",
+      changelogSource: "user",
+      files: [],
+      parsed: {
+        frontmatter: {
+          name: args.skillSlug,
+          description: "Disposable local-auth account deletion fixture skill.",
+        },
+        metadata: {},
+      },
+      capabilityTags: ["dev-tools"],
+      createdBy: userId,
+      createdAt: now,
+      softDeletedAt: undefined,
+    });
+    await ctx.db.patch(skillId, {
+      latestVersionId: skillVersionId,
+      latestVersionSummary: {
+        version: "1.0.0",
+        createdAt: now,
+        changelog: "Seeded local-auth account deletion fixture.",
+        changelogSource: "user",
+      },
+      tags: { latest: skillVersionId },
+      stats: {
+        downloads: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        stars: 0,
+        versions: 1,
+        comments: 0,
+      },
+      updatedAt: now,
+    });
+
+    const compatibility = { pluginApiRange: ">=0.1.0" };
+    const capabilities = {
+      executesCode: true,
+      runtimeId: normalizedName,
+      pluginKind: "runtime",
+      capabilityTags: ["dev-tools"],
+    };
+    const verification = {
+      tier: "structural" as const,
+      scope: "artifact-only" as const,
+      summary: "Seeded local-auth account deletion fixture.",
+      scanStatus: "clean" as const,
+    };
+    const packageId = await ctx.db.insert("packages", {
+      name: args.packageName,
+      normalizedName,
+      displayName: args.packageDisplayName,
+      summary: "Disposable local-auth fixture plugin owned by a personal publisher.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      runtimeId: normalizedName,
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      capabilityTags: ["dev-tools"],
+      executesCode: true,
+      compatibility,
+      capabilities,
+      verification,
+      scanStatus: "clean",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
+      ...seededPackageRecommendationPatch({ downloads: 0, installs: 0, stars: 0 }),
+      softDeletedAt: undefined,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const packageReleaseId = await ctx.db.insert("packageReleases", {
+      packageId,
+      version: "1.0.0",
+      changelog: "Seeded local-auth account deletion fixture.",
+      summary: "Disposable local-auth fixture plugin release.",
+      distTags: ["latest"],
+      files: [],
+      integritySha256: `account-delete-fixture-${normalizedName}`,
+      extractedPackageJson: {
+        name: args.packageName,
+        version: "1.0.0",
+      },
+      compatibility,
+      capabilities,
+      verification,
+      sha256hash: `account-delete-fixture-${normalizedName}`,
+      createdBy: userId,
+      publishActor: { kind: "user", userId },
+      createdAt: now,
+      softDeletedAt: undefined,
+    });
+    await ctx.db.patch(packageId, {
+      latestReleaseId: packageReleaseId,
+      latestVersionSummary: {
+        version: "1.0.0",
+        createdAt: now,
+        changelog: "Seeded local-auth account deletion fixture.",
+        compatibility,
+        capabilities,
+        verification,
+      },
+      tags: { latest: packageReleaseId },
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      updatedAt: now,
+    });
+    await ctx.db.patch(publisherId, {
+      publishedSkills: 1,
+      publishedPackages: 1,
+      updatedAt: now,
+    });
+    return {
+      ok: true,
+      userId,
+      publisherId,
+      handle: "local-user",
+      skillId,
+      skillVersionId,
+      packageId,
+      packageReleaseId,
+      skillSlug: args.skillSlug,
+      packageName: args.packageName,
+    };
+  },
+});
+
+export const getAccountDeletionFixtureState: ReturnType<typeof rawInternalMutation> =
+  rawInternalMutation({
+    args: {
+      userId: v.id("users"),
+      publisherId: v.id("publishers"),
+      skillId: v.id("skills"),
+      packageId: v.id("packages"),
+    },
+    handler: async (ctx, args) => {
+      const user = await ctx.db.get(args.userId);
+      const publisher = await ctx.db.get(args.publisherId);
+      const skill = await ctx.db.get(args.skillId);
+      const pkg = await ctx.db.get(args.packageId);
+      const authAccounts = await ctx.db
+        .query("authAccounts")
+        .withIndex("userIdAndProvider", (q) => q.eq("userId", args.userId))
+        .collect();
+      const authSessions = await ctx.db
+        .query("authSessions")
+        .withIndex("userId", (q) => q.eq("userId", args.userId))
+        .collect();
+      return {
+        ok: true as const,
+        user: user
+          ? {
+              exists: true,
+              handle: user.handle ?? null,
+              deactivatedAt: user.deactivatedAt ?? null,
+              purgedAt: user.purgedAt ?? null,
+              deletedAt: user.deletedAt ?? null,
+            }
+          : { exists: false },
+        publisherExists: Boolean(publisher),
+        skillExists: Boolean(skill),
+        skillActive: Boolean(skill && !skill.softDeletedAt),
+        skillSoftDeletedAt: skill?.softDeletedAt ?? null,
+        packageExists: Boolean(pkg),
+        skillPubliclyVisible: Boolean(
+          skill && !skill.softDeletedAt && !skill.hiddenAt && skill.moderationStatus !== "removed",
+        ),
+        packagePubliclyVisible: Boolean(pkg && !pkg.softDeletedAt),
+        packageActive: Boolean(pkg && !pkg.softDeletedAt),
+        packageSoftDeletedAt: pkg?.softDeletedAt ?? null,
+        authAccountCount: authAccounts.length,
+        authSessionCount: authSessions.length,
+      };
+    },
+  });
+
+export const getAccountRecreationState: ReturnType<typeof rawInternalMutation> =
+  rawInternalMutation({
+    args: {
+      handle: v.string(),
+      previousUserId: v.id("users"),
+      previousPublisherId: v.id("publishers"),
+      previousSkillId: v.id("skills"),
+      previousPackageId: v.id("packages"),
+    },
+    handler: async (ctx, args) => {
+      const previousUser = await ctx.db.get(args.previousUserId);
+      const previousPublisher = await ctx.db.get(args.previousPublisherId);
+      const previousSkill = await ctx.db.get(args.previousSkillId);
+      const previousPackage = await ctx.db.get(args.previousPackageId);
+      const user = await ctx.db
+        .query("users")
+        .withIndex("handle", (q) => q.eq("handle", args.handle))
+        .unique();
+      const activeUser = user && !user.deletedAt && !user.deactivatedAt ? user : null;
+      const publisher = await ctx.db
+        .query("publishers")
+        .withIndex("by_handle", (q) => q.eq("handle", args.handle))
+        .unique();
+      const activePublisher =
+        publisher && !publisher.deletedAt && !publisher.deactivatedAt ? publisher : null;
+      const linkedPublisherUser = activePublisher?.linkedUserId
+        ? await ctx.db.get(activePublisher.linkedUserId)
+        : null;
+      const activePublisherUser =
+        linkedPublisherUser && !linkedPublisherUser.deletedAt && !linkedPublisherUser.deactivatedAt
+          ? linkedPublisherUser
+          : null;
+      const activeResolvedUser = activeUser ?? activePublisherUser;
+
+      return {
+        ok: true as const,
+        previousUser: previousUser
+          ? {
+              exists: true,
+              handle: previousUser.handle ?? null,
+              deactivatedAt: previousUser.deactivatedAt ?? null,
+              purgedAt: previousUser.purgedAt ?? null,
+              deletedAt: previousUser.deletedAt ?? null,
+            }
+          : { exists: false },
+        previousPublisherExists: Boolean(previousPublisher),
+        previousSkillActive: Boolean(previousSkill && !previousSkill.softDeletedAt),
+        previousPackageActive: Boolean(previousPackage && !previousPackage.softDeletedAt),
+        activeUser: activeResolvedUser
+          ? {
+              userId: activeResolvedUser._id,
+              handle: activeResolvedUser.handle ?? activePublisher?.handle ?? "",
+              deactivatedAt: activeResolvedUser.deactivatedAt ?? null,
+              purgedAt: activeResolvedUser.purgedAt ?? null,
+              deletedAt: activeResolvedUser.deletedAt ?? null,
+              personalPublisherId: activeResolvedUser.personalPublisherId ?? null,
+            }
+          : null,
+        activePublisher: activePublisher
+          ? {
+              publisherId: activePublisher._id,
+              handle: activePublisher.handle,
+              linkedUserId: activePublisher.linkedUserId ?? null,
+              deactivatedAt: activePublisher.deactivatedAt ?? null,
+              deletedAt: activePublisher.deletedAt ?? null,
+            }
+          : null,
+      };
+    },
+  });
 
 async function upsertRoleHelpFixtureUser(ctx: MutationCtx, user: RoleHelpFixtureUser) {
   const now = Date.now();

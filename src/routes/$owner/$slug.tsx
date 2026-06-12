@@ -7,15 +7,13 @@ import {
 } from "@tanstack/react-router";
 import { SkillDetailPage } from "../../components/SkillDetailPage";
 import { buildSkillMeta } from "../../lib/og";
+import { isOwnerRouteHandleOrIdSegment, isOwnerRouteScopeSegment } from "../../lib/ownerRoute";
 import { fetchSkillPageData } from "../../lib/skillPage";
 import { resolveOpenClawPluginSlug } from "../../lib/slugRoute";
 
 export const Route = createFileRoute("/$owner/$slug")({
   beforeLoad: ({ params }) => {
-    const isHandle = /^[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
-    const isScope = /^@[a-zA-Z0-9_][a-zA-Z0-9_-]*$/.test(params.owner);
-    const isOwnerId = params.owner.startsWith("users:") || params.owner.startsWith("publishers:");
-    if (!isHandle && !isScope && !isOwnerId) {
+    if (!isOwnerRouteHandleOrIdSegment(params.owner) && !isOwnerRouteScopeSegment(params.owner)) {
       throw notFound();
     }
   },

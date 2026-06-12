@@ -38,6 +38,7 @@ type RequestArgs =
       token?: string;
       body?: unknown;
       retryCount?: number;
+      acceptedStatuses?: number[];
     }
   | {
       method: "GET" | "POST" | "DELETE";
@@ -45,6 +46,7 @@ type RequestArgs =
       token?: string;
       body?: unknown;
       retryCount?: number;
+      acceptedStatuses?: number[];
     };
 
 type FormRequestArgs =
@@ -184,7 +186,7 @@ export function createHttpClient(options: HttpClientOptions = {}): HttpClient {
         headers,
         body,
       });
-      if (!response.ok) {
+      if (!response.ok && !isAcceptedStatus(response.status, args.acceptedStatuses)) {
         throwHttpStatusError(
           response.status,
           await readResponseTextSafe(response),
@@ -626,6 +628,10 @@ function cleanUserFacingErrorMessage(message: string) {
   return cleaned;
 }
 
+function isAcceptedStatus(status: number, acceptedStatuses: number[] | undefined) {
+  return acceptedStatuses?.includes(status) ?? false;
+}
+
 function isTransientConvexContention(text: string) {
   const lowered = text.toLowerCase();
   return (
@@ -739,7 +745,7 @@ async function fetchJsonViaCurl(
     throw new Error(result.stderr || "curl failed");
   }
   const { body, status, headers: responseHeaders } = parseCurlBodyAndMeta(result.stdout ?? "");
-  if (status < 200 || status >= 300) {
+  if ((status < 200 || status >= 300) && !isAcceptedStatus(status, args.acceptedStatuses)) {
     throwHttpStatusError(status, body, responseHeaders, deps.now);
   }
   return JSON.parse(body || "null") as unknown;

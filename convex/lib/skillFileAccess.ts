@@ -1,16 +1,69 @@
 import type { Id } from "../_generated/dataModel";
 
-type SkillFileModerationInfo = {
+export type SkillFileModerationInfo = {
   isPendingScan?: boolean | null;
   isMalwareBlocked?: boolean | null;
   isHiddenByMod?: boolean | null;
   isRemoved?: boolean | null;
+  sourceVersionId?: Id<"skillVersions"> | string | null;
+};
+
+type SkillVersionSecuritySource = {
+  _id: Id<"skillVersions"> | string;
+  llmAnalysis?: {
+    status?: string | null;
+    verdict?: string | null;
+  } | null;
+};
+
+type SkillModerationSource = {
+  moderationStatus?: string | null;
+  moderationReason?: string | null;
+  moderationFlags?: string[] | null;
+  moderationVerdict?: string | null;
+  moderationSourceVersionId?: Id<"skillVersions"> | string | null;
 };
 
 type SkillFileAccessBlock = {
   status: number;
   message: string;
 };
+
+function isPendingSkillModerationReason(reason: string | null | undefined) {
+  const normalized = reason?.trim().toLowerCase();
+  return (
+    normalized === "pending.scan" ||
+    normalized === "pending.scan.stale" ||
+    normalized === "scanner.vt.pending" ||
+    normalized === "scanner.llm.pending"
+  );
+}
+
+function normalizeSkillScanStatus(status: string | null | undefined) {
+  const normalized = status?.trim().toLowerCase();
+  if (normalized === "benign") return "clean";
+  if (normalized === "clean" || normalized === "suspicious" || normalized === "malicious") {
+    return normalized;
+  }
+  return null;
+}
+
+export function getSkillFileModerationInfoFromSkill(
+  skill: SkillModerationSource,
+): SkillFileModerationInfo {
+  const isPendingScan =
+    skill.moderationStatus === "hidden" && isPendingSkillModerationReason(skill.moderationReason);
+  const isMalwareBlocked =
+    skill.moderationVerdict === "malicious" ||
+    (skill.moderationFlags?.includes("blocked.malware") ?? false);
+  return {
+    isPendingScan,
+    isMalwareBlocked,
+    isHiddenByMod: skill.moderationStatus === "hidden" && !isPendingScan && !isMalwareBlocked,
+    isRemoved: skill.moderationStatus === "removed",
+    sourceVersionId: skill.moderationSourceVersionId ?? null,
+  };
+}
 
 export function getPublicSkillFileAccessBlock(
   moderationInfo: SkillFileModerationInfo | null | undefined,
@@ -35,6 +88,45 @@ export function getPublicSkillFileAccessBlock(
   if (moderationInfo?.isHiddenByMod) {
     return { status: 403, message: "This skill is currently unavailable." };
   }
+  return null;
+}
+
+export function getPublicSkillVersionAccessBlock(
+  moderationInfo: SkillFileModerationInfo | null | undefined,
+  versionId: Id<"skillVersions"> | string,
+  fallbackModeratedVersionId?: Id<"skillVersions"> | string | null,
+): SkillFileAccessBlock | null {
+  const block = getPublicSkillFileAccessBlock(moderationInfo);
+  if (!block) return null;
+  if (moderationInfo?.isRemoved || moderationInfo?.isHiddenByMod) return block;
+
+  const moderatedVersionId = moderationInfo?.sourceVersionId ?? fallbackModeratedVersionId;
+  return moderatedVersionId === versionId ? block : null;
+}
+
+export function getPublicSkillVersionDownloadBlock(
+  moderationInfo: SkillFileModerationInfo | null | undefined,
+  version: SkillVersionSecuritySource,
+  fallbackModeratedVersionId?: Id<"skillVersions"> | string | null,
+): SkillFileAccessBlock | null {
+  const moderationBlock = getPublicSkillVersionAccessBlock(
+    moderationInfo,
+    version._id,
+    fallbackModeratedVersionId,
+  );
+  if (moderationBlock) return moderationBlock;
+
+  const scanStatus = normalizeSkillScanStatus(
+    version.llmAnalysis?.verdict ?? version.llmAnalysis?.status,
+  );
+  if (scanStatus === "malicious") {
+    return {
+      status: 403,
+      message:
+        "Blocked: this skill version has been flagged as malicious by ClawScan and cannot be downloaded.",
+    };
+  }
+
   return null;
 }
 

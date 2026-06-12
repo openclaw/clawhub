@@ -5,6 +5,10 @@ import { DocsLinks } from "clawhub-schema";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+const { toastErrorMock } = vi.hoisted(() => ({
+  toastErrorMock: vi.fn(),
+}));
+
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: (path: string) => (config: { component: unknown }) => ({
     __config: config,
@@ -22,6 +26,12 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("@convex-dev/auth/react", () => ({
   useAuthActions: () => ({ signIn: vi.fn() }),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: toastErrorMock,
+  },
 }));
 
 const generateUploadUrl = vi.fn();
@@ -88,6 +98,7 @@ describe("plugins publish route", () => {
     fetchMock.mockReset();
     useAuthStatusMock.mockReset();
     useQueryMock.mockReset();
+    toastErrorMock.mockReset();
 
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -280,6 +291,59 @@ describe("plugins publish route", () => {
         ]),
       }),
     });
+  });
+
+  it("shows backend publish failures inline on the upload form", async () => {
+    publishRelease.mockRejectedValueOnce(
+      new Error(
+        "Plugin Inspector blocked publish: 1 breakage. missing-expected-seam: missing expected registration registerTool",
+      ),
+    );
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.3",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    const dist = withRelativePath(
+      new File(["export const demo = true;\n"], "index.js", { type: "text/javascript" }),
+      "demo-plugin/dist/index.js",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, dist] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("demo-plugin")).toBeTruthy();
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("alert").textContent).toContain("Plugin Inspector blocked publish");
+    });
+    expect(screen.getByRole("columnheader", { name: "Code" })).toBeTruthy();
+    expect(screen.getByRole("columnheader", { name: "Message" })).toBeTruthy();
+    expect(screen.getByText("missing-expected-seam")).toBeTruthy();
+    expect(screen.getByText("missing expected registration registerTool")).toBeTruthy();
+    expect(toastErrorMock).not.toHaveBeenCalled();
   });
 
   it("surfaces missing OpenClaw compatibility metadata before publish", async () => {
@@ -534,7 +598,6 @@ describe("plugins publish route", () => {
       expect(screen.getByText(/Ignored: node_modules\/dep\/index\.js/i)).toBeTruthy();
     });
 
-    expect(screen.queryByLabelText("ClawScan note")).toBeNull();
     fireEvent.change(screen.getByPlaceholderText("owner/repo"), {
       target: { value: "openclaw/demo-plugin" },
     });
@@ -559,7 +622,6 @@ describe("plugins publish route", () => {
       "package.json",
       "src/index.js",
     ]);
-    expect(payload).not.toHaveProperty("clawScanNote");
   });
 
   it("blocks plugin publish when a file exceeds 10MB", async () => {

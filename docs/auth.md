@@ -17,7 +17,9 @@ Use GitHub to sign in at [clawhub.ai](https://clawhub.ai).
 
 Deleted, banned, or disabled accounts cannot complete normal ClawHub sign-in.
 If sign-in returns you to a logged-out state, your account may not be in good
-standing.
+standing. If your account was banned or disabled, use the
+[ClawHub appeal form](https://appeals.openclaw.ai/) if you believe this is a
+mistake.
 
 ## CLI login
 
@@ -86,3 +88,6 @@ Revoked, invalid, or missing tokens return `401 Unauthorized`. Sign in again
 with `clawhub login` or provide a fresh token with `clawhub login --token`.
 
 Deleted, banned, or disabled accounts cannot continue using existing API tokens.
+If your account was banned or disabled, use the
+[ClawHub appeal form](https://appeals.openclaw.ai/) if you believe this is a
+mistake.

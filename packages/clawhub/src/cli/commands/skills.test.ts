@@ -9,7 +9,7 @@ import {
   createUiModuleMocks,
   makeGlobalOpts,
 } from "../../../test/cliCommandTestKit.js";
-import { ApiRoutes } from "../../schema/index.js";
+import { ApiRoutes, LegacyApiRoutes } from "../../schema/index.js";
 import * as skillStore from "../../skills.js";
 
 const fsMocks = vi.hoisted(() => ({
@@ -37,6 +37,7 @@ const httpMocks = createHttpModuleMocks();
 const uiMocks = createUiModuleMocks();
 const mockApiRequest = httpMocks.apiRequest;
 const mockDownloadZip = httpMocks.downloadZip;
+const mockFetchBinary = httpMocks.fetchBinary;
 const mockGetOptionalAuthToken = authTokenMocks.getOptionalAuthToken;
 const mockSpinner = uiMocks.spinner;
 const mockIsInteractive = vi.fn(() => false);
@@ -53,6 +54,7 @@ vi.mock("../ui.js", () => ({
 }));
 
 const extractZipToDirMock = vi.spyOn(skillStore, "extractZipToDir");
+const extractGitHubZipPathToDirMock = vi.spyOn(skillStore, "extractGitHubZipPathToDir");
 const hashSkillFilesMock = vi.spyOn(skillStore, "hashSkillFiles");
 const listTextFilesMock = vi.spyOn(skillStore, "listTextFiles");
 const readLockfileMock = vi.spyOn(skillStore, "readLockfile");
@@ -79,6 +81,7 @@ const {
   formatExploreLine,
 } = await import("./skills.js");
 const {
+  extractGitHubZipPathToDir,
   extractZipToDir,
   hashSkillFiles,
   listTextFiles,
@@ -100,6 +103,7 @@ beforeEach(() => {
   rmMock.mockResolvedValue(undefined);
   statMock.mockRejectedValue(new Error("missing"));
   extractZipToDirMock.mockResolvedValue(undefined);
+  extractGitHubZipPathToDirMock.mockResolvedValue(undefined);
   hashSkillFilesMock.mockReturnValue({ fingerprint: "hash", files: [] });
   listTextFilesMock.mockResolvedValue([]);
   readLockfileMock.mockResolvedValue({ version: 1, skills: {} });
@@ -114,6 +118,7 @@ afterEach(() => {
 
 afterAll(() => {
   extractZipToDirMock.mockRestore();
+  extractGitHubZipPathToDirMock.mockRestore();
   hashSkillFilesMock.mockRestore();
   listTextFilesMock.mockRestore();
   readLockfileMock.mockRestore();
@@ -430,6 +435,105 @@ describe("cmdUpdate", () => {
     expect(mockLog).toHaveBeenCalledWith("Skipped 1 pinned skill: demo");
   });
 
+  it("continues update --all when a source-backed resolver response blocks one skill", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: false,
+        slug: "stale-github",
+        reason: "github_verification_pending",
+        message: "stale-github changed upstream; waiting for ClawHub scan.",
+        status: 423,
+      })
+      .mockResolvedValueOnce({
+        latestVersion: { version: "2.0.0" },
+        moderation: null,
+      });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        "stale-github": { version: "a".repeat(40), installedAt: 123 },
+        demo: { version: "1.0.0", installedAt: 456 },
+      },
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([]);
+
+    await cmdUpdate(makeOpts(), undefined, { all: true }, false);
+
+    expect(mockSpinner.fail).toHaveBeenCalledWith(
+      "stale-github: stale-github changed upstream; waiting for ClawHub scan.",
+    );
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({ slug: "demo", version: "2.0.0" }),
+    );
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        "stale-github": { version: "a".repeat(40), installedAt: 123 },
+        demo: { version: "2.0.0", installedAt: expect.any(Number) },
+      },
+    });
+    const [, resolverArgs] = mockApiRequest.mock.calls[1] ?? [];
+    expect(resolverArgs).toEqual(
+      expect.objectContaining({
+        path: `${ApiRoutes.skills}/${encodeURIComponent("stale-github")}/install`,
+        acceptedStatuses: [403, 409, 410, 423],
+      }),
+    );
+  });
+
+  it("passes force-install to source-backed update resolution", async () => {
+    const commit = "d".repeat(40);
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+        },
+      });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { "aiq-deploy": { version: "a".repeat(40), installedAt: 123 } },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "aiq-deploy",
+      installedVersion: "a".repeat(40),
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+
+    await cmdUpdate(makeOpts(), "aiq-deploy", { forceInstall: true }, false);
+
+    const [, resolverArgs] = mockApiRequest.mock.calls[1] ?? [];
+    expect(resolverArgs).toEqual(
+      expect.objectContaining({
+        path: `${ApiRoutes.skills}/${encodeURIComponent("aiq-deploy")}/install?forceInstall=1`,
+      }),
+    );
+  });
+
   it("uses path-based skill lookup when no local fingerprint is available", async () => {
     mockApiRequest.mockResolvedValue({ latestVersion: { version: "1.0.0" } });
     mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
@@ -501,6 +605,162 @@ describe("cmdUpdate", () => {
         demo: { version: "2.0.0", installedAt: expect.any(Number), ownerHandle: "openclaw" },
       },
     });
+  });
+
+  it("does not overwrite GitHub-backed local files when the origin fingerprint is missing", async () => {
+    const commit = "b".repeat(40);
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+        },
+      });
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { "aiq-deploy": { version: "a".repeat(40), installedAt: 123 } },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "aiq-deploy",
+      installedVersion: "a".repeat(40),
+      installedAt: 123,
+    });
+    vi.mocked(listTextFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "local-fingerprint", files: [] });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+
+    await cmdUpdate(makeOpts(), "aiq-deploy", {}, false);
+
+    expect(mockLog).toHaveBeenCalledWith(
+      "aiq-deploy: local changes (no match). Use --force to overwrite.",
+    );
+    expect(rm).not.toHaveBeenCalled();
+    expect(mockFetchBinary).not.toHaveBeenCalled();
+    expect(extractGitHubZipPathToDir).not.toHaveBeenCalled();
+  });
+
+  it("reinstalls GitHub-backed skills when only the lockfile remains", async () => {
+    const commit = "c".repeat(40);
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+        },
+      });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { "aiq-deploy": { version: commit, installedAt: 123 } },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue(null);
+    vi.mocked(listTextFiles).mockResolvedValueOnce([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "clean-fingerprint", files: [] });
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+
+    await cmdUpdate(makeOpts(), "aiq-deploy", {}, false);
+
+    expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+      url: `https://codeload.github.com/NVIDIA/skills/zip/${commit}`,
+    });
+    expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
+      new Uint8Array([1, 2, 3]),
+      "/work/skills/aiq-deploy",
+      "skills/aiq-deploy",
+    );
+    expect(mockSpinner.succeed).toHaveBeenCalledWith(
+      `aiq-deploy: updated -> ${commit.slice(0, 12)}`,
+    );
+  });
+
+  it("overwrites confirmed GitHub-backed local changes even when already at latest commit", async () => {
+    const commit = "b".repeat(40);
+    mockIsInteractive.mockReturnValue(true);
+    mockPromptConfirm.mockResolvedValue(true);
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+        },
+      });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { "aiq-deploy": { version: commit, installedAt: 123 } },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "aiq-deploy",
+      installedVersion: commit,
+      installedAt: 123,
+      fingerprint: "clean-fingerprint",
+    });
+    vi.mocked(listTextFiles)
+      .mockResolvedValueOnce([{ relPath: "SKILL.md", bytes: new Uint8Array([9]) }])
+      .mockResolvedValueOnce([{ relPath: "SKILL.md", bytes: new Uint8Array([1]) }]);
+    vi.mocked(hashSkillFiles)
+      .mockReturnValueOnce({ fingerprint: "dirty-fingerprint", files: [] })
+      .mockReturnValueOnce({ fingerprint: "clean-fingerprint", files: [] });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+
+    await cmdUpdate(makeOpts(), "aiq-deploy", {}, true);
+
+    expect(mockPromptConfirm).toHaveBeenCalledWith(
+      `aiq-deploy: local changes (no match). Overwrite with ${commit.slice(0, 12)}?`,
+    );
+    expect(rm).toHaveBeenCalledWith("/work/skills/aiq-deploy", {
+      recursive: true,
+      force: true,
+    });
+    expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+      url: `https://codeload.github.com/NVIDIA/skills/zip/${commit}`,
+    });
+    expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
+      new Uint8Array([1, 2, 3]),
+      "/work/skills/aiq-deploy",
+      "skills/aiq-deploy",
+    );
+    expect(mockSpinner.succeed).toHaveBeenCalledWith(
+      `aiq-deploy: updated -> ${commit.slice(0, 12)}`,
+    );
   });
 
   it("trusts the stored install fingerprint when the resolve endpoint cannot match", async () => {
@@ -630,6 +890,56 @@ describe("cmdUpdate", () => {
       },
     });
   });
+
+  it("writes identical installedAt to origin and lockfile on update", async () => {
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "2.0.0" },
+      owner: null,
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        demo: { version: "1.0.0", installedAt: 100 },
+      },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "demo",
+      installedVersion: "1.0.0",
+      installedAt: 100,
+      fingerprint: "hash",
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdUpdate(makeOpts(), "demo", {}, false);
+
+    const originInstalledAt = vi.mocked(writeSkillOrigin).mock.calls[0]?.[1]?.installedAt;
+    const lockfileInstalledAt =
+      vi.mocked(writeLockfile).mock.calls[0]?.[1]?.skills?.demo?.installedAt;
+    expect(originInstalledAt).toBeDefined();
+    expect(lockfileInstalledAt).toBeDefined();
+    expect(originInstalledAt).toBe(lockfileInstalledAt);
+  });
 });
 
 describe("pin commands", () => {
@@ -721,19 +1031,22 @@ describe("cmdList", () => {
 describe("cmdInstall", () => {
   it("passes optional auth token to API + download requests", async () => {
     mockGetOptionalAuthToken.mockResolvedValue("tkn");
-    mockApiRequest.mockResolvedValue({
-      skill: {
-        slug: "demo",
-        displayName: "Demo",
-        summary: null,
-        tags: {},
-        stats: {},
-        createdAt: 0,
-        updatedAt: 0,
-      },
-      latestVersion: { version: "1.0.0" },
-      owner: null,
-      moderation: null,
+    mockApiRequest.mockImplementation(async (_registry, args) => {
+      if (args.path === LegacyApiRoutes.cliTelemetryInstall) return { ok: true };
+      return {
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: { version: "1.0.0" },
+        owner: null,
+        moderation: null,
+      };
     });
     mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
     vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
@@ -749,6 +1062,178 @@ describe("cmdInstall", () => {
     expect(requestArgs?.token).toBe("tkn");
     const [, zipArgs] = mockDownloadZip.mock.calls[0] ?? [];
     expect(zipArgs?.token).toBe("tkn");
+    expect(mockApiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: LegacyApiRoutes.cliTelemetryInstall,
+        token: "tkn",
+        body: {
+          event: "install",
+          slug: "demo",
+          version: "1.0.0",
+          rootId: expect.any(String),
+          rootLabel: expect.any(String),
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("does not fail installs when install telemetry fails", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest.mockImplementation(async (_registry, args) => {
+      if (args.path === LegacyApiRoutes.cliTelemetryInstall) throw new Error("telemetry down");
+      return {
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: { version: "1.0.0" },
+        owner: null,
+        moderation: null,
+      };
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+
+    await expect(cmdInstall(makeOpts(), "demo")).resolves.toBeUndefined();
+
+    expect(writeLockfile).toHaveBeenCalled();
+  });
+
+  it("installs source-backed skills from the GitHub resolver response", async () => {
+    const commit = "a".repeat(40);
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        skill: {
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: null,
+        owner: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+        },
+      });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractGitHubZipPathToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+
+    await cmdInstall(makeOpts(), "aiq-deploy");
+
+    expect(mockApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      {
+        method: "GET",
+        path: `${ApiRoutes.skills}/${encodeURIComponent("aiq-deploy")}/install`,
+        token: "tkn",
+        acceptedStatuses: [403, 409, 410, 423],
+      },
+      expect.anything(),
+    );
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+    expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
+      url: `https://codeload.github.com/NVIDIA/skills/zip/${commit}`,
+    });
+    expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
+      new Uint8Array([1, 2, 3]),
+      "/work/skills/aiq-deploy",
+      "skills/aiq-deploy",
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith("/work/skills/aiq-deploy", {
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "aiq-deploy",
+      installedVersion: commit,
+      installedAt: expect.any(Number),
+      fingerprint: "hash",
+    });
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        "aiq-deploy": { version: commit, installedAt: expect.any(Number) },
+      },
+    });
+  });
+
+  it("passes force-install to source-backed install resolution", async () => {
+    const commit = "a".repeat(40);
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest
+      .mockResolvedValueOnce({
+        skill: {
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: null,
+        owner: null,
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        slug: "aiq-deploy",
+        installKind: "github",
+        github: {
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          sourceUrl: `https://github.com/NVIDIA/skills/tree/${commit}/skills/aiq-deploy`,
+        },
+      });
+    mockFetchBinary.mockResolvedValue(new Uint8Array([1, 2, 3]));
+
+    await cmdInstall(makeOpts(), "aiq-deploy", undefined, false, true);
+
+    expect(mockApiRequest).toHaveBeenNthCalledWith(
+      2,
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "GET",
+        path: `${ApiRoutes.skills}/${encodeURIComponent("aiq-deploy")}/install?forceInstall=1`,
+        token: "tkn",
+      }),
+      expect.anything(),
+    );
   });
 
   it("installs owner-qualified skill refs using owner-scoped API requests", async () => {
@@ -1042,6 +1527,46 @@ describe("cmdInstall", () => {
     const rmOrder = vi.mocked(rm).mock.invocationCallOrder[0];
     const downloadOrder = mockDownloadZip.mock.invocationCallOrder[0];
     expect(rmOrder).toBeLessThan(downloadOrder);
+  });
+
+  it("writes identical installedAt to origin and lockfile on install", async () => {
+    mockApiRequest.mockImplementation(async (_registry, args) => {
+      if (args.path === LegacyApiRoutes.cliTelemetryInstall) return { ok: true };
+      return {
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: { version: "1.0.0" },
+        owner: null,
+        moderation: null,
+      };
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdInstall(makeOpts(), "demo");
+
+    const originInstalledAt = vi.mocked(writeSkillOrigin).mock.calls[0]?.[1]?.installedAt;
+    const lockfileInstalledAt =
+      vi.mocked(writeLockfile).mock.calls[0]?.[1]?.skills?.demo?.installedAt;
+    expect(originInstalledAt).toBeDefined();
+    expect(lockfileInstalledAt).toBeDefined();
+    expect(originInstalledAt).toBe(lockfileInstalledAt);
   });
 });
 

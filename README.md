@@ -30,8 +30,6 @@ It also now exposes a native **OpenClaw package catalog** for code plugins and b
 - Publish new skill versions with changelogs + tags (including `latest`).
 - Rename an owned skill without breaking old links or installs.
 - Merge duplicate owned skills into one canonical slug.
-- Browse souls + render their `SOUL.md`.
-- Publish new soul versions with changelogs + tags.
 - Search via embeddings (vector index) instead of brittle keywords.
 - Star + comment; admins/mods can curate and approve skills.
 - Pin local skill installs so updates and force reinstalls cannot overwrite frozen copies.
@@ -74,7 +72,7 @@ Docs: [`docs/quickstart.md`](docs/quickstart.md), [`docs/cli.md`](docs/cli.md).
 
 ## Telemetry
 
-ClawHub tracks minimal **install telemetry** (to compute install counts) when you run `clawhub sync` while logged in.
+ClawHub tracks minimal **install telemetry** (to compute install counts) when you run `clawhub install` while logged in.
 Disable via:
 
 ```bash
@@ -125,9 +123,6 @@ database seeding), see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 - `VITE_CONVEX_URL`: Convex deployment URL (`https://<deployment>.convex.cloud`).
 - `VITE_CONVEX_SITE_URL`: Convex site URL (`https://<deployment>.convex.site`).
-- `VITE_SOULHUB_SITE_URL`: SoulHub site URL.
-- `VITE_SOULHUB_HOST`: SoulHub host match.
-- `VITE_SITE_MODE`: Optional override (`skills` or `souls`) for SSR builds.
 - `CONVEX_SITE_URL`: same as `VITE_CONVEX_SITE_URL` (auth + cookies).
 - `SITE_URL`: App URL (local: `http://localhost:3000`).
 - `AUTH_GITHUB_ID` / `AUTH_GITHUB_SECRET`: GitHub OAuth App.

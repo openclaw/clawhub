@@ -1,6 +1,8 @@
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
+import { getOwnerPublisher } from "./publishers";
+import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
 import { tokenize } from "./searchText";
 import { readCanonicalStat } from "./skillStats";
 
@@ -25,6 +27,10 @@ const SHARED_KEYS = [
   "canonicalSkillId",
   "forkOf",
   "latestVersionId",
+  "installKind",
+  "githubHasSkillCard",
+  "githubCurrentStatus",
+  "githubScanStatus",
   "latestVersionSummary",
   "tags",
   "capabilityTags",
@@ -37,6 +43,7 @@ const SHARED_KEYS = [
   "softDeletedAt",
   "moderationStatus",
   "moderationFlags",
+  "moderationVerdict",
   "moderationReason",
   "isSuspicious",
   "createdAt",
@@ -56,16 +63,28 @@ export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[n
   ownerName?: string;
   ownerDisplayName?: string;
   ownerImage?: string;
+  recommendedScore?: number;
+  recommendedScoreVersion?: number;
 };
 
 /** Pick the subset of fields from a full skill doc needed for the digest. */
 export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFields {
+  const statsDownloads = readCanonicalStat(skill, "downloads");
+  const statsStars = readCanonicalStat(skill, "stars");
+  const statsInstallsCurrent = readCanonicalStat(skill, "installsCurrent");
+  const statsInstallsAllTime = readCanonicalStat(skill, "installsAllTime");
   return {
     ...pick(skill, [...SHARED_KEYS]),
-    statsDownloads: readCanonicalStat(skill, "downloads"),
-    statsStars: readCanonicalStat(skill, "stars"),
-    statsInstallsCurrent: readCanonicalStat(skill, "installsCurrent"),
-    statsInstallsAllTime: readCanonicalStat(skill, "installsAllTime"),
+    statsDownloads,
+    statsStars,
+    statsInstallsCurrent,
+    statsInstallsAllTime,
+    recommendedScore: computeRecommendationScore({
+      downloads: statsDownloads,
+      installs: statsInstallsAllTime,
+      stars: statsStars,
+    }),
+    recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
     skillId: skill._id,
     normalizedSlug: normalizeSkillSearchText(skill.slug),
     normalizedSlugFirstToken: getFirstSearchToken(skill.slug),
@@ -128,6 +147,26 @@ export async function upsertSkillSearchDigest(
   } else {
     await ctx.db.insert("skillSearchDigest", fields);
   }
+}
+
+export async function syncSkillSearchDigestForSkill(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills"> | null | undefined,
+) {
+  if (!skill) return;
+  const fields = await extractValidatedDigestFields(ctx, skill);
+  const owner = await getOwnerPublisher(ctx, {
+    ownerPublisherId: skill.ownerPublisherId,
+    ownerUserId: skill.ownerUserId,
+  });
+  await upsertSkillSearchDigest(ctx, {
+    ...fields,
+    ownerHandle: owner?.handle ?? "",
+    ownerKind: owner?.kind,
+    ownerName: owner?.linkedUserId ? owner.handle : undefined,
+    ownerDisplayName: owner?.displayName,
+    ownerImage: owner?.image,
+  });
 }
 
 /** Compare new fields against existing row. Returns true if any field differs. */

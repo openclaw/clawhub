@@ -24,13 +24,6 @@ test("skills loads without error", async ({ page }) => {
   await expectHealthyPage(page, errors);
 });
 
-test("souls loads without error", async ({ page }) => {
-  const errors = trackRuntimeErrors(page);
-  await page.goto("/souls", { waitUntil: "domcontentloaded" });
-  await expect(page.locator("h1", { hasText: "SOUL.md discovery is on deck" })).toBeVisible();
-  await expectHealthyPage(page, errors);
-});
-
 test("header menu routes render", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
   await page.goto("/", { waitUntil: "domcontentloaded" });

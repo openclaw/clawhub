@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import { getCliBuildLabel, getCliVersion } from "./cli/buildInfo.js";
 import { resolveClawdbotDefaultWorkspace } from "./cli/clawdbotConfig.js";
 import { cmdLoginFlow, cmdLogout, cmdToken, cmdWhoami } from "./cli/commands/auth.js";
@@ -15,6 +15,7 @@ import { cmdInspect, cmdVerifySkill } from "./cli/commands/inspect.js";
 import { cmdMergeSkill, cmdRenameSkill } from "./cli/commands/ownership.js";
 import {
   cmdDeletePackage,
+  cmdDeletePackageTrustedPublisher,
   cmdDownloadPackage,
   cmdExplorePackages,
   cmdGetPackageTrustedPublisher,
@@ -25,13 +26,15 @@ import {
   cmdPackPackage,
   cmdPublishPackage,
   cmdReportPackage,
+  cmdSetPackageTrustedPublisher,
   cmdTransferPackage,
   cmdUndeletePackage,
+  cmdValidatePackage,
   cmdVerifyPackage,
 } from "./cli/commands/packages.js";
 import { cmdPublish } from "./cli/commands/publish.js";
 import { cmdCreatePublisher } from "./cli/commands/publishers.js";
-import { cmdScan } from "./cli/commands/scan.js";
+import { cmdScan, cmdScanDownload } from "./cli/commands/scan.js";
 import {
   cmdExplore,
   cmdInstall,
@@ -271,9 +274,10 @@ registerCommand(program, ["install"])
   .argument("<skill>", "Skill to install, e.g. @openclaw/demo")
   .option("--version <version>", "Version to install")
   .option("--force", "Overwrite existing folder")
+  .option("--force-install", "Install a pending GitHub-backed skill before ClawHub scan completes")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
-    await cmdInstall(opts, slug, options.version, options.force);
+    await cmdInstall(opts, slug, options.version, options.force, options.forceInstall);
   });
 
 registerCommand(program, ["update"])
@@ -282,6 +286,7 @@ registerCommand(program, ["update"])
   .option("--all", "Update all installed skills")
   .option("--version <version>", "Update to specific version (single slug only)")
   .option("--force", "Overwrite when local files do not match any version")
+  .option("--force-install", "Install a pending GitHub-backed skill before ClawHub scan completes")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdUpdate(opts, slug, options, isInputAllowed());
@@ -373,9 +378,9 @@ registerCommand(program, ["publish"])
     await cmdPublish(opts, folder, options);
   });
 
-registerCommand(program, ["scan"])
-  .description("Run ClawScan on a local skill bundle or one of your published skills")
-  .argument("[path]", "Local skill folder path")
+const scanCmd = registerCommand(program, ["scan"])
+  .description("Run or download ClawHub scan reports")
+  .argument("[path]", "Deprecated local skill folder path")
   .option("--slug <slug>", "Published skill slug to scan")
   .option("--version <version>", "Published skill version to scan")
   .option("--update", "Write published scan results back to the selected version")
@@ -384,6 +389,22 @@ registerCommand(program, ["scan"])
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdScan(opts, folder, options);
+  });
+
+registerCommand(scanCmd, ["scan", "download"])
+  .description("Download stored scan results for a submitted skill or plugin version")
+  .argument("<name>", "Skill slug or plugin package name")
+  .option("--version <version>", "Submitted version to download scan results for")
+  .option("--kind <kind>", "Artifact kind: skill or plugin", "skill")
+  .option("-o, --output <path>", "Output ZIP file")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    const parentOptions = scanCmd.opts<{ version?: string; output?: string }>();
+    await cmdScanDownload(opts, name, {
+      ...options,
+      version: options.version ?? parentOptions.version,
+      output: options.output ?? parentOptions.output,
+    });
   });
 
 registerCommand(program, ["delete"])
@@ -454,6 +475,7 @@ registerCommand(skill, ["skill", "verify"])
   .option("--version <version>", "Version to verify")
   .option("--tag <tag>", "Tag to verify")
   .option("--card", "Output generated skill-card.md Markdown")
+  .addOption(new Option("--json", "Output JSON").hideHelp())
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdVerifySkill(opts, slug, options);
@@ -466,7 +488,7 @@ const publisherCmd = registerCommandGroup(program, ["publisher"])
 
 registerCommand(publisherCmd, ["publisher", "create"])
   .description("Create an org publisher you own")
-  .argument("<handle>", "Publisher handle, for example opik")
+  .argument("<handle>", "Publisher handle, for example example.tools")
   .option("--display-name <name>", "Publisher display name")
   .option("--json", "Output JSON")
   .action(async (handle, options) => {
@@ -554,6 +576,20 @@ registerCommand(packageCmd, ["package", "verify"])
       ...options,
       packageName: options.package,
     });
+  });
+
+registerCommand(packageCmd, ["package", "validate"])
+  .description("Validate a local plugin package with the bundled Plugin Inspector")
+  .argument("<source>", "Package folder path")
+  .option("--out <dir>", "Directory for Plugin Inspector reports", "reports")
+  .option("--openclaw <path>", "Optional local OpenClaw checkout to inspect against")
+  .option("--runtime", "Enable runtime capture; imports plugin code")
+  .option("--allow-execute", "Allow runtime capture in an isolated workspace")
+  .option("--no-mock-sdk", "Disable mocked OpenClaw SDK during runtime capture")
+  .option("--json", "Output JSON")
+  .action(async (source, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdValidatePackage(opts, source, options);
   });
 
 registerCommand(packageCmd, ["package", "delete"])
@@ -676,6 +712,27 @@ registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "get"])
     await cmdGetPackageTrustedPublisher(opts, name, options);
   });
 
+registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "set"])
+  .description("Set trusted publisher config for a package")
+  .argument("<name>", "Package name")
+  .requiredOption("--repository <repo>", "GitHub repository, for example openclaw/openclaw")
+  .requiredOption("--workflow-filename <file>", "GitHub Actions workflow filename")
+  .option("--environment <name>", "GitHub Actions environment name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdSetPackageTrustedPublisher(opts, name, options);
+  });
+
+registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "delete"])
+  .description("Delete trusted publisher config for a package")
+  .argument("<name>", "Package name")
+  .option("--json", "Output JSON")
+  .action(async (name, options) => {
+    const opts = await resolveGlobalOpts();
+    await cmdDeletePackageTrustedPublisher(opts, name, options);
+  });
+
 registerCommand(skill, ["skill", "rename"])
   .description("Rename a published skill and keep the old slug as a redirect")
   .argument("<skill>", "Current skill")
@@ -774,17 +831,23 @@ registerCommand(program, ["sync"])
   .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
   .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
   .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--concurrency <n>", "Concurrent registry checks (default: 4)", "4")
-  .option("--no-clawdbot-roots", "Only scan the configured workdir/dir and --root values")
-  .option("--source-repo <repo>", "GitHub repo (owner/repo or URL)")
-  .option("--source-commit <sha>", "Git commit SHA")
-  .option("--source-ref <ref>", "Git ref/tag/branch")
+  .option("--concurrency <n>", "Concurrent registry/file checks", (value) =>
+    Number.parseInt(value, 10),
+  )
+  .option("--source-repo <repo>", "GitHub repo URL or owner/name for source provenance")
+  .option("--source-commit <sha>", "Git commit SHA for source provenance")
+  .option("--source-ref <ref>", "Git ref for source provenance")
+  .addOption(
+    new Option("--clawdbot-roots", "Include Clawdbot-configured roots").default(true, "enabled"),
+  )
+  .addOption(new Option("--no-clawdbot-roots", "Disable Clawdbot-configured roots"))
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
-    const bump = String(options.bump ?? "patch") as "patch" | "minor" | "major";
-    if (!["patch", "minor", "major"].includes(bump)) fail("--bump must be patch|minor|major");
-    const concurrencyRaw = Number(options.concurrency ?? 4);
-    const concurrency = Number.isFinite(concurrencyRaw) ? Math.round(concurrencyRaw) : 4;
+    const bump =
+      options.bump === "patch" || options.bump === "minor" || options.bump === "major"
+        ? options.bump
+        : fail("--bump must be patch, minor, or major");
+    const concurrency = options.concurrency ?? 6;
     if (concurrency < 1 || concurrency > 32) fail("--concurrency must be between 1 and 32");
     await cmdSync(
       opts,

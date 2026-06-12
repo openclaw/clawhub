@@ -11,6 +11,13 @@ crons.interval(
 );
 
 crons.interval(
+  "github-skill-source-sync",
+  { minutes: 15 },
+  internal.githubSkillSync.syncGitHubSkillSourcesInternal,
+  {},
+);
+
+crons.interval(
   "trending-leaderboard",
   { minutes: 60 },
   internal.leaderboards.rebuildTrendingLeaderboardAction,
@@ -64,6 +71,20 @@ crons.interval(
   { batchSize: 250, maxPages: 5, trigger: "cron" },
 );
 
+crons.interval(
+  "publisher-temporal-abuse-scan",
+  { hours: 24 },
+  internal.publisherAbuse.runTemporalPublisherAbuseScanInternal,
+  {
+    mode: "current",
+    dryRun: false,
+    candidateLimit: 1000,
+    batchSize: 50,
+    maxPages: 20,
+    trigger: "cron",
+  },
+);
+
 crons.interval("vt-pending-scans", { minutes: 5 }, internal.vt.pollPendingScans, {
   batchSize: 100,
 });
@@ -90,6 +111,13 @@ crons.interval(
   "download-dedupe-prune",
   { hours: 24 },
   internal.downloads.pruneDownloadDedupesInternal,
+  {},
+);
+
+crons.interval(
+  "download-metric-dedupe-prune",
+  { hours: 24 },
+  internal.downloadMetrics.pruneDownloadMetricDedupesInternal,
   {},
 );
 

@@ -1,124 +1,187 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMutation, useQuery } from "convex/react";
-import { useEffect, useState } from "react";
+import { useAction, useMutation, useQuery } from "convex/react";
+import {
+  AlertTriangle,
+  ChevronRight,
+  ClipboardList,
+  GitBranch,
+  PackageSearch,
+  Plug,
+  UserRound,
+  Wrench,
+} from "lucide-react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { ManagementSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
-import { Badge } from "../components/ui/badge";
 import { Button } from "../components/ui/button";
 import { Card } from "../components/ui/card";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
-import {
-  getSkillBadges,
-  isSkillDeprecated,
-  isSkillHighlighted,
-  isSkillOfficial,
-} from "../lib/badges";
-import { getUserFacingConvexError } from "../lib/convexError";
-import { familyLabel } from "../lib/packageLabels";
-import type { PublicPublisher } from "../lib/publicUser";
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "../components/ui/dialog";
+import { Textarea } from "../components/ui/textarea";
 import { isAdmin, isModerator } from "../lib/roles";
 import { useAuthStatus } from "../lib/useAuthStatus";
+import {
+  AbusePage,
+  canBanPublisherAbuseOwner,
+  comparePublisherAbuseItems,
+  filterPublisherAbuseItems,
+  getPublisherAbuseItemsForTab,
+  getPublisherAbuseVisiblePendingItems,
+} from "./-management/AbusePage";
+import { DuplicatesPage } from "./-management/DuplicatesPage";
+import {
+  formatManagementUserLabel,
+  formatMutationError,
+  formatWholeNumber,
+  SKILL_AUDIT_LOG_LIMIT,
+  type DuplicateCandidateEntry,
+  type ManagementOwnerOption,
+  type ManagementUserListResult,
+  type ManagementView,
+  type PluginByNameResult,
+  type PublisherAbuseReviewItem,
+  type PublisherAbuseTab,
+  type RecentVersionEntry,
+  type ReportedSkillEntry,
+  type SkillBySlugResult,
+  USER_BAN_REASON_MAX_LENGTH,
+} from "./-management/managementShared";
+import { PluginsPage } from "./-management/PluginsPage";
+import { RecentPushesPage } from "./-management/RecentPushesPage";
+import { ReportsPage } from "./-management/ReportsPage";
+import { SkillsPage } from "./-management/SkillsPage";
+import { UsersPage } from "./-management/UsersPage";
 
-const SKILL_AUDIT_LOG_LIMIT = 10;
+const MANAGEMENT_VIEWS = new Set<string>([
+  "overview",
+  "abuse",
+  "reports",
+  "users",
+  "publishers",
+  "skills",
+  "plugins",
+  "duplicates",
+  "recent",
+  "audit",
+  "system",
+  "settings",
+]);
 
-type ManagementUserSummary = {
-  _id: Id<"users">;
-  handle?: string | null;
-  name?: string | null;
-  displayName?: string | null;
-};
-
-type SkillAuditLogEntry = {
-  _id: Id<"auditLogs">;
-  action: string;
-  metadata?: unknown;
-  createdAt: number;
-  actor: ManagementUserSummary | null;
-};
-
-type ManagementSkillEntry = {
-  skill: Doc<"skills">;
-  latestVersion: Doc<"skillVersions"> | null;
-  owner: Doc<"users"> | null;
-};
-
-type ReportReasonEntry = {
-  reason: string;
-  createdAt: number;
-  reporterHandle: string | null;
-  reporterId: Id<"users">;
-};
-
-type ReportedSkillEntry = ManagementSkillEntry & {
-  reports: ReportReasonEntry[];
-};
-
-type RecentVersionEntry = {
-  version: Doc<"skillVersions">;
-  skill: Doc<"skills"> | null;
-  owner: Doc<"users"> | null;
-};
-
-type DuplicateCandidateEntry = {
-  skill: Doc<"skills">;
-  latestVersion: Doc<"skillVersions"> | null;
-  fingerprint: string | null;
-  matches: Array<{ skill: Doc<"skills">; owner: Doc<"users"> | null }>;
-  owner: Doc<"users"> | null;
-};
-
-type SkillBySlugResult = {
-  skill: Doc<"skills">;
-  latestVersion: Doc<"skillVersions"> | null;
-  owner: Doc<"users"> | null;
-  overrideReviewer: ManagementUserSummary | null;
-  auditLogs: SkillAuditLogEntry[];
-  canonical: {
-    skill: { slug: string; displayName: string };
-    owner: { handle: string | null; userId: Id<"users"> | null };
-  } | null;
-} | null;
-
-type PluginByNameResult = {
-  package: Doc<"packages">;
-  latestRelease: Doc<"packageReleases"> | null;
-  owner: PublicPublisher | null;
-  highlighted: { byUserId: Id<"users">; at: number } | null;
-} | null;
-
-function resolveOwnerParam(
-  handle: string | null | undefined,
-  ownerId?: Id<"users"> | Id<"publishers">,
-) {
-  return handle?.trim().toLowerCase() || (ownerId ? String(ownerId) : "unknown");
+function isManagementView(value: unknown): value is ManagementView {
+  return typeof value === "string" && MANAGEMENT_VIEWS.has(value);
 }
 
-function promptBanReason(label: string) {
-  const result = window.prompt(`Ban reason for ${label} (optional)`);
-  if (result === null) return null;
-  const trimmed = result.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+type ManagementConfirmRequest = {
+  title: string;
+  body?: string;
+  confirmLabel: string;
+  destructive?: boolean;
+  reason?: {
+    label: string;
+    placeholder?: string;
+    required?: boolean;
+    maxLength?: number;
+  };
+  onConfirm: (reason: string | undefined) => void;
+};
+
+// Convex `useQuery` returns undefined while a new query (e.g. a changed search arg)
+// is in flight. Keep the previous result visible during that window so search-driven
+// lists do not blank out to a loading state on every keystroke.
+function useStableQuery<T>(value: T | undefined): T | undefined {
+  const ref = useRef<T | undefined>(value);
+  if (value !== undefined) ref.current = value;
+  return ref.current;
 }
 
-function promptUnbanReason(label: string) {
-  const result = window.prompt(`Unban reason for ${label} (optional)`);
-  if (result === null) return null;
-  const trimmed = result.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
+function ManagementConfirmDialog({
+  request,
+  onClose,
+}: {
+  request: ManagementConfirmRequest | null;
+  onClose: () => void;
+}) {
+  const [reason, setReason] = useState("");
+
+  useEffect(() => {
+    setReason("");
+  }, [request]);
+
+  const reasonRequired = request?.reason?.required ?? false;
+  const canConfirm = !reasonRequired || reason.trim().length > 0;
+
+  return (
+    <Dialog
+      open={request !== null}
+      onOpenChange={(open) => {
+        if (!open) onClose();
+      }}
+    >
+      <DialogContent className="management-confirm">
+        <DialogHeader>
+          <DialogTitle>{request?.title}</DialogTitle>
+          {request?.body ? <DialogDescription>{request.body}</DialogDescription> : null}
+        </DialogHeader>
+        {request?.reason ? (
+          <label className="management-confirm-field">
+            <span>{request.reason.label}</span>
+            <Textarea
+              autoFocus
+              rows={3}
+              maxLength={request.reason.maxLength}
+              placeholder={request.reason.placeholder}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+            />
+          </label>
+        ) : null}
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            variant={request?.destructive ? "destructive" : "primary"}
+            disabled={!canConfirm}
+            onClick={() => {
+              request?.onConfirm(reason.trim() || undefined);
+              onClose();
+            }}
+          >
+            {request?.confirmLabel}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
 }
 
 export const Route = createFileRoute("/management")({
-  validateSearch: (search) => ({
-    skill: typeof search.skill === "string" && search.skill.trim() ? search.skill : undefined,
-    plugin: typeof search.plugin === "string" && search.plugin.trim() ? search.plugin : undefined,
-  }),
+  validateSearch: (search) => {
+    const validated: {
+      skill?: string;
+      plugin?: string;
+      view?: ManagementView;
+    } = {};
+    if (typeof search.skill === "string" && search.skill.trim()) {
+      validated.skill = search.skill;
+    }
+    if (typeof search.plugin === "string" && search.plugin.trim()) {
+      validated.plugin = search.plugin;
+    }
+    if (isManagementView(search.view)) {
+      validated.view = search.view;
+    }
+    return validated;
+  },
   component: Management,
 });
 
@@ -131,6 +194,8 @@ export function Management() {
 
   const selectedSlug = search.skill?.trim();
   const selectedPluginName = search.plugin?.trim();
+  const activeView = resolveManagementView(search.view, selectedSlug, selectedPluginName);
+  const abuseViewActive = activeView === "abuse";
   const selectedSkill = useQuery(
     api.skills.getBySlugForStaff,
     staff && selectedSlug ? { slug: selectedSlug, auditLogLimit: SKILL_AUDIT_LOG_LIMIT } : "skip",
@@ -150,6 +215,10 @@ export function Management() {
     api.skills.listDuplicateCandidates,
     staff ? { limit: 20 } : "skip",
   ) as DuplicateCandidateEntry[] | undefined;
+  const publisherAbuseDashboard = useQuery(
+    api.publisherAbuse.listReviewDashboard,
+    staff && abuseViewActive ? { limit: 150 } : "skip",
+  );
 
   const setRole = useMutation(api.users.setRole);
   const banUser = useMutation(api.users.banUser);
@@ -164,29 +233,74 @@ export function Management() {
   const setDeprecatedBadge = useMutation(api.skills.setDeprecatedBadge);
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
+  const banPublisherAbuseOwnerMutation = useMutation(api.publisherAbuse.banPublisherAbuseOwner);
+  const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
-  const [selectedOwner, setSelectedOwner] = useState("");
+  const [selectedOwner, setSelectedOwner] = useState<Id<"users"> | "">("");
   const [reportSearch, setReportSearch] = useState("");
   const [reportSearchDebounced, setReportSearchDebounced] = useState("");
   const [userSearch, setUserSearch] = useState("");
   const [userSearchDebounced, setUserSearchDebounced] = useState("");
+  const [ownerSearch, setOwnerSearch] = useState("");
+  const [ownerSearchDebounced, setOwnerSearchDebounced] = useState("");
   const [pluginSearch, setPluginSearch] = useState(selectedPluginName ?? "");
+  const [skillSearch, setSkillSearch] = useState(selectedSlug ?? "");
   const [skillOverrideNote, setSkillOverrideNote] = useState("");
+  const [confirmRequest, setConfirmRequest] = useState<ManagementConfirmRequest | null>(null);
+  const [publisherAbuseTab, setPublisherAbuseTab] =
+    useState<PublisherAbuseTab>("potential_ban_candidate");
+  const [publisherAbuseSearch, setPublisherAbuseSearch] = useState("");
+  const [publisherAbuseNotes, setPublisherAbuseNotes] = useState("");
+  const [selectedPublisherAbuseNominationId, setSelectedPublisherAbuseNominationId] =
+    useState<Id<"publisherAbuseReviewNominations"> | null>(null);
 
   const userQuery = userSearchDebounced.trim();
-  const userResult = useQuery(
-    api.users.list,
-    admin ? { limit: 200, search: userQuery || undefined } : "skip",
-  ) as { items: Doc<"users">[]; total: number } | undefined;
+  const userResult = useStableQuery(
+    useQuery(
+      api.users.list,
+      admin && activeView === "users" ? { limit: 200, search: userQuery || undefined } : "skip",
+    ) as ManagementUserListResult | undefined,
+  );
+  const ownerQuery = ownerSearchDebounced.trim();
+  const ownerResult = useStableQuery(
+    useQuery(
+      api.users.list,
+      admin && activeView === "skills" ? { limit: 200, search: ownerQuery || undefined } : "skip",
+    ) as ManagementUserListResult | undefined,
+  );
+  const selectedPublisherAbuseDetail = useQuery(
+    api.publisherAbuse.getReviewNominationDetail,
+    staff && abuseViewActive && selectedPublisherAbuseNominationId
+      ? { nominationId: selectedPublisherAbuseNominationId }
+      : "skip",
+  );
 
   const selectedOwnerUserId = selectedSkill?.skill?.ownerUserId ?? null;
   const selectedCanonicalSlug = selectedSkill?.canonical?.skill?.slug ?? "";
+  const publisherAbuseItemsForTab = useMemo(
+    () =>
+      publisherAbuseDashboard
+        ? getPublisherAbuseItemsForTab(publisherAbuseDashboard, publisherAbuseTab)
+        : [],
+    [publisherAbuseDashboard, publisherAbuseTab],
+  );
+  const filteredPublisherAbuseItems = useMemo(() => {
+    const filtered = filterPublisherAbuseItems(publisherAbuseItemsForTab, publisherAbuseSearch);
+    if (publisherAbuseTab === "resolved") return filtered;
+    return filtered.sort(comparePublisherAbuseItems);
+  }, [publisherAbuseItemsForTab, publisherAbuseSearch, publisherAbuseTab]);
+  const fallbackSelectedPublisherAbuseItem =
+    publisherAbuseItemsForTab.find(
+      (item) => item.nomination._id === selectedPublisherAbuseNominationId,
+    ) ?? null;
+  const selectedPublisherAbuseItem =
+    selectedPublisherAbuseDetail?.item ?? fallbackSelectedPublisherAbuseItem;
 
   useEffect(() => {
     if (!selectedSkillId || !selectedOwnerUserId) return;
     setSelectedDuplicate(selectedCanonicalSlug);
-    setSelectedOwner(String(selectedOwnerUserId));
+    setSelectedOwner(selectedOwnerUserId);
   }, [selectedCanonicalSlug, selectedOwnerUserId, selectedSkillId]);
 
   useEffect(() => {
@@ -198,6 +312,10 @@ export function Management() {
   }, [selectedPluginName]);
 
   useEffect(() => {
+    setSkillSearch(selectedSlug ?? "");
+  }, [selectedSlug]);
+
+  useEffect(() => {
     const handle = setTimeout(() => setReportSearchDebounced(reportSearch), 250);
     return () => clearTimeout(handle);
   }, [reportSearch]);
@@ -206,6 +324,25 @@ export function Management() {
     const handle = setTimeout(() => setUserSearchDebounced(userSearch), 250);
     return () => clearTimeout(handle);
   }, [userSearch]);
+
+  useEffect(() => {
+    const handle = setTimeout(() => setOwnerSearchDebounced(ownerSearch), 250);
+    return () => clearTimeout(handle);
+  }, [ownerSearch]);
+
+  // Detail opens in a drawer on row click. If the selected nomination leaves the
+  // current tab/filter, close the drawer rather than auto-opening another one.
+  useEffect(() => {
+    if (!selectedPublisherAbuseNominationId) return;
+    const stillVisible = filteredPublisherAbuseItems.some(
+      (item) => item.nomination._id === selectedPublisherAbuseNominationId,
+    );
+    if (!stillVisible) setSelectedPublisherAbuseNominationId(null);
+  }, [filteredPublisherAbuseItems, selectedPublisherAbuseNominationId]);
+
+  useEffect(() => {
+    setPublisherAbuseNotes("");
+  }, [selectedPublisherAbuseNominationId]);
 
   if (isAuthLoading) {
     return <ManagementSkeleton />;
@@ -219,43 +356,59 @@ export function Management() {
     );
   }
 
-  if (!recentVersions || !reportedSkills || !duplicateCandidates) {
-    return <ManagementSkeleton />;
-  }
-
   const reportQuery = reportSearchDebounced.trim().toLowerCase();
-  const filteredReportedSkills = reportQuery
-    ? reportedSkills.filter((entry) => {
-        const reportReasons = (entry.reports ?? []).map((report) => report.reason).join(" ");
-        const reporterHandles = (entry.reports ?? [])
-          .map((report) => report.reporterHandle)
-          .filter(Boolean)
-          .join(" ");
-        const haystack = [
-          entry.skill.displayName,
-          entry.skill.slug,
-          entry.owner?.handle,
-          entry.owner?.name,
-          reportReasons,
-          reporterHandles,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        return haystack.includes(reportQuery);
-      })
-    : reportedSkills;
+  const filteredReportedSkills = reportedSkills?.filter((entry) => {
+    if (!reportQuery) return true;
+    const reportReasons = (entry.reports ?? []).map((report) => report.reason).join(" ");
+    const reporterHandles = (entry.reports ?? [])
+      .map((report) => report.reporterHandle)
+      .filter(Boolean)
+      .join(" ");
+    const haystack = [
+      entry.skill.displayName,
+      entry.skill.slug,
+      entry.owner?.handle,
+      entry.owner?.name,
+      reportReasons,
+      reporterHandles,
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return haystack.includes(reportQuery);
+  });
   const reportCountLabel =
-    filteredReportedSkills.length === 0 && reportedSkills.length > 0
+    filteredReportedSkills?.length === 0 && (reportedSkills?.length ?? 0) > 0
       ? "No matching reports."
       : "No reports yet.";
-  const reportSummary = `Showing ${filteredReportedSkills.length} of ${reportedSkills.length}`;
+  const reportSummary = reportedSkills
+    ? `Showing ${filteredReportedSkills?.length ?? 0} of ${reportedSkills.length}`
+    : "Loading reports…";
 
   const filteredUsers = userResult?.items ?? [];
   const userTotal = userResult?.total ?? 0;
   const userSummary = userResult
     ? `Showing ${filteredUsers.length} of ${userTotal}`
     : "Loading users…";
+  const ownerUsers = ownerResult?.items ?? [];
+  const selectedOwnerOption: ManagementOwnerOption | null = selectedSkill?.owner?.linkedUserId
+    ? {
+        userId: selectedSkill.owner.linkedUserId,
+        label: `@${selectedSkill.owner.handle ?? selectedSkill.owner.displayName ?? "user"}`,
+      }
+    : null;
+  const ownerUserOptions: ManagementOwnerOption[] = ownerUsers.map((user) => ({
+    userId: user._id,
+    label: formatManagementUserLabel(user, user._id),
+  }));
+  const ownerOptions =
+    selectedOwnerOption &&
+    !ownerUserOptions.some((option) => option.userId === selectedOwnerOption.userId)
+      ? [selectedOwnerOption, ...ownerUserOptions]
+      : ownerUserOptions;
+  const ownerSummary = ownerResult
+    ? `Showing ${ownerOptions.length} of ${Math.max(ownerResult.total, ownerOptions.length)}`
+    : "Loading owners…";
   const userEmptyLabel = userResult
     ? filteredUsers.length === 0
       ? userQuery
@@ -272,8 +425,9 @@ export function Management() {
     })
       .then(() => {
         setSkillOverrideNote("");
+        toast.success("Skill marked okay.");
       })
-      .catch((error) => window.alert(formatMutationError(error)));
+      .catch((error) => toast.error(formatMutationError(error)));
   };
 
   const clearSkillOverride = () => {
@@ -284,8 +438,9 @@ export function Management() {
     })
       .then(() => {
         setSkillOverrideNote("");
+        toast.success("Override cleared.");
       })
-      .catch((error) => window.alert(formatMutationError(error)));
+      .catch((error) => toast.error(formatMutationError(error)));
   };
 
   const managePlugin = () => {
@@ -293,912 +448,465 @@ export function Management() {
     if (!name) return;
     void navigate({
       to: "/management",
-      search: { skill: undefined, plugin: name },
+      search: { view: "plugins", skill: undefined, plugin: name },
+    });
+  };
+  const manageSkill = () => {
+    const slug = skillSearch.trim();
+    if (!slug) return;
+    void navigate({
+      to: "/management",
+      search: { view: "skills", skill: slug, plugin: undefined },
+    });
+  };
+  const requestBanUser = (userId: Id<"users">, label: string) => {
+    setConfirmRequest({
+      title: `Ban ${label}?`,
+      body: "Hides their skills and personal package/plugin resources, and revokes package publish tokens.",
+      confirmLabel: "Ban user",
+      destructive: true,
+      reason: {
+        label: "Reason (optional)",
+        placeholder: "Why are you banning this user?",
+        maxLength: USER_BAN_REASON_MAX_LENGTH,
+      },
+      onConfirm: (reason) => {
+        void banUser({ userId, reason })
+          .then(() => toast.success(`Banned ${label}.`))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestUnbanUser = (userId: Id<"users">, label: string) => {
+    setConfirmRequest({
+      title: `Unban ${label}?`,
+      body: "Restores eligible skills and ban-hidden personal package/plugin resources.",
+      confirmLabel: "Unban user",
+      reason: {
+        label: "Reason (optional)",
+        placeholder: "Why are you unbanning this user?",
+        maxLength: USER_BAN_REASON_MAX_LENGTH,
+      },
+      onConfirm: (reason) => {
+        void unbanUser({ userId, reason })
+          .then(() => toast.success(`Unbanned ${label}.`))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestToggleSkillHidden = (skill: Doc<"skills">) => {
+    const hide = !skill.softDeletedAt;
+    setConfirmRequest({
+      title: hide ? `Hide ${skill.displayName}?` : `Restore ${skill.displayName}?`,
+      confirmLabel: hide ? "Hide skill" : "Restore skill",
+      destructive: hide,
+      reason: {
+        label: "Reason",
+        placeholder: hide ? "Why hide this skill?" : "Why restore this skill?",
+        required: true,
+      },
+      onConfirm: (reason) => {
+        void setSoftDeleted({
+          skillId: skill._id,
+          deleted: hide,
+          reason: reason ?? "",
+        })
+          .then(() => toast.success(hide ? "Skill hidden." : "Skill restored."))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const requestHardDeleteSkill = (skill: Doc<"skills">) => {
+    setConfirmRequest({
+      title: `Hard delete ${skill.displayName}?`,
+      body: "This permanently removes the skill and its history. It cannot be undone.",
+      confirmLabel: "Hard delete",
+      destructive: true,
+      onConfirm: () => {
+        void hardDelete({ skillId: skill._id })
+          .then(() => toast.success("Skill hard-deleted."))
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
+    });
+  };
+
+  const banPublisherAbuseOwner = (item: PublisherAbuseReviewItem) => {
+    const ownerUser = item.ownerUser;
+    if (!ownerUser || !canBanPublisherAbuseOwner(item, me?._id ?? null, admin)) return;
+    const label = `@${ownerUser.handle ?? ownerUser.name ?? item.nomination.handleSnapshot}`;
+    // The review notes box above the Ban button is the ban reason — no separate prompt.
+    const reason = publisherAbuseNotes.trim() || undefined;
+    setConfirmRequest({
+      title: `Ban ${label}?`,
+      body: "Hides their skills and personal package/plugin resources, and revokes package publish tokens.",
+      confirmLabel: "Ban user",
+      destructive: true,
+      onConfirm: () => {
+        void banPublisherAbuseOwnerMutation({
+          nominationId: item.nomination._id,
+          expectedLatestScoreId: item.nomination.latestScoreId,
+          expectedUpdatedAt: item.nomination.updatedAt,
+          reason,
+        })
+          .then(() => {
+            toast.success(`Banned ${label}.`);
+            setPublisherAbuseNotes("");
+            setSelectedPublisherAbuseNominationId(null);
+          })
+          .catch((error) => toast.error(formatMutationError(error)));
+      },
     });
   };
 
   return (
-    <main className="section">
-      <h1 className="section-title">Management console</h1>
-      <p className="section-subtitle">Moderation, curation, and ownership tools.</p>
-
-      <Card>
-        <h2 className="section-title text-[1.2rem] m-0">Reported skills</h2>
-        <div className="management-controls">
-          <div className="management-control management-search">
-            <span className="mono">Filter</span>
-            <input
-              type="search"
-              placeholder="Search reported skills"
-              value={reportSearch}
-              onChange={(event) => setReportSearch(event.target.value)}
-            />
-          </div>
-          <div className="management-count">{reportSummary}</div>
+    <main className="management-shell">
+      <ManagementSidebar
+        activeView={activeView}
+        admin={admin}
+        abuseCount={
+          publisherAbuseDashboard
+            ? getPublisherAbuseVisiblePendingItems(publisherAbuseDashboard).length
+            : undefined
+        }
+        duplicateCount={duplicateCandidates?.length}
+        recentCount={recentVersions?.length}
+        reportCount={reportedSkills?.length}
+        userCount={userResult ? userTotal : undefined}
+      />
+      <section className="management-main">
+        <div className="management-breadcrumb">
+          <span>Management</span>
+          <ChevronRight size={13} aria-hidden="true" />
+          <strong>{formatManagementViewLabel(activeView)}</strong>
         </div>
-        <div className="management-list">
-          {filteredReportedSkills.length === 0 ? (
-            <div className="stat">{reportCountLabel}</div>
-          ) : (
-            filteredReportedSkills.map((entry) => {
-              const { skill, latestVersion, owner, reports } = entry;
-              const ownerParam = resolveOwnerParam(
-                owner?.handle ?? null,
-                owner?._id ?? skill.ownerUserId,
-              );
-              const reportEntries = reports ?? [];
-              return (
-                <div key={skill._id} className="management-item">
-                  <div className="management-item-main">
-                    <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
-                      {skill.displayName}
-                    </Link>
-                    <div className="section-subtitle m-0">
-                      @{owner?.handle ?? owner?.name ?? "user"} · v{latestVersion?.version ?? "—"} ·
-                      {skill.reportCount ?? 0} report{(skill.reportCount ?? 0) === 1 ? "" : "s"}
-                      {skill.lastReportedAt
-                        ? ` · last ${formatTimestamp(skill.lastReportedAt)}`
-                        : ""}
-                    </div>
-                    {reportEntries.length > 0 ? (
-                      <div className="management-sublist">
-                        {reportEntries.map((report) => (
-                          <div
-                            key={`${report.reporterId}-${report.createdAt}`}
-                            className="management-report-item"
-                          >
-                            <span className="management-report-meta">
-                              {formatTimestamp(report.createdAt)}
-                              {report.reporterHandle ? ` · @${report.reporterHandle}` : ""}
-                            </span>
-                            <span>{report.reason}</span>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="section-subtitle m-0">No report reasons yet.</div>
-                    )}
-                  </div>
-                  <div className="management-actions">
-                    <Button asChild>
-                      <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
-                        Manage
-                      </Link>
-                    </Button>
-                    <Button
-                      type="button"
-                      onClick={() => {
-                        const reason = window.prompt(
-                          skill.softDeletedAt ? "Restore reason:" : "Hide reason:",
-                        );
-                        if (!reason?.trim()) return;
-                        void setSoftDeleted({
-                          skillId: skill._id,
-                          deleted: !skill.softDeletedAt,
-                          reason: reason.trim(),
-                        }).catch((error) => window.alert(formatMutationError(error)));
-                      }}
-                    >
-                      {skill.softDeletedAt ? "Restore" : "Hide"}
-                    </Button>
-                    {admin ? (
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          if (!window.confirm(`Hard delete ${skill.displayName}?`)) return;
-                          void hardDelete({ skillId: skill._id });
-                        }}
-                      >
-                        Hard delete
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </Card>
 
-      <Card className="mt-5">
-        <h2 className="section-title text-[1.2rem] m-0">Skill tools</h2>
-        {selectedSlug ? (
-          <div className="section-subtitle mt-2">
-            Managing "{selectedSlug}" ·{" "}
-            <Link to="/management" search={{ skill: undefined, plugin: undefined }}>
-              Clear selection
-            </Link>
-          </div>
+        {activeView === "abuse" ? (
+          <AbusePage
+            admin={admin}
+            currentUserId={me?._id ?? null}
+            dashboard={publisherAbuseDashboard}
+            detail={selectedPublisherAbuseDetail}
+            items={filteredPublisherAbuseItems}
+            notes={publisherAbuseNotes}
+            search={publisherAbuseSearch}
+            selectedItem={selectedPublisherAbuseItem}
+            selectedNominationId={selectedPublisherAbuseNominationId}
+            tab={publisherAbuseTab}
+            onBanOwner={banPublisherAbuseOwner}
+            onChangeNotes={setPublisherAbuseNotes}
+            onChangeSearch={setPublisherAbuseSearch}
+            onChangeTab={setPublisherAbuseTab}
+            onRefresh={() => {
+              setConfirmRequest({
+                title: "Run a new abuse scan?",
+                body: "Re-scores every publisher in the catalog against the latest model. This normally runs automatically every few days; a manual run can take a while.",
+                confirmLabel: "Run scan",
+                onConfirm: () => {
+                  void startPublisherAbuseScoreRun({})
+                    .then(() => toast.success("Scan started."))
+                    .catch((error) => toast.error(formatMutationError(error)));
+                },
+              });
+            }}
+            onClose={() => setSelectedPublisherAbuseNominationId(null)}
+            onSelect={setSelectedPublisherAbuseNominationId}
+          />
         ) : null}
-        <div className="management-list">
-          {!selectedSlug ? (
-            <div className="stat">Use the Manage button on a skill to open tooling here.</div>
-          ) : selectedSkill === undefined ? (
-            <div className="stat">Loading skill…</div>
-          ) : !selectedSkill?.skill ? (
-            <div className="stat">No skill found for "{selectedSlug}".</div>
-          ) : (
-            (() => {
-              const { skill, latestVersion, owner, canonical, overrideReviewer, auditLogs } =
-                selectedSkill;
-              const ownerParam = resolveOwnerParam(
-                owner?.handle ?? null,
-                owner?._id ?? skill.ownerUserId,
-              );
-              const moderationStatus =
-                skill.moderationStatus ?? (skill.softDeletedAt ? "hidden" : "active");
-              const isHighlighted = isSkillHighlighted(skill);
-              const isOfficial = isSkillOfficial(skill);
-              const isDeprecated = isSkillDeprecated(skill);
-              const badges = getSkillBadges(skill);
-              const ownerUserId = skill.ownerUserId ?? selectedOwnerUserId;
-              const ownerHandle = owner?.handle ?? owner?.name ?? "user";
-              const isOwnerAdmin = owner?.role === "admin";
-              const canBanOwner =
-                staff && ownerUserId && ownerUserId !== me?._id && (admin || !isOwnerAdmin);
 
-              return (
-                <div key={skill._id} className="management-item management-item-detail">
-                  <div className="management-item-main">
-                    <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
-                      {skill.displayName}
-                    </Link>
-                    <div className="section-subtitle m-0">
-                      @{owner?.handle ?? owner?.name ?? "user"} · v{latestVersion?.version ?? "—"} ·
-                      updated {formatTimestamp(skill.updatedAt)} · {moderationStatus}
-                      {badges.length ? ` · ${badges.join(", ").toLowerCase()}` : ""}
-                    </div>
-                    {skill.moderationFlags?.length ? (
-                      <div className="management-tags">
-                        {skill.moderationFlags.map((flag: string) => (
-                          <Badge key={flag}>{flag}</Badge>
-                        ))}
-                      </div>
-                    ) : null}
-                    <div className="management-sublist">
-                      <div className="section-subtitle m-0">Manual overrides</div>
-                      <section className="management-override-panel">
-                        <div className="management-report-item">
-                          <span className="management-report-meta">Current override</span>
-                          <span>
-                            {formatManualOverrideState(skill.manualOverride, overrideReviewer)}
-                          </span>
-                        </div>
-                        <div className="management-report-item">
-                          <span className="management-report-meta">Latest version</span>
-                          <span>
-                            {latestVersion ? `v${latestVersion.version}` : "No published version."}
-                          </span>
-                        </div>
-                        <div className="management-report-item">
-                          <span className="management-report-meta">Behavior</span>
-                          <span>Applies to the full skill until a moderator clears it.</span>
-                        </div>
-                        <textarea
-                          className="form-input management-textarea"
-                          rows={4}
-                          placeholder={
-                            skill.manualOverride
-                              ? "Audit note required to update or clear the okay override"
-                              : "Audit note required to mark this skill okay"
-                          }
-                          value={skillOverrideNote}
-                          onChange={(event) => setSkillOverrideNote(event.target.value)}
-                        />
-                        <div className="management-actions management-actions-start">
-                          <Button
-                            className="management-action-btn"
-                            type="button"
-                            disabled={!skillOverrideNote.trim()}
-                            onClick={applySkillOverride}
-                          >
-                            {skill.manualOverride ? "Update okay override" : "Mark skill okay"}
-                          </Button>
-                          {skill.manualOverride ? (
-                            <Button
-                              className="management-action-btn"
-                              type="button"
-                              disabled={!skillOverrideNote.trim()}
-                              onClick={clearSkillOverride}
-                            >
-                              Clear skill override
-                            </Button>
-                          ) : null}
-                        </div>
-                      </section>
-                    </div>
-                    <div className="management-sublist">
-                      <div className="section-subtitle m-0">Recent audit activity</div>
-                      <section className="management-override-panel management-audit-panel">
-                        <div className="management-report-item">
-                          <span className="management-report-meta">Window</span>
-                          <span>Last {SKILL_AUDIT_LOG_LIMIT} entries for this skill.</span>
-                        </div>
-                        {auditLogs.length === 0 ? (
-                          <div className="section-subtitle m-0">No audit activity yet.</div>
-                        ) : (
-                          <div className="management-audit-list">
-                            {auditLogs.map((entry) => {
-                              const auditSummary = formatAuditMetadataSummary(
-                                entry.action,
-                                entry.metadata,
-                              );
-                              return (
-                                <div key={entry._id} className="management-audit-item">
-                                  <div className="management-report-item">
-                                    <span className="management-report-meta">
-                                      {formatTimestamp(entry.createdAt)} ·{" "}
-                                      {formatManagementUserLabel(entry.actor)}
-                                    </span>
-                                    <span>
-                                      {formatAuditActionLabel(entry.action, entry.metadata)}
-                                    </span>
-                                  </div>
-                                  {auditSummary ? (
-                                    <div className="section-subtitle management-audit-summary">
-                                      {auditSummary}
-                                    </div>
-                                  ) : null}
-                                  {entry.metadata ? (
-                                    <details className="management-audit-details">
-                                      <summary>metadata</summary>
-                                      <pre className="management-audit-json">
-                                        {JSON.stringify(entry.metadata, null, 2)}
-                                      </pre>
-                                    </details>
-                                  ) : null}
-                                </div>
-                              );
-                            })}
-                          </div>
-                        )}
-                      </section>
-                    </div>
-                    <div className="management-tool-grid">
-                      <label className="management-control management-control-stack">
-                        <span className="mono">duplicate of</span>
-                        <input
-                          className="management-field"
-                          value={selectedDuplicate}
-                          onChange={(event) => setSelectedDuplicate(event.target.value)}
-                          placeholder={canonical?.skill?.slug ?? "canonical slug"}
-                        />
-                      </label>
-                      <div className="management-control management-control-stack">
-                        <span className="mono">duplicate action</span>
-                        <Button
-                          className="management-action-btn"
-                          type="button"
-                          onClick={() =>
-                            void setDuplicate({
-                              skillId: skill._id,
-                              canonicalSlug: selectedDuplicate.trim() || undefined,
-                            })
-                          }
-                        >
-                          Set duplicate
-                        </Button>
-                      </div>
-                      {admin ? (
-                        <>
-                          <label className="management-control management-control-stack">
-                            <span className="mono">owner</span>
-                            <Select value={selectedOwner} onValueChange={setSelectedOwner}>
-                              <SelectTrigger className="management-field">
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                {filteredUsers.map((user) => (
-                                  <SelectItem key={user._id} value={user._id}>
-                                    @{user.handle ?? user.name ?? "user"}
-                                  </SelectItem>
-                                ))}
-                              </SelectContent>
-                            </Select>
-                          </label>
-                          <div className="management-control management-control-stack">
-                            <span className="mono">owner action</span>
-                            <Button
-                              className="management-action-btn"
-                              type="button"
-                              onClick={() =>
-                                void changeOwner({
-                                  skillId: skill._id,
-                                  ownerUserId: selectedOwner as Doc<"users">["_id"],
-                                })
-                              }
-                            >
-                              Change owner
-                            </Button>
-                          </div>
-                        </>
-                      ) : null}
-                    </div>
-                  </div>
-                  <div className="management-actions management-action-grid">
-                    <Button asChild className="management-action-btn">
-                      <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
-                        View
-                      </Link>
-                    </Button>
-                    <Button
-                      className="management-action-btn"
-                      type="button"
-                      onClick={() => {
-                        const reason = window.prompt(
-                          skill.softDeletedAt ? "Restore reason:" : "Hide reason:",
-                        );
-                        if (!reason?.trim()) return;
-                        void setSoftDeleted({
-                          skillId: skill._id,
-                          deleted: !skill.softDeletedAt,
-                          reason: reason.trim(),
-                        }).catch((error) => window.alert(formatMutationError(error)));
-                      }}
-                    >
-                      {skill.softDeletedAt ? "Restore" : "Hide"}
-                    </Button>
-                    <Button
-                      className="management-action-btn"
-                      type="button"
-                      onClick={() =>
-                        void setBatch({
-                          skillId: skill._id,
-                          batch: isHighlighted ? undefined : "highlighted",
-                        })
-                      }
-                    >
-                      {isHighlighted ? "Unhighlight" : "Highlight"}
-                    </Button>
-                    {admin ? (
-                      <Button
-                        className="management-action-btn"
-                        type="button"
-                        onClick={() => {
-                          if (!window.confirm(`Hard delete ${skill.displayName}?`)) return;
-                          void hardDelete({ skillId: skill._id });
-                        }}
-                      >
-                        Hard delete
-                      </Button>
-                    ) : null}
-                    {staff ? (
-                      <Button
-                        className="management-action-btn"
-                        type="button"
-                        disabled={!canBanOwner}
-                        onClick={() => {
-                          if (!ownerUserId || ownerUserId === me?._id) return;
-                          if (
-                            !window.confirm(
-                              `Ban @${ownerHandle}, hide their skills and personal package/plugin resources, and revoke package publish tokens?`,
-                            )
-                          ) {
-                            return;
-                          }
-                          const reason = promptBanReason(`@${ownerHandle}`);
-                          if (reason === null) return;
-                          void banUser({ userId: ownerUserId, reason });
-                        }}
-                      >
-                        Ban user
-                      </Button>
-                    ) : null}
-                    {admin ? (
-                      <>
-                        <Button
-                          className="management-action-btn"
-                          type="button"
-                          onClick={() =>
-                            void setOfficialBadge({
-                              skillId: skill._id,
-                              official: !isOfficial,
-                            })
-                          }
-                        >
-                          {isOfficial ? "Remove official" : "Mark official"}
-                        </Button>
-                        <Button
-                          className="management-action-btn"
-                          type="button"
-                          onClick={() =>
-                            void setDeprecatedBadge({
-                              skillId: skill._id,
-                              deprecated: !isDeprecated,
-                            })
-                          }
-                        >
-                          {isDeprecated ? "Remove deprecated" : "Mark deprecated"}
-                        </Button>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              );
-            })()
-          )}
-        </div>
-      </Card>
-
-      <Card className="mt-5">
-        <h2 className="section-title text-[1.2rem] m-0">Plugin tools</h2>
-        <div className="management-controls">
-          <div className="management-control management-search">
-            <span className="mono">Package</span>
-            <input
-              type="search"
-              placeholder="@scope/plugin-name or package-name"
-              value={pluginSearch}
-              onChange={(event) => setPluginSearch(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  managePlugin();
-                }
-              }}
-            />
-          </div>
-          <Button type="button" onClick={managePlugin} disabled={!pluginSearch.trim()}>
-            Manage
-          </Button>
-        </div>
-        {selectedPluginName ? (
-          <div className="section-subtitle mt-2">
-            Managing "{selectedPluginName}" ·{" "}
-            <Link to="/management" search={{ skill: undefined, plugin: undefined }}>
-              Clear selection
-            </Link>
-          </div>
+        {activeView === "reports" ? (
+          <ReportsPage
+            admin={admin}
+            items={filteredReportedSkills}
+            reportCountLabel={reportCountLabel}
+            search={reportSearch}
+            summary={reportSummary}
+            onChangeSearch={setReportSearch}
+            onHardDeleteSkill={requestHardDeleteSkill}
+            onToggleSkillHidden={requestToggleSkillHidden}
+          />
         ) : null}
-        <div className="management-list">
-          {!selectedPluginName ? (
-            <div className="stat">Enter a plugin package name to open tooling here.</div>
-          ) : selectedPlugin === undefined ? (
-            <div className="stat">Loading plugin…</div>
-          ) : !selectedPlugin?.package ? (
-            <div className="stat">No plugin found for "{selectedPluginName}".</div>
-          ) : (
-            (() => {
-              const plugin = selectedPlugin.package;
-              const owner = selectedPlugin.owner;
-              const latestRelease = selectedPlugin.latestRelease;
-              const isHighlighted = Boolean(selectedPlugin.highlighted);
 
-              return (
-                <div key={plugin._id} className="management-item management-item-detail">
-                  <div className="management-item-main">
-                    <Link to="/plugins/$name" params={{ name: plugin.name }}>
-                      {plugin.displayName}
-                    </Link>
-                    <div className="section-subtitle m-0">
-                      {owner?.handle ? `@${owner.handle}` : "unknown owner"} ·{" "}
-                      {familyLabel(plugin.family)} · v{latestRelease?.version ?? "—"} · updated{" "}
-                      {formatTimestamp(plugin.updatedAt)}
-                      {plugin.softDeletedAt ? " · hidden" : ""}
-                      {isHighlighted ? " · highlighted" : ""}
-                    </div>
-                    <div className="management-tags">
-                      <Badge>{plugin.channel}</Badge>
-                      {plugin.isOfficial ? <Badge variant="official">Official</Badge> : null}
-                      {plugin.executesCode ? <Badge>executes code</Badge> : null}
-                      {plugin.runtimeId ? <Badge>{plugin.runtimeId}</Badge> : null}
-                    </div>
-                    <div className="management-sublist">
-                      <div className="management-report-item">
-                        <span className="management-report-meta">Package name</span>
-                        <span className="mono">{plugin.name}</span>
-                      </div>
-                      <div className="management-report-item">
-                        <span className="management-report-meta">Summary</span>
-                        <span>{plugin.summary ?? "No summary provided."}</span>
-                      </div>
-                      <div className="management-report-item">
-                        <span className="management-report-meta">Featured state</span>
-                        <span>
-                          {isHighlighted
-                            ? `Highlighted ${formatTimestamp(selectedPlugin.highlighted?.at ?? 0)}`
-                            : "Not highlighted"}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="management-actions management-action-grid">
-                    <Button asChild className="management-action-btn">
-                      <Link to="/plugins/$name" params={{ name: plugin.name }}>
-                        View
-                      </Link>
-                    </Button>
-                    <Button
-                      className="management-action-btn"
-                      type="button"
-                      onClick={() =>
-                        void setPackageBatch({
-                          packageId: plugin._id,
-                          batch: isHighlighted ? undefined : "highlighted",
-                        }).catch((error) => window.alert(formatMutationError(error)))
-                      }
-                    >
-                      {isHighlighted ? "Unhighlight" : "Highlight"}
-                    </Button>
-                  </div>
-                </div>
+        {activeView === "skills" ? (
+          <SkillsPage
+            admin={admin}
+            currentUserId={me?._id ?? null}
+            ownerOptions={ownerOptions}
+            ownerSearch={ownerSearch}
+            ownerSummary={ownerSummary}
+            ownerUsers={ownerUsers}
+            selectedDuplicate={selectedDuplicate}
+            selectedOwner={selectedOwner}
+            selectedSkill={selectedSkill}
+            selectedSlug={selectedSlug}
+            skillOverrideNote={skillOverrideNote}
+            skillSearch={skillSearch}
+            staff={staff}
+            onApplySkillOverride={applySkillOverride}
+            onBanUser={requestBanUser}
+            onChangeOwner={(skillId, ownerUserId) => {
+              void changeOwner({ skillId, ownerUserId });
+            }}
+            onChangeOwnerSearch={setOwnerSearch}
+            onChangeSelectedDuplicate={setSelectedDuplicate}
+            onChangeSelectedOwner={setSelectedOwner}
+            onChangeSkillOverrideNote={setSkillOverrideNote}
+            onChangeSkillSearch={setSkillSearch}
+            onClearSkillOverride={clearSkillOverride}
+            onHardDeleteSkill={requestHardDeleteSkill}
+            onManageSkill={manageSkill}
+            onSetBatch={(skillId, batch) => {
+              void setBatch({ skillId, batch });
+            }}
+            onSetDeprecatedBadge={(skillId, deprecated) => {
+              void setDeprecatedBadge({ skillId, deprecated });
+            }}
+            onSetDuplicate={(skillId, canonicalSlug) => {
+              void setDuplicate({ skillId, canonicalSlug });
+            }}
+            onSetOfficialBadge={(skillId, official) => {
+              void setOfficialBadge({ skillId, official });
+            }}
+            onToggleSkillHidden={requestToggleSkillHidden}
+          />
+        ) : null}
+
+        {activeView === "plugins" ? (
+          <PluginsPage
+            pluginSearch={pluginSearch}
+            selectedPlugin={selectedPlugin}
+            selectedPluginName={selectedPluginName}
+            onChangePluginSearch={setPluginSearch}
+            onManagePlugin={managePlugin}
+            onSetPackageBatch={(packageId, batch) => {
+              void setPackageBatch({ packageId, batch }).catch((error) =>
+                toast.error(formatMutationError(error)),
               );
-            })()
-          )}
-        </div>
-      </Card>
+            }}
+          />
+        ) : null}
 
-      <Card className="mt-5">
-        <h2 className="section-title text-[1.2rem] m-0">Duplicate candidates</h2>
-        <div className="management-list">
-          {duplicateCandidates.length === 0 ? (
-            <div className="stat">No duplicate candidates.</div>
-          ) : (
-            duplicateCandidates.map((entry) => (
-              <div key={entry.skill._id} className="management-item">
-                <div className="management-item-main">
-                  <Link
-                    to="/$owner/$slug"
-                    params={{
-                      owner: resolveOwnerParam(
-                        entry.owner?.handle ?? null,
-                        entry.owner?._id ?? entry.skill.ownerUserId,
-                      ),
-                      slug: entry.skill.slug,
-                    }}
-                  >
-                    {entry.skill.displayName}
-                  </Link>
-                  <div className="section-subtitle m-0">
-                    @{entry.owner?.handle ?? entry.owner?.name ?? "user"} · v
-                    {entry.latestVersion?.version ?? "—"} · fingerprint{" "}
-                    {entry.fingerprint?.slice(0, 8)}
-                  </div>
-                  <div className="management-sublist">
-                    {entry.matches.map((match) => (
-                      <div key={match.skill._id} className="management-subitem">
-                        <div>
-                          <strong>{match.skill.displayName}</strong>
-                          <div className="section-subtitle m-0">
-                            @{match.owner?.handle ?? match.owner?.name ?? "user"} ·{" "}
-                            {match.skill.slug}
-                          </div>
-                        </div>
-                        <div className="management-actions">
-                          <Button asChild>
-                            <Link
-                              to="/$owner/$slug"
-                              params={{
-                                owner: resolveOwnerParam(
-                                  match.owner?.handle ?? null,
-                                  match.owner?._id ?? match.skill.ownerUserId,
-                                ),
-                                slug: match.skill.slug,
-                              }}
-                            >
-                              View
-                            </Link>
-                          </Button>
-                          <Button
-                            type="button"
-                            onClick={() =>
-                              void setDuplicate({
-                                skillId: entry.skill._id,
-                                canonicalSkillId: match.skill._id,
-                              })
-                            }
-                          >
-                            Mark duplicate
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-                <div className="management-actions">
-                  <Button asChild>
-                    <Link
-                      to="/$owner/$slug"
-                      params={{
-                        owner: resolveOwnerParam(
-                          entry.owner?.handle ?? null,
-                          entry.owner?._id ?? entry.skill.ownerUserId,
-                        ),
-                        slug: entry.skill.slug,
-                      }}
-                    >
-                      View
-                    </Link>
-                  </Button>
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </Card>
+        {activeView === "duplicates" ? (
+          <DuplicatesPage
+            duplicateCandidates={duplicateCandidates}
+            onSetDuplicate={(skillId, canonicalSkillId) => {
+              void setDuplicate({ skillId, canonicalSkillId });
+            }}
+          />
+        ) : null}
 
-      <Card className="mt-5">
-        <h2 className="section-title text-[1.2rem] m-0">Recent pushes</h2>
-        <div className="management-list">
-          {recentVersions.length === 0 ? (
-            <div className="stat">No recent versions.</div>
-          ) : (
-            recentVersions.map((entry) => (
-              <div key={entry.version._id} className="management-item">
-                <div className="management-item-main">
-                  <strong>{entry.skill?.displayName ?? "Unknown skill"}</strong>
-                  <div className="section-subtitle m-0">
-                    v{entry.version.version} · @{entry.owner?.handle ?? entry.owner?.name ?? "user"}
-                  </div>
-                </div>
-                <div className="management-actions">
-                  {entry.skill ? (
-                    <Button asChild>
-                      <Link
-                        to="/management"
-                        search={{ skill: entry.skill.slug, plugin: undefined }}
-                      >
-                        Manage
-                      </Link>
-                    </Button>
-                  ) : null}
-                  {entry.skill ? (
-                    <Button asChild>
-                      <Link
-                        to="/$owner/$slug"
-                        params={{
-                          owner: resolveOwnerParam(
-                            entry.owner?.handle ?? null,
-                            entry.owner?._id ?? entry.skill.ownerUserId,
-                          ),
-                          slug: entry.skill.slug,
-                        }}
-                      >
-                        View
-                      </Link>
-                    </Button>
-                  ) : null}
-                </div>
-              </div>
-            ))
-          )}
-        </div>
-      </Card>
+        {activeView === "recent" ? <RecentPushesPage recentVersions={recentVersions} /> : null}
 
-      {admin ? (
-        <Card className="mt-5">
-          <h2 className="section-title text-[1.2rem] m-0">Users</h2>
-          <div className="management-controls">
-            <div className="management-control management-search">
-              <span className="mono">Filter</span>
-              <input
-                type="search"
-                placeholder="Search users"
-                value={userSearch}
-                onChange={(event) => setUserSearch(event.target.value)}
-              />
-            </div>
-            <div className="management-count">{userSummary}</div>
-          </div>
-          <div className="management-list">
-            {filteredUsers.length === 0 ? (
-              <div className="stat">{userEmptyLabel}</div>
-            ) : (
-              filteredUsers.map((user) => (
-                <div key={user._id} className="management-item">
-                  <div className="management-item-main">
-                    <span className="mono">@{user.handle ?? user.name ?? "user"}</span>
-                    {user.deletedAt || user.deactivatedAt ? (
-                      <div className="section-subtitle m-0">
-                        {user.banReason && user.deletedAt
-                          ? `Banned ${formatTimestamp(user.deletedAt)} · ${user.banReason}`
-                          : `Deleted ${formatTimestamp((user.deactivatedAt ?? user.deletedAt) as number)}`}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="management-actions">
-                    <Select
-                      value={user.role ?? "user"}
-                      onValueChange={(value) => {
-                        if (value === "admin" || value === "moderator" || value === "user") {
-                          void setRole({ userId: user._id, role: value });
-                        }
-                      }}
-                    >
-                      <SelectTrigger size="sm" className="w-[130px]">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="user">User</SelectItem>
-                        <SelectItem value="moderator">Moderator</SelectItem>
-                        <SelectItem value="admin">Admin</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <Button
-                      type="button"
-                      disabled={user._id === me?._id}
-                      onClick={() => {
-                        if (user._id === me?._id) return;
-                        if (
-                          !window.confirm(
-                            `Ban @${user.handle ?? user.name ?? "user"}, hide their skills and personal package/plugin resources, and revoke package publish tokens?`,
-                          )
-                        ) {
-                          return;
-                        }
-                        const label = `@${user.handle ?? user.name ?? "user"}`;
-                        const reason = promptBanReason(label);
-                        if (reason === null) return;
-                        void banUser({ userId: user._id, reason }).catch((error) =>
-                          window.alert(formatMutationError(error)),
-                        );
-                      }}
-                    >
-                      Ban user
-                    </Button>
-                    {user.deletedAt && !user.deactivatedAt ? (
-                      <Button
-                        type="button"
-                        onClick={() => {
-                          const label = `@${user.handle ?? user.name ?? "user"}`;
-                          if (
-                            !window.confirm(
-                              `Unban ${label} and restore eligible skills and ban-hidden personal package/plugin resources?`,
-                            )
-                          ) {
-                            return;
-                          }
-                          const reason = promptUnbanReason(label);
-                          if (reason === null) return;
-                          void unbanUser({ userId: user._id, reason }).catch((error) =>
-                            window.alert(formatMutationError(error)),
-                          );
-                        }}
-                      >
-                        Unban user
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              ))
-            )}
-          </div>
-        </Card>
-      ) : null}
+        {admin && activeView === "users" ? (
+          <UsersPage
+            currentUserId={me?._id ?? null}
+            filteredUsers={filteredUsers}
+            search={userSearch}
+            summary={userSummary}
+            userEmptyLabel={userEmptyLabel}
+            onBanUser={requestBanUser}
+            onChangeSearch={setUserSearch}
+            onSetRole={(userId, role) => {
+              void setRole({ userId, role });
+            }}
+            onUnbanUser={requestUnbanUser}
+          />
+        ) : null}
+        {!admin && activeView === "users" ? (
+          <ManagementPlaceholder
+            title="Users"
+            description="User administration is available to admins."
+          />
+        ) : null}
+        {activeView === "overview" ? (
+          <ManagementPlaceholder
+            title="Overview"
+            description="Use the sidebar to jump into focused management queues."
+          />
+        ) : null}
+        {activeView === "publishers" ? (
+          <ManagementPlaceholder
+            title="Publishers"
+            description="Publisher-specific tooling will live here as it graduates out of one-off moderation flows."
+          />
+        ) : null}
+        {activeView === "audit" ? (
+          <ManagementPlaceholder
+            title="Audit log"
+            description="Audit log exploration is still handled inside individual tools for now."
+          />
+        ) : null}
+        {activeView === "system" ? (
+          <ManagementPlaceholder
+            title="System"
+            description="System maintenance shortcuts can be added here without crowding moderation queues."
+          />
+        ) : null}
+        {activeView === "settings" ? (
+          <ManagementPlaceholder
+            title="Settings"
+            description="Staff settings can be split into this view when we have more than inline controls."
+          />
+        ) : null}
+      </section>
+      <ManagementConfirmDialog request={confirmRequest} onClose={() => setConfirmRequest(null)} />
     </main>
   );
 }
 
-function formatTimestamp(value: number) {
-  return new Date(value).toLocaleString();
+function ManagementPlaceholder({ title, description }: { title: string; description: string }) {
+  return (
+    <Card className="management-placeholder">
+      <h2 className="section-title text-[1.2rem] m-0">{title}</h2>
+      <p className="section-subtitle m-0">{description}</p>
+    </Card>
+  );
 }
 
-function formatMutationError(error: unknown) {
-  return getUserFacingConvexError(error, "Request failed.");
+function ManagementSidebar({
+  abuseCount,
+  activeView,
+  admin,
+  duplicateCount,
+  recentCount,
+  reportCount,
+  userCount,
+}: {
+  abuseCount?: number;
+  activeView: ManagementView;
+  admin: boolean;
+  duplicateCount?: number;
+  recentCount?: number;
+  reportCount?: number;
+  userCount?: number;
+}) {
+  return (
+    <aside className="management-sidebar">
+      <nav aria-label="Management sections">
+        <div className="management-sidebar-heading">Management</div>
+        <div className="management-sidebar-section-title">Review</div>
+        <div className="management-sidebar-group">
+          <ManagementSidebarLink
+            active={activeView === "abuse"}
+            badge={queueBadge(abuseCount)}
+            icon={<AlertTriangle size={15} />}
+            label="Publisher abuse"
+            view="abuse"
+          />
+          <ManagementSidebarLink
+            active={activeView === "reports"}
+            badge={queueBadge(reportCount)}
+            icon={<ClipboardList size={15} />}
+            label="Content reports"
+            view="reports"
+          />
+        </div>
+
+        <div className="management-sidebar-section-title">Queues</div>
+        <div className="management-sidebar-group">
+          <ManagementSidebarLink
+            active={activeView === "duplicates"}
+            badge={queueBadge(duplicateCount)}
+            icon={<PackageSearch size={15} />}
+            label="Duplicate candidates"
+            view="duplicates"
+          />
+          <ManagementSidebarLink
+            active={activeView === "recent"}
+            badge={queueBadge(recentCount)}
+            icon={<GitBranch size={15} />}
+            label="Recent pushes"
+            view="recent"
+          />
+        </div>
+
+        <div className="management-sidebar-section-title">Staff tools</div>
+        <div className="management-sidebar-group">
+          {admin ? (
+            <ManagementSidebarLink
+              active={activeView === "users"}
+              badge={userCount === undefined ? undefined : formatWholeNumber(userCount)}
+              icon={<UserRound size={15} />}
+              label="Users"
+              view="users"
+            />
+          ) : null}
+          <ManagementSidebarLink
+            active={activeView === "skills"}
+            icon={<Wrench size={15} />}
+            label="Skills"
+            view="skills"
+          />
+          <ManagementSidebarLink
+            active={activeView === "plugins"}
+            icon={<Plug size={15} />}
+            label="Plugins"
+            view="plugins"
+          />
+        </div>
+      </nav>
+    </aside>
+  );
 }
 
-function formatManualOverrideState(
-  override:
-    | {
-        verdict: string;
-        note: string;
-        reviewerUserId: string;
-        updatedAt: number;
-      }
-    | null
-    | undefined,
-  reviewer?: ManagementUserSummary | null,
-) {
-  if (!override) return "No override.";
-  return `${formatVerdictLabel(override.verdict)} · reviewer ${formatManagementUserLabel(reviewer, override.reviewerUserId)} · updated ${formatTimestamp(
-    override.updatedAt,
-  )} · ${override.note}`;
+function ManagementSidebarLink({
+  active,
+  badge,
+  icon,
+  label,
+  view,
+}: {
+  active: boolean;
+  badge?: string;
+  icon: ReactNode;
+  label: string;
+  view: ManagementView;
+}) {
+  return (
+    <Link
+      className={active ? "management-sidebar-link is-active" : "management-sidebar-link"}
+      to="/management"
+      search={{ view, skill: undefined, plugin: undefined }}
+    >
+      {icon}
+      <span>{label}</span>
+      {badge ? <small>{badge}</small> : null}
+    </Link>
+  );
 }
 
-function formatManagementUserLabel(
-  user: ManagementUserSummary | null | undefined,
-  fallbackId?: string | null,
-) {
-  if (user?.handle?.trim()) return `@${user.handle.trim()}`;
-  if (user?.displayName?.trim()) return user.displayName.trim();
-  if (user?.name?.trim()) return user.name.trim();
-  if (fallbackId?.trim()) return fallbackId.trim();
-  return "unknown user";
+function resolveManagementView(
+  view: ManagementView | undefined,
+  selectedSlug?: string,
+  selectedPluginName?: string,
+): ManagementView {
+  if (selectedSlug) return "skills";
+  if (selectedPluginName) return "plugins";
+  return view ?? "abuse";
 }
 
-function formatAuditActionLabel(action: string, metadata?: unknown) {
-  const record = asAuditMetadataRecord(metadata);
-  if (action === "skill.manual_override.set") {
-    const verdict = typeof record?.verdict === "string" ? record.verdict : "unknown";
-    return `Override set to ${formatVerdictLabel(verdict)}`;
-  }
-  if (action === "skill.manual_override.clear") {
-    return "Override cleared";
-  }
-  if (action === "skill.owner.change") {
-    return "Owner changed";
-  }
-  if (action === "skill.duplicate.set") {
-    return "Duplicate target set";
-  }
-  if (action === "skill.duplicate.clear") {
-    return "Duplicate target cleared";
-  }
-  if (action === "skill.auto_hide") {
-    return "Skill auto-hidden";
-  }
-  if (action === "skill.hard_delete") {
-    return "Skill hard-deleted";
-  }
-  if (action.startsWith("skill.transfer.")) {
-    return `Transfer ${action.slice("skill.transfer.".length).replaceAll("_", " ")}`;
-  }
-  if (action.startsWith("skill.")) {
-    return action.slice("skill.".length).replaceAll(".", " ").replaceAll("_", " ");
-  }
-  return action.replaceAll(".", " ").replaceAll("_", " ");
+const MANAGEMENT_VIEW_LABELS: Record<ManagementView, string> = {
+  overview: "Overview",
+  abuse: "Publisher abuse",
+  reports: "Content reports",
+  users: "Users",
+  publishers: "Publishers",
+  skills: "Skills",
+  plugins: "Plugins",
+  duplicates: "Duplicate candidates",
+  recent: "Recent pushes",
+  audit: "Audit log",
+  system: "System",
+  settings: "Settings",
+};
+
+function formatManagementViewLabel(view: ManagementView) {
+  return MANAGEMENT_VIEW_LABELS[view];
 }
 
-function formatAuditMetadataSummary(action: string, metadata?: unknown) {
-  const record = asAuditMetadataRecord(metadata);
-  if (!record) return null;
-
-  if (action === "skill.manual_override.set") {
-    const note = typeof record.note === "string" ? record.note.trim() : "";
-    if (note) return note;
-    const previousVerdict =
-      typeof record.previousVerdict === "string" ? record.previousVerdict : null;
-    return previousVerdict ? `Previous verdict: ${formatVerdictLabel(previousVerdict)}` : null;
-  }
-
-  if (action === "skill.manual_override.clear") {
-    const note = typeof record.note === "string" ? record.note.trim() : "";
-    if (note) return note;
-    const previousVerdict =
-      typeof record.previousVerdict === "string" ? record.previousVerdict : null;
-    return previousVerdict
-      ? `Previous override verdict: ${formatVerdictLabel(previousVerdict)}`
-      : null;
-  }
-
-  if (action === "skill.owner.change") {
-    const from = typeof record.from === "string" ? record.from : null;
-    const to = typeof record.to === "string" ? record.to : null;
-    if (from || to) return `from ${from ?? "unknown"} to ${to ?? "unknown"}`;
-  }
-
-  if (action === "skill.duplicate.set") {
-    return typeof record.canonicalSlug === "string"
-      ? `Canonical skill: ${record.canonicalSlug}`
-      : null;
-  }
-
-  if (action === "skill.duplicate.clear") {
-    return "Canonical skill cleared.";
-  }
-
-  if (action === "skill.auto_hide") {
-    return typeof record.reportCount === "number" ? `${record.reportCount} active reports` : null;
-  }
-
-  if (action === "skill.hard_delete") {
-    return typeof record.slug === "string" ? `Deleted slug: ${record.slug}` : null;
-  }
-
-  if (typeof record.note === "string" && record.note.trim()) {
-    return record.note.trim();
-  }
-  if (typeof record.reason === "string" && record.reason.trim()) {
-    return record.reason.trim();
-  }
-  return null;
-}
-
-function asAuditMetadataRecord(metadata: unknown) {
-  if (!metadata || typeof metadata !== "object" || Array.isArray(metadata)) return null;
-  return metadata as Record<string, unknown>;
-}
-
-function formatVerdictLabel(verdict: string) {
-  return verdict === "clean" ? "okay" : verdict;
+/** Queue badges only carry signal when there is a backlog; hide 0 and loading. */
+function queueBadge(count: number | undefined) {
+  return count ? formatWholeNumber(count) : undefined;
 }

@@ -61,11 +61,24 @@ on:
         description: Optional source path inside the repository for monorepo package publishes.
         required: false
         type: string
-      clawhub_version:
-        description: Legacy npm CLI version input. Kept for compatibility; the workflow now runs the checked-out source.
+      package_artifact_name:
+        description: Optional Actions artifact name containing a prebuilt ClawPack .tgz to publish.
         required: false
         type: string
-        default: latest
+      package_artifact_path:
+        description: Optional path to the .tgz inside package_artifact_name. Defaults to the only .tgz in the artifact.
+        required: false
+        type: string
+      inspector_artifact_name:
+        description: Artifact name for plugin inspector reports. Set a unique value when calling this workflow from a matrix.
+        required: false
+        type: string
+        default: plugin-inspector-report
+      publish_json_artifact_name:
+        description: Artifact name for the package publish JSON output. Set a unique value when calling this workflow from a matrix.
+        required: false
+        type: string
+        default: clawhub-package-publish-json
     secrets:
       clawhub_token:
         required: false
@@ -87,6 +100,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      actions: read
       contents: read
       id-token: write
     outputs:
@@ -218,7 +232,56 @@ jobs:
           PY
           echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-config.json" >> "$GITHUB_ENV"
 
+      - name: Download prebuilt package artifact
+        if: inputs.package_artifact_name != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.package_artifact_name }}
+          path: ${{ runner.temp }}/prebuilt-package-artifact
+
+      - name: Resolve prebuilt package artifact
+        id: resolve_artifact
+        env:
+          INPUT_PACKAGE_ARTIFACT_NAME: ${{ inputs.package_artifact_name }}
+          INPUT_PACKAGE_ARTIFACT_PATH: ${{ inputs.package_artifact_path }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          artifact_name = os.environ["INPUT_PACKAGE_ARTIFACT_NAME"].strip()
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          if not artifact_name:
+              with output_path.open("a", encoding="utf-8") as fh:
+                  fh.write("package_artifact_path=\n")
+              raise SystemExit(0)
+
+          artifact_root = Path(os.environ["RUNNER_TEMP"]) / "prebuilt-package-artifact"
+          requested_path = os.environ["INPUT_PACKAGE_ARTIFACT_PATH"].strip()
+          if requested_path:
+              candidate = (artifact_root / requested_path).resolve()
+              if artifact_root.resolve() not in candidate.parents and candidate != artifact_root.resolve():
+                  raise SystemExit(f"Prebuilt artifact path escapes downloaded artifact: {requested_path}")
+              if not candidate.is_file():
+                  raise SystemExit(f"Prebuilt package artifact path not found: {requested_path}")
+          else:
+              candidates = sorted(path for path in artifact_root.rglob("*.tgz") if path.is_file())
+              if not candidates:
+                  raise SystemExit(f"Prebuilt package artifact {artifact_name!r} did not contain a .tgz file.")
+              if len(candidates) > 1:
+                  joined = ", ".join(str(path.relative_to(artifact_root)) for path in candidates)
+                  raise SystemExit(
+                      "Prebuilt package artifact contains multiple .tgz files; set package_artifact_path. "
+                      f"Found: {joined}"
+                  )
+              candidate = candidates[0]
+
+          with output_path.open("a", encoding="utf-8") as fh:
+              fh.write(f"package_artifact_path={candidate}\n")
+          PY
+
       - name: Resolve publish command
+        id: resolve_publish
         env:
           INPUT_SOURCE: ${{ inputs.source }}
           INPUT_REF: ${{ inputs.ref }}
@@ -230,9 +293,11 @@ jobs:
           INPUT_SOURCE_COMMIT: ${{ inputs.source_commit }}
           INPUT_SOURCE_REF: ${{ inputs.source_ref }}
           INPUT_SOURCE_PATH: ${{ inputs.source_path }}
+          PREBUILT_PACKAGE_ARTIFACT_PATH: ${{ steps.resolve_artifact.outputs.package_artifact_path }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_EVENT_NAME: ${{ github.event_name }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_REF: ${{ github.ref }}
@@ -243,6 +308,78 @@ jobs:
           import os
           import shlex
           from pathlib import Path
+          from urllib.error import HTTPError
+          from urllib.parse import quote, urlparse
+          from urllib.request import Request, urlopen
+
+          def split_ref_path(value):
+              if not value:
+                  return "", ""
+              if ":" not in value:
+                  return value, ""
+              ref, path = value.split(":", 1)
+              return ref, path.strip("/")
+
+          def github_commit_exists(repo, ref):
+              token = os.environ.get("GITHUB_TOKEN", "").strip()
+              headers = {
+                  "Accept": "application/vnd.github+json",
+                  "User-Agent": "clawhub-package-publish",
+              }
+              if token:
+                  headers["Authorization"] = f"Bearer {token}"
+              request = Request(
+                  f"https://api.github.com/repos/{repo}/commits/{quote(ref, safe='')}",
+                  headers=headers,
+              )
+              try:
+                  with urlopen(request, timeout=10) as response:
+                      return 200 <= response.status < 300
+              except HTTPError as error:
+                  if error.code in (404, 422):
+                      return False
+                  raise
+
+          def resolve_github_url_ref_and_path(repo, kind, segments):
+              min_path_segments = 1 if kind == "blob" else 0
+              max_ref_segments = len(segments) - min_path_segments
+              for ref_segment_count in range(max_ref_segments, 0, -1):
+                  ref = "/".join(segments[:ref_segment_count])
+                  path = "/".join(segments[ref_segment_count:]).strip("/")
+                  if kind == "blob" and not path:
+                      continue
+                  if not github_commit_exists(repo, ref):
+                      continue
+                  if kind == "blob":
+                      path = "/".join(path.split("/")[:-1]).strip("/")
+                  return ref, path
+              raise SystemExit(f"GitHub ref not found in source URL for {repo}")
+
+          def parse_github_source(value):
+              raw = value.strip()
+              if raw.startswith("github:"):
+                  raw = raw[len("github:"):]
+              if raw.startswith("https://") or raw.startswith("http://"):
+                  parsed = urlparse(raw)
+                  if parsed.netloc.lower() != "github.com":
+                      return None
+                  parts = [part for part in parsed.path.strip("/").split("/") if part]
+                  if len(parts) < 2:
+                      return None
+                  repo_name = parts[1][:-4] if parts[1].endswith(".git") else parts[1]
+                  repo = f"{parts[0]}/{repo_name}"
+                  if len(parts) >= 4 and parts[2] in {"tree", "blob"}:
+                      ref, path = resolve_github_url_ref_and_path(repo, parts[2], parts[3:])
+                      return {"repo": repo, "ref": ref, "path": path}
+                  return {"repo": repo, "ref": "", "path": ""}
+
+              source_part, at, ref_part = raw.partition("@")
+              repo_parts = source_part.split("/")
+              if len(repo_parts) != 2 or not repo_parts[0] or not repo_parts[1]:
+                  return None
+              repo_name = repo_parts[1][:-4] if repo_parts[1].endswith(".git") else repo_parts[1]
+              ref, path = split_ref_path(ref_part if at else "")
+              return {"repo": f"{repo_parts[0]}/{repo_name}", "ref": ref, "path": path}
 
           source = os.environ["INPUT_SOURCE"].strip()
           if not source:
@@ -254,6 +391,33 @@ jobs:
           is_local_source = source.startswith(".") or source.startswith("/") or Path(source).exists()
           if ref and "@" not in source and not source.startswith("http") and not is_local_source:
               source = f"{source}@{ref}"
+          source_path = os.environ["INPUT_SOURCE_PATH"].strip()
+          prebuilt_artifact_path = os.environ["PREBUILT_PACKAGE_ARTIFACT_PATH"].strip()
+          inspect_checkout_repository = ""
+          inspect_checkout_ref = ""
+          inspect_local_root = str(Path(os.environ["GITHUB_WORKSPACE"]).resolve())
+          inspect_subdir = source_path
+          if prebuilt_artifact_path:
+              inspect_local_root = str((Path(os.environ["RUNNER_TEMP"]) / "prebuilt-package-inspect").resolve())
+              inspect_subdir = ""
+          elif is_local_source:
+              inspect_local_root = str(Path(source).resolve())
+          else:
+              github_source = parse_github_source(source)
+              source_ref_differs_from_checkout = (
+                  bool(github_source and github_source["ref"])
+                  and github_source["ref"] != os.environ["GITHUB_SHA"]
+              )
+              if github_source and (
+                  github_source["repo"] != os.environ["GITHUB_REPOSITORY"]
+                  or source_ref_differs_from_checkout
+              ):
+                  inspect_checkout_repository = github_source["repo"]
+                  inspect_checkout_ref = github_source["ref"]
+                  inspect_local_root = str((Path(os.environ["GITHUB_WORKSPACE"]) / "clawhub-publish-source").resolve())
+                  inspect_subdir = source_path or github_source["path"]
+              elif github_source:
+                  inspect_subdir = source_path or github_source["path"]
 
           cli_entry = (
               Path(os.environ["GITHUB_WORKSPACE"])
@@ -266,12 +430,13 @@ jobs:
           if not cli_entry.exists():
               raise SystemExit(f"Missing ClawHub CLI entrypoint at {cli_entry}")
 
+          cmd_source = prebuilt_artifact_path or source
           cmd = [
               "bun",
               str(cli_entry),
               "package",
               "publish",
-              source,
+              cmd_source,
               "--site",
               os.environ["INPUT_SITE"],
               "--registry",
@@ -294,7 +459,16 @@ jobs:
           source_repo = os.environ["INPUT_SOURCE_REPO"].strip()
           source_commit = os.environ["INPUT_SOURCE_COMMIT"].strip()
           source_ref = os.environ["INPUT_SOURCE_REF"].strip()
-          source_path = os.environ["INPUT_SOURCE_PATH"].strip()
+          if prebuilt_artifact_path:
+              if not source_repo and not source_commit:
+                  source_repo = os.environ["GITHUB_REPOSITORY"].strip()
+                  source_commit = os.environ["GITHUB_SHA"].strip()
+              elif not source_repo or not source_commit:
+                  raise SystemExit(
+                      "Prebuilt artifact mode requires source_repo and source_commit together when overriding source attribution."
+                  )
+              if not source_ref:
+                  source_ref = os.environ["GITHUB_REF"].strip()
           if source_repo:
               cmd += ["--source-repo", source_repo]
           if source_commit:
@@ -318,7 +492,64 @@ jobs:
           path.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + shell_line + "\n", encoding="utf-8")
           path.chmod(0o755)
           print(shell_line)
+
+          output_path = Path(os.environ["GITHUB_OUTPUT"])
+          with output_path.open("a", encoding="utf-8") as fh:
+              fh.write(f"inspect_checkout_repository={inspect_checkout_repository}\n")
+              fh.write(f"inspect_checkout_ref={inspect_checkout_ref}\n")
+              fh.write(f"inspect_local_root={inspect_local_root}\n")
+              fh.write(f"inspect_subdir={inspect_subdir}\n")
           PY
+
+      - name: Extract prebuilt package artifact for plugin validation
+        if: steps.resolve_artifact.outputs.package_artifact_path != ''
+        env:
+          PREBUILT_PACKAGE_ARTIFACT_PATH: ${{ steps.resolve_artifact.outputs.package_artifact_path }}
+          INSPECT_LOCAL_ROOT: ${{ steps.resolve_publish.outputs.inspect_local_root }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$INSPECT_LOCAL_ROOT"
+          tar -xzf "$PREBUILT_PACKAGE_ARTIFACT_PATH" -C "$INSPECT_LOCAL_ROOT" --strip-components=1
+
+      - name: Checkout publish source for plugin inspector
+        if: steps.resolve_publish.outputs.inspect_checkout_repository != ''
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ steps.resolve_publish.outputs.inspect_checkout_repository }}
+          ref: ${{ steps.resolve_publish.outputs.inspect_checkout_ref }}
+          path: clawhub-publish-source
+
+      - name: Run plugin validation
+        env:
+          INSPECT_LOCAL_ROOT: ${{ steps.resolve_publish.outputs.inspect_local_root }}
+          INSPECT_SUBDIR: ${{ steps.resolve_publish.outputs.inspect_subdir }}
+        run: |
+          set -euo pipefail
+          inspect_root="$(python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["INSPECT_LOCAL_ROOT"]).resolve()
+          subdir = os.environ["INSPECT_SUBDIR"].strip()
+          inspect_root = (root / subdir).resolve() if subdir else root
+          if inspect_root != root and root not in inspect_root.parents:
+              raise SystemExit(f"Inspector source path escapes publish source: {subdir}")
+          print(inspect_root)
+          PY
+          )"
+          if [ ! -f "$inspect_root/package.json" ] && [ ! -f "$inspect_root/openclaw.plugin.json" ]; then
+            echo "::warning::Plugin Inspector skipped because $inspect_root is not a plugin root."
+            exit 0
+          fi
+          bun "$GITHUB_WORKSPACE/clawhub-source/packages/clawhub/src/cli.ts" package validate "$inspect_root" --out "$RUNNER_TEMP/plugin-inspector"
+
+      - name: Upload plugin inspector reports
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ inputs.inspector_artifact_name }}
+          path: ${{ runner.temp }}/plugin-inspector
+          if-no-files-found: ignore
 
       - name: Run package publish
         run: |
@@ -349,6 +580,6 @@ jobs:
       - name: Upload publish JSON artifact
         uses: actions/upload-artifact@v7
         with:
-          name: clawhub-package-publish-json
+          name: ${{ inputs.publish_json_artifact_name }}
           path: ${{ runner.temp }}/package-publish.json
           if-no-files-found: error

@@ -152,7 +152,11 @@ type Captured = {
   allPatches: Array<{ id: string; value: Record<string, unknown> }>;
 };
 
-function buildDb(skill: SkillDoc, captured: Captured) {
+function buildDb(
+  skill: SkillDoc,
+  captured: Captured,
+  existingVersion?: Record<string, unknown> | null,
+) {
   // Trigger-driven code (syncSkillSearchDigestForSkill -> getOwnerPublisher)
   // will ask for publishers via `db.get(ownerPublisherId)`. Return null so
   // getOwnerPublisher falls back to resolving the publisher from the owner user.
@@ -236,7 +240,7 @@ function buildDb(skill: SkillDoc, captured: Captured) {
             if (name !== "by_skill_version") {
               throw new Error(`unexpected skillVersions index ${name}`);
             }
-            return { unique: async () => null };
+            return { unique: async () => existingVersion ?? null };
           },
         };
       }
@@ -384,7 +388,7 @@ function buildDb(skill: SkillDoc, captured: Captured) {
   return db;
 }
 
-function buildCtx(skill: SkillDoc) {
+function buildCtx(skill: SkillDoc, existingVersion?: Record<string, unknown> | null) {
   const captured: Captured = {
     skillPatches: [],
     embeddingInserts: [],
@@ -392,7 +396,7 @@ function buildCtx(skill: SkillDoc) {
     versionInserted: null,
     allPatches: [],
   };
-  const db = buildDb(skill, captured);
+  const db = buildDb(skill, captured, existingVersion);
   const ctx = {
     db,
     scheduler: { runAfter: vi.fn() },
@@ -401,20 +405,18 @@ function buildCtx(skill: SkillDoc) {
 }
 
 describe("skills.insertVersion latest-tag protection", () => {
-  it("ignores stale clawScanNote values when inserting skill versions", async () => {
+  it("tells authors to increment the version when publishing a duplicate skill version", async () => {
     const skill = buildExistingSkill();
-    const { ctx, captured } = buildCtx(skill);
-
-    await insertVersionHandler(
-      ctx as never,
-      buildPublishArgs({
-        clawScanNote: "The shell command is constrained to this skill folder.",
-      }) as never,
-    );
-
-    expect(captured.versionInserted).not.toMatchObject({
-      clawScanNote: expect.anything(),
+    const { ctx, captured } = buildCtx(skill, {
+      _id: "skillVersions:existing",
+      skillId: SKILL_ID,
+      version: "1.0.1",
     });
+
+    await expect(
+      insertVersionHandler(ctx as never, buildPublishArgs({ version: "1.0.1" }) as never),
+    ).rejects.toThrow("Version 1.0.1 already exists. Increment the version number and try again.");
+    expect(captured.versionInserted).toBeNull();
   });
 
   it("promotes latest when publishing a strictly higher version", async () => {

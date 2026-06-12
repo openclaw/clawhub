@@ -1,0 +1,55 @@
+name: Plugin Inspector Pin Bump Dispatch
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - package.json
+      - packages/clawhub/package.json
+      - bun.lock
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  dispatch-plugin-inspector-bulk-scan:
+    name: Dispatch Plugin Inspector bulk scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main commit
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Fetch previous main commit
+        env:
+          BASE_SHA: ${{ github.event.before }}
+        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+
+      - name: Detect pinned Plugin Inspector change
+        id: detect
+        env:
+          BASE_SHA: ${{ github.event.before }}
+          HEAD_SHA: ${{ github.sha }}
+        run: node scripts/github/plugin-inspector-pin-change.mjs --base "$BASE_SHA" --head "$HEAD_SHA"
+
+      - name: Dispatch Plugin Inspector bulk scan
+        if: ${{ steps.detect.outputs.changed == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh workflow run plugin-inspector-bulk-scan.yml \
+            --ref main \
+            -f batch_size=25 \
+            -f dry_run=false \
+            -f dry_run_max_batches=20 \
+            -f source_sha=${{ github.sha }}
+
+      - name: Explain skipped dispatch
+        if: ${{ steps.detect.outputs.changed != 'true' }}
+        env:
+          DISPATCH_SKIP_REASON: ${{ steps.detect.outputs.reason }}
+        run: printf '%s\n' "$DISPATCH_SKIP_REASON"

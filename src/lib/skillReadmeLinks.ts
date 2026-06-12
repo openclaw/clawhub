@@ -64,3 +64,31 @@ export function resolveSkillReadmeHref(
     normalizedPath,
   )}${ownerQuery}${fragment}`;
 }
+
+export function resolveGitHubSkillReadmeHref(href: string, sourceBaseUrl: string) {
+  const safeHref = defaultUrlTransform(href);
+  if (!safeHref) return "";
+
+  const trimmed = safeHref.trim();
+  if (!trimmed || ABSOLUTE_OR_ROOT_HREF.test(trimmed)) return safeHref;
+
+  const { path, fragment } = splitFragment(trimmed);
+  const normalizedPath = normalizeRelativeSkillPath(path);
+  if (!normalizedPath) return "";
+
+  const base = sourceBaseUrl.endsWith("/") ? sourceBaseUrl : `${sourceBaseUrl}/`;
+  return `${base}${encodeGitHubPath(normalizedPath)}${fragment}`;
+}
+
+function encodeGitHubPath(path: string) {
+  return path
+    .split("/")
+    .map((segment) => {
+      try {
+        return encodeURIComponent(decodeURIComponent(segment));
+      } catch {
+        return encodeURIComponent(segment);
+      }
+    })
+    .join("/");
+}

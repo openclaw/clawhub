@@ -66,6 +66,22 @@ describe("public skill mapping", () => {
     });
   });
 
+  it("exposes GitHub-backed skill source fields", () => {
+    const mapped = toPublicSkill(
+      makeSkill({
+        installKind: "github",
+        githubPath: "skills/demo",
+        githubCurrentCommit: "a".repeat(40),
+      }),
+    );
+
+    expect(mapped).toMatchObject({
+      installKind: "github",
+      githubPath: "skills/demo",
+      githubCurrentCommit: "a".repeat(40),
+    });
+  });
+
   it("returns skill when moderationStatus is active", () => {
     const skill = makeSkill({ moderationStatus: "active" });
     expect(toPublicSkill(skill)).not.toBeNull();
@@ -90,6 +106,14 @@ describe("public skill mapping", () => {
     const skill = makeSkill({
       moderationStatus: "active",
       moderationFlags: ["blocked.malware"],
+    });
+    expect(toPublicSkill(skill)).toBeNull();
+  });
+
+  it("filters out skills with a malicious moderation verdict", () => {
+    const skill = makeSkill({
+      moderationStatus: "active",
+      moderationVerdict: "malicious",
     });
     expect(toPublicSkill(skill)).toBeNull();
   });

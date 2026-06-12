@@ -1,6 +1,8 @@
 /* @vitest-environment node */
 
 import { describe, expect, it } from "vitest";
+import { toPublicSkill } from "./public";
+import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
 import {
   digestToHydratableSkill,
   extractDigestFields,
@@ -81,6 +83,10 @@ describe("extractDigestFields", () => {
     expect(digest.statsStars).toBe(5);
     expect(digest.statsInstallsCurrent).toBe(10);
     expect(digest.statsInstallsAllTime).toBe(100);
+    expect(digest.recommendedScore).toBe(
+      computeRecommendationScore({ downloads: 42, installs: 100, stars: 5 }),
+    );
+    expect(digest.recommendedScoreVersion).toBe(RECOMMENDATION_SCORE_VERSION);
     expect(digest.stats).toEqual({
       downloads: 42,
       installsCurrent: 10,
@@ -90,6 +96,7 @@ describe("extractDigestFields", () => {
       comments: 1,
     });
     expect(digest.moderationFlags).toEqual(["flagged.test"]);
+    expect(digest.moderationVerdict).toBeUndefined();
     expect(digest.isSuspicious).toBe(false);
     expect(digest.createdAt).toBe(1000);
     expect(digest.updatedAt).toBe(2000);
@@ -116,6 +123,10 @@ describe("extractDigestFields", () => {
     expect(digest.statsStars).toBe(5);
     expect(digest.statsInstallsCurrent).toBe(10);
     expect(digest.statsInstallsAllTime).toBe(100);
+    expect(digest.recommendedScore).toBe(
+      computeRecommendationScore({ downloads: 42, installs: 100, stars: 5 }),
+    );
+    expect(digest.recommendedScoreVersion).toBe(RECOMMENDATION_SCORE_VERSION);
   });
 
   it("omits large fields not needed for search", () => {
@@ -176,6 +187,14 @@ describe("extractDigestFields", () => {
     const hydratable = digestToHydratableSkill(digest as never);
 
     expect(hydratable.isSuspicious).toBe(true);
+  });
+
+  it("preserves malicious moderation verdicts through digest hydration", () => {
+    const digest = extractDigestFields(makeSkillDoc({ moderationVerdict: "malicious" }) as never);
+    const hydratable = digestToHydratableSkill(digest as never);
+
+    expect(hydratable.moderationVerdict).toBe("malicious");
+    expect(toPublicSkill(hydratable)).toBeNull();
   });
 });
 

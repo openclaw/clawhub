@@ -1,5 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useMutation } from "convex/react";
+import { ShieldAlert, Trash2 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -33,6 +34,7 @@ type SkillOwnershipPanelProps = {
   ownedSkills: OwnedSkillOption[];
   summary?: string | null;
   onSaveSummary?: ((summary: string) => Promise<void>) | null;
+  canDeleteSkill: boolean;
 };
 
 function formatMutationError(error: unknown) {
@@ -101,10 +103,12 @@ export function SkillOwnershipPanel({
   ownedSkills,
   summary,
   onSaveSummary,
+  canDeleteSkill,
 }: SkillOwnershipPanelProps) {
   const navigate = useNavigate();
   const renameOwnedSkill = useMutation(api.skills.renameOwnedSkill);
   const mergeOwnedSkillIntoCanonical = useMutation(api.skills.mergeOwnedSkillIntoCanonical);
+  const setOwnedSkillSoftDeleted = useMutation(api.skills.setOwnedSkillSoftDeleted);
 
   const [renameSlug, setRenameSlug] = useState(slug);
   const [mergeTargetSlug, setMergeTargetSlug] = useState(ownedSkills[0]?.slug ?? "");
@@ -112,6 +116,7 @@ export function SkillOwnershipPanel({
   const [error, setError] = useState<string | null>(null);
   const [confirmRename, setConfirmRename] = useState(false);
   const [confirmMerge, setConfirmMerge] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   // When ownedSkills first arrives from the server, default the merge target to
   // the first available skill so the Select is never blank.
@@ -167,6 +172,30 @@ export function SkillOwnershipPanel({
       });
     } catch (mergeError) {
       setError(formatMutationError(mergeError));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    setIsSubmitting(true);
+    setError(null);
+    try {
+      const result = await setOwnedSkillSoftDeleted({
+        skillId,
+      });
+      const reservedUntil =
+        result && "slugReservedUntil" in result && typeof result.slugReservedUntil === "number"
+          ? new Date(result.slugReservedUntil).toLocaleDateString()
+          : null;
+      toast.success(
+        reservedUntil
+          ? `Deleted ${slug}. Slug reserved until ${reservedUntil}.`
+          : `Deleted ${slug}.`,
+      );
+      await navigate({ to: "/", replace: true });
+    } catch (deleteError) {
+      setError(formatMutationError(deleteError));
     } finally {
       setIsSubmitting(false);
     }
@@ -265,6 +294,35 @@ export function SkillOwnershipPanel({
           </div>
         </SettingsActionRow>
 
+        {canDeleteSkill ? (
+          <div className="mt-8 rounded-[var(--radius-md)] border border-red-300/50 bg-red-500/[0.035] p-4 dark:border-red-500/35 dark:bg-red-500/[0.045] sm:p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300">
+                  <ShieldAlert size={17} aria-hidden="true" />
+                </span>
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-red-700 dark:text-red-300">Delete skill</h3>
+                  <p className="text-sm text-[color:var(--ink-soft)]">
+                    Hide this skill from search, browse, and public install surfaces. The slug stays
+                    reserved for 30 days.
+                  </p>
+                </div>
+              </div>
+              <Button
+                variant="destructive"
+                type="button"
+                className="sm:w-auto"
+                onClick={() => setConfirmDelete(true)}
+                disabled={isSubmitting}
+              >
+                <Trash2 size={16} aria-hidden="true" />
+                Delete skill
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         {error ? (
           <p className="text-sm font-medium text-red-600 dark:text-red-400">{error}</p>
         ) : null}
@@ -321,6 +379,34 @@ export function SkillOwnershipPanel({
               }}
             >
               Merge and hide
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation dialog */}
+      <Dialog open={canDeleteSkill && confirmDelete} onOpenChange={setConfirmDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete skill</DialogTitle>
+            <DialogDescription>
+              Delete <strong>{slug}</strong> from public ClawHub surfaces. The slug stays reserved
+              for 30 days so accidental deletes can be restored.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setConfirmDelete(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              loading={isSubmitting}
+              onClick={() => {
+                void handleDelete().finally(() => setConfirmDelete(false));
+              }}
+            >
+              <Trash2 size={16} aria-hidden="true" />
+              Delete skill
             </Button>
           </DialogFooter>
         </DialogContent>

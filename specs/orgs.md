@@ -40,7 +40,6 @@ migration.
 
 - Skills: yes
 - Packages: yes
-- Souls: probably yes, for consistency, even if lower priority in UI
 
 Avoid split models like "skills stay user-owned, packages become org-owned".
 That creates permanent complexity in auth, routes, and migrations.
@@ -125,7 +124,6 @@ Content tables should move to `ownerPublisherId`.
 Affected tables:
 
 - `skills`
-- `souls`
 - `packages`
 - search digest tables
 - slug/name alias tables
@@ -157,6 +155,17 @@ Use dual fields during rollout:
 - Publisher owners/admins may manage user lifecycle actions for content owned by
   that publisher: rename, transfer into another publisher they administer,
   soft-delete, and restore.
+- Org deletion is owner-only and self-serve from account settings. It marks the
+  org publisher `deletedAt` and `deactivatedAt`, keeps membership/audit/resource
+  rows, and soft-deletes resources owned through that `ownerPublisherId`.
+- Org deletion cascades must hide both skills and packages/plugins from public
+  browse, detail, install, and API surfaces. Skills use
+  `moderationReason = "publisher.deleted"` and packages use
+  `softDeletedReason = "publisher.deleted"`; package publish tokens are revoked
+  when present.
+- Account deletion must hide the user's personal publisher resources and must
+  delete sole-owner org publishers through the same soft-delete cascade.
+  Multi-owner orgs remain active because another owner can still manage them.
 - Platform moderators/admins may still perform moderation actions, but a normal
   publisher-admin restore must not lift scanner, moderator, ban, or security
   hides.
@@ -173,7 +182,6 @@ Use dual fields during rollout:
 
 - Skill uniqueness: `(ownerPublisherId, slug)`
 - Package uniqueness: `(ownerPublisherId, normalizedName)`
-- Soul uniqueness: `(ownerPublisherId, slug)`
 
 ### Legacy compatibility
 
@@ -194,6 +202,10 @@ Handle reservation must move from user-centric to publisher-centric.
 
 Current reservation logic is anchored to rightful owner user id. Replace with
 publisher-aware reservations so org handles are first-class.
+
+Platform route/system handles such as `admin`, `plugins`, and `skills` are not
+owned by users or orgs. They must be blocked by route reservation policy instead
+of represented as empty publisher rows.
 
 ## Routing
 
@@ -419,6 +431,15 @@ necessary. Keep digest-first reads.
 - backfill `ownerPublisherId` from `ownerUserId`
 - backfill digest owner publisher fields
 - backfill alias tables if needed
+
+Production cleanup uses targeted `maintenance:repairLegacyPublisherOwnershipForUser` canaries.
+It patches one active user at a time across `skills` and `packages`, scheduling
+the next phase when requested.
+
+Run with `dryRun: true` and `scheduleNext: false` before apply. The repair must
+skip deleted, deactivated, and purged users. Apply-mode failures should abort
+the current mutation so Convex rolls back any partial owner projection,
+trigger-owned digest/stat, or content updates for that batch.
 
 ### Phase 3: dual read/write
 

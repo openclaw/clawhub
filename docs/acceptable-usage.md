@@ -10,7 +10,7 @@ read_when:
 
 This page describes the kinds of skills and content ClawHub is okay with, and the abuse workflows it will not host.
 
-These rules are intentionally practical. We care most about end-to-end abuse workflows, not just isolated keywords. If a skill is built to evade defenses, abuse platforms, scam people, invade privacy, or enable non-consensual behavior, it does not belong on ClawHub.
+These rules are intentionally practical. We care most about end-to-end abuse workflows, not just isolated keywords. If a skill is built to gain unauthorized access, abuse platforms, scam people, invade privacy, or enable non-consensual behavior, it does not belong on ClawHub.
 
 ## Recent patterns we are explicitly okay with
 
@@ -24,7 +24,7 @@ These rules are intentionally practical. We care most about end-to-end abuse wor
 ## Not okay
 
 - Security-bypass or unauthorized-access workflows.
-  - Examples: auth bypass, account takeover, CAPTCHA bypass, Cloudflare or anti-bot evasion, rate-limit bypass, stealth scraping designed to defeat protections, live call or agent takeover, reusable session theft, auto-approving pairing flows for unapproved users.
+  - Examples: auth bypass, account takeover, rate-limit abuse, live call or agent takeover, reusable session theft, auto-approving pairing flows for unapproved users.
 
 - Platform abuse and ban evasion.
   - Examples: stealth accounts after bans, account warming/farming, fake engagement, karma or follower cultivation, multi-account automation, mass posting, spam bots, marketplace or social automation built to avoid detection.
@@ -32,8 +32,8 @@ These rules are intentionally practical. We care most about end-to-end abuse wor
 - Fraud, scams, and deceptive financial workflows.
   - Examples: fake certificates, fake invoices, deceptive payment flows, scam outreach, fake social proof, tools that enable spending or charging without clear human approval and transparent controls, or synthetic-identity workflows built to create accounts for fraud.
 
-- Privacy-invasive scraping, enrichment, or surveillance.
-  - Examples: scraping contact details at scale for spam, doxxing, stalking, lead extraction paired with unsolicited outreach, covert monitoring, face search or biometric matching used without clear consent, or buying, publishing, downloading, or operationalizing leaked data or breach dumps.
+- Privacy-invasive enrichment or surveillance.
+  - Examples: collecting contact details at scale for spam, doxxing, stalking, lead extraction paired with unsolicited outreach, covert monitoring, face search or biometric matching used without clear consent, or buying, publishing, downloading, or operationalizing leaked data or breach dumps.
 
 - Non-consensual impersonation or deceptive identity manipulation.
   - Examples: face swap, digital twins, fake personas, cloned influencers, or other identity-manipulation tooling used to impersonate or mislead.
@@ -51,14 +51,14 @@ These rules are intentionally practical. We care most about end-to-end abuse wor
 - “Cultivate Reddit/Twitter accounts with undetectable automation.”
 - “Generate professional certificates or invoices for arbitrary use.”
 - “Generate NSFW content with safety checks disabled.”
-- “Scrape leads, enrich contacts, and launch cold outreach at scale.”
+- “Harvest leads, enrich contacts, and launch cold outreach at scale.”
 - “Buy, publish, or download leaked data or breach dumps.”
-- “Bulk-create email or social accounts with synthetic identities or CAPTCHA solving.”
+- “Bulk-create email or social accounts with synthetic identities.”
 
 ## Notes for reviewers
 
 - Context matters. The same topic can be legitimate in a narrow defensive or consent-based setting and unacceptable when packaged as an abuse workflow.
-- We should bias toward action when a skill is clearly optimized for evasion, deception, or non-consensual use.
+- We should bias toward action when a skill is clearly optimized for unauthorized access, platform abuse, deception, or non-consensual use.
 - Repeated uploads in these categories are grounds for hiding content and banning the account.
 
 ## Enforcement

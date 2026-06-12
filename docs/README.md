@@ -28,16 +28,16 @@ Reading order:
 4. `docs/publishing.md`: owner-scoped skill/plugin publishing flow.
 5. `docs/cli.md`: ClawHub CLI reference.
 6. `docs/skill-format.md`: skill bundle metadata and package shape.
-7. `docs/soul-format.md`: SOUL.md bundle format.
-8. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
-9. `docs/telemetry.md`: what `clawhub sync` reports and how to opt out.
-10. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
+7. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
+8. `docs/telemetry.md`: install telemetry and how to opt out.
+9. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
 
 Policy, API, and trust docs:
 
 - `docs/acceptable-usage.md`: marketplace policy and enforcement boundaries.
 - `docs/api.md`: public REST API overview.
 - `docs/http-api.md`: detailed HTTP API reference.
+- `docs/security.md`: reporting ClawHub security issues and vulnerability disclosure policy.
 - `docs/security-audits.md`: user-facing security audit status, risk levels, findings, and interpretation.
 - `docs/moderation.md`: reports, moderation holds, hidden listings, bans, and account standing.
 

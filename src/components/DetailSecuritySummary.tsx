@@ -7,6 +7,7 @@ type DetailSecuritySummaryProps = {
   auditHref: string;
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
+  githubScanStatus?: string | null;
   suppressScanResults?: boolean;
 };
 
@@ -17,13 +18,12 @@ function auditVerdictMeterLevel(status: string) {
     case "warn":
     case "warning":
     case "suspicious":
-      return 2;
     case "review":
-      return 3;
+      return 2;
     case "benign":
     case "clean":
     case "cleared":
-      return 4;
+      return 3;
     default:
       return 0;
   }
@@ -33,13 +33,17 @@ export function DetailSecuritySummary({
   auditHref,
   vtAnalysis,
   llmAnalysis,
+  githubScanStatus,
   suppressScanResults = false,
 }: DetailSecuritySummaryProps) {
-  const auditVerdict = aggregateAuditVerdict({
-    vtAnalysis,
-    llmAnalysis,
-    suppressScanResults,
-  });
+  const hasVersionScanResult = Boolean(vtAnalysis || llmAnalysis);
+  const auditVerdict = hasVersionScanResult
+    ? aggregateAuditVerdict({
+        vtAnalysis,
+        llmAnalysis,
+        suppressScanResults,
+      })
+    : (githubScanStatus ?? "pending");
   const auditVerdictInfo = getScanStatusInfo(auditVerdict);
   const meterLevel = auditVerdictMeterLevel(auditVerdict);
   return (
@@ -49,7 +53,6 @@ export function DetailSecuritySummary({
           {auditVerdictInfo.label}
         </span>
         <div className="security-audit-meter" data-level={meterLevel} aria-hidden="true">
-          <span />
           <span />
           <span />
           <span />
