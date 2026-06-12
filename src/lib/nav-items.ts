@@ -66,8 +66,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 export const SECONDARY_NAV_ITEMS: NavItem[] = [
   {
     label: "Docs",
-    href: "/docs",
-    activePathPrefixes: ["/docs"],
+    href: "https://docs.openclaw.ai/clawhub/",
   },
 ];
 

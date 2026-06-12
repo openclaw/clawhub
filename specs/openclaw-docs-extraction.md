@@ -10,7 +10,7 @@ Source audited for this slice:
 
 ## Moved into ClawHub docs
 
-Canonical product and registry material now lives in `docs/clawhub.md`:
+Canonical product and registry material now lives in `docs/index.md`:
 
 - What ClawHub is: public registry for OpenClaw skills and plugins.
 - Native OpenClaw search/install/update examples for skills and plugins.
@@ -21,7 +21,7 @@ Canonical product and registry material now lives in `docs/clawhub.md`:
 
 ## Summarize or link from OpenClaw docs
 
-These OpenClaw docs should eventually point to the ClawHub docs tab rather than
+These OpenClaw docs should eventually point to `https://clawhub.ai/docs` rather than
 restate the whole registry guide:
 
 - `docs/tools/clawhub.md`: keep as a concise bridge to ClawHub docs plus OpenClaw-native install examples.

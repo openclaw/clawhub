@@ -38,7 +38,7 @@ describe("React Email templates", () => {
 
     expect(html).toContain("ClawHub");
     expect(html).toContain("OpenClaw");
-    expect(html).toContain("https://clawhub.ai/docs");
+    expect(html).toContain("https://docs.openclaw.ai/clawhub/");
     expect(text).toContain("ClawHub");
   });
 });

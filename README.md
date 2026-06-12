@@ -19,7 +19,7 @@ It also now exposes a native **OpenClaw package catalog** for code plugins and b
 <p align="center">
   <a href="https://clawhub.ai">ClawHub</a> ·
   <a href="VISION.md">Vision</a> ·
-  <a href="docs/clawhub.md">Docs</a> ·
+  <a href="docs/index.md">Docs</a> ·
   <a href="CONTRIBUTING.md">Contributing</a> ·
   <a href="https://discord.gg/clawd">Discord</a>
 </p>

@@ -6,38 +6,36 @@ read_when:
 
 # Mintlify
 
-Goal: publish `docs/` as a browsable docs site (nice UX for OSS users).
+Goal: publish `docs/` as the browsable ClawHub docs site at
+`https://clawhub.ai/docs`.
 
-This repo does **not** include Mintlify config yet (`mint.json` missing).
+`docs/docs.json` is the Mintlify configuration. The repo keeps public docs,
+navigation, branding, and docs assets inside `docs/` so the Mintlify project can
+publish that directory directly.
 
-## Minimal setup
+## Local workflow
 
-1. Install Mintlify CLI (per Mintlify docs).
+- Preview locally with `bun run docs:dev`.
+- Validate the Mintlify project with `bun run docs:check`.
+- Do not generate or commit `public/docs`; ClawHub docs are served by Mintlify,
+  not by the TanStack/Vite app build.
 
-2. Add a `mint.json` at repo root that points to `docs/` pages.
+## Production setup
 
-Example (starter):
-
-```json
-{
-  "name": "ClawHub",
-  "logo": "public/logo.svg",
-  "navigation": [
-    { "group": "Start", "pages": ["docs/README", "docs/quickstart"] },
-    { "group": "Concepts", "pages": ["docs/architecture", "docs/skill-format", "docs/telemetry"] },
-    { "group": "Reference", "pages": ["docs/cli", "docs/http-api", "docs/auth", "docs/deploy"] }
-  ]
-}
-```
+- Connect the Mintlify project to this repository's `docs/` directory.
+- Configure production hosting so canonical docs resolve under
+  `https://clawhub.ai/docs`.
+- Keep `specs/` unpublished; only the public user/operator docs in `docs/`
+  belong in the docs site.
 
 Notes:
 
-- Mintlify usually wants page paths without extension; keep files as `.md`.
-- If you prefer Mintlify conventions, rename to `.mdx` later (optional).
+- Keep page paths in `docs/docs.json` extensionless.
+- Keep source files as `.md` unless a page needs MDX-only behavior.
 
 ## Recommended “docs UX” additions
 
-- Add an “Overview” page (use `docs/README.md`).
+- Use `docs/index.md` as the Overview page.
 - Keep “Quickstart” copy/paste friendly.
 - Provide CLI + HTTP API reference pages (done here).
 - Add a Troubleshooting page for common setup failures.
