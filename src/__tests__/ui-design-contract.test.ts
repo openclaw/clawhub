@@ -68,25 +68,31 @@ describe("restored UI design contract", () => {
   const styles = () => read("src/styles.css");
   const theme = () => read("src/lib/theme.ts");
 
-  it("requires the restored two-row header, full-width search, public nav, and theme control", () => {
+  it("requires the single-row header, full-width search, public nav, and profile theme control", () => {
     const headerSource = header();
     const navSource = navItems();
     const css = styles();
 
     expect(headerSource).toContain("Row 1: Brand + Search + Actions");
     expect(headerSource).toContain('className="navbar-top"');
+    expect(headerSource).toContain('className="navbar-top-links"');
     expect(headerSource).toContain('className="navbar-search-wrap"');
-    expect(headerSource).toContain('className="theme-mode-toggle"');
+    expect(headerSource).toContain('className="user-dropdown-section-label"');
+    expect(headerSource).toContain('className="user-dropdown-theme-item"');
+    expect(headerSource).not.toContain('className="theme-mode-toggle"');
     expect(headerSource).toContain('className="github-sign-in-button"');
     expect(headerSource).toContain('className="sign-in-full-copy"');
     expect(headerSource).toContain('className="sign-in-compact-copy"');
     expect(headerSource).toContain("Search skills and plugins");
-    expect(headerSource).toContain('className="navbar-tabs-primary"');
-    expect(headerSource).toContain('className="navbar-tabs-secondary"');
+    expect(headerSource).not.toContain('className="navbar-tabs-primary"');
+    expect(headerSource).not.toContain('className="navbar-tabs-secondary"');
 
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
-    expect(navSource).toContain('label: "Publishers"');
+    expect(navSource).not.toContain('label: "Publishers"');
     expect(navSource).toContain('label: "Docs"');
+    expect(navSource).toContain('href: "/docs"');
+    expect(navSource).not.toContain('icon: "wrench"');
+    expect(navSource).not.toContain('icon: "plug"');
     expect(navSource).not.toContain('label: "About"');
     expect(navSource).not.toContain('label: "Stars"');
     expect(navSource).not.toContain('label: "Management"');
@@ -95,16 +101,20 @@ describe("restored UI design contract", () => {
     expect(headerShell).toContain("max-width: var(--page-max)");
     expect(headerShell).toContain("padding: 0 var(--space-5)");
 
-    const themeControl = cssRule(css, ".theme-mode-toggle");
-    expect(themeControl).toContain("min-width: 124px");
-    expect(themeControl).toContain("min-height: 32px");
-    expect(themeControl).toContain("border: 1px solid var(--line)");
+    const topLinks = cssRule(css, ".navbar-top-links");
+    expect(topLinks).toContain("display: inline-flex");
+    const topRow = cssRule(css, ".navbar-top");
+    expect(topRow).toContain(
+      "grid-template-columns: max-content max-content minmax(220px, 1fr) auto",
+    );
+    const themeItem = cssRule(css, ".user-dropdown-theme-item");
+    expect(themeItem).toContain("min-width: 220px");
     expect(css).toContain("--r-btn: var(--r-sm)");
 
     const compact = cssMediaContaining(css, "(max-width: 760px)", [
       "grid-template-columns: 40px minmax(0, 1fr) 40px",
       ".navbar-search {\n    display: flex;",
-      ".navbar-tabs {\n    display: none;",
+      ".navbar-top-links {\n    display: none;",
       ".nav-mobile {\n    display: inline-flex;",
     ]);
     expect(compact).not.toContain(".navbar-search {\n    display: none;");

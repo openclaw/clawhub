@@ -18,7 +18,7 @@ const resolveHandler = (
   >
 )._handler;
 
-function chain<T>(value: T) {
+function chain(value: unknown) {
   const q = {
     eq: vi.fn(() => q),
   };

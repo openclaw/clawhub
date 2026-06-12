@@ -130,8 +130,24 @@ vi.mock("../lib/useUnifiedSearch", () => ({
 
 vi.mock("../components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div className={className}>{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    className,
+    onClick,
+    ...props
+  }: {
+    children: ReactNode;
+    className?: string;
+    onClick?: () => void;
+    "data-status"?: string;
+  }) => (
+    <div className={className} data-status={props["data-status"]} onClick={onClick}>
+      {children}
+    </div>
+  ),
   DropdownMenuSeparator: () => <hr />,
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -198,39 +214,64 @@ describe("Header", () => {
     signInMock.mockResolvedValue({ signingIn: true });
   });
 
-  it("renders restored desktop nav rows and segmented theme controls", () => {
+  it("renders text-only content links in the top navbar", () => {
     setModeMock.mockClear();
 
     render(<Header />);
 
-    expect(document.querySelector(".navbar-tabs")).toBeTruthy();
-    expect(document.querySelector(".navbar-tabs-secondary")).toBeTruthy();
-    expect(document.querySelector(".theme-mode-toggle")).toBeTruthy();
-    expect(screen.getByLabelText("Theme mode").className).toContain("theme-mode-toggle");
-    expect(screen.getByRole("button", { name: /Cycle theme mode/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "System theme" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Light theme" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Dark theme" })).toBeTruthy();
+    const topNav = screen.getByRole("navigation", { name: "Primary navigation" });
+    expect(document.querySelector(".navbar-top-links")).toBeTruthy();
+    expect(document.querySelector(".navbar-tabs")).toBeNull();
+    expect(document.querySelector(".theme-mode-toggle")).toBeNull();
+    expect(within(topNav).getByText("Skills").closest("a")?.querySelector("svg")).toBeNull();
+    expect(within(topNav).getByText("Plugins").closest("a")?.querySelector("svg")).toBeNull();
+    expect(within(topNav).getByText("Docs").closest("a")?.getAttribute("href")).toBe("/docs");
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
-    expect(screen.getAllByText("Publishers")).toHaveLength(1);
+    expect(screen.queryByText("Publishers")).toBeNull();
     expect(screen.getAllByText("Docs")).toHaveLength(1);
     expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
     expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
-    expect(setModeMock).toHaveBeenCalledWith("light");
-
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
     expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
-    expect(screen.getAllByText("Publishers")).toHaveLength(2);
+    expect(screen.queryByText("Publishers")).toBeNull();
     expect(screen.getAllByText("Docs")).toHaveLength(2);
     expect(screen.queryByText("About")).toBeNull();
+  });
+
+  it("moves theme mode controls into the signed-in profile menu", () => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+
+    render(<Header />);
+
+    expect(document.querySelector(".theme-mode-toggle")).toBeNull();
+    expect(screen.getByText("Theme")).toBeTruthy();
+    expect(
+      screen
+        .getByText("System theme")
+        .closest(".user-dropdown-theme-item")
+        ?.getAttribute("data-status"),
+    ).toBe("active");
+    fireEvent.click(screen.getByText("Light theme").closest(".user-dropdown-theme-item")!);
+    expect(setModeMock).toHaveBeenCalledWith("light");
+    fireEvent.click(screen.getByText("Dark theme").closest(".user-dropdown-theme-item")!);
+    expect(setModeMock).toHaveBeenCalledWith("dark");
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {
@@ -425,7 +466,7 @@ describe("Header", () => {
       .filter((label): label is string => Boolean(label));
 
     expect(labels.slice(0, 2)).toEqual(["Home", "Skills"]);
-    expect(labels.slice(3, 5)).toEqual(["Publishers", "Docs"]);
+    expect(labels.slice(3, 4)).toEqual(["Docs"]);
   });
 
   it("links starred skills from the signed-in avatar menu", () => {

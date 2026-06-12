@@ -1,0 +1,70 @@
+{
+  "$schema": "https://mintlify.com/docs.json",
+  "name": "ClawHub",
+  "description": "Public documentation for finding, installing, publishing, and operating ClawHub skills and plugins.",
+  "home": "clawhub",
+  "favicon": "/assets/pixel-lobster.svg",
+  "logo": {
+    "light": "/assets/pixel-lobster.svg",
+    "dark": "/assets/pixel-lobster.svg"
+  },
+  "colors": {
+    "primary": "#FF8A5F"
+  },
+  "chat": {
+    "name": "Molty",
+    "label": "ClawHub docs assistant"
+  },
+  "headerLinks": [
+    {
+      "label": "ClawHub",
+      "href": "https://clawhub.ai",
+      "icon": "globe"
+    }
+  ],
+  "search": {
+    "placeholder": "Search ClawHub docs...",
+    "suggestions": ["Install a skill", "Publish a package", "Use API tokens", "Run security audits"]
+  },
+  "navigation": {
+    "languages": [
+      {
+        "language": "en",
+        "tabs": [
+          {
+            "tab": "Start",
+            "groups": [
+              {
+                "group": "Overview",
+                "pages": ["clawhub", "quickstart", "how-it-works"]
+              }
+            ]
+          },
+          {
+            "tab": "Use",
+            "groups": [
+              {
+                "group": "Install and Publish",
+                "pages": ["cli", "publishing", "skill-format", "plugin-validation-fixes"]
+              },
+              {
+                "group": "Reference",
+                "pages": ["auth", "api", "http-api", "telemetry", "troubleshooting"]
+              }
+            ]
+          },
+          {
+            "tab": "Trust",
+            "groups": [
+              {
+                "group": "Safety and Operations",
+                "pages": ["security", "security-audits", "moderation", "acceptable-usage"]
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "redirects": []
+}
