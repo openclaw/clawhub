@@ -11585,7 +11585,6 @@ export const listByDateRange = internalQuery({
           indexName: "by_active_updated",
           maxIndexKeyLength: 2,
           eqPrefix: [undefined],
-          allowAnonymousCursor: true,
         })
       : null;
     if (args.cursor && !decodedCursor) {

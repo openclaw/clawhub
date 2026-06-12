@@ -150,7 +150,7 @@ Invalid `sort` values return `400`.
 
 Notes:
 
-- `recommended` ranks by stars, then all-time installs, then `updatedAt`.
+- `recommended` ranks by the current recommendation score, then `updatedAt`.
 - `trending` ranks by installs in the last 7 days (telemetry-based).
 - `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
