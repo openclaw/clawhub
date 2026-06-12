@@ -345,6 +345,30 @@ describe("SkillsIndex", () => {
     expect(screen.getByRole("radio", { name: "Featured" })).toBeTruthy();
   });
 
+  it("does not treat category keywords typed in search as category filters", async () => {
+    const actionFn = vi.fn().mockResolvedValue([]);
+    convexReactMocks.useAction.mockReturnValue(actionFn);
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+
+    const input = screen.getByPlaceholderText("Search skills...");
+    await act(async () => {
+      fireEvent.change(input, { target: { value: "test" } });
+      await vi.runAllTimersAsync();
+    });
+
+    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("radio", { name: "Dev Tools" }).getAttribute("aria-checked")).toBe(
+      "false",
+    );
+    expect(actionFn).toHaveBeenCalledWith(
+      expect.objectContaining({
+        query: "test",
+      }),
+    );
+  });
+
   it("switches implicit recommended sorting back to relevance when entering search", async () => {
     searchMock = { sort: "downloads" };
     vi.useFakeTimers();
