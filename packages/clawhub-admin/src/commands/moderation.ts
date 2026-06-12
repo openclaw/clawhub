@@ -276,7 +276,7 @@ export async function cmdRecoverPersonalPublisher(
     } else {
       const migration = parsed.resourceOwnerMigration;
       console.log(
-        `Owner rows: ${migration.skills} skills, ${migration.skillSlugAliases} skill aliases, ${migration.packages} packages, ${migration.packageInspectorWarnings} package warnings (${migration.githubSourcesChecked} GitHub sources checked; limit ${migration.limitPerTable}/table).`,
+        `Owner rows: ${migration.skills} skills, ${migration.skillSlugAliases} skill aliases, ${migration.packages} packages, ${migration.packageInspectorWarnings} package warnings, ${migration.handleReservations} handle reservations (${migration.githubSourcesChecked} GitHub sources checked; limit ${migration.limitPerTable}/table).`,
       );
       if (dryRun) console.log("Re-run with --apply --verified --yes to write this recovery.");
     }

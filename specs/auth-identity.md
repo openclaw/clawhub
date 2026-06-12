@@ -42,6 +42,9 @@ continuity verification, moves the previous user's handle/personal-publisher
 pointer out of the way, links the publisher to the verified replacement user,
 updates every bounded legacy `ownerUserId` row that remains authoritative for the
 recovered publisher's direct-owner workflows, and writes an audit log. Recovery
+must also transfer any active protected-handle reservation for the recovered
+handle to the replacement user so subsequent profile synchronization cannot
+reassert the former user's authority over that handle. Recovery
 must fail closed if the replacement user's current personal publisher has content
 or GitHub source state that would be orphaned by the handoff. It must also fail
 closed if recovered publisher resources are already attributed to a third user,
