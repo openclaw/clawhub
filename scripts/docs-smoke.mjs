@@ -38,10 +38,7 @@ assert(
   "README.md should not publish as a docs page",
 );
 assert(!fs.existsSync(path.join(site, "specs")), "specs should not publish under /docs");
-assert(
-  fs.existsSync(path.join(site, "assets", "pixel-lobster.svg")),
-  "docs assets should be copied",
-);
+assert(fs.existsSync(path.join(site, "assets", "clawd-logo.png")), "docs assets should be copied");
 assert(quickstart.includes("Quickstart"), "quickstart child route should render");
 assert(index.includes("Ask Molty"), "Ask Molty widget should render");
 assert(index.includes("ClawHub docs assistant"), "Ask Molty should use the ClawHub chat label");

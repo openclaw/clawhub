@@ -14,7 +14,7 @@ describe("docs-builder", () => {
   it("stages ClawHub docs in the shape expected by openclaw/docs", () => {
     const entries = planDocsStage([
       "README.md",
-      "assets/pixel-lobster.svg",
+      "assets/clawd-logo.png",
       "clawhub.md",
       "docs.json",
       "quickstart.md",
@@ -24,8 +24,8 @@ describe("docs-builder", () => {
     expect(entries).toEqual([
       {
         injectSourcePath: null,
-        sourceRel: "assets/pixel-lobster.svg",
-        stageRel: "assets/pixel-lobster.svg",
+        sourceRel: "assets/clawd-logo.png",
+        stageRel: "assets/clawd-logo.png",
       },
       { injectSourcePath: null, sourceRel: "docs.json", stageRel: "docs.json" },
       {
