@@ -12,7 +12,7 @@
         "@fontsource/manrope": "5.2.8",
         "@fontsource/noto-sans-sc": "5.2.9",
         "@monaco-editor/react": "4.7.0",
-        "@openclaw/plugin-inspector": "0.3.12",
+        "@openclaw/plugin-inspector": "0.3.15",
         "@radix-ui/react-avatar": "1.1.12",
         "@radix-ui/react-dialog": "1.1.16",
         "@radix-ui/react-dropdown-menu": "2.1.17",
@@ -95,7 +95,7 @@
       },
       "dependencies": {
         "@clack/prompts": "1.5.1",
-        "@openclaw/plugin-inspector": "0.3.12",
+        "@openclaw/plugin-inspector": "0.3.15",
         "arktype": "2.2.0",
         "commander": "15.0.0",
         "fflate": "0.8.3",
@@ -408,7 +408,7 @@
 
     "@openclaw/clawhub-admin": ["@openclaw/clawhub-admin@workspace:packages/clawhub-admin"],
 
-    "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.12", "", { "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-Odj7qfvaz9ZC7BUGvbB5i9nSnhaXWn+DVl1a/D+hHpSwq8NAhWNs9j0XKSZPZUVRi8MT67tiNeIkXuBJ3hc8Aw=="],
+    "@openclaw/plugin-inspector": ["@openclaw/plugin-inspector@0.3.15", "", { "bin": { "plugin-inspector": "src/cli.js" } }, "sha512-zg7hBRHE3BTcRcaD3B5RK9y2Tme2u6aLK5qpDZXx8eJ91y7yXOYEH48gqZl5qZytQJ3SN3bxGyjr9f0iRPqqTg=="],
 
     "@oslojs/asn1": ["@oslojs/asn1@1.0.0", "", { "dependencies": { "@oslojs/binary": "1.0.0" } }, "sha512-zw/wn0sj0j0QKbIXfIlnEcTviaCzYOY3V5rAyjR6YtOByFtJiT574+8p9Wlach0lZH9fddD4yb9laEAIl4vXQA=="],
 
