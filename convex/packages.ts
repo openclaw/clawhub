@@ -329,6 +329,16 @@ function getScopedPackageMissingPublisherMessage(params: {
   return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub has no "@${params.scopedOwnerHandle}" publisher. Create it with "clawhub publisher create ${params.scopedOwnerHandle}".`;
 }
 
+function getScopedPackagePublishAccessMessage(params: {
+  scopedOwnerHandle: string;
+  packageName: string;
+}) {
+  return [
+    `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but your account does not have publish rights to the "@${params.scopedOwnerHandle}" ClawHub organization.`,
+    "Create the matching ClawHub organization if it does not exist, get publish rights to that organization, or rename package.json name to use an organization scope you control.",
+  ].join("\n\n");
+}
+
 function isTrustedOpenClawPluginPackage(params: {
   family: PackageFamily;
   normalizedName: string;
@@ -6214,7 +6224,7 @@ async function publishPackageImpl(
         }
         if (/forbidden|publish access/i.test(error.message)) {
           throw new ConvexError(
-            `This package name uses the "@${scopedOwnerHandle}" namespace, but you do not have publish access to that publisher. Ask an owner or admin of "@${scopedOwnerHandle}" to add you.`,
+            getScopedPackagePublishAccessMessage({ scopedOwnerHandle, packageName: name }),
           );
         }
       }

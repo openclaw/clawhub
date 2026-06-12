@@ -8111,6 +8111,56 @@ describe("packages public queries", () => {
     ).rejects.toThrow('Create it with "clawhub publisher create example.tools".');
   });
 
+  it("explains scoped package publish access failures from package.json", async () => {
+    const runMutation = vi.fn(async () => {
+      throw new Error('Forbidden: you do not have publish access to publisher "@openclaw"');
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:steipete",
+          handle: "steipete",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:steipete",
+          handle: "steipete",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        }),
+      runMutation,
+      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(),
+      },
+    };
+
+    await expect(
+      publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:steipete",
+        payload: {
+          name: "@openclaw/discord",
+          displayName: "Discord",
+          family: "bundle-plugin",
+          version: "2026.5.3-beta.2",
+          changelog: "beta",
+          bundle: { hostTargets: ["desktop"] },
+          files: [],
+        },
+      }),
+    ).rejects.toThrow(
+      [
+        'Cannot publish @openclaw/discord: package.json name is scoped to "@openclaw", but your account does not have publish rights to the "@openclaw" ClawHub organization.',
+        "Create the matching ClawHub organization if it does not exist, get publish rights to that organization, or rename package.json name to use an organization scope you control.",
+      ].join("\n\n"),
+    );
+  });
+
   it("rejects scoped package publishes when --owner conflicts with the package scope", async () => {
     const runMutation = vi.fn();
     const ctx = {
