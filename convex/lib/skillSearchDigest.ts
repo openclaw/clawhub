@@ -2,7 +2,7 @@ import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
 import { getOwnerPublisher } from "./publishers";
-import { computeRecommendationScore } from "./recommendationScore";
+import { computeRecommendationScore, RECOMMENDATION_SCORE_VERSION } from "./recommendationScore";
 import { tokenize } from "./searchText";
 import { readCanonicalStat } from "./skillStats";
 
@@ -63,6 +63,7 @@ export type SkillSearchDigestFields = Pick<Doc<"skills">, (typeof SHARED_KEYS)[n
   ownerDisplayName?: string;
   ownerImage?: string;
   recommendedScore?: number;
+  recommendedScoreVersion?: number;
 };
 
 /** Pick the subset of fields from a full skill doc needed for the digest. */
@@ -82,6 +83,7 @@ export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFiel
       installs: statsInstallsAllTime,
       stars: statsStars,
     }),
+    recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
     skillId: skill._id,
     normalizedSlug: normalizeSkillSearchText(skill.slug),
     normalizedSlugFirstToken: getFirstSearchToken(skill.slug),

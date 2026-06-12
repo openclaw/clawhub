@@ -1067,6 +1067,7 @@ const skillSearchDigest = defineTable({
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
   recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
   moderationStatus: moderationStatusValidator,
   moderationFlags: v.optional(v.array(v.string())),
@@ -1101,6 +1102,7 @@ const skillSearchDigest = defineTable({
     "updatedAt",
   ])
   .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
+  .index("by_active_recommended_score_version", ["softDeletedAt", "recommendedScoreVersion"])
   .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
   .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
   .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
@@ -1147,6 +1149,11 @@ const skillSearchDigest = defineTable({
     "recommendedScore",
     "updatedAt",
   ])
+  .index("by_nonsuspicious_recommended_score_version", [
+    "softDeletedAt",
+    "isSuspicious",
+    "recommendedScoreVersion",
+  ])
   .searchIndex("search_by_display_name", {
     searchField: "displayName",
     filterFields: ["softDeletedAt", "isSuspicious"],
@@ -1189,6 +1196,7 @@ const packages = defineTable({
   scanStatus: packageScanStatusValidator,
   stats: packageStatsValidator,
   recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
   reportCount: v.optional(v.number()),
   lastReportedAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
@@ -1245,11 +1253,17 @@ const packages = defineTable({
     "updatedAt",
   ])
   .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
+  .index("by_active_recommended_score_version", ["softDeletedAt", "recommendedScoreVersion"])
   .index("by_active_family_recommended_score", [
     "softDeletedAt",
     "family",
     "recommendedScore",
     "updatedAt",
+  ])
+  .index("by_active_family_recommended_score_version", [
+    "softDeletedAt",
+    "family",
+    "recommendedScoreVersion",
   ]);
 
 const packageReleases = defineTable({

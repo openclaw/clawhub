@@ -3,7 +3,10 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
-import { computeRecommendationScore } from "./lib/recommendationScore";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import {
   backfillLatestPackageScanStatusInternal,
   backfillPackageReleaseScansInternal,
@@ -1100,6 +1103,7 @@ function makeDigestCtx(options: {
                   let lowerBound = "";
                   let upperBound = "";
                   const filters: Array<{ field: string; value: unknown }> = [];
+                  const rangeFilters: Array<{ field: string; value: number }> = [];
                   const queryBuilder = {
                     eq: (field: string, value: unknown) => {
                       filters.push({ field, value });
@@ -1110,8 +1114,11 @@ function makeDigestCtx(options: {
                       lowerBound = value;
                       return queryBuilder;
                     },
-                    lt: (_field: string, value: string) => {
-                      upperBound = value;
+                    lt: (field: string, value: string | number) => {
+                      upperBound = typeof value === "string" ? value : "";
+                      if (typeof value === "number") {
+                        rangeFilters.push({ field, value });
+                      }
                       return queryBuilder;
                     },
                   };
@@ -1122,21 +1129,26 @@ function makeDigestCtx(options: {
                     indexName === "by_active_recommended_rank" ||
                     indexName === "by_active_family_recommended_rank" ||
                     indexName === "by_active_recommended_score" ||
-                    indexName === "by_active_family_recommended_score"
+                    indexName === "by_active_family_recommended_score" ||
+                    indexName === "by_active_recommended_score_version" ||
+                    indexName === "by_active_family_recommended_score_version"
                   ) {
                     indexFilters.push({ indexName, filters });
                     const indexedQuery = withIndex(table, indexName);
                     return {
                       ...indexedQuery,
-                      first: vi
-                        .fn()
-                        .mockResolvedValue(
-                          (rowsByTable.get(table) ?? []).find((row) =>
+                      first: vi.fn().mockResolvedValue(
+                        (rowsByTable.get(table) ?? []).find(
+                          (row) =>
                             filters.every(
                               ({ field, value }) => readTestField(row, field) === value,
-                            ),
-                          ) ?? null,
-                        ),
+                            ) &&
+                            rangeFilters.every(({ field, value }) => {
+                              const current = readTestField(row, field);
+                              return typeof current === "number" && current < value;
+                            }),
+                        ) ?? null,
+                      ),
                     };
                   }
                   if (indexName !== "by_name" && indexName !== "by_runtime_id") {
@@ -2296,19 +2308,6 @@ describe("packages public queries", () => {
         {
           page: [
             makePackageDoc({
-              _id: "packages:code-plugin-downloaded",
-              name: "code-plugin-downloaded",
-              normalizedName: "code-plugin-downloaded",
-              displayName: "Code Plugin Downloaded",
-              family: "code-plugin",
-              stats: { downloads: 43_080, installs: 2, stars: 0, versions: 1 },
-              recommendedScore: computeRecommendationScore({
-                downloads: 43_080,
-                installs: 2,
-                stars: 0,
-              }),
-            }),
-            makePackageDoc({
               _id: "packages:code-plugin-installed",
               name: "code-plugin-installed",
               normalizedName: "code-plugin-installed",
@@ -2320,6 +2319,21 @@ describe("packages public queries", () => {
                 installs: 74,
                 stars: 0,
               }),
+              recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+            }),
+            makePackageDoc({
+              _id: "packages:code-plugin-downloaded",
+              name: "code-plugin-downloaded",
+              normalizedName: "code-plugin-downloaded",
+              displayName: "Code Plugin Downloaded",
+              family: "code-plugin",
+              stats: { downloads: 43_080, installs: 2, stars: 0, versions: 1 },
+              recommendedScore: computeRecommendationScore({
+                downloads: 43_080,
+                installs: 2,
+                stars: 0,
+              }),
+              recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
             }),
           ],
           isDone: true,
@@ -2334,11 +2348,13 @@ describe("packages public queries", () => {
       paginationOpts: { cursor: null, numItems: 1 },
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-downloaded"]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-installed"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor.startsWith("pkgpage:")).toBe(true);
     expect(indexNames).toEqual([
       "by_active_family_recommended_score",
+      "by_active_family_recommended_score_version",
+      "by_active_family_recommended_score_version",
       "by_active_family_recommended_score",
     ]);
     expect(indexFilters).toEqual([
@@ -2348,6 +2364,21 @@ describe("packages public queries", () => {
           { field: "softDeletedAt", value: undefined },
           { field: "family", value: "code-plugin" },
           { field: "recommendedScore", value: undefined },
+        ],
+      },
+      {
+        indexName: "by_active_family_recommended_score_version",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
+          { field: "recommendedScoreVersion", value: undefined },
+        ],
+      },
+      {
+        indexName: "by_active_family_recommended_score_version",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
         ],
       },
       {
@@ -2362,8 +2393,21 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
   });
 
-  it("falls back to the family-scoped recommended rank index while scores are missing", async () => {
+  it("falls back to updated family digests while recommendation scores are missing", async () => {
     const { ctx, indexFilters, indexNames } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("code-plugin-downloaded", {
+              packageId: "packages:code-plugin-downloaded",
+              displayName: "Code Plugin Downloaded",
+              family: "code-plugin",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
       packagePages: [
         {
           page: [
@@ -2388,9 +2432,67 @@ describe("packages public queries", () => {
       paginationOpts: { cursor: null, numItems: 1 },
     });
 
+    expect(indexNames).toEqual(["by_active_family_recommended_score", "by_active_family_updated"]);
+    expect(indexFilters).toEqual([
+      {
+        indexName: "by_active_family_recommended_score",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
+          { field: "recommendedScore", value: undefined },
+        ],
+      },
+    ]);
+  });
+
+  it("falls back to updated family digests while recommendation score versions are missing", async () => {
+    const { ctx, indexFilters, indexNames } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("code-plugin-updated", {
+              packageId: "packages:code-plugin-updated",
+              displayName: "Code Plugin Updated",
+              family: "code-plugin",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:code-plugin-stale-score",
+              name: "code-plugin-stale-score",
+              normalizedName: "code-plugin-stale-score",
+              displayName: "Code Plugin Stale Score",
+              family: "code-plugin",
+              stats: { downloads: 43_080, installs: 2, stars: 0, versions: 1 },
+              recommendedScore: computeRecommendationScore({
+                downloads: 43_080,
+                installs: 2,
+                stars: 0,
+              }),
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "recommended",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
     expect(indexNames).toEqual([
       "by_active_family_recommended_score",
-      "by_active_family_recommended_rank",
+      "by_active_family_recommended_score_version",
+      "by_active_family_updated",
     ]);
     expect(indexFilters).toEqual([
       {
@@ -2402,13 +2504,131 @@ describe("packages public queries", () => {
         ],
       },
       {
-        indexName: "by_active_family_recommended_rank",
+        indexName: "by_active_family_recommended_score_version",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
+          { field: "recommendedScoreVersion", value: undefined },
+        ],
+      },
+    ]);
+  });
+
+  it("keeps legacy recommended package cursors on the recommended score index", async () => {
+    const legacyCursor = `pkgpage:${JSON.stringify({
+      cursor: "legacy-recommended-next",
+      offset: 0,
+      pageSize: 50,
+      done: false,
+    })}`;
+    const { ctx, indexFilters, indexNames } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [],
+          isDone: false,
+          continueCursor: "legacy-recommended-next",
+        },
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:code-plugin-next",
+              name: "code-plugin-next",
+              normalizedName: "code-plugin-next",
+              displayName: "Code Plugin Next",
+              family: "code-plugin",
+              stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "recommended",
+      paginationOpts: { cursor: legacyCursor, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-next"]);
+    expect(indexNames).toEqual(["by_active_family_recommended_score"]);
+    expect(indexFilters).toEqual([
+      {
+        indexName: "by_active_family_recommended_score",
         filters: [
           { field: "softDeletedAt", value: undefined },
           { field: "family", value: "code-plugin" },
         ],
       },
     ]);
+  });
+
+  it("keeps recommended digest fallback cursors on the digest path after backfill", async () => {
+    const fallbackCursor = `pkgpage:${JSON.stringify({
+      cursor: "digest-next",
+      offset: 0,
+      pageSize: 50,
+      done: false,
+      mode: "digest",
+    })}`;
+    const { ctx, indexFilters, indexNames } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("code-plugin-first", {
+              packageId: "packages:code-plugin-first",
+              displayName: "Code Plugin First",
+              family: "code-plugin",
+            }),
+          ],
+          isDone: false,
+          continueCursor: "digest-next",
+        },
+        {
+          page: [
+            makeDigest("code-plugin-second", {
+              packageId: "packages:code-plugin-second",
+              displayName: "Code Plugin Second",
+              family: "code-plugin",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:code-plugin-second",
+              name: "code-plugin-second",
+              normalizedName: "code-plugin-second",
+              displayName: "Code Plugin Second",
+              family: "code-plugin",
+              stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
+              recommendedScore: computeRecommendationScore({
+                downloads: 1,
+                installs: 1,
+                stars: 0,
+              }),
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "recommended",
+      paginationOpts: { cursor: fallbackCursor, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-second"]);
+    expect(indexNames).toEqual(["by_active_family_updated"]);
+    expect(indexFilters).toEqual([]);
   });
 
   it("continues scanning global download-sorted pages for non-indexed filters", async () => {

@@ -24,16 +24,12 @@ const BROWSE_SORT_OPTIONS = [
   { value: "name", label: "Name" },
 ];
 
-const SEARCH_SORT_OPTIONS = [
-  { value: "downloads", label: "Most downloaded" },
-  { value: "stars", label: "Most starred" },
-  { value: "installs", label: "Most installed" },
-  { value: "updated", label: "Recently updated" },
-  { value: "newest", label: "Newest" },
-  { value: "name", label: "Name" },
-];
-
 const FEATURED_SORT_OPTION = { value: "featured", label: "Featured" };
+const SKILLS_SORT_OPTIONS = [
+  BROWSE_SORT_OPTIONS[0],
+  FEATURED_SORT_OPTION,
+  ...BROWSE_SORT_OPTIONS.slice(1),
+];
 
 const SKILL_CATEGORY_SLUGS = new Set(SKILL_CATEGORIES.map((category) => category.slug));
 
@@ -75,9 +71,6 @@ export function SkillsIndex() {
     searchInputRef,
   });
 
-  const sortOptions = model.hasQuery
-    ? [BROWSE_SORT_OPTIONS[0], ...SEARCH_SORT_OPTIONS]
-    : [BROWSE_SORT_OPTIONS[0], FEATURED_SORT_OPTION, ...BROWSE_SORT_OPTIONS.slice(1)];
   const activeSort = model.featuredOnly
     ? "featured"
     : model.sort === "relevance"
@@ -204,7 +197,7 @@ export function SkillsIndex() {
           categories={SKILL_CATEGORIES}
           activeCategory={model.activeCategory}
           onCategoryChange={handleCategoryChange}
-          sortOptions={sortOptions}
+          sortOptions={SKILLS_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}
         />

@@ -18,6 +18,13 @@ describe("recommendationScore", () => {
     expect(starred).toBeGreaterThan(unstarred);
   });
 
+  it("weights installs more strongly than downloads", () => {
+    const installLed = computeRecommendationScore({ downloads: 0, installs: 10, stars: 0 });
+    const downloadLed = computeRecommendationScore({ downloads: 10, installs: 0, stars: 0 });
+
+    expect(installLed).toBeGreaterThan(downloadLed);
+  });
+
   it("compresses large raw counts logarithmically", () => {
     const firstThousand = computeRecommendationScore({ downloads: 1_000, installs: 0, stars: 0 });
     const secondThousand = computeRecommendationScore({

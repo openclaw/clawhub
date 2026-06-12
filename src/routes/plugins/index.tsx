@@ -16,7 +16,9 @@ import {
   type PackageListItem,
 } from "../../lib/packageApi";
 
-type PluginSort = "recommended" | "relevance" | "updated" | "downloads" | "newest" | "name";
+type VisiblePluginSort = "recommended" | "updated" | "downloads";
+type PluginSort = VisiblePluginSort | "relevance";
+type LegacyPluginSort = PluginSort | "newest" | "name";
 
 const PLUGINS_PAGE_SIZE = 25;
 
@@ -28,12 +30,18 @@ type PluginSearchState = {
   featured?: boolean;
   official?: boolean;
   executesCode?: boolean;
-  sort?: PluginSort;
+  sort?: LegacyPluginSort;
   view?: LegacyPluginView;
 };
 
 type PluginView = "list" | "grid";
 type LegacyPluginView = PluginView | "cards";
+
+const PLUGIN_SORT_OPTIONS = [
+  { value: "recommended", label: "Recommended" },
+  { value: "downloads", label: "Most downloaded" },
+  { value: "updated", label: "Recently updated" },
+];
 
 function normalizePluginView(value: unknown): PluginView | undefined {
   if (value === "list") return "list";
@@ -83,7 +91,7 @@ function formatRetryDelay(retryAfterSeconds: number | null) {
   return `in about ${minutes} minute${minutes === 1 ? "" : "s"}`;
 }
 
-function parsePluginSort(value: unknown): PluginSort | undefined {
+function parsePluginSort(value: unknown): LegacyPluginSort | undefined {
   if (
     value === "recommended" ||
     value === "relevance" ||
@@ -107,23 +115,6 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
       a.family.localeCompare(b.family) ||
       a.name.localeCompare(b.name);
 
-    if (sort === "name") {
-      return (
-        a.displayName.localeCompare(b.displayName) ||
-        a.name.localeCompare(b.name) ||
-        a.family.localeCompare(b.family)
-      );
-    }
-
-    if (sort === "newest") {
-      return (
-        b.createdAt - a.createdAt ||
-        b.updatedAt - a.updatedAt ||
-        a.family.localeCompare(b.family) ||
-        a.name.localeCompare(b.name)
-      );
-    }
-
     if (sort === "downloads") {
       return (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0) || tieBreak();
     }
@@ -131,6 +122,11 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
     return tieBreak();
   });
   return sorted;
+}
+
+function normalizeActivePluginSort(sort: LegacyPluginSort | undefined): PluginSort | undefined {
+  if (sort === "newest" || sort === "name") return undefined;
+  return sort;
 }
 
 function isNavigationAbortError(err: unknown, signal?: AbortSignal) {
@@ -223,11 +219,11 @@ export const Route = createFileRoute("/plugins/")({
   beforeLoad: ({ search }) => {
     const hasQuery = Boolean(search.q?.trim());
     const incompatibleSort =
-      !hasQuery &&
       search.sort &&
       search.sort !== "recommended" &&
       search.sort !== "updated" &&
-      search.sort !== "downloads";
+      search.sort !== "downloads" &&
+      !(hasQuery && search.sort === "relevance");
     const staleFeatured = Boolean(search.featured);
     const invalidCategory = Boolean(search.category && !isPluginCategorySlug(search.category));
     if (incompatibleSort || staleFeatured || invalidCategory) {
@@ -278,11 +274,7 @@ function PluginsIndexPending() {
           categories={PLUGIN_CATEGORIES}
           activeCategory={undefined}
           onCategoryChange={() => {}}
-          sortOptions={[
-            { value: "recommended", label: "Recommended" },
-            { value: "downloads", label: "Most downloaded" },
-            { value: "updated", label: "Recently updated" },
-          ]}
+          sortOptions={PLUGIN_SORT_OPTIONS}
           activeSort="recommended"
           onSortChange={() => {}}
           filters={[
@@ -356,7 +348,7 @@ function PluginsIndex() {
       featured: search.featured,
       official: search.official,
       executesCode: search.executesCode,
-      sort: search.sort,
+      sort: normalizeActivePluginSort(search.sort),
       signal: controller.signal,
     })
       .then((data) => setCatalogData(data))
@@ -386,28 +378,13 @@ function PluginsIndex() {
   const activeCategory = search.category;
 
   const activeSort: PluginSort =
-    search.sort === "relevance" ? "recommended" : (search.sort ?? "recommended");
+    search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
+      ? "recommended"
+      : (search.sort ?? "recommended");
   const visibleItems = useMemo(
     () => (hasQuery ? sortPluginSearchItems(items, activeSort) : items),
     [activeSort, hasQuery, items],
   );
-
-  const sortOptions = useMemo(() => {
-    if (hasQuery) {
-      return [
-        { value: "recommended", label: "Recommended" },
-        { value: "downloads", label: "Most downloaded" },
-        { value: "updated", label: "Recently updated" },
-        { value: "newest", label: "Newest" },
-        { value: "name", label: "Name" },
-      ];
-    }
-    return [
-      { value: "recommended", label: "Recommended" },
-      { value: "downloads", label: "Most downloaded" },
-      { value: "updated", label: "Recently updated" },
-    ];
-  }, [hasQuery]);
 
   const handleFilterToggle = (key: string) => {
     if (key === "official") {
@@ -431,7 +408,13 @@ function PluginsIndex() {
 
   const handleSortChange = (value: string) => {
     const nextSort = parsePluginSort(value);
-    const sort = nextSort === "recommended" || nextSort === "relevance" ? undefined : nextSort;
+    const sort =
+      nextSort === "recommended" ||
+      nextSort === "relevance" ||
+      nextSort === "newest" ||
+      nextSort === "name"
+        ? undefined
+        : nextSort;
 
     void navigate({
       search: (prev: PluginSearchState) => ({
@@ -588,7 +571,7 @@ function PluginsIndex() {
           categories={PLUGIN_CATEGORIES}
           activeCategory={activeCategory}
           onCategoryChange={handleCategoryChange}
-          sortOptions={sortOptions}
+          sortOptions={PLUGIN_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}
           filters={[

@@ -87,7 +87,10 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
-import { computeRecommendationScore } from "./lib/recommendationScore";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
@@ -121,7 +124,27 @@ function computePackageRecommendationScore(stats: Doc<"packages">["stats"]) {
   });
 }
 
+function computePackageRecommendationPatch(stats: Doc<"packages">["stats"]) {
+  return {
+    recommendedScore: computePackageRecommendationScore(stats),
+    recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+  };
+}
+
+function getPackageRecommendedScoreIndexName(family: Doc<"packages">["family"] | undefined) {
+  return family ? "by_active_family_recommended_score" : "by_active_recommended_score";
+}
+
 async function getPackageRecommendedIndexName(
+  ctx: Pick<QueryCtx, "db">,
+  family: Doc<"packages">["family"] | undefined,
+) {
+  const missingScore = await hasMissingPackageRecommendedScore(ctx, family);
+  if (missingScore) return null;
+  return getPackageRecommendedScoreIndexName(family);
+}
+
+async function hasMissingPackageRecommendedScore(
   ctx: Pick<QueryCtx, "db">,
   family: Doc<"packages">["family"] | undefined,
 ) {
@@ -132,9 +155,29 @@ async function getPackageRecommendedIndexName(
         q.eq("softDeletedAt", undefined).eq("family", family).eq("recommendedScore", undefined),
       )
       .first();
-    return missingScore
-      ? "by_active_family_recommended_rank"
-      : "by_active_family_recommended_score";
+    if (missingScore) return true;
+
+    const missingVersion = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("recommendedScoreVersion", undefined),
+      )
+      .first();
+    if (missingVersion) return true;
+
+    const staleVersion = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+      )
+      .first();
+    return Boolean(staleVersion);
   }
 
   const missingScore = await ctx.db
@@ -143,7 +186,23 @@ async function getPackageRecommendedIndexName(
       q.eq("softDeletedAt", undefined).eq("recommendedScore", undefined),
     )
     .first();
-  return missingScore ? "by_active_recommended_rank" : "by_active_recommended_score";
+  if (missingScore) return true;
+
+  const missingVersion = await ctx.db
+    .query("packages")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScoreVersion", undefined),
+    )
+    .first();
+  if (missingVersion) return true;
+
+  const staleVersion = await ctx.db
+    .query("packages")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+    )
+    .first();
+  return Boolean(staleVersion);
 }
 
 const llmAgenticRiskEvidenceValidator = v.object({
@@ -734,6 +793,7 @@ type PublicPageCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
+  mode?: "packages" | "digest";
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 
@@ -1410,6 +1470,7 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
       pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
+      mode: parsed.mode === "packages" || parsed.mode === "digest" ? parsed.mode : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -3114,6 +3175,23 @@ export const countPublicPluginsInternal = internalQuery({
   },
 });
 
+export const hasMissingRecommendationScoresInternal = internalQuery({
+  args: {
+    families: v.optional(
+      v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (!args.families || args.families.length === 0) {
+      return await hasMissingPackageRecommendedScore(ctx, undefined);
+    }
+    for (const family of args.families) {
+      if (await hasMissingPackageRecommendedScore(ctx, family)) return true;
+    }
+    return false;
+  },
+});
+
 export const countPublicPlugins = query({
   args: {},
   handler: async (ctx) => {
@@ -3177,13 +3255,23 @@ async function listPackagePageImpl(
     ),
   );
 
-  if (args.sort === "downloads" || args.sort === "recommended") {
+  const keepDigestCursor = args.sort === "recommended" && decodedCursor.mode === "digest";
+  const keepRecommendedPackageCursor =
+    args.sort === "recommended" &&
+    Boolean(args.paginationOpts.cursor) &&
+    decodedCursor.mode !== "digest";
+  const recommendedIndexName =
+    args.sort === "recommended" && !keepDigestCursor
+      ? keepRecommendedPackageCursor
+        ? getPackageRecommendedScoreIndexName(family)
+        : await getPackageRecommendedIndexName(ctx, family)
+      : null;
+
+  if (args.sort === "downloads" || recommendedIndexName) {
     let cursor = pageCursor;
     let pageOffset = offset;
     let pageSize: number | null = decodedCursor.pageSize ?? null;
     let done = decodedCursor.done;
-    const recommendedIndexName =
-      args.sort === "recommended" ? await getPackageRecommendedIndexName(ctx, family) : null;
     const buildSortedQuery = () =>
       family
         ? ctx.db
@@ -3223,12 +3311,14 @@ async function listPackagePageImpl(
                   offset: nextOffset,
                   pageSize: scanPageSize,
                   done: page.isDone,
+                  mode: "packages" as const,
                 }
               : {
                   cursor: page.continueCursor,
                   offset: 0,
                   pageSize: scanPageSize,
                   done: page.isDone,
+                  mode: "packages" as const,
                 };
           return {
             page: collected,
@@ -3252,6 +3342,7 @@ async function listPackagePageImpl(
         offset: pageOffset,
         pageSize,
         done,
+        mode: "packages",
       }),
     };
   }
@@ -3301,12 +3392,14 @@ async function listPackagePageImpl(
               offset: nextOffset,
               pageSize: effectivePageSize,
               done: page.isDone,
+              mode: "digest" as const,
             }
           : {
               cursor: page.continueCursor,
               offset: 0,
               pageSize: effectivePageSize,
               done: page.isDone,
+              mode: "digest" as const,
             };
       return {
         page: collected,
@@ -3324,6 +3417,7 @@ async function listPackagePageImpl(
       offset: 0,
       pageSize: effectivePageSize,
       done: page.isDone,
+      mode: "digest",
     }),
   };
 }
@@ -3549,7 +3643,7 @@ export const processPackageStatEventsInternal = internalMutation({
       };
       await ctx.db.patch(pkg._id, {
         stats: nextStats,
-        recommendedScore: computePackageRecommendationScore(nextStats),
+        ...computePackageRecommendationPatch(nextStats),
       });
       packagesUpdated += 1;
     }
@@ -6781,7 +6875,7 @@ export const reservePackageNameInternal = internalMutation({
       capabilityTags: [],
       executesCode: false,
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-      recommendedScore: computePackageRecommendationScore({
+      ...computePackageRecommendationPatch({
         downloads: 0,
         installs: 0,
         stars: 0,
@@ -7771,7 +7865,7 @@ export const insertReleaseInternal = internalMutation({
         verification: args.verification,
         scanStatus: args.verification?.scanStatus,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-        recommendedScore: computePackageRecommendationScore({
+        ...computePackageRecommendationPatch({
           downloads: 0,
           installs: 0,
           stars: 0,

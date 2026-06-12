@@ -5,8 +5,11 @@ export type RecommendationStats = {
 };
 
 const DOWNLOAD_WEIGHT = 100;
-const INSTALL_WEIGHT = 60;
+const INSTALL_WEIGHT = 160;
 const STAR_WEIGHT = 120;
+
+// Bump this when changing weights, then run statsMaintenance:runRecommendationScoreBackfillInternal.
+export const RECOMMENDATION_SCORE_VERSION = 2;
 
 function safeCount(value: number) {
   if (!Number.isFinite(value) || value <= 0) return 0;

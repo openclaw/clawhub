@@ -9,7 +9,10 @@ import {
   setGlobalPublicPluginsCount,
   setGlobalPublicSkillsCount,
 } from "./lib/globalStats";
-import { computeRecommendationScore } from "./lib/recommendationScore";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 
 const DEFAULT_BATCH_SIZE = 200;
 const MAX_BATCH_SIZE = 1000;
@@ -199,10 +202,18 @@ export const backfillSkillDigestRecommendationScoresInternal = internalMutation(
     let patched = 0;
     for (const digest of page) {
       const recommendedScore = computeSkillDigestRecommendationScore(digest);
-      if (digest.recommendedScore === recommendedScore) continue;
+      if (
+        digest.recommendedScore === recommendedScore &&
+        digest.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
+      ) {
+        continue;
+      }
       patched += 1;
       if (!args.dryRun) {
-        await ctx.db.patch(digest._id, { recommendedScore });
+        await ctx.db.patch(digest._id, {
+          recommendedScore,
+          recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+        });
       }
     }
 
@@ -233,10 +244,18 @@ export const backfillPackageRecommendationScoresInternal = internalMutation({
     let patched = 0;
     for (const pkg of page) {
       const recommendedScore = computePackageRecommendationScore(pkg);
-      if (pkg.recommendedScore === recommendedScore) continue;
+      if (
+        pkg.recommendedScore === recommendedScore &&
+        pkg.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
+      ) {
+        continue;
+      }
       patched += 1;
       if (!args.dryRun) {
-        await ctx.db.patch(pkg._id, { recommendedScore });
+        await ctx.db.patch(pkg._id, {
+          recommendedScore,
+          recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
+        });
       }
     }
 
@@ -250,6 +269,92 @@ export const backfillPackageRecommendationScoresInternal = internalMutation({
     };
   },
 });
+
+type RecommendationScoreBackfillArgs = {
+  skillCursor?: string;
+  packageCursor?: string;
+  skillsDone?: boolean;
+  packagesDone?: boolean;
+  batchSize?: number;
+  maxBatches?: number;
+  dryRun?: boolean;
+};
+
+type RecommendationScoreBackfillTotals = {
+  scanned: number;
+  patched: number;
+  batches: number;
+};
+
+export const runRecommendationScoreBackfillInternal: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      skillCursor: v.optional(v.string()),
+      packageCursor: v.optional(v.string()),
+      skillsDone: v.optional(v.boolean()),
+      packagesDone: v.optional(v.boolean()),
+      batchSize: v.optional(v.number()),
+      maxBatches: v.optional(v.number()),
+      dryRun: v.optional(v.boolean()),
+    },
+    handler: async (ctx, args: RecommendationScoreBackfillArgs) => {
+      const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+      const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+      const dryRun = args.dryRun === true;
+      let skillsDone = args.skillsDone === true;
+      let packagesDone = args.packagesDone === true;
+      let skillCursor: string | null = skillsDone ? null : (args.skillCursor ?? null);
+      let packageCursor: string | null = packagesDone ? null : (args.packageCursor ?? null);
+      const skills: RecommendationScoreBackfillTotals = { scanned: 0, patched: 0, batches: 0 };
+      const packages: RecommendationScoreBackfillTotals = { scanned: 0, patched: 0, batches: 0 };
+
+      for (let i = 0; i < maxBatches && (!skillsDone || !packagesDone); i += 1) {
+        if (!skillsDone) {
+          const result = (await ctx.runMutation(
+            internal.statsMaintenance.backfillSkillDigestRecommendationScoresInternal,
+            {
+              cursor: skillCursor ?? undefined,
+              batchSize,
+              dryRun,
+            },
+          )) as { scanned: number; patched: number; cursor: string | null; isDone: boolean };
+          skills.scanned += result.scanned;
+          skills.patched += result.patched;
+          skills.batches += 1;
+          skillCursor = result.cursor;
+          skillsDone = result.isDone;
+        }
+
+        if (!packagesDone) {
+          const result = (await ctx.runMutation(
+            internal.statsMaintenance.backfillPackageRecommendationScoresInternal,
+            {
+              cursor: packageCursor ?? undefined,
+              batchSize,
+              dryRun,
+            },
+          )) as { scanned: number; patched: number; cursor: string | null; isDone: boolean };
+          packages.scanned += result.scanned;
+          packages.patched += result.patched;
+          packages.batches += 1;
+          packageCursor = result.cursor;
+          packagesDone = result.isDone;
+        }
+      }
+
+      return {
+        ok: true as const,
+        dryRun,
+        scoreVersion: RECOMMENDATION_SCORE_VERSION,
+        isDone: skillsDone && packagesDone,
+        skillsDone,
+        packagesDone,
+        skillCursor,
+        packageCursor,
+        stats: { skills, packages },
+      };
+    },
+  });
 
 function buildSkillStatPatch(skill: Doc<"skills">) {
   const stats = skill.stats;

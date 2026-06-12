@@ -83,7 +83,10 @@ import {
   normalizePublisherHandle,
   requirePublisherRole,
 } from "./lib/publishers";
-import { computeRecommendationScore } from "./lib/recommendationScore";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import {
   AUTO_HIDE_REPORT_THRESHOLD,
   MAX_ACTIVE_REPORTS_PER_USER,
@@ -5097,13 +5100,6 @@ export const listPublicPageV4 = query({
             rankCursor: recommendedRankCursor,
             updatedCursor,
             hasMissingScores: hasMissingRecommendedScore,
-            hasMissingRankStats: hasMissingRecommendedScore
-              ? await hasMissingRecommendedRankStats(
-                  ctx,
-                  args.nonSuspiciousOnly ?? false,
-                  recommendedAnyCursor,
-                )
-              : false,
           })
         : null;
     const sort = recommendedResolution?.sort ?? requestedSort;
@@ -5658,13 +5654,6 @@ export const listPublicApiPageV1 = query({
             rankCursor: recommendedRankCursor,
             updatedCursor,
             hasMissingScores: hasMissingRecommendedScore,
-            hasMissingRankStats: hasMissingRecommendedScore
-              ? await hasMissingRecommendedRankStats(
-                  ctx,
-                  args.nonSuspiciousOnly ?? false,
-                  recommendedAnyCursor,
-                )
-              : false,
           })
         : null;
     const sort = recommendedResolution?.sort ?? requestedSort;
@@ -6147,7 +6136,6 @@ function resolveRecommendedPublicListQuery({
   rankCursor,
   updatedCursor,
   hasMissingScores,
-  hasMissingRankStats,
 }: {
   scoreIndexName: SkillSearchDigestSortIndexName;
   rankIndexName: SkillSearchDigestSortIndexName;
@@ -6156,7 +6144,6 @@ function resolveRecommendedPublicListQuery({
   rankCursor: IndexKey | null;
   updatedCursor: IndexKey | null;
   hasMissingScores: boolean;
-  hasMissingRankStats: boolean;
 }): { sort: SortKey; indexName: SkillSearchDigestSortIndexName; decodedCursor: IndexKey | null } {
   if (scoreCursor) {
     return { sort: "recommended", indexName: scoreIndexName, decodedCursor: scoreCursor };
@@ -6168,22 +6155,9 @@ function resolveRecommendedPublicListQuery({
     return { sort: "updated", indexName: updatedIndexName, decodedCursor: updatedCursor };
   }
   if (hasMissingScores) {
-    return hasMissingRankStats
-      ? { sort: "updated", indexName: updatedIndexName, decodedCursor: null }
-      : { sort: "recommended", indexName: rankIndexName, decodedCursor: null };
+    return { sort: "updated", indexName: updatedIndexName, decodedCursor: null };
   }
   return { sort: "recommended", indexName: scoreIndexName, decodedCursor: null };
-}
-
-function resolveRecommendedPublicListSort({
-  decodedCursor,
-  hasMissingRankStats,
-}: {
-  decodedCursor: readonly unknown[] | null;
-  hasMissingRankStats: boolean;
-}): SortKey {
-  if (decodedCursor) return decodedCursor.length <= 5 ? "updated" : "recommended";
-  return hasMissingRankStats ? "updated" : "recommended";
 }
 
 async function hasMissingRecommendedScores(
@@ -6202,7 +6176,29 @@ async function hasMissingRecommendedScores(
           .eq("recommendedScore", undefined),
       )
       .first();
-    return Boolean(missingScore);
+    if (missingScore) return true;
+
+    const missingVersion = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_nonsuspicious_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isSuspicious", false)
+          .eq("recommendedScoreVersion", undefined),
+      )
+      .first();
+    if (missingVersion) return true;
+
+    const staleVersion = await ctx.db
+      .query("skillSearchDigest")
+      .withIndex("by_nonsuspicious_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isSuspicious", false)
+          .lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+      )
+      .first();
+    return Boolean(staleVersion);
   }
 
   const missingScore = await ctx.db
@@ -6211,66 +6207,23 @@ async function hasMissingRecommendedScores(
       q.eq("softDeletedAt", undefined).eq("recommendedScore", undefined),
     )
     .first();
-  return Boolean(missingScore);
-}
+  if (missingScore) return true;
 
-async function hasMissingRecommendedRankStats(
-  ctx: Pick<QueryCtx, "db">,
-  nonSuspiciousOnly: boolean,
-  decodedCursor: IndexKey | null,
-) {
-  if (decodedCursor) return false;
-  if (nonSuspiciousOnly) {
-    const [missingStars, missingInstalls, missingDownloads] = await Promise.all([
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_nonsuspicious_stars", (q) =>
-          q.eq("softDeletedAt", undefined).eq("isSuspicious", false).eq("statsStars", undefined),
-        )
-        .first(),
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_nonsuspicious_installs", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isSuspicious", false)
-            .eq("statsInstallsAllTime", undefined),
-        )
-        .first(),
-      ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_nonsuspicious_downloads", (q) =>
-          q
-            .eq("softDeletedAt", undefined)
-            .eq("isSuspicious", false)
-            .eq("statsDownloads", undefined),
-        )
-        .first(),
-    ]);
-    return Boolean(missingStars || missingInstalls || missingDownloads);
-  }
+  const missingVersion = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScoreVersion", undefined),
+    )
+    .first();
+  if (missingVersion) return true;
 
-  const [missingStars, missingInstalls, missingDownloads] = await Promise.all([
-    ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_stats_stars", (q) =>
-        q.eq("softDeletedAt", undefined).eq("statsStars", undefined),
-      )
-      .first(),
-    ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_stats_installs_all_time", (q) =>
-        q.eq("softDeletedAt", undefined).eq("statsInstallsAllTime", undefined),
-      )
-      .first(),
-    ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_active_stats_downloads", (q) =>
-        q.eq("softDeletedAt", undefined).eq("statsDownloads", undefined),
-      )
-      .first(),
-  ]);
-  return Boolean(missingStars || missingInstalls || missingDownloads);
+  const staleVersion = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+    )
+    .first();
+  return Boolean(staleVersion);
 }
 
 function readDigestRankStat(
@@ -6284,7 +6237,9 @@ function readDigestRankStat(
 
 function readDigestRecommendationScore(digest: Doc<"skillSearchDigest">): number {
   return (
-    digest.recommendedScore ??
+    (digest.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
+      ? digest.recommendedScore
+      : undefined) ??
     computeRecommendationScore({
       downloads: readDigestRankStat(digest, "downloads"),
       installs: readDigestRankStat(digest, "installsAllTime"),
@@ -11777,6 +11732,5 @@ export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutati
 export const __test = {
   normalizePublicListSort,
   resolveRecommendedPublicListQuery,
-  resolveRecommendedPublicListSort,
   resolvePublicListDir,
 };

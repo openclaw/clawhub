@@ -147,7 +147,7 @@ class TestEqBuilder {
   }
 }
 
-function makeMissingRecommendedRankStatsCtx() {
+function makeMissingRecommendedScoresCtx() {
   const first = vi.fn(async () => makeSearchDigest({ statsStars: undefined }));
   const withIndex = vi.fn((_indexName: string, build: (q: TestEqBuilder) => unknown) => {
     build(new TestEqBuilder());
@@ -172,8 +172,8 @@ describe("public skill list deterministic cursors", () => {
     getPageMock.mockResolvedValue({ page: [], hasMore: false, indexKeys: [] });
   });
 
-  it("falls back to the updated index while default rank stats are missing", async () => {
-    const { ctx, withIndex } = makeMissingRecommendedRankStatsCtx();
+  it("falls back to the updated index while recommendation scores are missing", async () => {
+    const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
 
     await listPublicPageV4Handler(ctx, {
       numItems: 10,
@@ -181,9 +181,6 @@ describe("public skill list deterministic cursors", () => {
 
     expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
       "by_active_recommended_score",
-      "by_active_stats_stars",
-      "by_active_stats_installs_all_time",
-      "by_active_stats_downloads",
     ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
@@ -194,8 +191,8 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
-  it("falls back to the non-suspicious updated index while default rank stats are missing", async () => {
-    const { ctx, withIndex } = makeMissingRecommendedRankStatsCtx();
+  it("falls back to the non-suspicious updated index while recommendation scores are missing", async () => {
+    const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
 
     await listPublicApiPageV1Handler(ctx, {
       numItems: 10,
@@ -205,9 +202,6 @@ describe("public skill list deterministic cursors", () => {
 
     expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
       "by_nonsuspicious_recommended_score",
-      "by_nonsuspicious_stars",
-      "by_nonsuspicious_installs",
-      "by_nonsuspicious_downloads",
     ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({

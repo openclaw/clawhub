@@ -1,7 +1,10 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import { computeRecommendationScore } from "./lib/recommendationScore";
+import {
+  computeRecommendationScore,
+  RECOMMENDATION_SCORE_VERSION,
+} from "./lib/recommendationScore";
 import {
   processPackageStatEventsInternal,
   recordPackageDownloadInternal,
@@ -141,6 +144,7 @@ describe("package stat events", () => {
           installs: 2,
           stars: 2,
         }),
+        recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
       }),
     );
     expect(patch).toHaveBeenCalledWith(

@@ -327,6 +327,24 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
 
+  it("keeps the skills sort option list stable while typing a search", async () => {
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+
+    const beforeTyping = Array.from(
+      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+    ).map((option) => option.textContent);
+    const input = screen.getByPlaceholderText("Search skills...");
+    fireEvent.change(input, { target: { value: "agent" } });
+    const whileTyping = Array.from(
+      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+    ).map((option) => option.textContent);
+
+    expect(whileTyping).toEqual(beforeTyping);
+    expect(screen.getByRole("radio", { name: "Featured" })).toBeTruthy();
+  });
+
   it("switches implicit recommended sorting back to relevance when entering search", async () => {
     searchMock = { sort: "downloads" };
     vi.useFakeTimers();

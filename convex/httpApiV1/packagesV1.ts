@@ -100,6 +100,7 @@ const internalRefs = internal as unknown as {
   packages: {
     countPublicPluginsInternal: unknown;
     getByNameForViewerInternal: unknown;
+    hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -810,6 +811,7 @@ type UnifiedCatalogCursorState = {
 type PluginCatalogCursorState = {
   codePlugins: CatalogSourceCursorState;
   bundlePlugins: CatalogSourceCursorState;
+  recommendedFallback?: "updated";
 };
 
 type CatalogPageResult<T> = {
@@ -915,6 +917,7 @@ function decodeMultiPluginCursor(
     return {
       codePlugins: normalize(parsed.codePlugins),
       bundlePlugins: normalize(parsed.bundlePlugins),
+      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
     };
   } catch {
     return {
@@ -1572,6 +1575,21 @@ async function listPackages(
     const decodedCursor = decodePluginCatalogCursor(cursor);
     const codePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.codePlugins);
     const bundlePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.bundlePlugins);
+    const isFreshRecommendedRequest = sortParam.value === "recommended" && !cursor;
+    const hasMissingRecommendationScores = isFreshRecommendedRequest
+      ? await runQueryRef<boolean>(
+          ctx,
+          internalRefs.packages.hasMissingRecommendationScoresInternal,
+          {
+            families: options.pluginFamilies,
+          },
+        )
+      : false;
+    const useUpdatedRecommendationFallback =
+      sortParam.value === "recommended" &&
+      (decodedCursor.recommendedFallback === "updated" ||
+        (isFreshRecommendedRequest && hasMissingRecommendationScores));
+    const pluginListSort = useUpdatedRecommendationFallback ? "updated" : sortParam.value;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1591,7 +1609,7 @@ async function listPackages(
         executesCode: executesCode.value,
         capabilityTag,
         category,
-        sort: sortParam.value,
+        sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
       });
@@ -1620,7 +1638,7 @@ async function listPackages(
       if (
         !bundlePluginCandidate ||
         (codePluginCandidate &&
-          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, sortParam.value) <=
+          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, pluginListSort) <=
             0)
       ) {
         items.push(codePluginCandidate!);
@@ -1634,6 +1652,7 @@ async function listPackages(
     const nextState = {
       codePlugins: finalizeCatalogSource(codePluginSource),
       bundlePlugins: finalizeCatalogSource(bundlePluginSource),
+      recommendedFallback: useUpdatedRecommendationFallback ? ("updated" as const) : undefined,
     };
     const isDoneAll =
       nextState.codePlugins.done &&

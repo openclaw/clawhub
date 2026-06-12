@@ -172,7 +172,7 @@ describe("plugins route", () => {
     ).toThrow();
   });
 
-  it("keeps search-only sort choices when search is active", async () => {
+  it("keeps visible plugin sort choices when search is active", async () => {
     const route = await loadRoute();
     const beforeLoad = (
       route.__config as never as {
@@ -187,12 +187,60 @@ describe("plugins route", () => {
     ).not.toThrow();
     expect(() =>
       beforeLoad?.({
-        search: { q: "security", sort: "newest" },
+        search: { q: "security", sort: "downloads" },
       }),
     ).not.toThrow();
     expect(() =>
       beforeLoad?.({
+        search: { q: "security", sort: "newest" },
+      }),
+    ).toThrow();
+    expect(() =>
+      beforeLoad?.({
         search: { q: "security", sort: "name" },
+      }),
+    ).toThrow();
+  });
+
+  it("redirects hidden legacy plugin sort choices while search is active", async () => {
+    const route = await loadRoute();
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() =>
+      beforeLoad?.({
+        search: { q: "security", sort: "newest" },
+      }),
+    ).toThrow();
+    expect(() =>
+      beforeLoad?.({
+        search: { q: "security", sort: "name" },
+      }),
+    ).toThrow();
+    expect(redirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: expect.objectContaining({
+          q: "security",
+          sort: undefined,
+        }),
+      }),
+    );
+  });
+
+  it("keeps hidden relevance sort URLs compatible while search is active", async () => {
+    const route = await loadRoute();
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() =>
+      beforeLoad?.({
+        search: { q: "security", sort: "relevance" },
       }),
     ).not.toThrow();
   });
@@ -222,14 +270,14 @@ describe("plugins route", () => {
 
     expect(() =>
       beforeLoad?.({
-        search: { q: "security", sort: "name", featured: true },
+        search: { q: "security", sort: "updated", featured: true },
       }),
     ).toThrow();
     expect(redirectMock).toHaveBeenCalledWith(
       expect.objectContaining({
         search: expect.objectContaining({
           featured: undefined,
-          sort: "name",
+          sort: "updated",
         }),
       }),
     );
@@ -299,7 +347,7 @@ describe("plugins route", () => {
 
     await loadPluginsPageData({
       q: "security",
-      sort: "name",
+      sort: "downloads",
       cursor: "cursor:search",
     });
 
@@ -986,14 +1034,14 @@ describe("plugins route", () => {
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
 
-  it("selects loaded-result search sort without changing the query", async () => {
+  it("selects visible search sort without changing the query", async () => {
     searchMock = { q: "security" };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Name" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Most downloaded" }));
 
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
@@ -1003,12 +1051,12 @@ describe("plugins route", () => {
       cursor: undefined,
       family: undefined,
       featured: undefined,
-      sort: "name",
+      sort: "downloads",
     });
   });
 
   it("sorts loaded search results by the selected search sort", async () => {
-    searchMock = { q: "security", sort: "name" };
+    searchMock = { q: "security", sort: "downloads" };
     loaderDataMock = {
       items: [
         {
@@ -1020,6 +1068,7 @@ describe("plugins route", () => {
           executesCode: true,
           createdAt: 2,
           updatedAt: 20,
+          stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
         },
         {
           name: "alpha-plugin",
@@ -1030,6 +1079,7 @@ describe("plugins route", () => {
           executesCode: true,
           createdAt: 1,
           updatedAt: 10,
+          stats: { downloads: 10, installs: 0, stars: 0, versions: 1 },
         },
       ],
       nextCursor: null,
@@ -1058,6 +1108,21 @@ describe("plugins route", () => {
     );
     expect(screen.queryByRole("radio", { name: "Featured" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
+  });
+
+  it("keeps plugin sort options stable while searching", async () => {
+    searchMock = { q: "security" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const sortOptions = Array.from(
+      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+    ).map((option) => option.textContent);
+    expect(sortOptions).toEqual(["Recommended", "Most downloaded", "Recently updated"]);
+    expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
   });
 
   it("puts the default plugin sort first", async () => {
