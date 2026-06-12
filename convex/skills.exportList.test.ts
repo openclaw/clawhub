@@ -105,4 +105,25 @@ describe("skills.listByDateRange export list", () => {
       }),
     );
   });
+
+  it("accepts existing anonymous cursors for later export pages", async () => {
+    getPageMock.mockResolvedValue({
+      page: [],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    await listByDateRangeHandler(
+      { db: {} },
+      { startDate: 1, endDate: 5, cursor: JSON.stringify([{ __undef: 1 }, 4]) },
+    );
+
+    expect(getPageMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        startIndexKey: [undefined, 4],
+        startInclusive: false,
+      }),
+    );
+  });
 });

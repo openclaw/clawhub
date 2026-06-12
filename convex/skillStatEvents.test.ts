@@ -81,6 +81,73 @@ describe("skill stat events - comment delta handling", () => {
     );
   });
 
+  it("applies install deltas to skill ranking fields", async () => {
+    const installEvent = {
+      _id: "skillStatEvents:install",
+      skillId: "skills:1",
+      kind: "install_new",
+      occurredAt: 1000,
+      processedAt: undefined,
+    };
+    const skill = {
+      _id: "skills:1",
+      ownerUserId: "users:owner",
+      statsDownloads: 10,
+      statsStars: 5,
+      statsInstallsCurrent: 2,
+      statsInstallsAllTime: 7,
+      stats: {
+        downloads: 10,
+        stars: 5,
+        installsCurrent: 2,
+        installsAllTime: 7,
+        versions: 1,
+        comments: 0,
+      },
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "skills:1" ? skill : null)),
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "skillStatEvents") {
+            return {
+              withIndex: () => ({
+                take: async () => [installEvent],
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    await expect(processSkillStatEventsInternalHandler(ctx, { batchSize: 10 })).resolves.toEqual({
+      processed: 1,
+    });
+
+    expect(patch).toHaveBeenCalledWith("skills:1", {
+      statsDownloads: 10,
+      statsStars: 5,
+      statsInstallsCurrent: 3,
+      statsInstallsAllTime: 8,
+      stats: {
+        downloads: 10,
+        stars: 5,
+        installsCurrent: 3,
+        installsAllTime: 8,
+        versions: 1,
+        comments: 0,
+      },
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "skillStatEvents:install",
+      expect.objectContaining({ processedAt: expect.any(Number) }),
+    );
+  });
+
   it("aggregates comment and uncomment events into net deltas", () => {
     // Simulate the aggregation logic from processSkillStatEventsAction
     type EventKind =

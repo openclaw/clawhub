@@ -4,7 +4,8 @@ import { describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const interval = vi.fn();
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
-  return { interval, githubSkillSyncRef };
+  const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
+  return { interval, githubSkillSyncRef, installTelemetryDedupePruneRef };
 });
 
 vi.mock("convex/server", () => ({
@@ -41,6 +42,9 @@ vi.mock("./_generated/api", () => ({
     downloadMetrics: {
       pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
     },
+    telemetry: {
+      pruneInstallTelemetryDedupesInternal: mocks.installTelemetryDedupePruneRef,
+    },
   },
 }));
 
@@ -52,6 +56,17 @@ describe("crons", () => {
       "github-skill-source-sync",
       { minutes: 15 },
       mocks.githubSkillSyncRef,
+      {},
+    );
+  });
+
+  it("prunes install telemetry dedupe rows daily", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "install-telemetry-dedupe-prune",
+      { hours: 24 },
+      mocks.installTelemetryDedupePruneRef,
       {},
     );
   });

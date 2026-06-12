@@ -123,10 +123,10 @@ Response:
 
 Notes:
 
-- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior from stars and downloads).
-- Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more downloads.
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior from stars and installs).
+- Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more installs.
 - ASCII text is tokenized on word and punctuation boundaries. For example, `personal-map` contains a standalone `map` token, while `amap-jsapi-skill` contains `amap`, `jsapi`, and `skill`; searching for `map` therefore gives `personal-map` a stronger lexical match than `amap-jsapi-skill`.
-- Popularity is log-scaled and capped. Stars carry the strongest weight, and downloads are the fallback popularity signal. High-download skills can rank lower when the query text is a weaker match.
+- Popularity is log-scaled and capped. Stars carry the strongest weight, and all-time installs are the fallback popularity signal. High-install skills can rank lower when the query text is a weaker match.
 - Suspicious or hidden moderation state can remove a skill from public search depending on caller filters and current moderation status.
 
 Publisher discoverability guidance:
@@ -150,7 +150,7 @@ Invalid `sort` values return `400`.
 
 Notes:
 
-- `recommended` ranks by stars, then downloads, then `updatedAt`.
+- `recommended` ranks by the current recommendation score, then `updatedAt`.
 - `trending` ranks by installs in the last 7 days (telemetry-based).
 - `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
