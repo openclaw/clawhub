@@ -92,8 +92,8 @@ describe("skill route loader", () => {
   });
 
   it("allows npm-compatible dotted and underscored owner handles in beforeLoad", () => {
-    expect(() => runBeforeLoad({ owner: "bitrouter.ai", slug: "weather" })).not.toThrow();
-    expect(() => runBeforeLoad({ owner: "pluglab_thinkly", slug: "weather" })).not.toThrow();
+    expect(() => runBeforeLoad({ owner: "example.tools", slug: "weather" })).not.toThrow();
+    expect(() => runBeforeLoad({ owner: "studio_tools", slug: "weather" })).not.toThrow();
   });
 
   it("allows raw owner ids in beforeLoad", () => {
@@ -109,7 +109,7 @@ describe("skill route loader", () => {
   });
 
   it("allows npm-style scopes with dotted owners in beforeLoad", () => {
-    expect(() => runBeforeLoad({ owner: "@bitrouter.ai", slug: "openclaw-plugin" })).not.toThrow();
+    expect(() => runBeforeLoad({ owner: "@example.tools", slug: "demo-plugin" })).not.toThrow();
   });
 
   beforeEach(() => {

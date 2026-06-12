@@ -7,15 +7,15 @@ import {
 
 describe("owner route segments", () => {
   it("accepts npm-compatible publisher handle characters", () => {
-    expect(isOwnerRouteHandleSegment("bitrouter.ai")).toBe(true);
-    expect(isOwnerRouteHandleSegment("glin_1")).toBe(true);
-    expect(isOwnerRouteHandleSegment("pluglab_thinkly")).toBe(true);
-    expect(isOwnerRouteHandleSegment("souls_market")).toBe(true);
+    expect(isOwnerRouteHandleSegment("example.tools")).toBe(true);
+    expect(isOwnerRouteHandleSegment("lab_1")).toBe(true);
+    expect(isOwnerRouteHandleSegment("studio_tools")).toBe(true);
+    expect(isOwnerRouteHandleSegment("market_square")).toBe(true);
   });
 
   it("keeps route segments bounded by alphanumeric characters", () => {
-    expect(isOwnerRouteHandleSegment(".bitrouter")).toBe(false);
-    expect(isOwnerRouteHandleSegment("bitrouter.")).toBe(false);
+    expect(isOwnerRouteHandleSegment(".example")).toBe(false);
+    expect(isOwnerRouteHandleSegment("example.")).toBe(false);
     expect(isOwnerRouteHandleSegment("_glin")).toBe(false);
     expect(isOwnerRouteHandleSegment("glin_")).toBe(false);
   });
@@ -34,7 +34,7 @@ describe("owner route segments", () => {
 
   it("accepts npm scope route aliases for the main skill route", () => {
     expect(isOwnerRouteScopeSegment("@openclaw")).toBe(true);
-    expect(isOwnerRouteScopeSegment("@bitrouter.ai")).toBe(true);
-    expect(isOwnerRouteScopeSegment("@glin_1")).toBe(true);
+    expect(isOwnerRouteScopeSegment("@example.tools")).toBe(true);
+    expect(isOwnerRouteScopeSegment("@lab_1")).toBe(true);
   });
 });

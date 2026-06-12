@@ -121,8 +121,8 @@ describe("cmdCreateOrg", () => {
   it("creates org publishers with npm-compatible handles", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
-      publisherId: "publishers:bitrouter.ai",
-      handle: "bitrouter.ai",
+      publisherId: "publishers:example.tools",
+      handle: "example.tools",
       created: true,
       migrated: false,
       trusted: false,
@@ -133,8 +133,8 @@ describe("cmdCreateOrg", () => {
       },
     });
 
-    await cmdCreateOrg(makeGlobalOpts(), "@BitRouter.AI", {
-      displayName: "BitRouter AI",
+    await cmdCreateOrg(makeGlobalOpts(), "@Example.Tools", {
+      displayName: "Example Tools",
       member: "vincentkoc",
       json: true,
     });
@@ -143,8 +143,8 @@ describe("cmdCreateOrg", () => {
       "https://clawhub.ai",
       expect.objectContaining({
         body: expect.objectContaining({
-          handle: "bitrouter.ai",
-          displayName: "BitRouter AI",
+          handle: "example.tools",
+          displayName: "Example Tools",
           memberHandle: "vincentkoc",
         }),
       }),
@@ -430,14 +430,14 @@ describe("cmdRepairScopedPackages", () => {
     const csv = await withCsv(
       [
         "packageName,intendedOrg,legacyOwner,orgDisplayName",
-        "@bitrouter.ai/openclaw-plugin,bitrouter.ai,vincentkoc,BitRouter AI",
+        "@example.tools/demo-plugin,example.tools,vincentkoc,Example Tools",
       ].join("\n"),
     );
     httpMocks.apiRequest
       .mockResolvedValueOnce({
         ok: true,
-        publisherId: "publishers:bitrouter.ai",
-        handle: "bitrouter.ai",
+        publisherId: "publishers:example.tools",
+        handle: "example.tools",
         created: false,
         migrated: false,
         trusted: false,
@@ -447,18 +447,18 @@ describe("cmdRepairScopedPackages", () => {
         ok: true,
         dryRun: true,
         source: {
-          packageId: "packages:bitrouter",
-          name: "@bitrouter.ai/openclaw-plugin",
-          runtimeId: "openclaw-plugin",
+          packageId: "packages:example-tools",
+          name: "@example.tools/demo-plugin",
+          runtimeId: "demo-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         target: {
-          packageId: "packages:bitrouter",
-          name: "@bitrouter.ai/openclaw-plugin",
-          runtimeId: "openclaw-plugin",
+          packageId: "packages:example-tools",
+          name: "@example.tools/demo-plugin",
+          runtimeId: "demo-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
@@ -466,25 +466,25 @@ describe("cmdRepairScopedPackages", () => {
         },
         retiredName: null,
         operations: [
-          { action: "transfer-owner", packageId: "packages:bitrouter", owner: "bitrouter.ai" },
+          { action: "transfer-owner", packageId: "packages:example-tools", owner: "example.tools" },
         ],
       })
       .mockResolvedValueOnce({
         ok: true,
         dryRun: false,
         source: {
-          packageId: "packages:bitrouter",
-          name: "@bitrouter.ai/openclaw-plugin",
-          runtimeId: "openclaw-plugin",
+          packageId: "packages:example-tools",
+          name: "@example.tools/demo-plugin",
+          runtimeId: "demo-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
           softDeletedAt: null,
         },
         target: {
-          packageId: "packages:bitrouter",
-          name: "@bitrouter.ai/openclaw-plugin",
-          runtimeId: "openclaw-plugin",
+          packageId: "packages:example-tools",
+          name: "@example.tools/demo-plugin",
+          runtimeId: "demo-plugin",
           ownerUserId: "users:vincent",
           ownerPublisherId: "publishers:vincent",
           channel: "community",
@@ -492,7 +492,7 @@ describe("cmdRepairScopedPackages", () => {
         },
         retiredName: null,
         operations: [
-          { action: "transfer-owner", packageId: "packages:bitrouter", owner: "bitrouter.ai" },
+          { action: "transfer-owner", packageId: "packages:example-tools", owner: "example.tools" },
         ],
       });
 
@@ -510,8 +510,8 @@ describe("cmdRepairScopedPackages", () => {
           method: "POST",
           path: "/api/v1/users/publisher",
           body: {
-            handle: "bitrouter.ai",
-            displayName: "BitRouter AI",
+            handle: "example.tools",
+            displayName: "Example Tools",
             memberHandle: "vincentkoc",
             memberRole: "owner",
           },
@@ -522,11 +522,11 @@ describe("cmdRepairScopedPackages", () => {
         2,
         "https://clawhub.ai",
         expect.objectContaining({
-          path: "/api/v1/packages/%40bitrouter.ai%2Fopenclaw-plugin/repair-name",
+          path: "/api/v1/packages/%40example.tools%2Fdemo-plugin/repair-name",
           body: {
-            nextName: "@bitrouter.ai/openclaw-plugin",
-            owner: "bitrouter.ai",
-            reason: "Move legacy personal package into @bitrouter.ai",
+            nextName: "@example.tools/demo-plugin",
+            owner: "example.tools",
+            reason: "Move legacy personal package into @example.tools",
             dryRun: true,
           },
         }),
@@ -536,7 +536,7 @@ describe("cmdRepairScopedPackages", () => {
         3,
         "https://clawhub.ai",
         expect.objectContaining({
-          path: "/api/v1/packages/%40bitrouter.ai%2Fopenclaw-plugin/repair-name",
+          path: "/api/v1/packages/%40example.tools%2Fdemo-plugin/repair-name",
           body: expect.objectContaining({ dryRun: false }),
         }),
         expect.anything(),

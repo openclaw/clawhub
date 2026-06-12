@@ -7701,7 +7701,7 @@ describe("packages public queries", () => {
 
   it("suggests publisher creation for missing npm-compatible package scopes", async () => {
     const runMutation = vi.fn(async () => {
-      throw new Error('Publisher "@bitrouter.ai" not found');
+      throw new Error('Publisher "@example.tools" not found');
     });
     const ctx = {
       runQuery: vi
@@ -7732,7 +7732,7 @@ describe("packages public queries", () => {
       publishPackageForUserInternalHandler(ctx as never, {
         actorUserId: "users:vincent",
         payload: {
-          name: "@bitrouter.ai/openclaw-plugin",
+          name: "@example.tools/demo-plugin",
           displayName: "Demo",
           family: "bundle-plugin",
           version: "1.0.0",
@@ -7741,7 +7741,7 @@ describe("packages public queries", () => {
           files: [],
         },
       }),
-    ).rejects.toThrow('Create it with "clawhub publisher create bitrouter.ai".');
+    ).rejects.toThrow('Create it with "clawhub publisher create example.tools".');
   });
 
   it("rejects scoped package publishes when --owner conflicts with the package scope", async () => {

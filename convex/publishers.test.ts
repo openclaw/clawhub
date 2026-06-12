@@ -3838,7 +3838,7 @@ describe("self-serve org publisher creation", () => {
   });
 
   it("creates org publishers for npm-compatible scoped package handles", async () => {
-    const examples = ["bitrouter.ai", "glin_1", "pluglab_thinkly", "souls_market"];
+    const examples = ["example.tools", "lab_1", "studio_tools", "market_square"];
 
     for (const handle of examples) {
       const { ctx, inserts } = makeCreateOrgPublisherCtx({});
