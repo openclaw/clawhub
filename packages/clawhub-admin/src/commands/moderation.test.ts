@@ -21,6 +21,7 @@ vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
 const {
   cmdBanUser,
+  cmdRecoverPersonalPublisher,
   cmdReclassifyBan,
   cmdRepairVtPendingSkills,
   cmdRescanAllSkills,
@@ -543,6 +544,85 @@ describe("cmdRepairVtPendingSkills", () => {
       }),
       expect.anything(),
     );
+  });
+});
+
+describe("cmdRecoverPersonalPublisher", () => {
+  it("plans publisher recovery by default", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: true,
+      recovered: false,
+      publisherId: "publishers:gingiris",
+      handle: "gingiris",
+      previousUser: {
+        userId: "users:legacy",
+        handle: "gingiris",
+        nextHandle: "gingiris-recovered",
+        githubProviderAccountId: "111",
+        authAccountCount: 1,
+      },
+      nextUser: {
+        userId: "users:current",
+        handle: "gingiris-1031",
+        nextHandle: "gingiris",
+        githubProviderAccountId: "222",
+        authAccountCount: 1,
+      },
+      retiredPersonalPublisher: null,
+      identityVerified: false,
+      reason: "Verified account continuity",
+    });
+
+    await cmdRecoverPersonalPublisher(
+      makeGlobalOpts(),
+      "@Gingiris",
+      {
+        to: "@Gingiris-1031",
+        previousGithubId: "111",
+        nextGithubId: "222",
+        reason: "Verified account continuity",
+      },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/publisher-recovery",
+        token: "tkn",
+        body: {
+          handle: "gingiris",
+          nextUserHandle: "gingiris-1031",
+          previousGitHubProviderAccountId: "111",
+          nextGitHubProviderAccountId: "222",
+          reason: "Verified account continuity",
+          confirmIdentityVerified: false,
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires --verified before applying recovery", async () => {
+    await expect(
+      cmdRecoverPersonalPublisher(
+        makeGlobalOpts(),
+        "gingiris",
+        {
+          to: "gingiris-1031",
+          previousGithubId: "111",
+          nextGithubId: "222",
+          reason: "Verified account continuity",
+          apply: true,
+          yes: true,
+        },
+        false,
+      ),
+    ).rejects.toThrow(/--verified/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 });
 

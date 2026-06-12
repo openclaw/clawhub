@@ -235,6 +235,39 @@ export const ApiV1PublisherDeleteResponseSchema = type({
 });
 export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
 
+export const ApiV1PublisherRecoveryResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  recovered: "boolean",
+  publisherId: "string",
+  handle: "string",
+  previousUser: {
+    userId: "string",
+    handle: "string|null",
+    nextHandle: "string|null",
+    githubProviderAccountId: "string",
+    authAccountCount: "number",
+  },
+  nextUser: {
+    userId: "string",
+    handle: "string|null",
+    nextHandle: "string",
+    githubProviderAccountId: "string",
+    authAccountCount: "number",
+  },
+  retiredPersonalPublisher: type({
+    publisherId: "string",
+    handle: "string",
+    skills: "number",
+    packages: "number",
+    githubSources: "number",
+  }).or("null"),
+  identityVerified: "boolean",
+  reason: "string",
+});
+export type ApiV1PublisherRecoveryResponse =
+  (typeof ApiV1PublisherRecoveryResponseSchema)[inferred];
+
 export const ApiV1OfficialPublisherListResponseSchema = type({
   ok: "true",
   items: type({

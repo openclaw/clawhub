@@ -13,6 +13,7 @@ import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
   ApiV1BanUserResponseSchema,
+  ApiV1PublisherRecoveryResponseSchema,
   ApiV1ReclassifyBanResponseSchema,
   ApiV1SetRoleResponseSchema,
   ApiV1SkillScanBatchResponseSchema,
@@ -187,6 +188,97 @@ export async function cmdSetRole(
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdRecoverPersonalPublisher(
+  opts: GlobalOpts,
+  handleArg: string,
+  options: {
+    to?: string;
+    previousGithubId?: string;
+    nextGithubId?: string;
+    retiredHandle?: string;
+    reason?: string;
+    apply?: boolean;
+    verified?: boolean;
+    yes?: boolean;
+    json?: boolean;
+  },
+  inputAllowed: boolean,
+) {
+  const handle = normalizeRequiredHandle(handleArg, "Publisher handle");
+  const nextUserHandle = normalizeRequiredHandle(options.to ?? "", "--to");
+  const previousGitHubProviderAccountId = normalizeGitHubProviderId(
+    options.previousGithubId,
+    "--previous-github-id",
+  );
+  const nextGitHubProviderAccountId = normalizeGitHubProviderId(
+    options.nextGithubId,
+    "--next-github-id",
+  );
+  const retiredUserHandle = options.retiredHandle
+    ? normalizeRequiredHandle(options.retiredHandle, "--retired-handle")
+    : undefined;
+  const reason = options.reason?.trim();
+  if (!reason) fail("--reason required");
+  if (reason.length > 500) fail("--reason must be 500 characters or fewer");
+
+  const dryRun = options.apply !== true;
+  const confirmIdentityVerified = options.verified === true;
+  if (!dryRun && !confirmIdentityVerified) fail("--verified required with --apply");
+  if (!dryRun && !options.yes) {
+    if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
+    const ok = await promptConfirm(
+      `Recover @${handle} for @${nextUserHandle}? This changes personal publisher control.`,
+    );
+    if (!ok) return undefined;
+  }
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createSpinner(`${dryRun ? "Planning" : "Applying"} publisher recovery for @${handle}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/publisher-recovery`,
+        token,
+        body: {
+          handle,
+          nextUserHandle,
+          previousGitHubProviderAccountId,
+          nextGitHubProviderAccountId,
+          ...(retiredUserHandle ? { retiredUserHandle } : {}),
+          reason,
+          confirmIdentityVerified,
+          dryRun,
+        },
+      },
+      ApiV1PublisherRecoveryResponseSchema,
+    );
+    const parsed = parseArk(
+      ApiV1PublisherRecoveryResponseSchema,
+      result,
+      "Publisher recovery response",
+    );
+    spinner?.succeed(
+      parsed.recovered
+        ? `Recovered @${parsed.handle} for @${parsed.nextUser.nextHandle}`
+        : `Dry run OK for @${parsed.handle}; @${parsed.previousUser.handle ?? parsed.previousUser.userId} would retire to @${parsed.previousUser.nextHandle}`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(parsed, null, 2)}\n`);
+    } else if (dryRun) {
+      console.log("Re-run with --apply --verified --yes to write this recovery.");
+    }
+    return parsed;
+  } catch (error) {
+    spinner?.fail(formatError(error));
     throw error;
   }
 }
@@ -660,6 +752,19 @@ export async function cmdReclassifyBan(
 function normalizeHandle(value: string) {
   const trimmed = value.trim();
   return trimmed.startsWith("@") ? trimmed.slice(1).toLowerCase() : trimmed.toLowerCase();
+}
+
+function normalizeRequiredHandle(value: string, label: string) {
+  const handle = normalizeHandle(value);
+  if (!handle) fail(`${label} required`);
+  return handle;
+}
+
+function normalizeGitHubProviderId(value: string | undefined, label: string) {
+  const providerId = value?.trim() ?? "";
+  if (!providerId) fail(`${label} required`);
+  if (!/^\d+$/.test(providerId)) fail(`${label} must be a numeric GitHub provider account id`);
+  return providerId;
 }
 
 function normalizeSkillSlug(value: string) {
