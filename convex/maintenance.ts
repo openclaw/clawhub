@@ -111,6 +111,37 @@ type LegacyPublisherOwnershipForUserRepairResult = {
   nextPhase?: LegacyPublisherOwnershipTargetPhase;
 };
 
+type DeprecatedClawScanNoteCleanupTable = "skillVersions" | "packageReleases";
+
+type DeprecatedClawScanNoteCleanupStats = {
+  rowsScanned: number;
+  rowsWithDeprecatedFields: number;
+  rowsPatched: number;
+};
+
+type DeprecatedClawScanNoteCleanupResult = {
+  ok: true;
+  table: DeprecatedClawScanNoteCleanupTable;
+  dryRun: boolean;
+  stats: DeprecatedClawScanNoteCleanupStats;
+  isDone: boolean;
+  cursor: string | null;
+};
+
+type DeprecatedClawScanJobSourceCleanupStats = {
+  rowsScanned: number;
+  rowsWithDeprecatedSource: number;
+  rowsPatched: number;
+};
+
+type DeprecatedClawScanJobSourceCleanupResult = {
+  ok: true;
+  dryRun: boolean;
+  stats: DeprecatedClawScanJobSourceCleanupStats;
+  isDone: boolean;
+  cursor: string | null;
+};
+
 export const getSkillBackfillPageInternal = internalQuery({
   args: {
     cursor: v.optional(v.string()),
@@ -324,6 +355,224 @@ export type PublisherStatsBackfillActionResult = {
   isDone: boolean;
   cursor: string | null;
 };
+
+function hasDeprecatedClawScanNoteFields(
+  doc: Pick<
+    Doc<"skillVersions"> | Doc<"packageReleases">,
+    "clawScanNote" | "clawScanNoteUpdatedAt"
+  >,
+) {
+  return doc.clawScanNote !== undefined || doc.clawScanNoteUpdatedAt !== undefined;
+}
+
+export async function cleanupDeprecatedClawScanNoteFieldsBatchHandler(
+  ctx: MutationCtx,
+  args: {
+    table: DeprecatedClawScanNoteCleanupTable;
+    cursor?: string;
+    batchSize?: number;
+    dryRun?: boolean;
+  },
+): Promise<DeprecatedClawScanNoteCleanupResult> {
+  const dryRun = args.dryRun === true;
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const stats: DeprecatedClawScanNoteCleanupStats = {
+    rowsScanned: 0,
+    rowsWithDeprecatedFields: 0,
+    rowsPatched: 0,
+  };
+
+  if (args.table === "skillVersions") {
+    const page = await ctx.db
+      .query("skillVersions")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    for (const version of page.page) {
+      stats.rowsScanned++;
+      if (!hasDeprecatedClawScanNoteFields(version)) continue;
+      stats.rowsWithDeprecatedFields++;
+      if (dryRun) continue;
+      await ctx.db.patch(version._id, {
+        clawScanNote: undefined,
+        clawScanNoteUpdatedAt: undefined,
+      });
+      stats.rowsPatched++;
+    }
+
+    return {
+      ok: true as const,
+      table: args.table,
+      dryRun,
+      stats,
+      isDone: page.isDone,
+      cursor: page.continueCursor,
+    };
+  }
+
+  const page = await ctx.db
+    .query("packageReleases")
+    .order("asc")
+    .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+  for (const release of page.page) {
+    stats.rowsScanned++;
+    if (!hasDeprecatedClawScanNoteFields(release)) continue;
+    stats.rowsWithDeprecatedFields++;
+    if (dryRun) continue;
+    await ctx.db.patch(release._id, {
+      clawScanNote: undefined,
+      clawScanNoteUpdatedAt: undefined,
+    });
+    stats.rowsPatched++;
+  }
+
+  return {
+    ok: true as const,
+    table: args.table,
+    dryRun,
+    stats,
+    isDone: page.isDone,
+    cursor: page.continueCursor,
+  };
+}
+
+export async function cleanupDeprecatedClawScanNoteFieldsInternalHandler(
+  ctx: ActionCtx,
+  args: {
+    table: DeprecatedClawScanNoteCleanupTable;
+    cursor?: string;
+    batchSize?: number;
+    maxBatches?: number;
+    dryRun?: boolean;
+  },
+): Promise<DeprecatedClawScanNoteCleanupResult> {
+  const dryRun = args.dryRun === true;
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+  const stats: DeprecatedClawScanNoteCleanupStats = {
+    rowsScanned: 0,
+    rowsWithDeprecatedFields: 0,
+    rowsPatched: 0,
+  };
+
+  let cursor: string | null = args.cursor ?? null;
+  let isDone = false;
+
+  for (let i = 0; i < maxBatches; i++) {
+    const result = (await ctx.runMutation(
+      internal.maintenance.cleanupDeprecatedClawScanNoteFieldsBatchInternal,
+      {
+        table: args.table,
+        dryRun,
+        batchSize,
+        cursor: cursor ?? undefined,
+      },
+    )) as DeprecatedClawScanNoteCleanupResult;
+
+    stats.rowsScanned += result.stats.rowsScanned;
+    stats.rowsWithDeprecatedFields += result.stats.rowsWithDeprecatedFields;
+    stats.rowsPatched += result.stats.rowsPatched;
+    cursor = result.cursor;
+    isDone = result.isDone;
+    if (isDone) break;
+  }
+
+  return {
+    ok: true as const,
+    table: args.table,
+    dryRun,
+    stats,
+    isDone,
+    cursor,
+  };
+}
+
+export async function cleanupDeprecatedClawScanJobSourcesBatchHandler(
+  ctx: MutationCtx,
+  args: {
+    cursor?: string;
+    batchSize?: number;
+    dryRun?: boolean;
+  },
+): Promise<DeprecatedClawScanJobSourceCleanupResult> {
+  const dryRun = args.dryRun === true;
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const stats: DeprecatedClawScanJobSourceCleanupStats = {
+    rowsScanned: 0,
+    rowsWithDeprecatedSource: 0,
+    rowsPatched: 0,
+  };
+  const page = await ctx.db
+    .query("securityScanJobs")
+    .order("asc")
+    .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+  for (const job of page.page) {
+    stats.rowsScanned++;
+    if (job.source !== "clawscan-note") continue;
+    stats.rowsWithDeprecatedSource++;
+    if (dryRun) continue;
+    await ctx.db.patch(job._id, { source: "manual" });
+    stats.rowsPatched++;
+  }
+
+  return {
+    ok: true as const,
+    dryRun,
+    stats,
+    isDone: page.isDone,
+    cursor: page.continueCursor,
+  };
+}
+
+export async function cleanupDeprecatedClawScanJobSourcesInternalHandler(
+  ctx: ActionCtx,
+  args: {
+    cursor?: string;
+    batchSize?: number;
+    maxBatches?: number;
+    dryRun?: boolean;
+  },
+): Promise<DeprecatedClawScanJobSourceCleanupResult> {
+  const dryRun = args.dryRun === true;
+  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+  const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
+  const stats: DeprecatedClawScanJobSourceCleanupStats = {
+    rowsScanned: 0,
+    rowsWithDeprecatedSource: 0,
+    rowsPatched: 0,
+  };
+
+  let cursor: string | null = args.cursor ?? null;
+  let isDone = false;
+
+  for (let i = 0; i < maxBatches; i++) {
+    const result = (await ctx.runMutation(
+      internal.maintenance.cleanupDeprecatedClawScanJobSourcesBatchInternal,
+      {
+        dryRun,
+        batchSize,
+        cursor: cursor ?? undefined,
+      },
+    )) as DeprecatedClawScanJobSourceCleanupResult;
+
+    stats.rowsScanned += result.stats.rowsScanned;
+    stats.rowsWithDeprecatedSource += result.stats.rowsWithDeprecatedSource;
+    stats.rowsPatched += result.stats.rowsPatched;
+    cursor = result.cursor;
+    isDone = result.isDone;
+    if (isDone) break;
+  }
+
+  return {
+    ok: true as const,
+    dryRun,
+    stats,
+    isDone,
+    cursor,
+  };
+}
 
 export async function backfillSkillSummariesInternalHandler(
   ctx: ActionCtx,
@@ -555,6 +804,46 @@ export const backfillPublisherStatsInternal = internalAction({
     cursor: v.optional(v.string()),
   },
   handler: backfillPublisherStatsInternalHandler,
+});
+
+export const cleanupDeprecatedClawScanNoteFieldsBatchInternal = internalMutation({
+  args: {
+    table: v.union(v.literal("skillVersions"), v.literal("packageReleases")),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: cleanupDeprecatedClawScanNoteFieldsBatchHandler,
+});
+
+export const cleanupDeprecatedClawScanNoteFieldsInternal = internalAction({
+  args: {
+    table: v.union(v.literal("skillVersions"), v.literal("packageReleases")),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: cleanupDeprecatedClawScanNoteFieldsInternalHandler,
+});
+
+export const cleanupDeprecatedClawScanJobSourcesBatchInternal = internalMutation({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: cleanupDeprecatedClawScanJobSourcesBatchHandler,
+});
+
+export const cleanupDeprecatedClawScanJobSourcesInternal = internalAction({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: cleanupDeprecatedClawScanJobSourcesInternalHandler,
 });
 
 export const backfillSkillSummaries: ReturnType<typeof action> = action({

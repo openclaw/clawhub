@@ -96,9 +96,16 @@ const jobSourceValidator = v.union(
   v.literal("backfill"),
   v.literal("bulk-rescan"),
   v.literal("manual"),
+  v.literal("clawscan-note"),
 );
 
-type SecurityScanJobSource = "publish" | "vt-update" | "backfill" | "bulk-rescan" | "manual";
+type SecurityScanJobSource =
+  | "publish"
+  | "vt-update"
+  | "backfill"
+  | "bulk-rescan"
+  | "manual"
+  | "clawscan-note";
 
 const CLAIM_SOURCE_ORDER: SecurityScanJobSource[] = [
   "backfill",

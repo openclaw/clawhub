@@ -33,6 +33,12 @@ vi.mock("./_generated/api", () => ({
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
       cleanupEmptySkillsInternal: Symbol("cleanupEmptySkillsInternal"),
       nominateEmptySkillSpammersInternal: Symbol("nominateEmptySkillSpammersInternal"),
+      cleanupDeprecatedClawScanNoteFieldsBatchInternal: Symbol(
+        "cleanupDeprecatedClawScanNoteFieldsBatchInternal",
+      ),
+      cleanupDeprecatedClawScanJobSourcesBatchInternal: Symbol(
+        "cleanupDeprecatedClawScanJobSourcesBatchInternal",
+      ),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
@@ -57,6 +63,10 @@ const {
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
+  cleanupDeprecatedClawScanNoteFieldsBatchHandler,
+  cleanupDeprecatedClawScanNoteFieldsInternalHandler,
+  cleanupDeprecatedClawScanJobSourcesBatchHandler,
+  cleanupDeprecatedClawScanJobSourcesInternalHandler,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
@@ -542,6 +552,254 @@ describe("maintenance legacy publisher ownership repair", () => {
 });
 
 describe("maintenance backfill", () => {
+  it("dry-runs deprecated ClawScan note cleanup without patching rows", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        { _id: "packageReleases:1", clawScanNote: "old note", clawScanNoteUpdatedAt: 123 },
+        { _id: "packageReleases:2" },
+      ],
+      continueCursor: "next",
+      isDone: false,
+    });
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+        patch,
+      },
+    } as never;
+
+    const result = await cleanupDeprecatedClawScanNoteFieldsBatchHandler(ctx, {
+      table: "packageReleases",
+      dryRun: true,
+      batchSize: 10,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      table: "packageReleases",
+      dryRun: true,
+      stats: {
+        rowsScanned: 2,
+        rowsWithDeprecatedFields: 1,
+        rowsPatched: 0,
+      },
+      isDone: false,
+      cursor: "next",
+    });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("removes deprecated ClawScan note fields from matching rows only", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        { _id: "skillVersions:1", clawScanNote: "old note" },
+        { _id: "skillVersions:2", clawScanNoteUpdatedAt: 456 },
+        { _id: "skillVersions:3" },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+        patch,
+      },
+    } as never;
+
+    const result = await cleanupDeprecatedClawScanNoteFieldsBatchHandler(ctx, {
+      table: "skillVersions",
+      dryRun: false,
+      batchSize: 10,
+    });
+
+    expect(result.stats).toEqual({
+      rowsScanned: 3,
+      rowsWithDeprecatedFields: 2,
+      rowsPatched: 2,
+    });
+    expect(patch).toHaveBeenNthCalledWith(1, "skillVersions:1", {
+      clawScanNote: undefined,
+      clawScanNoteUpdatedAt: undefined,
+    });
+    expect(patch).toHaveBeenNthCalledWith(2, "skillVersions:2", {
+      clawScanNote: undefined,
+      clawScanNoteUpdatedAt: undefined,
+    });
+  });
+
+  it("runs deprecated ClawScan note cleanup batches until done or maxBatches", async () => {
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        table: "packageReleases",
+        dryRun: false,
+        stats: { rowsScanned: 2, rowsWithDeprecatedFields: 1, rowsPatched: 1 },
+        isDone: false,
+        cursor: "next",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        table: "packageReleases",
+        dryRun: false,
+        stats: { rowsScanned: 1, rowsWithDeprecatedFields: 0, rowsPatched: 0 },
+        isDone: true,
+        cursor: null,
+      });
+
+    const result = await cleanupDeprecatedClawScanNoteFieldsInternalHandler(
+      { runMutation } as never,
+      { table: "packageReleases", dryRun: false, batchSize: 2, maxBatches: 5 },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      table: "packageReleases",
+      dryRun: false,
+      stats: { rowsScanned: 3, rowsWithDeprecatedFields: 1, rowsPatched: 1 },
+      isDone: true,
+      cursor: null,
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.cleanupDeprecatedClawScanNoteFieldsBatchInternal,
+      {
+        table: "packageReleases",
+        dryRun: false,
+        batchSize: 2,
+        cursor: undefined,
+      },
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.cleanupDeprecatedClawScanNoteFieldsBatchInternal,
+      {
+        table: "packageReleases",
+        dryRun: false,
+        batchSize: 2,
+        cursor: "next",
+      },
+    );
+  });
+
+  it("dry-runs deprecated ClawScan job source cleanup without patching rows", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        { _id: "securityScanJobs:1", source: "clawscan-note" },
+        { _id: "securityScanJobs:2", source: "manual" },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+        patch,
+      },
+    } as never;
+
+    const result = await cleanupDeprecatedClawScanJobSourcesBatchHandler(ctx, {
+      dryRun: true,
+      batchSize: 10,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      dryRun: true,
+      stats: {
+        rowsScanned: 2,
+        rowsWithDeprecatedSource: 1,
+        rowsPatched: 0,
+      },
+      isDone: true,
+      cursor: null,
+    });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("maps deprecated ClawScan job source rows to manual", async () => {
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        { _id: "securityScanJobs:1", source: "clawscan-note" },
+        { _id: "securityScanJobs:2", source: "publish" },
+      ],
+      continueCursor: null,
+      isDone: true,
+    });
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ order: vi.fn(() => ({ paginate })) })),
+        patch,
+      },
+    } as never;
+
+    const result = await cleanupDeprecatedClawScanJobSourcesBatchHandler(ctx, {
+      dryRun: false,
+      batchSize: 10,
+    });
+
+    expect(result.stats).toEqual({
+      rowsScanned: 2,
+      rowsWithDeprecatedSource: 1,
+      rowsPatched: 1,
+    });
+    expect(patch).toHaveBeenCalledWith("securityScanJobs:1", { source: "manual" });
+  });
+
+  it("runs deprecated ClawScan job source cleanup batches until done or maxBatches", async () => {
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        dryRun: false,
+        stats: { rowsScanned: 2, rowsWithDeprecatedSource: 1, rowsPatched: 1 },
+        isDone: false,
+        cursor: "next",
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        dryRun: false,
+        stats: { rowsScanned: 1, rowsWithDeprecatedSource: 0, rowsPatched: 0 },
+        isDone: true,
+        cursor: null,
+      });
+
+    const result = await cleanupDeprecatedClawScanJobSourcesInternalHandler(
+      { runMutation } as never,
+      { dryRun: false, batchSize: 2, maxBatches: 5 },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      dryRun: false,
+      stats: { rowsScanned: 3, rowsWithDeprecatedSource: 1, rowsPatched: 1 },
+      isDone: true,
+      cursor: null,
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.cleanupDeprecatedClawScanJobSourcesBatchInternal,
+      {
+        dryRun: false,
+        batchSize: 2,
+        cursor: undefined,
+      },
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.cleanupDeprecatedClawScanJobSourcesBatchInternal,
+      {
+        dryRun: false,
+        batchSize: 2,
+        cursor: "next",
+      },
+    );
+  });
+
   it("repairs summary + parsed by reparsing SKILL.md", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       items: [
