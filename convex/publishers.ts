@@ -1321,6 +1321,27 @@ export const listMine = query({
   },
 });
 
+export const getMyProfileHandle = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return null;
+
+    const publisher = user.personalPublisherId
+      ? await ctx.db.get(user.personalPublisherId)
+      : await getPersonalPublisherForUser(ctx, userId);
+    if (!publisher || publisher.kind !== "user" || publisher.deletedAt || publisher.deactivatedAt) {
+      return null;
+    }
+    const isPersonalPublisher =
+      publisher.linkedUserId === userId ||
+      (!publisher.linkedUserId && user.personalPublisherId === publisher._id);
+    return isPersonalPublisher ? publisher.handle : null;
+  },
+});
+
 export const getByHandle = query({
   args: { handle: v.string() },
   handler: async (ctx, args) =>

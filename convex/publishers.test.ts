@@ -6,6 +6,7 @@ import {
   listPublicPage,
   listPublic,
   listMine,
+  getMyProfileHandle,
   getProfileByHandle,
   listMembers,
   listPublishedPage,
@@ -103,6 +104,10 @@ const removeOrgPublisherMemberInternalHandler = (
 
 const listMineHandler = (
   listMine as unknown as WrappedHandler<Record<string, never>, Array<unknown>>
+)._handler;
+
+const getMyProfileHandleHandler = (
+  getMyProfileHandle as unknown as WrappedHandler<Record<string, never>, string | null>
 )._handler;
 
 const listPublicHandler = (
@@ -3329,6 +3334,40 @@ describe("publisher bootstrap", () => {
       },
     };
   }
+
+  it("returns the real personal publisher handle when it differs from the user handle", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "claimed",
+              personalPublisherId: "publishers:alice-profile",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:alice-profile") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "alice-profile",
+              linkedUserId: "users:alice",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn(() => {
+          throw new Error("unexpected query");
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(
+      "alice-profile",
+    );
+  });
 
   it("lists a synthesized personal publisher when membership rows are missing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
