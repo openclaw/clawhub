@@ -1,5 +1,5 @@
-import { mkdir, rm, stat } from "node:fs/promises";
-import { join } from "node:path";
+import { mkdir, mkdtemp, rename, rm, stat } from "node:fs/promises";
+import { basename, dirname, join } from "node:path";
 import semver from "semver";
 import { apiRequest, downloadZip, fetchBinary, registryUrl } from "../../http.js";
 import {
@@ -153,8 +153,9 @@ export async function cmdInstall(
   const registry = await getRegistry(opts, { cache: true });
   await mkdir(opts.dir, { recursive: true });
   const target = join(opts.dir, trimmed);
+  const targetExists = await fileExists(target);
   if (!force) {
-    const exists = await fileExists(target);
+    const exists = targetExists;
     if (exists) fail(`Already installed: ${target} (use --force)`);
   }
 
@@ -224,20 +225,20 @@ export async function cmdInstall(
       );
     }
 
-    if (force) {
-      await rm(target, { recursive: true, force: true });
-    }
-
     if (githubInstall) {
       spinner.text = `Downloading ${trimmed}@${formatGitHubVersion(githubInstall.github.commit)}`;
-      await installGitHubSkill(registry, githubInstall, target);
+      await installSkillWithOptionalStaging(target, targetExists, (installTarget) =>
+        installGitHubSkill(registry, githubInstall, installTarget),
+      );
       resolvedVersion = githubInstall.github.commit;
     } else {
       const archiveVersion = resolvedVersion;
       if (!archiveVersion) fail("Could not resolve latest version");
       spinner.text = `Downloading ${trimmed}@${archiveVersion}`;
-      const zip = await downloadZip(registry, { slug: trimmed, version: archiveVersion, token });
-      await extractZipToDir(zip, target);
+      await installSkillWithOptionalStaging(target, targetExists, async (installTarget) => {
+        const zip = await downloadZip(registry, { slug: trimmed, version: archiveVersion, token });
+        await extractZipToDir(zip, installTarget);
+      });
     }
     const installedFiles = await listTextFiles(target);
     const installedFingerprint =
@@ -308,6 +309,16 @@ export async function cmdUpdate(
     console.log("No installed skills.");
     return;
   }
+
+  let lockDirty = false;
+  const markLockDirty = () => {
+    lockDirty = true;
+  };
+  const flushLockfile = async () => {
+    if (!lockDirty) return;
+    await writeLockfile(opts.workdir, lock);
+    lockDirty = false;
+  };
 
   for (const entry of slugs) {
     const spinner = createSpinner(`Checking ${entry}`);
@@ -407,6 +418,8 @@ export async function cmdUpdate(
                 lock.skills[entry]?.installedAt ?? Date.now(),
                 lock.skills[entry],
               );
+              markLockDirty();
+              await flushLockfile();
             }
             spinner.succeed(`${entry}: up to date (${formatGitHubVersion(targetVersion)})`);
             continue;
@@ -417,8 +430,10 @@ export async function cmdUpdate(
           } else {
             spinner.start(`Updating ${entry} -> ${formatGitHubVersion(targetVersion)}`);
           }
-          await rm(target, { recursive: true, force: true });
-          await installGitHubSkill(registry, latestInstall, target);
+          const githubResolution = latestInstall;
+          await installSkillWithOptionalStaging(target, exists, (installTarget) =>
+            installGitHubSkill(registry, githubResolution, installTarget),
+          );
           const installedFiles = await listTextFiles(target);
           const installedFingerprint =
             installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
@@ -434,6 +449,8 @@ export async function cmdUpdate(
           });
 
           lock.skills[entry] = withPinnedMetadata(targetVersion, installedAt, lock.skills[entry]);
+          markLockDirty();
+          await flushLockfile();
           spinner.succeed(`${entry}: updated -> ${formatGitHubVersion(targetVersion)}`);
           continue;
         }
@@ -467,6 +484,8 @@ export async function cmdUpdate(
           lock.skills[entry]?.installedAt ?? Date.now(),
           lock.skills[entry],
         );
+        markLockDirty();
+        await flushLockfile();
       }
 
       if (!latest) {
@@ -506,9 +525,10 @@ export async function cmdUpdate(
       } else {
         spinner.start(`Updating ${entry} -> ${targetVersion}`);
       }
-      await rm(target, { recursive: true, force: true });
-      const zip = await downloadZip(registry, { slug: entry, version: targetVersion, token });
-      await extractZipToDir(zip, target);
+      await installSkillWithOptionalStaging(target, exists, async (installTarget) => {
+        const zip = await downloadZip(registry, { slug: entry, version: targetVersion, token });
+        await extractZipToDir(zip, installTarget);
+      });
       const installedFiles = await listTextFiles(target);
       const installedFingerprint =
         installedFiles.length > 0 ? hashSkillFiles(installedFiles).fingerprint : undefined;
@@ -524,6 +544,8 @@ export async function cmdUpdate(
       });
 
       lock.skills[entry] = withPinnedMetadata(targetVersion, installedAt, lock.skills[entry]);
+      markLockDirty();
+      await flushLockfile();
       spinner.succeed(`${entry}: updated -> ${targetVersion}`);
     } catch (error) {
       spinner.fail(formatError(error));
@@ -531,7 +553,7 @@ export async function cmdUpdate(
     }
   }
 
-  await writeLockfile(opts.workdir, lock);
+  await flushLockfile();
   if (skippedPinned.length > 0) {
     const suffix = skippedPinned.length === 1 ? "" : "s";
     console.log(
@@ -932,6 +954,44 @@ async function installGitHubSkill(
     url: gitHubZipUrl(resolution.github.repo, resolution.github.commit),
   });
   await extractGitHubZipPathToDir(zip, target, resolution.github.path);
+}
+
+async function installSkillWithOptionalStaging(
+  target: string,
+  targetExists: boolean,
+  install: (target: string) => Promise<void>,
+) {
+  if (!targetExists) {
+    await install(target);
+    return;
+  }
+
+  const parent = dirname(target);
+  await mkdir(parent, { recursive: true });
+  const stage = await mkdtemp(join(parent, `.${basename(target)}.tmp-`));
+  const backup = join(parent, `.${basename(target)}.backup-${process.pid}-${Date.now()}`);
+  let stageMoved = false;
+  let backupCreated = false;
+
+  try {
+    await install(stage);
+    await rename(target, backup);
+    backupCreated = true;
+    await rename(stage, target);
+    stageMoved = true;
+    await rm(backup, { recursive: true, force: true });
+    backupCreated = false;
+  } catch (error) {
+    if (backupCreated) {
+      await rm(target, { recursive: true, force: true }).catch(() => {});
+      await rename(backup, target).catch(() => {});
+    }
+    throw error;
+  } finally {
+    if (!stageMoved) {
+      await rm(stage, { recursive: true, force: true }).catch(() => {});
+    }
+  }
 }
 
 function gitHubZipUrl(repo: string, commit: string) {
