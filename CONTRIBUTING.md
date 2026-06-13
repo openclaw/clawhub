@@ -279,7 +279,7 @@ See [`docs/security.md`](docs/security.md) for moderation and upload gating deta
 ## Reading Order for New Contributors
 
 1. This file (local setup)
-2. [`docs/index.md`](docs/index.md) — public registry overview
+2. [`docs/clawhub.md`](docs/clawhub.md) — public registry overview
 3. [`docs/quickstart.md`](docs/quickstart.md) — end-to-end workflows
 4. [`docs/how-it-works.md`](docs/how-it-works.md) — registry behavior and system overview
 5. [`docs/skill-format.md`](docs/skill-format.md) — skill structure

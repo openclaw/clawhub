@@ -148,9 +148,7 @@ describe("plugins publish route", () => {
     renderPublishRoute();
 
     const guideLink = screen.getByRole("link", { name: /Plugin publishing guide/i });
-    expect(guideLink.getAttribute("href")).toBe(
-      "https://docs.openclaw.ai/clawhub/publishing#plugins",
-    );
+    expect(guideLink.getAttribute("href")).toBe("https://clawhub.ai/docs/publishing#plugins");
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
 

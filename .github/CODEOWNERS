@@ -117,7 +117,7 @@
 /docs/auth.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/http-api.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/security.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/webhook.md @openclaw/openclaw-secops @Patrick-Erichsen
 /specs/deploy.md @openclaw/openclaw-secops @Patrick-Erichsen
 /specs/github-import.md @openclaw/openclaw-secops @Patrick-Erichsen
-/specs/webhook.md @openclaw/openclaw-secops @Patrick-Erichsen
 /public/api/v1/openapi.json @openclaw/openclaw-secops @Patrick-Erichsen

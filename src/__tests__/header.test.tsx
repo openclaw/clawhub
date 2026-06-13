@@ -225,9 +225,7 @@ describe("Header", () => {
     expect(document.querySelector(".theme-mode-toggle")).toBeNull();
     expect(within(topNav).getByText("Skills").closest("a")?.querySelector("svg")).toBeNull();
     expect(within(topNav).getByText("Plugins").closest("a")?.querySelector("svg")).toBeNull();
-    expect(within(topNav).getByText("Docs").closest("a")?.getAttribute("href")).toBe(
-      "https://docs.openclaw.ai/clawhub/",
-    );
+    expect(within(topNav).getByText("Docs").closest("a")?.getAttribute("href")).toBe("/docs");
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
     expect(screen.queryByText("Publishers")).toBeNull();

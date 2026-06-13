@@ -2,19 +2,17 @@
   "$schema": "https://mintlify.com/docs.json",
   "name": "ClawHub",
   "description": "Public documentation for finding, installing, publishing, and operating ClawHub skills and plugins.",
-  "theme": "mint",
-  "icons": {
-    "library": "lucide"
-  },
   "favicon": "/assets/clawd-logo.png",
   "logo": {
     "light": "/assets/clawd-logo.png",
     "dark": "/assets/clawd-logo.png"
   },
   "colors": {
-    "primary": "#FF5A36",
-    "dark": "#FF5A36",
-    "light": "#FF8A6B"
+    "primary": "#FF8A5F"
+  },
+  "chat": {
+    "name": "Molty",
+    "label": "ClawHub docs assistant"
   },
   "navbar": {
     "links": [

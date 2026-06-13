@@ -7,8 +7,8 @@ read_when:
 
 # Docs
 
-`docs/` is the Mintlify source for user-facing ClawHub documentation served at
-`https://clawhub.ai/docs`.
+`docs/` is the publishable source for user-facing ClawHub documentation served
+under `https://clawhub.ai/docs`.
 
 Keep product, CLI, publisher, API, policy, security, and troubleshooting docs
 here. These pages should explain how people use ClawHub: discover, install,
@@ -22,7 +22,7 @@ site.
 
 Reading order:
 
-1. `docs/index.md`: public overview for discovery, install, publish, and trust.
+1. `docs/clawhub.md`: public overview for discovery, install, publish, and trust.
 2. `docs/quickstart.md`: product quickstart for users and publishers.
 3. `docs/how-it-works.md`: listings, versions, installs, publishing, scans, and API access.
 4. `docs/publishing.md`: owner-scoped skill/plugin publishing flow.
@@ -47,8 +47,8 @@ Maintainer records:
 
 Publish flow:
 
-- Preview locally with `bun run docs:dev`.
-- Validate the Mintlify project with `bun run docs:check`.
-- Production publishing is handled by the Mintlify project connected to this
-  repository's `docs/` directory.
+- Build with `bun run docs:build`; this stages `docs/` into the shared
+  `openclaw/docs` renderer and writes the generated site to `public/docs`.
+- Preview the generated static site with `bun run docs:run`.
+- Validate the generated route with `bun run docs:smoke`.
 - `specs/` is intentionally not published.

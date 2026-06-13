@@ -14,7 +14,7 @@ import {
 import type { ReactNode } from "react";
 
 export const CLAWHUB_URL = "https://clawhub.ai";
-export const CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/";
+export const CLAWHUB_DOCS_URL = "https://clawhub.ai/docs";
 export const EMAIL_PREFERENCES_URL = "https://clawhub.ai/settings";
 export const APPEALS_URL = "https://appeals.openclaw.ai/";
 export const CLAWHUB_LOGO_URL =

@@ -698,8 +698,7 @@ describe("plugin detail route", () => {
             scanSource: "nightly",
             authorRemediation: {
               summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
-              docsUrl:
-                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+              docsUrl: "https://clawhub.ai/docs/plugin-validation-fixes#legacy-before-agent-start",
             },
             createdAt: 1,
           },
@@ -780,10 +779,10 @@ describe("plugin detail route", () => {
     expect(
       screen
         .getByRole("link", {
-          name: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+          name: "https://clawhub.ai/docs/plugin-validation-fixes#legacy-before-agent-start",
         })
         .getAttribute("href"),
-    ).toBe("https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start");
+    ).toBe("https://clawhub.ai/docs/plugin-validation-fixes#legacy-before-agent-start");
     expect(screen.getByText("Docs")).toBeTruthy();
     expect(screen.getAllByText("OpenClaw 0.9.0").length).toBeGreaterThan(0);
   });

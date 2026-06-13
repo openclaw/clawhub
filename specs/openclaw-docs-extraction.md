@@ -10,7 +10,7 @@ Source audited for this slice:
 
 ## Moved into ClawHub docs
 
-Canonical product and registry material now lives in `docs/index.md`:
+Canonical product and registry material now lives in `docs/clawhub.md`:
 
 - What ClawHub is: public registry for OpenClaw skills and plugins.
 - Native OpenClaw search/install/update examples for skills and plugins.
