@@ -6,6 +6,7 @@ import {
   listPublicPage,
   listPublic,
   listMine,
+  getMyProfileHandle,
   getProfileByHandle,
   listMembers,
   listPublishedPage,
@@ -103,6 +104,10 @@ const removeOrgPublisherMemberInternalHandler = (
 
 const listMineHandler = (
   listMine as unknown as WrappedHandler<Record<string, never>, Array<unknown>>
+)._handler;
+
+const getMyProfileHandleHandler = (
+  getMyProfileHandle as unknown as WrappedHandler<Record<string, never>, string | null>
 )._handler;
 
 const listPublicHandler = (
@@ -3329,6 +3334,143 @@ describe("publisher bootstrap", () => {
       },
     };
   }
+
+  it("returns the real personal publisher handle when it differs from the user handle", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "claimed",
+              personalPublisherId: "publishers:alice-profile",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:alice-profile") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "alice-profile",
+              linkedUserId: "users:alice",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn(() => {
+          throw new Error("unexpected query");
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(
+      "alice-profile",
+    );
+  });
+
+  it("falls back to the linked personal publisher when the direct pointer is stale", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "claimed",
+              personalPublisherId: "publishers:stale",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:stale") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "stale",
+              linkedUserId: "users:bob",
+              deactivatedAt: 2,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publishers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string) => {
+              if (indexName !== "by_linked_user") throw new Error(`unexpected index ${indexName}`);
+              return {
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publishers:alice-profile",
+                  kind: "user",
+                  handle: "alice-profile",
+                  linkedUserId: "users:alice",
+                }),
+              };
+            }),
+          };
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(
+      "alice-profile",
+    );
+  });
+
+  it.each([
+    {
+      name: "hides a legacy pointer without an owner membership",
+      memberships: [],
+      expected: null,
+    },
+    {
+      name: "returns a legacy pointer with the signed-in owner's membership",
+      memberships: [
+        {
+          _id: "publisherMembers:alice",
+          publisherId: "publishers:legacy-alice",
+          userId: "users:alice",
+          role: "owner",
+        },
+      ],
+      expected: "legacy-alice",
+    },
+  ])("$name", async ({ memberships, expected }) => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "alice",
+              personalPublisherId: "publishers:legacy-alice",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:legacy-alice") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "legacy-alice",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string) => {
+              if (indexName !== "by_publisher") throw new Error(`unexpected index ${indexName}`);
+              return { collect: vi.fn().mockResolvedValue(memberships) };
+            }),
+          };
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(expected);
+  });
 
   it("lists a synthesized personal publisher when membership rows are missing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
