@@ -1329,16 +1329,26 @@ export const getMyProfileHandle = query({
     const user = await ctx.db.get(userId);
     if (!user || user.deletedAt || user.deactivatedAt) return null;
 
-    const publisher = user.personalPublisherId
-      ? await ctx.db.get(user.personalPublisherId)
-      : await getPersonalPublisherForUser(ctx, userId);
-    if (!publisher || publisher.kind !== "user" || publisher.deletedAt || publisher.deactivatedAt) {
-      return null;
+    const getVisiblePersonalPublisher = async (
+      publisher: Doc<"publishers"> | null,
+    ): Promise<Doc<"publishers"> | null> => {
+      const isPersonalPublisher =
+        publisher?.kind === "user" &&
+        (publisher.linkedUserId === userId ||
+          (!publisher.linkedUserId && user.personalPublisherId === publisher._id));
+      if (!isPersonalPublisher) return null;
+
+      const visible = await getPublicPublisherVisibility(ctx, publisher);
+      return visible?.linkedUser?._id === userId ? publisher : null;
+    };
+
+    let publisher = await getVisiblePersonalPublisher(
+      user.personalPublisherId ? await ctx.db.get(user.personalPublisherId) : null,
+    );
+    if (!publisher) {
+      publisher = await getVisiblePersonalPublisher(await getPersonalPublisherForUser(ctx, userId));
     }
-    const isPersonalPublisher =
-      publisher.linkedUserId === userId ||
-      (!publisher.linkedUserId && user.personalPublisherId === publisher._id);
-    return isPersonalPublisher ? publisher.handle : null;
+    return publisher?.handle ?? null;
   },
 });
 
