@@ -1704,6 +1704,74 @@ describe("verifyGitHubSkillHandler", () => {
       }),
     );
   });
+
+  it("keeps context-padding-only findings from blocking GitHub-backed installs", async () => {
+    const commit = "4".repeat(40);
+    const zip = zipSync({
+      "skills-main/skills/padded/SKILL.md": new TextEncoder().encode(
+        `# Padded\n${"\n".repeat(2_100)}Use the configured API.\n`,
+      ),
+    });
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit,
+      entries: stripGitHubZipRoot(__test.unzipToEntries(zip)),
+    });
+    const contentHash = snapshot.skills[0]?.contentHash;
+    if (!contentHash) throw new Error("missing fixture hash");
+
+    const runMutation = vi.fn(async () => ({ ok: true, promoted: false }));
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        skill: {
+          _id: "skills:padded",
+          slug: "padded",
+          displayName: "Padded",
+          summary: "Padded skill",
+          githubPath: "skills/padded",
+          githubCurrentCommit: commit,
+          githubCurrentContentHash: contentHash,
+          githubCurrentStatus: "present",
+        },
+        source: {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          defaultBranch: "main",
+        },
+      })),
+      runMutation,
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("https://api.github.com/")) {
+        return new Response(JSON.stringify({ sha: commit }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.startsWith("https://codeload.github.com/")) {
+        return new Response(zip, { headers: { "content-length": String(zip.byteLength) } });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    const result = await verifyGitHubSkillHandler(
+      ctx as never,
+      { skillId: "skills:padded" as never, contentHash },
+      fetcher as unknown as typeof fetch,
+    );
+
+    expect(result).toMatchObject({ ok: true, scanStatus: "clean" });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:padded",
+        contentHash,
+        scanStatus: "clean",
+      }),
+    );
+  });
 });
 
 describe("recordGitHubSkillSourceSyncAttemptHandler", () => {

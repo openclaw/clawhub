@@ -18,6 +18,7 @@ export const REASON_CODES = {
   LLM_REVIEW: "review.llm_review",
   DANGEROUS_EXEC: "suspicious.dangerous_exec",
   DYNAMIC_CODE: "suspicious.dynamic_code_execution",
+  CONTEXT_PADDING_TRUNCATION: "suspicious.context_padding_truncation",
   GENERATED_SOURCE_TEMPLATE: "suspicious.generated_source_template_injection",
   EXPOSED_RESOURCE_IDENTIFIER: "suspicious.exposed_resource_identifier",
   DESTRUCTIVE_DELETE_COMMAND: "suspicious.destructive_delete_command",
