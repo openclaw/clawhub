@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "title": "Single-row ClawHub header",
+  "targetUrl": "http://127.0.0.1:3000/",
+  "lanes": [
+    {
+      "name": "header",
+      "steps": [
+        {
+          "name": "Local single-row header keeps Docs on OpenClaw docs",
+          "slug": "single-row-header",
+          "status": "passed",
+          "screenshot": "single-row-header.png"
+        }
+      ]
+    }
+  ]
+}
