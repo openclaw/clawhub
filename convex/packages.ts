@@ -1,6 +1,7 @@
 import {
   ServerPackagePublishRequestSchema,
   derivePluginCategoryTags,
+  guessTextContentType,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
   parseArk,
@@ -45,7 +46,7 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
-import { sha256Hex } from "./lib/clawpack";
+import { parseClawPack, sha256Hex } from "./lib/clawpack";
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
@@ -353,7 +354,10 @@ function isTrustedOpenClawPluginPackage(params: {
 const internalRefs = internal as unknown as {
   packages: {
     backfillPackageReleaseScansInternal: unknown;
+    repairClawPackReleaseFilesInternal: unknown;
+    repairHistoricalClawPackReleaseFilesInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
+    replaceReleaseFilesAfterClawPackRepairInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
@@ -361,6 +365,7 @@ const internalRefs = internal as unknown as {
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
     getPackageReleaseScanBackfillBatchInternal: unknown;
+    getHistoricalClawPackRepairBatchInternal: unknown;
     listVersionsForViewerInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
@@ -466,6 +471,86 @@ type PackageInspectorFinding = {
   fixture?: string;
   decision?: string;
 };
+
+type PackageReleaseFilePatch = Array<{
+  path: string;
+  size: number;
+  storageId: Id<"_storage">;
+  sha256: string;
+  contentType?: string;
+}>;
+
+type ClawPackRepairCandidate = {
+  releaseId: Id<"packageReleases">;
+  packageId: Id<"packages">;
+  packageName: string;
+  version: string;
+  createdAt: number;
+  existingFileCount: number;
+  npmFileCount: number | null;
+  clawpackSha256: string | null;
+};
+
+type ClawPackRepairResult =
+  | {
+      ok: true;
+      repaired: boolean;
+      dryRun: boolean;
+      files: number;
+      existingFiles: number;
+      npmFileCount: number;
+      integritySha256: string;
+      samplePaths: string[];
+      artifactSha256: string;
+    }
+  | {
+      ok: true;
+      repaired: false;
+      dryRun: boolean;
+      skipped: "missing_release" | "not_needed" | "missing_package";
+    }
+  | {
+      ok: false;
+      repaired: false;
+      dryRun: boolean;
+      error: string;
+    };
+
+type HistoricalClawPackRepairStats = {
+  scanned: number;
+  candidates: number;
+  validated: number;
+  wouldRepair: number;
+  repaired: number;
+  skipped: number;
+  errors: number;
+};
+
+const CLAWPACK_REPAIR_WRITE_CONFIRMATION = "repair-historical-clawpack-files";
+
+function bytesToArrayBuffer(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
+function inferClawPackEntryContentType(path: string) {
+  return guessTextContentType(path) ?? "application/octet-stream";
+}
+
+function needsClawPackReleaseFileRepair(
+  release: Pick<
+    Doc<"packageReleases">,
+    "artifactKind" | "clawpackStorageId" | "npmFileCount" | "files"
+  >,
+) {
+  return (
+    release.artifactKind === "npm-pack" &&
+    Boolean(release.clawpackStorageId) &&
+    typeof release.npmFileCount === "number" &&
+    release.npmFileCount > release.files.length
+  );
+}
 
 type PackageInspectorPublishResult = {
   status: "pass" | "fail";
@@ -5986,6 +6071,128 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
   },
 });
 
+export const getHistoricalClawPackRepairBatchInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+    releaseId: v.optional(v.id("packageReleases")),
+    packageName: v.optional(v.string()),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 25), 100));
+    const targetName = args.packageName ? normalizePackageName(args.packageName) : undefined;
+
+    const toCandidateForPackage = (
+      release: Doc<"packageReleases">,
+      pkg: Doc<"packages">,
+    ): ClawPackRepairCandidate | null => {
+      if (!isReleaseActive(release)) return null;
+      if (!needsClawPackReleaseFileRepair(release)) return null;
+      if (args.version && release.version !== args.version) return null;
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") return null;
+      if (targetName && pkg.normalizedName !== targetName) return null;
+
+      return {
+        releaseId: release._id,
+        packageId: release.packageId,
+        packageName: pkg.normalizedName,
+        version: release.version,
+        createdAt: release.createdAt,
+        existingFileCount: release.files.length,
+        npmFileCount: release.npmFileCount ?? null,
+        clawpackSha256: release.clawpackSha256 ?? null,
+      };
+    };
+
+    const toCandidate = async (release: Doc<"packageReleases">) => {
+      const pkg = await ctx.db.get(release.packageId);
+      if (!pkg) return null;
+      return toCandidateForPackage(release, pkg);
+    };
+
+    if (args.releaseId) {
+      const release = await ctx.db.get(args.releaseId);
+      const candidate = release ? await toCandidate(release) : null;
+      return {
+        candidates: candidate ? [candidate] : [],
+        scanned: release ? 1 : 0,
+        cursor: null,
+        isDone: true,
+      };
+    }
+
+    if (targetName) {
+      const pkg = await getPackageByNormalizedName(ctx, targetName);
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+        return {
+          candidates: [],
+          scanned: 0,
+          cursor: null,
+          isDone: true,
+        };
+      }
+
+      if (args.version) {
+        const targetVersion = args.version;
+        const release = await ctx.db
+          .query("packageReleases")
+          .withIndex("by_package_version", (q) =>
+            q.eq("packageId", pkg._id).eq("version", targetVersion),
+          )
+          .unique();
+        const candidate = release ? toCandidateForPackage(release, pkg) : null;
+        return {
+          candidates: candidate ? [candidate] : [],
+          scanned: release ? 1 : 0,
+          cursor: null,
+          isDone: true,
+        };
+      }
+
+      const { page, continueCursor, isDone } = await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package_active_created", (q) =>
+          q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
+        )
+        .order("asc")
+        .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+      const candidates: ClawPackRepairCandidate[] = [];
+      for (const release of page) {
+        const candidate = toCandidateForPackage(release, pkg);
+        if (candidate) candidates.push(candidate);
+      }
+
+      return {
+        candidates,
+        scanned: page.length,
+        cursor: isDone ? null : continueCursor,
+        isDone,
+      };
+    }
+
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    const candidates: ClawPackRepairCandidate[] = [];
+    for (const release of page) {
+      const candidate = await toCandidate(release);
+      if (candidate) candidates.push(candidate);
+    }
+
+    return {
+      candidates,
+      scanned: page.length,
+      cursor: isDone ? null : continueCursor,
+      isDone,
+    };
+  },
+});
+
 function buildGitHubActionsPublishActor(
   publishToken: Doc<"packagePublishTokens">,
 ): Extract<PackagePublishActor, { kind: "github-actions" }> {
@@ -8478,6 +8685,368 @@ export const updateReleaseStaticScanInternal = internalMutation({
   },
 });
 
+export const replaceReleaseFilesAfterClawPackRepairInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    files: v.array(
+      v.object({
+        path: v.string(),
+        size: v.number(),
+        storageId: v.id("_storage"),
+        sha256: v.string(),
+        contentType: v.optional(v.string()),
+      }),
+    ),
+    clawpackSha256: v.string(),
+    npmIntegrity: v.string(),
+    npmShasum: v.string(),
+    npmTarballName: v.string(),
+    npmUnpackedSize: v.number(),
+    npmFileCount: v.number(),
+    integritySha256: v.string(),
+    extractedPackageJson: v.any(),
+    extractedPluginManifest: v.any(),
+    checkedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!isReleaseActive(release) || !needsClawPackReleaseFileRepair(release)) {
+      return { repaired: false as const };
+    }
+
+    const nextVerification = release.verification
+      ? {
+          ...release.verification,
+          scanStatus: "pending" as const,
+        }
+      : release.verification;
+    const patch: Partial<Doc<"packageReleases">> = {
+      files: args.files,
+      integritySha256: args.integritySha256,
+      clawpackSha256: args.clawpackSha256,
+      npmIntegrity: args.npmIntegrity,
+      npmShasum: args.npmShasum,
+      npmTarballName: args.npmTarballName,
+      npmUnpackedSize: args.npmUnpackedSize,
+      npmFileCount: args.npmFileCount,
+      extractedPackageJson: args.extractedPackageJson,
+      extractedPluginManifest: args.extractedPluginManifest,
+      verification: nextVerification,
+      staticScan: undefined,
+      skillSpectorAnalysis: undefined,
+      llmAnalysis: {
+        status: "pending",
+        summary: "ClawPack file listing repaired from the stored artifact; fresh review queued.",
+        checkedAt: args.checkedAt,
+      },
+    };
+    await ctx.db.patch(args.releaseId, patch);
+
+    await syncLatestPackageVerification(ctx, {
+      ...release,
+      ...patch,
+    } as Doc<"packageReleases">);
+
+    return { repaired: true as const };
+  },
+});
+
+async function repairClawPackReleaseFiles(
+  ctx: ActionCtx,
+  args: { releaseId: Id<"packageReleases">; dryRun?: boolean },
+): Promise<ClawPackRepairResult> {
+  const dryRun = args.dryRun === true;
+  const release = await runQueryRef<Doc<"packageReleases"> | null>(
+    ctx,
+    internalRefs.packages.getReleaseByIdInternal,
+    { releaseId: args.releaseId },
+  );
+  if (!release || release.softDeletedAt) {
+    return { ok: true, repaired: false, dryRun, skipped: "missing_release" };
+  }
+  if (!needsClawPackReleaseFileRepair(release) || !release.clawpackStorageId) {
+    return { ok: true, repaired: false, dryRun, skipped: "not_needed" };
+  }
+
+  const pkg = await runQueryRef<Doc<"packages"> | null>(
+    ctx,
+    internalRefs.packages.getPackageByIdInternal,
+    { packageId: release.packageId },
+  );
+  if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+    return { ok: true, repaired: false, dryRun, skipped: "missing_package" };
+  }
+
+  const blob = await ctx.storage.get(release.clawpackStorageId);
+  if (!blob) {
+    return {
+      ok: false,
+      repaired: false,
+      dryRun,
+      error: "ClawPack artifact missing",
+    };
+  }
+
+  const artifactBytes = new Uint8Array(await blob.arrayBuffer());
+  const parsed = await parseClawPack(artifactBytes);
+  if (release.clawpackSha256 && parsed.artifactSha256 !== release.clawpackSha256) {
+    throw new Error("Stored ClawPack artifact digest does not match package release metadata");
+  }
+  const parsedPackageName = normalizePackageName(parsed.packageName);
+  const storedPackageNames = new Set([pkg.normalizedName, normalizePackageName(pkg.name)]);
+  if (!storedPackageNames.has(parsedPackageName) || parsed.packageVersion !== release.version) {
+    throw new Error("Stored ClawPack artifact identity does not match package release metadata");
+  }
+
+  const parsedFiles = [];
+  for (const entry of parsed.entries) {
+    parsedFiles.push({
+      path: entry.path,
+      size: entry.bytes.byteLength,
+      sha256: await sha256Hex(entry.bytes),
+      contentType: inferClawPackEntryContentType(entry.path),
+      bytes: entry.bytes,
+    });
+  }
+  const integritySha256 = await hashSkillFiles(parsedFiles);
+
+  if (dryRun) {
+    return {
+      ok: true,
+      repaired: false,
+      dryRun: true,
+      files: parsedFiles.length,
+      existingFiles: release.files.length,
+      npmFileCount: parsed.fileCount,
+      integritySha256,
+      artifactSha256: parsed.artifactSha256,
+      samplePaths: parsedFiles.slice(0, 10).map((file) => file.path),
+    };
+  }
+
+  const files: PackageReleaseFilePatch = [];
+  for (const file of parsedFiles) {
+    const storageId = await ctx.storage.store(
+      new Blob([bytesToArrayBuffer(file.bytes)], { type: file.contentType }),
+    );
+    files.push({
+      path: file.path,
+      size: file.size,
+      storageId,
+      sha256: file.sha256,
+      contentType: file.contentType,
+    });
+  }
+
+  const result = await runMutationRef<{ repaired: boolean }>(
+    ctx,
+    internalRefs.packages.replaceReleaseFilesAfterClawPackRepairInternal,
+    {
+      releaseId: args.releaseId,
+      files,
+      clawpackSha256: parsed.artifactSha256,
+      npmIntegrity: parsed.npmIntegrity,
+      npmShasum: parsed.npmShasum,
+      npmTarballName: parsed.npmTarballName,
+      npmUnpackedSize: parsed.unpackedSize,
+      npmFileCount: parsed.fileCount,
+      integritySha256,
+      extractedPackageJson: parsed.packageJson,
+      extractedPluginManifest: parsed.pluginManifest,
+      checkedAt: Date.now(),
+    },
+  );
+
+  if (!result.repaired) {
+    return { ok: true, repaired: false, dryRun: false, skipped: "not_needed" };
+  }
+
+  await runAfterRef(ctx, 0, internalRefs.packages.scanPackageReleaseStaticallyInternal, {
+    releaseId: args.releaseId,
+  });
+  await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
+    releaseId: args.releaseId,
+    source: "manual",
+  });
+
+  return {
+    ok: true,
+    repaired: true,
+    dryRun: false,
+    files: files.length,
+    existingFiles: release.files.length,
+    npmFileCount: parsed.fileCount,
+    integritySha256,
+    artifactSha256: parsed.artifactSha256,
+    samplePaths: files.slice(0, 10).map((file) => file.path),
+  };
+}
+
+export const repairClawPackReleaseFilesInternal = internalAction({
+  args: {
+    releaseId: v.id("packageReleases"),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: repairClawPackReleaseFiles,
+});
+
+export const repairHistoricalClawPackReleaseFilesInternal = internalAction({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    releaseId: v.optional(v.id("packageReleases")),
+    packageName: v.optional(v.string()),
+    version: v.optional(v.string()),
+    confirmation: v.optional(v.string()),
+    scheduleNext: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirmation !== CLAWPACK_REPAIR_WRITE_CONFIRMATION) {
+      throw new ConvexError(
+        `Set confirmation to "${CLAWPACK_REPAIR_WRITE_CONFIRMATION}" to repair historical ClawPack release files.`,
+      );
+    }
+
+    const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 25), 100));
+    const maxBatches = Math.max(1, Math.min(Math.floor(args.maxBatches ?? 1), 20));
+    const stats: HistoricalClawPackRepairStats = {
+      scanned: 0,
+      candidates: 0,
+      validated: 0,
+      wouldRepair: 0,
+      repaired: 0,
+      skipped: 0,
+      errors: 0,
+    };
+    const logLines = [
+      `[clawpack-repair] mode=${dryRun ? "dry-run" : "apply"} batchSize=${batchSize} maxBatches=${maxBatches}`,
+    ];
+    const samples: Array<
+      ClawPackRepairCandidate & {
+        repairedFiles: number;
+        integritySha256: string;
+        artifactSha256: string;
+        samplePaths: string[];
+      }
+    > = [];
+    let cursor: string | null = args.cursor ?? null;
+    let isDone = false;
+
+    for (let batchIndex = 0; batchIndex < maxBatches; batchIndex++) {
+      const batch = await runQueryRef<{
+        candidates: ClawPackRepairCandidate[];
+        scanned: number;
+        cursor: string | null;
+        isDone: boolean;
+      }>(ctx, internalRefs.packages.getHistoricalClawPackRepairBatchInternal, {
+        cursor,
+        batchSize,
+        releaseId: args.releaseId,
+        packageName: args.packageName,
+        version: args.version,
+      });
+
+      stats.scanned += batch.scanned;
+      stats.candidates += batch.candidates.length;
+      cursor = batch.cursor;
+      isDone = batch.isDone;
+      logLines.push(
+        `[clawpack-repair] batch=${batchIndex + 1} scanned=${batch.scanned} candidates=${batch.candidates.length} nextCursor=${cursor ?? "<done>"}`,
+      );
+
+      for (const candidate of batch.candidates) {
+        try {
+          const result = await repairClawPackReleaseFiles(ctx, {
+            releaseId: candidate.releaseId,
+            dryRun,
+          });
+          if (!result.ok) {
+            stats.errors++;
+            logLines.push(
+              `[clawpack-repair] error package=${candidate.packageName} version=${candidate.version} release=${candidate.releaseId} error=${result.error}`,
+            );
+            continue;
+          }
+          if ("skipped" in result) {
+            stats.skipped++;
+            logLines.push(
+              `[clawpack-repair] skipped package=${candidate.packageName} version=${candidate.version} release=${candidate.releaseId} reason=${result.skipped}`,
+            );
+            continue;
+          }
+
+          stats.validated++;
+          if (dryRun) {
+            stats.wouldRepair++;
+          } else if (result.repaired) {
+            stats.repaired++;
+          }
+          if (samples.length < 20) {
+            samples.push({
+              ...candidate,
+              repairedFiles: result.files,
+              integritySha256: result.integritySha256,
+              artifactSha256: result.artifactSha256,
+              samplePaths: result.samplePaths,
+            });
+          }
+          logLines.push(
+            `[clawpack-repair] ${dryRun ? "would-repair" : "repaired"} package=${candidate.packageName} version=${candidate.version} release=${candidate.releaseId} files=${candidate.existingFileCount}->${result.files} npmFileCount=${result.npmFileCount} integrity=${result.integritySha256.slice(0, 12)}...`,
+          );
+        } catch (error) {
+          stats.errors++;
+          const message = error instanceof Error ? error.message : String(error);
+          logLines.push(
+            `[clawpack-repair] error package=${candidate.packageName} version=${candidate.version} release=${candidate.releaseId} error=${message}`,
+          );
+        }
+      }
+
+      if (args.releaseId || isDone) break;
+    }
+
+    if (!dryRun && args.scheduleNext === true && !isDone && cursor) {
+      await runAfterRef(
+        ctx,
+        0,
+        internalRefs.packages.repairHistoricalClawPackReleaseFilesInternal,
+        {
+          cursor,
+          batchSize,
+          maxBatches,
+          dryRun: false,
+          releaseId: args.releaseId,
+          packageName: args.packageName,
+          version: args.version,
+          confirmation: args.confirmation,
+          scheduleNext: true,
+        },
+      );
+      logLines.push(`[clawpack-repair] scheduled-next cursor=${cursor}`);
+    }
+
+    return {
+      ok: true as const,
+      dryRun,
+      confirmationRequired: !dryRun,
+      target: {
+        releaseId: args.releaseId ?? null,
+        packageName: args.packageName ?? null,
+        version: args.version ?? null,
+      },
+      cursor,
+      isDone,
+      stats,
+      samples,
+      logLines,
+      writeConfirmation: dryRun ? CLAWPACK_REPAIR_WRITE_CONFIRMATION : null,
+    };
+  },
+});
+
 export const scanPackageReleaseStaticallyInternal = internalAction({
   args: {
     releaseId: v.id("packageReleases"),
@@ -8600,6 +9169,32 @@ export const backfillPackageReleaseScans = action({
     return await runActionRef(ctx, internalRefs.packages.backfillPackageReleaseScansInternal, {
       batchSize: args.batchSize,
     });
+  },
+});
+
+export const repairHistoricalClawPackReleaseFiles = action({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    releaseId: v.optional(v.id("packageReleases")),
+    packageName: v.optional(v.string()),
+    version: v.optional(v.string()),
+    confirmation: v.optional(v.string()),
+    scheduleNext: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertAdmin(user);
+    return await runActionRef(
+      ctx,
+      internalRefs.packages.repairHistoricalClawPackReleaseFilesInternal,
+      {
+        ...args,
+        dryRun: args.dryRun !== false,
+      },
+    );
   },
 });
 
