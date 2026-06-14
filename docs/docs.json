@@ -46,17 +46,24 @@
             "groups": [
               {
                 "group": "Install and Publish",
-                "pages": [
-                  "cli",
-                  "publishing",
-                  "skill-format",
-                  "plugin-development",
-                  "plugin-validation-fixes"
-                ]
+                "pages": ["cli", "publishing", "plugin-validation-fixes"]
               },
               {
                 "group": "Reference",
                 "pages": ["auth", "api", "http-api", "telemetry", "troubleshooting"]
+              }
+            ]
+          },
+          {
+            "tab": "Build",
+            "groups": [
+              {
+                "group": "Plugin Development",
+                "pages": ["plugin-development"]
+              },
+              {
+                "group": "Skill Development",
+                "pages": ["skill-format"]
               }
             ]
           },
