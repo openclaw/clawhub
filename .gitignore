@@ -9,7 +9,6 @@ artifacts/
 bin/docs-list
 dist
 dist-ssr
-public/docs/
 !packages/schema/dist
 !packages/schema/dist/**
 *.local

@@ -41,7 +41,7 @@ type InspectorReport = {
   issues?: unknown[];
 };
 
-const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.clawhub.ai/plugin-validation-fixes";
+const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.openclaw.ai/clawhub/plugin-validation-fixes";
 
 const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
   "channel-env-vars":

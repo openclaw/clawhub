@@ -81,7 +81,7 @@ PluginInspectorFindingsEmail.PreviewProps = {
       meta: "legacy-before-agent-start · deprecation-warning · P2",
       message: "legacy before_agent_start hook is deprecated",
       fix: "Replace the legacy before_agent_start hook with current prompt hooks.",
-      docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-before-agent-start",
+      docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
     },
   ],
 } satisfies PluginInspectorFindingsEmailProps;

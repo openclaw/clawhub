@@ -1,21 +1,43 @@
 ---
-summary: "Superseded Mintlify notes for publishing docs/."
+summary: "Mintlify setup notes for publishing docs/."
 read_when:
   - Setting up docs site
 ---
 
 # Mintlify
 
-Status: superseded for the CLAW-201 ClawHub docs migration.
+Goal: publish `docs/` as a browsable docs site (nice UX for OSS users).
 
-The current migration plan is to build `docs/` with the shared
-`openclaw/docs` renderer and serve the generated output from ClawHub under
-`https://docs.clawhub.ai`. Do not set up Mintlify for this migration unless a
-new issue explicitly reopens that direction.
+This repo does **not** include Mintlify config yet (`mint.json` missing).
 
-## Historical note
+## Minimal setup
 
-Mintlify was evaluated as a simpler docs host, but the project direction moved
-back to reusing the existing `openclaw/docs` framework so ClawHub docs keep the
-same shell, Ask Molty integration, search/index generation, and route behavior
-as OpenClaw docs without introducing a second docs product.
+1. Install Mintlify CLI (per Mintlify docs).
+
+2. Add a `mint.json` at repo root that points to `docs/` pages.
+
+Example (starter):
+
+```json
+{
+  "name": "ClawHub",
+  "logo": "public/logo.svg",
+  "navigation": [
+    { "group": "Start", "pages": ["docs/README", "docs/quickstart"] },
+    { "group": "Concepts", "pages": ["docs/architecture", "docs/skill-format", "docs/telemetry"] },
+    { "group": "Reference", "pages": ["docs/cli", "docs/http-api", "docs/auth", "docs/deploy"] }
+  ]
+}
+```
+
+Notes:
+
+- Mintlify usually wants page paths without extension; keep files as `.md`.
+- If you prefer Mintlify conventions, rename to `.mdx` later (optional).
+
+## Recommended “docs UX” additions
+
+- Add an “Overview” page (use `docs/README.md`).
+- Keep “Quickstart” copy/paste friendly.
+- Provide CLI + HTTP API reference pages (done here).
+- Add a Troubleshooting page for common setup failures.

@@ -21,7 +21,7 @@ Canonical product and registry material now lives in `docs/clawhub.md`:
 
 ## Summarize or link from OpenClaw docs
 
-These OpenClaw docs should eventually point to `https://docs.clawhub.ai` rather than
+These OpenClaw docs should eventually point to the ClawHub docs tab rather than
 restate the whole registry guide:
 
 - `docs/tools/clawhub.md`: keep as a concise bridge to ClawHub docs plus OpenClaw-native install examples.

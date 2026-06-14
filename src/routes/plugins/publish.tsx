@@ -60,7 +60,7 @@ const apiRefs = api as unknown as {
 };
 
 const SHOW_CLAWPACK_ONBOARDING_BANNER = false;
-const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.clawhub.ai/publishing#plugins";
+const PLUGIN_PUBLISHING_GUIDE_URL = "https://docs.openclaw.ai/clawhub/publishing#plugins";
 
 function findReadmeFile(files: File[]): File | null {
   // Match the same lookup the publish backend uses (readme.md / readme.mdx)

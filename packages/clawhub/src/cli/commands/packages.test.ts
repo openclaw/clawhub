@@ -209,36 +209,7 @@ function artifactIdentity(bytes: Uint8Array) {
 }
 
 afterEach(() => {
-  httpMocks.apiRequest.mockReset();
-  httpMocks.apiRequestForm.mockReset();
-  httpMocks.downloadZip.mockReset();
-  httpMocks.fetchBinary.mockReset();
-  httpMocks.fetchText.mockReset();
-  httpMocks.uploadBinary.mockReset();
-  httpMocks.registryUrl.mockReset().mockImplementation((path: string, registry: string) => {
-    const base = registry.endsWith("/") ? registry : `${registry}/`;
-    const relative = path.startsWith("/") ? path.slice(1) : path;
-    return new URL(relative, base);
-  });
-  authTokenMocks.requireAuthToken.mockReset().mockResolvedValue("tkn");
-  authTokenMocks.getOptionalAuthToken.mockReset().mockResolvedValue(undefined);
-  registryMocks.getRegistry.mockReset().mockResolvedValue("https://clawhub.ai");
-  inspectorMocks.pluginRoot.runCheck.mockReset();
-  inspectorMocks.reports.renderTextSummary
-    .mockReset()
-    .mockImplementation((report: { status?: string }) => {
-      return `Plugin Inspector: ${report.status}`;
-    });
-  inspectorMocks.reports.sanitizeArtifact
-    .mockReset()
-    .mockImplementation((report: unknown) => report);
-  inspectorMocks.ci.writeOutputs.mockReset();
-  uiMocks.fail.mockClear();
-  uiMocks.promptConfirm.mockClear();
-  uiMocks.spinner.stop.mockClear();
-  uiMocks.spinner.fail.mockClear();
-  uiMocks.spinner.succeed.mockClear();
-  uiMocks.spinner.start.mockClear();
+  vi.clearAllMocks();
   mockLog.mockClear();
   mockWrite.mockClear();
   uiMocks.spinner.text = "";
@@ -386,7 +357,7 @@ describe("package commands", () => {
               evidence: ["src/index.ts:4", { hook: "before_agent_start" }],
               authorRemediation: {
                 summary: "Move the hook to before_prompt_build.",
-                docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-hook",
+                docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
               },
             },
             {
@@ -414,7 +385,9 @@ describe("package commands", () => {
         "WARNING legacy-hook (deprecation-warning) P2: legacy hook is deprecated",
       );
       expect(output).toContain("Fix: Move the hook to before_prompt_build.");
-      expect(output).toContain("Docs: https://docs.clawhub.ai/plugin-validation-fixes#legacy-hook");
+      expect(output).toContain(
+        "Docs: https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
+      );
       expect(output).toContain("Evidence:");
       expect(output).toContain("- src/index.ts:4");
       expect(output).not.toContain("runtime-tool-capture");
@@ -451,7 +424,7 @@ describe("package commands", () => {
             message: "legacy hook is deprecated",
             authorRemediation: {
               summary: "Move the hook to before_prompt_build.",
-              docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-hook",
+              docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
             },
           },
           {
@@ -489,7 +462,7 @@ describe("package commands", () => {
             message: "legacy hook is deprecated",
             authorRemediation: {
               summary: "Move the hook to before_prompt_build.",
-              docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-hook",
+              docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-hook",
             },
           },
           {
@@ -499,7 +472,7 @@ describe("package commands", () => {
             authorRemediation: {
               summary: "Declare the OpenClaw plugin API range this package supports.",
               docsUrl:
-                "https://docs.clawhub.ai/plugin-validation-fixes#package-plugin-api-compat-missing",
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-plugin-api-compat-missing",
             },
           },
         ],
@@ -2488,7 +2461,8 @@ describe("package commands", () => {
             message: "legacy before_agent_start hook is deprecated",
             authorRemediation: {
               summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
-              docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-before-agent-start",
+              docsUrl:
+                "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
             },
           },
         ],
@@ -2510,7 +2484,7 @@ describe("package commands", () => {
         "  Fix: Replace the legacy before_agent_start hook with current prompt hooks.",
       );
       expect(mockLog).toHaveBeenCalledWith(
-        "  Docs: https://docs.clawhub.ai/plugin-validation-fixes#legacy-before-agent-start",
+        "  Docs: https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
       );
     } finally {
       await rm(workdir, { recursive: true, force: true });
