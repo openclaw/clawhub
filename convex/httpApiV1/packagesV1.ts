@@ -290,10 +290,7 @@ function parseBooleanQueryParam(
   return { ok: false, message: invalidQueryParamMessage(name) };
 }
 
-function getCapabilityTagFromQueryParams(params: URLSearchParams) {
-  const explicit = params.get("capabilityTag")?.trim();
-  if (explicit) return explicit;
-
+function getCapabilityShorthandTagFromQueryParams(params: URLSearchParams) {
   const target = params.get("target")?.trim() || params.get("hostTarget")?.trim();
   if (target) return `host:${normalizeCapabilityTagSegment(target)}`;
 
@@ -350,6 +347,16 @@ function getCapabilityTagFromQueryParams(params: URLSearchParams) {
   if (!environmentDeclared.ok) return { error: environmentDeclared.message };
   if (environmentDeclared.value) return "environment:declared";
   return undefined;
+}
+
+function getCapabilityTagFromQueryParams(params: URLSearchParams) {
+  const explicit = params.get("capabilityTag")?.trim();
+  const shorthand = getCapabilityShorthandTagFromQueryParams(params);
+  if (typeof shorthand === "object") return shorthand;
+  if (explicit && shorthand) {
+    return { error: "capabilityTag cannot be combined with capability shorthand filters" };
+  }
+  return explicit || shorthand;
 }
 
 function parsePackageModerationQueueStatus(

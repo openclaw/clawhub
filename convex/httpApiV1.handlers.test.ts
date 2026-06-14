@@ -7386,6 +7386,45 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
   });
 
+  it("packages search rejects capabilityTag combined with a shorthand capability filter", async () => {
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/search?q=test&capabilityTag=tools&requiresBrowser=true",
+      ),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe(
+      "capabilityTag cannot be combined with capability shorthand filters",
+    );
+    expect(runQuery).not.toHaveBeenCalled();
+  });
+
+  it("packages search ignores inactive shorthand placeholders with capabilityTag", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if ("query" in args) return [];
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/search?q=test&capabilityTag=tools&requiresBrowser=false&os=",
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
+      expect.objectContaining({
+        query: "test",
+        capabilityTag: "tools",
+      }),
+    );
+  });
+
   it("packages search maps environment filters to capability tags", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("query" in args) return [];

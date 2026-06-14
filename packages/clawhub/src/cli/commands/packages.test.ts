@@ -519,7 +519,7 @@ describe("package commands", () => {
     }
   });
 
-  it("searches package catalog via /api/v1/packages/search", async () => {
+  it("searches package catalog by exact capability tag", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       results: [
         {
@@ -540,6 +540,22 @@ describe("package commands", () => {
     await cmdExplorePackages(makeOpts(), "demo plugin", {
       family: "code-plugin",
       executesCode: true,
+      capabilityTag: "capability:model-provider",
+    });
+
+    const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
+    const url = new URL(String(request?.url));
+    expect(url.pathname).toBe("/api/v1/packages/search");
+    expect(url.searchParams.get("q")).toBe("demo plugin");
+    expect(url.searchParams.get("family")).toBe("code-plugin");
+    expect(url.searchParams.get("executesCode")).toBe("true");
+    expect(url.searchParams.get("capabilityTag")).toBe("capability:model-provider");
+  });
+
+  it("preserves existing package explore shorthand filters", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ results: [] });
+
+    await cmdExplorePackages(makeOpts(), "demo plugin", {
       os: "darwin",
       requiresBrowser: true,
       externalService: "GitHub",
@@ -549,10 +565,6 @@ describe("package commands", () => {
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
     const url = new URL(String(request?.url));
-    expect(url.pathname).toBe("/api/v1/packages/search");
-    expect(url.searchParams.get("q")).toBe("demo plugin");
-    expect(url.searchParams.get("family")).toBe("code-plugin");
-    expect(url.searchParams.get("executesCode")).toBe("true");
     expect(url.searchParams.get("os")).toBe("darwin");
     expect(url.searchParams.get("requiresBrowser")).toBe("true");
     expect(url.searchParams.get("externalService")).toBe("GitHub");
@@ -566,14 +578,43 @@ describe("package commands", () => {
       nextCursor: null,
     });
 
-    await cmdExplorePackages(makeOpts(), "", { family: "skill", target: "linux-x64", limit: 7 });
+    await cmdExplorePackages(makeOpts(), "", {
+      family: "skill",
+      capabilityTag: "capability:model-provider",
+      limit: 7,
+    });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
     const url = new URL(String(request?.url));
     expect(url.pathname).toBe("/api/v1/packages");
     expect(url.searchParams.get("family")).toBe("skill");
-    expect(url.searchParams.get("target")).toBe("linux-x64");
+    expect(url.searchParams.get("capabilityTag")).toBe("capability:model-provider");
     expect(url.searchParams.get("limit")).toBe("7");
+  });
+
+  it.each([
+    ["target", { target: "linux-x64" }],
+    ["os", { os: "darwin" }],
+    ["arch", { arch: "arm64" }],
+    ["libc", { libc: "glibc" }],
+    ["requires-browser", { requiresBrowser: true }],
+    ["requires-desktop", { requiresDesktop: true }],
+    ["requires-native-deps", { requiresNativeDeps: true }],
+    ["requires-external-service", { requiresExternalService: true }],
+    ["external-service", { externalService: "GitHub" }],
+    ["binary", { binary: "git" }],
+    ["os-permission", { osPermission: "camera" }],
+    ["artifact-kind", { artifactKind: "npm-pack" as const }],
+    ["npm-mirror", { npmMirror: true }],
+  ])("rejects --capability-tag combined with the %s shorthand filter", async (_label, filter) => {
+    await expect(
+      cmdExplorePackages(makeOpts(), "", {
+        capabilityTag: "capability:model-provider",
+        ...filter,
+      }),
+    ).rejects.toThrow("--capability-tag cannot be combined with capability shorthand filters");
+
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
   it("uses tag param when fetching a package file", async () => {

@@ -125,7 +125,8 @@ async function syncPackageSearchDigest(
   pkg: Doc<"packages"> | null | undefined,
 ) {
   if (!pkg) return;
-  const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
+  const latestReleaseId = pkg.latestReleaseId ?? pkg.tags.latest;
+  const latestRelease = latestReleaseId ? await ctx.db.get(latestReleaseId) : null;
   const fields = extractPackageDigestFields(pkg);
   const owner = await getOwnerPublisher(ctx, {
     ownerPublisherId: pkg.ownerPublisherId,

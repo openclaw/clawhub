@@ -123,6 +123,7 @@ type PackageExploreOptions = {
   family?: PackageFamily;
   official?: boolean;
   executesCode?: boolean;
+  capabilityTag?: string;
   target?: string;
   os?: string;
   arch?: string;
@@ -296,6 +297,7 @@ type PackedClawPack = {
 };
 
 function appendPackageExploreFilters(url: URL, options: PackageExploreOptions) {
+  if (options.capabilityTag) url.searchParams.set("capabilityTag", options.capabilityTag);
   if (options.target) url.searchParams.set("target", options.target);
   if (options.os) url.searchParams.set("os", options.os);
   if (options.arch) url.searchParams.set("arch", options.arch);
@@ -309,6 +311,28 @@ function appendPackageExploreFilters(url: URL, options: PackageExploreOptions) {
   if (options.osPermission) url.searchParams.set("osPermission", options.osPermission);
   if (options.artifactKind) url.searchParams.set("artifactKind", options.artifactKind);
   if (options.npmMirror) url.searchParams.set("npmMirror", "true");
+}
+
+function assertPackageExploreCapabilityFilters(options: PackageExploreOptions) {
+  if (!options.capabilityTag) return;
+  const hasShorthandFilter = Boolean(
+    options.target ||
+    options.os ||
+    options.arch ||
+    options.libc ||
+    options.requiresBrowser ||
+    options.requiresDesktop ||
+    options.requiresNativeDeps ||
+    options.requiresExternalService ||
+    options.externalService ||
+    options.binary ||
+    options.osPermission ||
+    options.artifactKind ||
+    options.npmMirror,
+  );
+  if (hasShorthandFilter) {
+    fail("--capability-tag cannot be combined with capability shorthand filters");
+  }
 }
 
 type PrintableFile = {
@@ -333,6 +357,7 @@ export async function cmdExplorePackages(
   query: string,
   options: PackageExploreOptions = {},
 ) {
+  assertPackageExploreCapabilityFilters(options);
   const trimmedQuery = query.trim();
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });

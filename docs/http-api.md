@@ -606,6 +606,40 @@ Notes:
 - Artifact filters are backed by indexed capability tags:
   `artifact:legacy-zip`, `artifact:npm-pack`, and `npm-mirror:available`.
 
+#### Stable provider and onboarding capability tags
+
+ClawHub derives the following exact capability tags from `openclaw.plugin.json`
+during publishing. Publishers cannot claim or override them manually.
+
+- `capability:model-provider`: top-level `providers` is non-empty
+- `capability:speech-provider`: `contracts.speechProviders` is non-empty
+- `capability:web-search-provider`: `contracts.webSearchProviders` is non-empty
+- `capability:image-generation-provider`:
+  `contracts.imageGenerationProviders` is non-empty
+- `capability:music-generation-provider`:
+  `contracts.musicGenerationProviders` is non-empty
+- `setup:text-inference`, `setup:image-generation`, and
+  `setup:music-generation`: at least one valid `providerAuthChoices[]` entry
+  includes the matching `onboardingScopes` value
+
+When a valid provider auth choice omits `onboardingScopes` or declares an empty
+scope list, ClawHub derives `setup:text-inference`, matching OpenClaw. An
+explicitly scoped image-only or music-only auth choice does not receive
+`setup:text-inference`. ClawHub also derives `setup:text-inference` when OpenClaw
+can synthesize a provider auth choice from `setup.providers[].authMethods`;
+the fallback is excluded only when package metadata declares the canonical
+`package.json openclaw.setupEntry` runtime setup source, unless
+`setup.requiresRuntime` is `false`. Unsupported top-level manifest
+`setupEntry` and `package.json openclaw.runtimeSetupEntry` fields do not
+suppress the fallback. There is no `setup:speech` tag because OpenClaw does not
+yet define a canonical speech onboarding continuation.
+
+Use `capabilityTag=<tag>` on package list or search endpoints for an exact,
+indexed match. Existing tags such as `provider:<id>` remain available.
+`capabilityTag` can be combined with direct package fields such as `family`,
+`channel`, `isOfficial`, and `executesCode`, but requests that also include a
+capability shorthand filter are rejected instead of silently ignoring one.
+
 ### `GET /api/v1/plugins`
 
 Plugin-only catalog browse across code-plugin and bundle-plugin packages.

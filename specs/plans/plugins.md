@@ -702,6 +702,59 @@ Operational rules:
 - no trigger writes when denormalized values did not change
 - backfills for new digest fields should be rate-controlled
 
+### Contextual onboarding discovery tags
+
+Provider-kind and onboarding-readiness tags are a stable ClawHub discovery
+contract derived from `openclaw.plugin.json`. They are not publisher-controlled
+claims and must be recomputed from the manifest on publish and during
+maintenance reconciliation.
+
+The canonical derived tags are:
+
+- `capability:model-provider` from non-empty top-level `providers`
+- `capability:speech-provider` from non-empty `contracts.speechProviders`
+- `capability:web-search-provider` from non-empty
+  `contracts.webSearchProviders`
+- `capability:image-generation-provider` from non-empty
+  `contracts.imageGenerationProviders`
+- `capability:music-generation-provider` from non-empty
+  `contracts.musicGenerationProviders`
+- `setup:text-inference`, `setup:image-generation`, and
+  `setup:music-generation` from `providerAuthChoices[].onboardingScopes`
+
+Invalid auth choices and non-string provider declarations are ignored, matching
+OpenClaw manifest normalization. Omitted or empty auth-choice scopes mean
+`text-inference`. Explicit image-only or music-only scopes do not imply text
+inference. Declarative `setup.providers[].authMethods` entries also imply
+`setup:text-inference` when OpenClaw can synthesize an auth choice from them;
+exclude the fallback only when `package.json openclaw.setupEntry` declares the
+canonical runtime setup source, unless `setup.requiresRuntime` is `false`.
+Top-level plugin-manifest `setupEntry` and `package.json
+openclaw.runtimeSetupEntry` are not canonical setup sources and must not
+suppress the fallback. Do not add `setup:speech` until OpenClaw defines a
+canonical speech-provider onboarding continuation.
+
+Derived tags are deduplicated and appended in the fixed order above while
+preserving existing capability tags such as `provider:<id>`. Latest release
+tags must propagate to `packages`, `latestVersionSummary`, `packageSearchDigest`,
+and `packageCapabilitySearchDigest`.
+
+The initial reconciliation backfill intentionally uses ClawHub's cursor-based
+action/internal-mutation convention instead of `@convex-dev/migrations`.
+Legacy bundle releases may require storage reads to recover
+`openclaw.plugin.json` and `package.json`, followed by one transaction that
+updates the release and latest-package projections. Releases without a stored
+capability summary are initialized from the latest package projection when
+available, otherwise from the package family, before derived tags are applied;
+latest releases also repair the package-level `executesCode` projection and
+create a missing `latestVersionSummary`. The backfill must remain dry-run
+capable, bounded, resumable, idempotent, and non-destructive. Scheduled
+continuation batches must carry cumulative counters and log cumulative progress
+so operators can verify completion without treating each batch as an
+independent run. Reconciliation query pages must stay small enough for
+worst-case release and package documents; this backfill caps them at four items
+to remain comfortably below Convex's bytes-read limit.
+
 ## API Shape
 
 ClawHub should expose a native plugin registry API before implementing full

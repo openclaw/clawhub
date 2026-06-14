@@ -53,13 +53,16 @@ import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import {
   assertPackageVersion,
+  deriveOpenClawOnboardingCapabilityTags,
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
+  hasOpenClawSetupSource,
   maybeParseJson,
   normalizePackageName,
   normalizePublishFiles,
   readOptionalTextFile,
+  replaceDerivedOpenClawOnboardingCapabilityTags,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
@@ -113,6 +116,8 @@ const REAL_BUNDLE_MANIFESTS = [
   { path: ".cursor-plugin/plugin.json", format: "cursor" },
 ] as const;
 const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
+const DEFAULT_PACKAGE_CAPABILITY_BACKFILL_DELAY_MS = 500;
+const MAX_PACKAGE_CAPABILITY_BACKFILL_BATCH_SIZE = 4;
 const PLUGIN_EXPORT_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
 
@@ -367,6 +372,9 @@ const internalRefs = internal as unknown as {
     insertAuditLogInternal: unknown;
     updateReleaseStaticScanInternal: unknown;
     backfillLatestPackageScanStatusInternal: unknown;
+    getPackageCapabilityTagBackfillPageInternal: unknown;
+    applyPackageCapabilityTagsInternal: unknown;
+    backfillPackageCapabilityTagsInternal: unknown;
     insertPackageInspectorWarningsInternal: unknown;
     sendPackageInspectorFindingsEmailInternal: unknown;
     getPackageInspectorEmailContextInternal: unknown;
@@ -8330,6 +8338,401 @@ export const getPluginScanStatusCountPageInternal = internalQuery({
       continueCursor,
       isDone,
     };
+  },
+});
+
+type PackageCapabilityTagBackfillPageItem = {
+  releaseId: Id<"packageReleases">;
+  extractedPluginManifest?: Value;
+  pluginManifestStorageId?: Id<"_storage">;
+  extractedPackageJson?: Value;
+  packageJsonStorageId?: Id<"_storage">;
+};
+
+type PackageCapabilityTagBackfillStats = {
+  releasesScanned: number;
+  releasesPatched: number;
+  latestPackagesPatched: number;
+  missingCapabilities: number;
+  missingManifests: number;
+  missingStorageBlobs: number;
+};
+
+type PackageCapabilityTagBackfillResult = {
+  ok: true;
+  stats: PackageCapabilityTagBackfillStats;
+  cursor: string | null;
+  isDone: boolean;
+};
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function jsonEqual(left: unknown, right: unknown) {
+  return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+}
+
+export const getPackageCapabilityTagBackfillPageInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    // Each item can read a near-limit release and package document. Keep the
+    // transaction comfortably below Convex's bytes-read limit.
+    const batchSize = Math.max(
+      1,
+      Math.min(
+        Math.floor(args.batchSize ?? MAX_PACKAGE_CAPABILITY_BACKFILL_BATCH_SIZE),
+        MAX_PACKAGE_CAPABILITY_BACKFILL_BATCH_SIZE,
+      ),
+    );
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packageReleases")
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+    const items: PackageCapabilityTagBackfillPageItem[] = [];
+    for (const release of page) {
+      const pkg = await ctx.db.get(release.packageId);
+      if (!pkg || (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin")) continue;
+      const pluginManifestFile = release.files.find(
+        (file) => file.path.toLowerCase() === "openclaw.plugin.json",
+      );
+      const packageJsonFile = release.files.find(
+        (file) => file.path.toLowerCase() === "package.json",
+      );
+      items.push({
+        releaseId: release._id,
+        extractedPluginManifest: release.extractedPluginManifest,
+        pluginManifestStorageId: pluginManifestFile?.storageId,
+        extractedPackageJson: release.extractedPackageJson,
+        packageJsonStorageId: packageJsonFile?.storageId,
+      });
+    }
+    return {
+      items,
+      cursor: isDone ? null : continueCursor,
+      isDone,
+    };
+  },
+});
+
+export async function applyPackageCapabilityTagsInternalHandler(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    releaseId: Id<"packageReleases">;
+    derivedCapabilityTags: string[];
+    dryRun?: boolean;
+  },
+) {
+  const release = await ctx.db.get(args.releaseId);
+  if (!release) {
+    return {
+      ok: true as const,
+      releasePatched: false,
+      packagePatched: false,
+      missingCapabilities: true,
+    };
+  }
+
+  const pkg = await ctx.db.get(release.packageId);
+  const isLatest = (pkg?.latestReleaseId ?? pkg?.tags.latest) === release._id;
+  const missingCapabilities = !release.capabilities;
+  if (
+    missingCapabilities &&
+    (!pkg || (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin"))
+  ) {
+    return {
+      ok: true as const,
+      releasePatched: false,
+      packagePatched: false,
+      missingCapabilities: true,
+    };
+  }
+
+  const fallbackExecutesCode = pkg?.family === "code-plugin";
+  const baseCapabilities = release.capabilities ??
+    (isLatest ? pkg?.capabilities : undefined) ?? {
+      executesCode: fallbackExecutesCode,
+    };
+  const currentCapabilityTags =
+    release.capabilities?.capabilityTags ??
+    (isLatest ? (pkg?.capabilityTags ?? pkg?.capabilities?.capabilityTags) : undefined) ??
+    [];
+  const artifactCapabilityTags = packageArtifactCapabilityTags(release).filter((tag) =>
+    currentCapabilityTags.includes(tag),
+  );
+  const artifactCapabilityTagSet = new Set(artifactCapabilityTags);
+  const nextCapabilityTags = [
+    ...replaceDerivedOpenClawOnboardingCapabilityTags(
+      currentCapabilityTags.filter((tag) => !artifactCapabilityTagSet.has(tag)),
+      args.derivedCapabilityTags,
+    ),
+    ...artifactCapabilityTags,
+  ];
+  const nextCapabilities = {
+    ...baseCapabilities,
+    executesCode: baseCapabilities.executesCode ?? fallbackExecutesCode,
+    capabilityTags: nextCapabilityTags,
+  };
+  const releasePatched = !jsonEqual(release.capabilities, nextCapabilities);
+  const nextLatestVersionSummary = isLatest
+    ? pkg?.latestVersionSummary
+      ? {
+          ...pkg.latestVersionSummary,
+          capabilities: nextCapabilities,
+        }
+      : packageLatestSummaryFromRelease({
+          ...release,
+          capabilities: nextCapabilities,
+        })
+    : pkg?.latestVersionSummary;
+  const packagePatched =
+    isLatest &&
+    pkg &&
+    (!jsonEqual(pkg.capabilityTags, nextCapabilityTags) ||
+      pkg.executesCode !== nextCapabilities.executesCode ||
+      !jsonEqual(pkg.capabilities, nextCapabilities) ||
+      !jsonEqual(pkg.latestVersionSummary, nextLatestVersionSummary));
+
+  if (args.dryRun) {
+    return {
+      ok: true as const,
+      releasePatched,
+      packagePatched,
+      missingCapabilities,
+    };
+  }
+  if (releasePatched) {
+    await ctx.db.patch(release._id, { capabilities: nextCapabilities });
+  }
+  if (packagePatched && pkg) {
+    // The trigger-wrapped package patch refreshes both package discovery digest tables.
+    await ctx.db.patch(pkg._id, {
+      capabilityTags: nextCapabilityTags,
+      executesCode: nextCapabilities.executesCode,
+      capabilities: nextCapabilities,
+      latestVersionSummary: nextLatestVersionSummary,
+    });
+  }
+
+  return {
+    ok: true as const,
+    releasePatched,
+    packagePatched,
+    missingCapabilities,
+  };
+}
+
+export const applyPackageCapabilityTagsInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    derivedCapabilityTags: v.array(v.string()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: applyPackageCapabilityTagsInternalHandler,
+});
+
+async function readPackageCapabilityBackfillManifest(
+  ctx: Pick<ActionCtx, "storage">,
+  item: PackageCapabilityTagBackfillPageItem,
+): Promise<{
+  manifest?: Record<string, unknown>;
+  packageJson?: Record<string, unknown>;
+  missingStorageBlob?: boolean;
+}> {
+  let manifest: Record<string, unknown> | undefined = isJsonRecord(item.extractedPluginManifest)
+    ? item.extractedPluginManifest
+    : undefined;
+  let packageJson: Record<string, unknown> | undefined = isJsonRecord(item.extractedPackageJson)
+    ? item.extractedPackageJson
+    : undefined;
+
+  if (!manifest && item.pluginManifestStorageId) {
+    const blob = await ctx.storage.get(item.pluginManifestStorageId);
+    if (!blob) return { missingStorageBlob: true };
+    try {
+      const parsed = JSON.parse(await blob.text()) as unknown;
+      if (isJsonRecord(parsed)) manifest = parsed;
+    } catch {
+      // Invalid JSON is reported as a missing manifest by the caller.
+    }
+  }
+
+  if (!packageJson && item.packageJsonStorageId) {
+    const blob = await ctx.storage.get(item.packageJsonStorageId);
+    if (!blob) return { missingStorageBlob: true };
+    try {
+      const parsed = JSON.parse(await blob.text()) as unknown;
+      if (isJsonRecord(parsed)) packageJson = parsed;
+    } catch {
+      // Invalid package metadata cannot declare a canonical setup source.
+    }
+  }
+
+  return { manifest, packageJson };
+}
+
+/**
+ * Cursor-based reconciliation is used instead of @convex-dev/migrations because
+ * legacy bundle releases require artifact storage reads before one transaction
+ * updates the release and its latest-package discovery projection.
+ */
+export async function backfillPackageCapabilityTagsInternalHandler(
+  ctx: ActionCtx,
+  args: {
+    dryRun?: boolean;
+    cursor?: string;
+    batchSize?: number;
+    maxBatches?: number;
+    delayMs?: number;
+    accReleasesScanned?: number;
+    accReleasesPatched?: number;
+    accLatestPackagesPatched?: number;
+    accMissingCapabilities?: number;
+    accMissingManifests?: number;
+    accMissingStorageBlobs?: number;
+  },
+): Promise<PackageCapabilityTagBackfillResult> {
+  const dryRun = Boolean(args.dryRun);
+  const batchSize = Math.max(
+    1,
+    Math.min(
+      Math.floor(args.batchSize ?? MAX_PACKAGE_CAPABILITY_BACKFILL_BATCH_SIZE),
+      MAX_PACKAGE_CAPABILITY_BACKFILL_BATCH_SIZE,
+    ),
+  );
+  const maxBatches = dryRun ? Math.max(1, Math.min(Math.floor(args.maxBatches ?? 20), 200)) : 1;
+  const stats: PackageCapabilityTagBackfillStats = {
+    releasesScanned: args.accReleasesScanned ?? 0,
+    releasesPatched: args.accReleasesPatched ?? 0,
+    latestPackagesPatched: args.accLatestPackagesPatched ?? 0,
+    missingCapabilities: args.accMissingCapabilities ?? 0,
+    missingManifests: args.accMissingManifests ?? 0,
+    missingStorageBlobs: args.accMissingStorageBlobs ?? 0,
+  };
+  let cursor = args.cursor ?? null;
+  let isDone = false;
+
+  for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
+    const page = await runQueryRef<{
+      items: PackageCapabilityTagBackfillPageItem[];
+      cursor: string | null;
+      isDone: boolean;
+    }>(ctx, internalRefs.packages.getPackageCapabilityTagBackfillPageInternal, {
+      cursor: cursor ?? undefined,
+      batchSize,
+    });
+    cursor = page.cursor;
+    isDone = page.isDone;
+
+    for (const item of page.items) {
+      stats.releasesScanned += 1;
+      const { manifest, packageJson, missingStorageBlob } =
+        await readPackageCapabilityBackfillManifest(ctx, item);
+      if (missingStorageBlob) {
+        stats.missingStorageBlobs += 1;
+        continue;
+      }
+      if (!manifest) {
+        stats.missingManifests += 1;
+        continue;
+      }
+      const result = await runMutationRef<{
+        ok: true;
+        releasePatched: boolean;
+        packagePatched: boolean;
+        missingCapabilities: boolean;
+      }>(ctx, internalRefs.packages.applyPackageCapabilityTagsInternal, {
+        releaseId: item.releaseId,
+        derivedCapabilityTags: deriveOpenClawOnboardingCapabilityTags(manifest, {
+          hasSetupSource: hasOpenClawSetupSource(packageJson),
+        }),
+        dryRun,
+      });
+      if (result.releasePatched) stats.releasesPatched += 1;
+      if (result.packagePatched) stats.latestPackagesPatched += 1;
+      if (result.missingCapabilities) stats.missingCapabilities += 1;
+    }
+    if (isDone) break;
+  }
+
+  return { ok: true, stats, cursor, isDone };
+}
+
+export const backfillPackageCapabilityTagsInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+    accReleasesScanned: v.optional(v.number()),
+    accReleasesPatched: v.optional(v.number()),
+    accLatestPackagesPatched: v.optional(v.number()),
+    accMissingCapabilities: v.optional(v.number()),
+    accMissingManifests: v.optional(v.number()),
+    accMissingStorageBlobs: v.optional(v.number()),
+    startedAt: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<PackageCapabilityTagBackfillResult> => {
+    const startedAt = args.startedAt ?? Date.now();
+    const result = await backfillPackageCapabilityTagsInternalHandler(ctx, args);
+    if (!args.dryRun && !result.isDone && result.cursor) {
+      const delayMs = Math.max(
+        0,
+        Math.min(Math.floor(args.delayMs ?? DEFAULT_PACKAGE_CAPABILITY_BACKFILL_DELAY_MS), 60_000),
+      );
+      await runAfterRef(ctx, delayMs, internalRefs.packages.backfillPackageCapabilityTagsInternal, {
+        dryRun: false,
+        cursor: result.cursor,
+        batchSize: args.batchSize,
+        maxBatches: 1,
+        delayMs,
+        accReleasesScanned: result.stats.releasesScanned,
+        accReleasesPatched: result.stats.releasesPatched,
+        accLatestPackagesPatched: result.stats.latestPackagesPatched,
+        accMissingCapabilities: result.stats.missingCapabilities,
+        accMissingManifests: result.stats.missingManifests,
+        accMissingStorageBlobs: result.stats.missingStorageBlobs,
+        startedAt,
+      });
+      console.log("[packages:capability-tag-backfill] Scheduling next batch:", {
+        ...result,
+        durationMs: Date.now() - startedAt,
+      });
+    } else {
+      const status = args.dryRun
+        ? result.isDone
+          ? "Dry run complete"
+          : "Dry run paused"
+        : "Complete";
+      console.log(`[packages:capability-tag-backfill] ${status}:`, {
+        ...result,
+        durationMs: Date.now() - startedAt,
+      });
+    }
+    return result;
+  },
+});
+
+export const backfillPackageCapabilityTags = action({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    delayMs: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<PackageCapabilityTagBackfillResult> => {
+    const { user } = await requireUserFromAction(ctx);
+    assertAdmin(user);
+    return await runActionRef(
+      ctx,
+      internalRefs.packages.backfillPackageCapabilityTagsInternal,
+      args,
+    );
   },
 });
 
