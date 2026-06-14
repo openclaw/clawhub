@@ -72,6 +72,42 @@ When refreshing the mirror, use a committed OpenClaw revision, exclude
 uncommitted sibling-worktree edits, preserve ClawHub-local links between
 mirrored pages, and rerun the ClawHub docs build, smoke test, and marker scan.
 
+## Automated mirror refresh contract
+
+The machine-readable mirror ownership and pinned OpenClaw revision live in
+`scripts/docs-sync/openclaw-plugin-docs.json`.
+
+Refreshes use a three-way merge:
+
+- base: the manifest's `upstream.lastSyncedCommit`
+- current: the ClawHub-flavoured mirrored document
+- target: the selected committed OpenClaw revision
+
+This preserves independent ClawHub additions while incorporating OpenClaw
+runtime changes. A conflicted target remains unchanged and the sync writes a
+review report under `docs/.openclaw-sync/`. A maintainer must edit every
+conflicted target, review watch-only upstream changes, and run the finalize
+command before the pinned revision can advance.
+
+ClawHub-owned pages are never mirror targets. Watch-only paths report relevant
+OpenClaw skill, plugin-management, and navigation changes without copying them.
+The sync verifier also protects required ClawHub publishing, validation,
+Plugin Inspector, external-publisher, bundle-distribution, and link behavior.
+
+Maintainer commands:
+
+```bash
+bun run docs:sync:openclaw:check
+bun run docs:sync:openclaw:update
+bun run docs:sync:openclaw:finalize
+bun run docs:sync:openclaw:verify
+```
+
+Use `-- --source <openclaw-checkout>` to use an existing checkout without
+reading uncommitted files. The sync fetches the configured upstream branch and
+reads committed Git objects only. Without `--source`, it maintains a read-only
+clone under `.cache/openclaw-docs-sync/`.
+
 ## Reviewer check
 
 For this slice, the ClawHub repo owns the new canonical source file. The

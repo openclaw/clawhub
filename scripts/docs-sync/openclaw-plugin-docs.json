@@ -1,0 +1,135 @@
+{
+  "schemaVersion": 1,
+  "upstream": {
+    "repository": "https://github.com/openclaw/openclaw.git",
+    "branch": "main",
+    "lastSyncedCommit": "d48b9274d819a369ed936bdcbee1ecdb42416703"
+  },
+  "mirrors": [
+    {
+      "source": "docs/plugins/building-plugins.md",
+      "target": "docs/plugins/building-plugins.md"
+    },
+    {
+      "source": "docs/plugins/bundles.md",
+      "target": "docs/plugins/bundles.md"
+    },
+    {
+      "source": "docs/plugins/cli-backend-plugins.md",
+      "target": "docs/plugins/cli-backend-plugins.md"
+    },
+    {
+      "source": "docs/plugins/compatibility.md",
+      "target": "docs/plugins/compatibility.md"
+    },
+    {
+      "source": "docs/plugins/hooks.md",
+      "target": "docs/plugins/hooks.md"
+    },
+    {
+      "source": "docs/plugins/manifest.md",
+      "target": "docs/plugins/manifest.md"
+    },
+    {
+      "source": "docs/plugins/plugin-permission-requests.md",
+      "target": "docs/plugins/plugin-permission-requests.md"
+    },
+    {
+      "source": "docs/plugins/sdk-channel-plugins.md",
+      "target": "docs/plugins/sdk-channel-plugins.md"
+    },
+    {
+      "source": "docs/plugins/sdk-entrypoints.md",
+      "target": "docs/plugins/sdk-entrypoints.md"
+    },
+    {
+      "source": "docs/plugins/sdk-migration.md",
+      "target": "docs/plugins/sdk-migration.md"
+    },
+    {
+      "source": "docs/plugins/sdk-overview.md",
+      "target": "docs/plugins/sdk-overview.md"
+    },
+    {
+      "source": "docs/plugins/sdk-provider-plugins.md",
+      "target": "docs/plugins/sdk-provider-plugins.md"
+    },
+    {
+      "source": "docs/plugins/sdk-runtime.md",
+      "target": "docs/plugins/sdk-runtime.md"
+    },
+    {
+      "source": "docs/plugins/sdk-setup.md",
+      "target": "docs/plugins/sdk-setup.md"
+    },
+    {
+      "source": "docs/plugins/sdk-subpaths.md",
+      "target": "docs/plugins/sdk-subpaths.md"
+    },
+    {
+      "source": "docs/plugins/sdk-testing.md",
+      "target": "docs/plugins/sdk-testing.md"
+    },
+    {
+      "source": "docs/plugins/tool-plugins.md",
+      "target": "docs/plugins/tool-plugins.md"
+    }
+  ],
+  "watchOnly": [
+    "docs/docs.json",
+    "docs/plugins/manage-plugins.md",
+    "docs/tools/creating-skills.md",
+    "docs/tools/plugin.md",
+    "docs/tools/skills.md"
+  ],
+  "clawhubOwned": [
+    "docs/cli.md",
+    "docs/creating-skills.md",
+    "docs/docs.json",
+    "docs/plugin-development.md",
+    "docs/plugin-inspector.md",
+    "docs/plugin-validation-fixes.md",
+    "docs/publishing.md"
+  ],
+  "linkPolicy": {
+    "rejectRootRelative": true
+  },
+  "flavourChecks": [
+    {
+      "path": "docs/plugins/building-plugins.md",
+      "includes": [
+        "npm run build",
+        "clawhub package validate .",
+        "clawhub package publish . --family code-plugin --dry-run",
+        "../plugin-inspector.md",
+        "\"runtimeExtensions\""
+      ],
+      "excludes": ["clawhub package publish your-org/"]
+    },
+    {
+      "path": "docs/plugins/bundles.md",
+      "includes": ["does not currently provide a pure ecosystem-bundle publish path"],
+      "excludes": ["clawhub package publish ./my-bundle"]
+    },
+    {
+      "path": "docs/plugins/compatibility.md",
+      "includes": [
+        "## For ClawHub publishers",
+        "clawhub package validate .",
+        "../plugin-inspector.md"
+      ]
+    },
+    {
+      "path": "docs/plugins/sdk-testing.md",
+      "includes": ["## External plugin workflow", "npm run build", "clawhub package validate ."]
+    },
+    {
+      "path": "docs/plugins/tool-plugins.md",
+      "includes": [
+        "npm run build",
+        "clawhub package validate .",
+        "clawhub package publish . --family code-plugin --dry-run"
+      ]
+    }
+  ]
+}
