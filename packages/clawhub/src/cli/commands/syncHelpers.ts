@@ -146,11 +146,21 @@ export async function checkRegistrySyncState(
     }
   }
 
-  const meta = await apiRequest(
-    registry,
-    { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}`, token },
-    ApiV1SkillResponseSchema,
-  ).catch(() => null);
+  let meta: { latestVersion?: { version?: string | null } | null } | null;
+  try {
+    meta = await apiRequest(
+      registry,
+      { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(skill.slug)}`, token },
+      ApiV1SkillResponseSchema,
+    );
+  } catch (error) {
+    const message = formatError(error);
+    if (/skill not found/i.test(message) || /HTTP 404/i.test(message)) {
+      meta = null;
+    } else {
+      throw error;
+    }
+  }
 
   const latestVersion = meta?.latestVersion?.version ?? null;
   if (!latestVersion) {

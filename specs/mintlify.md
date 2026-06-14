@@ -10,7 +10,7 @@ Status: superseded for the CLAW-201 ClawHub docs migration.
 
 The current migration plan is to build `docs/` with the shared
 `openclaw/docs` renderer and serve the generated output from ClawHub under
-`https://clawhub.ai/docs`. Do not set up Mintlify for this migration unless a
+`https://docs.clawhub.ai`. Do not set up Mintlify for this migration unless a
 new issue explicitly reopens that direction.
 
 ## Historical note

@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- Docs: serve ClawHub documentation from `docs.clawhub.ai` and permanently redirect legacy `clawhub.ai/docs` URLs while preserving paths and queries.
+
 ## 0.21.0 - 2026-06-11
 
 ### Changes

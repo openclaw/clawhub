@@ -52,6 +52,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   const spinner = jsonMode ? null : createSpinner("Scanning for local skills");
   const primaryScan = await scanRootsWithLabels(combinedRoots, clawdbotRoots.labels);
   let scan = primaryScan;
+  let outputRoots = primaryScan.roots;
   if (primaryScan.skills.length === 0) {
     if (!includeClawdbotRoots) {
       fail("No skills found (checked configured roots)");
@@ -60,6 +61,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     const fallbackScan = await scanRootsWithLabels(fallback);
     spinner?.stop();
     scan = fallbackScan;
+    outputRoots = fallbackScan.roots;
     if (fallbackScan.skills.length === 0)
       fail("No skills found (checked workdir and known Clawdis/Clawd locations)");
     if (!jsonMode) {
@@ -144,7 +146,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           ok: true,
           dryRun: Boolean(options.dryRun),
           registry,
-          roots: combinedRoots,
+          roots: outputRoots,
           owner: normalizeOwner(options.owner),
           duplicates: deduped.duplicates,
           alreadySynced: synced.map(formatSyncedJson),
@@ -187,7 +189,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           ok: true,
           dryRun: Boolean(options.dryRun),
           registry,
-          roots: combinedRoots,
+          roots: outputRoots,
           owner: normalizeOwner(options.owner),
           duplicates: deduped.duplicates,
           alreadySynced: synced.map(formatSyncedJson),
@@ -224,7 +226,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           ok: true,
           dryRun: true,
           registry,
-          roots: combinedRoots,
+          roots: outputRoots,
           owner: normalizeOwner(options.owner),
           duplicates: deduped.duplicates,
           alreadySynced: synced.map(formatSyncedJson),
@@ -257,6 +259,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           : undefined
         : undefined;
     try {
+      const previousExitCode = process.exitCode;
       await cmdPublish(opts, skill.folder, {
         slug: skill.slug,
         name: skill.displayName,
@@ -274,6 +277,15 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
             }
           : {}),
       });
+      const publishExitCode = process.exitCode;
+      if (isNonZeroExitCode(publishExitCode) && publishExitCode !== previousExitCode) {
+        process.exitCode = previousExitCode;
+        failedUploads.push({
+          slug: skill.slug,
+          message: `Publish command exited with code ${String(publishExitCode)}`,
+        });
+        continue;
+      }
       uploaded += 1;
       published.push({ slug: skill.slug, folder: skill.folder, version: publishVersion });
     } catch (error) {
@@ -288,7 +300,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           ok: false,
           dryRun: false,
           registry,
-          roots: combinedRoots,
+          roots: outputRoots,
           owner: normalizeOwner(options.owner),
           duplicates: deduped.duplicates,
           alreadySynced: synced.map(formatSyncedJson),
@@ -318,7 +330,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
         ok: true,
         dryRun: false,
         registry,
-        roots: combinedRoots,
+        roots: outputRoots,
         owner: normalizeOwner(options.owner),
         duplicates: deduped.duplicates,
         alreadySynced: synced.map(formatSyncedJson),
@@ -335,6 +347,12 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
 
 function normalizeRegistry(value: string) {
   return value.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+function isNonZeroExitCode(value: string | number | null | undefined) {
+  if (typeof value === "number") return value !== 0;
+  if (typeof value === "string") return value.trim() !== "" && value.trim() !== "0";
+  return false;
 }
 
 function normalizeOwner(value: string | undefined) {

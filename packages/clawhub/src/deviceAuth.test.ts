@@ -20,6 +20,7 @@ describe("deviceAuth", () => {
       const result = await requestDeviceCode({
         apiUrl: "https://api.example",
         siteUrl: "https://clawhub.ai",
+        label: "ssh box",
       });
 
       expect(result).toEqual(mockResponse);
@@ -29,6 +30,11 @@ describe("deviceAuth", () => {
           method: "POST",
           headers: expect.objectContaining({
             "Content-Type": "application/json",
+          }),
+          body: JSON.stringify({
+            scope: "read write",
+            site_url: "https://clawhub.ai",
+            label: "ssh box",
           }),
         }),
       );

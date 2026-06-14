@@ -35,23 +35,25 @@ const renderedPluginDocs = fs
     name: entry.name,
   }));
 const llms = read("llms.txt");
+const llmsDiscovery = fs.readFileSync(
+  path.join(repoRoot, "public", ".well-known", "llms.txt"),
+  "utf8",
+);
 const robots = read("robots.txt");
 const searchIndex = JSON.parse(read("docs-search.json"));
 const sourceIndexMeta = JSON.parse(read("source-index-meta.json"));
 const renderedHtmlFiles = listHtmlFiles(site);
+const vercelConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
 
 assert(
   index.includes("<title>ClawHub - ClawHub</title>"),
   "index should render ClawHub as the docs home",
 );
 assert(
-  index.includes('href="https://clawhub.ai/docs/"'),
-  "index should use clawhub.ai/docs canonical URL",
+  index.includes('href="https://docs.clawhub.ai/"'),
+  "index should use docs.clawhub.ai canonical URL",
 );
-assert(
-  index.includes('href="/docs/quickstart"'),
-  "index should link to the quickstart child route",
-);
+assert(index.includes('href="/quickstart"'), "index should link to the quickstart child route");
 assert(
   !fs.existsSync(path.join(site, "clawhub", "index.html")),
   "home page should not publish /docs/clawhub",
@@ -66,8 +68,8 @@ assert(quickstart.includes("Quickstart"), "quickstart child route should render"
 assert(index.includes("Ask Molty"), "Ask Molty widget should render");
 assert(index.includes("ClawHub docs assistant"), "Ask Molty should use the ClawHub chat label");
 assert(
-  siteJs.includes('new URL("/auth/docs",location.href)'),
-  "Ask Molty auth should use ClawHub /auth/docs",
+  siteJs.includes('new URL("https://clawhub.ai/auth/docs",location.href)'),
+  "Ask Molty auth should use canonical ClawHub auth",
 );
 assert(
   siteCss.includes(
@@ -110,40 +112,41 @@ assert(
   "llms.txt should describe the ClawHub docs corpus",
 );
 assert(
-  /https:\/\/clawhub\.ai\/docs\/[^)\s]+\.md/u.test(llms) &&
+  /https:\/\/docs\.clawhub\.ai\/[^)\s]+\.md/u.test(llms) &&
     !llms.includes("/start/getting-started.md"),
   "llms.txt should advertise a real ClawHub Markdown page",
 );
+assert(llmsDiscovery === llms, "root .well-known LLMS discovery should match the docs artifact");
 assert(
   robots.includes("# ClawHub documentation crawler policy") &&
-    robots.includes("Sitemap: https://clawhub.ai/docs/sitemap.xml") &&
+    robots.includes("Sitemap: https://docs.clawhub.ai/sitemap.xml") &&
     !robots.includes("OpenClaw documentation crawler policy"),
   "robots.txt should use ClawHub docs metadata",
 );
 assert(
-  pluginValidationFixes.includes('href="/docs/plugin-validation-fixes#package-json-missing"') &&
+  pluginValidationFixes.includes('href="/plugin-validation-fixes#package-json-missing"') &&
     !pluginValidationFixes.includes('href="./plugin-validation-fixes.md#package-json-missing"'),
   "relative Markdown links should resolve to docs routes",
 );
 assert(
-  pluginValidationFixes.includes('href="/docs/plugins/building-plugins"') &&
-    !pluginValidationFixes.includes('href="/plugins/building-plugins"'),
+  pluginValidationFixes.includes('href="/plugins/building-plugins"') &&
+    !pluginValidationFixes.includes('href="https://docs.openclaw.ai/plugins/building-plugins"'),
   "plugin validation fixes should link to the imported plugin development docs",
 );
 assert(
-  pluginDevelopment.includes('href="/docs/plugins/building-plugins"') &&
+  pluginDevelopment.includes('href="/plugins/building-plugins"') &&
     buildingPlugins.includes("Create your first OpenClaw plugin in minutes"),
   "plugin development docs should render and link to the first-plugin tutorial",
 );
 assert(
-  pluginDevelopment.includes('href="/docs/plugins/tool-plugins"') &&
-    pluginDevelopment.includes('href="/docs/plugins/sdk-provider-plugins"') &&
-    pluginDevelopment.includes('href="/docs/plugin-inspector"') &&
+  pluginDevelopment.includes('href="/plugins/tool-plugins"') &&
+    pluginDevelopment.includes('href="/plugins/sdk-provider-plugins"') &&
+    pluginDevelopment.includes('href="/plugin-inspector"') &&
     creatingSkills.includes("Ship a skill inside a plugin"),
   "the Build tab should include plugin-type and skill-authoring guidance",
 );
 assert(
-  skillFormat.includes('class="tab-link active" href="/docs/plugin-development">Build') &&
+  skillFormat.includes('class="tab-link active" href="/plugin-development">Build') &&
     skillFormat.includes("<h2>Skill Development</h2>"),
   "skill-format should live in the Build tab without an ambiguous duplicate navigation entry",
 );
@@ -152,9 +155,9 @@ assert(
     pluginInspector.includes("plugin-inspector ci --no-openclaw") &&
     !pluginInspector.includes("plugin-inspector inspect --no-openclaw") &&
     pluginInspector.includes("plugin-inspector-reports") &&
-    buildingPlugins.includes('href="/docs/plugin-inspector"') &&
-    cli.includes('href="/docs/plugin-inspector"') &&
-    pluginCompatibility.includes('href="/docs/plugin-inspector"') &&
+    buildingPlugins.includes('href="/plugin-inspector"') &&
+    cli.includes('href="/plugin-inspector"') &&
+    pluginCompatibility.includes('href="/plugin-inspector"') &&
     !pluginCompatibility.includes("openclaw-plugin-inspector ./my-plugin"),
   "Plugin Inspector development and CI guidance should render and be linked",
 );
@@ -202,7 +205,7 @@ assert(
   "the primary quickstart and CLI reference should describe a buildable code-plugin package",
 );
 assert(
-  pluginMigration.includes('href="/docs/plugins/sdk-channel-plugins"'),
+  pluginMigration.includes('href="/plugins/sdk-channel-plugins"'),
   "mirrored migration references should link to the mirrored ClawHub route",
 );
 assert(
@@ -257,6 +260,29 @@ assert(
   "source index should identify openclaw/clawhub",
 );
 assertInternalDocsLinks(renderedHtmlFiles);
+assert(
+  vercelConfig.redirects?.some(
+    (route) =>
+      route.source === "/docs/:path*" &&
+      route.destination === "https://docs.clawhub.ai/:path*" &&
+      route.statusCode === 308,
+  ),
+  "legacy ClawHub docs paths should redirect to the canonical docs host",
+);
+assert(
+  vercelConfig.rewrites?.some(
+    (route) =>
+      route.source === "/:path*" &&
+      route.destination === "/docs/:path*" &&
+      route.has?.some(
+        (condition) =>
+          condition.type === "header" &&
+          condition.key === "host" &&
+          condition.value === "docs.clawhub.ai",
+      ),
+  ),
+  "docs.clawhub.ai should serve the generated docs artifact",
+);
 
 console.log("ClawHub docs smoke ok");
 
@@ -292,7 +318,7 @@ function listHtmlFiles(dir) {
   const files = [];
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const file = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
+    if (entry.isDirectory() && !entry.name.startsWith("__")) {
       files.push(...listHtmlFiles(file));
     } else if (entry.isFile() && entry.name.endsWith(".html")) {
       files.push(file);
@@ -306,7 +332,7 @@ function assertInternalDocsLinks(files) {
     const sourceHtml = fs.readFileSync(sourceFile, "utf8");
     for (const match of sourceHtml.matchAll(/href="([^"]+)"/gu)) {
       const href = decodeHtmlAttribute(match[1]);
-      if (!href.startsWith("/docs") && !href.startsWith("#")) continue;
+      if (!href.startsWith("/") && !href.startsWith("#")) continue;
       const [route, hash] = href.split("#");
       const target = route ? renderedDocsTarget(route) : sourceFile;
       assert(
@@ -324,7 +350,7 @@ function assertInternalDocsLinks(files) {
 }
 
 function renderedDocsTarget(route) {
-  const relative = route.split("?")[0].replace(/^\/docs\/?/u, "");
+  const relative = route.split("?")[0].replace(/^\/+/u, "");
   if (!relative) return path.join(site, "index.html");
   const direct = path.join(site, relative);
   if (fs.existsSync(direct) && fs.statSync(direct).isFile()) return direct;

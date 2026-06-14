@@ -89,7 +89,7 @@ describe("Upload route", () => {
     render(<Upload />);
 
     const guideLink = screen.getByRole("link", { name: /Skill publishing guide/i });
-    expect(guideLink.getAttribute("href")).toBe("https://clawhub.ai/docs/skill-format");
+    expect(guideLink.getAttribute("href")).toBe("https://docs.clawhub.ai/skill-format");
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
 

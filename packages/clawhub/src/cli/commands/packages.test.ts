@@ -386,7 +386,7 @@ describe("package commands", () => {
               evidence: ["src/index.ts:4", { hook: "before_agent_start" }],
               authorRemediation: {
                 summary: "Move the hook to before_prompt_build.",
-                docsUrl: "https://clawhub.ai/docs/plugin-validation-fixes#legacy-hook",
+                docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-hook",
               },
             },
             {
@@ -414,7 +414,7 @@ describe("package commands", () => {
         "WARNING legacy-hook (deprecation-warning) P2: legacy hook is deprecated",
       );
       expect(output).toContain("Fix: Move the hook to before_prompt_build.");
-      expect(output).toContain("Docs: https://clawhub.ai/docs/plugin-validation-fixes#legacy-hook");
+      expect(output).toContain("Docs: https://docs.clawhub.ai/plugin-validation-fixes#legacy-hook");
       expect(output).toContain("Evidence:");
       expect(output).toContain("- src/index.ts:4");
       expect(output).not.toContain("runtime-tool-capture");
@@ -451,7 +451,7 @@ describe("package commands", () => {
             message: "legacy hook is deprecated",
             authorRemediation: {
               summary: "Move the hook to before_prompt_build.",
-              docsUrl: "https://clawhub.ai/docs/plugin-validation-fixes#legacy-hook",
+              docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-hook",
             },
           },
           {
@@ -489,7 +489,7 @@ describe("package commands", () => {
             message: "legacy hook is deprecated",
             authorRemediation: {
               summary: "Move the hook to before_prompt_build.",
-              docsUrl: "https://clawhub.ai/docs/plugin-validation-fixes#legacy-hook",
+              docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-hook",
             },
           },
           {
@@ -499,7 +499,7 @@ describe("package commands", () => {
             authorRemediation: {
               summary: "Declare the OpenClaw plugin API range this package supports.",
               docsUrl:
-                "https://clawhub.ai/docs/plugin-validation-fixes#package-plugin-api-compat-missing",
+                "https://docs.clawhub.ai/plugin-validation-fixes#package-plugin-api-compat-missing",
             },
           },
         ],
@@ -2488,7 +2488,7 @@ describe("package commands", () => {
             message: "legacy before_agent_start hook is deprecated",
             authorRemediation: {
               summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
-              docsUrl: "https://clawhub.ai/docs/plugin-validation-fixes#legacy-before-agent-start",
+              docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#legacy-before-agent-start",
             },
           },
         ],
@@ -2510,7 +2510,7 @@ describe("package commands", () => {
         "  Fix: Replace the legacy before_agent_start hook with current prompt hooks.",
       );
       expect(mockLog).toHaveBeenCalledWith(
-        "  Docs: https://clawhub.ai/docs/plugin-validation-fixes#legacy-before-agent-start",
+        "  Docs: https://docs.clawhub.ai/plugin-validation-fixes#legacy-before-agent-start",
       );
     } finally {
       await rm(workdir, { recursive: true, force: true });

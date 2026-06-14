@@ -199,11 +199,11 @@ async function pathExists(path: string) {
 }
 
 registerCommand(program, ["login"])
-  .description("Log in (opens browser or stores token)")
+  .description("Log in with device flow or store a token")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "CLI token")
-  .option("--no-browser", "Do not open browser (requires --token)")
-  .option("--device", "Use Device Flow (for headless/remote environments)")
+  .option("--label <label>", "Token label", "CLI device login")
+  .option("--no-browser", "Do not open browser (device flow prints a verification URL)")
+  .option("--device", "Use device flow (default)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -235,11 +235,11 @@ const auth = registerCommandGroup(program, ["auth"])
   .showSuggestionAfterError();
 
 registerCommand(auth, ["auth", "login"])
-  .description("Log in (opens browser or stores token)")
+  .description("Log in with device flow or store a token")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "CLI token")
-  .option("--no-browser", "Do not open browser (requires --token)")
-  .option("--device", "Use Device Flow (for headless/remote environments)")
+  .option("--label <label>", "Token label", "CLI device login")
+  .option("--no-browser", "Do not open browser (device flow prints a verification URL)")
+  .option("--device", "Use device flow (default)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());

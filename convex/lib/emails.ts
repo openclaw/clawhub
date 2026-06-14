@@ -1,5 +1,5 @@
 export const APPEALS_URL = "https://appeals.openclaw.ai/";
-export const MODERATION_GUIDELINES_URL = "https://clawhub.ai/docs/moderation";
+export const MODERATION_GUIDELINES_URL = "https://docs.clawhub.ai/moderation";
 export const MALICIOUS_REJECTION_ACCOUNT_WARNING =
   "Repeated malicious rejections may lead to account disablement.";
 const MAX_EMAIL_FINDING_SUMMARY_LENGTH = 280;

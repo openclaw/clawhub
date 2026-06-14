@@ -70,7 +70,7 @@ const { DocsAuth, Route } = await import("./docs");
 describe("DocsAuth", () => {
   beforeEach(() => {
     routePath = Route.path;
-    mockSearch = { return_to: "https://clawhub.ai/docs/concepts/models" };
+    mockSearch = { return_to: "https://docs.clawhub.ai/concepts/models" };
     mockAuthToken = "convex.jwt";
     mockAuthStatus = {
       isAuthenticated: true,
@@ -88,15 +88,27 @@ describe("DocsAuth", () => {
 
     const form = screen.getByRole("button", { name: /continue to docs/i }).closest("form");
     expect(form?.getAttribute("method")).toBe("post");
-    expect(form?.getAttribute("action")).toBe("https://clawhub.ai/ask-molty/auth/callback");
+    expect(form?.getAttribute("action")).toBe("https://docs.clawhub.ai/ask-molty/auth/callback");
     expect(document.querySelector<HTMLInputElement>('input[name="token"]')?.value).toBe(
       "convex.jwt",
     );
     expect(document.querySelector<HTMLInputElement>('input[name="return_to"]')?.value).toBe(
-      "https://clawhub.ai/docs/concepts/models",
+      "https://docs.clawhub.ai/concepts/models",
     );
     expect(document.querySelector<HTMLInputElement>('input[name="registry"]')?.value).toBe(
       "http://127.0.0.1:3211",
+    );
+  });
+
+  it("canonicalizes the legacy docs host before posting the auth token", () => {
+    mockSearch = { return_to: "https://hub.openclaw.ai/docs/plugins?from=mobile" };
+
+    render(<DocsAuth autoSubmit={false} />);
+
+    const form = screen.getByRole("button", { name: /continue to docs/i }).closest("form");
+    expect(form?.getAttribute("action")).toBe("https://docs.clawhub.ai/ask-molty/auth/callback");
+    expect(document.querySelector<HTMLInputElement>('input[name="return_to"]')?.value).toBe(
+      "https://docs.clawhub.ai/plugins?from=mobile",
     );
   });
 
@@ -107,7 +119,7 @@ describe("DocsAuth", () => {
 
     expect(screen.getByRole("heading", { name: /verify with github/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /verify with github/i }).dataset.redirectTo).toBe(
-      "/auth/docs?return_to=https%3A%2F%2Fclawhub.ai%2Fdocs%2Fconcepts%2Fmodels",
+      "/auth/docs?return_to=https%3A%2F%2Fdocs.clawhub.ai%2Fconcepts%2Fmodels",
     );
   });
 

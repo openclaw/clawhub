@@ -5,11 +5,13 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import {
+  docsBasePathForEnv,
   ensureOpenClawDocsRepo,
   escapeMdxComponentsOutsideFences,
   fenceAwareDedentComponentChildren,
   patchDocsTableCss,
   planDocsStage,
+  prepareDocsMarkdown,
   resolveOpenClawDocsRepo,
   stripMdxImportsOutsideFences,
 } from "./docs-builder.mjs";
@@ -43,6 +45,29 @@ describe("docs-builder", () => {
         stageRel: "quickstart.md",
       },
     ]);
+  });
+
+  it("uses root links in production and /docs links on Vercel previews", () => {
+    expect(docsBasePathForEnv({ VERCEL_ENV: "production" })).toBe("");
+    expect(docsBasePathForEnv({ VERCEL_ENV: "preview" })).toBe("/docs");
+    expect(docsBasePathForEnv({})).toBe("");
+  });
+
+  it("makes OpenClaw plugin guide links absolute while preserving ClawHub source metadata", () => {
+    expect(
+      prepareDocsMarkdown(
+        [
+          'import Card from "./Card.mdx";',
+          "",
+          "See [Plugin manifest](/plugins/manifest) and [Publishing](/publishing).",
+        ].join("\n"),
+        "clawhub/plugin-validation-fixes.md",
+      ),
+    )
+      .toContain(
+        "[Plugin manifest](https://docs.openclaw.ai/plugins/manifest) and [Publishing](/publishing)",
+      )
+      .not.toContain('import Card from "./Card.mdx";');
   });
 
   it("resolves an explicit openclaw/docs checkout", () => {

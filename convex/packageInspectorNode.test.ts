@@ -35,7 +35,7 @@ describe("package inspector publish normalization", () => {
           authorRemediation: {
             summary:
               "Publish the entrypoint declared in OpenClaw package metadata or update the metadata to point at an existing file.",
-            docsUrl: "https://clawhub.ai/docs/plugin-validation-fixes#package-entrypoint-missing",
+            docsUrl: "https://docs.clawhub.ai/plugin-validation-fixes#package-entrypoint-missing",
           },
         },
       ],
@@ -75,7 +75,7 @@ describe("package inspector publish normalization", () => {
           authorRemediation: {
             summary: "Declare the OpenClaw plugin API range this package supports.",
             docsUrl:
-              "https://clawhub.ai/docs/plugin-validation-fixes#package-plugin-api-compat-missing",
+              "https://docs.clawhub.ai/plugin-validation-fixes#package-plugin-api-compat-missing",
           },
         },
       ],

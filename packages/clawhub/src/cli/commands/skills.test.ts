@@ -13,7 +13,9 @@ import { ApiRoutes, LegacyApiRoutes } from "../../schema/index.js";
 import * as skillStore from "../../skills.js";
 
 const fsMocks = vi.hoisted(() => ({
+  mkdtemp: vi.fn(),
   mkdir: vi.fn(),
+  rename: vi.fn(),
   rm: vi.fn(),
   stat: vi.fn(),
 }));
@@ -22,7 +24,9 @@ vi.mock("node:fs/promises", async () => {
   const actual = await vi.importActual<typeof import("node:fs/promises")>("node:fs/promises");
   return {
     ...actual,
+    mkdtemp: fsMocks.mkdtemp,
     mkdir: fsMocks.mkdir,
+    rename: fsMocks.rename,
     rm: fsMocks.rm,
     stat: fsMocks.stat,
   };
@@ -62,7 +66,9 @@ const readSkillOriginMock = vi.spyOn(skillStore, "readSkillOrigin");
 const writeLockfileMock = vi.spyOn(skillStore, "writeLockfile");
 const writeSkillOriginMock = vi.spyOn(skillStore, "writeSkillOrigin");
 
+const mkdtempMock = fsMocks.mkdtemp;
 const mkdirMock = fsMocks.mkdir;
+const renameMock = fsMocks.rename;
 const rmMock = fsMocks.rm;
 const statMock = fsMocks.stat;
 const {
@@ -90,7 +96,7 @@ const {
   writeLockfile,
   writeSkillOrigin,
 } = skillStore;
-const { rm, stat } = fsPromises;
+const { rename, rm, stat } = fsPromises;
 
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 
@@ -99,7 +105,9 @@ function makeOpts() {
 }
 
 beforeEach(() => {
+  mkdtempMock.mockImplementation(async (prefix: string) => `${prefix}123`);
   mkdirMock.mockResolvedValue(undefined);
+  renameMock.mockResolvedValue(undefined);
   rmMock.mockResolvedValue(undefined);
   statMock.mockRejectedValue(new Error("missing"));
   extractZipToDirMock.mockResolvedValue(undefined);
@@ -696,17 +704,30 @@ describe("cmdUpdate", () => {
     expect(mockPromptConfirm).toHaveBeenCalledWith(
       `aiq-deploy: local changes (no match). Overwrite with ${commit.slice(0, 12)}?`,
     );
-    expect(rm).toHaveBeenCalledWith("/work/skills/aiq-deploy", {
-      recursive: true,
-      force: true,
-    });
     expect(mockFetchBinary).toHaveBeenCalledWith("https://clawhub.ai", {
       url: `https://codeload.github.com/NVIDIA/skills/zip/${commit}`,
     });
     expect(extractGitHubZipPathToDir).toHaveBeenCalledWith(
       new Uint8Array([1, 2, 3]),
-      "/work/skills/aiq-deploy",
+      "/work/skills/.aiq-deploy.tmp-123",
       "skills/aiq-deploy",
+    );
+    expect(rename).toHaveBeenNthCalledWith(
+      1,
+      "/work/skills/aiq-deploy",
+      expect.stringMatching(/^\/work\/skills\/\.aiq-deploy\.backup-/),
+    );
+    expect(rename).toHaveBeenNthCalledWith(
+      2,
+      "/work/skills/.aiq-deploy.tmp-123",
+      "/work/skills/aiq-deploy",
+    );
+    expect(rm).toHaveBeenCalledWith(
+      expect.stringMatching(/^\/work\/skills\/\.aiq-deploy\.backup-/),
+      {
+        recursive: true,
+        force: true,
+      },
     );
     expect(mockSpinner.succeed).toHaveBeenCalledWith(
       `aiq-deploy: updated -> ${commit.slice(0, 12)}`,
@@ -847,6 +868,67 @@ describe("cmdUpdate", () => {
     expect(originInstalledAt).toBeDefined();
     expect(lockfileInstalledAt).toBeDefined();
     expect(originInstalledAt).toBe(lockfileInstalledAt);
+  });
+
+  it("keeps the installed directory when an update download fails", async () => {
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    mockApiRequest.mockResolvedValue({
+      latestVersion: { version: "2.0.0" },
+      moderation: null,
+    });
+    mockDownloadZip.mockRejectedValue(new Error("network down"));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "1.0.0", installedAt: 123 } },
+    });
+    vi.mocked(listTextFiles).mockResolvedValue([]);
+
+    await expect(cmdUpdate(makeOpts(), "demo", {}, false)).rejects.toThrow("network down");
+
+    expect(rename).not.toHaveBeenCalled();
+    expect(rm).toHaveBeenCalledWith("/work/skills/.demo.tmp-123", {
+      recursive: true,
+      force: true,
+    });
+    expect(rm).not.toHaveBeenCalledWith("/work/skills/demo", {
+      recursive: true,
+      force: true,
+    });
+    expect(writeLockfile).not.toHaveBeenCalled();
+  });
+
+  it("persists successful --all updates before a later skill fails", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: { version: "2.0.0" },
+        moderation: null,
+      })
+      .mockRejectedValueOnce(new Error("registry down"));
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        first: { version: "1.0.0", installedAt: 111 },
+        second: { version: "1.0.0", installedAt: 222 },
+      },
+    });
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([]);
+
+    await expect(cmdUpdate(makeOpts(), undefined, { all: true }, false)).rejects.toThrow(
+      "registry down",
+    );
+
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        first: { version: "2.0.0", installedAt: expect.any(Number) },
+        second: { version: "1.0.0", installedAt: 222 },
+      },
+    });
+    const writeOrder = vi.mocked(writeLockfile).mock.invocationCallOrder[0];
+    const secondRequestOrder = mockApiRequest.mock.invocationCallOrder[1];
+    expect(writeOrder).toBeLessThan(secondRequestOrder);
   });
 });
 
@@ -1183,6 +1265,42 @@ describe("cmdInstall", () => {
     expect(rm).not.toHaveBeenCalled();
   });
 
+  it("keeps the installed directory when force reinstall download fails", async () => {
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "1.0.0" },
+      owner: null,
+      moderation: null,
+    });
+    mockDownloadZip.mockRejectedValue(new Error("network down"));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "0.9.0", installedAt: 123 } },
+    });
+
+    await expect(cmdInstall(makeOpts(), "demo", undefined, true)).rejects.toThrow("network down");
+
+    expect(rename).not.toHaveBeenCalled();
+    expect(rm).toHaveBeenCalledWith("/work/skills/.demo.tmp-123", {
+      recursive: true,
+      force: true,
+    });
+    expect(rm).not.toHaveBeenCalledWith("/work/skills/demo", {
+      recursive: true,
+      force: true,
+    });
+    expect(writeLockfile).not.toHaveBeenCalled();
+  });
+
   it("does not rm local directory when requested version lookup fails (--force)", async () => {
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>); // target exists
     mockApiRequest
@@ -1254,19 +1372,22 @@ describe("cmdInstall", () => {
 
     await cmdInstall(makeOpts(), "demo", "9.9.9", true);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
     expect(mockDownloadZip).toHaveBeenCalledWith(
       "https://clawhub.ai",
       expect.objectContaining({ slug: "demo", version: "9.9.9" }),
     );
+    expect(extractZipToDir).toHaveBeenCalledWith(
+      new Uint8Array([1, 2, 3]),
+      "/work/skills/.demo.tmp-123",
+    );
     const versionLookupOrder = mockApiRequest.mock.invocationCallOrder[1];
-    const rmOrder = vi.mocked(rm).mock.invocationCallOrder[0];
     const downloadOrder = mockDownloadZip.mock.invocationCallOrder[0];
-    expect(versionLookupOrder).toBeLessThan(rmOrder);
-    expect(rmOrder).toBeLessThan(downloadOrder);
+    const firstRenameOrder = vi.mocked(rename).mock.invocationCallOrder[0];
+    expect(versionLookupOrder).toBeLessThan(downloadOrder);
+    expect(downloadOrder).toBeLessThan(firstRenameOrder);
   });
 
-  it("calls rm before download when all checks pass (--force)", async () => {
+  it("stages replacement before swapping an existing install (--force)", async () => {
     vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>); // target exists
     mockApiRequest.mockResolvedValue({
       skill: {
@@ -1291,11 +1412,24 @@ describe("cmdInstall", () => {
 
     await cmdInstall(makeOpts(), "demo", undefined, true);
 
-    expect(rm).toHaveBeenCalledWith("/work/skills/demo", { recursive: true, force: true });
     expect(mockDownloadZip).toHaveBeenCalled();
-    const rmOrder = vi.mocked(rm).mock.invocationCallOrder[0];
+    expect(extractZipToDir).toHaveBeenCalledWith(
+      new Uint8Array([1, 2, 3]),
+      "/work/skills/.demo.tmp-123",
+    );
+    expect(rename).toHaveBeenNthCalledWith(
+      1,
+      "/work/skills/demo",
+      expect.stringMatching(/^\/work\/skills\/\.demo\.backup-/),
+    );
+    expect(rename).toHaveBeenNthCalledWith(2, "/work/skills/.demo.tmp-123", "/work/skills/demo");
+    expect(rm).toHaveBeenCalledWith(expect.stringMatching(/^\/work\/skills\/\.demo\.backup-/), {
+      recursive: true,
+      force: true,
+    });
     const downloadOrder = mockDownloadZip.mock.invocationCallOrder[0];
-    expect(rmOrder).toBeLessThan(downloadOrder);
+    const firstRenameOrder = vi.mocked(rename).mock.invocationCallOrder[0];
+    expect(downloadOrder).toBeLessThan(firstRenameOrder);
   });
 
   it("writes identical installedAt to origin and lockfile on install", async () => {

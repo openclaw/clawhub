@@ -8,7 +8,7 @@ read_when:
 # Docs
 
 `docs/` is the publishable source for user-facing ClawHub documentation served
-under `https://clawhub.ai/docs`.
+at `https://docs.clawhub.ai`.
 
 Keep product, CLI, publisher, API, policy, security, and troubleshooting docs
 here. These pages should explain how people use ClawHub: discover, install,

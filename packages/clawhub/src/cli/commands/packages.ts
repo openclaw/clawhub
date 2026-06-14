@@ -67,7 +67,7 @@ const LEGACY_DOT_DIR = ".clawdhub";
 const DOT_IGNORE = ".clawhubignore";
 const LEGACY_DOT_IGNORE = ".clawdhubignore";
 const PACKAGE_PUBLISH_RETRY_COUNT = 5;
-const AUTHOR_REMEDIATION_DOCS_BASE = "https://clawhub.ai/docs/plugin-validation-fixes";
+const AUTHOR_REMEDIATION_DOCS_BASE = "https://docs.clawhub.ai/plugin-validation-fixes";
 const LEGACY_AUTHOR_REMEDIATION_SUMMARIES = {
   "channel-env-vars":
     "Move legacy channel environment variable metadata into the current setup/config metadata.",
