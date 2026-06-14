@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -49,6 +50,9 @@ export function getCliBuildLabel() {
 }
 
 function readGitCommitFromCwd() {
+  const revParseCommit = readGitCommitFromRevParse();
+  if (revParseCommit) return revParseCommit;
+
   try {
     const gitDir = findGitDir(process.cwd());
     if (!gitDir) return null;
@@ -62,6 +66,19 @@ function readGitCommitFromCwd() {
     const refPath = join(gitDir, ref);
     if (!existsSync(refPath)) return null;
     const sha = readFileSync(refPath, "utf8").trim();
+    return shortCommit(sha);
+  } catch {
+    return null;
+  }
+}
+
+function readGitCommitFromRevParse() {
+  try {
+    const sha = execFileSync("git", ["rev-parse", "HEAD"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
     return shortCommit(sha);
   } catch {
     return null;

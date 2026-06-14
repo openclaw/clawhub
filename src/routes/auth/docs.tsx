@@ -8,7 +8,6 @@ import { AuthFlowSkeleton } from "../../components/skeletons/ProtectedPageSkelet
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import { buildDocsAuthCallbackUrl, normalizeDocsReturnTo } from "../../lib/docsAuth";
-import { getRuntimeEnv } from "../../lib/runtimeEnv";
 import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from "../../lib/site";
 import { useAuthError } from "../../lib/useAuthError";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -28,20 +27,12 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
   const formRef = useRef<HTMLFormElement>(null);
   const submittedRef = useRef(false);
   const search = Route.useSearch() as { return_to?: string };
-  const currentOrigin =
-    typeof window !== "undefined"
-      ? window.location.origin
-      : normalizeClawHubSiteOrigin(getRuntimeEnv("VITE_CONVEX_SITE_URL"));
-  const docsAuthOptions = { currentOrigin };
-  const returnTo = normalizeDocsReturnTo(search.return_to, docsAuthOptions);
-  const callbackUrl = returnTo ? buildDocsAuthCallbackUrl(returnTo, docsAuthOptions) : null;
+  const returnTo = normalizeDocsReturnTo(search.return_to);
+  const callbackUrl = returnTo ? buildDocsAuthCallbackUrl(returnTo) : null;
   const signInRedirectTo = returnTo
     ? `/auth/docs?return_to=${encodeURIComponent(returnTo)}`
     : undefined;
   const registry = useMemo(() => {
-    const localConvexSiteUrl = normalizeClawHubSiteOrigin(getRuntimeEnv("VITE_CONVEX_SITE_URL"));
-    if (localConvexSiteUrl?.startsWith("http://localhost:")) return localConvexSiteUrl;
-    if (localConvexSiteUrl?.startsWith("http://127.0.0.1:")) return localConvexSiteUrl;
     if (typeof window !== "undefined") {
       return normalizeClawHubSiteOrigin(window.location.origin) ?? getClawHubSiteUrl();
     }
@@ -62,7 +53,7 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
       <AuthFrame title="Docs agent login">
         <p className="text-sm text-[color:var(--ink-soft)]">Invalid docs return URL.</p>
         <p className="text-sm text-[color:var(--ink-soft)]">
-          Open Ask Molty from the ClawHub documentation page and try again.
+          Open Ask Molty from the OpenClaw documentation page and try again.
         </p>
       </AuthFrame>
     );
@@ -76,7 +67,7 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
     return (
       <SignInPrompt
         title="Verify with GitHub"
-        description="Sign in to ClawHub with GitHub to unlock Ask Molty on the ClawHub docs."
+        description="Sign in to ClawHub with GitHub to unlock Ask Molty on the OpenClaw docs."
         error={authError}
         onDismissError={clearAuthError}
         action={
@@ -99,7 +90,7 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
   return (
     <AuthFrame title="Connecting docs">
       <p className="text-sm text-[color:var(--ink-soft)]">
-        Returning to the ClawHub docs with your ClawHub login.
+        Returning to the OpenClaw docs with your ClawHub login.
       </p>
       <form ref={formRef} method="post" action={callbackUrl ?? undefined}>
         <input type="hidden" name="token" value={authToken} />

@@ -427,10 +427,9 @@ code {
 
 .navbar-top {
   display: grid;
-  grid-template-columns: max-content max-content minmax(220px, 1fr) auto;
+  grid-template-columns: minmax(148px, auto) minmax(240px, 1fr) auto;
   align-items: center;
-  column-gap: 16px;
-  row-gap: 10px;
+  gap: 16px;
   padding: 12px 0;
   min-height: 62px;
 }
@@ -654,17 +653,12 @@ code {
 }
 
 .navbar-top-links {
-  display: inline-flex;
+  display: none;
   align-items: center;
   justify-content: flex-start;
   gap: 4px;
   min-width: 0;
   white-space: nowrap;
-}
-
-.navbar-top-links .navbar-tab {
-  min-height: 32px;
-  padding: 7px 10px;
 }
 
 .navbar-tabs-primary,
@@ -920,6 +914,103 @@ code {
   min-width: 0;
 }
 
+.theme-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.theme-cycle-group {
+  display: none;
+  align-items: center;
+  gap: 8px;
+  width: 72px;
+  min-width: 72px;
+  grid-template-columns: repeat(2, 32px);
+  justify-content: end;
+}
+
+.theme-cycle-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  background: var(--surface);
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.theme-cycle-button:hover {
+  color: var(--ink);
+  border-color: var(--border-ui-hover);
+  background: var(--surface-muted);
+}
+
+.theme-cycle-button:focus-visible {
+  outline: 2px solid var(--input-focus-border);
+  outline-offset: 2px;
+}
+
+.theme-mode-toggle {
+  min-width: 124px;
+  height: 32px;
+  min-height: 32px;
+  padding: 0 8px;
+  gap: 8px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  justify-content: center;
+  border-radius: var(--r-btn);
+}
+
+.theme-mode-toggle button {
+  all: unset;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r-btn);
+  cursor: pointer;
+  color: var(--ink-soft);
+  opacity: 0.5;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.theme-mode-toggle button svg {
+  width: 16px;
+  height: 16px;
+}
+
+.theme-mode-toggle button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.theme-mode-toggle button:hover {
+  opacity: 0.8;
+}
+
+.theme-mode-toggle button[data-state="on"] {
+  opacity: 1;
+  color: var(--ink);
+  background: transparent;
+}
+
 .github-sign-in-button {
   height: 32px !important;
   min-height: 32px !important;
@@ -1014,30 +1105,6 @@ code {
 
 .user-dropdown-content [data-slot="dropdown-menu-item"]:focus-visible {
   outline: none;
-}
-
-.user-dropdown-section-label {
-  padding: 4px 8px 6px;
-  font-size: var(--fs-xs);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
-}
-
-.user-dropdown-theme-item {
-  min-width: 220px;
-}
-
-.user-dropdown-theme-item[data-status="active"] {
-  background: color-mix(in srgb, var(--accent) 12%, transparent);
-  color: var(--ink);
-}
-
-.user-dropdown-current {
-  margin-left: auto;
-  font-size: var(--fs-xs);
-  color: var(--ink-soft);
 }
 
 /* @deprecated — use <Button> from components/ui/button.tsx */
@@ -6549,6 +6616,10 @@ code {
   }
 
   .brand {
+    display: none;
+  }
+
+  .theme-toggle {
     display: none;
   }
 
@@ -13414,34 +13485,16 @@ a.publisher-profile-detail:hover {
 }
 
 @media (max-width: 1100px) and (min-width: 761px) {
-  .navbar-top {
-    grid-template-columns: max-content max-content minmax(180px, 1fr) auto;
-    gap: 10px;
+  .theme-mode-toggle {
+    min-width: 112px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0 8px;
+    gap: 6px;
   }
 
-  .brand-name-responsive {
+  .theme-cycle-group {
     display: none;
-  }
-
-  .navbar-top-links {
-    gap: 0;
-  }
-
-  .navbar-top-links .navbar-tab {
-    padding: 7px 8px;
-  }
-
-  .github-sign-in-button,
-  .auth-loading-placeholder {
-    width: 92px !important;
-  }
-
-  .sign-in-full-copy {
-    display: none;
-  }
-
-  .sign-in-compact-copy {
-    display: inline-block;
   }
 }
 
@@ -14967,6 +15020,13 @@ a.publisher-profile-detail:hover {
   border-radius: var(--r-btn) !important;
 }
 .skills-view button {
+  border-radius: var(--r-btn) !important;
+}
+
+/* Theme toggle buttons */
+.theme-cycle-button,
+.theme-mode-toggle button,
+.theme-mode-toggle {
   border-radius: var(--r-btn) !important;
 }
 

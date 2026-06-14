@@ -381,6 +381,31 @@ jobs:
             echo "RELEASE_TITLE=clawhub ${PACKAGE_VERSION}"
           } >> "$GITHUB_ENV"
 
+      - name: Write npm publish proof artifact
+        id: publish_proof
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          PUBLISH_PROOF_DIR="$RUNNER_TEMP/clawhub-cli-npm-publish-proof"
+          rm -rf "$PUBLISH_PROOF_DIR"
+          mkdir -p "$PUBLISH_PROOF_DIR"
+          printf '%s\n' "$RELEASE_TAG" > "$PUBLISH_PROOF_DIR/release-tag.txt"
+          git rev-parse HEAD > "$PUBLISH_PROOF_DIR/release-sha.txt"
+          printf '%s\n' "$PACKAGE_VERSION" > "$PUBLISH_PROOF_DIR/package-version.txt"
+          printf '%s\n' "$NPM_TARBALL_URL" > "$PUBLISH_PROOF_DIR/npm-tarball-url.txt"
+          printf '%s\n' "$NPM_INTEGRITY" > "$PUBLISH_PROOF_DIR/npm-integrity.txt"
+          printf '%s\n' "$GITHUB_RUN_ID" > "$PUBLISH_PROOF_DIR/publish-run-id.txt"
+          printf '%s\n' "false" > "$PUBLISH_PROOF_DIR/preflight-only.txt"
+          echo "dir=$PUBLISH_PROOF_DIR" >> "$GITHUB_OUTPUT"
+
+      - name: Upload npm publish proof artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: clawhub-cli-npm-publish-${{ inputs.tag }}
+          path: ${{ steps.publish_proof.outputs.dir }}
+          if-no-files-found: error
+
       - name: Build GitHub Release notes
         env:
           RELEASE_TAG: ${{ inputs.tag }}

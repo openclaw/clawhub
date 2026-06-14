@@ -306,7 +306,7 @@ const resolvePublishTargetForUserInternalHandler = (
   >
 )._handler;
 
-function indexedRows(rows: unknown[]) {
+function indexedRows<T>(rows: T[]) {
   return {
     collect: vi.fn(async () => rows),
     order: vi.fn(() => ({

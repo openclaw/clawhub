@@ -33,6 +33,8 @@ type DeviceFlowConfig = {
   apiUrl: string;
   /** The ClawHub site URL that hosts the verification page */
   siteUrl: string;
+  /** Token label to show during approval and store on the created token */
+  label?: string;
   /** Client ID for the OAuth app (provided by ClawHub) */
   clientId?: string;
   /** Scope to request */
@@ -51,6 +53,9 @@ export async function requestDeviceCode(config: DeviceFlowConfig): Promise<Devic
     scope: config.scope ?? DEFAULT_SCOPE,
     site_url: config.siteUrl,
   };
+  if (config.label) {
+    body.label = config.label;
+  }
   if (config.clientId) {
     body.client_id = config.clientId;
   }

@@ -527,6 +527,46 @@ describe("cmdSync", () => {
     expect(parsed.wouldPublish.map((entry) => entry.slug)).toEqual(["ci-skill"]);
   });
 
+  it("reports fallback roots used for JSON sync output", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const { findSkillFolders, getFallbackSkillRoots } = await import("../scanSkills.js");
+    mocked(getFallbackSkillRoots).mockImplementation(() => ["/fallback"]);
+    mocked(findSkillFolders).mockImplementation(async (root: string) => {
+      if (root === "/fallback") {
+        return [
+          {
+            folder: "/fallback/fallback-skill",
+            slug: "fallback-skill",
+            displayName: "Fallback Skill",
+          },
+        ];
+      }
+      return [];
+    });
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        throw new Error("Skill not found");
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+
+    let output = "";
+    try {
+      await cmdSync(makeOpts(), { all: true, dryRun: true, json: true }, false);
+      output = String(stdoutWrite.mock.calls.at(-1)?.[0] ?? "").trim();
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    const parsed = JSON.parse(output) as {
+      roots: string[];
+      wouldPublish: Array<{ slug: string }>;
+    };
+    expect(parsed.roots).toEqual(["/fallback"]);
+    expect(parsed.wouldPublish.map((entry) => entry.slug)).toEqual(["fallback-skill"]);
+  });
+
   it("does not fall back to ambient roots when exact CI scans find no skills", async () => {
     interactive = false;
     const { findSkillFolders, getFallbackSkillRoots } = await import("../scanSkills.js");
@@ -749,6 +789,55 @@ describe("cmdSync", () => {
 
     const outro = mockOutro.mock.calls.at(-1)?.[0];
     expect(String(outro)).toMatch(/Uploaded 1 of 2 skill\(s\). 1 failed/);
+    expect(process.exitCode).toBe(1);
+  });
+
+  it("records publishes that resolve with a non-zero exitCode as per-skill failures", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path: string }) => {
+      if (args.path === "/api/v1/whoami") return { user: { handle: "steipete" } };
+      if (args.path === "/api/cli/telemetry/install") return { ok: true };
+      if (args.path.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") {
+          throw new Error("Skill not found");
+        }
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${args.path}`);
+    });
+    mockCmdPublish.mockImplementation(async (_opts, _folder, options?: unknown) => {
+      const { slug } = options as { slug: string };
+      if (slug === "new-skill") {
+        process.exitCode = 1;
+      }
+    });
+
+    let output = "";
+    try {
+      await cmdSync(makeOpts(), { root: ["/scan"], all: true, dryRun: false, json: true }, true);
+      output = String(stdoutWrite.mock.calls.at(-1)?.[0] ?? "").trim();
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    const parsed = JSON.parse(output) as {
+      ok: boolean;
+      published: Array<{ slug: string }>;
+      failed: Array<{ slug: string; message: string }>;
+    };
+    expect(parsed.ok).toBe(false);
+    expect(parsed.published.map((entry) => entry.slug)).toEqual(["update-skill"]);
+    expect(parsed.failed).toEqual([
+      { slug: "new-skill", message: "Publish command exited with code 1" },
+    ]);
     expect(process.exitCode).toBe(1);
   });
 

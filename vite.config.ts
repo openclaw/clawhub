@@ -15,7 +15,6 @@ const convexReactPath = join(convexRoot, "dist/esm/react/index.js");
 const convexBrowserPath = join(convexRoot, "dist/esm/browser/index.js");
 const convexValuesPath = join(convexRoot, "dist/esm/values/index.js");
 const convexAuthReactPath = require.resolve("@convex-dev/auth/react");
-const askMoltyProxyOrigin = process.env.ASK_MOLTY_PROXY_ORIGIN;
 
 function handleRollupWarning(
   warning: { code?: string; message: string; id?: string },
@@ -196,17 +195,6 @@ const config = defineConfig({
     tanstackStart(),
     viteReact(),
   ],
-  server: {
-    proxy: askMoltyProxyOrigin
-      ? {
-          "/ask-molty": {
-            target: askMoltyProxyOrigin,
-            changeOrigin: true,
-            secure: false,
-          },
-        }
-      : undefined,
-  },
   build: {
     // Keep the shipped client bundle parseable in Safari/WebKit.
     target: "safari15",

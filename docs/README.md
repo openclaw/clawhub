@@ -7,8 +7,8 @@ read_when:
 
 # Docs
 
-`docs/` is the publishable source for user-facing ClawHub documentation served
-under `https://clawhub.ai/docs`.
+`docs/` is the publishable source for user-facing ClawHub pages that can be
+mirrored into the `ClawHub` tab on `docs.openclaw.ai`.
 
 Keep product, CLI, publisher, API, policy, security, and troubleshooting docs
 here. These pages should explain how people use ClawHub: discover, install,
@@ -17,8 +17,8 @@ publish, inspect, report, moderate, and integrate with the registry.
 Use `specs/` for repository setup, production deploy runbooks, implementation
 plans, design rationale, regression notes, maintainer validation records, and
 internal subsystem intent. If a page tells someone how to run or deploy the
-ClawHub project itself, it belongs in `specs/`, not in the public ClawHub docs
-site.
+ClawHub project itself, it belongs in `specs/`, not in the public OpenClaw docs
+tab.
 
 Reading order:
 
@@ -47,8 +47,5 @@ Maintainer records:
 
 Publish flow:
 
-- Build with `bun run docs:build`; this stages `docs/` into the shared
-  `openclaw/docs` renderer and writes the generated site to `public/docs`.
-- Preview the generated static site with `bun run docs:run`.
-- Validate the generated route with `bun run docs:smoke`.
-- `specs/` is intentionally not published.
+- Changes under `docs/` dispatch the OpenClaw docs sync workflow, which mirrors this directory into the `ClawHub` tab on `docs.openclaw.ai`.
+- `specs/` is intentionally not mirrored.
