@@ -330,6 +330,7 @@ Notes:
   - `--family skill|code-plugin|bundle-plugin`
   - `--official`
   - `--executes-code`
+  - `--capability-tag <tag>`: exact stable capability-tag filter
   - `--target <target>`, `--os <os>`, `--arch <arch>`, `--libc <libc>`
   - `--requires-browser`, `--requires-desktop`, `--requires-native-deps`
   - `--requires-external-service`, `--external-service <name>`
@@ -338,11 +339,15 @@ Notes:
   - `--npm-mirror`
   - `--limit <n>` (1-100, default: 25)
   - `--json`
+- `--capability-tag` can be combined with family, official, and executes-code
+  filters, but not with the capability shorthand filters listed after it.
 
 Examples:
 
 ```bash
 clawhub package explore --family code-plugin
+clawhub package explore --capability-tag capability:model-provider --json
+clawhub package explore bitrouter --capability-tag capability:model-provider --json
 clawhub package explore --family code-plugin --os darwin --requires-desktop
 clawhub package explore --family code-plugin --artifact-kind npm-pack
 clawhub package explore --npm-mirror

@@ -8,8 +8,13 @@ import {
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
 import {
+  applyPackageCapabilityTagsInternal,
+  applyPackageCapabilityTagsInternalHandler,
   backfillLatestPackageScanStatusInternal,
+  backfillPackageCapabilityTagsInternal,
+  backfillPackageCapabilityTagsInternalHandler,
   backfillPackageReleaseScansInternal,
+  getPackageCapabilityTagBackfillPageInternal,
   getPackageReleaseScanBackfillBatchInternal,
   getByName,
   list,
@@ -70,6 +75,63 @@ type TestPackageInspectorAuthorRemediation = {
   summary: string;
   docsUrl?: string;
 };
+
+const applyPackageCapabilityTagsInternalMutationHandler = (
+  applyPackageCapabilityTagsInternal as unknown as WrappedHandler<
+    {
+      releaseId: string;
+      derivedCapabilityTags: string[];
+      dryRun?: boolean;
+    },
+    {
+      ok: true;
+      releasePatched: boolean;
+      packagePatched: boolean;
+      missingCapabilities: boolean;
+    }
+  >
+)._handler;
+
+const backfillPackageCapabilityTagsInternalActionHandler = (
+  backfillPackageCapabilityTagsInternal as unknown as WrappedHandler<
+    {
+      dryRun?: boolean;
+      cursor?: string;
+      batchSize?: number;
+      maxBatches?: number;
+      delayMs?: number;
+    },
+    {
+      ok: true;
+      stats: {
+        releasesScanned: number;
+        releasesPatched: number;
+        latestPackagesPatched: number;
+        missingCapabilities: number;
+        missingManifests: number;
+        missingStorageBlobs: number;
+      };
+      cursor: string | null;
+      isDone: boolean;
+    }
+  >
+)._handler;
+const getPackageCapabilityTagBackfillPageInternalHandler = (
+  getPackageCapabilityTagBackfillPageInternal as unknown as WrappedHandler<
+    { cursor?: string; batchSize?: number },
+    {
+      items: Array<{
+        releaseId: string;
+        extractedPluginManifest?: unknown;
+        pluginManifestStorageId?: string;
+        extractedPackageJson?: unknown;
+        packageJsonStorageId?: string;
+      }>;
+      cursor: string | null;
+      isDone: boolean;
+    }
+  >
+)._handler;
 
 const getByNameHandler = (
   getByName as unknown as WrappedHandler<
@@ -3269,14 +3331,43 @@ describe("packages public queries", () => {
     expect(indexNames).toEqual(["by_active_executes_updated"]);
   });
 
-  it("uses capability digests for capability-tagged package search", async () => {
+  it("uses capability digests for provider-capability package listings", async () => {
+    const capabilityTag = "capability:model-provider";
     const { ctx, indexNames, tableNames } = makeDigestCtx({
       capabilityPages: [
         {
           page: [
-            makeDigest("tools-demo", {
-              capabilityTag: "tools",
-              capabilityTags: ["tools"],
+            makeDigest("bitrouter", {
+              capabilityTag,
+              capabilityTags: [capabilityTag, "setup:text-inference"],
+              executesCode: true,
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      capabilityTag,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["bitrouter"]);
+    expect(tableNames).toEqual(["packageCapabilitySearchDigest"]);
+    expect(indexNames).toEqual(["by_active_tag_updated"]);
+  });
+
+  it("uses capability digests for capability-tagged package search", async () => {
+    const capabilityTag = "capability:model-provider";
+    const { ctx, indexNames, tableNames } = makeDigestCtx({
+      capabilityPages: [
+        {
+          page: [
+            makeDigest("bitrouter", {
+              capabilityTag,
+              capabilityTags: [capabilityTag, "setup:text-inference"],
               executesCode: true,
             }),
           ],
@@ -3287,13 +3378,13 @@ describe("packages public queries", () => {
     });
 
     const result = await searchPublicHandler(ctx, {
-      query: "tools",
-      capabilityTag: "tools",
+      query: "bitrouter",
+      capabilityTag,
       executesCode: true,
       limit: 10,
     });
 
-    expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
+    expect(result.map((entry) => entry.package.name)).toEqual(["bitrouter"]);
     expect(tableNames).toEqual(["packageCapabilitySearchDigest"]);
     expect(indexNames).toEqual(["by_active_tag_executes_updated"]);
   });
@@ -5631,10 +5722,19 @@ describe("packages public queries", () => {
       npmIntegrity: "sha512-demo",
       npmShasum: "b".repeat(40),
       npmTarballName: "demo-plugin-1.1.0.tgz",
-      capabilities: { capabilityTags: ["tools"], executesCode: true },
+      capabilities: {
+        capabilityTags: ["tools", "capability:model-provider", "setup:text-inference"],
+        executesCode: true,
+      },
     });
 
-    const expectedTags = ["tools", "artifact:npm-pack", "npm-mirror:available"];
+    const expectedTags = [
+      "tools",
+      "capability:model-provider",
+      "setup:text-inference",
+      "artifact:npm-pack",
+      "npm-mirror:available",
+    ];
     expect(ctx.insert).toHaveBeenCalledWith(
       "packageReleases",
       expect.objectContaining({
@@ -9840,6 +9940,774 @@ describe("packages public queries", () => {
       nextCursor: null,
       done: true,
     });
+  });
+});
+
+describe("package capability tag backfill", () => {
+  it("loads supported legacy bundle manifests into the backfill page", async () => {
+    const release = makeReleaseDoc({
+      packageId: "packages:bundle",
+      files: [
+        {
+          path: ".claude-plugin/plugin.json",
+          storageId: "storage:bundle-manifest",
+        },
+      ],
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          order: vi.fn(() => ({
+            paginate: vi.fn().mockResolvedValue({
+              page: [release],
+              continueCursor: "",
+              isDone: true,
+            }),
+          })),
+        })),
+        get: vi.fn().mockResolvedValue(
+          makePackageDoc({
+            _id: "packages:bundle",
+            family: "bundle-plugin",
+          }),
+        ),
+      },
+    };
+
+    await expect(
+      getPackageCapabilityTagBackfillPageInternalHandler(ctx, { batchSize: 1 }),
+    ).resolves.toEqual({
+      items: [
+        {
+          releaseId: release._id,
+          extractedPluginManifest: undefined,
+          pluginManifestStorageId: "storage:bundle-manifest",
+          extractedPackageJson: undefined,
+          packageJsonStorageId: undefined,
+        },
+      ],
+      cursor: null,
+      isDone: true,
+    });
+  });
+
+  it("syncs package search and capability digests through the package mutation trigger", async () => {
+    const packageId = "packages:demo";
+    const releaseId = "packageReleases:demo-1";
+    const userId = "users:owner";
+    const publisherId = "publishers:owner";
+    const packageSearchDigestId = "packageSearchDigest:demo";
+    const existingCapabilityDigestId = "packageCapabilitySearchDigest:provider";
+    const initialCapabilities = {
+      executesCode: true,
+      capabilityTags: ["provider:bitrouter"],
+    };
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        releaseId,
+        makeReleaseDoc({
+          _id: releaseId,
+          packageId,
+          capabilities: initialCapabilities,
+        }),
+      ],
+      [
+        packageId,
+        makePackageDoc({
+          _id: packageId,
+          ownerUserId: userId,
+          ownerPublisherId: publisherId,
+          capabilityTags: initialCapabilities.capabilityTags,
+          capabilities: initialCapabilities,
+          latestVersionSummary: {
+            version: "1.0.0",
+            capabilities: initialCapabilities,
+          },
+        }),
+      ],
+      [
+        userId,
+        {
+          _id: userId,
+          handle: "owner",
+          personalPublisherId: publisherId,
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        },
+      ],
+      [
+        publisherId,
+        {
+          _id: publisherId,
+          kind: "user",
+          handle: "owner",
+          linkedUserId: userId,
+          deletedAt: undefined,
+          deactivatedAt: undefined,
+        },
+      ],
+      [
+        packageSearchDigestId,
+        {
+          ...makeDigest("demo", {
+            _id: packageSearchDigestId,
+            packageId,
+            capabilityTags: initialCapabilities.capabilityTags,
+          }),
+        },
+      ],
+      [
+        existingCapabilityDigestId,
+        {
+          ...makeDigest("demo", {
+            _id: existingCapabilityDigestId,
+            packageId,
+            capabilityTag: "provider:bitrouter",
+            capabilityTags: initialCapabilities.capabilityTags,
+          }),
+        },
+      ],
+    ]);
+    const patch = vi.fn(
+      async (first: string, second: string | Record<string, unknown>, third?: unknown) => {
+        const id = typeof second === "string" ? second : first;
+        const value = typeof second === "string" ? third : second;
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+          throw new Error(`Expected patch for ${id}`);
+        }
+        docs.set(id, { ...docs.get(id), ...value });
+      },
+    );
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      const id = `${table}:inserted-${insert.mock.calls.length}`;
+      docs.set(id, { ...value, _id: id });
+      return id;
+    });
+    const ctx = {
+      db: {
+        system: {},
+        normalizeId: vi.fn((table: string, id: string) => (id.startsWith(`${table}:`) ? id : null)),
+        get: vi.fn(async (first: string, second?: string) => docs.get(second ?? first) ?? null),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => {
+              if (table === "packageSearchDigest") return docs.get(packageSearchDigestId) ?? null;
+              return null;
+            }),
+            collect: vi.fn(async () => {
+              if (table === "packageCapabilitySearchDigest") {
+                return [...docs.values()].filter(
+                  (doc) =>
+                    String(doc._id).startsWith("packageCapabilitySearchDigest:") &&
+                    doc.packageId === packageId,
+                );
+              }
+              if (table === "packagePluginCategorySearchDigest") return [];
+              throw new Error(`Unexpected collect table ${table}`);
+            }),
+          })),
+        })),
+        patch,
+        insert,
+        delete: vi.fn(async (first: string, second?: string) => {
+          docs.delete(second ?? first);
+        }),
+      },
+    };
+
+    await expect(
+      applyPackageCapabilityTagsInternalMutationHandler(ctx, {
+        releaseId,
+        derivedCapabilityTags: ["capability:model-provider", "setup:text-inference"],
+      }),
+    ).resolves.toMatchObject({ ok: true, releasePatched: true, packagePatched: true });
+
+    expect(docs.get(packageSearchDigestId)?.capabilityTags).toEqual([
+      "provider:bitrouter",
+      "capability:model-provider",
+      "setup:text-inference",
+    ]);
+    expect(insert).toHaveBeenCalledWith(
+      "packageCapabilitySearchDigest",
+      expect.objectContaining({
+        packageId,
+        capabilityTag: "capability:model-provider",
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "packageCapabilitySearchDigest",
+      expect.objectContaining({
+        packageId,
+        capabilityTag: "setup:text-inference",
+      }),
+    );
+  });
+
+  it("updates a release and its latest package projection once", async () => {
+    const initialCapabilities = {
+      executesCode: true,
+      capabilityTags: ["executes-code", "provider:bitrouter"],
+    };
+    let release = makeReleaseDoc({
+      capabilities: initialCapabilities,
+    });
+    let pkg = makePackageDoc({
+      capabilityTags: initialCapabilities.capabilityTags,
+      capabilities: initialCapabilities,
+      latestVersionSummary: {
+        version: "1.0.0",
+        capabilities: initialCapabilities,
+      },
+    });
+    const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      if (id === release._id) release = { ...release, ...value };
+      if (id === pkg._id) pkg = { ...pkg, ...value };
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === release._id) return release;
+          if (id === pkg._id) return pkg;
+          return null;
+        }),
+        patch,
+      },
+    } as never;
+    const args = {
+      releaseId: release._id as never,
+      derivedCapabilityTags: ["capability:model-provider", "setup:text-inference"],
+    };
+
+    const first = await applyPackageCapabilityTagsInternalHandler(ctx, args);
+
+    expect(first).toEqual({
+      ok: true,
+      releasePatched: true,
+      packagePatched: true,
+      missingCapabilities: false,
+    });
+    expect(patch).toHaveBeenCalledWith(
+      release._id,
+      expect.objectContaining({
+        capabilities: expect.objectContaining({
+          capabilityTags: [
+            "executes-code",
+            "provider:bitrouter",
+            "capability:model-provider",
+            "setup:text-inference",
+          ],
+        }),
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      pkg._id,
+      expect.objectContaining({
+        capabilityTags: [
+          "executes-code",
+          "provider:bitrouter",
+          "capability:model-provider",
+          "setup:text-inference",
+        ],
+        executesCode: true,
+        latestVersionSummary: expect.objectContaining({
+          capabilities: expect.objectContaining({
+            capabilityTags: [
+              "executes-code",
+              "provider:bitrouter",
+              "capability:model-provider",
+              "setup:text-inference",
+            ],
+          }),
+        }),
+      }),
+    );
+
+    patch.mockClear();
+    const second = await applyPackageCapabilityTagsInternalHandler(ctx, args);
+
+    expect(second).toEqual({
+      ok: true,
+      releasePatched: false,
+      packagePatched: false,
+      missingCapabilities: false,
+    });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("updates legacy latest package projections selected by tags.latest", async () => {
+    const initialCapabilities = {
+      executesCode: true,
+      capabilityTags: ["provider:bitrouter"],
+    };
+    const release = makeReleaseDoc({
+      capabilities: initialCapabilities,
+    });
+    const pkg = makePackageDoc({
+      tags: { latest: release._id },
+      latestReleaseId: undefined,
+      capabilityTags: initialCapabilities.capabilityTags,
+      capabilities: initialCapabilities,
+      latestVersionSummary: {
+        version: "1.0.0",
+        capabilities: initialCapabilities,
+      },
+    });
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === release._id) return release;
+          if (id === pkg._id) return pkg;
+          return null;
+        }),
+        patch,
+      },
+    } as never;
+
+    await expect(
+      applyPackageCapabilityTagsInternalHandler(ctx, {
+        releaseId: release._id as never,
+        derivedCapabilityTags: ["capability:model-provider", "setup:text-inference"],
+      }),
+    ).resolves.toMatchObject({ ok: true, releasePatched: true, packagePatched: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      pkg._id,
+      expect.objectContaining({
+        capabilityTags: ["provider:bitrouter", "capability:model-provider", "setup:text-inference"],
+      }),
+    );
+  });
+
+  it("initializes and idempotently reconciles legacy releases without capabilities", async () => {
+    let release = {
+      ...makeReleaseDoc({
+        changelog: "Initial release",
+        integritySha256: "legacy-sha256",
+      }),
+      capabilities: undefined as unknown,
+    };
+    let pkg = {
+      ...makePackageDoc({
+        capabilityTags: ["provider:bitrouter"],
+        capabilities: null,
+        latestVersionSummary: undefined,
+      }),
+      executesCode: undefined as unknown,
+    };
+    const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      if (id === release._id) release = { ...release, ...value };
+      if (id === pkg._id) pkg = { ...pkg, ...value };
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === release._id) return release;
+          if (id === pkg._id) return pkg;
+          return null;
+        }),
+        patch,
+      },
+    } as never;
+    const args = {
+      releaseId: release._id as never,
+      derivedCapabilityTags: ["capability:model-provider", "setup:text-inference"],
+    };
+
+    const first = await applyPackageCapabilityTagsInternalHandler(ctx, args);
+
+    expect(first).toEqual({
+      ok: true,
+      releasePatched: true,
+      packagePatched: true,
+      missingCapabilities: true,
+    });
+    expect(release.capabilities).toEqual({
+      executesCode: true,
+      capabilityTags: ["provider:bitrouter", "capability:model-provider", "setup:text-inference"],
+    });
+    expect(pkg.capabilities).toEqual(release.capabilities);
+    expect(pkg.executesCode).toBe(true);
+    expect(pkg.latestVersionSummary).toMatchObject({
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "Initial release",
+      capabilities: release.capabilities,
+      artifact: {
+        kind: "legacy-zip",
+        sha256: "legacy-sha256",
+        format: "zip",
+      },
+    });
+
+    patch.mockClear();
+    const second = await applyPackageCapabilityTagsInternalHandler(ctx, args);
+
+    expect(second).toEqual({
+      ok: true,
+      releasePatched: false,
+      packagePatched: false,
+      missingCapabilities: false,
+    });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("does not rewrite a freshly published release with canonical tag ordering", async () => {
+    const capabilityTags = [
+      "provider:bitrouter",
+      "capability:model-provider",
+      "setup:text-inference",
+      "artifact:npm-pack",
+      "npm-mirror:available",
+    ];
+    const capabilities = { executesCode: true, capabilityTags };
+    const release = makeReleaseDoc({
+      artifactKind: "npm-pack",
+      npmIntegrity: "sha512-demo",
+      capabilities,
+    });
+    const pkg = makePackageDoc({
+      capabilityTags,
+      executesCode: true,
+      capabilities,
+      latestVersionSummary: {
+        version: "1.0.0",
+        capabilities,
+      },
+    });
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === release._id) return release;
+          if (id === pkg._id) return pkg;
+          return null;
+        }),
+        patch,
+      },
+    } as never;
+
+    await expect(
+      applyPackageCapabilityTagsInternalHandler(ctx, {
+        releaseId: release._id as never,
+        derivedCapabilityTags: ["capability:model-provider", "setup:text-inference"],
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      releasePatched: false,
+      packagePatched: false,
+      missingCapabilities: false,
+    });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("dry-runs stored manifest backfills without mutating releases", async () => {
+    const runMutation = vi.fn().mockResolvedValue({
+      ok: true,
+      releasePatched: true,
+      packagePatched: true,
+      missingCapabilities: false,
+    });
+    const result = await backfillPackageCapabilityTagsInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          items: [
+            {
+              releaseId: "packageReleases:demo-1",
+              extractedPluginManifest: {
+                providers: ["bitrouter"],
+                providerAuthChoices: [
+                  { provider: "bitrouter", method: "api-key", choiceId: "bitrouter-api-key" },
+                ],
+              },
+            },
+          ],
+          cursor: null,
+          isDone: true,
+        }),
+        runMutation,
+        storage: { get: vi.fn() },
+      } as never,
+      { dryRun: true, batchSize: 1, maxBatches: 1 },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: "packageReleases:demo-1",
+      derivedCapabilityTags: ["capability:model-provider", "setup:text-inference"],
+      dryRun: true,
+    });
+    expect(result).toEqual({
+      ok: true,
+      stats: {
+        releasesScanned: 1,
+        releasesPatched: 1,
+        latestPackagesPatched: 1,
+        missingCapabilities: 0,
+        missingManifests: 0,
+        missingStorageBlobs: 0,
+      },
+      cursor: null,
+      isDone: true,
+    });
+  });
+
+  it("backfills declarative setup provider auth methods as text inference", async () => {
+    const runMutation = vi.fn().mockResolvedValue({
+      ok: true,
+      releasePatched: true,
+      packagePatched: true,
+      missingCapabilities: false,
+    });
+
+    await backfillPackageCapabilityTagsInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          items: [
+            {
+              releaseId: "packageReleases:declarative-provider",
+              extractedPluginManifest: {
+                providers: ["declarative-provider"],
+                setup: {
+                  providers: [{ id: "declarative-provider", authMethods: ["api-key"] }],
+                },
+              },
+            },
+          ],
+          cursor: null,
+          isDone: true,
+        }),
+        runMutation,
+        storage: { get: vi.fn() },
+      } as never,
+      { dryRun: true, batchSize: 1, maxBatches: 1 },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: "packageReleases:declarative-provider",
+      derivedCapabilityTags: ["capability:model-provider", "setup:text-inference"],
+      dryRun: true,
+    });
+  });
+
+  it("does not backfill setup-provider fallback choices from canonical setup entries", async () => {
+    const runMutation = vi.fn().mockResolvedValue({
+      ok: true,
+      releasePatched: false,
+      packagePatched: false,
+      missingCapabilities: false,
+    });
+
+    await backfillPackageCapabilityTagsInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          items: [
+            {
+              releaseId: "packageReleases:runtime-setup-provider",
+              extractedPluginManifest: {
+                providers: ["runtime-setup-provider"],
+                setup: {
+                  providers: [{ id: "runtime-setup-provider", authMethods: ["api-key"] }],
+                },
+              },
+              packageJsonStorageId: "storage:package-json",
+            },
+          ],
+          cursor: null,
+          isDone: true,
+        }),
+        runMutation,
+        storage: {
+          get: vi.fn().mockResolvedValue(
+            new Blob([
+              JSON.stringify({
+                openclaw: { setupEntry: "./dist/setup.js" },
+              }),
+            ]),
+          ),
+        },
+      } as never,
+      { dryRun: true, batchSize: 1, maxBatches: 1 },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: "packageReleases:runtime-setup-provider",
+      derivedCapabilityTags: ["capability:model-provider"],
+      dryRun: true,
+    });
+  });
+
+  it("backfills setup-provider fallback choices when only runtimeSetupEntry is declared", async () => {
+    const runMutation = vi.fn().mockResolvedValue({
+      ok: true,
+      releasePatched: true,
+      packagePatched: true,
+      missingCapabilities: false,
+    });
+
+    await backfillPackageCapabilityTagsInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          items: [
+            {
+              releaseId: "packageReleases:runtime-setup-entry-provider",
+              extractedPluginManifest: {
+                providers: ["runtime-setup-entry-provider"],
+                setup: {
+                  providers: [{ id: "runtime-setup-entry-provider", authMethods: ["api-key"] }],
+                },
+              },
+              extractedPackageJson: {
+                openclaw: { runtimeSetupEntry: "./dist/runtime-setup.js" },
+              },
+            },
+          ],
+          cursor: null,
+          isDone: true,
+        }),
+        runMutation,
+        storage: { get: vi.fn() },
+      } as never,
+      { dryRun: true, batchSize: 1, maxBatches: 1 },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: "packageReleases:runtime-setup-entry-provider",
+      derivedCapabilityTags: ["capability:model-provider", "setup:text-inference"],
+      dryRun: true,
+    });
+  });
+
+  it("bounds reconciliation pages for large release documents", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      items: [],
+      cursor: null,
+      isDone: true,
+    });
+
+    await backfillPackageCapabilityTagsInternalHandler(
+      {
+        runQuery,
+        runMutation: vi.fn(),
+        storage: { get: vi.fn() },
+      } as never,
+      { dryRun: true, batchSize: 100, maxBatches: 1 },
+    );
+
+    expect(runQuery.mock.calls[0]?.[1]).toEqual({
+      cursor: undefined,
+      batchSize: 4,
+    });
+  });
+
+  it("reads legacy bundle manifests from release storage", async () => {
+    const runMutation = vi.fn().mockResolvedValue({
+      ok: true,
+      releasePatched: true,
+      packagePatched: false,
+      missingCapabilities: false,
+    });
+    await backfillPackageCapabilityTagsInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          items: [
+            {
+              releaseId: "packageReleases:bundle-1",
+              pluginManifestStorageId: "storage:manifest",
+            },
+          ],
+          cursor: null,
+          isDone: true,
+        }),
+        runMutation,
+        storage: {
+          get: vi.fn().mockResolvedValue(
+            new Blob([
+              JSON.stringify({
+                contracts: { speechProviders: ["voice"] },
+              }),
+            ]),
+          ),
+        },
+      } as never,
+      { dryRun: true, batchSize: 1, maxBatches: 1 },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: "packageReleases:bundle-1",
+      derivedCapabilityTags: ["capability:speech-provider"],
+      dryRun: true,
+    });
+  });
+
+  it("carries cumulative stats into scheduled continuations", async () => {
+    const runAfter = vi.fn();
+    const result = await backfillPackageCapabilityTagsInternalActionHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          items: [
+            {
+              releaseId: "packageReleases:demo-1",
+              extractedPluginManifest: {
+                providers: ["bitrouter"],
+              },
+            },
+          ],
+          cursor: "next-page",
+          isDone: false,
+        }),
+        runMutation: vi.fn().mockResolvedValue({
+          ok: true,
+          releasePatched: true,
+          packagePatched: true,
+          missingCapabilities: false,
+        }),
+        storage: { get: vi.fn() },
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 1, delayMs: 0 },
+    );
+
+    expect(result.stats).toMatchObject({
+      releasesScanned: 1,
+      releasesPatched: 1,
+      latestPackagesPatched: 1,
+    });
+    expect(runAfter).toHaveBeenCalledOnce();
+    expect(runAfter.mock.calls[0]?.[0]).toBe(0);
+    expect(runAfter.mock.calls[0]?.[2]).toMatchObject({
+      cursor: "next-page",
+      accReleasesScanned: 1,
+      accReleasesPatched: 1,
+      accLatestPackagesPatched: 1,
+      accMissingCapabilities: 0,
+      accMissingManifests: 0,
+      accMissingStorageBlobs: 0,
+      startedAt: expect.any(Number),
+    });
+  });
+
+  it("logs bounded dry runs as paused until the cursor is exhausted", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+
+    await backfillPackageCapabilityTagsInternalActionHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          items: [],
+          cursor: "next-page",
+          isDone: false,
+        }),
+        runMutation: vi.fn(),
+        storage: { get: vi.fn() },
+        scheduler: { runAfter: vi.fn() },
+      } as never,
+      { dryRun: true, batchSize: 1, maxBatches: 1 },
+    );
+
+    expect(log).toHaveBeenCalledWith(
+      "[packages:capability-tag-backfill] Dry run paused:",
+      expect.objectContaining({ cursor: "next-page", isDone: false }),
+    );
+    log.mockRestore();
   });
 });
 

@@ -56,6 +56,15 @@ function normalizeStringList(input: unknown): string[] {
   return [];
 }
 
+function normalizeOpenClawStringList(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return input.flatMap((value) => {
+    if (typeof value !== "string") return [];
+    const normalized = value.trim();
+    return normalized ? [normalized] : [];
+  });
+}
+
 function normalizeNamedList(input: unknown): string[] {
   if (!Array.isArray(input)) return normalizeStringList(input);
   return input
@@ -77,6 +86,127 @@ function normalizeTagSegment(value: string) {
 
 function uniq(items: Array<string | undefined | null>) {
   return [...new Set(items.map((item) => item?.trim()).filter(Boolean) as string[])];
+}
+
+const DERIVED_OPENCLAW_ONBOARDING_CAPABILITY_TAGS = [
+  "capability:model-provider",
+  "capability:speech-provider",
+  "capability:web-search-provider",
+  "capability:image-generation-provider",
+  "capability:music-generation-provider",
+  "setup:text-inference",
+  "setup:image-generation",
+  "setup:music-generation",
+] as const;
+const DERIVED_OPENCLAW_ONBOARDING_CAPABILITY_TAG_SET = new Set<string>(
+  DERIVED_OPENCLAW_ONBOARDING_CAPABILITY_TAGS,
+);
+
+function hasDeclarativeSetupProviderAuthChoice(
+  pluginManifest: Record<string, unknown>,
+  hasSetupSource: boolean,
+  explicitProviderMethods: ReadonlySet<string>,
+) {
+  const setup = isRecord(pluginManifest.setup) ? pluginManifest.setup : undefined;
+  if (!setup || (hasSetupSource && setup.requiresRuntime !== false)) return false;
+  if (!Array.isArray(setup.providers)) return false;
+  return setup.providers.some((provider) => {
+    if (!isRecord(provider) || typeof provider.id !== "string") return false;
+    const providerId = provider.id.trim();
+    if (!providerId) return false;
+    return normalizeOpenClawStringList(provider.authMethods).some(
+      (method) => !explicitProviderMethods.has(`${providerId}::${method}`),
+    );
+  });
+}
+
+function hasDeclaredOpenClawSetupEntry(
+  pluginManifest: Record<string, unknown> | undefined,
+  packageJson: Record<string, unknown> | undefined,
+) {
+  const openclaw = isRecord(packageJson?.openclaw) ? packageJson.openclaw : undefined;
+  return [pluginManifest?.setupEntry, openclaw?.setupEntry].some(
+    (entry) => typeof entry === "string" && Boolean(entry.trim()),
+  );
+}
+
+export function hasOpenClawSetupSource(packageJson: Record<string, unknown> | undefined) {
+  const openclaw = isRecord(packageJson?.openclaw) ? packageJson.openclaw : undefined;
+  return typeof openclaw?.setupEntry === "string" && Boolean(openclaw.setupEntry.trim());
+}
+
+export function deriveOpenClawOnboardingCapabilityTags(
+  pluginManifest: Record<string, unknown>,
+  options?: { hasSetupSource?: boolean },
+): string[] {
+  const contracts = isRecord(pluginManifest.contracts) ? pluginManifest.contracts : undefined;
+  const setupScopes = new Set<string>();
+  const explicitProviderMethods = new Set<string>();
+  if (Array.isArray(pluginManifest.providerAuthChoices)) {
+    for (const choice of pluginManifest.providerAuthChoices) {
+      if (!isRecord(choice)) continue;
+      const provider = typeof choice.provider === "string" ? choice.provider.trim() : "";
+      const method = typeof choice.method === "string" ? choice.method.trim() : "";
+      const choiceId = typeof choice.choiceId === "string" ? choice.choiceId.trim() : "";
+      if (!provider || !method || !choiceId) continue;
+      explicitProviderMethods.add(`${provider}::${method}`);
+      const normalizedScopes = normalizeOpenClawStringList(choice.onboardingScopes).filter(
+        (scope) =>
+          scope === "text-inference" ||
+          scope === "image-generation" ||
+          scope === "music-generation",
+      );
+      const scopes = normalizedScopes.length > 0 ? normalizedScopes : ["text-inference"];
+      for (const scope of scopes) setupScopes.add(scope);
+    }
+  }
+  if (
+    hasDeclarativeSetupProviderAuthChoice(
+      pluginManifest,
+      Boolean(options?.hasSetupSource),
+      explicitProviderMethods,
+    )
+  ) {
+    setupScopes.add("text-inference");
+  }
+
+  const tags = new Set<string>();
+  if (normalizeOpenClawStringList(pluginManifest.providers).length > 0) {
+    tags.add("capability:model-provider");
+  }
+  if (normalizeOpenClawStringList(contracts?.speechProviders).length > 0) {
+    tags.add("capability:speech-provider");
+  }
+  if (normalizeOpenClawStringList(contracts?.webSearchProviders).length > 0) {
+    tags.add("capability:web-search-provider");
+  }
+  if (normalizeOpenClawStringList(contracts?.imageGenerationProviders).length > 0) {
+    tags.add("capability:image-generation-provider");
+  }
+  if (normalizeOpenClawStringList(contracts?.musicGenerationProviders).length > 0) {
+    tags.add("capability:music-generation-provider");
+  }
+  if (setupScopes.has("text-inference")) tags.add("setup:text-inference");
+  if (setupScopes.has("image-generation")) tags.add("setup:image-generation");
+  if (setupScopes.has("music-generation")) tags.add("setup:music-generation");
+
+  return DERIVED_OPENCLAW_ONBOARDING_CAPABILITY_TAGS.filter((tag) => tags.has(tag));
+}
+
+export function replaceDerivedOpenClawOnboardingCapabilityTags(
+  capabilityTags: Array<string | undefined | null> | undefined,
+  derivedCapabilityTags: string[],
+): string[] {
+  const preserved = uniq(capabilityTags ?? []).filter(
+    (tag) => !DERIVED_OPENCLAW_ONBOARDING_CAPABILITY_TAG_SET.has(tag),
+  );
+  const derived = new Set(
+    derivedCapabilityTags.filter((tag) => DERIVED_OPENCLAW_ONBOARDING_CAPABILITY_TAG_SET.has(tag)),
+  );
+  return [
+    ...preserved,
+    ...DERIVED_OPENCLAW_ONBOARDING_CAPABILITY_TAGS.filter((tag) => derived.has(tag)),
+  ];
 }
 
 function isRequiredEnvironmentFlag(value: unknown): boolean {
@@ -330,8 +460,8 @@ export function extractCodePluginArtifacts(params: {
     ...normalizeStringList(openclaw?.channels),
   ]);
   const providers = uniq([
-    ...normalizeStringList(params.pluginManifest.providers),
-    ...normalizeStringList(openclaw?.providers),
+    ...normalizeOpenClawStringList(params.pluginManifest.providers),
+    ...normalizeOpenClawStringList(openclaw?.providers),
   ]);
   const hooks = uniq([
     ...normalizeNamedList(params.pluginManifest.hooks),
@@ -349,6 +479,8 @@ export function extractCodePluginArtifacts(params: {
   const hostTargets = uniq(normalizeStringList(openclaw?.hostTargets));
   const environment = isRecord(openclaw?.environment) ? openclaw.environment : undefined;
   const environmentTags = extractEnvironmentCapabilityTags(environment);
+  const hasSetupSource = hasOpenClawSetupSource(params.packageJson);
+  const hasSetupEntry = hasDeclaredOpenClawSetupEntry(params.pluginManifest, params.packageJson);
 
   const httpRouteCount = Array.isArray(params.pluginManifest.httpRoutes)
     ? params.pluginManifest.httpRoutes.length
@@ -374,9 +506,7 @@ export function extractCodePluginArtifacts(params: {
     providers,
     hooks,
     bundledSkills,
-    setupEntry:
-      typeof params.pluginManifest.setupEntry === "string" ||
-      typeof openclaw?.setupEntry === "string",
+    setupEntry: hasSetupEntry,
     configSchema: hasConfigSchema,
     configUiHints:
       isRecord(params.pluginManifest.configUiHints) || isRecord(openclaw?.configUiHints),
@@ -388,16 +518,19 @@ export function extractCodePluginArtifacts(params: {
     hostTargets,
   };
 
-  capabilities.capabilityTags = uniq([
-    "executes-code",
-    capabilities.pluginKind ? `kind:${capabilities.pluginKind}` : null,
-    ...channels.map((entry) => `channel:${entry}`),
-    ...providers.map((entry) => `provider:${entry}`),
-    ...(capabilities.setupEntry ? ["setup"] : []),
-    ...extractHostTargetCapabilityTags(hostTargets),
-    ...environmentTags,
-    ...(toolNames.length > 0 ? ["tools"] : []),
-  ]);
+  capabilities.capabilityTags = replaceDerivedOpenClawOnboardingCapabilityTags(
+    [
+      "executes-code",
+      capabilities.pluginKind ? `kind:${capabilities.pluginKind}` : null,
+      ...channels.map((entry) => `channel:${entry}`),
+      ...providers.map((entry) => `provider:${entry}`),
+      ...(capabilities.setupEntry ? ["setup"] : []),
+      ...extractHostTargetCapabilityTags(hostTargets),
+      ...environmentTags,
+      ...(toolNames.length > 0 ? ["tools"] : []),
+    ],
+    deriveOpenClawOnboardingCapabilityTags(params.pluginManifest, { hasSetupSource }),
+  );
 
   return {
     runtimeId,
@@ -417,6 +550,7 @@ export function extractBundlePluginArtifacts(params: {
 }) {
   const openclaw = isRecord(params.packageJson?.openclaw) ? params.packageJson.openclaw : undefined;
   const environment = isRecord(openclaw?.environment) ? openclaw.environment : undefined;
+  const hasSetupSource = hasOpenClawSetupSource(params.packageJson);
   const manifest = params.bundleManifest;
   const runtimeId =
     (typeof params.pluginManifest.id === "string" && params.pluginManifest.id.trim()) ||
@@ -438,12 +572,15 @@ export function extractBundlePluginArtifacts(params: {
     runtimeId,
     bundleFormat,
     hostTargets,
-    capabilityTags: uniq([
-      "bundle-only",
-      bundleFormat ? `format:${bundleFormat}` : null,
-      ...extractHostTargetCapabilityTags(hostTargets),
-      ...extractEnvironmentCapabilityTags(environment),
-    ]),
+    capabilityTags: replaceDerivedOpenClawOnboardingCapabilityTags(
+      [
+        "bundle-only",
+        bundleFormat ? `format:${bundleFormat}` : null,
+        ...extractHostTargetCapabilityTags(hostTargets),
+        ...extractEnvironmentCapabilityTags(environment),
+      ],
+      deriveOpenClawOnboardingCapabilityTags(params.pluginManifest, { hasSetupSource }),
+    ),
   };
 
   return {
