@@ -14,6 +14,9 @@ Keep product, CLI, publisher, API, policy, security, and troubleshooting docs
 here. These pages should explain how people use ClawHub: discover, install,
 publish, inspect, report, moderate, and integrate with the registry.
 
+OpenClaw owns plugin runtime, SDK, and skill-authoring documentation. Link to
+the canonical OpenClaw pages instead of mirroring them into `docs/`.
+
 Use `specs/` for repository setup, production deploy runbooks, implementation
 plans, design rationale, regression notes, maintainer validation records, and
 internal subsystem intent. If a page tells someone how to run or deploy the
@@ -28,12 +31,10 @@ Reading order:
 4. `docs/publishing.md`: owner-scoped skill/plugin publishing flow.
 5. `docs/cli.md`: ClawHub CLI reference.
 6. `docs/skill-format.md`: skill bundle metadata and package shape.
-7. `docs/plugin-development.md`: OpenClaw plugin authoring path through ClawHub publishing.
-8. `docs/plugin-inspector.md`: Plugin Inspector development, testing, and CI workflow.
-9. `docs/creating-skills.md`: skill authoring, runtime proof, plugin-bundled skills, and publishing.
-10. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
-11. `docs/telemetry.md`: install telemetry and how to opt out.
-12. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
+7. `docs/plugin-development.md`: canonical OpenClaw authoring links and the ClawHub publishing handoff.
+8. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
+9. `docs/telemetry.md`: install telemetry and how to opt out.
+10. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
 
 Policy, API, and trust docs:
 

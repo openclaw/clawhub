@@ -29,8 +29,7 @@ export function docsBasePathForEnv(env = process.env) {
 }
 
 export function prepareDocsMarkdown(markdown, sourcePath) {
-  const sanitized = stripMdxImportsOutsideFences(markdown);
-  const absoluteOpenClawLinks = sanitized.replaceAll(
+  const absoluteOpenClawLinks = markdown.replaceAll(
     "](/plugins/",
     "](https://docs.openclaw.ai/plugins/",
   );
@@ -86,7 +85,10 @@ function prepareStage({ docsRepoDir, stageRoot, cwd }) {
   fs.mkdirSync(path.join(stageRoot, "scripts"), { recursive: true });
   fs.mkdirSync(path.join(stageRoot, ".openclaw-sync"), { recursive: true });
 
-  copyBuilderScripts({ docsRepoDir, stageRoot });
+  symlinkOrCopy(
+    path.join(docsRepoDir, "scripts", "docs-site"),
+    path.join(stageRoot, "scripts", "docs-site"),
+  );
 
   const nodeModulesDir = resolveBuilderNodeModules(docsRepoDir);
   symlinkOrCopy(nodeModulesDir, path.join(stageRoot, "node_modules"));
@@ -97,15 +99,15 @@ function prepareStage({ docsRepoDir, stageRoot, cwd }) {
     const source = path.join(docsSourceDir, entry.sourceRel);
     const target = path.join(stageRoot, "docs", entry.stageRel);
     fs.mkdirSync(path.dirname(target), { recursive: true });
-    if (!entry.injectSourcePath) {
+    if (entry.injectSourcePath) {
+      fs.writeFileSync(
+        target,
+        prepareDocsMarkdown(fs.readFileSync(source, "utf8"), entry.injectSourcePath),
+        "utf8",
+      );
+    } else {
       fs.copyFileSync(source, target);
-      continue;
     }
-    fs.writeFileSync(
-      target,
-      prepareDocsMarkdown(fs.readFileSync(source, "utf8"), entry.injectSourcePath),
-      "utf8",
-    );
   }
 
   fs.writeFileSync(
@@ -134,10 +136,9 @@ function runBuilderPipeline({ docsRepoDir, stageRoot, cwd, commandRunner, env })
     "source-index.mjs",
     "pagefind-normalize.mjs",
   ];
-  const stagedScriptsDir = path.join(stageRoot, "scripts", "docs-site");
 
   for (const script of nodeScripts.slice(0, 3)) {
-    commandRunner("node", [path.join(stagedScriptsDir, script)], {
+    commandRunner("node", [path.join(docsRepoDir, "scripts", "docs-site", script)], {
       cwd: stageRoot,
       env: builderEnv,
     });
@@ -154,10 +155,14 @@ function runBuilderPipeline({ docsRepoDir, stageRoot, cwd, commandRunner, env })
     { cwd: stageRoot, env: builderEnv },
   );
 
-  commandRunner("node", [path.join(stagedScriptsDir, "pagefind-normalize.mjs")], {
-    cwd: stageRoot,
-    env: builderEnv,
-  });
+  commandRunner(
+    "node",
+    [path.join(docsRepoDir, "scripts", "docs-site", "pagefind-normalize.mjs")],
+    {
+      cwd: stageRoot,
+      env: builderEnv,
+    },
+  );
 }
 
 function ensureBuilderDependencies(docsRepoDir) {
@@ -201,123 +206,6 @@ function sourcePathFor(sourceRel) {
   return `clawhub/${sourceRel}`;
 }
 
-export function stripMdxImportsOutsideFences(markdown) {
-  let fence = null;
-  return String(markdown)
-    .split("\n")
-    .map((line) => {
-      const marker = line.match(/^( *)(`{3,}|~{3,})(.*)$/u);
-      if (marker) {
-        const chars = marker[2];
-        if (!fence) {
-          fence = { char: chars[0], length: chars.length };
-        } else if (
-          chars[0] === fence.char &&
-          chars.length >= fence.length &&
-          marker[3].trim() === ""
-        ) {
-          fence = null;
-        }
-        return line;
-      }
-      return !fence && /^import\s+.+?;?\s*$/u.test(line) ? "" : line;
-    })
-    .join("\n");
-}
-
-export function fenceAwareDedentComponentChildren(markdown, markerPrefix = "OPENCLAW_DOCS_MARKER") {
-  let depth = 0;
-  let fence = null;
-  return markdown
-    .split("\n")
-    .map((line) => {
-      const markerMatch = line.match(new RegExp(`^${markerPrefix}:([^:]+):`));
-      if (markerMatch) {
-        if (
-          markerMatch[1].endsWith("Close") ||
-          markerMatch[1] === "blockClose" ||
-          markerMatch[1] === "calloutClose"
-        ) {
-          depth = Math.max(0, depth - 1);
-        }
-        const markerLine = line;
-        if (
-          markerMatch[1].endsWith("Open") ||
-          markerMatch[1] === "blockOpen" ||
-          markerMatch[1] === "calloutOpen"
-        ) {
-          depth += 1;
-        }
-        return markerLine;
-      }
-
-      if (fence) {
-        const dedented =
-          fence.indent > 0 ? line.replace(new RegExp(`^ {1,${fence.indent}}`), "") : line;
-        const closing = dedented.match(/^ {0,3}(`{3,}|~{3,})\s*$/u)?.[1];
-        if (closing && closing[0] === fence.char && closing.length >= fence.length) {
-          fence = null;
-        }
-        return dedented;
-      }
-
-      const opening = line.match(/^( *)(`{3,}|~{3,})(.*)$/u);
-      if (opening) {
-        const indent = Math.min(opening[1].length, depth * 2);
-        fence = { char: opening[2][0], length: opening[2].length, indent };
-        return line.slice(indent);
-      }
-
-      if (depth <= 0 || !line.startsWith(" ")) return line;
-      return line.replace(new RegExp(`^ {1,${depth * 2}}`), "");
-    })
-    .join("\n");
-}
-
-export function escapeMdxComponentsOutsideFences(markdown) {
-  let fence = null;
-  const escapeTag = (value) =>
-    String(value).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
-
-  return String(markdown)
-    .split("\n")
-    .map((line) => {
-      const marker = line.match(/^( *)(`{3,}|~{3,})(.*)$/u);
-      if (marker) {
-        const chars = marker[2];
-        if (!fence) {
-          fence = { char: chars[0], length: chars.length };
-        } else if (
-          chars[0] === fence.char &&
-          chars.length >= fence.length &&
-          marker[3].trim() === ""
-        ) {
-          fence = null;
-        }
-        return line;
-      }
-      if (fence) return line;
-      return line
-        .replace(/<([A-Z][A-Za-z0-9_.-]*)([^>]*)>/gu, (_, name, attrs) =>
-          escapeTag(`<${name}${attrs}>`),
-        )
-        .replace(/<\/([A-Z][A-Za-z0-9_.-]*)>/gu, (_, name) => escapeTag(`</${name}>`));
-    })
-    .join("\n");
-}
-
-export function patchDocsTableCss(source) {
-  const marker = "\n`;\n}\n\nexport function siteJs";
-  if (!source.includes(marker)) {
-    throw new Error("Could not patch openclaw/docs table styles");
-  }
-  const tableCss = `
-.doc .oc-table th,.doc .oc-table td,.doc .oc-table code{overflow-wrap:normal;word-break:normal}
-.doc .oc-table th,.doc .oc-table code{white-space:nowrap}
-@media(max-width:820px){.doc .oc-table{min-width:560px;table-layout:auto}.doc h2,.doc h3,.doc h4{overflow-wrap:anywhere;word-break:normal}}`;
-  return source.replace(marker, `${tableCss}${marker}`);
-}
-
 function injectSourcePath(markdown, sourcePath) {
   const sourceYaml = `x-i18n:\n  source_path: ${JSON.stringify(sourcePath)}\n`;
   if (markdown.startsWith("---\n")) return markdown.replace("---\n", `---\n${sourceYaml}`);
@@ -356,49 +244,6 @@ function listFiles(dir) {
   return files.map((file) => normalizeRel(file)).sort();
 }
 
-function copyBuilderScripts({ docsRepoDir, stageRoot }) {
-  const target = path.join(stageRoot, "scripts", "docs-site");
-  fs.cpSync(path.join(docsRepoDir, "scripts", "docs-site"), target, { recursive: true });
-  for (const relativePath of ["mdx-ish.mjs", "build.mjs", "assets.mjs"]) {
-    const file = path.join(target, relativePath);
-    const source = fs.readFileSync(file, "utf8");
-    fs.writeFileSync(file, patchBuilderScript(source, relativePath), "utf8");
-  }
-}
-
-function patchBuilderScript(source, relativePath) {
-  // ClawHub strips actual MDX imports while staging, so disable the upstream fence-blind pass.
-  let patched = source.replaceAll('.replace(/^import\\s+.+?;?\\s*$/gm, "")', "");
-  if (relativePath === "assets.mjs") return patchDocsTableCss(patched);
-  if (relativePath !== "mdx-ish.mjs") return patched;
-
-  const componentEscapeStart = patched.indexOf(
-    "  out = out.replace(/<([A-Z][A-Za-z0-9_.-]*)([^>]*)>/g",
-  );
-  const componentEscapeEnd = patched.indexOf(
-    "\n  return dedentComponentChildren(out);",
-    componentEscapeStart,
-  );
-  if (componentEscapeStart < 0 || componentEscapeEnd < 0) {
-    throw new Error("Could not patch openclaw/docs component escaping");
-  }
-  patched = `${patched.slice(0, componentEscapeStart)}  out = escapeMdxComponentsOutsideFences(out);${patched.slice(componentEscapeEnd)}`;
-
-  const start = patched.indexOf("function dedentComponentChildren(markdown) {");
-  const end = patched.indexOf("\n\nfunction parseAttrs(", start);
-  if (start < 0 || end < 0) {
-    throw new Error("Could not patch openclaw/docs component dedent renderer");
-  }
-  const replacement = fenceAwareDedentComponentChildren
-    .toString()
-    .replace(
-      /^function fenceAwareDedentComponentChildren\([^)]*\)/u,
-      "function dedentComponentChildren(markdown)",
-    );
-  patched = `${patched.slice(0, start)}${escapeMdxComponentsOutsideFences.toString()}\n\n${replacement}${patched.slice(end)}`;
-  return patched;
-}
-
 function symlinkOrCopy(source, target) {
   fs.rmSync(target, { recursive: true, force: true });
   try {
@@ -417,17 +262,11 @@ function resolveInstalledOpenClawDocsRepo() {
 }
 
 function resolveBuilderNodeModules(docsRepoDir) {
-  const realDocsRepoDir = fs.realpathSync(docsRepoDir);
-  const packageNodeModules =
-    path.basename(path.dirname(realDocsRepoDir)) === "node_modules"
-      ? path.dirname(realDocsRepoDir)
-      : null;
   const candidates = [
     path.join(docsRepoDir, "node_modules"),
-    packageNodeModules,
     path.join(path.dirname(docsRepoDir), "node_modules"),
     path.join(repoRoot, "node_modules"),
-  ].filter(Boolean);
+  ];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) return candidate;
   }

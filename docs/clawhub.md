@@ -83,8 +83,8 @@ clawhub search "postgres backups"
 clawhub skill publish ./my-skill --slug my-skill --name "My Skill" --version 1.0.0
 clawhub package explore --family code-plugin
 clawhub package inspect episodic-claw
-clawhub package publish ./my-plugin --family code-plugin --dry-run
-clawhub package publish ./my-plugin --family code-plugin
+clawhub package publish your-org/your-plugin --dry-run
+clawhub package publish your-org/your-plugin
 clawhub sync --all
 ```
 
@@ -129,7 +129,9 @@ for CI-friendly output.
 Code plugins must include the required OpenClaw compatibility metadata in
 `package.json`, including `openclaw.compat.pluginApi` and
 `openclaw.build.openclawVersion`. See [CLI](./cli.md) for the full command
-reference and [Skill format](./skill-format.md) for skill metadata.
+reference, [Plugin development](./plugin-development.md) for canonical OpenClaw
+authoring documentation, and [Skill format](./skill-format.md) for skill
+metadata.
 
 ## Security and moderation
 
