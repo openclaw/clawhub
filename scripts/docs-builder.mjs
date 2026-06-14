@@ -24,18 +24,6 @@ export function planDocsStage(sourceRels) {
     .sort((a, b) => a.stageRel.localeCompare(b.stageRel));
 }
 
-export function docsBasePathForEnv(env = process.env) {
-  return env.VERCEL_ENV === "preview" ? "/docs" : "";
-}
-
-export function prepareDocsMarkdown(markdown, sourcePath) {
-  const absoluteOpenClawLinks = markdown.replaceAll(
-    "](/plugins/",
-    "](https://docs.openclaw.ai/plugins/",
-  );
-  return injectSourcePath(absoluteOpenClawLinks, sourcePath);
-}
-
 export function resolveOpenClawDocsRepo({
   env = process.env,
   cwd = repoRoot,
@@ -102,7 +90,7 @@ function prepareStage({ docsRepoDir, stageRoot, cwd }) {
     if (entry.injectSourcePath) {
       fs.writeFileSync(
         target,
-        prepareDocsMarkdown(fs.readFileSync(source, "utf8"), entry.injectSourcePath),
+        injectSourcePath(fs.readFileSync(source, "utf8"), entry.injectSourcePath),
         "utf8",
       );
     } else {
@@ -121,10 +109,10 @@ function runBuilderPipeline({ docsRepoDir, stageRoot, cwd, commandRunner, env })
   const sourceRepoDir = env.DOCS_SOURCE_REPO_DIR?.trim() || cwd;
   const builderEnv = {
     ...env,
-    DOCS_SITE_BASE_PATH: docsBasePathForEnv(env),
+    DOCS_SITE_BASE_PATH: "/docs",
     DOCS_SITE_LEGACY_BASE_PATH: "",
-    DOCS_SITE_CANONICAL_ORIGIN: "https://docs.clawhub.ai",
-    DOCS_SITE_CHAT_AUTH_URL: "https://clawhub.ai/auth/docs",
+    DOCS_SITE_CANONICAL_ORIGIN: "https://clawhub.ai/docs",
+    DOCS_SITE_CHAT_AUTH_URL: "/auth/docs",
     DOCS_FEEDBACK_ISSUE_REPO: "openclaw/clawhub",
     DOCS_SOURCE_REPO_DIR: sourceRepoDir,
     DOCS_SOURCE_REPO_URL: "https://github.com/openclaw/clawhub",
@@ -179,11 +167,6 @@ function copyGeneratedDocs({ stageRoot, outputDir }) {
   fs.rmSync(outputDir, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(outputDir), { recursive: true });
   fs.cpSync(built, outputDir, { recursive: true });
-
-  const llmsDiscoverySource = path.join(built, ".well-known", "llms.txt");
-  const llmsDiscoveryTarget = path.join(path.dirname(outputDir), ".well-known", "llms.txt");
-  fs.mkdirSync(path.dirname(llmsDiscoveryTarget), { recursive: true });
-  fs.copyFileSync(llmsDiscoverySource, llmsDiscoveryTarget);
 }
 
 function shouldIgnoreSourceDoc(sourceRel) {

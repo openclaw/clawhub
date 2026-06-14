@@ -1,7 +1,8 @@
-const canonicalDocsOrigin = "https://docs.clawhub.ai";
-const legacyClawHubOrigins = new Set(["https://clawhub.ai", "https://hub.openclaw.ai"]);
+const canonicalDocsOrigin = "https://clawhub.ai";
+const docsOriginAliases = new Map([["https://hub.openclaw.ai", canonicalDocsOrigin]]);
 const productionDocsOrigins = new Set([
   canonicalDocsOrigin,
+  ...docsOriginAliases.keys(),
   "https://documentation.openclaw.ai",
   "https://docs.openclaw.ai",
 ]);
@@ -15,14 +16,12 @@ export function normalizeDocsReturnTo(value?: string | null, options: DocsAuthOp
   try {
     const url = new URL(value);
     if (!["http:", "https:"].includes(url.protocol)) return null;
-    if (legacyClawHubOrigins.has(url.origin)) {
-      if (url.pathname !== "/docs" && !url.pathname.startsWith("/docs/")) return null;
-      const canonical = new URL(canonicalDocsOrigin);
+    if (!isAllowedDocsOrigin(url.origin, options.currentOrigin ?? getCurrentOrigin())) return null;
+    const canonicalOrigin = docsOriginAliases.get(url.origin);
+    if (canonicalOrigin) {
+      const canonical = new URL(canonicalOrigin);
       url.protocol = canonical.protocol;
       url.host = canonical.host;
-      url.pathname = url.pathname.slice("/docs".length) || "/";
-    } else if (!isAllowedDocsOrigin(url.origin, options.currentOrigin ?? getCurrentOrigin())) {
-      return null;
     }
     return url.href;
   } catch {

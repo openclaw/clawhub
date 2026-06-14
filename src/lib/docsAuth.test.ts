@@ -6,13 +6,10 @@ import { buildDocsAuthCallbackUrl, normalizeDocsReturnTo } from "./docsAuth";
 describe("docs auth helpers", () => {
   it("allows documentation return URLs and rejects unrelated origins", () => {
     expect(normalizeDocsReturnTo("https://clawhub.ai/docs/auth")).toBe(
-      "https://docs.clawhub.ai/auth",
+      "https://clawhub.ai/docs/auth",
     );
     expect(normalizeDocsReturnTo("https://hub.openclaw.ai/docs/auth?from=mobile")).toBe(
-      "https://docs.clawhub.ai/auth?from=mobile",
-    );
-    expect(normalizeDocsReturnTo("https://docs.clawhub.ai/auth?from=mobile")).toBe(
-      "https://docs.clawhub.ai/auth?from=mobile",
+      "https://clawhub.ai/docs/auth?from=mobile",
     );
     expect(normalizeDocsReturnTo("https://documentation.openclaw.ai/concepts/models")).toBe(
       "https://documentation.openclaw.ai/concepts/models",
@@ -39,13 +36,10 @@ describe("docs auth helpers", () => {
 
   it("keeps callbacks on the same docs host", () => {
     expect(buildDocsAuthCallbackUrl("https://clawhub.ai/docs/auth")).toBe(
-      "https://docs.clawhub.ai/ask-molty/auth/callback",
+      "https://clawhub.ai/ask-molty/auth/callback",
     );
     expect(buildDocsAuthCallbackUrl("https://hub.openclaw.ai/docs/auth")).toBe(
-      "https://docs.clawhub.ai/ask-molty/auth/callback",
-    );
-    expect(buildDocsAuthCallbackUrl("https://docs.clawhub.ai/auth")).toBe(
-      "https://docs.clawhub.ai/ask-molty/auth/callback",
+      "https://clawhub.ai/ask-molty/auth/callback",
     );
     expect(buildDocsAuthCallbackUrl("https://documentation.openclaw.ai/concepts/models")).toBe(
       "https://documentation.openclaw.ai/ask-molty/auth/callback",

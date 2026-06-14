@@ -60,14 +60,14 @@ describe("ask-molty proxy route", () => {
       }),
     );
     const event = mockEvent(
-      "https://docs.clawhub.ai/ask-molty/sign-in?return_to=https%3A%2F%2Fdocs.clawhub.ai%2F",
+      "https://clawhub.ai/ask-molty/sign-in?return_to=https%3A%2F%2Fclawhub.ai%2Fdocs",
     );
 
     const response = await handler(event);
 
     expect(response.status).toBe(302);
     expect(response.headers.get("location")).toBe(
-      "https://clawhub.ai/auth/docs?return_to=https%3A%2F%2Fdocs.clawhub.ai%2F",
+      "https://clawhub.ai/auth/docs?return_to=https%3A%2F%2Fclawhub.ai%2Fdocs",
     );
     expect(response.headers.get("set-cookie")).toBe(
       "ask_molty_session=signed.value; Max-Age=604800; Path=/ask-molty; HttpOnly; Secure; SameSite=Lax",

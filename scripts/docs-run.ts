@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = resolve(fileURLToPath(import.meta.url), "..");
 const CLAWHUB_ROOT = resolve(HERE, "..");
-const DOCS_ROOT = resolve(CLAWHUB_ROOT, "public", "docs");
+const PUBLIC_ROOT = resolve(CLAWHUB_ROOT, "public");
 const HOST = process.env.DOCS_RUN_HOST || "127.0.0.1";
 const PORT = Number(process.env.DOCS_RUN_PORT || "4174");
 
@@ -22,7 +22,13 @@ const server = createServer((request, response) => {
   }
 
   const url = new URL(request.url, `http://${HOST}:${PORT}`);
-  const file = resolveDocsPath(url.pathname);
+  if (url.pathname === "/") {
+    response.writeHead(302, { Location: "/docs/" });
+    response.end();
+    return;
+  }
+
+  const file = resolvePublicPath(url.pathname);
   if (!file) {
     response.writeHead(404);
     response.end("Not found");
@@ -34,7 +40,7 @@ const server = createServer((request, response) => {
 });
 
 server.listen(PORT, HOST, () => {
-  console.log(`ClawHub docs preview: http://${HOST}:${PORT}/`);
+  console.log(`ClawHub docs preview: http://${HOST}:${PORT}/docs/`);
 });
 
 function run(command: string, args: string[]) {
@@ -48,12 +54,12 @@ function run(command: string, args: string[]) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-function resolveDocsPath(pathname: string) {
+function resolvePublicPath(pathname: string) {
   const decoded = decodeURIComponent(pathname);
   const normalized = normalize(decoded).replace(/^(\.\.(?:\/|\\|$))+/, "");
-  let candidate = resolve(DOCS_ROOT, `.${sep}${normalized}`);
+  let candidate = resolve(PUBLIC_ROOT, `.${sep}${normalized}`);
 
-  if (!candidate.startsWith(`${DOCS_ROOT}${sep}`) && candidate !== DOCS_ROOT) {
+  if (!candidate.startsWith(`${PUBLIC_ROOT}${sep}`) && candidate !== PUBLIC_ROOT) {
     return "";
   }
 

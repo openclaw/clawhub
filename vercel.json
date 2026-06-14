@@ -5,7 +5,7 @@
       "headers": [
         {
           "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://clawhub.ai https://docs.clawhub.ai https://documentation.openclaw.ai https://docs.openclaw.ai http://localhost:3000 http://127.0.0.1:3000 http://localhost:4173 http://127.0.0.1:4173; upgrade-insecure-requests"
+          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://clawhub.ai https://documentation.openclaw.ai https://docs.openclaw.ai http://localhost:3000 http://127.0.0.1:3000 http://localhost:4173 http://127.0.0.1:4173; upgrade-insecure-requests"
         },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
@@ -21,54 +21,6 @@
     }
   ],
   "redirects": [
-    {
-      "source": "/docs",
-      "has": [
-        {
-          "type": "header",
-          "key": "host",
-          "value": "clawhub.ai"
-        }
-      ],
-      "destination": "https://docs.clawhub.ai/",
-      "statusCode": 308
-    },
-    {
-      "source": "/docs/",
-      "has": [
-        {
-          "type": "header",
-          "key": "host",
-          "value": "clawhub.ai"
-        }
-      ],
-      "destination": "https://docs.clawhub.ai/",
-      "statusCode": 308
-    },
-    {
-      "source": "/docs/:path*",
-      "has": [
-        {
-          "type": "header",
-          "key": "host",
-          "value": "clawhub.ai"
-        }
-      ],
-      "destination": "https://docs.clawhub.ai/:path*",
-      "statusCode": 308
-    },
-    {
-      "source": "/docs/:path*/",
-      "has": [
-        {
-          "type": "header",
-          "key": "host",
-          "value": "clawhub.ai"
-        }
-      ],
-      "destination": "https://docs.clawhub.ai/:path*/",
-      "statusCode": 308
-    },
     {
       "source": "/",
       "has": [
@@ -95,28 +47,6 @@
     }
   ],
   "rewrites": [
-    {
-      "source": "/ask-molty/:path*",
-      "has": [
-        {
-          "type": "header",
-          "key": "host",
-          "value": "docs.clawhub.ai"
-        }
-      ],
-      "destination": "https://clawhub.ai/ask-molty/:path*"
-    },
-    {
-      "source": "/:path*",
-      "has": [
-        {
-          "type": "header",
-          "key": "host",
-          "value": "docs.clawhub.ai"
-        }
-      ],
-      "destination": "/docs/:path*"
-    },
     {
       "source": "/api/:path*",
       "destination": "https://wry-manatee-359.convex.site/api/:path*"

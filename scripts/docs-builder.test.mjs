@@ -4,13 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-  docsBasePathForEnv,
-  ensureOpenClawDocsRepo,
-  planDocsStage,
-  prepareDocsMarkdown,
-  resolveOpenClawDocsRepo,
-} from "./docs-builder.mjs";
+import { ensureOpenClawDocsRepo, planDocsStage, resolveOpenClawDocsRepo } from "./docs-builder.mjs";
 
 describe("docs-builder", () => {
   it("stages ClawHub docs in the shape expected by openclaw/docs", () => {
@@ -41,23 +35,6 @@ describe("docs-builder", () => {
         stageRel: "quickstart.md",
       },
     ]);
-  });
-
-  it("uses root links in production and /docs links on Vercel previews", () => {
-    expect(docsBasePathForEnv({ VERCEL_ENV: "production" })).toBe("");
-    expect(docsBasePathForEnv({ VERCEL_ENV: "preview" })).toBe("/docs");
-    expect(docsBasePathForEnv({})).toBe("");
-  });
-
-  it("makes OpenClaw plugin guide links absolute while preserving ClawHub source metadata", () => {
-    expect(
-      prepareDocsMarkdown(
-        "See [Plugin manifest](/plugins/manifest) and [Publishing](/publishing).\n",
-        "clawhub/plugin-validation-fixes.md",
-      ),
-    ).toContain(
-      "[Plugin manifest](https://docs.openclaw.ai/plugins/manifest) and [Publishing](/publishing)",
-    );
   });
 
   it("resolves an explicit openclaw/docs checkout", () => {

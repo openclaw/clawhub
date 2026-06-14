@@ -52,7 +52,7 @@ import {
 } from "../upload/-utils";
 
 const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
-const SKILL_PUBLISHING_GUIDE_URL = "https://docs.clawhub.ai/skill-format";
+const SKILL_PUBLISHING_GUIDE_URL = "https://clawhub.ai/docs/skill-format";
 const REQUIRED_FILE_LABEL = "SKILL.md";
 const REQUIRED_FILE_ISSUE = `${REQUIRED_FILE_LABEL} is required.`;
 // Ordered by sort priority: the canonical name first, the legacy alias second.

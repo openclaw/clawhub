@@ -13,24 +13,22 @@ const siteJs = read("assets/docs-site.js");
 const cli = read("cli/index.html");
 const pluginValidationFixes = read("plugin-validation-fixes/index.html");
 const llms = read("llms.txt");
-const llmsDiscovery = fs.readFileSync(
-  path.join(repoRoot, "public", ".well-known", "llms.txt"),
-  "utf8",
-);
 const robots = read("robots.txt");
 const searchIndex = JSON.parse(read("docs-search.json"));
 const sourceIndexMeta = JSON.parse(read("source-index-meta.json"));
-const vercelConfig = JSON.parse(fs.readFileSync(path.join(repoRoot, "vercel.json"), "utf8"));
 
 assert(
   index.includes("<title>ClawHub - ClawHub</title>"),
   "index should render ClawHub as the docs home",
 );
 assert(
-  index.includes('href="https://docs.clawhub.ai/"'),
-  "index should use docs.clawhub.ai canonical URL",
+  index.includes('href="https://clawhub.ai/docs/"'),
+  "index should use clawhub.ai/docs canonical URL",
 );
-assert(index.includes('href="/quickstart"'), "index should link to the quickstart child route");
+assert(
+  index.includes('href="/docs/quickstart"'),
+  "index should link to the quickstart child route",
+);
 assert(
   !fs.existsSync(path.join(site, "clawhub", "index.html")),
   "home page should not publish /docs/clawhub",
@@ -45,8 +43,8 @@ assert(quickstart.includes("Quickstart"), "quickstart child route should render"
 assert(index.includes("Ask Molty"), "Ask Molty widget should render");
 assert(index.includes("ClawHub docs assistant"), "Ask Molty should use the ClawHub chat label");
 assert(
-  siteJs.includes('new URL("https://clawhub.ai/auth/docs",location.href)'),
-  "Ask Molty auth should use canonical ClawHub auth",
+  siteJs.includes('new URL("/auth/docs",location.href)'),
+  "Ask Molty auth should use ClawHub /auth/docs",
 );
 assert(
   !siteJs.includes("https://hub.openclaw.ai/docs/auth"),
@@ -73,26 +71,25 @@ assert(
   "llms.txt should describe the ClawHub docs corpus",
 );
 assert(
-  /https:\/\/docs\.clawhub\.ai\/[^)\s]+\.md/u.test(llms) &&
+  /https:\/\/clawhub\.ai\/docs\/[^)\s]+\.md/u.test(llms) &&
     !llms.includes("/start/getting-started.md"),
   "llms.txt should advertise a real ClawHub Markdown page",
 );
-assert(llmsDiscovery === llms, "root .well-known LLMS discovery should match the docs artifact");
 assert(
   robots.includes("# ClawHub documentation crawler policy") &&
-    robots.includes("Sitemap: https://docs.clawhub.ai/sitemap.xml") &&
+    robots.includes("Sitemap: https://clawhub.ai/docs/sitemap.xml") &&
     !robots.includes("OpenClaw documentation crawler policy"),
   "robots.txt should use ClawHub docs metadata",
 );
 assert(
-  pluginValidationFixes.includes('href="/plugin-validation-fixes#package-json-missing"') &&
+  pluginValidationFixes.includes('href="/docs/plugin-validation-fixes#package-json-missing"') &&
     !pluginValidationFixes.includes('href="./plugin-validation-fixes.md#package-json-missing"'),
   "relative Markdown links should resolve to docs routes",
 );
 assert(
-  pluginValidationFixes.includes('href="https://docs.openclaw.ai/plugins/building-plugins"') &&
+  pluginValidationFixes.includes('href="/plugins/building-plugins"') &&
     !pluginValidationFixes.includes('href="/docs/plugins/building-plugins"'),
-  "OpenClaw plugin guide links should use the canonical OpenClaw docs host",
+  "root app links should stay outside the docs base path",
 );
 assert(
   cli.includes(
@@ -107,29 +104,6 @@ assert(
 assert(
   sourceIndexMeta.repository === "openclaw/clawhub",
   "source index should identify openclaw/clawhub",
-);
-assert(
-  vercelConfig.redirects?.some(
-    (route) =>
-      route.source === "/docs/:path*" &&
-      route.destination === "https://docs.clawhub.ai/:path*" &&
-      route.statusCode === 308,
-  ),
-  "legacy ClawHub docs paths should redirect to the canonical docs host",
-);
-assert(
-  vercelConfig.rewrites?.some(
-    (route) =>
-      route.source === "/:path*" &&
-      route.destination === "/docs/:path*" &&
-      route.has?.some(
-        (condition) =>
-          condition.type === "header" &&
-          condition.key === "host" &&
-          condition.value === "docs.clawhub.ai",
-      ),
-  ),
-  "docs.clawhub.ai should serve the generated docs artifact",
 );
 
 console.log("ClawHub docs smoke ok");

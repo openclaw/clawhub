@@ -83,6 +83,6 @@ BlockedVersionEmail.PreviewProps = {
   version: "1.2.3",
   findingSummary: "Attempts to exfiltrate credentials.",
   validateCommand: "clawhub scan download @scope/demo-plugin --version 1.2.3 --kind plugin",
-  docsUrl: "https://docs.clawhub.ai/moderation",
+  docsUrl: "https://clawhub.ai/docs/moderation",
   preheader: "ClawHub blocked @scope/demo-plugin@1.2.3 after a security scan.",
 } satisfies BlockedVersionEmailProps;
