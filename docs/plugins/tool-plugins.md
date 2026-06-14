@@ -287,7 +287,13 @@ For the simple tool-plugin workflow, `openclaw plugins build` aligns
     "openclaw": ">=2026.5.17"
   },
   "openclaw": {
-    "extensions": ["./dist/index.js"]
+    "extensions": ["./dist/index.js"],
+    "compat": {
+      "pluginApi": ">=2026.5.17"
+    },
+    "build": {
+      "openclawVersion": "2026.6.6"
+    }
   }
 }
 ```
@@ -295,6 +301,12 @@ For the simple tool-plugin workflow, `openclaw plugins build` aligns
 Use built JavaScript such as `./dist/index.js` for installed packages. Source
 entries are useful in workspace development, but published packages should not
 depend on TypeScript runtime loading.
+
+`openclaw plugins build` preserves existing `openclaw.compat` and
+`openclaw.build` fields, but it does not generate them. Before publishing to
+ClawHub, set `compat.pluginApi` to the supported plugin API range and
+`build.openclawVersion` to the exact OpenClaw version used to build and test the
+package. ClawHub requires both fields for external code plugins.
 
 ## Validate in CI
 
@@ -343,10 +355,15 @@ Publish through ClawHub when the package is ready:
 
 ```bash
 npm run build
+openclaw plugins validate --entry ./dist/index.js
 clawhub package validate .
 clawhub package publish . --family code-plugin --dry-run
 clawhub package publish . --family code-plugin
 ```
+
+Run the publish commands from a GitHub-backed checkout so ClawHub can infer the
+source repository and exact commit. Otherwise, pass `--source-repo` and
+`--source-commit` explicitly.
 
 Install with an explicit ClawHub locator:
 

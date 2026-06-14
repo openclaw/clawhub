@@ -205,6 +205,12 @@ assert(
   "the primary quickstart and CLI reference should describe a buildable code-plugin package",
 );
 assert(
+  codeTextFromPage(toolPlugins).includes('"pluginApi": ">=2026.5.17"') &&
+    codeTextFromPage(toolPlugins).includes('"openclawVersion": "2026.6.6"') &&
+    toolPlugins.includes("GitHub-backed checkout"),
+  "the tool-plugin publish guide should include required ClawHub metadata and provenance",
+);
+assert(
   pluginMigration.includes('href="/plugins/sdk-channel-plugins"'),
   "mirrored migration references should link to the mirrored ClawHub route",
 );
