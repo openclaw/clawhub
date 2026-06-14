@@ -4,7 +4,15 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { ensureOpenClawDocsRepo, planDocsStage, resolveOpenClawDocsRepo } from "./docs-builder.mjs";
+import {
+  ensureOpenClawDocsRepo,
+  escapeMdxComponentsOutsideFences,
+  fenceAwareDedentComponentChildren,
+  patchDocsTableCss,
+  planDocsStage,
+  resolveOpenClawDocsRepo,
+  stripMdxImportsOutsideFences,
+} from "./docs-builder.mjs";
 
 describe("docs-builder", () => {
   it("stages ClawHub docs in the shape expected by openclaw/docs", () => {
@@ -93,5 +101,121 @@ describe("docs-builder", () => {
     fs.writeFileSync(path.join(invalidDir, "package.json"), "{}\n", "utf8");
 
     expect(() => ensureOpenClawDocsRepo(invalidDir)).toThrow(/not an openclaw\/docs checkout/);
+  });
+
+  it("strips MDX imports without stripping imports from fenced examples", () => {
+    const markdown = [
+      'import Card from "./Card.mdx";',
+      "",
+      "```typescript",
+      'import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";',
+      "```",
+      "",
+      "~~~ts",
+      'import { Type } from "typebox";',
+      "~~~",
+    ].join("\n");
+
+    expect(stripMdxImportsOutsideFences(markdown)).toBe(
+      [
+        "",
+        "",
+        "```typescript",
+        'import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";',
+        "```",
+        "",
+        "~~~ts",
+        'import { Type } from "typebox";',
+        "~~~",
+      ].join("\n"),
+    );
+  });
+
+  it("preserves code indentation relative to nested component fences", () => {
+    const marker = "OPENCLAW_DOCS_MARKER";
+    const markdown = [
+      `${marker}:blockOpen:`,
+      `${marker}:stepOpen:`,
+      `${marker}:blockOpen:`,
+      "```json",
+      "{",
+      '  "name": "unindented-fence"',
+      "}",
+      "```",
+      "    ```json",
+      "    {",
+      '      "name": "indented-fence"',
+      "    }",
+      "    ```",
+      `${marker}:blockClose:`,
+      `${marker}:stepClose:`,
+      `${marker}:blockClose:`,
+    ].join("\n");
+
+    expect(fenceAwareDedentComponentChildren(markdown)).toContain(
+      ["```json", "{", '  "name": "unindented-fence"', "}", "```"].join("\n"),
+    );
+    expect(fenceAwareDedentComponentChildren(markdown)).toContain(
+      ["```json", "{", '  "name": "indented-fence"', "}", "```"].join("\n"),
+    );
+  });
+
+  it("recognizes valid indented closing fences before nested components", () => {
+    const marker = "OPENCLAW_DOCS_MARKER";
+    const markdown = [
+      `${marker}:blockOpen:`,
+      "  ```js",
+      "  const x = 1;",
+      "   ```",
+      `${marker}:calloutOpen:`,
+      "    ```bash",
+      "    echo nested",
+      "    ```",
+      `${marker}:calloutClose:`,
+      `${marker}:blockClose:`,
+    ].join("\n");
+
+    const dedented = fenceAwareDedentComponentChildren(markdown);
+
+    expect(dedented).toContain(["```js", "const x = 1;", " ```"].join("\n"));
+    expect(dedented).toContain(["```bash", "echo nested", "```"].join("\n"));
+  });
+
+  it("escapes unsupported MDX components without escaping TypeScript generics", () => {
+    const markdown = [
+      "<Unsupported>",
+      "    ```typescript",
+      "    const store = openKeyedStore<MyRecord>();",
+      "    ```",
+      "</Unsupported>",
+    ].join("\n");
+
+    const escaped = escapeMdxComponentsOutsideFences(markdown);
+
+    expect(escaped).toContain("&lt;Unsupported&gt;");
+    expect(escaped).toContain("&lt;/Unsupported&gt;");
+    expect(escaped).toContain("const store = openKeyedStore<MyRecord>();");
+  });
+
+  it("keeps tables readable and contains long headings on narrow screens", () => {
+    const source = [
+      "export function siteCss() {",
+      "  return `",
+      ".doc .oc-table{table-layout:fixed}",
+      "`;",
+      "}",
+      "",
+      "export function siteJs() {}",
+    ].join("\n");
+
+    const patched = patchDocsTableCss(source);
+
+    expect(patched).toContain(
+      ".doc .oc-table th,.doc .oc-table td,.doc .oc-table code{overflow-wrap:normal;word-break:normal}",
+    );
+    expect(patched).toContain(".doc .oc-table th,.doc .oc-table code{white-space:nowrap}");
+    expect(patched).toContain(
+      "@media(max-width:820px){.doc .oc-table{min-width:560px;table-layout:auto}.doc h2,.doc h3,.doc h4{overflow-wrap:anywhere;word-break:normal}}",
+    );
   });
 });

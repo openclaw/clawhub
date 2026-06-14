@@ -46,11 +46,49 @@
             "groups": [
               {
                 "group": "Install and Publish",
-                "pages": ["cli", "publishing", "skill-format", "plugin-validation-fixes"]
+                "pages": ["cli", "publishing", "plugin-validation-fixes"]
               },
               {
                 "group": "Reference",
                 "pages": ["auth", "api", "http-api", "telemetry", "troubleshooting"]
+              }
+            ]
+          },
+          {
+            "tab": "Build",
+            "groups": [
+              {
+                "group": "Plugin Development",
+                "pages": [
+                  "plugin-development",
+                  "plugins/building-plugins",
+                  "plugin-inspector",
+                  "plugins/tool-plugins",
+                  "plugins/sdk-channel-plugins",
+                  "plugins/sdk-provider-plugins",
+                  "plugins/cli-backend-plugins",
+                  "plugins/bundles",
+                  "plugins/plugin-permission-requests"
+                ]
+              },
+              {
+                "group": "Plugin SDK Reference",
+                "pages": [
+                  "plugins/manifest",
+                  "plugins/sdk-overview",
+                  "plugins/sdk-entrypoints",
+                  "plugins/sdk-subpaths",
+                  "plugins/sdk-runtime",
+                  "plugins/sdk-setup",
+                  "plugins/sdk-testing",
+                  "plugins/hooks",
+                  "plugins/compatibility",
+                  "plugins/sdk-migration"
+                ]
+              },
+              {
+                "group": "Skill Development",
+                "pages": ["creating-skills", "skill-format"]
               }
             ]
           },

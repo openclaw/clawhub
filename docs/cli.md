@@ -430,6 +430,8 @@ clawhub package validate ./example-plugin
 
 If validation reports a package, manifest, SDK import, or artifact finding, see
 [Plugin validation fixes](./plugin-validation-fixes.md), then rerun the command.
+For local development scripts, runtime capture, and CI integration, see
+[Plugin Inspector](./plugin-inspector.md).
 
 ### `package delete <name>`
 
@@ -595,6 +597,7 @@ Use `--dry-run` first so you can confirm the resolved package metadata and
 source attribution before creating a live release:
 
 ```bash
+npm run build
 npm pack
 clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin --dry-run
 clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin
@@ -602,26 +605,33 @@ clawhub package publish ./my-plugin-1.2.3.tgz --family code-plugin
 
 #### Local folder flow
 
-For code plugins, folder publish builds and uploads a ClawPack artifact from
-the package folder:
+For code plugins, build first. Folder publish then packs and uploads a ClawPack
+artifact from the package folder with lifecycle scripts disabled:
 
 ```bash
+npm run build
 clawhub package publish ./my-plugin --family code-plugin --dry-run
 clawhub package publish ./my-plugin --family code-plugin
 ```
 
-#### Minimal `package.json` for `--family code-plugin`
+#### Minimal code-plugin metadata
 
 External code plugins need a small amount of OpenClaw metadata in
-`package.json`. This minimal manifest is enough for a successful publish:
+`package.json`. The following example declares both the source entry used
+during development and the built JavaScript entry ClawHub publishes:
 
 ```json
 {
   "name": "@myorg/openclaw-my-plugin",
   "version": "1.0.0",
   "type": "module",
+  "files": ["dist", "openclaw.plugin.json"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
   "openclaw": {
     "extensions": ["./index.ts"],
+    "runtimeExtensions": ["./dist/index.js"],
     "compat": {
       "pluginApi": ">=2026.3.24-beta.2"
     },
@@ -639,6 +649,9 @@ Required fields:
 
 Notes:
 
+- Run `npm run build` before validation or publishing so `dist/index.js`
+  exists. A native plugin package must also include `openclaw.plugin.json`,
+  runtime dependencies, and any other files its runtime imports.
 - `package.json.version` is your package release version, but it is not used as
   a fallback for OpenClaw compatibility/build validation.
 - `openclaw.hostTargets` and `openclaw.environment` are optional metadata.

@@ -39,6 +39,39 @@ in OpenClaw unless the owner explicitly asks for a separate extraction:
 - Threat model references where ClawHub is one platform component inside a broader OpenClaw security model.
 - Showcase or FAQ links that merely point users to live ClawHub pages.
 
+## Plugin authoring mirror
+
+The owner requested a ClawHub-local copy of the public plugin development
+documentation so authors can move from runtime development to ClawHub
+validation and publishing without switching documentation sites.
+
+The imported mirror is sourced from OpenClaw `main` at
+`d48b9274d819a369ed936bdcbee1ecdb42416703` and lives under `docs/plugins/`.
+It includes the public first-plugin, plugin-type, manifest, compatibility, SDK,
+setup, testing, hook, and permission-request guides selected in
+`docs/plugin-development.md`.
+
+Ownership remains split:
+
+- OpenClaw remains canonical for plugin runtime and SDK behavior.
+- ClawHub owns the mirrored navigation, registry-facing context, validation
+  remediation links, Plugin Inspector author workflow, publishing flow, and
+  skill-authoring guidance.
+- ClawHub-facing examples must use ClawHub's real local-source publish syntax,
+  make external publishers the default audience, and label OpenClaw
+  repository-only commands and test helpers explicitly.
+- Code-plugin publishing walkthroughs must declare and build the JavaScript
+  runtime artifacts ClawHub validates; do not advertise pure ecosystem-bundle
+  publishing until ClawHub can preserve OpenClaw bundle semantics.
+- Links to OpenClaw runtime pages that are not mirrored stay absolute
+  `https://docs.openclaw.ai/...` links.
+- Do not copy generated per-plugin reference pages or OpenClaw operator and
+  maintainer runbooks into ClawHub docs.
+
+When refreshing the mirror, use a committed OpenClaw revision, exclude
+uncommitted sibling-worktree edits, preserve ClawHub-local links between
+mirrored pages, and rerun the ClawHub docs build, smoke test, and marker scan.
+
 ## Reviewer check
 
 For this slice, the ClawHub repo owns the new canonical source file. The

@@ -24,6 +24,9 @@ After applying any fix, rerun:
 clawhub package validate <path-to-plugin>
 ```
 
+For a full local testing and CI workflow, see
+[Plugin Inspector](./plugin-inspector.md).
+
 ## Author-facing findings
 
 | Code                                    | Start here                                                                                                                  |
@@ -61,8 +64,8 @@ npm package, version, entrypoints, or OpenClaw metadata.
 
 - Add `package.json` with `name`, `version`, and `type`.
 - Add an `openclaw` block when the package ships an OpenClaw plugin.
-- Use [Building plugins](/plugins/building-plugins) for a minimal package
-  example and [Plugin manifest](/plugins/manifest#manifest-versus-packagejson)
+- Use [Building plugins](./plugins/building-plugins.md) for a minimal package
+  example and [Plugin manifest](./plugins/manifest.md#manifest-versus-package.json)
   for the package versus manifest split.
 - Rerun `clawhub package validate <path-to-plugin>`.
 
@@ -76,7 +79,7 @@ metadata.
   `openclaw.runtimeExtensions`.
 - Add compatibility and install metadata when the package will be published or
   installed through ClawHub.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](./plugins/manifest.md#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-openclaw-entry-missing
@@ -88,8 +91,8 @@ entrypoint.
 - Add `openclaw.runtimeExtensions` when the published package should load built
   JavaScript.
 - Keep all entrypoint paths inside the package directory.
-- See [Plugin entry points](/plugins/sdk-entrypoints) and
-  [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [Plugin entry points](./plugins/sdk-entrypoints.md) and
+  [package.json fields that affect discovery](./plugins/manifest.md#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-entrypoint-missing
@@ -101,7 +104,7 @@ from the package being validated.
   `openclaw.setupEntry`, and `openclaw.runtimeSetupEntry`.
 - Build the package if the entrypoint is generated into `dist`.
 - Update the metadata if the entrypoint moved.
-- See [Plugin entry points](/plugins/sdk-entrypoints).
+- See [Plugin entry points](./plugins/sdk-entrypoints.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-install-metadata-incomplete
@@ -113,7 +116,7 @@ ClawHub cannot tell how the package should be installed or updated.
 - Set `openclaw.install.defaultChoice` when more than one install source is
   available.
 - Use `openclaw.install.minHostVersion` for the minimum OpenClaw host version.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](./plugins/manifest.md#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-plugin-api-compat-missing
@@ -125,7 +128,7 @@ The package does not declare the OpenClaw plugin API range it supports.
   against.
 - Keep this separate from the package version. The package version describes the
   plugin release; `openclaw.compat.pluginApi` describes the host API contract.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](./plugins/manifest.md#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-min-host-version-drift
@@ -138,7 +141,7 @@ the package was built against.
   used during release.
 - Align the minimum host version with the host version range the package
   actually supports.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](./plugins/manifest.md#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-manifest-version-drift
@@ -149,7 +152,7 @@ The package version and plugin manifest version disagree.
 - If `openclaw.plugin.json` also has `version`, update it to match or remove
   stale manifest version metadata when package metadata is authoritative.
 - Publish a new package version after changing published metadata.
-- See [Plugin manifest](/plugins/manifest).
+- See [Plugin manifest](./plugins/manifest.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-openclaw-unsupported-metadata
@@ -161,7 +164,7 @@ OpenClaw package metadata.
 - Keep native plugin metadata in `openclaw.plugin.json`.
 - Keep package entrypoints, compatibility, install, setup, and catalog metadata
   in supported `package.json#openclaw` fields.
-- See [package.json fields that affect discovery](/plugins/manifest#packagejson-fields-that-affect-discovery).
+- See [package.json fields that affect discovery](./plugins/manifest.md#package.json-fields-that-affect-discovery).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ## Published artifact
@@ -186,7 +189,7 @@ entrypoint files declared in `package.json#openclaw`.
 - Build generated entrypoints before packing.
 - Update `files`, `.npmignore`, or build output so declared entrypoints are
   included.
-- See [Plugin entry points](/plugins/sdk-entrypoints).
+- See [Plugin entry points](./plugins/sdk-entrypoints.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### package-npm-pack-metadata-missing
@@ -199,7 +202,7 @@ package.
 - Ensure `openclaw.plugin.json` is included when the package is a native
   OpenClaw plugin.
 - Update `files` or `.npmignore` so package metadata is not excluded.
-- See [Building plugins](/plugins/building-plugins).
+- See [Building plugins](./plugins/building-plugins.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ## Manifest metadata
@@ -210,7 +213,7 @@ The native plugin manifest does not include a display name.
 
 - Add a non-empty `name` field to `openclaw.plugin.json`.
 - Keep `name` human-readable and keep `id` as the stable machine id.
-- See [Plugin manifest](/plugins/manifest).
+- See [Plugin manifest](./plugins/manifest.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### manifest-unknown-fields
@@ -218,7 +221,7 @@ The native plugin manifest does not include a display name.
 The plugin manifest has top-level fields that OpenClaw does not support.
 
 - Compare each top-level field with the
-  [manifest field reference](/plugins/manifest#top-level-field-reference).
+  [manifest field reference](./plugins/manifest.md#top-level-field-reference).
 - Remove custom fields from `openclaw.plugin.json`.
 - Move package or install metadata into supported `package.json#openclaw` fields
   instead of the manifest.
@@ -229,7 +232,7 @@ The plugin manifest has top-level fields that OpenClaw does not support.
 The manifest declares unsupported keys inside `contracts`.
 
 - Compare each key under `contracts` with the
-  [contracts reference](/plugins/manifest#contracts-reference).
+  [contracts reference](./plugins/manifest.md#contracts-reference).
 - Remove unsupported contract keys.
 - Move runtime behavior into plugin registration code, and keep `contracts`
   limited to static capability ownership metadata.
@@ -245,8 +248,8 @@ The plugin imports from the deprecated root SDK barrel:
 - Replace root-barrel imports with focused public subpath imports.
 - Use `openclaw/plugin-sdk/plugin-entry` for `definePluginEntry`.
 - Use `openclaw/plugin-sdk/channel-core` for channel entry helpers.
-- Use [Import conventions](/plugins/building-plugins#import-conventions) and
-  [Plugin SDK subpaths](/plugins/sdk-subpaths) to find the narrow import.
+- Use [Import conventions](./plugins/building-plugins.md#import-conventions) and
+  [Plugin SDK subpaths](./plugins/sdk-subpaths.md) to find the narrow import.
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### reserved-sdk-import
@@ -258,8 +261,8 @@ compatibility.
   `openclaw/plugin-sdk/*` subpaths.
 - If the behavior has no public SDK, keep the helper inside your package or
   request a public OpenClaw API.
-- Use [Plugin SDK subpaths](/plugins/sdk-subpaths) and
-  [SDK migration](/plugins/sdk-migration) to choose a supported import.
+- Use [Plugin SDK subpaths](./plugins/sdk-subpaths.md) and
+  [SDK migration](./plugins/sdk-migration.md) to choose a supported import.
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### sdk-load-session-store
@@ -274,8 +277,8 @@ The plugin still uses the deprecated whole-session-store helper
 - Avoid loading, mutating, and saving the whole session store object.
 - Keep `loadSessionStore(...)` only while your declared compatibility range
   still supports older OpenClaw versions that require it.
-- See [Runtime API](/plugins/sdk-runtime#agent-session-state) and
-  [Plugin SDK subpaths](/plugins/sdk-subpaths).
+- See [Runtime API](./plugins/sdk-runtime.md#runtime-namespaces) and
+  [Plugin SDK subpaths](./plugins/sdk-subpaths.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### legacy-before-agent-start
@@ -286,8 +289,8 @@ The plugin still uses the legacy `before_agent_start` hook.
 - Move prompt or context mutation work to `before_prompt_build`.
 - Keep `before_agent_start` only while your declared compatibility range still
   supports older OpenClaw versions that require it.
-- See [Hooks](/plugins/hooks) and
-  [Plugin compatibility](/plugins/compatibility).
+- See [Hooks](./plugins/hooks.md) and
+  [Plugin compatibility](./plugins/compatibility.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### provider-auth-env-vars
@@ -297,8 +300,8 @@ The manifest still uses legacy `providerAuthEnvVars` provider auth metadata.
 - Mirror provider env-var metadata into `setup.providers[].envVars`.
 - Keep `providerAuthEnvVars` only as compatibility metadata while your supported
   OpenClaw range still needs it.
-- See [setup reference](/plugins/manifest#setup-reference) and
-  [SDK migration](/plugins/sdk-migration).
+- See [setup reference](./plugins/manifest.md#setup-reference) and
+  [SDK migration](./plugins/sdk-migration.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ### channel-env-vars
@@ -312,8 +315,8 @@ setup or config metadata ClawHub expects.
   package channel metadata used by your plugin shape.
 - Keep `channelEnvVars` only as compatibility metadata while older supported
   OpenClaw versions still require it.
-- See [Plugin manifest](/plugins/manifest) and
-  [Channel plugins](/plugins/sdk-channel-plugins).
+- See [Plugin manifest](./plugins/manifest.md) and
+  [Channel plugins](./plugins/sdk-channel-plugins.md).
 - Rerun `clawhub package validate <path-to-plugin>`.
 
 ## Security manifest
@@ -341,7 +344,7 @@ The package ships an unsupported security manifest file.
 
 - [ClawHub CLI](./cli.md)
 - [ClawHub publishing](./publishing.md)
-- [Building plugins](/plugins/building-plugins)
-- [Plugin manifest](/plugins/manifest)
-- [Plugin entry points](/plugins/sdk-entrypoints)
-- [Plugin compatibility](/plugins/compatibility)
+- [Building plugins](./plugins/building-plugins.md)
+- [Plugin manifest](./plugins/manifest.md)
+- [Plugin entry points](./plugins/sdk-entrypoints.md)
+- [Plugin compatibility](./plugins/compatibility.md)

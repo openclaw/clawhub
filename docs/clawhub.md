@@ -83,8 +83,8 @@ clawhub search "postgres backups"
 clawhub skill publish ./my-skill --slug my-skill --name "My Skill" --version 1.0.0
 clawhub package explore --family code-plugin
 clawhub package inspect episodic-claw
-clawhub package publish your-org/your-plugin --dry-run
-clawhub package publish your-org/your-plugin
+clawhub package publish ./my-plugin --family code-plugin --dry-run
+clawhub package publish ./my-plugin --family code-plugin
 clawhub sync --all
 ```
 

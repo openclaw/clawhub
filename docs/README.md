@@ -28,9 +28,12 @@ Reading order:
 4. `docs/publishing.md`: owner-scoped skill/plugin publishing flow.
 5. `docs/cli.md`: ClawHub CLI reference.
 6. `docs/skill-format.md`: skill bundle metadata and package shape.
-7. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
-8. `docs/telemetry.md`: install telemetry and how to opt out.
-9. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
+7. `docs/plugin-development.md`: OpenClaw plugin authoring path through ClawHub publishing.
+8. `docs/plugin-inspector.md`: Plugin Inspector development, testing, and CI workflow.
+9. `docs/creating-skills.md`: skill authoring, runtime proof, plugin-bundled skills, and publishing.
+10. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
+11. `docs/telemetry.md`: install telemetry and how to opt out.
+12. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
 
 Policy, API, and trust docs:
 
