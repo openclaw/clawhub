@@ -27,6 +27,54 @@
         {
           "type": "header",
           "key": "host",
+          "value": "docs.clawhub.ai"
+        }
+      ],
+      "destination": "https://docs.clawhub.ai/",
+      "statusCode": 308
+    },
+    {
+      "source": "/docs/",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
+          "value": "docs.clawhub.ai"
+        }
+      ],
+      "destination": "https://docs.clawhub.ai/",
+      "statusCode": 308
+    },
+    {
+      "source": "/docs/:path*",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
+          "value": "docs.clawhub.ai"
+        }
+      ],
+      "destination": "https://docs.clawhub.ai/:path*",
+      "statusCode": 308
+    },
+    {
+      "source": "/docs/:path*/",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
+          "value": "docs.clawhub.ai"
+        }
+      ],
+      "destination": "https://docs.clawhub.ai/:path*/",
+      "statusCode": 308
+    },
+    {
+      "source": "/docs",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
           "value": "clawhub.ai"
         }
       ],
@@ -95,6 +143,17 @@
     }
   ],
   "rewrites": [
+    {
+      "source": "/",
+      "has": [
+        {
+          "type": "header",
+          "key": "host",
+          "value": "docs.clawhub.ai"
+        }
+      ],
+      "destination": "/docs"
+    },
     {
       "source": "/ask-molty/:path*",
       "has": [

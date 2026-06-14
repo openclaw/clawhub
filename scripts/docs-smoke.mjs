@@ -120,6 +120,35 @@ assert(
 assert(
   vercelConfig.rewrites?.some(
     (route) =>
+      route.source === "/" &&
+      route.destination === "/docs" &&
+      route.has?.some(
+        (condition) =>
+          condition.type === "header" &&
+          condition.key === "host" &&
+          condition.value === "docs.clawhub.ai",
+      ),
+  ),
+  "docs.clawhub.ai root should serve the generated docs artifact",
+);
+assert(
+  vercelConfig.redirects?.some(
+    (route) =>
+      route.source === "/docs/:path*" &&
+      route.destination === "https://docs.clawhub.ai/:path*" &&
+      route.statusCode === 308 &&
+      route.has?.some(
+        (condition) =>
+          condition.type === "header" &&
+          condition.key === "host" &&
+          condition.value === "docs.clawhub.ai",
+      ),
+  ),
+  "docs.clawhub.ai/docs paths should redirect to root docs paths",
+);
+assert(
+  vercelConfig.rewrites?.some(
+    (route) =>
       route.source === "/:path*" &&
       route.destination === "/docs/:path*" &&
       route.has?.some(

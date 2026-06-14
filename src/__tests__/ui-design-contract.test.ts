@@ -90,7 +90,7 @@ describe("restored UI design contract", () => {
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
     expect(navSource).not.toContain('label: "Publishers"');
     expect(navSource).toContain('label: "Docs"');
-    expect(navSource).toContain('href: "/docs"');
+    expect(navSource).toContain('href: "https://docs.clawhub.ai/"');
     expect(navSource).not.toContain('icon: "wrench"');
     expect(navSource).not.toContain('icon: "plug"');
     expect(navSource).not.toContain('label: "About"');
