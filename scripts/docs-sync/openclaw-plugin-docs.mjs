@@ -144,6 +144,8 @@ export function updateSync({ repoRoot = defaultRepoRoot, sourceRepoDir, targetRe
     baseCommit: changes.baseCommit,
     conflicts,
     mirrored,
+    reviewReasons:
+      changes.watchOnly.length > 0 ? ["Watch-only upstream changes require maintainer review"] : [],
     targetCommit: changes.targetCommit,
     watchOnly: changes.watchOnly,
   };
@@ -157,6 +159,10 @@ export function updateSync({ repoRoot = defaultRepoRoot, sourceRepoDir, targetRe
     verifyClawHubFlavour({ manifest, repoRoot });
   } catch (error) {
     result.validationErrors = [error instanceof Error ? error.message : String(error)];
+    writePendingReport(repoRoot, result);
+    return result;
+  }
+  if (result.reviewReasons.length > 0) {
     writePendingReport(repoRoot, result);
     return result;
   }
@@ -270,7 +276,7 @@ function verifyClawHubFlavour({ manifest, repoRoot }) {
   if (manifest.linkPolicy?.rejectRootRelative) {
     for (const entry of manifest.mirrors) {
       const contents = fs.readFileSync(path.join(repoRoot, entry.target), "utf8");
-      if (/(?:\]\(|href=["'])\/(?!\/)/u.test(contents)) {
+      if (hasRootRelativeLink(contents)) {
         throw new Error(
           `${entry.target} contains an OpenClaw-style root-relative link; use a ClawHub-local relative link or an absolute docs.openclaw.ai URL`,
         );
@@ -396,6 +402,7 @@ function writePendingReport(repoRoot, result) {
     baseCommit: result.baseCommit,
     conflicts,
     mirrored: result.mirrored,
+    reviewReasons: result.reviewReasons ?? [],
     schemaVersion: 1,
     targetCommit: result.targetCommit,
     validationErrors: result.validationErrors ?? [],
@@ -433,6 +440,14 @@ function sha256(value) {
 
 function hasConflictMarkers(contents) {
   return /^(?:<<<<<<< .+|=======|>>>>>>> .+|\|\|\|\|\|\|\| .+)$/mu.test(contents);
+}
+
+function hasRootRelativeLink(contents) {
+  return [
+    /\]\(\s*<?\/(?!\/)/u,
+    /\bhref\s*=\s*["']\/(?!\/)/iu,
+    /^\s{0,3}\[[^\]\n]+\]:[ \t]*(?:\n[ \t]*)?<?\/(?!\/)/mu,
+  ].some((pattern) => pattern.test(contents));
 }
 
 function ensureDescendant(sourceRepoDir, baseCommit, targetCommit) {
@@ -530,7 +545,9 @@ export function main(argv = process.argv.slice(2)) {
 
   if (options.json) console.log(JSON.stringify(result, null, 2));
   else printSummary(options.command, result);
-  if (result.conflicts?.length || result.validationErrors?.length) process.exitCode = 2;
+  if (result.conflicts?.length || result.validationErrors?.length || result.reviewReasons?.length) {
+    process.exitCode = 2;
+  }
   return result;
 }
 
@@ -546,6 +563,9 @@ function printSummary(command, result) {
   if (result.conflicts?.length) console.log(`Conflicts: ${result.conflicts.join(", ")}`);
   if (result.validationErrors?.length) {
     console.log(`Validation errors: ${result.validationErrors.join(", ")}`);
+  }
+  if (result.reviewReasons?.length) {
+    console.log(`Review required: ${result.reviewReasons.join(", ")}`);
   }
 }
 

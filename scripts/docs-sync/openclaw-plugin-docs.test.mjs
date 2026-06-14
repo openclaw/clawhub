@@ -59,6 +59,33 @@ describe("OpenClaw plugin docs sync", () => {
     );
   });
 
+  it("keeps watch-only changes pending until a maintainer finalizes them", () => {
+    const fixture = createFixture({
+      baseWatch: "# Skills\n\nOld runtime guidance.\n",
+      upstreamWatch: "# Skills\n\nNew runtime guidance.\n",
+    });
+
+    const result = updateSync(fixture.options);
+
+    expect(result.reviewReasons).toEqual(["Watch-only upstream changes require maintainer review"]);
+    expect(readManifest(fixture.workspace).upstream.lastSyncedCommit).toBe(fixture.baseCommit);
+    expect(JSON.parse(read(fixture.workspace, "docs/.openclaw-sync/pending.json"))).toMatchObject({
+      targetCommit: fixture.targetCommit,
+      reviewReasons: result.reviewReasons,
+      watchOnly: [
+        {
+          path: "docs/tools/skills.md",
+          status: "modified",
+        },
+      ],
+    });
+
+    finalizeSync(fixture.options);
+
+    expect(readManifest(fixture.workspace).upstream.lastSyncedCommit).toBe(fixture.targetCommit);
+    expect(fs.existsSync(path.join(fixture.workspace, "docs/.openclaw-sync"))).toBe(false);
+  });
+
   it("rejects a target commit that would move the OpenClaw pin backward", () => {
     const fixture = createFixture();
     const manifest = readManifest(fixture.workspace);
@@ -203,6 +230,17 @@ describe("OpenClaw plugin docs sync", () => {
       fixture.workspace,
       "docs/plugins/runtime.md",
       "# Runtime\n\nPublish with ClawHub.\n\nSee [internal](/plugins/internal).\n",
+    );
+
+    expect(() => verifySync(fixture.options)).toThrow(/root-relative link/);
+  });
+
+  it("fails verification for a reference-style OpenClaw root-relative link", () => {
+    const fixture = createFixture({ rejectRootRelativeLinks: true });
+    write(
+      fixture.workspace,
+      "docs/plugins/runtime.md",
+      "# Runtime\n\nPublish with ClawHub.\n\nSee [internal][guide].\n\n[guide]: /plugins/internal\n",
     );
 
     expect(() => verifySync(fixture.options)).toThrow(/root-relative link/);

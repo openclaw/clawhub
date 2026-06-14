@@ -91,6 +91,8 @@ command before the pinned revision can advance.
 
 ClawHub-owned pages are never mirror targets. Watch-only paths report relevant
 OpenClaw skill, plugin-management, and navigation changes without copying them.
+Any watch-only change creates a pending review report and keeps the old pin
+until a maintainer runs the finalize command.
 The sync verifier also protects required ClawHub publishing, validation,
 Plugin Inspector, external-publisher, bundle-distribution, and link behavior.
 
