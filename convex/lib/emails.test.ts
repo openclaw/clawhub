@@ -60,7 +60,7 @@ describe("moderation notification email copy", () => {
     expect(email.html).toContain("https://clawhub.ai/docs");
     expectFooterLinksUnderlined(email.html);
     expect(email.text).not.toContain("clawhub scan ./my-skill --output clawhub-scan.zip");
-    expect(email.text).not.toContain("https://clawhub.ai/docs/cli#scan-path");
+    expect(email.text).not.toContain("https://docs.openclaw.ai/clawhub/cli#scan-path");
   });
 
   it("does not leak raw manual moderator notes into outbound email", async () => {
@@ -148,7 +148,7 @@ describe("moderation notification email copy", () => {
     expect(email.text).toContain("Version: 1.2.3");
     expect(email.text).toContain("clawhub scan download demo-skill --version 1.2.3");
     expect(email.text).toContain("Increment the version number before uploading the fixed skill.");
-    expect(email.text).toContain("https://clawhub.ai/docs/moderation");
+    expect(email.text).toContain("https://docs.openclaw.ai/clawhub/moderation");
     expect(email.text).not.toContain("clawhub scan ./my-skill --output clawhub-scan.zip");
     expect(email.text).not.toContain("fixed local copy");
     expect(email.text).toContain("Repeated malicious rejections may lead to account disablement");
@@ -219,7 +219,8 @@ describe("moderation notification email copy", () => {
           scanSource: "publish",
           authorRemediation: {
             summary: "Replace the legacy before_agent_start hook with current prompt hooks.",
-            docsUrl: "https://clawhub.ai/docs/plugin-validation-fixes#legacy-before-agent-start",
+            docsUrl:
+              "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
           },
         },
       ],
@@ -242,7 +243,7 @@ describe("moderation notification email copy", () => {
     );
     expect(email.text).toContain("  Docs:");
     expect(email.text).toContain(
-      "  https://clawhub.ai/docs/plugin-validation-fixes#legacy-before-agent-start",
+      "  https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
     );
     expect(email.text).not.toContain("ClawHub Security");
     expect(email.html).toContain("Validate a local fix");
@@ -251,7 +252,7 @@ describe("moderation notification email copy", () => {
     expect(email.html).not.toContain('href="https://clawhub.ai" style="display:inline-block');
     expect(email.html).not.toContain("You&#39;re receiving this because");
     expect(email.html).not.toContain("You're receiving this because");
-    expect(email.html).toContain("https://clawhub.ai/docs/plugin-validation-fixes");
+    expect(email.html).toContain("https://docs.openclaw.ai");
     expectFooterLinksUnderlined(email.html);
     expect(email.html).toContain("OpenClaw Version");
     expect(email.html).toContain("0.9.0");

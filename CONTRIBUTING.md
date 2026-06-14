@@ -281,10 +281,10 @@ See [`docs/security.md`](docs/security.md) for moderation and upload gating deta
 1. This file (local setup)
 2. [`docs/clawhub.md`](docs/clawhub.md) — public registry overview
 3. [`docs/quickstart.md`](docs/quickstart.md) — end-to-end workflows
-4. [`docs/how-it-works.md`](docs/how-it-works.md) — registry behavior and system overview
+4. [`docs/architecture.md`](docs/architecture.md) — system design
 5. [`docs/skill-format.md`](docs/skill-format.md) — skill structure
 6. [`docs/cli.md`](docs/cli.md) — CLI reference
 7. [`docs/http-api.md`](docs/http-api.md) — HTTP endpoints
 8. [`docs/auth.md`](docs/auth.md) — authentication
-9. [`specs/deploy.md`](specs/deploy.md) — deployment
+9. [`docs/deploy.md`](docs/deploy.md) — deployment
 10. [`docs/troubleshooting.md`](docs/troubleshooting.md) — common issues

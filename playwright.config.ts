@@ -2,7 +2,6 @@ import { defineConfig, devices } from "@playwright/test";
 
 const port = Number(process.env.PLAYWRIGHT_PORT || 4173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`;
-const previewReadyURL = new URL("/favicon.ico", baseURL).toString();
 const workerCount = Number(process.env.PLAYWRIGHT_WORKERS ?? 2);
 
 export default defineConfig({
@@ -22,7 +21,7 @@ export default defineConfig({
     ? undefined
     : {
         command: "bun run preview -- --host 127.0.0.1 --port 4173",
-        url: previewReadyURL,
+        url: baseURL,
         reuseExistingServer: !process.env.CI,
         stdout: "ignore",
         stderr: "pipe",
