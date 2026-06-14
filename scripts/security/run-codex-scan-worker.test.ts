@@ -10,6 +10,7 @@ import {
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
 import {
+  assertCodexArtifactCoverageForVerdict,
   buildPrompt,
   normalizeSkillSpectorAnalysis,
   resolveSkillSpectorScanInput,
@@ -28,6 +29,78 @@ async function tempDir() {
   tempDirs.push(dir);
   return dir;
 }
+
+function coverageRange(kind: "full" | "head" | "tail") {
+  return {
+    kind,
+    startLine: null,
+    endLine: null,
+    startByte: null,
+    endByte: null,
+  };
+}
+
+function codexResult(overrides: Record<string, unknown> = {}) {
+  return JSON.stringify({
+    verdict: "benign",
+    confidence: "high",
+    summary: "The artifact is coherent and proportionate.",
+    dimensions: {
+      purpose_capability: { status: "ok", detail: "Purpose and capabilities align." },
+      instruction_scope: { status: "ok", detail: "Instructions are scoped." },
+      install_mechanism: { status: "ok", detail: "No unusual install behavior." },
+      environment_proportionality: { status: "ok", detail: "Credentials are proportionate." },
+      persistence_privilege: { status: "ok", detail: "No persistence concern." },
+    },
+    scan_findings_in_context: [],
+    user_guidance: "Looks coherent.",
+    artifact_coverage: {
+      status: "complete",
+      inspected_files: [
+        {
+          path: "SKILL.md",
+          coverage: "full",
+          ranges: [coverageRange("full")],
+          reason: "Primary instructions were fully read.",
+        },
+        {
+          path: "src/large.ts",
+          coverage: "head_tail",
+          ranges: [coverageRange("head"), coverageRange("tail")],
+          reason: "Large source file was sampled at both ends.",
+        },
+      ],
+    },
+    ...overrides,
+  });
+}
+
+const coverageJob = {
+  job: {
+    _id: "job123",
+    hasMaliciousSignal: false,
+    leaseToken: "lease-secret",
+    source: "publish",
+    targetKind: "skillVersion" as const,
+    waitForVtUntil: 0,
+  },
+  target: {
+    files: [
+      {
+        path: "SKILL.md",
+        sha256: "abc123",
+        size: 42,
+        url: "https://signed.example.invalid/skill",
+      },
+      {
+        path: "src/large.ts",
+        sha256: "def456",
+        size: 70_000,
+        url: "https://signed.example.invalid/large",
+      },
+    ],
+  },
+};
 
 describe("run-codex-scan-worker diagnostics", () => {
   it("blocks direct local Codex security worker runs without opt-in", () => {
@@ -96,6 +169,10 @@ describe("run-codex-scan-worker diagnostics", () => {
 
     expect(prompt).toContain("Do your own security research");
     expect(prompt).toContain("Inspect workspace files when needed");
+    expect(prompt).toContain("A benign verdict requires complete artifact coverage proof");
+    expect(prompt).toContain("Submitted artifact files that must be covered");
+    expect(prompt).toContain("artifact_coverage");
+    expect(prompt).toContain("set unused line or byte coordinates to null");
     expect(prompt).toContain("SkillSpector findings are advisory research-preview evidence");
     expect(prompt).toContain("not validated ground truth");
     expect(prompt).toContain("artifact-backed evidence");
@@ -104,15 +181,121 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(prompt).not.toContain("Return the required JSON object only after those reads complete");
   });
 
-  it("does not expose incomplete artifact inspection as an output-schema field", async () => {
+  it("requires artifact coverage proof in the output schema", async () => {
     const raw = await readFile("scripts/security/codex-scan-output.schema.json", "utf8");
     const schema = JSON.parse(raw) as {
       required?: string[];
       properties?: Record<string, unknown>;
     };
 
+    expect(schema.required).toContain("artifact_coverage");
+    expect(schema.properties).toHaveProperty("artifact_coverage");
     expect(schema.required).not.toContain("incomplete_artifact_inspection");
     expect(schema.properties).not.toHaveProperty("incomplete_artifact_inspection");
+  });
+
+  it("keeps artifact coverage ranges compatible with Codex structured outputs", async () => {
+    const raw = await readFile("scripts/security/codex-scan-output.schema.json", "utf8");
+    const schema = JSON.parse(raw);
+    const rangeSchema =
+      schema.properties.artifact_coverage.properties.inspected_files.items.properties.ranges.items;
+
+    expect(rangeSchema.required).toEqual(Object.keys(rangeSchema.properties));
+    expect(rangeSchema.properties.startLine.type).toContain("null");
+    expect(rangeSchema.properties.endLine.type).toContain("null");
+    expect(rangeSchema.properties.startByte.type).toContain("null");
+    expect(rangeSchema.properties.endByte.type).toContain("null");
+  });
+
+  it("accepts benign Codex results only when submitted files have coverage proof", () => {
+    expect(() =>
+      assertCodexArtifactCoverageForVerdict(codexResult(), coverageJob, "benign"),
+    ).not.toThrow();
+  });
+
+  it("rejects benign Codex results that omit artifact coverage", () => {
+    const raw = codexResult({ artifact_coverage: undefined });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
+      "artifact_coverage missing",
+    );
+  });
+
+  it("rejects benign Codex results when large files lack tail coverage", () => {
+    const raw = codexResult({
+      artifact_coverage: {
+        status: "complete",
+        inspected_files: [
+          {
+            path: "SKILL.md",
+            coverage: "full",
+            ranges: [coverageRange("full")],
+            reason: "Primary instructions were fully read.",
+          },
+          {
+            path: "src/large.ts",
+            coverage: "partial",
+            ranges: [coverageRange("head")],
+            reason: "Only the beginning was read.",
+          },
+        ],
+      },
+    });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
+      "src/large.ts: large file lacks full or head/tail coverage",
+    );
+  });
+
+  it("rejects benign Codex results when the coverage summary overstates ranges", () => {
+    const inspectedFiles = JSON.parse(codexResult()).artifact_coverage.inspected_files.map(
+      (file: { path: string }) =>
+        file.path === "src/large.ts"
+          ? {
+              ...file,
+              coverage: "head_tail",
+              ranges: [coverageRange("head")],
+            }
+          : file,
+    );
+    const raw = codexResult({
+      artifact_coverage: {
+        status: "complete",
+        inspected_files: inspectedFiles,
+      },
+    });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
+      "src/large.ts: large file lacks full or head/tail coverage",
+    );
+  });
+
+  it.each([
+    {
+      path: "SKILL.md",
+      coverage: "metadata_only",
+      ranges: [coverageRange("full")],
+    },
+    {
+      path: "src/large.ts",
+      coverage: "not_inspected",
+      ranges: [coverageRange("head"), coverageRange("tail")],
+    },
+  ])("rejects benign Codex results with contradictory $coverage coverage", (contradiction) => {
+    const inspectedFiles = JSON.parse(codexResult()).artifact_coverage.inspected_files.map(
+      (file: { path: string }) =>
+        file.path === contradiction.path ? { ...file, ...contradiction } : file,
+    );
+    const raw = codexResult({
+      artifact_coverage: {
+        status: "complete",
+        inspected_files: inspectedFiles,
+      },
+    });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
+      `${contradiction.path}: coverage is ${contradiction.coverage}`,
+    );
   });
 
   it("passes SkillSpector findings to Codex without asking for OWASP finding output", () => {
