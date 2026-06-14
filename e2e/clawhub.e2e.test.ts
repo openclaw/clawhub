@@ -164,7 +164,7 @@ describe("clawhub e2e", () => {
       cwd: process.cwd(),
       encoding: "utf8",
     });
-    expect(result.status).toBe(0);
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
     expect(result.stdout.trim()).toMatch(/^\d+\.\d+\.\d+/);
   });
 
@@ -871,7 +871,7 @@ describe("clawhub e2e", () => {
       },
     );
 
-    expect(result.status).toBe(0);
+    expect(result.status, `${result.stdout}\n${result.stderr}`).toBe(0);
     expect(result.stdout).toMatch(/Dry run/i);
     expect(result.stdout).toMatch(/openclaw-codex-app-server/);
     expect(result.stdout).toMatch(/code-plugin/i);
