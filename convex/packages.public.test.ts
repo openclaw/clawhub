@@ -14,6 +14,7 @@ import {
   backfillPackageCapabilityTagsInternal,
   backfillPackageCapabilityTagsInternalHandler,
   backfillPackageReleaseScansInternal,
+  getPackageCapabilityTagBackfillPageInternal,
   getPackageReleaseScanBackfillBatchInternal,
   getByName,
   list,
@@ -110,6 +111,22 @@ const backfillPackageCapabilityTagsInternalActionHandler = (
         missingManifests: number;
         missingStorageBlobs: number;
       };
+      cursor: string | null;
+      isDone: boolean;
+    }
+  >
+)._handler;
+const getPackageCapabilityTagBackfillPageInternalHandler = (
+  getPackageCapabilityTagBackfillPageInternal as unknown as WrappedHandler<
+    { cursor?: string; batchSize?: number },
+    {
+      items: Array<{
+        releaseId: string;
+        extractedPluginManifest?: unknown;
+        pluginManifestStorageId?: string;
+        extractedPackageJson?: unknown;
+        packageJsonStorageId?: string;
+      }>;
       cursor: string | null;
       isDone: boolean;
     }
@@ -9927,6 +9944,53 @@ describe("packages public queries", () => {
 });
 
 describe("package capability tag backfill", () => {
+  it("loads supported legacy bundle manifests into the backfill page", async () => {
+    const release = makeReleaseDoc({
+      packageId: "packages:bundle",
+      files: [
+        {
+          path: ".claude-plugin/plugin.json",
+          storageId: "storage:bundle-manifest",
+        },
+      ],
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          order: vi.fn(() => ({
+            paginate: vi.fn().mockResolvedValue({
+              page: [release],
+              continueCursor: "",
+              isDone: true,
+            }),
+          })),
+        })),
+        get: vi.fn().mockResolvedValue(
+          makePackageDoc({
+            _id: "packages:bundle",
+            family: "bundle-plugin",
+          }),
+        ),
+      },
+    };
+
+    await expect(
+      getPackageCapabilityTagBackfillPageInternalHandler(ctx, { batchSize: 1 }),
+    ).resolves.toEqual({
+      items: [
+        {
+          releaseId: release._id,
+          extractedPluginManifest: undefined,
+          pluginManifestStorageId: "storage:bundle-manifest",
+          extractedPackageJson: undefined,
+          packageJsonStorageId: undefined,
+        },
+      ],
+      cursor: null,
+      isDone: true,
+    });
+  });
+
   it("syncs package search and capability digests through the package mutation trigger", async () => {
     const packageId = "packages:demo";
     const releaseId = "packageReleases:demo-1";

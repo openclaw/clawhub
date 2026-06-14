@@ -8396,9 +8396,13 @@ export const getPackageCapabilityTagBackfillPageInternal = internalQuery({
     for (const release of page) {
       const pkg = await ctx.db.get(release.packageId);
       if (!pkg || (pkg.family !== "code-plugin" && pkg.family !== "bundle-plugin")) continue;
-      const pluginManifestFile = release.files.find(
-        (file) => file.path.toLowerCase() === "openclaw.plugin.json",
-      );
+      const pluginManifestFile =
+        release.files.find((file) => file.path.toLowerCase() === "openclaw.plugin.json") ??
+        (pkg.family === "bundle-plugin"
+          ? release.files.find((file) =>
+              REAL_BUNDLE_MANIFESTS.some((manifest) => manifest.path === file.path.toLowerCase()),
+            )
+          : undefined);
       const packageJsonFile = release.files.find(
         (file) => file.path.toLowerCase() === "package.json",
       );
