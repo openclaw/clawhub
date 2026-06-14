@@ -111,6 +111,13 @@ reading uncommitted files. The sync fetches the configured upstream branch and
 reads committed Git objects only. Without `--source`, it maintains a read-only
 clone under `.cache/openclaw-docs-sync/`.
 
+The `Sync OpenClaw Plugin Docs` workflow runs on cross-repository dispatch,
+every six hours as a fallback, and by manual dispatch. It opens a dedicated
+automation PR only when relevant upstream changes exist. Pending conflicts,
+watch-only changes, or flavour-validation errors produce a draft PR. While a
+sync PR remains open, later runs leave it untouched so maintainer resolutions
+cannot be overwritten.
+
 ## Reviewer check
 
 For this slice, the ClawHub repo owns the new canonical source file. The

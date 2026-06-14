@@ -1,0 +1,257 @@
+name: Sync OpenClaw Plugin Docs
+
+on:
+  repository_dispatch:
+    types: [openclaw-plugin-docs-updated]
+  schedule:
+    # Avoid the top of the hour, when scheduled GitHub Actions runs are most delayed.
+    - cron: "23 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Optional committed OpenClaw revision to sync
+        required: false
+        type: string
+
+concurrency:
+  group: openclaw-plugin-docs-sync
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  UPDATE_BRANCH: automation/openclaw-plugin-docs-sync
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout ClawHub
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token
+        continue-on-error: true
+        with:
+          app-id: "2729701"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+
+      - uses: actions/create-github-app-token@v3
+        id: app-token-fallback
+        continue-on-error: true
+        if: steps.app-token.outcome == 'failure'
+        with:
+          app-id: "2971289"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}
+
+      - name: Stop when a sync pull request is already open
+        id: existing-pr
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-fallback.outputs.token || github.token }}
+        run: |
+          set -euo pipefail
+          count="$(
+            gh pr list \
+              --repo "$GITHUB_REPOSITORY" \
+              --state open \
+              --head "$UPDATE_BRANCH" \
+              --json number \
+              --jq length
+          )"
+          if [[ "$count" -gt 0 ]]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::A sync pull request is already open; leaving its maintainer resolutions untouched."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Resolve requested OpenClaw revision
+        if: steps.existing-pr.outputs.exists != 'true'
+        id: source
+        env:
+          DISPATCH_SHA: ${{ github.event.client_payload.source_sha }}
+          MANUAL_SHA: ${{ inputs.source_sha }}
+        run: |
+          set -euo pipefail
+          requested="${DISPATCH_SHA:-${MANUAL_SHA:-}}"
+          if [[ -n "$requested" && ! "$requested" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::source_sha must be a full 40-character Git commit SHA"
+            exit 1
+          fi
+          echo "ref=${requested:-main}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout OpenClaw source
+        if: steps.existing-pr.outputs.exists != 'true'
+        uses: actions/checkout@v6
+        with:
+          repository: openclaw/openclaw
+          ref: ${{ steps.source.outputs.ref }}
+          path: openclaw-source
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Record exact OpenClaw source revision
+        if: steps.existing-pr.outputs.exists != 'true'
+        id: source-commit
+        run: echo "sha=$(git -C openclaw-source rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Install dependencies
+        if: steps.existing-pr.outputs.exists != 'true'
+        run: bun install --frozen-lockfile
+
+      - name: Check for relevant OpenClaw changes
+        if: steps.existing-pr.outputs.exists != 'true'
+        id: check
+        env:
+          SOURCE_SHA: ${{ steps.source-commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/openclaw-docs-check.json"
+          bun run docs:sync:openclaw:check -- \
+            --source "$GITHUB_WORKSPACE/openclaw-source" \
+            --to "$SOURCE_SHA" \
+            --json > "$report"
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+          echo "changed=$(jq -r '.hasChanges' "$report")" >> "$GITHUB_OUTPUT"
+
+      - name: Apply OpenClaw docs update
+        if: steps.check.outputs.changed == 'true'
+        id: update
+        env:
+          SOURCE_SHA: ${{ steps.source-commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          report="$RUNNER_TEMP/openclaw-docs-update.json"
+          set +e
+          bun run docs:sync:openclaw:update -- \
+            --source "$GITHUB_WORKSPACE/openclaw-source" \
+            --to "$SOURCE_SHA" \
+            --json > "$report"
+          status=$?
+          set -e
+          if [[ "$status" -ne 0 && "$status" -ne 2 ]]; then
+            exit "$status"
+          fi
+          echo "report=$report" >> "$GITHUB_OUTPUT"
+          echo "review_required=$([[ "$status" -eq 2 ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+      - name: Run focused sync and docs verification
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          bunx vitest run scripts/docs-sync/openclaw-plugin-docs.test.mjs scripts/docs-builder.test.mjs
+          bun run docs:build
+          bun run docs:smoke
+          bun run ci:static
+
+      - name: Ensure only docs sync files changed
+        if: steps.check.outputs.changed == 'true'
+        run: |
+          set -euo pipefail
+          rm -rf openclaw-source
+          unexpected="$(
+            git status --porcelain --untracked-files=all |
+              awk '{print $2}' |
+              grep -Ev '^(docs/plugins/|docs/\.openclaw-sync/|scripts/docs-sync/openclaw-plugin-docs\.json$)' || true
+          )"
+          if [[ -n "$unexpected" ]]; then
+            echo "::error::OpenClaw docs sync touched unexpected files:"
+            printf '%s\n' "$unexpected"
+            exit 1
+          fi
+
+      - name: Commit and push sync branch
+        if: steps.check.outputs.changed == 'true'
+        env:
+          SOURCE_SHA: ${{ steps.source-commit.outputs.sha }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -B "$UPDATE_BRANCH"
+          git add docs/plugins scripts/docs-sync/openclaw-plugin-docs.json
+          if [[ -d docs/.openclaw-sync ]]; then
+            git add docs/.openclaw-sync
+          fi
+          git commit -m "docs: sync OpenClaw plugin docs to ${SOURCE_SHA:0:12}"
+          git push --force origin "$UPDATE_BRANCH"
+
+      - name: Open sync pull request
+        if: steps.check.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || steps.app-token-fallback.outputs.token || github.token }}
+          REVIEW_REQUIRED: ${{ steps.update.outputs.review_required }}
+          SOURCE_SHA: ${{ steps.source-commit.outputs.sha }}
+          SOURCE_RUN_URL: ${{ github.event.client_payload.source_run_url }}
+          UPDATE_REPORT: ${{ steps.update.outputs.report }}
+        run: |
+          set -euo pipefail
+          body_file="$(mktemp)"
+          node --input-type=module > "$body_file" <<'EOF'
+          import fs from "node:fs";
+
+          const report = JSON.parse(fs.readFileSync(process.env.UPDATE_REPORT, "utf8"));
+          const changed = report.mirrored.filter((entry) => entry.status !== "unchanged");
+          const conflicts = report.mirrored.filter((entry) => entry.status === "conflict");
+          const merged = report.mirrored.filter((entry) =>
+            ["merged", "already-current"].includes(entry.status),
+          );
+          const list = (items, format) =>
+            items.length > 0 ? items.map((item) => `- ${format(item)}`).join("\n") : "- None";
+          const sourceUrl = `https://github.com/openclaw/openclaw/commit/${process.env.SOURCE_SHA}`;
+
+          console.log(`## Summary
+
+          - sync OpenClaw plugin documentation through [\`${process.env.SOURCE_SHA.slice(0, 12)}\`](${sourceUrl})
+          - update ${changed.length} mirrored document(s)
+          - preserve ClawHub publishing, validation, Plugin Inspector, and provenance guidance
+
+          ## Maintainer Review
+
+          Review required: **${process.env.REVIEW_REQUIRED === "true" ? "yes" : "no"}**
+
+          ### Conflicts
+
+          ${list(conflicts, (entry) => `\`${entry.target}\``)}
+
+          ### Watch-only upstream changes
+
+          ${list(report.watchOnly, (entry) => `\`${entry.path}\` (${entry.status})`)}
+
+          ### Validation errors
+
+          ${list(report.validationErrors ?? [], (error) => error)}
+
+          ## Applied Cleanly
+
+          ${list(merged, (entry) => `\`${entry.target}\` (${entry.status})`)}
+
+          ## Validation
+
+          - \`bunx vitest run scripts/docs-sync/openclaw-plugin-docs.test.mjs scripts/docs-builder.test.mjs\`
+          - \`bun run docs:build\`
+          - \`bun run docs:smoke\`
+          - \`bun run ci:static\`
+          ${process.env.SOURCE_RUN_URL ? `\nSource workflow: ${process.env.SOURCE_RUN_URL}` : ""}`);
+          EOF
+
+          args=(
+            --repo "$GITHUB_REPOSITORY"
+            --base main
+            --head "$UPDATE_BRANCH"
+            --title "[automation] Sync OpenClaw plugin docs"
+            --body-file "$body_file"
+          )
+          if [[ "$REVIEW_REQUIRED" == "true" ]]; then
+            args+=(--draft)
+          fi
+          gh pr create "${args[@]}"
