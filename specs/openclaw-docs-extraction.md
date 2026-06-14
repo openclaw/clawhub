@@ -94,7 +94,8 @@ OpenClaw skill, plugin-management, and navigation changes without copying them.
 Any watch-only change creates a pending review report and keeps the old pin
 until a maintainer runs the finalize command.
 The sync verifier also protects required ClawHub publishing, validation,
-Plugin Inspector, external-publisher, bundle-distribution, and link behavior.
+Plugin Inspector, external-publisher, build-metadata, source-provenance,
+bundle-distribution, and link behavior.
 
 Maintainer commands:
 

@@ -128,7 +128,10 @@
       "includes": [
         "npm run build",
         "clawhub package validate .",
-        "clawhub package publish . --family code-plugin --dry-run"
+        "clawhub package publish . --family code-plugin --dry-run",
+        "\"pluginApi\": \">=2026.5.17\"",
+        "\"openclawVersion\": \"2026.6.6\"",
+        "GitHub-backed checkout"
       ]
     }
   ]
