@@ -20,6 +20,7 @@ Public documentation for finding, installing, publishing, and operating ClawHub 
 - [HTTP API](https://docs.clawhub.ai/http-api): HTTP API reference (public + CLI endpoints + auth).
 - [ClawHub](https://docs.clawhub.ai/): Public ClawHub overview for discovery, install, publish, security, and the clawhub CLI.
 - [Moderation and Account Safety](https://docs.clawhub.ai/moderation): How ClawHub reports, moderation holds, hidden listings, bans, and account standing work.
+- [Plugin development](https://docs.clawhub.ai/plugin-development): Canonical OpenClaw plugin development docs and ClawHub publishing links.
 - [Plugin validation fixes](https://docs.clawhub.ai/plugin-validation-fixes): Fix ClawHub plugin package validation findings before publishing
 - [Publishing](https://docs.clawhub.ai/publishing): How ClawHub publishing works for skills, plugins, owners, scopes, releases, and review.
 - [Quickstart](https://docs.clawhub.ai/quickstart): Start using ClawHub: find, install, update, and publish skills or plugins.
