@@ -11,8 +11,9 @@ let mockAuthStatus = {
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: { component: unknown }) => ({
+  createFileRoute: (path: string) => (config: { component: unknown }) => ({
     ...config,
+    path,
     useSearch: () => mockSearch,
   }),
 }));
@@ -58,7 +59,7 @@ vi.mock("../../components/ui/card", () => ({
   CardTitle: ({ children }: { children: React.ReactNode }) => <h1>{children}</h1>,
 }));
 
-const { DocsAuth } = await import("./auth");
+const { DocsAuth, Route } = await import("./docs");
 
 describe("DocsAuth", () => {
   beforeEach(() => {
@@ -69,6 +70,10 @@ describe("DocsAuth", () => {
       isLoading: false,
       me: { _id: "user_123" },
     };
+  });
+
+  it("mounts outside /docs so OpenClaw docs pages can own the docs route tree", () => {
+    expect(Route.path).toBe("/auth/docs");
   });
 
   it("posts the ClawHub auth token to the docs callback", () => {
@@ -92,7 +97,7 @@ describe("DocsAuth", () => {
 
     expect(screen.getByRole("heading", { name: /verify with github/i })).toBeTruthy();
     expect(screen.getByRole("button", { name: /verify with github/i }).dataset.redirectTo).toBe(
-      "/docs/auth?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fconcepts%2Fmodels",
+      "/auth/docs?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fconcepts%2Fmodels",
     );
   });
 

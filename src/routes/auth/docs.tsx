@@ -12,7 +12,7 @@ import { getClawHubSiteUrl, normalizeClawHubSiteOrigin } from "../../lib/site";
 import { useAuthError } from "../../lib/useAuthError";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
-export const Route = createFileRoute("/docs/auth")({
+export const Route = createFileRoute("/auth/docs")({
   component: DocsAuth,
 });
 
@@ -30,7 +30,7 @@ export function DocsAuth({ autoSubmit = true }: DocsAuthProps = {}) {
   const returnTo = normalizeDocsReturnTo(search.return_to);
   const callbackUrl = returnTo ? buildDocsAuthCallbackUrl(returnTo) : null;
   const signInRedirectTo = returnTo
-    ? `/docs/auth?return_to=${encodeURIComponent(returnTo)}`
+    ? `/auth/docs?return_to=${encodeURIComponent(returnTo)}`
     : undefined;
   const registry = useMemo(() => {
     if (typeof window !== "undefined") {
