@@ -283,6 +283,12 @@ describe("plugin detail route", () => {
     ).toBeNull();
     expect(screen.queryByText("Zip")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "README" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    expect(screen.getByText("Loaded next page")).toBeTruthy();
+    expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
   });
 
   it("does not hide a remaining release cursor when the current page is empty", async () => {

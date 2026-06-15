@@ -256,6 +256,7 @@ function PluginDetailTabs({
   validationPanel: ReactNode | null;
   validationCount: number;
 }) {
+  const [hasMountedVersions, setHasMountedVersions] = useState(false);
   const selectTab = (tab: PluginDetailTab) => {
     setActiveTab(tab);
     if (typeof window === "undefined") return;
@@ -275,14 +276,15 @@ function PluginDetailTabs({
         : activeTab === "validation" && validationPanel
           ? "validation"
           : "readme";
+  useEffect(() => {
+    if (effectiveActiveTab === "versions") setHasMountedVersions(true);
+  }, [effectiveActiveTab]);
   const activePanel =
-    effectiveActiveTab === "versions"
-      ? versionsPanel
-      : effectiveActiveTab === "compatibility" && compatibilityPanel
-        ? compatibilityPanel
-        : effectiveActiveTab === "validation" && validationPanel
-          ? validationPanel
-          : readmePanel;
+    effectiveActiveTab === "compatibility" && compatibilityPanel
+      ? compatibilityPanel
+      : effectiveActiveTab === "validation" && validationPanel
+        ? validationPanel
+        : readmePanel;
 
   return (
     <div className="tab-card">
@@ -328,7 +330,12 @@ function PluginDetailTabs({
           </button>
         ) : null}
       </div>
-      <div className="tab-body">{activePanel}</div>
+      <div className="tab-body">
+        {effectiveActiveTab === "versions" ? null : activePanel}
+        {hasMountedVersions || effectiveActiveTab === "versions" ? (
+          <div hidden={effectiveActiveTab !== "versions"}>{versionsPanel}</div>
+        ) : null}
+      </div>
     </div>
   );
 }
