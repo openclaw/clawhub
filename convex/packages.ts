@@ -4193,6 +4193,7 @@ async function restorePackageDoc(
   const restoredReleaseIds: Array<Id<"packageReleases">> = [];
   const activeReleases: Doc<"packageReleases">[] = [];
   for (const release of releases) {
+    if (release.ownerDeletedAt !== undefined) continue;
     if (release.softDeletedAt) {
       if (
         params.releaseSoftDeletedAt !== undefined &&
@@ -4242,6 +4243,8 @@ async function restorePackageDoc(
         }
       : undefined,
     summary: nextLatest?.summary,
+    runtimeId: packageRuntimeIdFromRelease(nextLatest),
+    sourceRepo: packageSourceRepoFromRelease(nextLatest),
     capabilityTags: nextLatest?.capabilities?.capabilityTags,
     executesCode:
       typeof nextLatest?.capabilities?.executesCode === "boolean"
@@ -4799,6 +4802,88 @@ export const softDeletePackage = mutation({
       actorRole: user.role,
       source: "dashboard",
     });
+  },
+});
+
+export async function deleteOwnedPackageReleaseForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  args: { name: string; version: string },
+) {
+  const normalizedName = normalizePackageName(args.name);
+  const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+  if (!pkg || pkg.softDeletedAt || isPackageBlockedFromPublic(pkg.scanStatus)) {
+    throw new ConvexError("This package is unavailable and its releases cannot be deleted.");
+  }
+  if (pkg.family === "skill") {
+    throw new ConvexError("Skill packages must use the skills deletion flow.");
+  }
+
+  await assertCanManageOwnedResource(ctx, {
+    actor,
+    ownerUserId: pkg.ownerUserId,
+    ownerPublisherId: pkg.ownerPublisherId,
+    allowedPublisherRoles: ["admin"],
+  });
+
+  const release = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", args.version))
+    .unique();
+  if (
+    !release ||
+    release.softDeletedAt ||
+    release.ownerDeletedAt !== undefined ||
+    resolvePackageReleaseScanStatus(release) === "malicious"
+  ) {
+    throw new ConvexError("This package release is already unavailable and cannot be deleted.");
+  }
+
+  const activeReleases = (
+    await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_active_created", (q) =>
+        q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
+      )
+      .collect()
+  ).filter(
+    (candidate) =>
+      candidate.ownerDeletedAt === undefined &&
+      resolvePackageReleaseScanStatus(candidate) !== "malicious",
+  );
+  if (activeReleases.length <= 1) {
+    throw new ConvexError(
+      "You cannot delete the only active release. Remove the whole package instead.",
+    );
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(release._id, {
+    softDeletedAt: now,
+    ownerDeletedAt: now,
+    ownerDeletedBy: actor._id,
+  });
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "package.release.delete",
+    targetType: "packageRelease",
+    targetId: release._id,
+    metadata: {
+      packageId: pkg._id,
+      name: pkg.name,
+      version: release.version,
+    },
+    createdAt: now,
+  });
+
+  return { ok: true as const, packageId: pkg._id, releaseId: release._id };
+}
+
+export const deleteOwnedRelease = mutation({
+  args: { name: v.string(), version: v.string() },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return await deleteOwnedPackageReleaseForActor(ctx, user, args);
   },
 });
 

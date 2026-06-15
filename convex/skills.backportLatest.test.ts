@@ -404,6 +404,9 @@ describe("skills.insertVersion latest-tag protection", () => {
       _id: "skillVersions:existing",
       skillId: SKILL_ID,
       version: "1.0.1",
+      softDeletedAt: 123,
+      ownerDeletedAt: 123,
+      ownerDeletedBy: OWNER_USER_ID,
     });
 
     await expect(

@@ -812,6 +812,8 @@ const skillVersions = defineTable({
   createdBy: v.id("users"),
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
+  ownerDeletedAt: v.optional(v.number()),
+  ownerDeletedBy: v.optional(v.id("users")),
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -869,6 +871,7 @@ const skillVersions = defineTable({
   ),
 })
   .index("by_skill", ["skillId"])
+  .index("by_skill_active_created", ["skillId", "softDeletedAt", "createdAt"])
   .index("by_skill_version", ["skillId", "version"])
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_active_vt_status_created", ["softDeletedAt", "vtAnalysis.status", "createdAt"])
@@ -1284,6 +1287,8 @@ const packageReleases = defineTable({
   publishActor: packagePublishActorValidator,
   createdAt: v.number(),
   softDeletedAt: v.optional(v.number()),
+  ownerDeletedAt: v.optional(v.number()),
+  ownerDeletedBy: v.optional(v.id("users")),
 })
   .index("by_package", ["packageId"])
   .index("by_package_active_created", ["packageId", "softDeletedAt", "createdAt"])

@@ -4280,6 +4280,65 @@ describe("packages public queries", () => {
     );
   });
 
+  it("does not restore owner-deleted releases with the whole package", async () => {
+    const { ctx, patch } = makeSoftDeletePackageCtx({
+      pkg: makePackageDoc({
+        softDeletedAt: 123,
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        tags: {},
+        runtimeId: "ownerDeleted.runtime",
+        sourceRepo: "owner/ownerDeleted",
+      }),
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:ownerDeleted",
+          version: "2.0.0",
+          softDeletedAt: 100,
+          ownerDeletedAt: 100,
+          ownerDeletedBy: "users:owner",
+          distTags: ["latest"],
+          runtimeId: "ownerDeleted.runtime",
+          sourceRepo: "owner/ownerDeleted",
+          createdAt: 20,
+        }),
+        makeReleaseDoc({
+          _id: "packageReleases:restorable",
+          version: "1.0.0",
+          softDeletedAt: 123,
+          distTags: ["stable"],
+          runtimeId: "restored.runtime",
+          sourceRepo: "owner/restored",
+          createdAt: 10,
+        }),
+      ],
+    });
+
+    const result = await restorePackageInternalHandler(ctx, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    expect(result).toMatchObject({ ok: true, releaseCount: 1, alreadyRestored: false });
+    expect(patch).not.toHaveBeenCalledWith("packageReleases:ownerDeleted", {
+      softDeletedAt: undefined,
+    });
+    expect(patch).toHaveBeenCalledWith("packageReleases:restorable", {
+      softDeletedAt: undefined,
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: "packageReleases:restorable",
+        latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
+        runtimeId: "restored.runtime",
+        sourceRepo: "owner/restored",
+      }),
+    );
+  });
+
   it("rejects owner restore for moderator-deleted packages", async () => {
     const { ctx, patch } = makeSoftDeletePackageCtx({
       pkg: makePackageDoc({
@@ -5862,6 +5921,9 @@ describe("packages public queries", () => {
         _id: "packageReleases:existing",
         version: "1.0.0",
         integritySha256: "abc123",
+        softDeletedAt: 123,
+        ownerDeletedAt: 123,
+        ownerDeletedBy: "users:owner",
       }),
     ]);
 

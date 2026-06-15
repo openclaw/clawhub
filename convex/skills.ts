@@ -6491,7 +6491,12 @@ export const listVersionsPage = query({
 
 export const getVersionById = query({
   args: { versionId: v.id("skillVersions") },
-  handler: async (ctx, args) => toPublicSkillVersion(await ctx.db.get(args.versionId)),
+  handler: async (ctx, args) => {
+    const version = await ctx.db.get(args.versionId);
+    return version && !version.softDeletedAt && version.ownerDeletedAt === undefined
+      ? toPublicSkillVersion(version)
+      : null;
+  },
 });
 
 export const getVersionsByIdsInternal = internalQuery({
@@ -8630,7 +8635,140 @@ export const getVersionBySkillAndVersion = query({
         q.eq("skillId", args.skillId).eq("version", args.version),
       )
       .unique();
-    return toPublicSkillVersion(version);
+    return version && !version.softDeletedAt && version.ownerDeletedAt === undefined
+      ? toPublicSkillVersion(version)
+      : null;
+  },
+});
+
+export async function deleteOwnedSkillVersionForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  args: { versionId: Id<"skillVersions"> },
+) {
+  const version = await ctx.db.get(args.versionId);
+  if (
+    !version ||
+    version.softDeletedAt ||
+    version.ownerDeletedAt !== undefined ||
+    isKnownMaliciousSkillVersion(version)
+  ) {
+    throw new ConvexError("This skill version is already unavailable and cannot be deleted.");
+  }
+
+  const skill = await ctx.db.get(version.skillId);
+  if (!skill || skill.softDeletedAt || skill.moderationStatus !== "active") {
+    throw new ConvexError("This skill is unavailable and its versions cannot be deleted.");
+  }
+
+  await assertCanManageOwnedResource(ctx, {
+    actor,
+    ownerUserId: skill.ownerUserId,
+    ownerPublisherId: skill.ownerPublisherId,
+    allowedPublisherRoles: ["admin"],
+  });
+
+  const activeVersions = (
+    await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", skill._id).eq("softDeletedAt", undefined),
+      )
+      .collect()
+  ).filter(
+    (candidate) =>
+      candidate.ownerDeletedAt === undefined && !isKnownMaliciousSkillVersion(candidate),
+  );
+  if (activeVersions.length <= 1) {
+    throw new ConvexError(
+      "You cannot delete the only active version. Remove the whole skill instead.",
+    );
+  }
+
+  const latestPointerAffected =
+    skill.latestVersionId === version._id || skill.tags.latest === version._id;
+  const replacement = latestPointerAffected
+    ? (activeVersions
+        .filter((candidate) => candidate._id !== version._id)
+        .sort(compareSkillVersionsForRestore)[0] ?? null)
+    : null;
+  if (latestPointerAffected && !replacement) {
+    throw new ConvexError(
+      "You cannot delete the only active version. Remove the whole skill instead.",
+    );
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(version._id, {
+    softDeletedAt: now,
+    ownerDeletedAt: now,
+    ownerDeletedBy: actor._id,
+  });
+
+  const nextTags = Object.fromEntries(
+    Object.entries(skill.tags ?? {}).filter(([, versionId]) => versionId !== version._id),
+  ) as Doc<"skills">["tags"];
+
+  if (latestPointerAffected && replacement) {
+    nextTags.latest = replacement._id;
+    const patch: Partial<Doc<"skills">> = {
+      displayName: skillDisplayNameFromSkillVersion(replacement) ?? skill.slug,
+      summary: skillSummaryFromSkillVersion(replacement),
+      icon: skillIconFromSkillVersion(replacement) ?? skill.icon,
+      latestVersionId: replacement._id,
+      latestVersionSummary: latestVersionSummaryFromSkillVersion(replacement),
+      tags: nextTags,
+      capabilityTags: replacement.capabilityTags,
+      updatedAt: now,
+    };
+    if (!shouldPreserveExistingModerationLock(skill)) {
+      const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
+      Object.assign(
+        patch,
+        applySkillManualOverrideToSkillPatch({
+          skill,
+          basePatch: buildScannerModerationPatchFromVersion({
+            owner,
+            version: replacement,
+            now,
+          }),
+          now,
+          stripUpdatedAt: true,
+        }),
+      );
+    }
+    const nextSkill = { ...skill, ...patch } as Doc<"skills">;
+    await ctx.db.patch(skill._id, patch);
+    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
+    await setSkillEmbeddingsLatestVersion(ctx, skill._id, replacement._id, now);
+  } else if (Object.keys(nextTags).length !== Object.keys(skill.tags ?? {}).length) {
+    await ctx.db.patch(skill._id, {
+      tags: nextTags,
+      updatedAt: now,
+    });
+  }
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "skill.version.delete",
+    targetType: "skillVersion",
+    targetId: version._id,
+    metadata: {
+      skillId: skill._id,
+      slug: skill.slug,
+      version: version.version,
+    },
+    createdAt: now,
+  });
+
+  return { ok: true as const, skillId: skill._id, versionId: version._id };
+}
+
+export const deleteOwnedVersion = mutation({
+  args: { versionId: v.id("skillVersions") },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return await deleteOwnedSkillVersionForActor(ctx, user, args);
   },
 });
 

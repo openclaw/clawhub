@@ -14,11 +14,13 @@ import {
   httpAction,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
+import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
   deletePackageSearchDigests,
   extractPackageDigestFields,
   upsertPackageSearchDigest,
 } from "./lib/packageSearchDigest";
+import { resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { getOwnerPublisher } from "./lib/publishers";
 import {
   adjustPublisherStatsForPackageChange,
@@ -49,9 +51,47 @@ type LatestPackageRelease = Pick<
   | "capabilities"
   | "verification"
   | "distTags"
+  | "runtimeId"
+  | "sourceRepo"
+  | "artifactKind"
+  | "clawpackSha256"
+  | "sha256hash"
+  | "clawpackSize"
+  | "clawpackFormat"
+  | "npmIntegrity"
+  | "npmShasum"
+  | "npmTarballName"
+  | "npmUnpackedSize"
+  | "npmFileCount"
+  | "vtAnalysis"
+  | "llmAnalysis"
+  | "staticScan"
+  | "manualModeration"
+  | "ownerDeletedAt"
 > & {
   scanStatus?: Doc<"packages">["scanStatus"];
 };
+
+function toPackageArtifactSummary(release: LatestPackageRelease) {
+  if (release.artifactKind === "npm-pack") {
+    return {
+      kind: "npm-pack" as const,
+      sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
+      size: release.clawpackSize,
+      format: release.clawpackFormat ?? "tgz",
+      npmIntegrity: release.npmIntegrity,
+      npmShasum: release.npmShasum,
+      npmTarballName: release.npmTarballName,
+      npmUnpackedSize: release.npmUnpackedSize,
+      npmFileCount: release.npmFileCount,
+    };
+  }
+  return {
+    kind: "legacy-zip" as const,
+    sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
+    format: "zip",
+  };
+}
 
 function toPackageLatestVersionSummary(
   release: LatestPackageRelease | null,
@@ -64,6 +104,7 @@ function toPackageLatestVersionSummary(
     compatibility: release.compatibility,
     capabilities: release.capabilities,
     verification: release.verification,
+    artifact: toPackageArtifactSummary(release),
   };
 }
 
@@ -101,6 +142,9 @@ async function getPreferredFallbackPackageRelease(
       .order("desc")
       .paginate({ cursor, numItems: 100 });
     for (const release of page.page) {
+      if (release.ownerDeletedAt !== undefined) continue;
+      const scanStatus = resolvePackageReleaseScanStatus(release);
+      if (scanStatus === "malicious") continue;
       const candidate: LatestPackageRelease = {
         _id: release._id,
         createdAt: release.createdAt,
@@ -110,8 +154,25 @@ async function getPreferredFallbackPackageRelease(
         compatibility: release.compatibility,
         capabilities: release.capabilities,
         verification: release.verification,
-        scanStatus: release.verification?.scanStatus,
+        scanStatus,
         distTags: release.distTags,
+        runtimeId: release.runtimeId,
+        sourceRepo: release.sourceRepo,
+        artifactKind: release.artifactKind,
+        clawpackSha256: release.clawpackSha256,
+        sha256hash: release.sha256hash,
+        clawpackSize: release.clawpackSize,
+        clawpackFormat: release.clawpackFormat,
+        npmIntegrity: release.npmIntegrity,
+        npmShasum: release.npmShasum,
+        npmTarballName: release.npmTarballName,
+        npmUnpackedSize: release.npmUnpackedSize,
+        npmFileCount: release.npmFileCount,
+        vtAnalysis: release.vtAnalysis,
+        llmAnalysis: release.llmAnalysis,
+        staticScan: release.staticScan,
+        manualModeration: release.manualModeration,
+        ownerDeletedAt: release.ownerDeletedAt,
       };
       if (!best || compareFallbackReleases(family, candidate, best) > 0) best = candidate;
     }
@@ -399,6 +460,8 @@ export async function repointPackageLatestRelease(
     patch.latestReleaseId = nextLatest?._id;
     patch.latestVersionSummary = toPackageLatestVersionSummary(nextLatest);
     patch.summary = nextLatest?.summary;
+    patch.runtimeId = nextLatest?.runtimeId ?? nextLatest?.capabilities?.runtimeId;
+    patch.sourceRepo = nextLatest?.sourceRepo ?? nextLatest?.verification?.sourceRepo;
     patch.capabilityTags = nextLatest?.capabilities?.capabilityTags;
     patch.executesCode =
       typeof nextLatest?.capabilities?.executesCode === "boolean"

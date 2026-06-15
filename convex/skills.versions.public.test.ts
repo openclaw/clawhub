@@ -266,6 +266,37 @@ describe("public skill version queries", () => {
     }
   });
 
+  it("hides soft-deleted or owner-deleted versions from direct public queries", async () => {
+    for (const version of [
+      { ...makeVersion(), softDeletedAt: 123 },
+      { ...makeVersion(), ownerDeletedAt: 123 },
+    ]) {
+      const ctx = {
+        db: {
+          get: vi.fn().mockResolvedValue(version),
+          query: vi.fn((table: string) => {
+            if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(version),
+              })),
+            };
+          }),
+        },
+      } as never;
+
+      await expect(
+        getVersionByIdHandler(ctx, { versionId: version._id } as never),
+      ).resolves.toBeNull();
+      await expect(
+        getVersionBySkillAndVersionHandler(ctx, {
+          skillId: version.skillId,
+          version: version.version,
+        } as never),
+      ).resolves.toBeNull();
+    }
+  });
+
   it("sanitizes latestVersion in listWithLatest", async () => {
     const version = makeVersion();
     const ctx = {

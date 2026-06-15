@@ -219,6 +219,13 @@ describe("package digest sync", () => {
       compatibility: { openclaw: "^1.0.0" },
       capabilities: { capabilityTags: ["stable"], executesCode: false },
       verification: { tier: "verified" },
+      runtimeId: "demo.fallback",
+      sourceRepo: "openclaw/fallback",
+      artifactKind: "npm-pack",
+      clawpackSha256: "a".repeat(64),
+      clawpackSize: 123,
+      clawpackFormat: "tgz",
+      npmIntegrity: "sha512-fallback",
       distTags: ["stable"],
       createdAt: 10,
       softDeletedAt: undefined,
@@ -235,6 +242,41 @@ describe("package digest sync", () => {
       verification: { tier: "verified" },
       distTags: ["legacy"],
       createdAt: 20,
+      softDeletedAt: undefined,
+    };
+    const revokedRelease = {
+      _id: "packageReleases:demo-revoked",
+      _creationTime: 30,
+      packageId: "packages:demo",
+      version: "1.5.0",
+      changelog: "revoked",
+      summary: "revoked summary",
+      compatibility: { openclaw: "^1.5.0" },
+      capabilities: { capabilityTags: ["revoked"], executesCode: true },
+      verification: { tier: "verified" },
+      manualModeration: {
+        state: "revoked",
+        reason: "unsafe",
+        reviewerUserId: "users:moderator",
+        updatedAt: 30,
+      },
+      distTags: ["beta"],
+      createdAt: 30,
+      softDeletedAt: undefined,
+    };
+    const ownerDeletedRelease = {
+      _id: "packageReleases:demo-ownerDeleted",
+      _creationTime: 40,
+      packageId: "packages:demo",
+      version: "3.0.0",
+      changelog: "ownerDeleted",
+      summary: "ownerDeleted summary",
+      compatibility: { openclaw: "^3.0.0" },
+      capabilities: { capabilityTags: ["ownerDeleted"], executesCode: true },
+      verification: { tier: "verified" },
+      distTags: ["next"],
+      ownerDeletedAt: 40,
+      createdAt: 40,
       softDeletedAt: undefined,
     };
     const owner = {
@@ -257,7 +299,12 @@ describe("package digest sync", () => {
               withIndex: vi.fn(() => ({
                 order: vi.fn(() => ({
                   paginate: vi.fn().mockResolvedValue({
-                    page: [legacyHotfixRelease, fallbackRelease],
+                    page: [
+                      ownerDeletedRelease,
+                      revokedRelease,
+                      legacyHotfixRelease,
+                      fallbackRelease,
+                    ],
                     isDone: true,
                     continueCursor: "",
                   }),
@@ -306,10 +353,20 @@ describe("package digest sync", () => {
       expect.objectContaining({
         latestReleaseId: "packageReleases:demo-1",
         tags: { latest: "packageReleases:demo-1" },
-        latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
         summary: "stable summary",
         capabilityTags: ["stable"],
         executesCode: false,
+        runtimeId: "demo.fallback",
+        sourceRepo: "openclaw/fallback",
+        latestVersionSummary: expect.objectContaining({
+          version: "1.0.0",
+          artifact: expect.objectContaining({
+            kind: "npm-pack",
+            sha256: "a".repeat(64),
+            size: 123,
+            npmIntegrity: "sha512-fallback",
+          }),
+        }),
       }),
     );
     expect(ctx.db.insert).toHaveBeenCalledWith(
