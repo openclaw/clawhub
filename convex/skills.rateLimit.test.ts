@@ -1555,7 +1555,6 @@ describe("skills anti-spam guards", () => {
         changelog: "Bad release",
         changelogSource: "user",
         clawdis: { tools: [] },
-        apiKeyRequired: undefined,
       },
       tags: {
         latest: "skillVersions:2",
@@ -1770,7 +1769,6 @@ describe("skills anti-spam guards", () => {
         changelog: "Latest release",
         changelogSource: "user",
         clawdis: { tools: [] },
-        apiKeyRequired: undefined,
       },
       tags: {
         latest: "skillVersions:latest",
@@ -1901,7 +1899,6 @@ describe("skills anti-spam guards", () => {
         changelog: "Initial release",
         changelogSource: "user",
         clawdis: { tools: [] },
-        apiKeyRequired: undefined,
       },
       tags: { latest: "skillVersions:1" },
       stats: { downloads: 0, installsCurrent: 0, installsAllTime: 0, stars: 0, versions: 1 },
@@ -2082,7 +2079,6 @@ describe("skills anti-spam guards", () => {
         changelog: "Initial release",
         changelogSource: "user",
         clawdis: undefined,
-        apiKeyRequired: undefined,
       },
       tags: { latest: "skillVersions:1" },
       badges: {},

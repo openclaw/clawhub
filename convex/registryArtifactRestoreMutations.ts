@@ -150,7 +150,7 @@ function buildEvictedSlug(slug: string, now: number) {
 function latestVersionSummaryFromVersion(
   version: Pick<
     Doc<"skillVersions">,
-    "version" | "createdAt" | "changelog" | "changelogSource" | "parsed" | "apiKeyRequired"
+    "version" | "createdAt" | "changelog" | "changelogSource" | "parsed"
   >,
 ): NonNullable<Doc<"skills">["latestVersionSummary"]> {
   return {
@@ -160,7 +160,6 @@ function latestVersionSummaryFromVersion(
     changelogSource: version.changelogSource,
     description: frontmatterString(version.parsed?.frontmatter?.description),
     clawdis: version.parsed?.clawdis,
-    apiKeyRequired: version.apiKeyRequired,
   };
 }
 

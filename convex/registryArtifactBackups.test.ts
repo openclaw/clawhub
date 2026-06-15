@@ -6,6 +6,10 @@ import {
   getRegistryArtifactBackupHealthHandler,
   getRegistryArtifactBackupPageInternal,
   getPackageRegistryArtifactBackupPageInternal,
+  releaseRegistryArtifactBackupRetryLeaseHandler,
+  releaseRegistryArtifactBackupIndexLeaseHandler,
+  tryAcquireRegistryArtifactBackupIndexLeaseHandler,
+  tryAcquireRegistryArtifactBackupRetryLeaseHandler,
 } from "./registryArtifactBackups";
 import {
   backupPackageForPublishInternal,
@@ -14,18 +18,38 @@ import {
   seedRegistryArtifactBackupsInternalHandler,
 } from "./registryArtifactBackupsNode";
 
-const registryBackupMocks = vi.hoisted(() => ({
-  backupPackageReleaseToObjectStorage: vi.fn(),
-  backupSkillVersionToObjectStorage: vi.fn(),
-  fetchPackageReleaseBackupMeta: vi.fn(),
-  fetchSkillVersionBackupMeta: vi.fn(),
-  getRegistryArtifactBackupContext: vi.fn(),
-  isRegistryArtifactBackupConfigured: vi.fn(),
-  repairPackageReleaseBackupIndex: vi.fn(),
-  repairPackageReleaseBackupIndexes: vi.fn(),
-  repairSkillVersionBackupIndex: vi.fn(),
-  repairSkillVersionBackupIndexes: vi.fn(),
-}));
+const registryBackupMocks = vi.hoisted(() => {
+  const normalizeOwner = (value: string) =>
+    value
+      .trim()
+      .toLowerCase()
+      .replace(/^@+/, "")
+      .replace(/[^a-z0-9._-]/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^[._-]+|[._-]+$/g, "") || "unknown";
+  const encodeBackupPathSegment = (value: string) =>
+    encodeURIComponent(value.trim()).replace(/\./g, "%2E");
+  return {
+    backupPackageReleaseToObjectStorage: vi.fn(),
+    backupSkillVersionToObjectStorage: vi.fn(),
+    buildPackageReleaseBackupManifest: vi.fn((params) => ({
+      indexPath: `${params.root}/${normalizeOwner(params.ownerHandle)}/${encodeBackupPathSegment(params.normalizedName || params.packageName)}/_index.json`,
+    })),
+    buildSkillVersionBackupManifest: vi.fn((params) => ({
+      indexPath: `${params.root}/${normalizeOwner(params.ownerHandle)}/${params.slug}/_index.json`,
+    })),
+    fetchPackageBackupIndex: vi.fn(),
+    fetchPackageReleaseBackupMeta: vi.fn(),
+    fetchSkillBackupIndex: vi.fn(),
+    fetchSkillVersionBackupMeta: vi.fn(),
+    getRegistryArtifactBackupContext: vi.fn(),
+    isRegistryArtifactBackupConfigured: vi.fn(),
+    repairPackageReleaseBackupIndex: vi.fn(),
+    repairPackageReleaseBackupIndexes: vi.fn(),
+    repairSkillVersionBackupIndex: vi.fn(),
+    repairSkillVersionBackupIndexes: vi.fn(),
+  };
+});
 
 vi.mock("./lib/registryArtifactBackup", () => registryBackupMocks);
 
@@ -46,7 +70,7 @@ const backupPackageForPublishHandler = (
 
 beforeEach(() => {
   vi.clearAllMocks();
-  registryBackupMocks.getRegistryArtifactBackupContext.mockReturnValue({
+  const backupContext = {
     endpoint: "https://account.r2.cloudflarestorage.com",
     bucket: "clawhub-registry-backup",
     accessKeyId: "access-key",
@@ -54,9 +78,100 @@ beforeEach(() => {
     region: "auto",
     skillsRoot: "skills",
     packagesRoot: "packages",
-  });
+  };
+  registryBackupMocks.getRegistryArtifactBackupContext.mockReturnValue(backupContext);
   registryBackupMocks.isRegistryArtifactBackupConfigured.mockReturnValue(true);
+  registryBackupMocks.backupSkillVersionToObjectStorage.mockImplementation(
+    async (
+      _ctx: unknown,
+      params: { root?: string; ownerHandle: string; slug: string },
+      context: typeof backupContext,
+      options?: {
+        withIndexWrite?: (indexPath: string, write: () => Promise<void>) => Promise<void>;
+      },
+    ) => {
+      const manifest = registryBackupMocks.buildSkillVersionBackupManifest({
+        root: params.root ?? context.skillsRoot,
+        ...params,
+      });
+      await options?.withIndexWrite?.(manifest.indexPath, async () => undefined);
+    },
+  );
+  registryBackupMocks.backupPackageReleaseToObjectStorage.mockImplementation(
+    async (
+      _ctx: unknown,
+      params: {
+        root?: string;
+        ownerHandle: string;
+        normalizedName: string;
+        packageName: string;
+      },
+      context: typeof backupContext,
+      options?: {
+        withIndexWrite?: (indexPath: string, write: () => Promise<void>) => Promise<void>;
+      },
+    ) => {
+      const manifest = registryBackupMocks.buildPackageReleaseBackupManifest({
+        root: params.root ?? context.packagesRoot,
+        ...params,
+      });
+      await options?.withIndexWrite?.(manifest.indexPath, async () => undefined);
+    },
+  );
+  registryBackupMocks.repairSkillVersionBackupIndexes.mockImplementation(
+    async (
+      _ctx: unknown,
+      params: Array<{ root?: string; ownerHandle: string; slug: string }>,
+      context: typeof backupContext,
+      options?: {
+        withIndexWrite?: (indexPath: string, write: () => Promise<void>) => Promise<void>;
+      },
+    ) => {
+      const first = params[0];
+      if (!first) return;
+      const manifest = registryBackupMocks.buildSkillVersionBackupManifest({
+        root: first.root ?? context.skillsRoot,
+        ...first,
+      });
+      await options?.withIndexWrite?.(manifest.indexPath, async () => undefined);
+    },
+  );
+  registryBackupMocks.repairPackageReleaseBackupIndexes.mockImplementation(
+    async (
+      _ctx: unknown,
+      params: Array<{
+        root?: string;
+        ownerHandle: string;
+        normalizedName: string;
+        packageName: string;
+      }>,
+      context: typeof backupContext,
+      options?: {
+        withIndexWrite?: (indexPath: string, write: () => Promise<void>) => Promise<void>;
+      },
+    ) => {
+      const first = params[0];
+      if (!first) return;
+      const manifest = registryBackupMocks.buildPackageReleaseBackupManifest({
+        root: first.root ?? context.packagesRoot,
+        ...first,
+      });
+      await options?.withIndexWrite?.(manifest.indexPath, async () => undefined);
+    },
+  );
 });
+
+function retryLeaseRunMutation() {
+  return vi.fn(async (_ref, args) => {
+    if (args && typeof args === "object" && "token" in args) {
+      if ("indexPath" in args) {
+        return { acquired: true, released: true };
+      }
+      return { acquired: true, released: true };
+    }
+    return undefined;
+  });
+}
 
 describe("publish-time registry artifact backups", () => {
   it("rehydrates skill backup args from current Convex state before writing", async () => {
@@ -87,17 +202,20 @@ describe("publish-time registry artifact backups", () => {
         deactivatedAt: undefined,
       });
 
-    await backupSkillForPublishHandler({ runQuery, runMutation: vi.fn() } as never, {
-      skillId: "skills:demo",
-      versionId: "skillVersions:demo-1",
-      slug: "stale-slug",
-      version: "1.0.0",
-      isLatest: true,
-      displayName: "Stale Name",
-      ownerHandle: "stale-owner",
-      files: [],
-      publishedAt: 1,
-    });
+    await backupSkillForPublishHandler(
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      {
+        skillId: "skills:demo",
+        versionId: "skillVersions:demo-1",
+        slug: "stale-slug",
+        version: "1.0.0",
+        isLatest: true,
+        displayName: "Stale Name",
+        ownerHandle: "stale-owner",
+        files: [],
+        publishedAt: 1,
+      },
+    );
 
     expect(registryBackupMocks.backupSkillVersionToObjectStorage).toHaveBeenCalledWith(
       expect.anything(),
@@ -107,6 +225,8 @@ describe("publish-time registry artifact backups", () => {
         ownerHandle: "alice",
         isLatest: false,
       }),
+      expect.anything(),
+      expect.anything(),
     );
   });
 
@@ -143,20 +263,23 @@ describe("publish-time registry artifact backups", () => {
         deactivatedAt: undefined,
       });
 
-    await backupPackageForPublishHandler({ runQuery, runMutation: vi.fn() } as never, {
-      ownerHandle: "stale-owner",
-      packageId: "packages:demo",
-      releaseId: "packageReleases:demo-1",
-      packageName: "@openclaw/stale",
-      normalizedName: "@openclaw/stale",
-      displayName: "Stale Package",
-      family: "code-plugin",
-      version: "1.0.0",
-      isLatest: true,
-      publishedAt: 1,
-      artifactStorageId: "storage:artifact",
-      files: [],
-    });
+    await backupPackageForPublishHandler(
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      {
+        ownerHandle: "stale-owner",
+        packageId: "packages:demo",
+        releaseId: "packageReleases:demo-1",
+        packageName: "@openclaw/stale",
+        normalizedName: "@openclaw/stale",
+        displayName: "Stale Package",
+        family: "code-plugin",
+        version: "1.0.0",
+        isLatest: true,
+        publishedAt: 1,
+        artifactStorageId: "storage:artifact",
+        files: [],
+      },
+    );
 
     expect(registryBackupMocks.backupPackageReleaseToObjectStorage).toHaveBeenCalledWith(
       expect.anything(),
@@ -167,6 +290,8 @@ describe("publish-time registry artifact backups", () => {
         displayName: "Current Package",
         isLatest: false,
       }),
+      expect.anything(),
+      expect.anything(),
     );
   });
 });
@@ -599,6 +724,95 @@ describe("seedRegistryArtifactBackupsInternalHandler", () => {
 });
 
 describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
+  it("skips retry drain when another retry action holds the lease", async () => {
+    const runMutation = vi.fn().mockResolvedValueOnce({ acquired: false });
+    const runQuery = vi.fn();
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsProcessed).toBe(0);
+    expect(runQuery).not.toHaveBeenCalled();
+    expect(registryBackupMocks.backupPackageReleaseToObjectStorage).not.toHaveBeenCalled();
+  });
+
+  it("releases the retry lease after draining jobs", async () => {
+    const runMutation = retryLeaseRunMutation();
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
+
+    await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    const token = runMutation.mock.calls[0]?.[1]?.token;
+    expect(typeof token).toBe("string");
+    expect(runMutation.mock.calls.at(-1)?.[1]).toMatchObject({ token });
+  });
+
+  it("can force pending retry jobs regardless of nextRunAt for operator drains", async () => {
+    const runMutation = retryLeaseRunMutation();
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
+
+    await processRegistryArtifactBackupRetriesInternalHandler({ runQuery, runMutation } as never, {
+      forceDue: true,
+    });
+
+    expect(runQuery.mock.calls[0]?.[1]).toMatchObject({ ignoreNextRunAt: true });
+  });
+
+  it("serializes retry artifact backups with a per-index lease", async () => {
+    const jobs = [makeSkillBackupJob("demo", "skillVersions:demo")];
+    const skill = {
+      ...makeSkill("skills:demo", "demo-skill"),
+      latestVersionId: "skillVersions:demo",
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.versionId) return makeSkillVersion("skillVersions:demo", "skills:demo", "1.0.0");
+      if (args.skillId === "skills:demo") return skill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const runMutation = retryLeaseRunMutation();
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(1);
+    expect(registryBackupMocks.backupSkillVersionToObjectStorage).toHaveBeenCalledOnce();
+    const indexLeaseCalls = runMutation.mock.calls.filter(
+      (call) => call[1]?.indexPath === "skills/alice/demo-skill/_index.json",
+    );
+    expect(indexLeaseCalls.map((call) => call[1])).toEqual([
+      expect.objectContaining({
+        indexPath: "skills/alice/demo-skill/_index.json",
+        ttlMs: 5 * 60 * 1000,
+      }),
+      expect.objectContaining({
+        indexPath: "skills/alice/demo-skill/_index.json",
+      }),
+    ]);
+  });
+
   it("drains retry jobs without scanning the historical registry", async () => {
     const dueJob = {
       _id: "registryArtifactBackupJobs:demo",
@@ -639,7 +853,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
         deactivatedAt: undefined,
       })
       .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
-    const runMutation = vi.fn();
+    const runMutation = retryLeaseRunMutation();
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
       { runQuery, runMutation } as never,
@@ -663,19 +877,20 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
   });
 
   it("requests a larger retry batch so publish bursts drain promptly", async () => {
+    const runMutation = retryLeaseRunMutation();
     const runQuery = vi
       .fn()
       .mockResolvedValueOnce([])
       .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
 
     await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: vi.fn() } as never,
+      { runQuery, runMutation } as never,
       {},
     );
 
     expect(runQuery.mock.calls[0]?.[1]).toMatchObject({
       includeExhaustedRepair: true,
-      limit: 200,
+      limit: 500,
       maxRepairAttempts: 16,
     });
   });
@@ -723,7 +938,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
       throw new Error(`unexpected query ${JSON.stringify(args)}`);
     });
-    const runMutation = vi.fn();
+    const runMutation = retryLeaseRunMutation();
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
     registryBackupMocks.backupSkillVersionToObjectStorage.mockRejectedValueOnce(
       new Error("R2 still down"),
@@ -790,7 +1005,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
       throw new Error(`unexpected query ${JSON.stringify(args)}`);
     });
-    const runMutation = vi.fn();
+    const runMutation = retryLeaseRunMutation();
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValueOnce({
       version: "1.0.0",
       restore: { versionId: "skillVersions:demo" },
@@ -813,6 +1028,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
         }),
       ],
       expect.anything(),
+      expect.anything(),
     );
   });
 
@@ -825,7 +1041,10 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       ["skillVersions:demo-1", makeSkillVersion("skillVersions:demo-1", "skills:demo", "1.0.0")],
       ["skillVersions:demo-2", makeSkillVersion("skillVersions:demo-2", "skills:demo", "1.1.0")],
     ]);
-    const skill = makeSkill("skills:demo", "demo-skill");
+    const skill = {
+      ...makeSkill("skills:demo", "demo-skill"),
+      latestVersionId: "skillVersions:demo-2",
+    };
     const owner = {
       _id: "users:owner",
       handle: "alice",
@@ -852,7 +1071,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     );
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: vi.fn() } as never,
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
       {},
     );
 
@@ -866,6 +1085,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
         expect.objectContaining({ ownerHandle: "alice", slug: "demo-skill", version: "1.0.0" }),
         expect.objectContaining({ ownerHandle: "alice", slug: "demo-skill", version: "1.1.0" }),
       ],
+      expect.anything(),
       expect.anything(),
     );
   });
@@ -916,7 +1136,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     );
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: vi.fn() } as never,
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
       {},
     );
 
@@ -939,6 +1159,297 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
         }),
       ],
       expect.anything(),
+      expect.anything(),
+    );
+  });
+
+  it("marks skill index retries succeeded when the version is already indexed", async () => {
+    const jobs = [
+      makeSkillBackupJob("demo-1", "skillVersions:demo-1"),
+      makeSkillBackupJob("demo-2", "skillVersions:demo-2"),
+    ];
+    const versions = new Map([
+      ["skillVersions:demo-1", makeSkillVersion("skillVersions:demo-1", "skills:demo", "1.0.0")],
+      ["skillVersions:demo-2", makeSkillVersion("skillVersions:demo-2", "skills:demo", "1.1.0")],
+    ]);
+    const skill = {
+      ...makeSkill("skills:demo", "demo-skill"),
+      latestVersionId: "skillVersions:demo-2",
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.versionId) return versions.get(args.versionId) ?? null;
+      if (args.skillId === "skills:demo") return skill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const versionIdsByVersion = new Map([
+      ["1.0.0", "skillVersions:demo-1"],
+      ["1.1.0", "skillVersions:demo-2"],
+    ]);
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockImplementation(
+      async (_context, _ownerHandle, _slug, version) => ({
+        version,
+        restore: { versionId: versionIdsByVersion.get(version) },
+      }),
+    );
+    registryBackupMocks.fetchSkillBackupIndex.mockResolvedValueOnce({
+      latest: { version: "1.1.0", versionId: "skillVersions:demo-2", isLatest: true },
+      versions: [
+        { version: "1.0.0", versionId: "skillVersions:demo-1", isLatest: false },
+        { version: "1.1.0", versionId: "skillVersions:demo-2", isLatest: true },
+      ],
+    });
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(2);
+    expect(result.stats.retryJobsFailed).toBe(0);
+    expect(registryBackupMocks.repairSkillVersionBackupIndexes).not.toHaveBeenCalled();
+  });
+
+  it("repairs skill index retries when the indexed version has stale latest state", async () => {
+    const jobs = [makeSkillBackupJob("demo", "skillVersions:demo")];
+    const skill = {
+      ...makeSkill("skills:demo", "demo-skill"),
+      latestVersionId: "skillVersions:demo",
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.versionId) return makeSkillVersion("skillVersions:demo", "skills:demo", "1.0.0");
+      if (args.skillId === "skills:demo") return skill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue({
+      version: "1.0.0",
+      restore: { versionId: "skillVersions:demo" },
+    });
+    registryBackupMocks.fetchSkillBackupIndex.mockResolvedValueOnce({
+      latest: { version: "0.9.0", versionId: "skillVersions:old", isLatest: true },
+      versions: [{ version: "1.0.0", versionId: "skillVersions:demo", isLatest: false }],
+    });
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(1);
+    expect(result.stats.retryJobsFailed).toBe(0);
+    expect(registryBackupMocks.repairSkillVersionBackupIndexes).toHaveBeenCalledOnce();
+  });
+
+  it("keeps indexed skill success marker failures isolated", async () => {
+    const jobs = [makeSkillBackupJob("demo", "skillVersions:demo")];
+    const skill = {
+      ...makeSkill("skills:demo", "demo-skill"),
+      latestVersionId: "skillVersions:demo",
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.versionId) return makeSkillVersion("skillVersions:demo", "skills:demo", "1.0.0");
+      if (args.skillId === "skills:demo") return skill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const runMutation = vi.fn(async (_ref, args) => {
+      if (args && typeof args === "object" && "token" in args) {
+        return { acquired: true, released: true };
+      }
+      if (args && typeof args === "object" && "jobId" in args) {
+        throw new Error("status patch failed");
+      }
+      return undefined;
+    });
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue({
+      version: "1.0.0",
+      restore: { versionId: "skillVersions:demo" },
+    });
+    registryBackupMocks.fetchSkillBackupIndex.mockResolvedValueOnce({
+      latest: { version: "1.0.0", versionId: "skillVersions:demo", isLatest: true },
+      versions: [{ version: "1.0.0", versionId: "skillVersions:demo", isLatest: true }],
+    });
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(0);
+    expect(result.stats.retryJobsFailed).toBe(1);
+    expect(registryBackupMocks.repairSkillVersionBackupIndexes).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledTimes(4);
+  });
+
+  it("marks package index retries succeeded when the release is already indexed", async () => {
+    const jobs = [
+      makePackageBackupJob("demo-1", "packageReleases:demo-1"),
+      makePackageBackupJob("demo-2", "packageReleases:demo-2"),
+    ];
+    const releases = new Map([
+      [
+        "packageReleases:demo-1",
+        makePackageRelease("packageReleases:demo-1", "packages:demo", "1.0.0"),
+      ],
+      [
+        "packageReleases:demo-2",
+        makePackageRelease("packageReleases:demo-2", "packages:demo", "1.1.0"),
+      ],
+    ]);
+    const pkg = {
+      ...makePackage("packages:demo", "@openclaw/demo"),
+      latestReleaseId: "packageReleases:demo-2",
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.releaseId) return releases.get(args.releaseId) ?? null;
+      if (args.packageId === "packages:demo") return pkg;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const releaseIdsByVersion = new Map([
+      ["1.0.0", "packageReleases:demo-1"],
+      ["1.1.0", "packageReleases:demo-2"],
+    ]);
+    const shaByVersion = new Map([
+      ["1.0.0", "sha:packageReleases:demo-1"],
+      ["1.1.0", "sha:packageReleases:demo-2"],
+    ]);
+    registryBackupMocks.fetchPackageReleaseBackupMeta.mockImplementation(
+      async (_context, _ownerHandle, _normalizedName, version) => ({
+        restore: { releaseId: releaseIdsByVersion.get(version) },
+        artifact: { sha256: shaByVersion.get(version) },
+      }),
+    );
+    registryBackupMocks.fetchPackageBackupIndex.mockResolvedValueOnce({
+      latest: { version: "1.1.0", releaseId: "packageReleases:demo-2", isLatest: true },
+      versions: [
+        { version: "1.0.0", releaseId: "packageReleases:demo-1", isLatest: false },
+        { version: "1.1.0", releaseId: "packageReleases:demo-2", isLatest: true },
+      ],
+    });
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(2);
+    expect(result.stats.retryJobsFailed).toBe(0);
+    expect(registryBackupMocks.repairPackageReleaseBackupIndexes).not.toHaveBeenCalled();
+  });
+
+  it("marks skill index retries failed when the index lookup fails", async () => {
+    const jobs = [makeSkillBackupJob("demo", "skillVersions:demo")];
+    const skill = makeSkill("skills:demo", "demo-skill");
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.versionId) return makeSkillVersion("skillVersions:demo", "skills:demo", "1.0.0");
+      if (args.skillId === "skills:demo") return skill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const runMutation = retryLeaseRunMutation();
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue({
+      version: "1.0.0",
+      restore: { versionId: "skillVersions:demo" },
+    });
+    registryBackupMocks.fetchSkillBackupIndex.mockRejectedValueOnce(new Error("R2 index read"));
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(0);
+    expect(result.stats.retryJobsFailed).toBe(1);
+    expect(registryBackupMocks.repairSkillVersionBackupIndexes).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        jobId: "registryArtifactBackupJobs:demo",
+        error: "R2 index read",
+      }),
+    );
+  });
+
+  it("marks package index retries failed when the index lookup fails", async () => {
+    const jobs = [makePackageBackupJob("demo", "packageReleases:demo")];
+    const pkg = makePackage("packages:demo", "@openclaw/demo");
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.releaseId) return makePackageRelease("packageReleases:demo", "packages:demo");
+      if (args.packageId === "packages:demo") return pkg;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const runMutation = retryLeaseRunMutation();
+    registryBackupMocks.fetchPackageReleaseBackupMeta.mockResolvedValue({
+      restore: { releaseId: "packageReleases:demo" },
+      artifact: { sha256: "sha:packageReleases:demo" },
+    });
+    registryBackupMocks.fetchPackageBackupIndex.mockRejectedValueOnce(new Error("R2 index read"));
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(0);
+    expect(result.stats.retryJobsFailed).toBe(1);
+    expect(registryBackupMocks.repairPackageReleaseBackupIndexes).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        jobId: "registryArtifactBackupJobs:demo",
+        error: "R2 index read",
+      }),
     );
   });
 
@@ -991,7 +1502,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     });
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: vi.fn() } as never,
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
       {},
     );
 
@@ -1042,7 +1553,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     });
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: vi.fn() } as never,
+      { runQuery, runMutation: retryLeaseRunMutation() } as never,
       {},
     );
 
@@ -1072,7 +1583,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
       throw new Error(`unexpected query ${JSON.stringify(args)}`);
     });
-    const runMutation = vi.fn();
+    const runMutation = retryLeaseRunMutation();
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
@@ -1126,7 +1637,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
         moderationStatus: "hidden",
       })
       .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
-    const runMutation = vi.fn();
+    const runMutation = retryLeaseRunMutation();
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
       { runQuery, runMutation } as never,
@@ -1223,6 +1734,50 @@ function makePackage(id: string, name: string) {
 }
 
 describe("registry artifact backup jobs", () => {
+  it("can force pending jobs without waiting for nextRunAt", async () => {
+    const now = 1_700_000_000_000;
+    const pendingJobs = [
+      {
+        _id: "registryArtifactBackupJobs:future",
+        status: "pending",
+        attempts: 1,
+        nextRunAt: now + 60 * 60 * 1000,
+      },
+    ];
+    const take = vi.fn((limit: number) => Promise.resolve(pendingJobs.slice(0, limit)));
+    const lte = vi.fn();
+    const withIndex = vi.fn(
+      (
+        _indexName: string,
+        buildIndex: (q: {
+          eq: (field: string, value: unknown) => { lte: (field: string, value: number) => unknown };
+        }) => unknown,
+      ) => {
+        buildIndex({
+          eq: () => ({
+            lte,
+          }),
+        });
+        return { take };
+      },
+    );
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ withIndex })),
+      },
+    };
+
+    const result = await dueJobsHandler(ctx as never, {
+      ignoreNextRunAt: true,
+      limit: 3,
+      now,
+    });
+
+    expect(result).toEqual(pendingJobs);
+    expect(lte).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledWith(3);
+  });
+
   it("can include exhausted jobs that still have repair attempts left", async () => {
     const now = 1_700_000_000_000;
     const pendingJobs = [
@@ -1302,6 +1857,241 @@ describe("registry artifact backup jobs", () => {
     expect(withIndex).toHaveBeenNthCalledWith(2, "by_status_attempts", expect.any(Function));
     expect(pendingTake).toHaveBeenCalledWith(3);
     expect(exhaustedTake).toHaveBeenCalledWith(2);
+  });
+
+  it("acquires a retry lease when no active lease exists", async () => {
+    const now = 1_700_000_000_000;
+    const insert = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
+        })),
+        insert,
+        patch: vi.fn(),
+      },
+    };
+
+    const result = await tryAcquireRegistryArtifactBackupRetryLeaseHandler(ctx as never, {
+      now,
+      token: "lease-token",
+      ttlMs: 60_000,
+    });
+
+    expect(result).toEqual({ acquired: true });
+    expect(insert).toHaveBeenCalledWith("registryArtifactBackupSyncState", {
+      key: "retryLease",
+      cursor: "lease-token",
+      updatedAt: now,
+    });
+  });
+
+  it("refuses a retry lease while a fresh lease exists", async () => {
+    const now = 1_700_000_000_000;
+    const existing = {
+      _id: "registryArtifactBackupSyncState:lease",
+      key: "retryLease",
+      cursor: "other-token",
+      updatedAt: now - 1_000,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(existing) })),
+        })),
+        insert: vi.fn(),
+        patch,
+      },
+    };
+
+    const result = await tryAcquireRegistryArtifactBackupRetryLeaseHandler(ctx as never, {
+      now,
+      token: "lease-token",
+      ttlMs: 60_000,
+    });
+
+    expect(result).toEqual({ acquired: false, holderUpdatedAt: existing.updatedAt });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("acquires a retry lease after the previous lease was released", async () => {
+    const now = 1_700_000_000_000;
+    const existing = {
+      _id: "registryArtifactBackupSyncState:lease",
+      key: "retryLease",
+      cursor: undefined,
+      updatedAt: now - 1_000,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(existing) })),
+        })),
+        insert: vi.fn(),
+        patch,
+      },
+    };
+
+    const result = await tryAcquireRegistryArtifactBackupRetryLeaseHandler(ctx as never, {
+      now,
+      token: "new-token",
+      ttlMs: 60_000,
+    });
+
+    expect(result).toEqual({ acquired: true });
+    expect(patch).toHaveBeenCalledWith("registryArtifactBackupSyncState:lease", {
+      cursor: "new-token",
+      updatedAt: now,
+    });
+  });
+
+  it("reclaims a stale retry lease", async () => {
+    const now = 1_700_000_000_000;
+    const existing = {
+      _id: "registryArtifactBackupSyncState:lease",
+      key: "retryLease",
+      cursor: "old-token",
+      updatedAt: now - 120_000,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(existing) })),
+        })),
+        insert: vi.fn(),
+        patch,
+      },
+    };
+
+    const result = await tryAcquireRegistryArtifactBackupRetryLeaseHandler(ctx as never, {
+      now,
+      token: "lease-token",
+      ttlMs: 60_000,
+    });
+
+    expect(result).toEqual({ acquired: true });
+    expect(patch).toHaveBeenCalledWith("registryArtifactBackupSyncState:lease", {
+      cursor: "lease-token",
+      updatedAt: now,
+    });
+  });
+
+  it("releases only the matching retry lease token", async () => {
+    const now = 1_700_000_000_000;
+    const existing = {
+      _id: "registryArtifactBackupSyncState:lease",
+      key: "retryLease",
+      cursor: "lease-token",
+      updatedAt: now - 1_000,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(existing) })),
+        })),
+        patch,
+      },
+    };
+
+    const result = await releaseRegistryArtifactBackupRetryLeaseHandler(ctx as never, {
+      now,
+      token: "lease-token",
+    });
+
+    expect(result).toEqual({ released: true });
+    expect(patch).toHaveBeenCalledWith("registryArtifactBackupSyncState:lease", {
+      cursor: undefined,
+      updatedAt: now,
+    });
+  });
+
+  it("acquires a registry artifact backup index lease with an index-scoped key", async () => {
+    const now = 1_700_000_000_000;
+    const insert = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(null) })),
+        })),
+        insert,
+        patch: vi.fn(),
+      },
+    };
+
+    const result = await tryAcquireRegistryArtifactBackupIndexLeaseHandler(ctx as never, {
+      indexPath: "skills/alice/demo/_index.json",
+      now,
+      token: "index-token",
+      ttlMs: 60_000,
+    });
+
+    expect(result).toEqual({ acquired: true });
+    expect(insert).toHaveBeenCalledWith("registryArtifactBackupSyncState", {
+      key: "index:skills/alice/demo/_index.json",
+      cursor: "index-token",
+      updatedAt: now,
+    });
+  });
+
+  it("refuses a fresh registry artifact backup index lease", async () => {
+    const now = 1_700_000_000_000;
+    const existing = {
+      _id: "registryArtifactBackupSyncState:index",
+      key: "index:skills/alice/demo/_index.json",
+      cursor: "other-token",
+      updatedAt: now - 1_000,
+    };
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(existing) })),
+        })),
+        insert: vi.fn(),
+        patch,
+      },
+    };
+
+    const result = await tryAcquireRegistryArtifactBackupIndexLeaseHandler(ctx as never, {
+      indexPath: "skills/alice/demo/_index.json",
+      now,
+      token: "index-token",
+      ttlMs: 60_000,
+    });
+
+    expect(result).toEqual({ acquired: false, holderUpdatedAt: existing.updatedAt });
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("releases only the matching registry artifact backup index lease token", async () => {
+    const now = 1_700_000_000_000;
+    const existing = {
+      _id: "registryArtifactBackupSyncState:index",
+      key: "index:skills/alice/demo/_index.json",
+      cursor: "index-token",
+      updatedAt: now - 1_000,
+    };
+    const deleteDoc = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ unique: vi.fn().mockResolvedValue(existing) })),
+        })),
+        delete: deleteDoc,
+      },
+    };
+
+    const result = await releaseRegistryArtifactBackupIndexLeaseHandler(ctx as never, {
+      indexPath: "skills/alice/demo/_index.json",
+      token: "index-token",
+    });
+
+    expect(result).toEqual({ released: true });
+    expect(deleteDoc).toHaveBeenCalledWith("registryArtifactBackupSyncState:index");
   });
 
   it("upserts package release backup failures into a retryable backlog", async () => {

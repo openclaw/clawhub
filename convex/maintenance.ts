@@ -2110,7 +2110,6 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
           ? getFrontmatterValue(version.parsed.frontmatter, "description")?.trim() || undefined
           : undefined,
         clawdis: version.parsed?.clawdis,
-        apiKeyRequired: version.apiKeyRequired,
       };
 
       // Skip if already in sync
@@ -2122,7 +2121,6 @@ export const backfillLatestVersionSummaryInternal = internalMutation({
         existing.changelog === expected.changelog &&
         existing.changelogSource === expected.changelogSource &&
         existing.description === expected.description &&
-        existing.apiKeyRequired === expected.apiKeyRequired &&
         JSON.stringify(existing.clawdis ?? null) === JSON.stringify(expected.clawdis ?? null)
       ) {
         continue;

@@ -705,7 +705,6 @@ describe("maintenance backfill", () => {
             changelog: "Same changelog",
             changelogSource: "user",
             clawdis: undefined,
-            apiKeyRequired: true,
           },
         },
       ],
@@ -719,7 +718,6 @@ describe("maintenance backfill", () => {
       changelog: "Same changelog",
       changelogSource: "auto",
       parsed: { clawdis: { emoji: "lobster" } },
-      apiKeyRequired: true,
     });
     const patch = vi.fn().mockResolvedValue(undefined);
     const runAfter = vi.fn();
@@ -751,7 +749,6 @@ describe("maintenance backfill", () => {
         changelog: "Same changelog",
         changelogSource: "auto",
         clawdis: { emoji: "lobster" },
-        apiKeyRequired: true,
       },
     });
     expect(runAfter).not.toHaveBeenCalled();

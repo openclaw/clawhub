@@ -2456,8 +2456,13 @@ async function resolveTransferContext(
   const auth = await requireApiTokenUserOrResponse(ctx, request, headers);
   if (!auth.ok) return auth;
 
-  const skill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug });
-  if (!skill || skill.softDeletedAt)
+  const liveSkill = await ctx.runQuery(internal.skills.getSkillBySlugInternal, { slug });
+  const skill =
+    liveSkill ??
+    (auth.user.role === "admin"
+      ? await ctx.runQuery(internal.skills.getSkillBySlugIncludingSoftDeletedInternal, { slug })
+      : null);
+  if (!skill || (skill.softDeletedAt && auth.user.role !== "admin"))
     return { ok: false, response: text("Skill not found", 404, headers) };
 
   return { ok: true, userId: auth.userId, skill };
@@ -2486,6 +2491,9 @@ async function handleTransferRequest(
   const toHandleRaw = toOwnerRaw || toUserHandleRaw;
   if (!toHandleRaw) return text("toUserHandle required", 400, headers);
   const message = typeof parsed.payload.message === "string" ? parsed.payload.message : undefined;
+  if (transferContext.skill.softDeletedAt && !message?.trim()) {
+    return text("message required for soft-deleted skill transfer", 400, headers);
+  }
 
   try {
     const publisher = (await ctx.runQuery(internal.publishers.getByHandleInternal, {
@@ -2493,7 +2501,12 @@ async function handleTransferRequest(
     })) as { kind?: "user" | "org"; handle?: string; linkedUserId?: Id<"users"> } | null;
     const isActorPersonalPublisher =
       publisher?.kind === "user" && publisher.linkedUserId === transferContext.userId;
-    if (toOwnerRaw || publisher?.kind === "org" || isActorPersonalPublisher) {
+    if (
+      transferContext.skill.softDeletedAt ||
+      toOwnerRaw ||
+      publisher?.kind === "org" ||
+      isActorPersonalPublisher
+    ) {
       const result = await ctx.runMutation(internal.skills.transferSkillOwnerForUserInternal, {
         actorUserId: transferContext.userId,
         slug: transferContext.skill.slug,

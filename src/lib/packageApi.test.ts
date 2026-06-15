@@ -12,6 +12,7 @@ import {
   fetchPackageDetail,
   fetchPackageReadme,
   fetchPackageVersion,
+  fetchPackageVersions,
   fetchPluginCatalog,
   fetchPackages,
   getPackageDownloadPath,
@@ -409,6 +410,75 @@ describe("fetchPackages", () => {
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "https://registry.example/api/v1/packages/demo-plugin/versions/1.2.3%2Bbuild%2Fmeta",
     );
+  });
+
+  it("fetches scoped package version history with pagination", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const response = {
+      items: [
+        {
+          version: "1.2.3",
+          createdAt: 123,
+          changelog: "Added package history",
+          distTags: ["latest"],
+        },
+      ],
+      nextCursor: "versions:next",
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
+
+    await expect(
+      fetchPackageVersions("@scope/demo-plugin", {
+        cursor: "versions:current",
+        limit: 25,
+      }),
+    ).resolves.toEqual(response);
+
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestUrl !== "string") {
+      throw new Error("Expected fetch to be called with a string URL");
+    }
+    const url = new URL(requestUrl);
+    expect(url.pathname).toBe("/api/v1/packages/%40scope%2Fdemo-plugin/versions");
+    expect(url.searchParams.get("cursor")).toBe("versions:current");
+    expect(url.searchParams.get("limit")).toBe("25");
+  });
+
+  it("omits unprovided package version history params and forwards the signal", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const signal = new AbortController().signal;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPackageVersions("demo-plugin", { signal });
+
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestUrl !== "string") {
+      throw new Error("Expected fetch to be called with a string URL");
+    }
+    const url = new URL(requestUrl);
+    expect(url.searchParams.has("cursor")).toBe(false);
+    expect(url.searchParams.has("limit")).toBe(false);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(signal);
+  });
+
+  it("omits an empty package version history cursor", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPackageVersions("demo-plugin", { cursor: "" });
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.searchParams.has("cursor")).toBe(false);
   });
 
   it("returns null when no supported README variant exists", async () => {

@@ -51,9 +51,6 @@ type SkillSearchEntry = {
   embeddingId?: Id<"skillEmbeddings">;
   skill: NonNullable<ReturnType<typeof toPublicSkill>>;
   version: Doc<"skillVersions"> | null;
-  /** Mirrors `skillVersions.apiKeyRequired` of the latest version (sourced
-   * from `latestVersionSummary` to avoid hydrating the full version doc). */
-  apiKeyRequired?: boolean;
   ownerHandle: string | null;
   owner: PublicPublisher | null;
 };
@@ -414,7 +411,6 @@ export const getExactSkillSlugMatch = internalQuery({
     return {
       skill: publicSkill,
       version: null,
-      apiKeyRequired: skill.latestVersionSummary?.apiKeyRequired,
       ownerHandle: resolved.ownerHandle,
       owner: resolved.owner,
     };
@@ -604,7 +600,6 @@ export const directPrefixSkillMatches = internalQuery({
         return {
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
-          apiKeyRequired: digest.latestVersionSummary?.apiKeyRequired,
           ownerHandle: resolved.ownerHandle,
           owner: resolved.owner,
         };
@@ -658,9 +653,6 @@ export const hydrateResults = internalQuery({
           embeddingId,
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
-          apiKeyRequired:
-            digest?.latestVersionSummary?.apiKeyRequired ??
-            skill.latestVersionSummary?.apiKeyRequired,
           ownerHandle: resolved.ownerHandle,
           owner: resolved.owner,
         };
@@ -776,7 +768,6 @@ export const lexicalFallbackSkills = internalQuery({
         return {
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
-          apiKeyRequired: skill.latestVersionSummary?.apiKeyRequired,
           ownerHandle: resolved.ownerHandle,
           owner: resolved.owner,
         };

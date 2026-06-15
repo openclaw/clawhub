@@ -118,6 +118,7 @@ import {
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import {
   computeIsSuspicious,
+  isSoftDeletedSkillEligibleForAdminTransfer,
   isSkillReviewFlagged,
   isSkillSuspicious,
   isSkillTransferBlockedByModeration,
@@ -504,7 +505,7 @@ async function patchStructuredModerationFromVersion(
 function latestVersionSummaryFromSkillVersion(
   version: Pick<
     Doc<"skillVersions">,
-    "version" | "createdAt" | "changelog" | "changelogSource" | "parsed" | "apiKeyRequired"
+    "version" | "createdAt" | "changelog" | "changelogSource" | "parsed"
   >,
 ): NonNullable<Doc<"skills">["latestVersionSummary"]> {
   return {
@@ -514,7 +515,6 @@ function latestVersionSummaryFromSkillVersion(
     changelogSource: version.changelogSource,
     description: skillSummaryFromSkillVersion(version),
     clawdis: version.parsed?.clawdis,
-    apiKeyRequired: version.apiKeyRequired,
   };
 }
 
@@ -1944,8 +1944,6 @@ type PublicSkillListVersion = Pick<
   "_id" | "_creationTime" | "skillId" | "version" | "createdAt" | "changelog" | "changelogSource"
 > & {
   parsed?: PublicSkillVersionParsed;
-  // Mirrors `skillVersions.apiKeyRequired` of the latest version.
-  apiKeyRequired?: boolean;
 };
 
 type PublicSkillVersionParsed = {
@@ -1983,7 +1981,6 @@ type PublicSkillVersion = {
   vtAnalysis?: Doc<"skillVersions">["vtAnalysis"];
   skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
-  apiKeyRequired?: boolean;
   staticScan?: {
     status: NonNullable<Doc<"skillVersions">["staticScan"]>["status"];
     reasonCodes: NonNullable<Doc<"skillVersions">["staticScan"]>["reasonCodes"];
@@ -2205,7 +2202,6 @@ function toPublicSkillListVersion(
             ...(version.parsed?.clawdis ? { clawdis: version.parsed.clawdis } : {}),
           }
         : undefined,
-    apiKeyRequired: version.apiKeyRequired,
   };
 }
 
@@ -2245,7 +2241,6 @@ function toPublicSkillVersion(
     vtAnalysis: version.vtAnalysis,
     skillSpectorAnalysis: version.skillSpectorAnalysis,
     llmAnalysis: version.llmAnalysis,
-    apiKeyRequired: version.apiKeyRequired,
     staticScan: version.staticScan
       ? {
           status: version.staticScan.status,
@@ -2317,7 +2312,6 @@ function toPublicSkillListVersionFromSummary(
             ...(summary.clawdis ? { clawdis: summary.clawdis } : {}),
           }
         : undefined,
-    apiKeyRequired: summary.apiKeyRequired,
   };
 }
 
@@ -8324,32 +8318,6 @@ export const updateVersionLlmAnalysisInternal = internalMutation({
   },
 });
 
-export const updateVersionApiKeyRequiredInternal = internalMutation({
-  args: {
-    versionId: v.id("skillVersions"),
-    apiKeyRequired: v.boolean(),
-  },
-  handler: async (ctx, args) => {
-    const version = await ctx.db.get(args.versionId);
-    if (!version) return;
-    await ctx.db.patch(args.versionId, { apiKeyRequired: args.apiKeyRequired });
-
-    // Mirror onto `skills.latestVersionSummary` when this is the current
-    // latest, so list/detail surfaces can render the badge without reading
-    // the full version doc.
-    const skill = await ctx.db.get(version.skillId);
-    if (!skill || skill.latestVersionId !== version._id) return;
-    if (!skill.latestVersionSummary) return;
-    if (skill.latestVersionSummary.apiKeyRequired === args.apiKeyRequired) return;
-    await ctx.db.patch(skill._id, {
-      latestVersionSummary: {
-        ...skill.latestVersionSummary,
-        apiKeyRequired: args.apiKeyRequired,
-      },
-    });
-  },
-});
-
 export const approveSkillByHashInternal = internalMutation({
   args: {
     sha256hash: v.string(),
@@ -9037,7 +9005,6 @@ export const updateTags = mutation({
         changelogSource: version.changelogSource,
         description: skillSummaryFromSkillVersion(version),
         clawdis: version.parsed?.clawdis,
-        apiKeyRequired: version.apiKeyRequired,
       };
       patch.capabilityTags = version.capabilityTags;
     }
@@ -9906,6 +9873,7 @@ async function transferSkillOwnershipAndEmbeddings(
     ownerUserId: Id<"users">;
     ownerPublisherId?: Id<"publishers"> | null;
     now: number;
+    allowSoftDeleted?: boolean;
   },
 ) {
   const patch: Partial<Doc<"skills">> = {
@@ -9921,7 +9889,10 @@ async function transferSkillOwnershipAndEmbeddings(
   const publisherChanged =
     "ownerPublisherId" in params && params.skill.ownerPublisherId !== params.ownerPublisherId;
   if (!ownerChanged && !publisherChanged) return;
-  if (isSkillTransferBlockedByModeration(params.skill)) {
+  if (
+    isSkillTransferBlockedByModeration(params.skill) &&
+    !(params.allowSoftDeleted && isSoftDeletedSkillEligibleForAdminTransfer(params.skill))
+  ) {
     throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
   }
 
@@ -9973,6 +9944,8 @@ async function canManagePublisherDestination(
   actor: Doc<"users">,
   publisher: Doc<"publishers">,
 ) {
+  // Platform-admin transfers are audited staff recovery/moderation operations,
+  // so they may select any verified active destination without publisher membership.
   if (actor.role === "admin") return true;
   if (publisher.kind === "user") {
     return publisher.linkedUserId
@@ -10000,7 +9973,9 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       .query("skills")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
       .unique();
-    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+    if (!skill || (skill.softDeletedAt && actor.role !== "admin")) {
+      throw new ConvexError("Skill not found");
+    }
 
     await assertCanManageOwnedResource(ctx, {
       actor,
@@ -10009,8 +9984,15 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       allowedPublisherRoles: ["admin"],
       allowPlatformAdmin: true,
     });
-    if (isSkillTransferBlockedByModeration(skill)) {
+    const allowSoftDeletedTransfer =
+      actor.role === "admin" &&
+      isSoftDeletedSkillEligibleForAdminTransfer(skill) &&
+      (await isOwnerInitiatedSkillHideForAdminTransfer(ctx, skill));
+    if (isSkillTransferBlockedByModeration(skill) && !allowSoftDeletedTransfer) {
       throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
+    }
+    if (allowSoftDeletedTransfer && !args.reason?.trim()) {
+      throw new ConvexError("Reason required for soft-deleted skill ownership transfer");
     }
 
     const destinationHandle = normalizePublisherHandle(args.toOwner);
@@ -10039,6 +10021,7 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       ownerUserId: nextOwner._id,
       ownerPublisherId: destinationPublisher._id,
       now,
+      allowSoftDeleted: allowSoftDeletedTransfer,
     });
     await syncSkillSearchDigestForSkillDoc(ctx, {
       ...skill,
@@ -11230,9 +11213,6 @@ export const insertVersion = internalMutation({
             changelogSource: args.changelogSource,
             description: getFrontmatterValue(args.parsed.frontmatter, "description")?.trim(),
             clawdis: args.parsed.clawdis,
-            // Filled later by the async analyser via
-            // `updateVersionApiKeyRequiredInternal`.
-            apiKeyRequired: undefined,
           }
         : skill.latestVersionSummary,
       tags: nextTags,
@@ -11332,6 +11312,70 @@ async function isOwnerInitiatedSkillHideForActor(
   const hiddenBy = await ctx.db.get(skill.hiddenBy);
   if (!hiddenBy || hiddenBy.deletedAt || hiddenBy.deactivatedAt) return false;
   if (hiddenBy.role === "admin" || hiddenBy.role === "moderator") return false;
+
+  try {
+    await assertCanManageOwnedResource(ctx, {
+      actor: hiddenBy,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowedPublisherRoles: ["admin"],
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof ConvexError || error instanceof Error) return false;
+    throw error;
+  }
+}
+
+async function isOwnerInitiatedSkillHideForAdminTransfer(
+  ctx: MutationCtx,
+  skill: Pick<
+    Doc<"skills">,
+    "_id" | "ownerUserId" | "ownerPublisherId" | "hiddenBy" | "softDeletedAt" | "forkOf"
+  >,
+) {
+  if (!skill.hiddenBy || skill.softDeletedAt === undefined) return false;
+  const softDeletedAt = skill.softDeletedAt;
+  const hiddenBy = await ctx.db.get(skill.hiddenBy);
+  if (!hiddenBy || hiddenBy.deletedAt || hiddenBy.deactivatedAt) return false;
+
+  const hideAuditLogs = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target_createdAt", (q) =>
+      q.eq("targetType", "skill").eq("targetId", skill._id).eq("createdAt", softDeletedAt),
+    )
+    .take(10);
+  const hasOrdinaryOwnerDeleteAudit = hideAuditLogs.some((log) => {
+    const metadata =
+      typeof log.metadata === "object" && log.metadata !== null
+        ? (log.metadata as Record<string, unknown>)
+        : null;
+    return (
+      log.action === "skill.delete" &&
+      log.actorUserId === skill.hiddenBy &&
+      metadata?.actorRole === "user" &&
+      metadata.softDeletedAt === softDeletedAt
+    );
+  });
+  if (!hasOrdinaryOwnerDeleteAudit) return false;
+
+  const duplicate = skill.forkOf?.kind === "duplicate" ? skill.forkOf : null;
+  if (duplicate) {
+    const relationshipAuditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_target_createdAt", (q) =>
+        q.eq("targetType", "skill").eq("targetId", skill._id).eq("createdAt", duplicate.at),
+      )
+      .take(10);
+    const hasMergeProvenance = relationshipAuditLogs.some((log) => {
+      const metadata =
+        typeof log.metadata === "object" && log.metadata !== null
+          ? (log.metadata as Record<string, unknown>)
+          : null;
+      return log.action === "skill.merge" && metadata?.targetSkillId === duplicate.skillId;
+    });
+    if (hasMergeProvenance) return false;
+  }
 
   try {
     await assertCanManageOwnedResource(ctx, {
@@ -11694,7 +11738,6 @@ async function findCanonicalSkillForFingerprint(
 
   return null;
 }
-
 export const listByDateRange = internalQuery({
   args: {
     startDate: v.number(),
@@ -11761,69 +11804,6 @@ function isExportableSkillDigest(
 ) {
   return Boolean(skill.latestVersionId) && isPublicSkillDoc(skill);
 }
-
-/**
- * Maintenance mutation: mirror `skillVersions.apiKeyRequired` into
- * `skills.latestVersionSummary.apiKeyRequired` for every skill that's
- * out of sync. Idempotent — safe to re-run. Rebuilds a missing summary
- * from the latest version doc when needed.
- *
- * CLI: `bunx convex run skills:backfillLatestVersionSummaryApiKeyRequiredInternal`
- */
-export const backfillLatestVersionSummaryApiKeyRequiredInternal = internalMutation({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const limit = Math.max(1, Math.min(args.limit ?? 500, 2000));
-    const skills = await ctx.db.query("skills").take(limit);
-    let scanned = 0;
-    let updated = 0;
-    let rebuiltSummary = 0;
-    let skippedNoLatest = 0;
-    let skippedAlreadyMatches = 0;
-    for (const skill of skills) {
-      scanned += 1;
-      if (!skill.latestVersionId) {
-        skippedNoLatest += 1;
-        continue;
-      }
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version) {
-        skippedNoLatest += 1;
-        continue;
-      }
-      if (!skill.latestVersionSummary) {
-        // Rebuild missing summary from the latest version doc.
-        await ctx.db.patch(skill._id, {
-          latestVersionSummary: {
-            version: version.version,
-            createdAt: version.createdAt,
-            changelog: version.changelog,
-            changelogSource: version.changelogSource,
-            description: skillSummaryFromSkillVersion(version),
-            clawdis: version.parsed?.clawdis,
-            apiKeyRequired: version.apiKeyRequired,
-          },
-        });
-        rebuiltSummary += 1;
-        continue;
-      }
-      if (skill.latestVersionSummary.apiKeyRequired === version.apiKeyRequired) {
-        skippedAlreadyMatches += 1;
-        continue;
-      }
-      await ctx.db.patch(skill._id, {
-        latestVersionSummary: {
-          ...skill.latestVersionSummary,
-          apiKeyRequired: version.apiKeyRequired,
-        },
-      });
-      updated += 1;
-    }
-    return { scanned, updated, rebuiltSummary, skippedNoLatest, skippedAlreadyMatches };
-  },
-});
 
 export const __test = {
   normalizePublicListSort,

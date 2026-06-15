@@ -32,3 +32,21 @@ arbitrary tie breaker.
 derive the actor server-side from Convex Auth (`getAuthUserId` via
 `requireUser`/`getOptionalActiveAuthUserId`). They must not accept client-supplied
 user ids, usernames, handles, or emails for authorization.
+
+Staff recovery for a personal publisher whose GitHub principal is no longer
+accessible must not rewrite or merge Convex Auth `authAccounts` rows. The only
+supported permanent recovery path is an admin-only personal publisher recovery
+operation that requires both immutable GitHub `providerAccountId` values, verifies
+that each maps unambiguously to exactly one ClawHub user, confirms staff identity
+continuity verification, moves the previous user's handle/personal-publisher
+pointer out of the way, links the publisher to the verified replacement user,
+updates every bounded legacy `ownerUserId` row that remains authoritative for the
+recovered publisher's direct-owner workflows, and writes an audit log. Recovery
+must also transfer any active protected-handle reservation for the recovered
+handle to the replacement user so subsequent profile synchronization cannot
+reassert the former user's authority over that handle. Recovery
+must fail closed if the replacement user's current personal publisher has content
+or GitHub source state that would be orphaned by the handoff. It must also fail
+closed if recovered publisher resources are already attributed to a third user,
+or if the affected primary resource rows exceed the bounded single-transaction
+limit; those cases require an explicit resumable migration before recovery.

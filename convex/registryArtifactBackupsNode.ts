@@ -9,7 +9,9 @@ import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   backupPackageReleaseToObjectStorage,
   backupSkillVersionToObjectStorage,
+  fetchPackageBackupIndex,
   fetchPackageReleaseBackupMeta,
+  fetchSkillBackupIndex,
   fetchSkillVersionBackupMeta,
   getRegistryArtifactBackupContext,
   isRegistryArtifactBackupConfigured,
@@ -22,13 +24,17 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 5;
 const MAX_MAX_BATCHES = 200;
-const DEFAULT_JOB_BATCH_SIZE = 200;
+const DEFAULT_JOB_BATCH_SIZE = 500;
 const MAX_RETRY_REPAIR_ATTEMPTS = 16;
-const MAX_PARALLEL_RETRY_ROOTS = 25;
+const MAX_PARALLEL_RETRY_ROOTS = 50;
 const UNKNOWN_PACKAGE_ARTIFACT_BYTES = 120 * 1024 * 1024;
 const UNKNOWN_SKILL_ARTIFACT_BYTES = 50 * 1024 * 1024;
 const MAX_PARALLEL_RETRY_ARTIFACT_BYTES = UNKNOWN_PACKAGE_ARTIFACT_BYTES;
 const STALE_BACKUP_JOB_MS = 24 * 60 * 60 * 1000;
+const RETRY_LEASE_TTL_MS = 20 * 60 * 1000;
+const INDEX_LEASE_TTL_MS = 5 * 60 * 1000;
+const INDEX_LEASE_RETRY_DELAY_MS = 250;
+const INDEX_LEASE_MAX_WAIT_MS = 30_000;
 
 type BackupPageItem =
   | {
@@ -119,6 +125,11 @@ export type ProcessRegistryArtifactBackupRetriesInternalResult = {
   stats: RegistryArtifactBackupSyncStats;
 };
 
+export type ProcessRegistryArtifactBackupRetriesInternalArgs = {
+  dryRun?: boolean;
+  forceDue?: boolean;
+};
+
 export const backupSkillForPublishInternal = internalAction({
   args: {
     skillId: v.optional(v.id("skills")),
@@ -148,7 +159,7 @@ export const backupSkillForPublishInternal = internalAction({
       if (args.versionId && !item) {
         return { skipped: true as const };
       }
-      await backupSkillVersionToObjectStorage(ctx, item ?? args);
+      await backupSkillVersionWithIndexLease(ctx, item ?? args);
       return { skipped: false as const };
     } catch (error) {
       if (args.versionId) {
@@ -208,7 +219,7 @@ export const backupPackageForPublishInternal = internalAction({
       if (!item) {
         return { skipped: true as const };
       }
-      await backupPackageReleaseToObjectStorage(ctx, item);
+      await backupPackageReleaseWithIndexLease(ctx, item);
       return { skipped: false as const };
     } catch (error) {
       await ctx.runMutation(
@@ -303,7 +314,7 @@ export async function seedRegistryArtifactBackupsInternalHandler(
         }
 
         if (!dryRun) {
-          await backupSkillVersionToObjectStorage(
+          await backupSkillVersionWithIndexLease(
             ctx,
             {
               skillId: item.skillId,
@@ -426,7 +437,7 @@ async function syncPackageReleaseBackups(
           continue;
         }
         if (!dryRun) {
-          await backupPackageReleaseToObjectStorage(ctx, item, context);
+          await backupPackageReleaseWithIndexLease(ctx, item, context);
           stats.packagesBackedUp += 1;
         }
       } catch (error) {
@@ -464,12 +475,14 @@ async function processDueRegistryArtifactBackupJobs(
   context: RegistryArtifactBackupContext,
   dryRun: boolean,
   stats: RegistryArtifactBackupSyncStats,
+  options: { forceDue?: boolean } = {},
 ) {
   if (dryRun) return;
   const jobs = (await ctx.runQuery(
     internal.registryArtifactBackups.getDueRegistryArtifactBackupJobsInternal,
     {
       includeExhaustedRepair: true,
+      ignoreNextRunAt: options.forceDue,
       limit: DEFAULT_JOB_BATCH_SIZE,
       maxRepairAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
     },
@@ -599,7 +612,7 @@ async function processRetryJobGroup(
         if (await hasMatchingPackageReleaseMeta(context, workItem.item)) {
           packageIndexRepairs.push(workItem);
         } else {
-          await backupPackageReleaseToObjectStorage(ctx, workItem.item, context);
+          await backupPackageReleaseWithIndexLease(ctx, workItem.item, context);
           await markRetryJobSucceeded(ctx, workItem.job);
           result.succeeded += 1;
         }
@@ -607,7 +620,7 @@ async function processRetryJobGroup(
         if (await hasMatchingSkillVersionMeta(context, workItem.item)) {
           skillIndexRepairs.push(workItem);
         } else {
-          await backupSkillVersionToObjectStorage(ctx, workItem.item, context);
+          await backupSkillVersionWithIndexLease(ctx, workItem.item, context);
           await markRetryJobSucceeded(ctx, workItem.job);
           result.succeeded += 1;
         }
@@ -636,19 +649,39 @@ async function flushPackageIndexRepairs(
   result: { succeeded: number; failed: number },
 ) {
   if (workItems.length === 0) return;
+  let splitItems: {
+    indexed: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>;
+    missing: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>;
+  };
   try {
-    await repairPackageReleaseBackupIndexes(
-      ctx,
-      workItems.map((workItem) => workItem.item),
-      context,
-    );
-    for (const workItem of workItems) {
-      await markRetryJobSucceeded(ctx, workItem.job);
-    }
-    result.succeeded += workItems.length;
+    splitItems = await splitPackageIndexRepairItems(context, workItems);
   } catch (error) {
     result.failed += workItems.length;
     await markRetryJobsFailed(ctx, workItems, error);
+    return;
+  }
+
+  const { indexed, missing } = splitItems;
+  await markIndexedRetryJobsSucceeded(ctx, indexed, result);
+  if (missing.length === 0) return;
+
+  try {
+    await repairPackageReleaseBackupIndexes(
+      ctx,
+      missing.map((workItem) => workItem.item),
+      context,
+      {
+        withIndexWrite: (indexPath, write) =>
+          withRegistryArtifactBackupIndexLease(ctx, indexPath, write),
+      },
+    );
+    for (const workItem of missing) {
+      await markRetryJobSucceeded(ctx, workItem.job);
+    }
+    result.succeeded += missing.length;
+  } catch (error) {
+    result.failed += missing.length;
+    await markRetryJobsFailed(ctx, missing, error);
   }
 }
 
@@ -659,19 +692,125 @@ async function flushSkillIndexRepairs(
   result: { succeeded: number; failed: number },
 ) {
   if (workItems.length === 0) return;
+  let splitItems: {
+    indexed: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>;
+    missing: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>;
+  };
   try {
-    await repairSkillVersionBackupIndexes(
-      ctx,
-      workItems.map((workItem) => workItem.item),
-      context,
-    );
-    for (const workItem of workItems) {
-      await markRetryJobSucceeded(ctx, workItem.job);
-    }
-    result.succeeded += workItems.length;
+    splitItems = await splitSkillIndexRepairItems(context, workItems);
   } catch (error) {
     result.failed += workItems.length;
     await markRetryJobsFailed(ctx, workItems, error);
+    return;
+  }
+
+  const { indexed, missing } = splitItems;
+  await markIndexedRetryJobsSucceeded(ctx, indexed, result);
+  if (missing.length === 0) return;
+
+  try {
+    await repairSkillVersionBackupIndexes(
+      ctx,
+      missing.map((workItem) => workItem.item),
+      context,
+      {
+        withIndexWrite: (indexPath, write) =>
+          withRegistryArtifactBackupIndexLease(ctx, indexPath, write),
+      },
+    );
+    for (const workItem of missing) {
+      await markRetryJobSucceeded(ctx, workItem.job);
+    }
+    result.succeeded += missing.length;
+  } catch (error) {
+    result.failed += missing.length;
+    await markRetryJobsFailed(ctx, missing, error);
+  }
+}
+
+async function splitPackageIndexRepairItems(
+  context: RegistryArtifactBackupContext,
+  workItems: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>,
+) {
+  const first = workItems[0];
+  const index = first
+    ? await fetchPackageBackupIndex(context, first.item.ownerHandle, first.item.normalizedName)
+    : null;
+  const indexed: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
+  const missing: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
+  for (const workItem of workItems) {
+    const present = packageIndexEntryMatchesRetry(index, workItem.item);
+    (present ? indexed : missing).push(workItem);
+  }
+  return { indexed, missing };
+}
+
+async function splitSkillIndexRepairItems(
+  context: RegistryArtifactBackupContext,
+  workItems: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>,
+) {
+  const first = workItems[0];
+  const index = first
+    ? await fetchSkillBackupIndex(context, first.item.ownerHandle, first.item.slug)
+    : null;
+  const indexed: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
+  const missing: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
+  for (const workItem of workItems) {
+    const present = skillIndexEntryMatchesRetry(index, workItem.item);
+    (present ? indexed : missing).push(workItem);
+  }
+  return { indexed, missing };
+}
+
+function packageIndexEntryMatchesRetry(
+  index: Awaited<ReturnType<typeof fetchPackageBackupIndex>>,
+  item: Extract<RetryJobWorkItem, { kind: "packageRelease" }>["item"],
+) {
+  const entry = index?.versions.find(
+    (candidate) => candidate.releaseId === item.releaseId && candidate.version === item.version,
+  );
+  if (!entry) return false;
+  if (typeof item.isLatest !== "boolean") return true;
+  if (entry.isLatest !== item.isLatest) return false;
+  const latestMatches = Boolean(
+    index && index.latest.releaseId === item.releaseId && index.latest.version === item.version,
+  );
+  return item.isLatest ? latestMatches : !latestMatches;
+}
+
+function skillIndexEntryMatchesRetry(
+  index: Awaited<ReturnType<typeof fetchSkillBackupIndex>>,
+  item: Extract<RetryJobWorkItem, { kind: "skillVersion" }>["item"],
+) {
+  const entry = index?.versions.find(
+    (candidate) => candidate.versionId === item.versionId && candidate.version === item.version,
+  );
+  if (!entry) return false;
+  if (typeof item.isLatest !== "boolean") return true;
+  if (entry.isLatest !== item.isLatest) return false;
+  const latestMatches = Boolean(
+    index && index.latest.versionId === item.versionId && index.latest.version === item.version,
+  );
+  return item.isLatest ? latestMatches : !latestMatches;
+}
+
+async function markIndexedRetryJobsSucceeded(
+  ctx: ActionCtx,
+  workItems: ArtifactRetryJobWorkItem[],
+  result: { succeeded: number; failed: number },
+) {
+  for (const workItem of workItems) {
+    try {
+      await markRetryJobSucceeded(ctx, workItem.job);
+      result.succeeded += 1;
+    } catch (error) {
+      result.failed += 1;
+      try {
+        await markRetryJobsFailed(ctx, [workItem], error);
+      } catch (markFailedError) {
+        console.error("Registry artifact backup retry status update failed", markFailedError);
+      }
+    }
   }
 }
 
@@ -764,6 +903,68 @@ function chunkRetryJobGroups(groups: RetryJobGroup[]) {
     chunks.push(current);
   }
   return chunks;
+}
+
+async function backupSkillVersionWithIndexLease(
+  ctx: ActionCtx,
+  item: Parameters<typeof backupSkillVersionToObjectStorage>[1],
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  await backupSkillVersionToObjectStorage(ctx, item, context, {
+    withIndexWrite: (indexPath, write) =>
+      withRegistryArtifactBackupIndexLease(ctx, indexPath, write),
+  });
+}
+
+async function backupPackageReleaseWithIndexLease(
+  ctx: ActionCtx,
+  item: Parameters<typeof backupPackageReleaseToObjectStorage>[1],
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  await backupPackageReleaseToObjectStorage(ctx, item, context, {
+    withIndexWrite: (indexPath, write) =>
+      withRegistryArtifactBackupIndexLease(ctx, indexPath, write),
+  });
+}
+
+async function withRegistryArtifactBackupIndexLease<T>(
+  ctx: ActionCtx,
+  indexPath: string,
+  run: () => Promise<T>,
+) {
+  const token = `index-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const deadline = Date.now() + INDEX_LEASE_MAX_WAIT_MS;
+  while (true) {
+    const lease = (await ctx.runMutation(
+      internal.registryArtifactBackups.tryAcquireRegistryArtifactBackupIndexLeaseInternal,
+      {
+        indexPath,
+        token,
+        ttlMs: INDEX_LEASE_TTL_MS,
+      },
+    )) as { acquired: boolean };
+    if (lease.acquired) break;
+    if (Date.now() >= deadline) {
+      throw new Error(`Registry artifact backup index ${indexPath} is busy`);
+    }
+    await sleep(INDEX_LEASE_RETRY_DELAY_MS);
+  }
+
+  try {
+    return await run();
+  } finally {
+    await ctx.runMutation(
+      internal.registryArtifactBackups.releaseRegistryArtifactBackupIndexLeaseInternal,
+      {
+        indexPath,
+        token,
+      },
+    );
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function getPackageBackupItemForRelease(
@@ -872,7 +1073,7 @@ async function alertOnUnhealthyBackupBacklog(
 
 export async function processRegistryArtifactBackupRetriesInternalHandler(
   ctx: ActionCtx,
-  args: { dryRun?: boolean },
+  args: ProcessRegistryArtifactBackupRetriesInternalArgs,
 ): Promise<ProcessRegistryArtifactBackupRetriesInternalResult> {
   const stats = initialRegistryArtifactBackupSyncStats();
 
@@ -881,8 +1082,35 @@ export async function processRegistryArtifactBackupRetriesInternalHandler(
   }
 
   const context = getRegistryArtifactBackupContext();
-  await processDueRegistryArtifactBackupJobs(ctx, context, Boolean(args.dryRun), stats);
-  await alertOnUnhealthyBackupBacklog(ctx, stats);
+  if (args.dryRun) {
+    await processDueRegistryArtifactBackupJobs(ctx, context, true, stats);
+    await alertOnUnhealthyBackupBacklog(ctx, stats);
+    return { stats };
+  }
+
+  const token = `retry-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const lease = (await ctx.runMutation(
+    internal.registryArtifactBackups.tryAcquireRegistryArtifactBackupRetryLeaseInternal,
+    {
+      token,
+      ttlMs: RETRY_LEASE_TTL_MS,
+    },
+  )) as { acquired: boolean };
+  if (!lease.acquired) return { stats };
+
+  try {
+    await processDueRegistryArtifactBackupJobs(ctx, context, false, stats, {
+      forceDue: args.forceDue,
+    });
+    await alertOnUnhealthyBackupBacklog(ctx, stats);
+  } finally {
+    await ctx.runMutation(
+      internal.registryArtifactBackups.releaseRegistryArtifactBackupRetryLeaseInternal,
+      {
+        token,
+      },
+    );
+  }
   return { stats };
 }
 
@@ -898,6 +1126,7 @@ export const seedRegistryArtifactBackupsInternal = internalAction({
 export const processRegistryArtifactBackupRetriesInternal = internalAction({
   args: {
     dryRun: v.optional(v.boolean()),
+    forceDue: v.optional(v.boolean()),
   },
   handler: processRegistryArtifactBackupRetriesInternalHandler,
 });

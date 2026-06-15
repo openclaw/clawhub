@@ -1375,6 +1375,113 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("users/publisher-recovery plans personal publisher recovery for admin", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        dryRun: true,
+        recovered: false,
+        publisherId: "publishers:gingiris",
+        handle: "gingiris",
+        previousUser: {
+          userId: "users:legacy",
+          handle: "gingiris",
+          nextHandle: "gingiris-recovered",
+          githubProviderAccountId: "111",
+          authAccountCount: 1,
+        },
+        nextUser: {
+          userId: "users:current",
+          handle: "gingiris-1031",
+          nextHandle: "gingiris",
+          githubProviderAccountId: "222",
+          authAccountCount: 1,
+        },
+        retiredPersonalPublisher: null,
+        resourceOwnerMigration: {
+          limitPerTable: 100,
+          skills: 1,
+          skillSlugAliases: 1,
+          packages: 0,
+          packageInspectorWarnings: 0,
+          githubSourcesChecked: 1,
+          handleReservations: 1,
+        },
+        identityVerified: false,
+        reason: "Verified account continuity for issue #2555",
+      };
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-recovery", {
+        method: "POST",
+        body: JSON.stringify({
+          handle: "@Gingiris",
+          nextUserHandle: "@Gingiris-1031",
+          previousGitHubProviderAccountId: "111",
+          nextGitHubProviderAccountId: "222",
+          reason: "Verified account continuity for issue #2555",
+        }),
+      }),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      dryRun: true,
+      handle: "gingiris",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        nextUserHandle: "gingiris-1031",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        confirmIdentityVerified: false,
+        dryRun: true,
+      }),
+    );
+  });
+
+  it("users/publisher-recovery requires destination handle guard", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("unexpected mutation");
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-recovery", {
+        method: "POST",
+        body: JSON.stringify({
+          handle: "@Gingiris",
+          previousGitHubProviderAccountId: "111",
+          nextGitHubProviderAccountId: "222",
+          reason: "Verified account continuity for issue #2555",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Missing nextUserHandle");
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ publisherHandle: "gingiris" }),
+    );
+  });
+
   it("users/publisher-official lists official publishers for admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
@@ -6654,6 +6761,118 @@ describe("httpApiV1 handlers", () => {
         toUserHandle: "@Alice",
       }),
     );
+  });
+
+  it("allows platform admins to transfer soft-deleted skills", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", handle: "admin", role: "admin" },
+    } as never);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: "skills:deleted", slug: "deleted-demo", softDeletedAt: 123 })
+      .mockResolvedValueOnce({ _id: "publishers:team", kind: "org", handle: "team" });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        transferred: true,
+        skillSlug: "deleted-demo",
+        toPublisherHandle: "team",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/deleted-demo/transfer", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({ toUserHandle: "@team", message: "Publisher recovery" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        slug: "deleted-demo",
+        toOwner: "@team",
+        reason: "Publisher recovery",
+      }),
+    );
+  });
+
+  it("prefers a live merged-alias target before admin soft-delete recovery lookup", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", handle: "admin", role: "admin" },
+    } as never);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "skills:canonical", slug: "canonical-demo" })
+      .mockResolvedValueOnce({ _id: "publishers:team", kind: "org", handle: "team" });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        transferred: true,
+        skillSlug: "canonical-demo",
+        toPublisherHandle: "team",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/merged-demo/transfer", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({ toOwner: "@team" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        slug: "canonical-demo",
+        toOwner: "@team",
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("requires an audit reason for soft-deleted skill transfers", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", handle: "admin", role: "admin" },
+    } as never);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: "skills:deleted", slug: "deleted-demo", softDeletedAt: 123 });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+    const ctx = makeCtx({ runQuery, runMutation });
+
+    const missingReason = await __handlers.skillsPostRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/deleted-demo/transfer", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({ toOwner: "@team" }),
+      }),
+    );
+
+    expect(missingReason.status).toBe(400);
+    expect(await missingReason.text()).toBe("message required for soft-deleted skill transfer");
   });
 
   it("skill transfer maps ownership denials to 403", async () => {

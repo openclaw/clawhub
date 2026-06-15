@@ -369,18 +369,6 @@ export async function publishVersionForUser(
     source: "publish",
   });
 
-  // Schedule the async "API key required?" analyser; non-fatal on failure
-  // (UI treats `apiKeyRequired === undefined` as "no badge"). Scheduler-table
-  // contention or transient Convex errors should not break a user-visible
-  // publish for a best-effort badge job.
-  void ctx.scheduler
-    .runAfter(0, internal.llmEval.evaluateApiKeyRequirement, {
-      versionId: publishResult.versionId,
-    })
-    .catch((error) => {
-      console.error("evaluateApiKeyRequirement scheduling failed", error);
-    });
-
   const targetPublisher =
     options.ownerPublisherId !== undefined
       ? ((await ctx.runQuery(internal.publishers.getByIdInternal, {

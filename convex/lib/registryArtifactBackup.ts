@@ -64,6 +64,10 @@ type PackageBackupParams = {
   files: Array<{ path: string; size: number; sha256: string }>;
 };
 
+type IndexWriteOptions = {
+  withIndexWrite?: <T>(indexPath: string, write: () => Promise<T>) => Promise<T>;
+};
+
 type VersionIndexEntry = {
   version: string;
   isLatest?: boolean;
@@ -151,6 +155,7 @@ export async function backupSkillVersionToObjectStorage(
   ctx: Pick<ActionCtx, "storage">,
   params: SkillBackupParams & { root?: string },
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+  options: IndexWriteOptions = {},
 ) {
   const planned = buildSkillVersionBackupManifest({
     root: params.root ?? context.skillsRoot,
@@ -165,8 +170,11 @@ export async function backupSkillVersionToObjectStorage(
   }
 
   await putJsonObject(context, planned.metaPath, planned.meta);
-  await putMergedJsonIndex(context, planned.indexPath, (existingIndex: SkillIndexFile | null) =>
-    buildSkillIndexFile(planned, existingIndex),
+  await writeMergedJsonIndex(
+    context,
+    planned.indexPath,
+    (existingIndex: SkillIndexFile | null) => buildSkillIndexFile(planned, existingIndex),
+    options,
   );
 }
 
@@ -174,6 +182,7 @@ export async function backupPackageReleaseToObjectStorage(
   ctx: Pick<ActionCtx, "storage">,
   params: PackageBackupParams & { artifactStorageId: Id<"_storage">; root?: string },
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+  options: IndexWriteOptions = {},
 ) {
   const planned = buildPackageReleaseBackupManifest({
     root: params.root ?? context.packagesRoot,
@@ -185,8 +194,11 @@ export async function backupPackageReleaseToObjectStorage(
   });
 
   await putJsonObject(context, planned.metaPath, planned.meta);
-  await putMergedJsonIndex(context, planned.indexPath, (existingIndex: PackageIndexFile | null) =>
-    buildPackageIndexFile(planned, existingIndex),
+  await writeMergedJsonIndex(
+    context,
+    planned.indexPath,
+    (existingIndex: PackageIndexFile | null) => buildPackageIndexFile(planned, existingIndex),
+    options,
   );
 }
 
@@ -194,14 +206,16 @@ export async function repairSkillVersionBackupIndex(
   _ctx: Pick<ActionCtx, "storage">,
   params: SkillBackupParams & { root?: string },
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+  options: IndexWriteOptions = {},
 ) {
-  await repairSkillVersionBackupIndexes(_ctx, [params], context);
+  await repairSkillVersionBackupIndexes(_ctx, [params], context, options);
 }
 
 export async function repairSkillVersionBackupIndexes(
   _ctx: Pick<ActionCtx, "storage">,
   params: Array<SkillBackupParams & { root?: string }>,
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+  options: IndexWriteOptions = {},
 ) {
   if (params.length === 0) return;
   const planned = params.map((item) =>
@@ -213,11 +227,15 @@ export async function repairSkillVersionBackupIndexes(
   const [first, ...rest] = planned;
   if (!first) return;
   const indexPath = sharedIndexPath(planned.map((item) => item.indexPath));
-  await putMergedJsonIndex(context, indexPath, (existingIndex: SkillIndexFile | null) =>
-    rest.reduce(
-      (nextIndex, plannedItem) => buildSkillIndexFile(plannedItem, nextIndex),
-      buildSkillIndexFile(first, existingIndex),
-    ),
+  await writeMergedJsonIndex(
+    context,
+    indexPath,
+    (existingIndex: SkillIndexFile | null) =>
+      rest.reduce(
+        (nextIndex, plannedItem) => buildSkillIndexFile(plannedItem, nextIndex),
+        buildSkillIndexFile(first, existingIndex),
+      ),
+    options,
   );
 }
 
@@ -225,14 +243,16 @@ export async function repairPackageReleaseBackupIndex(
   _ctx: Pick<ActionCtx, "storage">,
   params: PackageBackupParams & { root?: string },
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+  options: IndexWriteOptions = {},
 ) {
-  await repairPackageReleaseBackupIndexes(_ctx, [params], context);
+  await repairPackageReleaseBackupIndexes(_ctx, [params], context, options);
 }
 
 export async function repairPackageReleaseBackupIndexes(
   _ctx: Pick<ActionCtx, "storage">,
   params: Array<PackageBackupParams & { root?: string }>,
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+  options: IndexWriteOptions = {},
 ) {
   if (params.length === 0) return;
   const planned = params.map((item) =>
@@ -244,11 +264,15 @@ export async function repairPackageReleaseBackupIndexes(
   const [first, ...rest] = planned;
   if (!first) return;
   const indexPath = sharedIndexPath(planned.map((item) => item.indexPath));
-  await putMergedJsonIndex(context, indexPath, (existingIndex: PackageIndexFile | null) =>
-    rest.reduce(
-      (nextIndex, plannedItem) => buildPackageIndexFile(plannedItem, nextIndex),
-      buildPackageIndexFile(first, existingIndex),
-    ),
+  await writeMergedJsonIndex(
+    context,
+    indexPath,
+    (existingIndex: PackageIndexFile | null) =>
+      rest.reduce(
+        (nextIndex, plannedItem) => buildPackageIndexFile(plannedItem, nextIndex),
+        buildPackageIndexFile(first, existingIndex),
+      ),
+    options,
   );
 }
 
@@ -265,6 +289,19 @@ export async function fetchSkillVersionBackupMeta(
   return getJsonObject<ReturnType<typeof buildSkillVersionBackupManifest>["meta"]>(context, path);
 }
 
+async function writeMergedJsonIndex<T>(
+  context: RegistryArtifactBackupContext,
+  indexPath: string,
+  buildNext: (existing: T | null) => T,
+  options: IndexWriteOptions,
+) {
+  const write = () => putMergedJsonIndex(context, indexPath, buildNext);
+  if (options.withIndexWrite) {
+    return options.withIndexWrite(indexPath, write);
+  }
+  return write();
+}
+
 export async function fetchSkillBackupIndex(
   context: RegistryArtifactBackupContext,
   ownerHandle: string,
@@ -273,6 +310,18 @@ export async function fetchSkillBackupIndex(
   const owner = normalizeOwner(ownerHandle);
   const path = `${context.skillsRoot}/${owner}/${slug}/${INDEX_FILENAME}`;
   return getJsonObject<SkillIndexFile>(context, path);
+}
+
+export async function fetchPackageBackupIndex(
+  context: RegistryArtifactBackupContext,
+  ownerHandle: string,
+  normalizedName: string,
+) {
+  const owner = normalizeOwner(ownerHandle);
+  const path = `${context.packagesRoot}/${owner}/${encodeBackupPathSegment(
+    normalizedName,
+  )}/${INDEX_FILENAME}`;
+  return getJsonObject<PackageIndexFile>(context, path);
 }
 
 export async function fetchPackageReleaseBackupMeta(

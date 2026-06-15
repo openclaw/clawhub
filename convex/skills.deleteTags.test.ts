@@ -40,11 +40,11 @@ function buildGlobalStatsQuery(table: string) {
   };
 }
 
-function buildDigestQuery(table: string) {
+function buildDigestQuery(table: string, digest?: () => Record<string, unknown> | null) {
   if (table !== "skillSearchDigest") return null;
   return {
     withIndex: () => ({
-      unique: async () => null,
+      unique: async () => digest?.() ?? null,
     }),
   };
 }
@@ -55,21 +55,46 @@ function makeCtx(params: {
   publisher?: Record<string, unknown> | null;
   membership?: Record<string, unknown> | null;
   versionsById?: Record<string, Record<string, unknown>>;
+  digest?: Record<string, unknown> | null;
+  enableTriggers?: boolean;
 }) {
   vi.mocked(getAuthUserId).mockResolvedValue(params.user._id as never);
-  const patch = vi.fn(async (_id: string, value: Record<string, unknown>) => value);
+  const docs = new Map<string, Record<string, unknown>>();
+  docs.set(params.user._id as string, params.user);
+  if (params.skill) docs.set(params.skill._id as string, params.skill);
+  if (params.publisher) docs.set(params.publisher._id as string, params.publisher);
+  if (params.digest) docs.set(params.digest._id as string, params.digest);
+  for (const [id, version] of Object.entries(params.versionsById ?? {})) {
+    docs.set(id, version);
+  }
+  const findDigest = () => {
+    for (const doc of docs.values()) {
+      if (typeof doc._id === "string" && doc._id.startsWith("skillSearchDigest:")) return doc;
+    }
+    return null;
+  };
+  const patch = vi.fn(
+    async (
+      arg0: string,
+      arg1: string | Record<string, unknown>,
+      arg2?: Record<string, unknown>,
+    ) => {
+      const id = typeof arg1 === "string" ? arg1 : arg0;
+      const value = typeof arg1 === "string" ? arg2 : arg1;
+      if (!value) throw new Error(`Missing patch value for ${id}`);
+      const existing = docs.get(id);
+      if (existing) docs.set(id, { ...existing, ...value });
+      return value;
+    },
+  );
   const db = {
-    get: vi.fn(async (id: string) => {
-      if (id === params.user._id) return params.user;
-      if (params.skill && id === params.skill._id) return params.skill;
-      if (params.versionsById?.[id]) return params.versionsById[id];
-      if (params.publisher && id === params.publisher._id) return params.publisher;
-      return null;
+    get: vi.fn(async (arg0: string, arg1?: string) => {
+      return docs.get(arg1 ?? arg0) ?? null;
     }),
     query: vi.fn((table: string) => {
       const globalStatsQuery = buildGlobalStatsQuery(table);
       if (globalStatsQuery) return globalStatsQuery;
-      const digestQuery = buildDigestQuery(table);
+      const digestQuery = buildDigestQuery(table, findDigest);
       if (digestQuery) return digestQuery;
       if (table === "publisherMembers") {
         return {
@@ -91,7 +116,9 @@ function makeCtx(params: {
     patch,
     delete: vi.fn(),
     replace: vi.fn(),
-    normalizeId: vi.fn(() => null),
+    normalizeId: vi.fn((tableName: string, id: string) =>
+      params.enableTriggers && id.startsWith(`${tableName}:`) ? id : null,
+    ),
   };
   const auth = { getUserIdentity: vi.fn(async () => ({ tokenIdentifier: "test" })) };
   return { db, auth, patch };
@@ -120,16 +147,49 @@ const otherUser = {
 
 const baseSkill = {
   _id: "skills:1",
+  _creationTime: 1,
+  slug: "demo-skill",
+  displayName: "Demo Skill",
+  summary: "Old summary",
+  icon: undefined,
   ownerUserId: "users:owner",
+  ownerPublisherId: undefined,
+  canonicalSkillId: undefined,
+  forkOf: undefined,
+  latestVersionId: undefined,
+  installKind: undefined,
+  githubHasSkillCard: undefined,
+  githubCurrentStatus: undefined,
+  githubScanStatus: undefined,
+  latestVersionSummary: undefined,
   tags: {
     latest: "versions:3",
     stable: "versions:2",
     beta: "versions:3",
     "old-tag": "versions:1",
   },
+  capabilityTags: undefined,
+  badges: {},
+  statsDownloads: 0,
+  statsStars: 0,
+  statsInstallsCurrent: 0,
+  statsInstallsAllTime: 0,
+  stats: {
+    downloads: 0,
+    stars: 0,
+    installsCurrent: 0,
+    installsAllTime: 0,
+    versions: 0,
+    comments: 0,
+  },
   moderationStatus: "active",
   moderationFlags: undefined,
+  moderationVerdict: undefined,
+  moderationReason: undefined,
+  isSuspicious: undefined,
   softDeletedAt: undefined,
+  createdAt: 1,
+  updatedAt: 1,
 };
 
 const publisherSkill = {
@@ -316,13 +376,27 @@ describe("updateSummary", () => {
   });
 
   it("allows the skill owner to update a trimmed summary", async () => {
-    const { db, auth, patch } = makeCtx({ user: ownerUser, skill: baseSkill });
+    const { db, auth, patch } = makeCtx({
+      user: ownerUser,
+      skill: baseSkill,
+      digest: { _id: "skillSearchDigest:1", skillId: "skills:1", summary: "Old summary" },
+      enableTriggers: true,
+    });
     await updateSummaryHandler(
       { db, auth } as never,
       { skillId: "skills:1", summary: "  Updated summary  " } as never,
     );
-    expect(patch).toHaveBeenCalledOnce();
-    expect(patch.mock.calls[0][1]).toMatchObject({ summary: "Updated summary" });
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "skills",
+      "skills:1",
+      expect.objectContaining({ summary: "Updated summary" }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "skillSearchDigest:1",
+      expect.objectContaining({ summary: "Updated summary" }),
+    );
   });
 
   it("allows publisher admins to update org-owned skill summaries", async () => {
@@ -330,6 +404,8 @@ describe("updateSummary", () => {
       user: otherUser,
       skill: publisherSkill,
       publisher: activePublisher,
+      digest: { _id: "skillSearchDigest:1", skillId: "skills:1", summary: "Old summary" },
+      enableTriggers: true,
       membership: {
         _id: "publisherMembers:1",
         publisherId: "publishers:org",
@@ -341,8 +417,17 @@ describe("updateSummary", () => {
       { db, auth } as never,
       { skillId: "skills:1", summary: "Org summary" } as never,
     );
-    expect(patch).toHaveBeenCalledOnce();
-    expect(patch.mock.calls[0][1]).toMatchObject({ summary: "Org summary" });
+    expect(patch).toHaveBeenNthCalledWith(
+      1,
+      "skills",
+      "skills:1",
+      expect.objectContaining({ summary: "Org summary" }),
+    );
+    expect(patch).toHaveBeenNthCalledWith(
+      2,
+      "skillSearchDigest:1",
+      expect.objectContaining({ summary: "Org summary" }),
+    );
   });
 
   it("rejects publisher members without manage access", async () => {

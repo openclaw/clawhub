@@ -1,6 +1,5 @@
 import type { Doc } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
-import { ApiKeyRequiredBadge } from "./ApiKeyRequiredBadge";
 import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 
 type SkillVersionsPanelProps = {
@@ -52,17 +51,14 @@ export function SkillVersionsPanel({
                   {version.changelog}
                 </div>
                 <div className="pt-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
-                      <SecurityScanResults
-                        sha256hash={version.sha256hash}
-                        vtAnalysis={version.vtAnalysis}
-                        llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
-                        variant="badge"
-                      />
-                    ) : null}
-                    <ApiKeyRequiredBadge apiKeyRequired={version.apiKeyRequired} />
-                  </div>
+                  {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
+                    <SecurityScanResults
+                      sha256hash={version.sha256hash}
+                      vtAnalysis={version.vtAnalysis}
+                      llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
+                      variant="badge"
+                    />
+                  ) : null}
                 </div>
               </div>
               {!nixPlugin ? (

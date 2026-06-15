@@ -1,5 +1,6 @@
 import type {
   ApiV1PackageResponse,
+  ApiV1PackageVersionListResponse,
   PackageCapabilitySummary,
   PackageCompatibility,
   PackageVerificationSummary,
@@ -513,6 +514,20 @@ export async function fetchPackageDetail(name: string): Promise<PackageDetailRes
   }
   if (!response.ok) throw await createPackageApiError(response);
   return (await response.json()) as PackageDetailResponse;
+}
+
+export async function fetchPackageVersions(
+  name: string,
+  options?: {
+    cursor?: string;
+    limit?: number;
+    signal?: AbortSignal;
+  },
+): Promise<ApiV1PackageVersionListResponse> {
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/versions`);
+  if (options?.cursor) url.searchParams.set("cursor", options.cursor);
+  if (typeof options?.limit === "number") url.searchParams.set("limit", String(options.limit));
+  return await fetchJson<ApiV1PackageVersionListResponse>(url, options?.signal);
 }
 
 export async function fetchPackageVersion(

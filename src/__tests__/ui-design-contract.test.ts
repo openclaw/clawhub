@@ -77,8 +77,8 @@ describe("restored UI design contract", () => {
     expect(headerSource).toContain('className="navbar-top"');
     expect(headerSource).toContain('className="navbar-top-links"');
     expect(headerSource).toContain('className="navbar-search-wrap"');
-    expect(headerSource).toContain('className="user-dropdown-section-label"');
-    expect(headerSource).toContain('className="user-dropdown-theme-item"');
+    expect(headerSource).toContain('className="user-dropdown-theme-row"');
+    expect(headerSource).toContain('className="user-dropdown-theme-button"');
     expect(headerSource).not.toContain('className="theme-mode-toggle"');
     expect(headerSource).toContain('className="github-sign-in-button"');
     expect(headerSource).toContain('className="sign-in-full-copy"');
@@ -107,8 +107,10 @@ describe("restored UI design contract", () => {
     expect(topRow).toContain(
       "grid-template-columns: max-content max-content minmax(220px, 1fr) auto",
     );
-    const themeItem = cssRule(css, ".user-dropdown-theme-item");
-    expect(themeItem).toContain("min-width: 220px");
+    const themeRow = cssRule(css, ".user-dropdown-theme-row");
+    expect(themeRow).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
+    const themeButton = cssRule(css, ".user-dropdown-theme-button");
+    expect(themeButton).toContain("justify-content: center");
     expect(css).toContain("--r-btn: var(--r-sm)");
 
     const compact = cssMediaContaining(css, "(max-width: 760px)", [

@@ -632,7 +632,7 @@ const skills = defineTable({
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
       description: v.optional(v.string()),
       clawdis: v.optional(v.any()),
-      // Denormalised mirror of the latest version's `apiKeyRequired`.
+      // Deprecated field retained only until the production cleanup completes.
       apiKeyRequired: v.optional(v.boolean()),
     }),
   ),
@@ -869,8 +869,7 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
-  // Whether the user must supply an API key/secret to run this version.
-  // Filled asynchronously by the LLM analyser; absent until analysed.
+  // Deprecated field retained only until the production cleanup completes.
   apiKeyRequired: v.optional(v.boolean()),
 })
   .index("by_skill", ["skillId"])
@@ -991,7 +990,7 @@ const skillSearchDigest = defineTable({
       changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
       description: v.optional(v.string()),
       clawdis: v.optional(v.any()),
-      // Mirrors `skills.latestVersionSummary.apiKeyRequired`.
+      // Deprecated field retained only until the production cleanup completes.
       apiKeyRequired: v.optional(v.boolean()),
     }),
   ),
@@ -1862,6 +1861,19 @@ const skillStatBackfillState = defineTable({
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
+// Temporary state retained only until the API-key-required field cleanup completes.
+const apiKeyRequiredCleanupState = defineTable({
+  key: v.string(),
+  phase: v.union(v.literal("skillVersions"), v.literal("skills"), v.literal("skillSearchDigest")),
+  cursor: v.union(v.string(), v.null()),
+  isDone: v.boolean(),
+  batches: v.number(),
+  scanned: v.number(),
+  matched: v.number(),
+  patched: v.number(),
+  updatedAt: v.number(),
+}).index("by_key", ["key"]);
+
 const globalStats = defineTable({
   key: v.string(),
   activeSkillsCount: v.number(),
@@ -2542,6 +2554,7 @@ export default defineSchema({
   skillDailyStats,
   skillLeaderboards,
   skillStatBackfillState,
+  apiKeyRequiredCleanupState,
   globalStats,
   skillStatEvents,
   skillStatUpdateCursors,

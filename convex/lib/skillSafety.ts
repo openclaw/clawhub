@@ -1,6 +1,24 @@
 import type { Doc } from "../_generated/dataModel";
 import { verdictFromCodes } from "./moderationReasonCodes";
 
+type SkillTransferSafetyFields = Pick<
+  Doc<"skills">,
+  | "moderationStatus"
+  | "moderationVerdict"
+  | "isSuspicious"
+  | "moderationFlags"
+  | "moderationReason"
+  | "moderationReasonCodes"
+  | "softDeletedAt"
+  | "forkOf"
+>;
+
+const ADMIN_TRANSFER_DENIED_REASONS = new Set([
+  "owner.merged",
+  "user.banned",
+  "security.redaction",
+]);
+
 function isScannerSuspiciousReason(reason: string | undefined) {
   if (!reason) return false;
   return reason.startsWith("scanner.") && reason.endsWith(".suspicious");
@@ -22,24 +40,10 @@ export function isSkillBlockedByMalware(skill: Pick<Doc<"skills">, "moderationFl
   return skill.moderationFlags?.includes("blocked.malware") ?? false;
 }
 
-export function isSkillTransferBlockedByModeration(
-  skill: Pick<
-    Doc<"skills">,
-    | "moderationStatus"
-    | "moderationVerdict"
-    | "isSuspicious"
-    | "moderationFlags"
-    | "moderationReason"
-    | "moderationReasonCodes"
-    | "softDeletedAt"
-  >,
-) {
-  const moderationStatus = skill.moderationStatus ?? "active";
+function hasUnsafeSkillTransferModeration(skill: SkillTransferSafetyFields) {
   const moderationVerdict =
     skill.moderationVerdict ?? verdictFromCodes(skill.moderationReasonCodes ?? []);
   return (
-    skill.softDeletedAt !== undefined ||
-    moderationStatus !== "active" ||
     moderationVerdict === "suspicious" ||
     moderationVerdict === "malicious" ||
     skill.isSuspicious ||
@@ -47,6 +51,25 @@ export function isSkillTransferBlockedByModeration(
     isSkillBlockedByMalware(skill) ||
     isSkillSuspicious(skill) ||
     isScannerMaliciousReason(skill.moderationReason)
+  );
+}
+
+export function isSoftDeletedSkillEligibleForAdminTransfer(skill: SkillTransferSafetyFields) {
+  // Hide actor provenance requires DB-backed publisher authorization and is checked transactionally.
+  return (
+    skill.softDeletedAt !== undefined &&
+    (skill.moderationStatus === undefined || skill.moderationStatus === "hidden") &&
+    !ADMIN_TRANSFER_DENIED_REASONS.has(skill.moderationReason ?? "") &&
+    !hasUnsafeSkillTransferModeration(skill)
+  );
+}
+
+export function isSkillTransferBlockedByModeration(skill: SkillTransferSafetyFields) {
+  const moderationStatus = skill.moderationStatus ?? "active";
+  return (
+    skill.softDeletedAt !== undefined ||
+    moderationStatus !== "active" ||
+    hasUnsafeSkillTransferModeration(skill)
   );
 }
 
