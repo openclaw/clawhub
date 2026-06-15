@@ -3,7 +3,7 @@ import { unzipSync, type UnzipFileInfo } from "fflate";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
-import { action, internalAction, internalMutation, internalQuery } from "./functions";
+import { action, internalMutation, internalQuery } from "./functions";
 import { assertAdmin, requireUserFromAction } from "./lib/access";
 import { buildGitHubApiHeaders } from "./lib/githubAuth";
 import {
@@ -786,7 +786,7 @@ async function scheduleGitHubSkillVerification(
   },
 ) {
   if (args.scanStatus !== "pending") return;
-  await ctx.scheduler?.runAfter(0, internal.githubSkillSync.verifyGitHubSkillInternal, {
+  await ctx.scheduler?.runAfter(0, internal.githubSkillSyncNode.verifyGitHubSkillInternal, {
     skillId: args.skillId,
     contentHash: args.contentHash,
   });
@@ -906,14 +906,6 @@ export async function verifyGitHubSkillHandler(
     scanStatus: staticScan.status,
   };
 }
-
-export const verifyGitHubSkillInternal = internalAction({
-  args: {
-    skillId: v.id("skills"),
-    contentHash: v.string(),
-  },
-  handler: verifyGitHubSkillHandler,
-});
 
 export async function configurePublicGitHubSkillSourceHandler(
   ctx: ActionCtx,
@@ -1160,7 +1152,7 @@ export async function syncGitHubSkillSourcesHandler(
 
   let scheduledNext = false;
   if (!page.isDone && page.continueCursor && ctx.scheduler) {
-    await ctx.scheduler.runAfter(0, internal.githubSkillSync.syncGitHubSkillSourcesInternal, {
+    await ctx.scheduler.runAfter(0, internal.githubSkillSyncNode.syncGitHubSkillSourcesInternal, {
       cursor: page.continueCursor,
       batchSize,
     });
@@ -1178,21 +1170,6 @@ export async function syncGitHubSkillSourcesHandler(
     results,
   };
 }
-
-export const syncGitHubSkillSourcesInternal = internalAction({
-  args: {
-    cursor: v.optional(v.union(v.string(), v.null())),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    try {
-      return await syncGitHubSkillSourcesHandler(ctx, args);
-    } catch (error) {
-      logErrorEvent(Events.GitHubSkillSourceSyncFailed, { error: getErrorMessage(error) });
-      throw error;
-    }
-  },
-});
 
 async function fetchGitHubSkillSourceSnapshot(
   {

@@ -19,7 +19,7 @@ vi.mock("./_generated/api", () => ({
     registryArtifactBackupsNode: {
       processRegistryArtifactBackupRetriesInternal: mocks.registryArtifactBackupRetryRef,
     },
-    githubSkillSync: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
+    githubSkillSyncNode: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
     leaderboards: { rebuildTrendingLeaderboardAction: Symbol("trending-leaderboard") },
     statsMaintenance: {
       runSkillStatBackfillInternal: Symbol("skill-stats-backfill"),

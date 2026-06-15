@@ -1,3 +1,4 @@
+import { getFunctionName } from "convex/server";
 import { zipSync } from "fflate";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -505,6 +506,30 @@ describe("syncGitHubSkillSourcesHandler", () => {
     } finally {
       consoleLog.mockRestore();
     }
+  });
+
+  it("continues paginated scheduled syncs in the Node runtime", async () => {
+    const scheduler = {
+      runAfter: vi.fn(
+        async (_delayMs: number, _functionRef: unknown, _args: Record<string, unknown>) =>
+          undefined,
+      ),
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ sources: [], continueCursor: "next-page", isDone: false });
+
+    const result = await syncGitHubSkillSourcesHandler(
+      { runQuery, runMutation: vi.fn(), scheduler } as never,
+      {},
+      vi.fn() as never,
+    );
+
+    expect(result).toMatchObject({ scheduledNext: true, cursor: "next-page", isDone: false });
+    const scheduledFunction = scheduler.runAfter.mock.calls[0]?.[1];
+    expect(getFunctionName(scheduledFunction as Parameters<typeof getFunctionName>[0])).toBe(
+      "githubSkillSyncNode:syncGitHubSkillSourcesInternal",
+    );
   });
 
   it("rechecks repo visibility before scheduled syncs", async () => {
@@ -1396,7 +1421,12 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         },
       ],
     });
-    const scheduler = { runAfter: vi.fn(async () => undefined) };
+    const scheduler = {
+      runAfter: vi.fn(
+        async (_delayMs: number, _functionRef: unknown, _args: Record<string, unknown>) =>
+          undefined,
+      ),
+    };
 
     await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
       sourceId: "githubSkillSources:nvidia" as never,
@@ -1411,6 +1441,10 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       skillId: "skills:new-1",
       contentHash: snapshot.skills[0]?.contentHash,
     });
+    const scheduledFunction = scheduler.runAfter.mock.calls[0]?.[1];
+    expect(getFunctionName(scheduledFunction as Parameters<typeof getFunctionName>[0])).toBe(
+      "githubSkillSyncNode:verifyGitHubSkillInternal",
+    );
   });
 
   it("refreshes cached GitHub content metadata when bytes are unchanged at a new commit", async () => {

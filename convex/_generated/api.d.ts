@@ -26,6 +26,7 @@ import type * as githubIdentity from "../githubIdentity.js";
 import type * as githubImport from "../githubImport.js";
 import type * as githubSkillSources from "../githubSkillSources.js";
 import type * as githubSkillSync from "../githubSkillSync.js";
+import type * as githubSkillSyncNode from "../githubSkillSyncNode.js";
 import type * as http from "../http.js";
 import type * as httpApi from "../httpApi.js";
 import type * as httpApiV1 from "../httpApiV1.js";
@@ -170,6 +171,7 @@ declare const fullApi: ApiFromModules<{
   githubImport: typeof githubImport;
   githubSkillSources: typeof githubSkillSources;
   githubSkillSync: typeof githubSkillSync;
+  githubSkillSyncNode: typeof githubSkillSyncNode;
   http: typeof http;
   httpApi: typeof httpApi;
   httpApiV1: typeof httpApiV1;

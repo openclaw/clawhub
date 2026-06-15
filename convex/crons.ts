@@ -13,7 +13,7 @@ crons.interval(
 crons.interval(
   "github-skill-source-sync",
   { minutes: 15 },
-  internal.githubSkillSync.syncGitHubSkillSourcesInternal,
+  internal.githubSkillSyncNode.syncGitHubSkillSourcesInternal,
   {},
 );
 
