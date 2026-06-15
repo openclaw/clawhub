@@ -2,11 +2,13 @@
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { sha256Hex } from "./lib/clawpack";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
+import { buildDeterministicPackageZip } from "./lib/skillZip";
 import {
   backfillLatestPackageScanStatusInternal,
   backfillPackageReleaseScansInternal,
@@ -217,6 +219,7 @@ const insertReleaseInternalHandler = (
         contentType?: string;
       }>;
       integritySha256: string;
+      sha256hash?: string;
       sourceRepo?: string;
       runtimeId?: string;
       channel?: "official" | "community" | "private";
@@ -5623,6 +5626,7 @@ describe("packages public queries", () => {
       summary: "demo",
       files: [],
       integritySha256: "abc123",
+      sha256hash: "legacy-zip-sha",
       artifactKind: "npm-pack",
       clawpackStorageId: "storage:clawpack",
       clawpackSha256: "a".repeat(64),
@@ -5651,9 +5655,49 @@ describe("packages public queries", () => {
           capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
           artifact: expect.objectContaining({
             kind: "npm-pack",
+            sha256: "a".repeat(64),
             npmIntegrity: "sha512-demo",
             npmShasum: "b".repeat(40),
           }),
+        }),
+      }),
+    );
+  });
+
+  it("uses the exact legacy ZIP hash in promoted legacy artifact summaries", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        tags: { latest: "packageReleases:demo-1" },
+        latestReleaseId: "packageReleases:demo-1",
+        stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      }),
+    );
+
+    await insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.1.0",
+      changelog: "legacy zip",
+      tags: ["latest"],
+      summary: "demo",
+      files: [],
+      integritySha256: "file-set-sha",
+      sha256hash: "legacy-zip-sha",
+      artifactKind: "legacy-zip",
+    });
+
+    expect(ctx.patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestVersionSummary: expect.objectContaining({
+          artifact: {
+            kind: "legacy-zip",
+            sha256: "legacy-zip-sha",
+            format: "zip",
+          },
         }),
       }),
     );
@@ -6481,6 +6525,33 @@ describe("packages public queries", () => {
 
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => args);
+    const storedFiles = new Map<string, string>([
+      [
+        "storage:package",
+        JSON.stringify({
+          name: "demo-plugin",
+          openclaw: {
+            extensions: ["./dist/index.js"],
+            hostTargets: ["darwin-arm64", "linux-x64"],
+            environment: {},
+            compat: { pluginApi: "^1.0.0" },
+            build: { openclawVersion: "2026.3.14" },
+            configSchema: { type: "object" },
+          },
+        }),
+      ],
+      [
+        "storage:manifest",
+        JSON.stringify({
+          id: "demo.plugin",
+          tools: [{ name: "demoTool" }],
+        }),
+      ],
+      [
+        "storage:code",
+        "import { execSync } from 'node:child_process';\nexecSync('curl http://x');\n",
+      ],
+    ]);
     const ctx = {
       runQuery: vi
         .fn()
@@ -6500,34 +6571,7 @@ describe("packages public queries", () => {
       },
       storage: {
         get: vi.fn(async (storageId: string) => {
-          const files = new Map<string, string>([
-            [
-              "storage:package",
-              JSON.stringify({
-                name: "demo-plugin",
-                openclaw: {
-                  extensions: ["./dist/index.js"],
-                  hostTargets: ["darwin-arm64", "linux-x64"],
-                  environment: {},
-                  compat: { pluginApi: "^1.0.0" },
-                  build: { openclawVersion: "2026.3.14" },
-                  configSchema: { type: "object" },
-                },
-              }),
-            ],
-            [
-              "storage:manifest",
-              JSON.stringify({
-                id: "demo.plugin",
-                tools: [{ name: "demoTool" }],
-              }),
-            ],
-            [
-              "storage:code",
-              "import { execSync } from 'node:child_process';\nexecSync('curl http://x');\n",
-            ],
-          ]);
-          const content = files.get(storageId);
+          const content = storedFiles.get(storageId);
           return content ? new Blob([content]) : null;
         }),
       },
@@ -6585,8 +6629,25 @@ describe("packages public queries", () => {
         ],
       },
     })) as Record<string, unknown>;
+    const expectedLegacyZipSha256 = await sha256Hex(
+      buildDeterministicPackageZip([
+        {
+          path: "package.json",
+          bytes: new TextEncoder().encode(storedFiles.get("storage:package")),
+        },
+        {
+          path: "openclaw.plugin.json",
+          bytes: new TextEncoder().encode(storedFiles.get("storage:manifest")),
+        },
+        {
+          path: "dist/index.js",
+          bytes: new TextEncoder().encode(storedFiles.get("storage:code")),
+        },
+      ]),
+    );
 
     expect(runMutation).toHaveBeenCalled();
+    expect(result.sha256hash).toBe(expectedLegacyZipSha256);
     expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
     expect(result.staticScan).toEqual(
       expect.objectContaining({
@@ -10169,6 +10230,46 @@ describe("package scan backfill", () => {
         needsStatic: true,
       },
     ]);
+  });
+
+  it("does not repeatedly rescan a release solely because its artifact hash is missing", async () => {
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([]),
+              })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageReleases:npm-missing-artifact-hash",
+                      _creationTime: 10,
+                      packageId: "packages:demo",
+                      artifactKind: "npm-pack",
+                      sha256hash: "legacy-zip-hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }),
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return makePackageDoc();
+            return null;
+          }),
+        },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result.releases).toEqual([]);
   });
 
   it("prioritizes recent releases before draining older backlog", async () => {

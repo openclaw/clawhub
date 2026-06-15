@@ -76,6 +76,7 @@ import type * as lib_moderationReasonCodes from "../lib/moderationReasonCodes.js
 import type * as lib_observabilityEvents from "../lib/observabilityEvents.js";
 import type * as lib_officialPublishers from "../lib/officialPublishers.js";
 import type * as lib_openaiResponse from "../lib/openaiResponse.js";
+import type * as lib_packageArtifacts from "../lib/packageArtifacts.js";
 import type * as lib_packageRegistry from "../lib/packageRegistry.js";
 import type * as lib_packageSearchDigest from "../lib/packageSearchDigest.js";
 import type * as lib_packageSecurity from "../lib/packageSecurity.js";
@@ -118,6 +119,7 @@ import type * as maintenance from "../maintenance.js";
 import type * as managementDevSeed from "../managementDevSeed.js";
 import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageInspectorNode from "../packageInspectorNode.js";
+import type * as packageLegacyZipHashBackfill from "../packageLegacyZipHashBackfill.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
 import type * as publisherAbuse from "../publisherAbuse.js";
@@ -220,6 +222,7 @@ declare const fullApi: ApiFromModules<{
   "lib/observabilityEvents": typeof lib_observabilityEvents;
   "lib/officialPublishers": typeof lib_officialPublishers;
   "lib/openaiResponse": typeof lib_openaiResponse;
+  "lib/packageArtifacts": typeof lib_packageArtifacts;
   "lib/packageRegistry": typeof lib_packageRegistry;
   "lib/packageSearchDigest": typeof lib_packageSearchDigest;
   "lib/packageSecurity": typeof lib_packageSecurity;
@@ -262,6 +265,7 @@ declare const fullApi: ApiFromModules<{
   managementDevSeed: typeof managementDevSeed;
   packageInspectorHttp: typeof packageInspectorHttp;
   packageInspectorNode: typeof packageInspectorNode;
+  packageLegacyZipHashBackfill: typeof packageLegacyZipHashBackfill;
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;
   publisherAbuse: typeof publisherAbuse;

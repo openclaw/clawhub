@@ -1230,6 +1230,7 @@ const packageReleases = defineTable({
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
   verification: packageVerificationValidator,
+  // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
