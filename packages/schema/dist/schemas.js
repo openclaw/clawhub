@@ -133,6 +133,15 @@ export const CliTelemetryInstallRequestSchema = type({
     version: "string?",
     rootId: "string?",
     rootLabel: "string?",
+}).or({
+    roots: type({
+        rootId: "string",
+        label: "string",
+        skills: type({
+            slug: "string",
+            version: "string|null?",
+        }).array(),
+    }).array(),
 });
 export const ApiCliTelemetryInstallResponseSchema = type({
     ok: "true",

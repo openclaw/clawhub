@@ -295,7 +295,7 @@ describe("httpApi handlers", () => {
     });
   });
 
-  it("cliTelemetryInstallHttp rejects sync-shaped roots snapshots", async () => {
+  it("cliTelemetryInstallHttp accepts legacy roots snapshots", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
     const runMutation = vi.fn().mockResolvedValue(null);
     const response = await __handlers.cliTelemetryInstallHandler(
@@ -308,15 +308,62 @@ describe("httpApi handlers", () => {
             {
               rootId: "abc",
               label: "~/skills",
-              skills: [{ slug: "weather", version: "1.0.0" }],
+              skills: [
+                { slug: "weather", version: "1.0.0" },
+                { slug: "calendar", version: null },
+              ],
             },
           ],
         }),
       }),
     );
 
-    expect(response.status).toBe(400);
-    expect(runMutation).not.toHaveBeenCalled();
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ ok: true });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      userId: "users:1",
+      rootId: "abc",
+      rootLabel: "~/skills",
+      skills: [
+        { slug: "weather", version: "1.0.0" },
+        { slug: "calendar", version: undefined },
+      ],
+    });
+  });
+
+  it("cliTelemetryInstallHttp chunks large legacy roots snapshots", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({ userId: "users:1" } as never);
+    const runMutation = vi.fn().mockResolvedValue(null);
+    const skills = Array.from({ length: 101 }, (_, index) => ({
+      slug: `skill-${index}`,
+      version: "1.0.0",
+    }));
+
+    const response = await __handlers.cliTelemetryInstallHandler(
+      makeCtx({ runMutation }),
+      new Request("https://x/api/cli/telemetry/install", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          roots: [{ rootId: "abc", label: "~/skills", skills }],
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation.mock.calls[0]?.[1]).toMatchObject({
+      userId: "users:1",
+      rootId: "abc",
+      rootLabel: "~/skills",
+      skills: skills.slice(0, 100),
+    });
+    expect(runMutation.mock.calls[1]?.[1]).toMatchObject({
+      userId: "users:1",
+      rootId: "abc",
+      rootLabel: "~/skills",
+      skills: skills.slice(100),
+    });
   });
 
   it("cliDeviceCodeHttp rate limits and creates a device code", async () => {

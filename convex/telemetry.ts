@@ -67,6 +67,53 @@ export const reportCliInstallInternal = internalMutation({
   },
 });
 
+export const reportCliLegacyInstallBatchInternal = internalMutation({
+  args: {
+    userId: v.id("users"),
+    rootId: v.string(),
+    rootLabel: v.string(),
+    skills: v.array(
+      v.object({
+        slug: v.string(),
+        version: v.optional(v.string()),
+      }),
+    ),
+  },
+  handler: async (ctx, args) => {
+    const rootId = args.rootId.trim();
+    if (!rootId) return;
+
+    const now = Date.now();
+    await upsertRoot(ctx, {
+      userId: args.userId,
+      rootId,
+      label: args.rootLabel.trim() || "Unknown",
+      now,
+    });
+
+    const seen = new Set<string>();
+    for (const entry of args.skills) {
+      const slug = entry.slug.trim().toLowerCase();
+      if (!slug || seen.has(slug)) continue;
+      seen.add(slug);
+
+      const skill = await ctx.db
+        .query("skills")
+        .withIndex("by_slug", (q) => q.eq("slug", slug))
+        .unique();
+      if (!skill || skill.softDeletedAt) continue;
+
+      await upsertRootSkillInstall(ctx, {
+        userId: args.userId,
+        skillId: skill._id,
+        rootId,
+        now,
+        version: entry.version?.trim() || undefined,
+      });
+    }
+  },
+});
+
 export const clearMyTelemetry = mutation({
   args: {},
   handler: async (ctx) => {
@@ -233,6 +280,19 @@ async function upsertSingleRootInstall(
     now: params.now,
   });
 
+  await upsertRootSkillInstall(ctx, params);
+}
+
+async function upsertRootSkillInstall(
+  ctx: MutationCtx,
+  params: {
+    userId: Id<"users">;
+    skillId: Id<"skills">;
+    rootId: string;
+    now: number;
+    version?: string;
+  },
+) {
   const existing = await ctx.db
     .query("userSkillRootInstalls")
     .withIndex("by_user_root_skill", (q) =>

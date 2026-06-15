@@ -155,6 +155,15 @@ export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/
     version?: string | undefined;
     rootId?: string | undefined;
     rootLabel?: string | undefined;
+} | {
+    roots: {
+        rootId: string;
+        label: string;
+        skills: {
+            slug: string;
+            version?: string | null | undefined;
+        }[];
+    }[];
 }, {}>;
 export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
 export declare const ApiCliTelemetryInstallResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{

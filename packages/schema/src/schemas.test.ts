@@ -11,6 +11,7 @@ import {
   ApiV1SkillVerifyResponseSchema,
   CliPublishRequestSchema,
   CliSkillDeleteRequestSchema,
+  CliTelemetryInstallRequestSchema,
   LockfileSchema,
   WellKnownConfigSchema,
 } from "./schemas";
@@ -127,6 +128,30 @@ describe("clawhub-schema", () => {
       "Install resolver response",
     );
     expect(blocked.ok).toBe(false);
+  });
+
+  it("accepts current and legacy install telemetry payloads", () => {
+    const current = parseArk(
+      CliTelemetryInstallRequestSchema,
+      { event: "install", slug: "demo", version: "1.0.0" },
+      "Install telemetry",
+    );
+    const legacy = parseArk(
+      CliTelemetryInstallRequestSchema,
+      {
+        roots: [
+          {
+            rootId: "root",
+            label: "~/skills",
+            skills: [{ slug: "demo", version: "1.0.0" }],
+          },
+        ],
+      },
+      "Install telemetry",
+    );
+
+    expect(current).toMatchObject({ event: "install", slug: "demo" });
+    expect(legacy).toMatchObject({ roots: [{ rootId: "root" }] });
   });
 
   it("accepts publish payloads with an owner handle", () => {

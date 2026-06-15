@@ -27,6 +27,9 @@ type SearchSkillEntry = {
   version: { version?: string } | null;
 };
 
+const LEGACY_TELEMETRY_BATCH_SIZE = 100;
+const MAX_LEGACY_TELEMETRY_SKILLS = 5_000;
+
 type GetBySlugResult = {
   skill: {
     _id: Id<"skills">;
@@ -238,13 +241,38 @@ async function cliTelemetryInstallHandler(ctx: ActionCtx, request: Request) {
   try {
     const { userId } = await requireApiTokenUser(ctx, request);
     const args = parseArk(CliTelemetryInstallRequestSchema, body, "Install telemetry payload");
-    await ctx.runMutation(internal.telemetry.reportCliInstallInternal, {
-      userId,
-      slug: args.slug,
-      version: args.version,
-      rootId: args.rootId,
-      rootLabel: args.rootLabel,
-    });
+    if ("roots" in args) {
+      const skillCount = args.roots.reduce((total, root) => total + root.skills.length, 0);
+      if (skillCount > MAX_LEGACY_TELEMETRY_SKILLS) {
+        throw new Error(
+          `Legacy install telemetry supports at most ${MAX_LEGACY_TELEMETRY_SKILLS} skills`,
+        );
+      }
+      // Legacy snapshots are presence-only so stale or partial reports cannot deactivate installs.
+      for (const root of args.roots) {
+        for (let offset = 0; offset < root.skills.length; offset += LEGACY_TELEMETRY_BATCH_SIZE) {
+          await ctx.runMutation(internal.telemetry.reportCliLegacyInstallBatchInternal, {
+            userId,
+            rootId: root.rootId,
+            rootLabel: root.label,
+            skills: root.skills
+              .slice(offset, offset + LEGACY_TELEMETRY_BATCH_SIZE)
+              .map((skill) => ({
+                slug: skill.slug,
+                version: skill.version ?? undefined,
+              })),
+          });
+        }
+      }
+    } else {
+      await ctx.runMutation(internal.telemetry.reportCliInstallInternal, {
+        userId,
+        slug: args.slug,
+        version: args.version,
+        rootId: args.rootId,
+        rootLabel: args.rootLabel,
+      });
+    }
     const ok = parseArk(ApiCliTelemetryInstallResponseSchema, { ok: true }, "Telemetry response");
     return json(ok);
   } catch (error) {
