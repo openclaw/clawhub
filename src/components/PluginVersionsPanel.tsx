@@ -76,11 +76,14 @@ export function PluginVersionsPanel({
 
   const handleDelete = async () => {
     if (!deletingVersion) return;
+    const requestGeneration = requestGenerationRef.current;
+    const version = deletingVersion;
     setIsDeleting(true);
     try {
-      await deleteOwnedRelease({ name: packageName, version: deletingVersion });
-      setReleases((current) => current.filter((release) => release.version !== deletingVersion));
-      toast.success(`Deleted version ${deletingVersion}.`);
+      await deleteOwnedRelease({ name: packageName, version });
+      if (requestGeneration !== requestGenerationRef.current) return;
+      setReleases((current) => current.filter((release) => release.version !== version));
+      toast.success(`Deleted version ${version}.`);
       setDeletingVersion(null);
       void (async () => {
         try {
@@ -90,9 +93,10 @@ export function PluginVersionsPanel({
         }
       })();
     } catch (error) {
+      if (requestGeneration !== requestGenerationRef.current) return;
       toast.error(getUserFacingConvexError(error, "Version could not be deleted. Try again."));
     } finally {
-      setIsDeleting(false);
+      if (requestGeneration === requestGenerationRef.current) setIsDeleting(false);
     }
   };
 

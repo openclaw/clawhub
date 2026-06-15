@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -81,6 +81,24 @@ const pluginVersions = {
       version: "1.0.0",
       createdAt: 1,
       changelog: "Older plugin release",
+      distTags: [],
+    },
+  ],
+  nextCursor: null,
+};
+
+const otherPluginVersions = {
+  items: [
+    {
+      version: "3.0.0",
+      createdAt: 3,
+      changelog: "Current other plugin release",
+      distTags: ["latest"],
+    },
+    {
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "Older other plugin release",
       distTags: [],
     },
   ],
@@ -306,6 +324,73 @@ describe("version Delete UI", () => {
     expect(screen.getByText("Current plugin release")).toBeTruthy();
     expect(onVersionDeleted).toHaveBeenCalledTimes(1);
     expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
+  });
+
+  it("ignores a plugin deletion response after navigating to another plugin", async () => {
+    let resolveFirstDelete: (result: { ok: true }) => void = () => undefined;
+    const firstDelete = new Promise<{ ok: true }>((resolve) => {
+      resolveFirstDelete = resolve;
+    });
+    const secondDelete = new Promise<{ ok: true }>(() => undefined);
+    const deleteOwnedRelease = vi
+      .fn()
+      .mockReturnValueOnce(firstDelete)
+      .mockReturnValueOnce(secondDelete);
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "packages:deleteOwnedRelease" ? deleteOwnedRelease : vi.fn(),
+    );
+    const onVersionDeleted = vi.fn();
+    const { rerender } = render(
+      <PluginVersionsPanel
+        packageName="demo-plugin"
+        versions={pluginVersions}
+        latestVersion="2.0.0"
+        canDeleteVersions
+        onVersionDeleted={onVersionDeleted}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete version" }));
+    await waitFor(() => {
+      expect(deleteOwnedRelease).toHaveBeenCalledWith({
+        name: "demo-plugin",
+        version: "1.0.0",
+      });
+    });
+
+    rerender(
+      <PluginVersionsPanel
+        packageName="other-plugin"
+        versions={otherPluginVersions}
+        latestVersion="3.0.0"
+        canDeleteVersions
+        onVersionDeleted={onVersionDeleted}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete version" }));
+    await waitFor(() => {
+      expect(deleteOwnedRelease).toHaveBeenCalledWith({
+        name: "other-plugin",
+        version: "1.0.0",
+      });
+    });
+
+    await act(async () => {
+      resolveFirstDelete({ ok: true });
+      await firstDelete;
+    });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Delete version 1.0.0?" })).toBeTruthy();
+      expect(screen.getByText("Older other plugin release")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Delete version" }).hasAttribute("disabled")).toBe(
+        true,
+      );
+      expect(toast.success).not.toHaveBeenCalled();
+      expect(onVersionDeleted).not.toHaveBeenCalled();
+    });
   });
 
   it("hides plugin Delete actions from staff-only viewers", () => {
