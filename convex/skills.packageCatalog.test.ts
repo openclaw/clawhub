@@ -25,6 +25,7 @@ const listPackageCatalogPageHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      sort?: "updated" | "downloads" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
@@ -108,6 +109,7 @@ function makeDigest(
 
 function makeCtx(
   pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>,
+  indexNames: string[] = [],
 ) {
   const pageByCursor = new Map<
     string | null,
@@ -148,13 +150,16 @@ function makeCtx(
         }
 
         return {
-          withIndex: () => ({
-            order: () => ({
-              paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
-                pageByCursor.get(pageCursor) ?? { page: [], isDone: true, continueCursor: "" },
-            }),
-            unique: async () => null,
-          }),
+          withIndex: (indexName: string) => {
+            indexNames.push(indexName);
+            return {
+              order: () => ({
+                paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
+                  pageByCursor.get(pageCursor) ?? { page: [], isDone: true, continueCursor: "" },
+              }),
+              unique: async () => null,
+            };
+          },
         };
       },
     },
@@ -162,6 +167,29 @@ function makeCtx(
 }
 
 describe("skills package catalog queries", () => {
+  it("sorts skill package catalog rows by all-time installs", async () => {
+    const indexNames: string[] = [];
+
+    await listPackageCatalogPageHandler(
+      makeCtx(
+        [
+          {
+            page: [makeDigest("installed-skill")],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        indexNames,
+      ),
+      {
+        sort: "installs",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(indexNames).toContain("by_active_stats_installs_all_time");
+  });
+
   it("lists official skills as package catalog rows", async () => {
     const result = await listPackageCatalogPageHandler(
       makeCtx([

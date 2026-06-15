@@ -838,6 +838,7 @@ const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const PACKAGE_PAGE_CURSOR_PREFIX = "pkgpage:";
+const LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX = "pkginstalls:";
 const CATALOG_CURSOR_PREFIXES = [
   UNIFIED_CATALOG_CURSOR_PREFIX,
   PLUGIN_CATALOG_CURSOR_PREFIX,
@@ -1428,7 +1429,7 @@ async function listPackages(
   const url = new URL(request.url);
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
-  const cursor = url.searchParams.get("cursor");
+  const rawCursor = url.searchParams.get("cursor");
   const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
   if (typeof capabilityTag === "object") return text(capabilityTag.error, 400, rate.headers);
   const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
@@ -1445,6 +1446,15 @@ async function listPackages(
   if (!executesCode.ok) return text(executesCode.message, 400, rate.headers);
   const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
   if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
+  const isLegacyDownloadsSort = sortParam.value === "downloads";
+  const sort = isLegacyDownloadsSort ? "installs" : sortParam.value;
+  const cursor = isLegacyDownloadsSort
+    ? rawCursor?.startsWith(LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX)
+      ? rawCursor.slice(LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX.length)
+      : null
+    : rawCursor;
+  const nextCursor = (value: string | null) =>
+    isLegacyDownloadsSort && value ? `${LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX}${value}` : value;
   const category = url.searchParams.get("category")?.trim() || undefined;
   if (category && !isPluginCategorySlug(category)) {
     return text("Invalid plugin category", 400, rate.headers);
@@ -1471,11 +1481,11 @@ async function listPackages(
       highlightedOnly: highlightedOnly || undefined,
       executesCode: executesCode.value,
       capabilityTag,
-      sort: sortParam.value,
+      sort,
       paginationOpts: { cursor, numItems: limit },
     });
     return json(
-      { items: result.page, nextCursor: result.isDone ? null : result.continueCursor },
+      { items: result.page, nextCursor: result.isDone ? null : nextCursor(result.continueCursor) },
       200,
       rate.headers,
     );
@@ -1505,7 +1515,7 @@ async function listPackages(
             executesCode: executesCode.value,
             capabilityTag,
             category,
-            sort: sortParam.value,
+            sort,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1526,7 +1536,7 @@ async function listPackages(
             highlightedOnly: highlightedOnly || undefined,
             executesCode: executesCode.value,
             capabilityTag,
-            sort: sortParam.value,
+            sort,
             paginationOpts: { cursor: pageCursor, numItems },
           });
           return {
@@ -1541,7 +1551,7 @@ async function listPackages(
       if (
         !skillCandidate ||
         (packageCandidate &&
-          compareCatalogItemsForSort(packageCandidate, skillCandidate, sortParam.value) <= 0)
+          compareCatalogItemsForSort(packageCandidate, skillCandidate, sort) <= 0)
       ) {
         items.push(packageCandidate!);
         packageSource.index += 1;
@@ -1563,7 +1573,7 @@ async function listPackages(
     return json(
       {
         items,
-        nextCursor: isDoneAll ? null : encodeUnifiedCatalogCursor(nextState),
+        nextCursor: isDoneAll ? null : nextCursor(encodeUnifiedCatalogCursor(nextState)),
       },
       200,
       rate.headers,
@@ -1585,7 +1595,7 @@ async function listPackages(
     const decodedCursor = decodePluginCatalogCursor(cursor);
     const codePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.codePlugins);
     const bundlePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.bundlePlugins);
-    const isFreshRecommendedRequest = sortParam.value === "recommended" && !cursor;
+    const isFreshRecommendedRequest = sort === "recommended" && !cursor;
     const hasMissingRecommendationScores = isFreshRecommendedRequest
       ? await runQueryRef<boolean>(
           ctx,
@@ -1596,10 +1606,10 @@ async function listPackages(
         )
       : false;
     const useUpdatedRecommendationFallback =
-      sortParam.value === "recommended" &&
+      sort === "recommended" &&
       (decodedCursor.recommendedFallback === "updated" ||
         (isFreshRecommendedRequest && hasMissingRecommendationScores));
-    const pluginListSort = useUpdatedRecommendationFallback ? "updated" : sortParam.value;
+    const pluginListSort = useUpdatedRecommendationFallback ? "updated" : sort;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1672,7 +1682,7 @@ async function listPackages(
     return json(
       {
         items,
-        nextCursor: isDoneAll ? null : encodePluginCatalogCursor(nextState),
+        nextCursor: isDoneAll ? null : nextCursor(encodePluginCatalogCursor(nextState)),
         ...(totalCount !== null ? { totalCount } : {}),
       },
       200,
@@ -1692,12 +1702,12 @@ async function listPackages(
     executesCode: executesCode.value,
     capabilityTag,
     category,
-    sort: sortParam.value,
+    sort,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
   } satisfies PackageListQueryArgs);
   return json(
-    { items: result.page, nextCursor: result.isDone ? null : result.continueCursor },
+    { items: result.page, nextCursor: result.isDone ? null : nextCursor(result.continueCursor) },
     200,
     rate.headers,
   );

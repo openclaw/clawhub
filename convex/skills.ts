@@ -5956,7 +5956,7 @@ export const listPackageCatalogPage = query({
     highlightedOnly: v.optional(v.boolean()),
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
-    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"))),
+    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"), v.literal("installs"))),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -5995,7 +5995,11 @@ export const listPackageCatalogPage = query({
       remainingScanBudget -= effectivePageSize;
       const pageCursor = cursor;
       const indexName =
-        args.sort === "downloads" ? "by_active_stats_downloads" : "by_active_updated";
+        args.sort === "downloads"
+          ? "by_active_stats_downloads"
+          : args.sort === "installs"
+            ? "by_active_stats_installs_all_time"
+            : "by_active_updated";
       const page = await paginator(ctx.db, schema)
         .query("skillSearchDigest")
         .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined))

@@ -247,11 +247,16 @@ describe("cmdExplore", () => {
     }
   });
 
-  it("does not expose downloads as an explore sort", async () => {
-    await expect(cmdExplore(makeOpts(), { sort: "downloads" })).rejects.toThrow(
-      'Invalid sort "downloads". Use newest, updated, rating, installs, installsAllTime, or trending.',
-    );
-    expect(mockApiRequest).not.toHaveBeenCalled();
+  it("keeps legacy download aliases on the all-time install sort", async () => {
+    mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
+
+    await cmdExplore(makeOpts(), { sort: "downloads" });
+    await cmdExplore(makeOpts(), { sort: "download" });
+
+    for (const call of mockApiRequest.mock.calls) {
+      const url = new URL(String(call[1]?.url));
+      expect(url.searchParams.get("sort")).toBe("installsAllTime");
+    }
   });
 });
 

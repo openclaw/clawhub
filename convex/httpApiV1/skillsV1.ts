@@ -1427,7 +1427,7 @@ function toPublicListSort(sort: Exclude<SkillListSort, "trending">): PublicListS
   if (sort === "recommended") return "recommended";
   if (sort === "createdAt") return "newest";
   if (sort === "updated") return "updated";
-  if (sort === "downloads" || sort === "stars") return sort;
+  if (sort === "stars") return sort;
   return "installs";
 }
 

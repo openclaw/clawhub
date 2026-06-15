@@ -889,7 +889,12 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   if (normalized === "rating" || normalized === "stars" || normalized === "star") {
     return { sort: "rating", apiSort: "stars" };
   }
-  if (normalized === "installs" || normalized === "install") {
+  if (
+    normalized === "installs" ||
+    normalized === "install" ||
+    normalized === "downloads" ||
+    normalized === "download"
+  ) {
     return { sort: "installs", apiSort: "installsAllTime" };
   }
   if (
