@@ -3953,7 +3953,7 @@ async function deletePackageModerationEventsForAppeal(
 }
 
 async function hardDeletePackageDoc(
-  ctx: Pick<MutationCtx, "db">,
+  ctx: Pick<MutationCtx, "db" | "scheduler">,
   pkg: Doc<"packages">,
   params: {
     actorUserId: Id<"users">;
@@ -4029,6 +4029,19 @@ async function hardDeletePackageDoc(
     )
     .take(MAX_PUBLIC_LIST_PAGE_SIZE);
   for (const installDedupe of installDedupes) await ctx.db.delete(installDedupe._id);
+  if (installDedupes.length === MAX_PUBLIC_LIST_PAGE_SIZE) {
+    await ctx.scheduler.runAfter(0, internal.packages.hardDeletePackageInternal, {
+      packageId: pkg._id,
+      actorUserId: params.actorUserId,
+      deletedAt: params.deletedAt,
+      source: params.source,
+    });
+    return {
+      ok: true as const,
+      packageId: pkg._id,
+      cleanupPending: true as const,
+    };
+  }
 
   for (const release of releases) await ctx.db.delete(release._id);
   await ctx.db.delete(pkg._id);
@@ -4074,6 +4087,7 @@ export const hardDeletePackageInternal = internalMutation({
       deletedAt: args.deletedAt,
       source: args.source,
     });
+    if ("cleanupPending" in result) return { ...result, deleted: false as const };
     return { ...result, deleted: true as const };
   },
 });
