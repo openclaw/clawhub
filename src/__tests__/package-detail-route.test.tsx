@@ -291,6 +291,91 @@ describe("plugin detail route", () => {
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
   });
 
+  it("resets shared detail state when navigating between scoped plugins without a hash", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          name: "@scope/plugin-a",
+          displayName: "Plugin A",
+        },
+        owner: null,
+      },
+      readme: "Plugin A README",
+      versions: {
+        items: [
+          {
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "Plugin A current release",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: "versions:next",
+      },
+    };
+    vi.mocked(fetchPackageVersions).mockResolvedValueOnce({
+      items: [
+        {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Plugin A loaded release",
+          distTags: [],
+        },
+      ],
+      nextCursor: null,
+    });
+    const { PluginDetailPage } = await import("../routes/plugins/$name");
+    const { rerender } = render(
+      <PluginDetailPage name="@scope/plugin-a" loaderData={loaderDataMock} />,
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+    expect(screen.getByText("Plugin A loaded release")).toBeTruthy();
+
+    window.history.pushState(null, "", "/plugins/@scope/plugin-b");
+    pathnameMock = "/plugins/@scope/plugin-b";
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          name: "@scope/plugin-b",
+          displayName: "Plugin B",
+        },
+        owner: null,
+      },
+      readme: "Plugin B README",
+      versions: {
+        items: [
+          {
+            version: "3.0.0",
+            createdAt: 3,
+            changelog: "Plugin B release",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: null,
+      },
+    };
+    rerender(<PluginDetailPage name="@scope/plugin-b" loaderData={loaderDataMock} />);
+
+    expect(screen.getByRole("tab", { name: "README" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("Plugin B README")).toBeTruthy();
+    expect(screen.queryByText("Plugin A loaded release")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    expect(screen.getByText("Plugin B release")).toBeTruthy();
+    expect(screen.queryByText("Plugin A loaded release")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+    expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
+  });
+
   it("does not hide a remaining release cursor when the current page is empty", async () => {
     loaderDataMock = {
       ...loaderDataMock,

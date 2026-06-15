@@ -356,13 +356,16 @@ export function PluginDetailPending() {
   );
 }
 
-export function PluginDetailPage({
-  name,
-  loaderData,
-}: {
+type PluginDetailPageProps = {
   name: string;
   loaderData: PluginDetailLoaderData;
-}) {
+};
+
+export function PluginDetailPage(props: PluginDetailPageProps) {
+  return <PluginDetailPageContent key={props.name} {...props} />;
+}
+
+function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const { detail, version, versions, readme, rateLimited } = loaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
