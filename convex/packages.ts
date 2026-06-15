@@ -4948,9 +4948,23 @@ export async function deleteOwnedPackageReleaseForActor(
     Object.entries(pkg.tags ?? {}).filter(([, releaseId]) => releaseId !== release._id),
   ) as Doc<"packages">["tags"];
   if (Object.keys(nextTags).length !== Object.keys(pkg.tags ?? {}).length) {
-    await ctx.db.patch(pkg._id, {
+    const packagePatch: Partial<Doc<"packages">> = {
       tags: nextTags,
       updatedAt: now,
+    };
+    const nextPackage: Doc<"packages"> = {
+      ...pkg,
+      ...packagePatch,
+    };
+    await ctx.db.patch(pkg._id, packagePatch);
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: pkg.ownerPublisherId,
+      ownerUserId: pkg.ownerUserId,
+    });
+    await upsertPackageSearchDigest(ctx, {
+      ...extractPackageDigestFields(nextPackage),
+      ownerHandle: owner?.handle ?? "",
+      ownerKind: owner?.kind,
     });
   }
 

@@ -327,10 +327,22 @@ function makePackageDeletionCtx(options: {
       softDeletedAt: undefined,
     } as Record<string, unknown>);
   const actors: Record<string, Record<string, unknown>> = {
-    "users:owner": { _id: "users:owner", role: "user" },
-    "users:admin": { _id: "users:admin", role: "admin" },
-    "users:moderator": { _id: "users:moderator", role: "moderator" },
-    "users:org-admin": { _id: "users:org-admin", role: "user" },
+    "users:owner": { _id: "users:owner", _creationTime: 1, role: "user" },
+    "users:admin": { _id: "users:admin", _creationTime: 1, role: "admin" },
+    "users:moderator": { _id: "users:moderator", _creationTime: 1, role: "moderator" },
+    "users:org-admin": { _id: "users:org-admin", _creationTime: 1, role: "user" },
+  };
+  const digest: Record<string, unknown> = {
+    _id: "packageSearchDigest:demo",
+    packageId: pkg._id,
+    normalizedName: pkg.normalizedName,
+    family: pkg.family,
+    ownerUserId: pkg.ownerUserId,
+    ownerPublisherId: pkg.ownerPublisherId,
+    latestVersion: "2.0.0",
+    ownerHandle: "stale-owner",
+    ownerKind: "user",
+    updatedAt: 1,
   };
   const audits: Array<Record<string, unknown>> = [];
   const packageReleaseTakeLimits: number[] = [];
@@ -382,6 +394,30 @@ function makePackageDeletionCtx(options: {
             ),
           };
         }
+        if (table === "publishers") {
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(null),
+            })),
+          };
+        }
+        if (table === "packageSearchDigest") {
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(digest),
+            })),
+          };
+        }
+        if (
+          table === "packageCapabilitySearchDigest" ||
+          table === "packagePluginCategorySearchDigest"
+        ) {
+          return {
+            withIndex: vi.fn(() => ({
+              collect: vi.fn().mockResolvedValue([]),
+            })),
+          };
+        }
         if (table === "publisherMembers") {
           return {
             withIndex: vi.fn(() => ({
@@ -393,17 +429,28 @@ function makePackageDeletionCtx(options: {
       }),
       patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
         patches.push({ id, patch });
-        const row = (id === pkg._id ? pkg : null) ?? releases.find((candidate) => candidate._id === id);
+        const row =
+          (id === pkg._id ? pkg : null) ??
+          (id === digest._id ? digest : null) ??
+          releases.find((candidate) => candidate._id === id);
         if (row) Object.assign(row, patch);
       }),
       insert: vi.fn(async (table: string, row: Record<string, unknown>) => {
-        if (table !== "auditLogs") throw new Error(`Unexpected insert table ${table}`);
-        audits.push(row);
-        return "auditLogs:1";
+        if (table === "auditLogs") {
+          audits.push(row);
+          return "auditLogs:1";
+        }
+        if (
+          table === "packageCapabilitySearchDigest" ||
+          table === "packagePluginCategorySearchDigest"
+        ) {
+          return `${table}:1`;
+        }
+        throw new Error(`Unexpected insert table ${table}`);
       }),
     },
   };
-  return { actors, audits, ctx, packageReleaseTakeLimits, patches, pkg, releases };
+  return { actors, audits, ctx, digest, packageReleaseTakeLimits, patches, pkg, releases };
 }
 
 function makeTriggerWrappedPackageDeletionCtx(options?: {
@@ -1270,12 +1317,12 @@ describe("owner package release deletion", () => {
     );
   });
 
-  it("removes every package tag targeting the deleted release", async () => {
+  it("removes every package tag targeting the deleted release and synchronizes its digest", async () => {
     const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
       packagesModule,
       "deleteOwnedPackageReleaseForActor",
     );
-    const { actors, ctx, patches, pkg } = makePackageDeletionCtx({
+    const { actors, ctx, digest, patches, pkg } = makePackageDeletionCtx({
       pkg: {
         ...makePackageDeletionCtx({}).pkg,
         tags: {
@@ -1303,6 +1350,14 @@ describe("owner package release deletion", () => {
         updatedAt: expect.any(Number),
       },
     });
+    expect(digest).toMatchObject({
+      packageId: "packages:demo",
+      latestVersion: "2.0.0",
+      ownerHandle: "owner",
+      ownerKind: "user",
+      updatedAt: expect.any(Number),
+    });
+    expect(digest.updatedAt).toBe(pkg.updatedAt);
   });
 
   it("allows an org admin to delete an owned package release", async () => {
