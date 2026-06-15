@@ -13,8 +13,8 @@ import {
   fetchSkillVersionBackupMeta,
   getRegistryArtifactBackupContext,
   isRegistryArtifactBackupConfigured,
-  repairPackageReleaseBackupIndex,
-  repairSkillVersionBackupIndex,
+  repairPackageReleaseBackupIndexes,
+  repairSkillVersionBackupIndexes,
   type RegistryArtifactBackupContext,
 } from "./lib/registryArtifactBackup";
 
@@ -514,6 +514,10 @@ type RetryJobWorkItem =
       estimatedBytes: number;
     };
 
+type ArtifactRetryJobWorkItem =
+  | Extract<RetryJobWorkItem, { kind: "packageRelease" }>
+  | Extract<RetryJobWorkItem, { kind: "skillVersion" }>;
+
 type RetryJobGroup = {
   estimatedBytes: number;
   items: RetryJobWorkItem[];
@@ -581,6 +585,8 @@ async function processRetryJobGroup(
   group: RetryJobGroup,
 ) {
   const result = { processed: 0, succeeded: 0, failed: 0 };
+  const packageIndexRepairs: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
+  const skillIndexRepairs: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
   for (const workItem of group.items) {
     result.processed += 1;
     try {
@@ -588,22 +594,24 @@ async function processRetryJobGroup(
         throw workItem.error;
       } else if (workItem.kind === "missing") {
         await markRetryJobSucceeded(ctx, workItem.job);
+        result.succeeded += 1;
       } else if (workItem.kind === "packageRelease") {
         if (await hasMatchingPackageReleaseMeta(context, workItem.item)) {
-          await repairPackageReleaseBackupIndex(ctx, workItem.item, context);
+          packageIndexRepairs.push(workItem);
         } else {
           await backupPackageReleaseToObjectStorage(ctx, workItem.item, context);
+          await markRetryJobSucceeded(ctx, workItem.job);
+          result.succeeded += 1;
         }
-        await markRetryJobSucceeded(ctx, workItem.job);
       } else {
         if (await hasMatchingSkillVersionMeta(context, workItem.item)) {
-          await repairSkillVersionBackupIndex(ctx, workItem.item, context);
+          skillIndexRepairs.push(workItem);
         } else {
           await backupSkillVersionToObjectStorage(ctx, workItem.item, context);
+          await markRetryJobSucceeded(ctx, workItem.job);
+          result.succeeded += 1;
         }
-        await markRetryJobSucceeded(ctx, workItem.job);
       }
-      result.succeeded += 1;
     } catch (error) {
       result.failed += 1;
       await ctx.runMutation(
@@ -616,7 +624,72 @@ async function processRetryJobGroup(
       );
     }
   }
+  await flushPackageIndexRepairs(ctx, context, packageIndexRepairs, result);
+  await flushSkillIndexRepairs(ctx, context, skillIndexRepairs, result);
   return result;
+}
+
+async function flushPackageIndexRepairs(
+  ctx: ActionCtx,
+  context: RegistryArtifactBackupContext,
+  workItems: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>,
+  result: { succeeded: number; failed: number },
+) {
+  if (workItems.length === 0) return;
+  try {
+    await repairPackageReleaseBackupIndexes(
+      ctx,
+      workItems.map((workItem) => workItem.item),
+      context,
+    );
+    for (const workItem of workItems) {
+      await markRetryJobSucceeded(ctx, workItem.job);
+    }
+    result.succeeded += workItems.length;
+  } catch (error) {
+    result.failed += workItems.length;
+    await markRetryJobsFailed(ctx, workItems, error);
+  }
+}
+
+async function flushSkillIndexRepairs(
+  ctx: ActionCtx,
+  context: RegistryArtifactBackupContext,
+  workItems: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>,
+  result: { succeeded: number; failed: number },
+) {
+  if (workItems.length === 0) return;
+  try {
+    await repairSkillVersionBackupIndexes(
+      ctx,
+      workItems.map((workItem) => workItem.item),
+      context,
+    );
+    for (const workItem of workItems) {
+      await markRetryJobSucceeded(ctx, workItem.job);
+    }
+    result.succeeded += workItems.length;
+  } catch (error) {
+    result.failed += workItems.length;
+    await markRetryJobsFailed(ctx, workItems, error);
+  }
+}
+
+async function markRetryJobsFailed(
+  ctx: ActionCtx,
+  workItems: ArtifactRetryJobWorkItem[],
+  error: unknown,
+) {
+  for (const workItem of workItems) {
+    await ctx.runMutation(
+      internal.registryArtifactBackups.markRegistryArtifactBackupJobFailedInternal,
+      {
+        jobId: workItem.job._id,
+        error: errorMessage(error),
+        maxAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
+      },
+    );
+  }
 }
 
 async function markRetryJobSucceeded(ctx: ActionCtx, job: Doc<"registryArtifactBackupJobs">) {

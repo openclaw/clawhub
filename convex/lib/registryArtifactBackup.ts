@@ -195,12 +195,29 @@ export async function repairSkillVersionBackupIndex(
   params: SkillBackupParams & { root?: string },
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
 ) {
-  const planned = buildSkillVersionBackupManifest({
-    root: params.root ?? context.skillsRoot,
-    ...params,
-  });
-  await putMergedJsonIndex(context, planned.indexPath, (existingIndex: SkillIndexFile | null) =>
-    buildSkillIndexFile(planned, existingIndex),
+  await repairSkillVersionBackupIndexes(_ctx, [params], context);
+}
+
+export async function repairSkillVersionBackupIndexes(
+  _ctx: Pick<ActionCtx, "storage">,
+  params: Array<SkillBackupParams & { root?: string }>,
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  if (params.length === 0) return;
+  const planned = params.map((item) =>
+    buildSkillVersionBackupManifest({
+      root: item.root ?? context.skillsRoot,
+      ...item,
+    }),
+  );
+  const [first, ...rest] = planned;
+  if (!first) return;
+  const indexPath = sharedIndexPath(planned.map((item) => item.indexPath));
+  await putMergedJsonIndex(context, indexPath, (existingIndex: SkillIndexFile | null) =>
+    rest.reduce(
+      (nextIndex, plannedItem) => buildSkillIndexFile(plannedItem, nextIndex),
+      buildSkillIndexFile(first, existingIndex),
+    ),
   );
 }
 
@@ -209,12 +226,29 @@ export async function repairPackageReleaseBackupIndex(
   params: PackageBackupParams & { root?: string },
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
 ) {
-  const planned = buildPackageReleaseBackupManifest({
-    root: params.root ?? context.packagesRoot,
-    ...params,
-  });
-  await putMergedJsonIndex(context, planned.indexPath, (existingIndex: PackageIndexFile | null) =>
-    buildPackageIndexFile(planned, existingIndex),
+  await repairPackageReleaseBackupIndexes(_ctx, [params], context);
+}
+
+export async function repairPackageReleaseBackupIndexes(
+  _ctx: Pick<ActionCtx, "storage">,
+  params: Array<PackageBackupParams & { root?: string }>,
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  if (params.length === 0) return;
+  const planned = params.map((item) =>
+    buildPackageReleaseBackupManifest({
+      root: item.root ?? context.packagesRoot,
+      ...item,
+    }),
+  );
+  const [first, ...rest] = planned;
+  if (!first) return;
+  const indexPath = sharedIndexPath(planned.map((item) => item.indexPath));
+  await putMergedJsonIndex(context, indexPath, (existingIndex: PackageIndexFile | null) =>
+    rest.reduce(
+      (nextIndex, plannedItem) => buildPackageIndexFile(plannedItem, nextIndex),
+      buildPackageIndexFile(first, existingIndex),
+    ),
   );
 }
 
@@ -409,6 +443,14 @@ function buildSkillIndexFile(
     latest,
     versions,
   };
+}
+
+function sharedIndexPath(paths: string[]) {
+  const [first, ...rest] = paths;
+  if (!first || rest.some((path) => path !== first)) {
+    throw new Error("Registry artifact backup bulk index repair received mixed roots");
+  }
+  return first;
 }
 
 function compareSkillIndexEntriesForLatest(left: SkillIndexEntry, right: SkillIndexEntry) {
