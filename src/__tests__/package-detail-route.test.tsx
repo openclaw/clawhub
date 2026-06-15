@@ -837,9 +837,9 @@ describe("plugin detail route", () => {
         name: "demo-plugin",
         version: "1.0.0",
       });
+      expect(screen.queryByText("Older plugin release")).toBeNull();
+      expect(routerInvalidateMock).toHaveBeenCalledTimes(1);
     });
-    expect(screen.queryByText("Older plugin release")).toBeNull();
-    expect(routerInvalidateMock).toHaveBeenCalledTimes(1);
   });
 
   it("keeps plugin Delete hidden from staff-only managers", async () => {
