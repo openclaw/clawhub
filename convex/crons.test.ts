@@ -48,12 +48,12 @@ vi.mock("./_generated/api", () => ({
 }));
 
 describe("crons", () => {
-  it("drains registry artifact backup retries every 30 minutes", async () => {
+  it("drains registry artifact backup retries frequently enough for publish bursts", async () => {
     await import("./crons");
 
     expect(mocks.interval).toHaveBeenCalledWith(
       "registry-artifact-backup-retries",
-      { minutes: 30 },
+      { minutes: 5 },
       mocks.registryArtifactBackupRetryRef,
       {},
     );

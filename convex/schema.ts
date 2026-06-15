@@ -2440,6 +2440,7 @@ const registryArtifactBackupJobs = defineTable({
   updatedAt: v.number(),
 })
   .index("by_status_nextRunAt", ["status", "nextRunAt"])
+  .index("by_status_attempts", ["status", "attempts"])
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"])
   .index("by_updatedAt", ["updatedAt"]);

@@ -5,7 +5,7 @@ const crons = cronJobs();
 
 crons.interval(
   "registry-artifact-backup-retries",
-  { minutes: 30 },
+  { minutes: 5 },
   internal.registryArtifactBackupsNode.processRegistryArtifactBackupRetriesInternal,
   {},
 );
