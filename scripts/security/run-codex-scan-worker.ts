@@ -830,6 +830,9 @@ Additional ClawHub policy for this Codex run:
   not count as file-content coverage.
 - Fill artifact_coverage with exact artifact-relative paths from the submitted artifact manifest.
   For each coverage range, set unused line or byte coordinates to null.
+  For full/head/tail ranges used as benign coverage proof, include byte coordinates that prove
+  the submitted file boundary was covered: full ranges start at byte 0 and end at or past the
+  file size; head ranges start at byte 0; tail ranges end at or past the file size.
   If any submitted file is omitted, unreadable, metadata-only, or lacks tail coverage when large,
   set artifact_coverage.status to incomplete and do not return benign.
 - SkillSpector findings are advisory research-preview evidence, not validated ground truth and
@@ -1212,15 +1215,83 @@ function normalizeArtifactCoveragePath(path: string) {
     .replace(/^artifact\//, "");
 }
 
-function coverageRangeKinds(record: Record<string, unknown>) {
+const ACCEPTED_COVERAGE_RANGE_KINDS = new Set(["full", "head", "tail"]);
+
+function hasCoordinateValue(record: Record<string, unknown>, name: string) {
+  return record[name] !== undefined && record[name] !== null;
+}
+
+function coordinatePairState(
+  record: Record<string, unknown>,
+  startName: "startLine" | "startByte",
+  endName: "endLine" | "endByte",
+) {
+  const label = startName === "startLine" ? "line" : "byte";
+  const hasStart = hasCoordinateValue(record, startName);
+  const hasEnd = hasCoordinateValue(record, endName);
+
+  if (!hasStart && !hasEnd) return { status: "absent" as const };
+  if (hasStart !== hasEnd)
+    return { status: "invalid" as const, reason: `partial ${label} interval` };
+
+  const start = readNumber(record, [startName]);
+  const end = readNumber(record, [endName]);
+  if (start === undefined || end === undefined) {
+    return { status: "invalid" as const, reason: `non-numeric ${label} interval` };
+  }
+  if (end < start) return { status: "invalid" as const, reason: `reversed ${label} interval` };
+  return { status: "valid" as const, start, end };
+}
+
+function coverageRangeProblem(
+  record: Record<string, unknown>,
+  kind: string,
+  file: ArtifactCoverageFile,
+) {
+  const line = coordinatePairState(record, "startLine", "endLine");
+  if (line.status === "invalid") return line.reason;
+
+  const byte = coordinatePairState(record, "startByte", "endByte");
+  if (byte.status === "invalid") return byte.reason;
+
+  if (line.status !== "valid" && byte.status !== "valid") return "no inspected interval";
+  if (byte.status !== "valid") return "missing byte boundary interval";
+  if (byte.end === byte.start && file.size !== 0) return "empty byte interval";
+
+  if (kind === "full" && (byte.start > 0 || byte.end < file.size)) {
+    return "does not cover full file";
+  }
+  if (kind === "head" && byte.start > 0) {
+    return "does not start at file beginning";
+  }
+  if (kind === "tail" && byte.end < file.size) {
+    return "does not reach file end";
+  }
+
+  return undefined;
+}
+
+function coverageRangeKinds(
+  record: Record<string, unknown>,
+  file: ArtifactCoverageFile,
+  problems: string[],
+) {
   const ranges = readField(record, ["ranges"]);
   if (!Array.isArray(ranges)) return new Set<string>();
-  return new Set(
-    ranges
-      .map((range) => asRecord(range))
-      .map((range) => (range ? readString(range, ["kind"]) : undefined))
-      .filter((kind): kind is string => Boolean(kind)),
-  );
+  const kinds = new Set<string>();
+  for (const range of ranges) {
+    const rangeRecord = asRecord(range);
+    const kind = rangeRecord ? readString(rangeRecord, ["kind"]) : undefined;
+    if (!rangeRecord || !kind || !ACCEPTED_COVERAGE_RANGE_KINDS.has(kind)) continue;
+
+    const rangeProblem = coverageRangeProblem(rangeRecord, kind, file);
+    if (rangeProblem) {
+      problems.push(`${file.path}: ${kind} coverage range ${rangeProblem}`);
+      continue;
+    }
+    kinds.add(kind);
+  }
+  return kinds;
 }
 
 export function assertCodexArtifactCoverageForVerdict(
@@ -1276,7 +1347,7 @@ export function assertCodexArtifactCoverageForVerdict(
       continue;
     }
 
-    const ranges = coverageRangeKinds(inspectedFile);
+    const ranges = coverageRangeKinds(inspectedFile, file, problems);
     const hasFullCoverage = ranges.has("full");
     const hasHeadTailCoverage = ranges.has("head") && ranges.has("tail");
 

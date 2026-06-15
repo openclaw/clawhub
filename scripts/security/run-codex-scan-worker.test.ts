@@ -64,13 +64,25 @@ function unsafeFixtureLabels() {
   };
 }
 
-function coverageRange(kind: "full" | "head" | "tail") {
+function coverageRange(
+  kind: "full" | "head" | "tail",
+  overrides: Partial<{
+    startLine: number | null;
+    endLine: number | null;
+    startByte: number | null;
+    endByte: number | null;
+  }> = {},
+) {
+  const defaults = {
+    full: { startLine: null, endLine: null, startByte: 0, endByte: 42 },
+    head: { startLine: null, endLine: null, startByte: 0, endByte: 4096 },
+    tail: { startLine: null, endLine: null, startByte: 65_000, endByte: 70_000 },
+  }[kind];
+
   return {
     kind,
-    startLine: null,
-    endLine: null,
-    startByte: null,
-    endByte: null,
+    ...defaults,
+    ...overrides,
   };
 }
 
@@ -358,6 +370,39 @@ describe("run-codex-scan-worker diagnostics", () => {
     ).not.toThrow();
   });
 
+  it("accepts full coverage for zero-byte submitted files", () => {
+    const zeroByteJob = {
+      ...coverageJob,
+      target: {
+        files: [
+          ...coverageJob.target.files,
+          {
+            path: "empty.txt",
+            sha256: "empty",
+            size: 0,
+            url: "https://signed.example.invalid/empty",
+          },
+        ],
+      },
+    };
+    const raw = codexResult({
+      artifact_coverage: {
+        status: "complete",
+        inspected_files: [
+          ...JSON.parse(codexResult()).artifact_coverage.inspected_files,
+          {
+            path: "empty.txt",
+            coverage: "full",
+            ranges: [coverageRange("full", { startByte: 0, endByte: 0 })],
+            reason: "Empty submitted file was checked.",
+          },
+        ],
+      },
+    });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, zeroByteJob, "benign")).not.toThrow();
+  });
+
   it("rejects benign Codex results that omit artifact coverage", () => {
     const raw = codexResult({ artifact_coverage: undefined });
 
@@ -412,6 +457,105 @@ describe("run-codex-scan-worker diagnostics", () => {
 
     expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
       "src/large.ts: large file lacks full or head/tail coverage",
+    );
+  });
+
+  it.each([
+    {
+      name: "null-only",
+      ranges: [
+        coverageRange("full", {
+          startLine: null,
+          endLine: null,
+          startByte: null,
+          endByte: null,
+        }),
+      ],
+      message: "SKILL.md: full coverage range no inspected interval",
+    },
+    {
+      name: "partially specified",
+      ranges: [coverageRange("full", { startLine: 1, endLine: null })],
+      message: "SKILL.md: full coverage range partial line interval",
+    },
+    {
+      name: "reversed",
+      ranges: [coverageRange("full", { startLine: 12, endLine: 1 })],
+      message: "SKILL.md: full coverage range reversed line interval",
+    },
+    {
+      name: "empty",
+      ranges: [
+        coverageRange("full", {
+          startLine: null,
+          endLine: null,
+          startByte: 42,
+          endByte: 42,
+        }),
+      ],
+      message: "SKILL.md: full coverage range empty byte interval",
+    },
+  ])("rejects benign Codex results with $name accepted coverage ranges", (invalid) => {
+    const inspectedFiles = JSON.parse(codexResult()).artifact_coverage.inspected_files.map(
+      (file: { path: string }) =>
+        file.path === "SKILL.md" ? { ...file, ranges: invalid.ranges } : file,
+    );
+    const raw = codexResult({
+      artifact_coverage: {
+        status: "complete",
+        inspected_files: inspectedFiles,
+      },
+    });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
+      invalid.message,
+    );
+  });
+
+  it.each([
+    {
+      name: "line-only full coverage",
+      path: "SKILL.md",
+      ranges: [
+        coverageRange("full", { startLine: 1, endLine: 12, startByte: null, endByte: null }),
+      ],
+      message: "SKILL.md: full coverage range missing byte boundary interval",
+    },
+    {
+      name: "short full range",
+      path: "SKILL.md",
+      ranges: [coverageRange("full", { startByte: 1, endByte: 2 })],
+      message: "SKILL.md: full coverage range does not cover full file",
+    },
+    {
+      name: "middle head range",
+      path: "src/large.ts",
+      ranges: [coverageRange("head", { startByte: 100, endByte: 4096 }), coverageRange("tail")],
+      message: "src/large.ts: head coverage range does not start at file beginning",
+    },
+    {
+      name: "short tail range",
+      path: "src/large.ts",
+      ranges: [
+        coverageRange("head"),
+        coverageRange("tail", { startByte: 60_000, endByte: 65_000 }),
+      ],
+      message: "src/large.ts: tail coverage range does not reach file end",
+    },
+  ])("rejects benign Codex results with $name", (invalid) => {
+    const inspectedFiles = JSON.parse(codexResult()).artifact_coverage.inspected_files.map(
+      (file: { path: string }) =>
+        file.path === invalid.path ? { ...file, ranges: invalid.ranges } : file,
+    );
+    const raw = codexResult({
+      artifact_coverage: {
+        status: "complete",
+        inspected_files: inspectedFiles,
+      },
+    });
+
+    expect(() => assertCodexArtifactCoverageForVerdict(raw, coverageJob, "benign")).toThrow(
+      invalid.message,
     );
   });
 
