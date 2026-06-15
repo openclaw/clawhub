@@ -1,15 +1,54 @@
 import type { ApiV1PackageVersionListResponse } from "clawhub-schema";
-import { getPackageDownloadPath } from "../lib/packageApi";
+import { useEffect, useRef, useState } from "react";
+import { fetchPackageVersions, getPackageDownloadPath } from "../lib/packageApi";
 import { Badge } from "./ui/badge";
+import { Button } from "./ui/button";
 
 type PluginVersionsPanelProps = {
   packageName: string;
-  versions: ApiV1PackageVersionListResponse["items"] | null | undefined;
+  versions: ApiV1PackageVersionListResponse | null | undefined;
 };
 
 export function PluginVersionsPanel({ packageName, versions }: PluginVersionsPanelProps) {
   const isUnavailable = versions == null;
-  const releases = versions ?? [];
+  const [releases, setReleases] = useState(versions?.items ?? []);
+  const [nextCursor, setNextCursor] = useState(versions?.nextCursor ?? null);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
+  const loadMoreInFlightRef = useRef(false);
+  const requestGenerationRef = useRef(0);
+
+  useEffect(() => {
+    requestGenerationRef.current += 1;
+    loadMoreInFlightRef.current = false;
+    setReleases(versions?.items ?? []);
+    setNextCursor(versions?.nextCursor ?? null);
+    setIsLoadingMore(false);
+    setLoadMoreError(null);
+  }, [packageName, versions]);
+
+  const loadMore = async () => {
+    if (!nextCursor || loadMoreInFlightRef.current) return;
+    const cursor = nextCursor;
+    const requestGeneration = requestGenerationRef.current;
+    loadMoreInFlightRef.current = true;
+    setIsLoadingMore(true);
+    setLoadMoreError(null);
+    try {
+      const page = await fetchPackageVersions(packageName, { cursor, limit: 100 });
+      if (requestGeneration !== requestGenerationRef.current) return;
+      setReleases((current) => [...current, ...page.items]);
+      setNextCursor(page.nextCursor);
+    } catch {
+      if (requestGeneration !== requestGenerationRef.current) return;
+      setLoadMoreError("Could not load more releases. Try again.");
+    } finally {
+      if (requestGeneration === requestGenerationRef.current) {
+        setIsLoadingMore(false);
+        loadMoreInFlightRef.current = false;
+      }
+    }
+  };
 
   return (
     <div className="grid max-w-full gap-5 overflow-x-auto">
@@ -26,7 +65,7 @@ export function PluginVersionsPanel({ packageName, versions }: PluginVersionsPan
           <p className="empty-state-title">Release history is temporarily unavailable.</p>
           <p className="empty-state-body">Try again later.</p>
         </div>
-      ) : releases.length > 0 ? (
+      ) : releases.length > 0 || nextCursor ? (
         <div className="max-h-[600px] overflow-y-auto">
           <div className="flex flex-col gap-3">
             {releases.map((release) => (
@@ -54,6 +93,7 @@ export function PluginVersionsPanel({ packageName, versions }: PluginVersionsPan
                 <div className="shrink-0">
                   <a
                     href={getPackageDownloadPath(packageName, release.version)}
+                    aria-label={`Download version ${release.version} zip`}
                     className="inline-flex min-h-[34px] items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-pill)] border border-[color:var(--line)] bg-[color:var(--surface)] px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] no-underline transition-all duration-200"
                   >
                     Zip
@@ -62,6 +102,24 @@ export function PluginVersionsPanel({ packageName, versions }: PluginVersionsPan
               </div>
             ))}
           </div>
+          {loadMoreError ? (
+            <p className="mt-3 text-sm font-medium text-red-600 dark:text-red-400" role="alert">
+              {loadMoreError}
+            </p>
+          ) : null}
+          {nextCursor ? (
+            <div className="mt-3 flex justify-center">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                loading={isLoadingMore}
+                onClick={() => void loadMore()}
+              >
+                Load more
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : (
         <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">

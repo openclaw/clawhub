@@ -474,7 +474,7 @@ export function PluginDetailPage({
       <p className="empty-state-body">This plugin doesn't have a README yet.</p>
     </div>
   );
-  const versionsPanel = <PluginVersionsPanel packageName={pkg.name} versions={versions?.items} />;
+  const versionsPanel = <PluginVersionsPanel packageName={pkg.name} versions={versions} />;
   const compatibilityPanel =
     compatEntries.length > 0 || artifact ? (
       <div className="plugin-tab-panel">

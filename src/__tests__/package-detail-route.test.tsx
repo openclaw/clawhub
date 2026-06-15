@@ -228,11 +228,220 @@ describe("plugin detail route", () => {
     expect(screen.getByText("stable")).toBeTruthy();
     expect(screen.getByText("beta")).toBeTruthy();
     expect(
-      screen.getAllByRole("link", { name: "Zip" }).map((link) => link.getAttribute("href")),
+      screen
+        .getAllByRole("link", { name: /Download version .* zip/ })
+        .map((link) => link.getAttribute("href")),
     ).toEqual([
       "/api/v1/packages/demo-plugin/download?version=2.0.0",
       "/api/v1/packages/demo-plugin/download?version=2.0.0-beta.1",
     ]);
+    expect(screen.getByRole("link", { name: "Download version 2.0.0 zip" }).textContent).toBe(
+      "Zip",
+    );
+  });
+
+  it("loads and appends the next active release page", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      versions: {
+        items: [
+          {
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "Current page",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: "versions:next",
+      },
+    };
+    vi.mocked(fetchPackageVersions).mockResolvedValueOnce({
+      items: [
+        {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Loaded next page",
+          distTags: [],
+        },
+      ],
+      nextCursor: null,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
+      cursor: "versions:next",
+      limit: 100,
+    });
+    expect(screen.getByText("Current page")).toBeTruthy();
+    expect(screen.getByText("Loaded next page")).toBeTruthy();
+    expect(
+      screen.getByRole("link", { name: "Download version 1.0.0 zip" }).getAttribute("href"),
+    ).toBe("/api/v1/packages/demo-plugin/download?version=1.0.0");
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("does not hide a remaining release cursor when the current page is empty", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      versions: {
+        items: [],
+        nextCursor: "versions:next",
+      },
+    };
+    vi.mocked(fetchPackageVersions).mockResolvedValueOnce({
+      items: [
+        {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "Loaded after empty page",
+          distTags: [],
+        },
+      ],
+      nextCursor: null,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(screen.getByText("Loaded after empty page")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("keeps loaded releases and allows retry when loading more fails", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      versions: {
+        items: [
+          {
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "Current page",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: "versions:next",
+      },
+    };
+    vi.mocked(fetchPackageVersions)
+      .mockRejectedValueOnce(new Error("versions unavailable"))
+      .mockResolvedValueOnce({
+        items: [
+          {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Loaded after retry",
+            distTags: [],
+          },
+        ],
+        nextCursor: null,
+      });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(screen.getByText("Current page")).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toContain(
+      "Could not load more releases. Try again.",
+    );
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(fetchPackageVersions).toHaveBeenLastCalledWith("demo-plugin", {
+      cursor: "versions:next",
+      limit: 100,
+    });
+    expect(screen.getByText("Loaded after retry")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("ignores a pending release page after navigating to another plugin", async () => {
+    let resolvePendingPage!: (page: Awaited<ReturnType<typeof fetchPackageVersions>>) => void;
+    const pendingPage = new Promise<Awaited<ReturnType<typeof fetchPackageVersions>>>((resolve) => {
+      resolvePendingPage = resolve;
+    });
+    loaderDataMock = {
+      ...loaderDataMock,
+      versions: {
+        items: [
+          {
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "First plugin release",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: "versions:next",
+      },
+    };
+    vi.mocked(fetchPackageVersions).mockReturnValueOnce(pendingPage);
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+    const { rerender } = render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          name: "second-plugin",
+          displayName: "Second Plugin",
+        },
+        owner: null,
+      },
+      versions: {
+        items: [
+          {
+            version: "3.0.0",
+            createdAt: 3,
+            changelog: "Second plugin release",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: null,
+      },
+    };
+    rerender(<Component />);
+
+    await act(async () => {
+      resolvePendingPage({
+        items: [
+          {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Stale first plugin release",
+            distTags: [],
+          },
+        ],
+        nextCursor: null,
+      });
+    });
+
+    expect(screen.getByText("Second plugin release")).toBeTruthy();
+    expect(screen.queryByText("Stale first plugin release")).toBeNull();
   });
 
   it("selects the versions tab from the versions hash", async () => {
