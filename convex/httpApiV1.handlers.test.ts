@@ -7977,6 +7977,40 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("packages list install sort merges package and skill rows by installs", async () => {
+    const pluginPackage = makeCatalogItem("plugin-installed", {
+      family: "code-plugin",
+      updatedAt: 200,
+      stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
+    });
+    const skillPackage = makeCatalogItem("skill-installed", {
+      family: "skill",
+      updatedAt: 100,
+      stats: { downloads: 1, installs: 40, stars: 0, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      if (Object.hasOwn(args, "viewerUserId")) {
+        return { page: [pluginPackage], isDone: true, continueCursor: "" };
+      }
+      return { page: [skillPackage], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?limit=2&sort=installs"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "skill-installed",
+      "plugin-installed",
+    ]);
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
   it("plugins list defaults to plugin package families", async () => {
     const codePlugin = {
       name: "code-plugin",
