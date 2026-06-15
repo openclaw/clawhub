@@ -525,7 +525,7 @@ export async function fetchPackageVersions(
   },
 ): Promise<ApiV1PackageVersionListResponse> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/versions`);
-  if (options?.cursor !== undefined) url.searchParams.set("cursor", options.cursor);
+  if (options?.cursor) url.searchParams.set("cursor", options.cursor);
   if (typeof options?.limit === "number") url.searchParams.set("limit", String(options.limit));
   return await fetchJson<ApiV1PackageVersionListResponse>(url, options?.signal);
 }

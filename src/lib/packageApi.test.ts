@@ -467,6 +467,20 @@ describe("fetchPackages", () => {
     expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(signal);
   });
 
+  it("omits an empty package version history cursor", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPackageVersions("demo-plugin", { cursor: "" });
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.searchParams.has("cursor")).toBe(false);
+  });
+
   it("returns null when no supported README variant exists", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
