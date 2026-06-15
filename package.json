@@ -41,7 +41,6 @@
     "docs:list": "bun scripts/docs-list.ts",
     "docs:run": "bun scripts/docs-run.ts",
     "email:dev": "email dev --dir emails --port 8765",
-    "eval:clawscan:security-signals": "bun scripts/eval/clawscan-security-signals.ts",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
     "install:local-hooks": "bun scripts/install-git-hooks.mjs",

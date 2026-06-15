@@ -1947,6 +1947,8 @@ const skillStatDocSyncLeases = defineTable({
   lastProcessedCount: v.optional(v.number()),
 }).index("by_key", ["key"]);
 
+// Legacy skill comment storage is retained only so old production rows keep
+// validating and hard-delete/ban cleanup can purge them safely.
 const comments = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),

@@ -3008,7 +3008,7 @@ describe("users.banUserInternal", () => {
     vi.restoreAllMocks();
   });
 
-  it("soft-deletes target user skill comments during ban", async () => {
+  it("soft-deletes legacy skill comments during ban", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const { ctx, get, patch, insert, runMutation } = makeBanCtx();
 
@@ -3020,6 +3020,7 @@ describe("users.banUserInternal", () => {
 
     runMutation
       .mockResolvedValueOnce({ hiddenCount: 2, scheduled: false })
+      .mockResolvedValueOnce({ deletedCount: 0, revokedTokenCount: 0, scheduled: false })
       .mockResolvedValueOnce(undefined);
 
     const handler = (
@@ -3046,12 +3047,10 @@ describe("users.banUserInternal", () => {
       alreadyBanned: false,
       deletedSkillComments: 1,
     });
-
     expect(patch).toHaveBeenCalledWith("comments:active", {
       softDeletedAt: 1_700_000_000_000,
       deletedBy: "users:actor",
     });
-
     expect(insertStatEvent).toHaveBeenCalledWith(expect.anything(), {
       skillId: "skills:1",
       kind: "uncomment",
@@ -3115,7 +3114,7 @@ describe("users.banUserInternal", () => {
     });
   });
 
-  it("re-ban of already banned user still cleans lingering comments", async () => {
+  it("cleans lingering legacy skill comments when re-banning a deleted user", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const { ctx, get, patch, runMutation } = makeBanCtx();
 
