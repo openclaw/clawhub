@@ -1451,6 +1451,37 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("users/publisher-recovery requires destination handle guard", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("unexpected mutation");
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-recovery", {
+        method: "POST",
+        body: JSON.stringify({
+          handle: "@Gingiris",
+          previousGitHubProviderAccountId: "111",
+          nextGitHubProviderAccountId: "222",
+          reason: "Verified account continuity for issue #2555",
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Missing nextUserHandle");
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ publisherHandle: "gingiris" }),
+    );
+  });
+
   it("users/publisher-official lists official publishers for admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",

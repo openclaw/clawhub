@@ -804,6 +804,7 @@ async function handleAdminRecoverPersonalPublisher(
   const confirmIdentityVerified = payload.confirmIdentityVerified === true;
 
   if (!publisherHandle) return text("Missing handle", 400, headers);
+  if (!nextUserHandle) return text("Missing nextUserHandle", 400, headers);
   if (!previousGitHubProviderAccountId) {
     return text("Missing previousGitHubProviderAccountId", 400, headers);
   }
