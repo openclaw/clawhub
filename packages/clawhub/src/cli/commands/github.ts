@@ -277,7 +277,9 @@ function decodePathSegments(pathname: string) {
 }
 
 async function resolveDefaultBranch(owner: string, repo: string, token?: string) {
-  const response = await fetchGitHubApi(`${GITHUB_API}/repos/${owner}/${repo}`, token);
+  const response = await fetch(`${GITHUB_API}/repos/${owner}/${repo}`, {
+    headers: buildGitHubHeaders(token),
+  });
   if (!response.ok) throw new Error(`GitHub repo not found: ${owner}/${repo}`);
   const parsed = (await response.json()) as { default_branch?: unknown };
   const defaultBranch =
@@ -287,9 +289,11 @@ async function resolveDefaultBranch(owner: string, repo: string, token?: string)
 }
 
 async function resolveCommitSha(owner: string, repo: string, ref: string, token?: string) {
-  const response = await fetchGitHubApi(
+  const response = await fetch(
     `${GITHUB_API}/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
-    token,
+    {
+      headers: buildGitHubHeaders(token),
+    },
   );
   if (!response.ok) throw new Error(`GitHub ref not found: ${owner}/${repo}@${ref}`);
   const parsed = (await response.json()) as { sha?: unknown };
@@ -299,9 +303,11 @@ async function resolveCommitSha(owner: string, repo: string, ref: string, token?
 }
 
 async function tryResolveCommitSha(owner: string, repo: string, ref: string, token?: string) {
-  const response = await fetchGitHubApi(
+  const response = await fetch(
     `${GITHUB_API}/repos/${owner}/${repo}/commits/${encodeURIComponent(ref)}`,
-    token,
+    {
+      headers: buildGitHubHeaders(token),
+    },
   );
   if (!response.ok) return null;
   const parsed = (await response.json()) as { sha?: unknown };
@@ -310,24 +316,14 @@ async function tryResolveCommitSha(owner: string, repo: string, ref: string, tok
 }
 
 async function downloadGitHubZip(owner: string, repo: string, ref: string, token?: string) {
-  const response = await fetchGitHubApi(
+  const response = await fetch(
     `${GITHUB_API}/repos/${owner}/${repo}/zipball/${encodeURIComponent(ref)}`,
-    token,
+    {
+      headers: buildGitHubHeaders(token),
+    },
   );
   if (!response.ok) throw new Error(`GitHub archive download failed: ${owner}/${repo}@${ref}`);
   return new Uint8Array(await response.arrayBuffer());
-}
-
-async function fetchGitHubApi(url: string, token?: string) {
-  const response = await fetch(url, { headers: buildGitHubHeaders(token) });
-  if (!token || !shouldRetryWithoutGitHubToken(response.status)) return response;
-
-  const anonymousResponse = await fetch(url, { headers: buildGitHubHeaders() });
-  return anonymousResponse.ok ? anonymousResponse : response;
-}
-
-function shouldRetryWithoutGitHubToken(status: number) {
-  return status === 401 || status === 403 || status === 404;
 }
 
 function buildGitHubHeaders(token?: string) {
