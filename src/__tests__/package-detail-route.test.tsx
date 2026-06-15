@@ -228,16 +228,11 @@ describe("plugin detail route", () => {
     expect(screen.getByText("stable")).toBeTruthy();
     expect(screen.getByText("beta")).toBeTruthy();
     expect(
-      screen
-        .getAllByRole("link", { name: /Download version .* zip/ })
-        .map((link) => link.getAttribute("href")),
-    ).toEqual([
-      "/api/v1/packages/demo-plugin/download?version=2.0.0",
-      "/api/v1/packages/demo-plugin/download?version=2.0.0-beta.1",
-    ]);
-    expect(screen.getByRole("link", { name: "Download version 2.0.0 zip" }).textContent).toBe(
-      "Zip",
-    );
+      document.querySelector(
+        'a[href="/api/v1/packages/demo-plugin/download?version=2.0.0-beta.1"]',
+      ),
+    ).toBeNull();
+    expect(screen.queryByText("Zip")).toBeNull();
   });
 
   it("loads and appends the next active release page", async () => {
@@ -283,8 +278,9 @@ describe("plugin detail route", () => {
     expect(screen.getByText("Current page")).toBeTruthy();
     expect(screen.getByText("Loaded next page")).toBeTruthy();
     expect(
-      screen.getByRole("link", { name: "Download version 1.0.0 zip" }).getAttribute("href"),
-    ).toBe("/api/v1/packages/demo-plugin/download?version=1.0.0");
+      document.querySelector('a[href="/api/v1/packages/demo-plugin/download?version=1.0.0"]'),
+    ).toBeNull();
+    expect(screen.queryByText("Zip")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 

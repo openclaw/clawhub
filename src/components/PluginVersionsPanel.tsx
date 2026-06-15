@@ -1,6 +1,6 @@
 import type { ApiV1PackageVersionListResponse } from "clawhub-schema";
 import { useEffect, useRef, useState } from "react";
-import { fetchPackageVersions, getPackageDownloadPath } from "../lib/packageApi";
+import { fetchPackageVersions } from "../lib/packageApi";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
@@ -89,15 +89,6 @@ export function PluginVersionsPanel({ packageName, versions }: PluginVersionsPan
                       ))}
                     </div>
                   ) : null}
-                </div>
-                <div className="shrink-0">
-                  <a
-                    href={getPackageDownloadPath(packageName, release.version)}
-                    aria-label={`Download version ${release.version} zip`}
-                    className="inline-flex min-h-[34px] items-center justify-center gap-2 whitespace-nowrap rounded-[var(--radius-pill)] border border-[color:var(--line)] bg-[color:var(--surface)] px-3 py-1.5 text-xs font-semibold text-[color:var(--ink)] no-underline transition-all duration-200"
-                  >
-                    Zip
-                  </a>
                 </div>
               </div>
             ))}
