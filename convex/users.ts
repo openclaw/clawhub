@@ -55,6 +55,7 @@ const DEV_PERSONA_BANNED_REAUTH_MESSAGE =
   "This account has been banned and cannot sign in. If you believe this is a mistake, appeal this decision: https://appeals.openclaw.ai/.";
 const ACCOUNT_RECOVERY_PURGE_LIMIT_DEFAULT = 25;
 const ACCOUNT_RECOVERY_PURGE_LIMIT_MAX = 100;
+const HOVER_STATS_COMPATIBILITY_ROW_LIMIT = 200;
 const accountRecoveryPurgeModeValidator = v.optional(
   v.union(v.literal("deactivated"), v.literal("legacyDeleted")),
 );
@@ -1259,24 +1260,57 @@ export const getByHandle = query({
 async function getPublisherInstallFallback(
   ctx: Pick<QueryCtx, "db">,
   publisherId: Id<"publishers">,
+  ownerUserId: Id<"users">,
 ) {
-  const [skills, packages] = await Promise.all([
+  // Publisher aggregates are the normal path; keep legacy hover recovery bounded.
+  const [publisherSkills, publisherPackages, ownerSkills, ownerPackages] = await Promise.all([
     ctx.db
       .query("skills")
       .withIndex("by_owner_publisher_active_updated", (q) =>
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
-      .collect(),
+      .order("desc")
+      .take(HOVER_STATS_COMPATIBILITY_ROW_LIMIT),
     ctx.db
       .query("packages")
       .withIndex("by_owner_publisher_active_updated", (q) =>
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
-      .collect(),
+      .order("desc")
+      .take(HOVER_STATS_COMPATIBILITY_ROW_LIMIT),
+    ctx.db
+      .query("skills")
+      .withIndex("by_owner_active_updated", (q) =>
+        q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(HOVER_STATS_COMPATIBILITY_ROW_LIMIT),
+    ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
+      .order("desc")
+      .take(HOVER_STATS_COMPATIBILITY_ROW_LIMIT),
   ]);
+
+  const legacyOwnerRowsForPublisher = <T extends { ownerPublisherId?: Id<"publishers"> }>(
+    rows: T[],
+  ) => rows.filter((row) => !row.ownerPublisherId || row.ownerPublisherId === publisherId);
+  const skills = new Map(
+    [...publisherSkills, ...legacyOwnerRowsForPublisher(ownerSkills)].map((skill) => [
+      skill._id,
+      skill,
+    ]),
+  );
+  const packages = new Map(
+    [...publisherPackages, ...legacyOwnerRowsForPublisher(ownerPackages)].map((pkg) => [
+      pkg._id,
+      pkg,
+    ]),
+  );
+
   return [
-    ...skills.map(getSkillPublisherContribution),
-    ...packages.map(getPackagePublisherContribution),
+    ...Array.from(skills.values(), getSkillPublisherContribution),
+    ...Array.from(packages.values(), getPackagePublisherContribution),
   ].reduce((total, contribution) => total + contribution.totalInstalls, 0);
 }
 
@@ -1286,9 +1320,11 @@ export const getHoverStats = query({
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     const publisher = user ? await getPersonalPublisherForUserOrFallback(ctx, user) : null;
-    const totalInstalls = publisher
-      ? (publisher.totalInstalls ?? (await getPublisherInstallFallback(ctx, publisher._id)))
-      : 0;
+    const totalInstalls =
+      user && publisher
+        ? (publisher.totalInstalls ??
+          (await getPublisherInstallFallback(ctx, publisher._id, user._id)))
+        : 0;
 
     return {
       publishedSkills: publisher?.publishedSkills ?? user?.publishedSkills ?? 0,

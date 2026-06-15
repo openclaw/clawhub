@@ -1401,7 +1401,7 @@ describe("users.getHoverStats", () => {
     });
   });
 
-  it("computes installs when a personal publisher aggregate is not backfilled", async () => {
+  it("uses bounded legacy owner rows when a personal publisher aggregate is not backfilled", async () => {
     const get = vi.fn(async (id: string) => {
       if (id === "users:owner") {
         return {
@@ -1431,45 +1431,44 @@ describe("users.getHoverStats", () => {
       }
       return null;
     });
-    const query = vi.fn((table: string) => ({
-      withIndex: (indexName: string) => {
-        if (indexName !== "by_owner_publisher_active_updated") {
-          throw new Error(`Unexpected ${table} index ${indexName}`);
-        }
-        return {
-          collect: async () =>
-            table === "skills"
-              ? [
-                  {
-                    _id: "skills:demo",
-                    _creationTime: 1,
-                    ownerPublisherId: "publishers:owner",
-                    slug: "demo",
-                    stats: {
-                      downloads: 0,
-                      stars: 2,
-                      installsCurrent: 7,
-                      installsAllTime: 12,
-                      comments: 0,
-                      versions: 1,
-                    },
-                    statsInstallsAllTime: 12,
-                    createdAt: 1,
-                    updatedAt: 1,
-                  },
-                ]
-              : [
-                  {
-                    _id: "packages:demo",
-                    _creationTime: 1,
-                    ownerPublisherId: "publishers:owner",
-                    stats: { downloads: 0, installs: 8, stars: 0, versions: 1 },
-                    createdAt: 1,
-                    updatedAt: 1,
-                  },
-                ],
-        };
+    const takeLimits: number[] = [];
+    const skill = {
+      _id: "skills:demo",
+      _creationTime: 1,
+      ownerUserId: "users:owner",
+      slug: "demo",
+      stats: {
+        downloads: 0,
+        stars: 2,
+        installsCurrent: 7,
+        installsAllTime: 12,
+        comments: 0,
+        versions: 1,
       },
+      statsInstallsAllTime: 12,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const pkg = {
+      _id: "packages:demo",
+      _creationTime: 1,
+      ownerUserId: "users:owner",
+      stats: { downloads: 0, installs: 8, stars: 0, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const query = vi.fn((table: string) => ({
+      withIndex: (indexName: string) => ({
+        collect: async () => [],
+        order: () => ({
+          take: async (limit: number) => {
+            takeLimits.push(limit);
+            if (table === "skills" && indexName === "by_owner_active_updated") return [skill];
+            if (table === "packages" && indexName === "by_owner") return [pkg];
+            return [];
+          },
+        }),
+      }),
     }));
 
     const result = await getHoverStatsHandler({ db: { get, query } }, { userId: "users:owner" });
@@ -1479,6 +1478,8 @@ describe("users.getHoverStats", () => {
       totalStars: 2,
       totalInstalls: 20,
     });
+    expect(takeLimits).toHaveLength(4);
+    expect(takeLimits.every((limit) => limit > 0 && limit <= 200)).toBe(true);
   });
 });
 
