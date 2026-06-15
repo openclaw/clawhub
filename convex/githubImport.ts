@@ -120,92 +120,107 @@ export const listOwnedPublicGitHubRepos = action({
 export const previewGitHubImport = action({
   args: { url: v.string() },
   handler: async (ctx, args) => {
-    await requireUserFromAction(ctx);
-
-    const parsed = parseGitHubImportUrl(args.url);
-    await requirePublicGitHubRepoForImport(parsed.owner, parsed.repo, fetch);
-    const resolved = await resolveGitHubCommit(parsed, fetch);
-    const entries = await fetchResolvedGitHubEntries(resolved, fetch);
-    const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
-      isCandidateUnderResolvedPath(candidate.path, resolved.path),
-    );
-    if (candidates.length === 0)
-      throw new ConvexError("No SKILL.md or skills.md found in this repo");
-
-    return {
-      resolved,
-      candidates: candidates.map((candidate) => ({
-        path: candidate.path,
-        readmePath: candidate.readmePath,
-        name: candidate.name ?? null,
-        description: candidate.description ?? null,
-      })),
-    };
+    const { userId } = await requireUserFromAction(ctx);
+    return previewGitHubImportForUser(ctx, userId, args, fetch);
   },
 });
+
+async function previewGitHubImportForUser(
+  ctx: Pick<ActionCtx, "runQuery">,
+  userId: Id<"users">,
+  args: { url: string },
+  fetcher: typeof fetch,
+) {
+  const parsed = parseGitHubImportUrl(args.url);
+  await requireOwnedPublicGitHubRepoForImport(ctx, userId, parsed.owner, parsed.repo, fetcher);
+  const resolved = await resolveGitHubCommit(parsed, fetcher);
+  const entries = await fetchResolvedGitHubEntries(resolved, fetcher);
+  const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
+    isCandidateUnderResolvedPath(candidate.path, resolved.path),
+  );
+  if (candidates.length === 0) throw new ConvexError("No SKILL.md or skills.md found in this repo");
+
+  return {
+    resolved,
+    candidates: candidates.map((candidate) => ({
+      path: candidate.path,
+      readmePath: candidate.readmePath,
+      name: candidate.name ?? null,
+      description: candidate.description ?? null,
+    })),
+  };
+}
 
 export const previewGitHubImportCandidate = action({
   args: { url: v.string(), candidatePath: v.string() },
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
-
-    const parsed = parseGitHubImportUrl(args.url);
-    await requirePublicGitHubRepoForImport(parsed.owner, parsed.repo, fetch);
-    const resolved = await resolveGitHubCommit(parsed, fetch);
-    const entries = await fetchResolvedGitHubEntries(resolved, fetch);
-
-    const normalizedCandidatePath = normalizeRepoPath(args.candidatePath);
-    if (!isCandidateUnderResolvedPath(normalizedCandidatePath, resolved.path)) {
-      throw new ConvexError("Candidate path is outside the requested import scope");
-    }
-
-    const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
-      isCandidateUnderResolvedPath(candidate.path, resolved.path),
-    );
-
-    const candidate = candidates.find((item) => item.path === normalizedCandidatePath);
-    if (!candidate) throw new ConvexError("Candidate not found");
-
-    const files = listTextFilesUnderCandidate(entries, candidate.path);
-    const defaultSelectedPaths = computeDefaultSelectedPaths({ candidate, files });
-    const fileList = buildGitHubImportFileList({
-      candidate,
-      files,
-      defaultSelectedPaths,
-    });
-
-    const baseForNaming = candidate.path ? (candidate.path.split("/").at(-1) ?? "") : resolved.repo;
-    const suggestedDisplayName = suggestDisplayName(candidate, baseForNaming);
-
-    const rawSlugBase = sanitizeSlug(candidate.path ? baseForNaming : resolved.repo);
-    const suggestedSlug = await suggestAvailableSlug(ctx, userId, rawSlugBase);
-
-    const existing = await ctx.runQuery(api.skills.getBySlug, { slug: suggestedSlug });
-    const existingLatest =
-      existing?.skill && existing.skill.ownerUserId === userId
-        ? (existing.latestVersion?.version ?? null)
-        : null;
-    const suggestedVersion = suggestVersion(existingLatest);
-
-    return {
-      resolved,
-      candidate: {
-        path: candidate.path,
-        readmePath: candidate.readmePath,
-        name: candidate.name ?? null,
-        description: candidate.description ?? null,
-      },
-      defaults: {
-        selectedPaths: defaultSelectedPaths,
-        slug: suggestedSlug,
-        displayName: suggestedDisplayName,
-        version: suggestedVersion,
-        tags: ["latest"],
-      },
-      files: fileList,
-    };
+    return previewGitHubImportCandidateForUser(ctx, userId, args, fetch);
   },
 });
+
+async function previewGitHubImportCandidateForUser(
+  ctx: Pick<ActionCtx, "runQuery">,
+  userId: Id<"users">,
+  args: { url: string; candidatePath: string },
+  fetcher: typeof fetch,
+) {
+  const parsed = parseGitHubImportUrl(args.url);
+  await requireOwnedPublicGitHubRepoForImport(ctx, userId, parsed.owner, parsed.repo, fetcher);
+  const resolved = await resolveGitHubCommit(parsed, fetcher);
+  const entries = await fetchResolvedGitHubEntries(resolved, fetcher);
+
+  const normalizedCandidatePath = normalizeRepoPath(args.candidatePath);
+  if (!isCandidateUnderResolvedPath(normalizedCandidatePath, resolved.path)) {
+    throw new ConvexError("Candidate path is outside the requested import scope");
+  }
+
+  const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
+    isCandidateUnderResolvedPath(candidate.path, resolved.path),
+  );
+
+  const candidate = candidates.find((item) => item.path === normalizedCandidatePath);
+  if (!candidate) throw new ConvexError("Candidate not found");
+
+  const files = listTextFilesUnderCandidate(entries, candidate.path);
+  const defaultSelectedPaths = computeDefaultSelectedPaths({ candidate, files });
+  const fileList = buildGitHubImportFileList({
+    candidate,
+    files,
+    defaultSelectedPaths,
+  });
+
+  const baseForNaming = candidate.path ? (candidate.path.split("/").at(-1) ?? "") : resolved.repo;
+  const suggestedDisplayName = suggestDisplayName(candidate, baseForNaming);
+
+  const rawSlugBase = sanitizeSlug(candidate.path ? baseForNaming : resolved.repo);
+  const suggestedSlug = await suggestAvailableSlug(ctx, userId, rawSlugBase);
+
+  const existing = await ctx.runQuery(api.skills.getBySlug, { slug: suggestedSlug });
+  const existingLatest =
+    existing?.skill && existing.skill.ownerUserId === userId
+      ? (existing.latestVersion?.version ?? null)
+      : null;
+  const suggestedVersion = suggestVersion(existingLatest);
+
+  return {
+    resolved,
+    candidate: {
+      path: candidate.path,
+      readmePath: candidate.readmePath,
+      name: candidate.name ?? null,
+      description: candidate.description ?? null,
+    },
+    defaults: {
+      selectedPaths: defaultSelectedPaths,
+      slug: suggestedSlug,
+      displayName: suggestedDisplayName,
+      version: suggestedVersion,
+      tags: ["latest"],
+    },
+    files: fileList,
+  };
+}
 
 export const importGitHubSkill = action({
   args: {
@@ -222,131 +237,150 @@ export const importGitHubSkill = action({
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
-    if (!args.acceptLicenseTerms) {
-      throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
-    }
-
-    const parsed = parseGitHubImportUrl(args.url);
-    await requirePublicGitHubRepoForImport(parsed.owner, parsed.repo, fetch);
-    const resolved = await resolveGitHubCommit(parsed, fetch);
-    if (!/^[a-f0-9]{40}$/i.test(args.commit)) throw new ConvexError("Invalid commit");
-    if (args.commit.toLowerCase() !== resolved.commit.toLowerCase()) {
-      throw new ConvexError("Import is out of date. Re-run preview.");
-    }
-
-    const normalizedCandidatePath = normalizeRepoPath(args.candidatePath);
-    if (!isCandidateUnderResolvedPath(normalizedCandidatePath, resolved.path)) {
-      throw new ConvexError("Candidate path is outside the requested import scope");
-    }
-
-    const entries = await fetchResolvedGitHubEntries(resolved, fetch);
-
-    const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
-      isCandidateUnderResolvedPath(candidate.path, resolved.path),
-    );
-    const candidate = candidates.find((item) => item.path === normalizedCandidatePath);
-    if (!candidate) throw new ConvexError("Candidate not found");
-
-    const filesUnderCandidate = listTextFilesUnderCandidate(entries, candidate.path);
-    const byPath = new Map(filesUnderCandidate.map((file) => [file.path, file.bytes]));
-
-    const selected = Array.from(
-      new Set(args.selectedPaths.map((path) => normalizeRepoPath(path)).filter(Boolean)),
-    );
-    if (selected.length === 0) throw new ConvexError("No files selected");
-
-    const candidateRoot = candidate.path ? `${candidate.path}/` : "";
-    const normalizedReadmePath = normalizeRepoPath(candidate.readmePath);
-    if (!selected.includes(normalizedReadmePath)) {
-      throw new ConvexError("The skill file must be selected");
-    }
-
-    let totalBytes = 0;
-    const storedFiles: Array<{
-      path: string;
-      size: number;
-      storageId: Id<"_storage">;
-      sha256: string;
-      contentType?: string;
-    }> = [];
-
-    for (const path of selected.sort()) {
-      if (candidateRoot && !path.startsWith(candidateRoot)) {
-        throw new ConvexError("Selected file is outside the chosen skill folder");
-      }
-
-      const bytes = byPath.get(path);
-      if (!bytes) continue;
-      totalBytes += bytes.byteLength;
-      if (totalBytes > MAX_SELECTED_BYTES)
-        throw new ConvexError("Selected files exceed 50MB limit");
-
-      const relPath = candidateRoot ? path.slice(candidateRoot.length) : path;
-      const sanitized = sanitizePath(relPath);
-      if (!sanitized) throw new ConvexError("Invalid file paths");
-
-      const sha256 = await sha256Hex(bytes);
-      const safeBytes = new Uint8Array(bytes);
-      let storageId: Id<"_storage">;
-      try {
-        storageId = await ctx.storage.store(new Blob([safeBytes], { type: "text/plain" }));
-      } catch (error) {
-        throw new ConvexError(buildStoreFailureMessage(sanitized, bytes.byteLength, error));
-      }
-      storedFiles.push({
-        path: sanitized,
-        size: bytes.byteLength,
-        storageId,
-        sha256,
-        contentType: "text/plain",
-      });
-    }
-
-    if (storedFiles.length === 0) throw new ConvexError("No files selected");
-
-    const slugBase = (args.slug ?? "").trim().toLowerCase();
-    const displayName = (args.displayName ?? "").trim();
-    const tags = (args.tags ?? ["latest"]).map((tag) => tag.trim()).filter(Boolean);
-    const version = (args.version ?? "").trim();
-
-    if (!slugBase) throw new ConvexError("Slug required");
-    if (!displayName) throw new ConvexError("Display name required");
-    if (!version || !semver.valid(version)) throw new ConvexError("Version must be valid semver");
-
-    const sourceProvenance = {
-      kind: "github" as const,
-      url: resolved.originalUrl,
-      repo: `${resolved.owner}/${resolved.repo}`,
-      ref: resolved.ref,
-      commit: resolved.commit,
-      path: candidate.path,
-      importedAt: Date.now(),
-    };
-
-    let result: Awaited<ReturnType<typeof publishVersionForUser>>;
-    try {
-      result = await publishVersionForUser(
-        ctx,
-        userId,
-        {
-          slug: slugBase,
-          displayName,
-          version,
-          changelog: "",
-          tags,
-          icon: args.icon?.trim() || undefined,
-          files: storedFiles,
-          source: sourceProvenance,
-        },
-        { sourceProvenance },
-      );
-    } catch (error) {
-      throw new ConvexError(buildPublishFailureMessage(error));
-    }
-
-    return { ok: true, slug: slugBase, version, ...result };
+    return importGitHubSkillForUser(ctx, userId, args, fetch);
   },
 });
+
+async function importGitHubSkillForUser(
+  ctx: ActionCtx,
+  userId: Id<"users">,
+  args: {
+    url: string;
+    commit: string;
+    candidatePath: string;
+    selectedPaths: string[];
+    slug?: string;
+    displayName?: string;
+    version?: string;
+    tags?: string[];
+    icon?: string;
+    acceptLicenseTerms: boolean;
+  },
+  fetcher: typeof fetch,
+) {
+  if (!args.acceptLicenseTerms) {
+    throw new ConvexError("MIT-0 license terms must be accepted to publish skills");
+  }
+
+  const parsed = parseGitHubImportUrl(args.url);
+  await requireOwnedPublicGitHubRepoForImport(ctx, userId, parsed.owner, parsed.repo, fetcher);
+  const resolved = await resolveGitHubCommit(parsed, fetcher);
+  if (!/^[a-f0-9]{40}$/i.test(args.commit)) throw new ConvexError("Invalid commit");
+  if (args.commit.toLowerCase() !== resolved.commit.toLowerCase()) {
+    throw new ConvexError("Import is out of date. Re-run preview.");
+  }
+
+  const normalizedCandidatePath = normalizeRepoPath(args.candidatePath);
+  if (!isCandidateUnderResolvedPath(normalizedCandidatePath, resolved.path)) {
+    throw new ConvexError("Candidate path is outside the requested import scope");
+  }
+
+  const entries = await fetchResolvedGitHubEntries(resolved, fetcher);
+
+  const candidates = detectGitHubImportCandidates(entries).filter((candidate) =>
+    isCandidateUnderResolvedPath(candidate.path, resolved.path),
+  );
+  const candidate = candidates.find((item) => item.path === normalizedCandidatePath);
+  if (!candidate) throw new ConvexError("Candidate not found");
+
+  const filesUnderCandidate = listTextFilesUnderCandidate(entries, candidate.path);
+  const byPath = new Map(filesUnderCandidate.map((file) => [file.path, file.bytes]));
+
+  const selected = Array.from(
+    new Set(args.selectedPaths.map((path) => normalizeRepoPath(path)).filter(Boolean)),
+  );
+  if (selected.length === 0) throw new ConvexError("No files selected");
+
+  const candidateRoot = candidate.path ? `${candidate.path}/` : "";
+  const normalizedReadmePath = normalizeRepoPath(candidate.readmePath);
+  if (!selected.includes(normalizedReadmePath)) {
+    throw new ConvexError("The skill file must be selected");
+  }
+
+  let totalBytes = 0;
+  const storedFiles: Array<{
+    path: string;
+    size: number;
+    storageId: Id<"_storage">;
+    sha256: string;
+    contentType?: string;
+  }> = [];
+
+  for (const path of selected.sort()) {
+    if (candidateRoot && !path.startsWith(candidateRoot)) {
+      throw new ConvexError("Selected file is outside the chosen skill folder");
+    }
+
+    const bytes = byPath.get(path);
+    if (!bytes) continue;
+    totalBytes += bytes.byteLength;
+    if (totalBytes > MAX_SELECTED_BYTES) throw new ConvexError("Selected files exceed 50MB limit");
+
+    const relPath = candidateRoot ? path.slice(candidateRoot.length) : path;
+    const sanitized = sanitizePath(relPath);
+    if (!sanitized) throw new ConvexError("Invalid file paths");
+
+    const sha256 = await sha256Hex(bytes);
+    const safeBytes = new Uint8Array(bytes);
+    let storageId: Id<"_storage">;
+    try {
+      storageId = await ctx.storage.store(new Blob([safeBytes], { type: "text/plain" }));
+    } catch (error) {
+      throw new ConvexError(buildStoreFailureMessage(sanitized, bytes.byteLength, error));
+    }
+    storedFiles.push({
+      path: sanitized,
+      size: bytes.byteLength,
+      storageId,
+      sha256,
+      contentType: "text/plain",
+    });
+  }
+
+  if (storedFiles.length === 0) throw new ConvexError("No files selected");
+
+  const slugBase = (args.slug ?? "").trim().toLowerCase();
+  const displayName = (args.displayName ?? "").trim();
+  const tags = (args.tags ?? ["latest"]).map((tag) => tag.trim()).filter(Boolean);
+  const version = (args.version ?? "").trim();
+
+  if (!slugBase) throw new ConvexError("Slug required");
+  if (!displayName) throw new ConvexError("Display name required");
+  if (!version || !semver.valid(version)) throw new ConvexError("Version must be valid semver");
+
+  const sourceProvenance = {
+    kind: "github" as const,
+    url: resolved.originalUrl,
+    repo: `${resolved.owner}/${resolved.repo}`,
+    ref: resolved.ref,
+    commit: resolved.commit,
+    path: candidate.path,
+    importedAt: Date.now(),
+  };
+
+  let result: Awaited<ReturnType<typeof publishVersionForUser>>;
+  try {
+    result = await publishVersionForUser(
+      ctx,
+      userId,
+      {
+        slug: slugBase,
+        displayName,
+        version,
+        changelog: "",
+        tags,
+        icon: args.icon?.trim() || undefined,
+        files: storedFiles,
+        source: sourceProvenance,
+      },
+      { sourceProvenance },
+    );
+  } catch (error) {
+    throw new ConvexError(buildPublishFailureMessage(error));
+  }
+
+  return { ok: true, slug: slugBase, version, ...result };
+}
 
 async function listOwnedPublicGitHubReposForUser(
   ctx: Pick<ActionCtx, "runQuery">,
@@ -431,29 +465,6 @@ async function requireOwnedPublicGitHubRepoForImport(
 
   const metadata = await fetchGitHubRepoMetadata(owner, repo, fetcher);
   assertOwnedPublicGitHubRepoMetadata(metadata, identity);
-  if (metadata.archived === true) {
-    throw new ConvexError("Archived GitHub repositories cannot be imported.");
-  }
-  if (metadata.disabled === true) {
-    throw new ConvexError("Disabled GitHub repositories cannot be imported.");
-  }
-  if (metadata.fork === true) {
-    throw new ConvexError("Forked GitHub repositories cannot be imported.");
-  }
-  return metadata;
-}
-
-async function requirePublicGitHubRepoForImport(
-  owner: string,
-  repo: string,
-  fetcher: typeof fetch,
-) {
-  const metadata = await fetchGitHubRepoMetadata(owner, repo, fetcher);
-  const visibility = typeof metadata.visibility === "string" ? metadata.visibility : "";
-  const isPublicVisibility = visibility ? visibility === "public" : true;
-  if (metadata.private !== false || !isPublicVisibility) {
-    throw new ConvexError("Only public GitHub repositories can be imported.");
-  }
   if (metadata.archived === true) {
     throw new ConvexError("Archived GitHub repositories cannot be imported.");
   }
@@ -946,11 +957,13 @@ export const __test = {
   assertOwnedPublicGitHubRepoMetadata,
   buildPublishFailureMessage,
   buildStoreFailureMessage,
+  importGitHubSkillForUser,
   isPreviewFetchableTextPath,
   listOwnedPublicGitHubReposForUser,
   listSkillCandidatesForRepo,
+  previewGitHubImportCandidateForUser,
+  previewGitHubImportForUser,
   requireOwnedPublicGitHubRepoForImport,
-  requirePublicGitHubRepoForImport,
   toOwnedPublicSkillCandidate,
   toOwnedPublicRepoListItem,
   unzipToEntries,

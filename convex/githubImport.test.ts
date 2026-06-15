@@ -155,27 +155,102 @@ describe("githubImport", () => {
     );
   });
 
-  it("allows direct URL imports from another public GitHub owner", async () => {
+  it("rejects direct URL preview from another public GitHub owner before repo lookup", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({
-        name: "public-skill",
-        full_name: "someone-else/public-skill",
-        private: false,
-        visibility: "public",
-        owner: { id: 456, login: "someone-else" },
+        id: 123,
+        login: "vyctorbrzezowski",
+        avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
       }),
     });
 
     await expect(
-      __test.requirePublicGitHubRepoForImport("someone-else", "public-skill", fetchMock as never),
-    ).resolves.toMatchObject({
-      private: false,
-      visibility: "public",
+      __test.previewGitHubImportForUser(
+        ctx as never,
+        "users:1" as never,
+        { url: "https://github.com/someone-else/public-skill" },
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/owned by your GitHub account/i);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/user/123",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("rejects direct URL candidate preview from another public GitHub owner before repo lookup", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 123,
+        login: "vyctorbrzezowski",
+        avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+      }),
     });
 
+    await expect(
+      __test.previewGitHubImportCandidateForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          url: "https://github.com/someone-else/public-skill",
+          candidatePath: "",
+        },
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/owned by your GitHub account/i);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(fetchMock).toHaveBeenCalledWith(
-      "https://api.github.com/repos/someone-else/public-skill",
+      "https://api.github.com/user/123",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("rejects direct URL publish from another public GitHub owner before repo lookup", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 123,
+        login: "vyctorbrzezowski",
+        avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+      }),
+    });
+
+    await expect(
+      __test.importGitHubSkillForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          url: "https://github.com/someone-else/public-skill",
+          commit: "a".repeat(40),
+          candidatePath: "",
+          selectedPaths: ["SKILL.md"],
+          slug: "public-skill",
+          displayName: "Public Skill",
+          version: "1.0.0",
+          tags: ["latest"],
+          acceptLicenseTerms: true,
+        },
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/owned by your GitHub account/i);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/user/123",
       expect.objectContaining({ headers: expect.any(Object) }),
     );
   });
