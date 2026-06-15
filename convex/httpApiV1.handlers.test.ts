@@ -3336,6 +3336,37 @@ describe("httpApiV1 handlers", () => {
     expect(json.items[0].version).toBe("1.0.0");
   });
 
+  it("returns a recovered empty page for stale skill version cursors", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: { _id: "skills:1", slug: "demo", displayName: "Demo" },
+          latestVersion: null,
+          owner: { handle: "owner", displayName: "Owner", image: null },
+        };
+      }
+      if ("skillId" in args && "cursor" in args) {
+        return { items: [], nextCursor: null };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions?limit=1&cursor=legacy-cursor"),
+    );
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ items: [], nextCursor: null });
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:1",
+        limit: 1,
+        cursor: "legacy-cursor",
+      }),
+    );
+  });
+
   it("returns 404 for versions when the owner is banned", async () => {
     const runQuery = vi.fn(async () => null);
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -9134,6 +9165,52 @@ describe("httpApiV1 handlers", () => {
       expect.objectContaining({
         name: "private-plugin",
         viewerUserId: undefined,
+      }),
+    );
+  });
+
+  it("package skill compatibility versions return recovered empty pages for stale skill cursors", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("name" in args) {
+        return null;
+      }
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:demo",
+            slug: "demo",
+            displayName: "Demo Skill",
+            summary: "Skill summary",
+            latestVersionId: "skillVersions:demo-1",
+            tags: {},
+            badges: {},
+            createdAt: 1,
+            updatedAt: 2,
+          },
+          latestVersion: null,
+          owner: { handle: "owner" },
+        };
+      }
+      if ("skillId" in args && "cursor" in args) {
+        return { items: [], nextCursor: null };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/demo/versions?limit=1&cursor=legacy-cursor"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ items: [], nextCursor: null });
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:demo",
+        limit: 1,
+        cursor: "legacy-cursor",
       }),
     );
   });

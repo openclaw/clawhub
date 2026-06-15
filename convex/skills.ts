@@ -6511,13 +6511,18 @@ export const listVersionsPage = query({
   },
   handler: async (ctx, args) => {
     const limit = clampInt(args.limit ?? 20, 1, MAX_LIST_LIMIT);
-    const { page, isDone, continueCursor } = await ctx.db
-      .query("skillVersions")
-      .withIndex("by_skill_active_created", (q) =>
-        q.eq("skillId", args.skillId).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate({ cursor: args.cursor ?? null, numItems: limit });
+    const runPaginate = (cursor: string | null) =>
+      ctx.db
+        .query("skillVersions")
+        .withIndex("by_skill_active_created", (q) =>
+          q.eq("skillId", args.skillId).eq("softDeletedAt", undefined),
+        )
+        .order("desc")
+        .paginate({ cursor, numItems: limit });
+    const { page, isDone, continueCursor } = await paginateWithStaleCursorRecovery(
+      runPaginate,
+      args.cursor ?? null,
+    );
     const items = page.map((version) => toPublicSkillVersion(version)!);
     return { items, nextCursor: isDone ? null : continueCursor };
   },

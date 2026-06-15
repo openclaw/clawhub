@@ -552,6 +552,37 @@ describe("public skill version queries", () => {
     expect(paginate).toHaveBeenCalledWith({ cursor: "active-page", numItems: 1 });
   });
 
+  it("recovers public version pagination from stale pre-active-index cursors", async () => {
+    const paginate = vi.fn(async ({ cursor }: { cursor: string | null }) => {
+      if (cursor === "legacy-by-skill-cursor") {
+        throw new Error("cursor is from a different query");
+      }
+      throw new Error("stale cursor recovery should not retry old skill version pages");
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({ paginate })),
+            })),
+          };
+        }),
+      },
+    } as never;
+
+    const result = (await listVersionsPageHandler(ctx, {
+      skillId: "skills:1",
+      cursor: "legacy-by-skill-cursor",
+      limit: 1,
+    } as never)) as { items: Array<{ version: string }>; nextCursor: string | null };
+
+    expect(result).toEqual({ items: [], nextCursor: null });
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "legacy-by-skill-cursor", numItems: 1 });
+  });
+
   it("sanitizes latestVersion in listWithLatest", async () => {
     const version = makeVersion();
     const ctx = {
