@@ -136,6 +136,7 @@ import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
 
 const MAX_OWNER_SUMMARY_LENGTH = 500;
+const MAX_POINTERLESS_VERSION_SURVIVOR_SCAN = 100;
 
 export { publishVersionForUser } from "./lib/skillPublish";
 
@@ -6455,17 +6456,14 @@ export const listVersions = query({
   args: { skillId: v.id("skills"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
     const limit = args.limit ?? 20;
-    const authUserId = await getAuthUserId(ctx);
-    const actor = authUserId ? await ctx.db.get(authUserId) : null;
-    const isStaff = actor?.role === "admin" || actor?.role === "moderator";
     const versions = await ctx.db
       .query("skillVersions")
-      .withIndex("by_skill", (q) => q.eq("skillId", args.skillId))
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", args.skillId).eq("softDeletedAt", undefined),
+      )
       .order("desc")
       .take(limit);
-    return versions
-      .filter((version) => isStaff || !version.softDeletedAt)
-      .map((version) => toPublicSkillVersion(version)!);
+    return versions.map((version) => toPublicSkillVersion(version)!);
   },
 });
 
@@ -6479,12 +6477,12 @@ export const listVersionsPage = query({
     const limit = clampInt(args.limit ?? 20, 1, MAX_LIST_LIMIT);
     const { page, isDone, continueCursor } = await ctx.db
       .query("skillVersions")
-      .withIndex("by_skill", (q) => q.eq("skillId", args.skillId))
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", args.skillId).eq("softDeletedAt", undefined),
+      )
       .order("desc")
       .paginate({ cursor: args.cursor ?? null, numItems: limit });
-    const items = page
-      .filter((version) => !version.softDeletedAt)
-      .map((version) => toPublicSkillVersion(version)!);
+    const items = page.map((version) => toPublicSkillVersion(version)!);
     return { items, nextCursor: isDone ? null : continueCursor };
   },
 });
@@ -8641,6 +8639,32 @@ export const getVersionBySkillAndVersion = query({
   },
 });
 
+async function hasBoundedAvailableSkillVersionSurvivor(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  targetVersionId: Id<"skillVersions">,
+) {
+  const candidates = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_active_created", (q) =>
+      q.eq("skillId", skillId).eq("softDeletedAt", undefined),
+    )
+    .take(MAX_POINTERLESS_VERSION_SURVIVOR_SCAN + 1);
+  const hasSurvivor = candidates.some(
+    (candidate) =>
+      candidate._id !== targetVersionId &&
+      candidate.ownerDeletedAt === undefined &&
+      !isKnownMaliciousSkillVersion(candidate),
+  );
+  if (hasSurvivor) return true;
+  if (candidates.length > MAX_POINTERLESS_VERSION_SURVIVOR_SCAN) {
+    throw new ConvexError(
+      "This skill has too many active versions to safely delete an individual version.",
+    );
+  }
+  return false;
+}
+
 export async function deleteOwnedSkillVersionForActor(
   ctx: MutationCtx,
   actor: Doc<"users">,
@@ -8673,19 +8697,12 @@ export async function deleteOwnedSkillVersionForActor(
   let mustPublishReplacement =
     skill.latestVersionId === version._id || skill.tags.latest === version._id;
   if (!mustPublishReplacement && !skill.latestVersionId && !skill.tags.latest) {
-    // Admin cleanup can clear latest pointers, so prove a survivor with one tiny indexed read.
-    const candidates = await ctx.db
-      .query("skillVersions")
-      .withIndex("by_skill_active_created", (q) =>
-        q.eq("skillId", skill._id).eq("softDeletedAt", undefined),
-      )
-      .take(2);
-    mustPublishReplacement = !candidates.some(
-      (candidate) =>
-        candidate._id !== version._id &&
-        candidate.ownerDeletedAt === undefined &&
-        !isKnownMaliciousSkillVersion(candidate),
-    );
+    // Admin cleanup can clear latest pointers, so prove a survivor with a bounded indexed read.
+    mustPublishReplacement = !(await hasBoundedAvailableSkillVersionSurvivor(
+      ctx,
+      skill._id,
+      version._id,
+    ));
   }
   if (mustPublishReplacement) {
     throw new ConvexError(

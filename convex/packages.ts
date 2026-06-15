@@ -105,6 +105,7 @@ const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
 const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
+const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
@@ -4836,6 +4837,32 @@ export const softDeletePackage = mutation({
   },
 });
 
+async function hasBoundedAvailablePackageReleaseSurvivor(
+  ctx: MutationCtx,
+  packageId: Id<"packages">,
+  targetReleaseId: Id<"packageReleases">,
+) {
+  const candidates = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_active_created", (q) =>
+      q.eq("packageId", packageId).eq("softDeletedAt", undefined),
+    )
+    .take(MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN + 1);
+  const hasSurvivor = candidates.some(
+    (candidate) =>
+      candidate._id !== targetReleaseId &&
+      candidate.ownerDeletedAt === undefined &&
+      resolvePackageReleaseScanStatus(candidate) !== "malicious",
+  );
+  if (hasSurvivor) return true;
+  if (candidates.length > MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN) {
+    throw new ConvexError(
+      "This package has too many active releases to safely delete an individual release.",
+    );
+  }
+  return false;
+}
+
 export async function deleteOwnedPackageReleaseForActor(
   ctx: MutationCtx,
   actor: Doc<"users">,
@@ -4873,19 +4900,12 @@ export async function deleteOwnedPackageReleaseForActor(
   let mustPublishReplacement =
     pkg.latestReleaseId === release._id || pkg.tags.latest === release._id;
   if (!mustPublishReplacement && !pkg.latestReleaseId && !pkg.tags.latest) {
-    // Admin cleanup can clear latest pointers, so prove a survivor with one tiny indexed read.
-    const candidates = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_active_created", (q) =>
-        q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
-      )
-      .take(2);
-    mustPublishReplacement = !candidates.some(
-      (candidate) =>
-        candidate._id !== release._id &&
-        candidate.ownerDeletedAt === undefined &&
-        resolvePackageReleaseScanStatus(candidate) !== "malicious",
-    );
+    // Admin cleanup can clear latest pointers, so prove a survivor with a bounded indexed read.
+    mustPublishReplacement = !(await hasBoundedAvailablePackageReleaseSurvivor(
+      ctx,
+      pkg._id,
+      release._id,
+    ));
   }
   if (mustPublishReplacement) {
     throw new ConvexError(
