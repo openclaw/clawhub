@@ -80,7 +80,12 @@ type SearchSkillEntry = {
     displayName?: string;
     summary?: string | null;
     updatedAt?: number;
-    stats?: { downloads?: number } | null;
+    stats: {
+      downloads?: number;
+      stars?: number;
+      installsCurrent?: number;
+      installsAllTime?: number;
+    };
     statsDownloads?: number;
   } | null;
   version: { version?: string; createdAt?: number } | null;

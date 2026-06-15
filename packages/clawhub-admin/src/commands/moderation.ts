@@ -240,7 +240,7 @@ export async function cmdRecoverPersonalPublisher(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`${dryRun ? "Planning" : "Applying"} publisher recovery for @${handle}`);
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} publisher recovery for @${handle}`);
   try {
     const result = await apiRequest(
       registry,

@@ -30,7 +30,7 @@ const mockFail = uiMocks.fail;
 const mockSpinner = uiMocks.spinner;
 const mockPromptHidden = vi.fn(async () => "prompted-token");
 vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => mockSpinner),
+  createCrabLoader: vi.fn(() => mockSpinner),
   fail: (message: string) => mockFail(message),
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   promptHidden: () => mockPromptHidden(),

@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import { requireAuthToken } from "../../../clawhub/src/cli/authToken.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
-import { createSpinner, fail, formatError } from "../../../clawhub/src/cli/ui.js";
+import { createCrabLoader, fail, formatError } from "../../../clawhub/src/cli/ui.js";
 import { apiRequest } from "../../../clawhub/src/http.js";
 import { ApiRoutes, ApiV1StaffEmailSendResponseSchema } from "../../../clawhub/src/schema/index.js";
 
@@ -164,7 +164,7 @@ export async function cmdSendStaffEmail(opts: GlobalOpts, options: StaffEmailSen
   requireSendSignoff(options);
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner("Sending staff email");
+  const spinner = options.json ? null : createCrabLoader("Sending staff email");
   try {
     const result = await apiRequest(
       registry,

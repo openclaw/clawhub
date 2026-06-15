@@ -201,7 +201,7 @@ export async function cmdDeleteOrg(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`${dryRun ? "Planning delete for" : "Deleting"} @${orgHandle}`);
+    : createCrabLoader(`${dryRun ? "Planning delete for" : "Deleting"} @${orgHandle}`);
   try {
     const result = await apiRequest(
       registry,

@@ -583,7 +583,7 @@ export async function cmdSetPackageTrustedPublisher(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Saving trusted publisher");
+  const spinner = createCrabLoader("Saving trusted publisher");
   try {
     const result = await apiRequest(
       registry,
@@ -622,7 +622,7 @@ export async function cmdDeletePackageTrustedPublisher(
   const trimmed = normalizePackageNameOrFail(packageName);
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Deleting trusted publisher");
+  const spinner = createCrabLoader("Deleting trusted publisher");
   try {
     const result = await apiRequest(
       registry,

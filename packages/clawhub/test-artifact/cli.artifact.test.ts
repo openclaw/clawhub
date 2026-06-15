@@ -438,7 +438,7 @@ describe("built CLI artifact", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("OK. Installed demo");
+    expect(`${result.stdout}${result.stderr}`).toContain("Installed demo");
 
     const telemetryRequests = requests.filter(
       (request) => request.path === "/api/cli/telemetry/install",
