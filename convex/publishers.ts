@@ -133,6 +133,12 @@ function validateHandle(rawHandle: string) {
   return handle;
 }
 
+function publisherHandlesMatch(left: string | undefined | null, right: string | undefined | null) {
+  const normalizedLeft = normalizePublisherHandle(left);
+  const normalizedRight = normalizePublisherHandle(right);
+  return Boolean(normalizedLeft && normalizedLeft === normalizedRight);
+}
+
 function assertOrgPublisherMembershipManagement(publisher: Doc<"publishers">) {
   if (publisher.kind !== "org") {
     throw new ConvexError("Personal publishers do not support member management");
@@ -1266,7 +1272,7 @@ export const recoverPersonalPublisherInternal = internalMutation({
     }
 
     const expectedNextHandle = normalizePublisherHandle(args.nextUserHandle);
-    if (expectedNextHandle && nextUser.handle !== expectedNextHandle) {
+    if (expectedNextHandle && !publisherHandlesMatch(nextUser.handle, expectedNextHandle)) {
       throw new ConvexError(`Next GitHub provider id does not belong to @${expectedNextHandle}`);
     }
 
@@ -1322,17 +1328,18 @@ export const recoverPersonalPublisherInternal = internalMutation({
 
     const retiredHandleBase =
       normalizePublisherHandle(args.retiredUserHandle) ?? `${publisher.handle}-recovered`;
-    const previousUserRetiredHandle =
-      previousUser.handle === publisher.handle
-        ? await resolveAvailableUserHandle(ctx, retiredHandleBase, previousUser._id)
-        : undefined;
-    const nextPreviousUserHandle =
-      previousUser.handle === publisher.handle
-        ? previousUserRetiredHandle
-        : (previousUser.handle ?? null);
+    const previousUserHasRecoveredHandle = publisherHandlesMatch(
+      previousUser.handle,
+      publisher.handle,
+    );
+    const previousUserRetiredHandle = previousUserHasRecoveredHandle
+      ? await resolveAvailableUserHandle(ctx, retiredHandleBase, previousUser._id)
+      : undefined;
+    const nextPreviousUserHandle = previousUserHasRecoveredHandle
+      ? previousUserRetiredHandle
+      : (previousUser.handle ?? null);
     const previousUserNeedsPatch =
-      previousUser.personalPublisherId === publisher._id ||
-      previousUser.handle === publisher.handle;
+      previousUser.personalPublisherId === publisher._id || previousUserHasRecoveredHandle;
     const nextUserPreviousHandle = nextUser.handle ?? null;
 
     if (!dryRun) {

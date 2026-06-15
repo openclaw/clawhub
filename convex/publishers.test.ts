@@ -4166,6 +4166,7 @@ describe("legacy publisher migration", () => {
     options: {
       destinationHasResources?: boolean;
       legacyResources?: boolean;
+      mixedCaseUserHandles?: boolean;
       tooManyLegacySkills?: boolean;
       unexpectedResourceOwner?: boolean;
       unexpectedReservationOwner?: boolean;
@@ -4178,7 +4179,7 @@ describe("legacy publisher migration", () => {
         {
           _id: "users:legacy",
           role: "user",
-          handle: "gingiris",
+          handle: options.mixedCaseUserHandles ? "Gingiris" : "gingiris",
           personalPublisherId: "publishers:gingiris",
           publishedSkills: 5,
           totalDownloads: 100,
@@ -4191,7 +4192,7 @@ describe("legacy publisher migration", () => {
         {
           _id: "users:current",
           role: "user",
-          handle: "gingiris-1031",
+          handle: options.mixedCaseUserHandles ? "Gingiris-1031" : "gingiris-1031",
           personalPublisherId: "publishers:gingiris-1031",
           publishedSkills: 2,
           totalDownloads: 40,
@@ -4791,6 +4792,36 @@ describe("legacy publisher migration", () => {
         "reservedHandles:gingiris",
       ]),
     );
+  });
+
+  it("recovers users whose stored handles retain mixed-case GitHub casing", async () => {
+    const { ctx, users } = makePersonalPublisherRecoveryCtx({
+      mixedCaseUserHandles: true,
+    });
+
+    const result = await recoverPersonalPublisherInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      publisherHandle: "gingiris",
+      previousGitHubProviderAccountId: "111",
+      nextGitHubProviderAccountId: "222",
+      nextUserHandle: "gingiris-1031",
+      reason: "Verified account continuity for issue #2555",
+      confirmIdentityVerified: true,
+      dryRun: false,
+    });
+
+    expect(result).toMatchObject({
+      previousUser: { nextHandle: "gingiris-recovered" },
+      nextUser: { nextHandle: "gingiris" },
+    });
+    expect(users.get("users:legacy")).toMatchObject({
+      handle: "gingiris-recovered",
+      personalPublisherId: undefined,
+    });
+    expect(users.get("users:current")).toMatchObject({
+      handle: "gingiris",
+      personalPublisherId: "publishers:gingiris",
+    });
   });
 
   it("fails closed when the destination personal publisher has resources", async () => {
