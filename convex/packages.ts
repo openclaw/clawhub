@@ -4851,14 +4851,41 @@ async function hasBoundedAvailablePackageReleaseSurvivor(
   const hasSurvivor = candidates.some(
     (candidate) =>
       candidate._id !== targetReleaseId &&
-      candidate.ownerDeletedAt === undefined &&
-      resolvePackageReleaseScanStatus(candidate) !== "malicious",
+      isPackageReleaseAvailableForOwnerDeleteSafety(candidate, packageId),
   );
   if (hasSurvivor) return true;
   if (candidates.length > MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN) {
     throw new ConvexError(
       "This package has too many active releases to safely delete an individual release.",
     );
+  }
+  return false;
+}
+
+function isPackageReleaseAvailableForOwnerDeleteSafety(
+  release: Doc<"packageReleases"> | null | undefined,
+  packageId: Id<"packages">,
+): release is Doc<"packageReleases"> {
+  return Boolean(
+    release &&
+    release.packageId === packageId &&
+    !release.softDeletedAt &&
+    release.ownerDeletedAt === undefined &&
+    resolvePackageReleaseScanStatus(release) !== "malicious",
+  );
+}
+
+async function hasAvailableLatestPackageReleasePointer(
+  ctx: MutationCtx,
+  pkg: Pick<Doc<"packages">, "_id" | "latestReleaseId" | "tags">,
+) {
+  const pointerIds = new Set<Id<"packageReleases">>();
+  if (pkg.latestReleaseId) pointerIds.add(pkg.latestReleaseId);
+  if (pkg.tags.latest) pointerIds.add(pkg.tags.latest);
+
+  for (const pointerId of pointerIds) {
+    const pointer = await ctx.db.get(pointerId);
+    if (isPackageReleaseAvailableForOwnerDeleteSafety(pointer, pkg._id)) return true;
   }
   return false;
 }
@@ -4888,18 +4915,13 @@ export async function deleteOwnedPackageReleaseForActor(
     .query("packageReleases")
     .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", args.version))
     .unique();
-  if (
-    !release ||
-    release.softDeletedAt ||
-    release.ownerDeletedAt !== undefined ||
-    resolvePackageReleaseScanStatus(release) === "malicious"
-  ) {
+  if (!isPackageReleaseAvailableForOwnerDeleteSafety(release, pkg._id)) {
     throw new ConvexError("This package release is already unavailable and cannot be deleted.");
   }
 
   let mustPublishReplacement =
     pkg.latestReleaseId === release._id || pkg.tags.latest === release._id;
-  if (!mustPublishReplacement && !pkg.latestReleaseId && !pkg.tags.latest) {
+  if (!mustPublishReplacement && !(await hasAvailableLatestPackageReleasePointer(ctx, pkg))) {
     // Admin cleanup can clear latest pointers, so prove a survivor with a bounded indexed read.
     mustPublishReplacement = !(await hasBoundedAvailablePackageReleaseSurvivor(
       ctx,
