@@ -104,8 +104,8 @@ Stores your API token + cached registry URL.
 
 - Calls `/api/v1/search?q=...`.
 - Output includes the skill slug, owner handle, display name, and relevance score.
-- Search favors exact slug/name token matches before download popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
-- Downloads are a small popularity prior, not a guarantee of top placement.
+- Search favors exact slug/name token matches before general popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
+- Popularity is a small ranking prior, not a guarantee of top placement.
 - If a skill should appear but does not, run `clawhub inspect <slug>` while logged in to check owner-visible moderation diagnostics before renaming metadata.
 
 ### `explore`
@@ -113,7 +113,7 @@ Stores your API token + cached registry URL.
 - Lists newest skills via `/api/v1/skills?limit=...&sort=createdAt` (sorted by `createdAt` desc).
 - Flags:
   - `--limit <n>` (1-200, default: 25)
-  - `--sort newest|updated|downloads|rating|installs|installsAllTime|trending` (default: newest)
+  - `--sort newest|updated|rating|installs|installsAllTime|trending` (default: newest)
   - `--json` (machine-readable output)
 - Output: `<slug>  v<version>  <age>  <summary>` (summary truncated to 50 chars).
 

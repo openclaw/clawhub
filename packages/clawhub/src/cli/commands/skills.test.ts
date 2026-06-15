@@ -215,7 +215,7 @@ describe("cmdExplore", () => {
     const [, args] = mockApiRequest.mock.calls[0] ?? [];
     const url = new URL(String(args?.url));
     expect(url.searchParams.get("limit")).toBe("10");
-    expect(url.searchParams.get("sort")).toBe("installsCurrent");
+    expect(url.searchParams.get("sort")).toBe("installsAllTime");
     expect(mockLog).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
   });
 
@@ -232,6 +232,13 @@ describe("cmdExplore", () => {
     expect(first.searchParams.get("sort")).toBe("createdAt");
     expect(second.searchParams.get("sort")).toBe("installsAllTime");
     expect(third.searchParams.get("sort")).toBe("trending");
+  });
+
+  it("does not expose downloads as an explore sort", async () => {
+    await expect(cmdExplore(makeOpts(), { sort: "downloads" })).rejects.toThrow(
+      'Invalid sort "downloads". Use newest, updated, rating, installs, installsAllTime, or trending.',
+    );
+    expect(mockApiRequest).not.toHaveBeenCalled();
   });
 });
 

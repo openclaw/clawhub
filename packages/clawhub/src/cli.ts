@@ -335,7 +335,7 @@ registerCommand(program, ["explore"])
   )
   .option(
     "--sort <order>",
-    "Sort by newest, downloads, rating, installs, installsAllTime, or trending",
+    "Sort by newest, rating, installs, installsAllTime, or trending",
     "newest",
   )
   .option("--json", "Output JSON")
