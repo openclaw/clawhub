@@ -83,12 +83,17 @@ ClawHub.
 The production cron runs every 15 minutes:
 
 ```text
-github-skill-source-sync -> githubSkillSync.syncGitHubSkillSourcesInternal
+github-skill-source-sync -> githubSkillSyncNode.syncGitHubSkillSourcesInternal
 ```
 
-That cron fetches the current public GitHub repo, reads `skills.sh.json`, builds
-a source snapshot, and applies it to ClawHub. Pagination must use a stable source
-cursor, not `updatedAt`, because syncing a row updates the row.
+That cron runs in Convex's Node runtime because fetching and expanding a source
+archive can exceed the default action runtime's memory limit. It fetches the
+current public GitHub repo, reads `skills.sh.json`, builds a source snapshot, and
+applies it to ClawHub. Pagination must use a stable source cursor, not
+`updatedAt`, because syncing a row updates the row. Cursor continuations must
+remain on the Node runtime action. Per-skill verification also fetches and
+expands the source archive, so verification actions must run in the Node runtime
+as well.
 
 Sync must not pass the full repo Markdown payload through one large Convex
 mutation. The intended split is:
