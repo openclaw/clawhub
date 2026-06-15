@@ -279,6 +279,14 @@ describe("package digest sync", () => {
       createdAt: 40,
       softDeletedAt: undefined,
     };
+    const takeActiveReleases = vi
+      .fn()
+      .mockResolvedValue([
+        ownerDeletedRelease,
+        revokedRelease,
+        legacyHotfixRelease,
+        fallbackRelease,
+      ]);
     const owner = {
       _id: "users:owner",
       handle: "owner",
@@ -297,18 +305,10 @@ describe("package digest sync", () => {
           if (table === "packageReleases") {
             return {
               withIndex: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  paginate: vi.fn().mockResolvedValue({
-                    page: [
-                      ownerDeletedRelease,
-                      revokedRelease,
-                      legacyHotfixRelease,
-                      fallbackRelease,
-                    ],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                })),
+                take: takeActiveReleases,
+                paginate: vi.fn(() => {
+                  throw new Error("package fallback must not paginate");
+                }),
               })),
             };
           }
@@ -376,6 +376,8 @@ describe("package digest sync", () => {
         ownerHandle: "owner",
       }),
     );
+    expect(takeActiveReleases).toHaveBeenCalledTimes(1);
+    expect(takeActiveReleases).toHaveBeenCalledWith(101);
   });
 
   it("repoints bundle packages to the newest surviving release, not semver-looking versions", async () => {
@@ -433,6 +435,7 @@ describe("package digest sync", () => {
       createdAt: 20,
       softDeletedAt: undefined,
     };
+    const takeActiveReleases = vi.fn().mockResolvedValue([newestRelease, semverLookingRelease]);
     const owner = {
       _id: "users:owner",
       handle: "owner",
@@ -451,13 +454,10 @@ describe("package digest sync", () => {
           if (table === "packageReleases") {
             return {
               withIndex: vi.fn(() => ({
-                order: vi.fn(() => ({
-                  paginate: vi.fn().mockResolvedValue({
-                    page: [newestRelease, semverLookingRelease],
-                    isDone: true,
-                    continueCursor: "",
-                  }),
-                })),
+                take: takeActiveReleases,
+                paginate: vi.fn(() => {
+                  throw new Error("package fallback must not paginate");
+                }),
               })),
             };
           }
@@ -513,6 +513,45 @@ describe("package digest sync", () => {
         ownerHandle: "owner",
       }),
     );
+    expect(takeActiveReleases).toHaveBeenCalledTimes(1);
+    expect(takeActiveReleases).toHaveBeenCalledWith(101);
+  });
+
+  it("rejects package latest repair when active history exceeds the bounded fallback limit", async () => {
+    const pkg = {
+      _id: "packages:demo",
+      family: "code-plugin",
+      tags: { latest: "packageReleases:deleted" },
+      latestReleaseId: "packageReleases:deleted",
+      softDeletedAt: undefined,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === pkg._id ? pkg : null)),
+        query: vi.fn((table: string) => {
+          if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              take: vi.fn().mockResolvedValue(
+                Array.from({ length: 101 }, (_, index) => ({
+                  _id: `packageReleases:${index}`,
+                })),
+              ),
+            })),
+          };
+        }),
+        patch: vi.fn(),
+      },
+    };
+
+    await expect(
+      repointPackageLatestRelease(
+        ctx as never,
+        "packages:demo" as never,
+        "packageReleases:deleted" as never,
+      ),
+    ).rejects.toThrow(/too many active releases.*remove the whole package/i);
+    expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
   it("re-syncs package digests when an owner handle changes", async () => {

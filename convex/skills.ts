@@ -12,6 +12,7 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
+  MAX_OWNER_DELETE_ACTIVE_CHILDREN,
   mutation,
   query,
 } from "./functions";
@@ -7648,6 +7649,28 @@ async function setSkillEmbeddingsLatestVersion(
   }
 }
 
+async function setSkillVersionEmbeddingLatestPointers(
+  ctx: MutationCtx,
+  previousLatestVersionIds: Id<"skillVersions">[],
+  latestVersionId: Id<"skillVersions">,
+  now: number,
+) {
+  const versionIds = new Set([...previousLatestVersionIds, latestVersionId]);
+  for (const versionId of versionIds) {
+    const embedding = await ctx.db
+      .query("skillEmbeddings")
+      .withIndex("by_version", (q) => q.eq("versionId", versionId))
+      .unique();
+    if (!embedding) continue;
+    const isLatest = versionId === latestVersionId;
+    await ctx.db.patch(embedding._id, {
+      isLatest,
+      visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
+      updatedAt: now,
+    });
+  }
+}
+
 async function setSkillEmbeddingsApproved(
   ctx: MutationCtx,
   skillId: Id<"skills">,
@@ -8641,6 +8664,23 @@ export const getVersionBySkillAndVersion = query({
   },
 });
 
+async function getBoundedAvailableSkillVersions(ctx: MutationCtx, skillId: Id<"skills">) {
+  const versions = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_active_created", (q) =>
+      q.eq("skillId", skillId).eq("softDeletedAt", undefined),
+    )
+    .take(MAX_OWNER_DELETE_ACTIVE_CHILDREN + 1);
+  if (versions.length > MAX_OWNER_DELETE_ACTIVE_CHILDREN) {
+    throw new ConvexError(
+      "This skill has too many active versions to safely delete an individual version. Remove the whole skill instead.",
+    );
+  }
+  return versions.filter(
+    (version) => version.ownerDeletedAt === undefined && !isKnownMaliciousSkillVersion(version),
+  );
+}
+
 export async function deleteOwnedSkillVersionForActor(
   ctx: MutationCtx,
   actor: Doc<"users">,
@@ -8657,7 +8697,7 @@ export async function deleteOwnedSkillVersionForActor(
   }
 
   const skill = await ctx.db.get(version.skillId);
-  if (!skill || skill.softDeletedAt || skill.moderationStatus !== "active") {
+  if (!skill || skill.softDeletedAt || (skill.moderationStatus ?? "active") !== "active") {
     throw new ConvexError("This skill is unavailable and its versions cannot be deleted.");
   }
 
@@ -8668,18 +8708,8 @@ export async function deleteOwnedSkillVersionForActor(
     allowedPublisherRoles: ["admin"],
   });
 
-  const activeVersions = (
-    await ctx.db
-      .query("skillVersions")
-      .withIndex("by_skill_active_created", (q) =>
-        q.eq("skillId", skill._id).eq("softDeletedAt", undefined),
-      )
-      .collect()
-  ).filter(
-    (candidate) =>
-      candidate.ownerDeletedAt === undefined && !isKnownMaliciousSkillVersion(candidate),
-  );
-  if (activeVersions.length <= 1) {
+  const activeVersions = await getBoundedAvailableSkillVersions(ctx, skill._id);
+  if (!activeVersions.some((candidate) => candidate._id !== version._id)) {
     throw new ConvexError(
       "You cannot delete the only active version. Remove the whole skill instead.",
     );
@@ -8740,7 +8770,12 @@ export async function deleteOwnedSkillVersionForActor(
     const nextSkill = { ...skill, ...patch } as Doc<"skills">;
     await ctx.db.patch(skill._id, patch);
     await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-    await setSkillEmbeddingsLatestVersion(ctx, skill._id, replacement._id, now);
+    await setSkillVersionEmbeddingLatestPointers(
+      ctx,
+      [version._id, ...(skill.latestVersionId ? [skill.latestVersionId] : [])],
+      replacement._id,
+      now,
+    );
   } else if (Object.keys(nextTags).length !== Object.keys(skill.tags ?? {}).length) {
     await ctx.db.patch(skill._id, {
       tags: nextTags,

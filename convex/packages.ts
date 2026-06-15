@@ -24,6 +24,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
+  getBoundedAvailablePackageReleases,
   internalAction,
   internalMutation,
   internalQuery,
@@ -4839,19 +4840,8 @@ export async function deleteOwnedPackageReleaseForActor(
     throw new ConvexError("This package release is already unavailable and cannot be deleted.");
   }
 
-  const activeReleases = (
-    await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_active_created", (q) =>
-        q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
-      )
-      .collect()
-  ).filter(
-    (candidate) =>
-      candidate.ownerDeletedAt === undefined &&
-      resolvePackageReleaseScanStatus(candidate) !== "malicious",
-  );
-  if (activeReleases.length <= 1) {
+  const activeReleases = await getBoundedAvailablePackageReleases(ctx, pkg._id);
+  if (!activeReleases.some((candidate) => candidate._id !== release._id)) {
     throw new ConvexError(
       "You cannot delete the only active release. Remove the whole package instead.",
     );

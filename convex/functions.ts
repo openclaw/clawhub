@@ -1,6 +1,6 @@
 import { customCtx, customMutation } from "convex-helpers/server/customFunctions";
 import { Triggers, type Change } from "convex-helpers/server/triggers";
-import { v } from "convex/values";
+import { ConvexError, v } from "convex/values";
 import semver from "semver";
 import { internal } from "./_generated/api";
 import type { DataModel, Doc, Id } from "./_generated/dataModel";
@@ -40,6 +40,7 @@ function isMissingTableError(error: unknown, table: string) {
 type PackageDigestSyncCtx = Pick<MutationCtx, "db">;
 type OwnerPublisherDigestScheduleCtx = Pick<Partial<MutationCtx>, "scheduler">;
 const OWNER_PUBLISHER_DIGEST_PAGE_SIZE = 100;
+export const MAX_OWNER_DELETE_ACTIVE_CHILDREN = 100;
 type LatestPackageRelease = Pick<
   Doc<"packageReleases">,
   | "_id"
@@ -126,59 +127,68 @@ function compareFallbackReleases(
   return a._id.localeCompare(b._id);
 }
 
+export async function getBoundedAvailablePackageReleases(
+  ctx: PackageDigestSyncCtx,
+  packageId: Id<"packages">,
+) {
+  const releases = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_active_created", (q) =>
+      q.eq("packageId", packageId).eq("softDeletedAt", undefined),
+    )
+    .take(MAX_OWNER_DELETE_ACTIVE_CHILDREN + 1);
+  if (releases.length > MAX_OWNER_DELETE_ACTIVE_CHILDREN) {
+    throw new ConvexError(
+      "This package has too many active releases to safely delete an individual release. Remove the whole package instead.",
+    );
+  }
+  return releases.filter(
+    (release) =>
+      release.ownerDeletedAt === undefined &&
+      resolvePackageReleaseScanStatus(release) !== "malicious",
+  );
+}
+
 async function getPreferredFallbackPackageRelease(
   ctx: PackageDigestSyncCtx,
   packageId: Id<"packages">,
   family: Doc<"packages">["family"],
 ): Promise<LatestPackageRelease | null> {
-  let cursor: string | null = null;
   let best: LatestPackageRelease | null = null;
-  while (true) {
-    const page = await ctx.db
-      .query("packageReleases")
-      .withIndex("by_package_active_created", (q) =>
-        q.eq("packageId", packageId).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .paginate({ cursor, numItems: 100 });
-    for (const release of page.page) {
-      if (release.ownerDeletedAt !== undefined) continue;
-      const scanStatus = resolvePackageReleaseScanStatus(release);
-      if (scanStatus === "malicious") continue;
-      const candidate: LatestPackageRelease = {
-        _id: release._id,
-        createdAt: release.createdAt,
-        version: release.version,
-        changelog: release.changelog,
-        summary: release.summary,
-        compatibility: release.compatibility,
-        capabilities: release.capabilities,
-        verification: release.verification,
-        scanStatus,
-        distTags: release.distTags,
-        runtimeId: release.runtimeId,
-        sourceRepo: release.sourceRepo,
-        artifactKind: release.artifactKind,
-        clawpackSha256: release.clawpackSha256,
-        sha256hash: release.sha256hash,
-        clawpackSize: release.clawpackSize,
-        clawpackFormat: release.clawpackFormat,
-        npmIntegrity: release.npmIntegrity,
-        npmShasum: release.npmShasum,
-        npmTarballName: release.npmTarballName,
-        npmUnpackedSize: release.npmUnpackedSize,
-        npmFileCount: release.npmFileCount,
-        vtAnalysis: release.vtAnalysis,
-        llmAnalysis: release.llmAnalysis,
-        staticScan: release.staticScan,
-        manualModeration: release.manualModeration,
-        ownerDeletedAt: release.ownerDeletedAt,
-      };
-      if (!best || compareFallbackReleases(family, candidate, best) > 0) best = candidate;
-    }
-    if (page.isDone) return best;
-    cursor = page.continueCursor;
+  const releases = await getBoundedAvailablePackageReleases(ctx, packageId);
+  for (const release of releases) {
+    const candidate: LatestPackageRelease = {
+      _id: release._id,
+      createdAt: release.createdAt,
+      version: release.version,
+      changelog: release.changelog,
+      summary: release.summary,
+      compatibility: release.compatibility,
+      capabilities: release.capabilities,
+      verification: release.verification,
+      scanStatus: resolvePackageReleaseScanStatus(release),
+      distTags: release.distTags,
+      runtimeId: release.runtimeId,
+      sourceRepo: release.sourceRepo,
+      artifactKind: release.artifactKind,
+      clawpackSha256: release.clawpackSha256,
+      sha256hash: release.sha256hash,
+      clawpackSize: release.clawpackSize,
+      clawpackFormat: release.clawpackFormat,
+      npmIntegrity: release.npmIntegrity,
+      npmShasum: release.npmShasum,
+      npmTarballName: release.npmTarballName,
+      npmUnpackedSize: release.npmUnpackedSize,
+      npmFileCount: release.npmFileCount,
+      vtAnalysis: release.vtAnalysis,
+      llmAnalysis: release.llmAnalysis,
+      staticScan: release.staticScan,
+      manualModeration: release.manualModeration,
+      ownerDeletedAt: release.ownerDeletedAt,
+    };
+    if (!best || compareFallbackReleases(family, candidate, best) > 0) best = candidate;
   }
+  return best;
 }
 
 async function syncPackageSearchDigest(
