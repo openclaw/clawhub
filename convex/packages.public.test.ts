@@ -11593,12 +11593,16 @@ function makeOwnedPackageBatchCtx(options?: {
   const insert = vi.fn().mockResolvedValue("auditLogs:1");
   const deleteDoc = vi.fn();
   const runAfter = vi.fn();
+  const installDedupeTake = vi.fn(async (limit: number) =>
+    (options?.packageInstallMetricDedupes ?? []).slice(0, limit),
+  );
 
   return {
     patch,
     insert,
     deleteDoc,
     runAfter,
+    installDedupeTake,
     ctx: {
       scheduler: { runAfter },
       db: {
@@ -11727,7 +11731,7 @@ function makeOwnedPackageBatchCtx(options?: {
           if (table === "packageInstallMetricDedupes") {
             return {
               withIndex: vi.fn(() => ({
-                collect: vi.fn().mockResolvedValue(options?.packageInstallMetricDedupes ?? []),
+                take: installDedupeTake,
               })),
             };
           }
@@ -12470,7 +12474,7 @@ describe("owned package sanction batches", () => {
   });
 
   it("deletes package install dedupe rows during package hard delete", async () => {
-    const { ctx, deleteDoc } = makeOwnedPackageBatchCtx({
+    const { ctx, deleteDoc, installDedupeTake } = makeOwnedPackageBatchCtx({
       packageInstallMetricDedupes: [
         { _id: "packageInstallMetricDedupes:one" },
         { _id: "packageInstallMetricDedupes:two" },
@@ -12485,8 +12489,32 @@ describe("owned package sanction batches", () => {
     });
 
     expect(result).toMatchObject({ ok: true, packageId: "packages:demo", deleted: true });
+    expect(installDedupeTake).toHaveBeenCalledWith(200);
     expect(deleteDoc).toHaveBeenCalledWith("packageInstallMetricDedupes:one");
     expect(deleteDoc).toHaveBeenCalledWith("packageInstallMetricDedupes:two");
+    expect(deleteDoc).toHaveBeenCalledWith("packages:demo");
+  });
+
+  it("bounds install metric dedupe cleanup during package hard delete", async () => {
+    const packageInstallMetricDedupes = Array.from({ length: 201 }, (_, index) => ({
+      _id: `packageInstallMetricDedupes:${index}`,
+    }));
+    const { ctx, deleteDoc, installDedupeTake } = makeOwnedPackageBatchCtx({
+      packageInstallMetricDedupes,
+    });
+
+    const result = await hardDeletePackageInternalHandler(ctx as never, {
+      packageId: "packages:demo",
+      actorUserId: "users:owner",
+      deletedAt: 3_000,
+      source: "account.delete",
+    });
+
+    expect(result).toMatchObject({ ok: true, packageId: "packages:demo", deleted: true });
+    expect(installDedupeTake).toHaveBeenCalledWith(200);
+    expect(deleteDoc).toHaveBeenCalledWith("packageInstallMetricDedupes:0");
+    expect(deleteDoc).toHaveBeenCalledWith("packageInstallMetricDedupes:199");
+    expect(deleteDoc).not.toHaveBeenCalledWith("packageInstallMetricDedupes:200");
     expect(deleteDoc).toHaveBeenCalledWith("packages:demo");
   });
 

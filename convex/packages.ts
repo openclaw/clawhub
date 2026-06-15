@@ -4061,7 +4061,7 @@ async function hardDeletePackageDoc(
     .withIndex("by_target_metric_identity_day", (q) =>
       q.eq("targetKind", "package").eq("targetId", pkg._id),
     )
-    .collect();
+    .take(MAX_PUBLIC_LIST_PAGE_SIZE);
   for (const installDedupe of installDedupes) await ctx.db.delete(installDedupe._id);
 
   for (const release of releases) await ctx.db.delete(release._id);
