@@ -5904,6 +5904,7 @@ type SkillCatalogCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
+  recommendedFallback?: "updated";
 };
 
 function encodeSkillCatalogCursor(state: SkillCatalogCursorState) {
@@ -5925,6 +5926,7 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
       pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
+      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -6114,6 +6116,11 @@ export const listPackageCatalogPage = query({
     let offset = decodedCursor.offset;
     let pageSize = decodedCursor.pageSize;
     let done = decodedCursor.done;
+    const useUpdatedRecommendationFallback =
+      args.sort === "recommended" &&
+      (decodedCursor.recommendedFallback === "updated" ||
+        (!cursor && (await hasMissingRecommendedScores(ctx, false, null))));
+    const effectiveSort = useUpdatedRecommendationFallback ? "updated" : args.sort;
     let loops = 0;
     let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
 
@@ -6135,11 +6142,11 @@ export const listPackageCatalogPage = query({
       remainingScanBudget -= effectivePageSize;
       const pageCursor = cursor;
       const indexName =
-        args.sort === "recommended"
+        effectiveSort === "recommended"
           ? "by_active_recommended_score"
-          : args.sort === "downloads"
+          : effectiveSort === "downloads"
             ? "by_active_stats_downloads"
-            : args.sort === "installs"
+            : effectiveSort === "installs"
               ? "by_active_stats_installs_all_time"
               : "by_active_updated";
       const page = await paginator(ctx.db, schema)
@@ -6165,10 +6172,19 @@ export const listPackageCatalogPage = query({
             pageSize = effectivePageSize;
             done = page.isDone;
           }
+          const recommendedFallback = useUpdatedRecommendationFallback
+            ? ("updated" as const)
+            : undefined;
           return {
             page: collected,
             isDone: done && offset === 0,
-            continueCursor: encodeSkillCatalogCursor({ cursor, offset, pageSize, done }),
+            continueCursor: encodeSkillCatalogCursor({
+              cursor,
+              offset,
+              pageSize,
+              done,
+              recommendedFallback,
+            }),
           };
         }
       }
@@ -6179,10 +6195,17 @@ export const listPackageCatalogPage = query({
       pageSize = effectivePageSize;
     }
 
+    const recommendedFallback = useUpdatedRecommendationFallback ? ("updated" as const) : undefined;
     return {
       page: collected,
       isDone: done,
-      continueCursor: encodeSkillCatalogCursor({ cursor, offset, pageSize, done }),
+      continueCursor: encodeSkillCatalogCursor({
+        cursor,
+        offset,
+        pageSize,
+        done,
+        recommendedFallback,
+      }),
     };
   },
 });

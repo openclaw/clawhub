@@ -109,11 +109,13 @@ function makeDigest(
 
 function makeCtx(
   pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>,
-  optionsOrIndexNames: { indexNames?: string[] } | string[] = {},
+  optionsOrIndexNames: { firstByIndex?: Record<string, unknown>; indexNames?: string[] } | string[] =
+    {},
 ) {
-  const indexNames = Array.isArray(optionsOrIndexNames)
-    ? optionsOrIndexNames
-    : optionsOrIndexNames.indexNames;
+  const options = Array.isArray(optionsOrIndexNames)
+    ? { indexNames: optionsOrIndexNames }
+    : optionsOrIndexNames;
+  const indexNames = options.indexNames;
   const pageByCursor = new Map<
     string | null,
     { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
@@ -156,6 +158,7 @@ function makeCtx(
           withIndex: (indexName: string) => {
             indexNames?.push(indexName);
             return {
+              first: async () => options.firstByIndex?.[indexName] ?? null,
               order: () => ({
                 paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
                   pageByCursor.get(pageCursor) ?? { page: [], isDone: true, continueCursor: "" },
@@ -302,13 +305,51 @@ describe("skills package catalog queries", () => {
       },
     );
 
-    expect(indexNames).toEqual(["by_active_recommended_score"]);
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_recommended_score_version",
+      "by_active_recommended_score_version",
+      "by_active_recommended_score",
+    ]);
     expect(result.page).toEqual([
       expect.objectContaining({
         name: "recommended-skill",
         family: "skill",
       }),
     ]);
+  });
+
+  it("falls back to updated sort for recommended package catalog rows while scores backfill", async () => {
+    const indexNames: string[] = [];
+    const result = await listPackageCatalogPageHandler(
+      makeCtx(
+        [
+          {
+            page: [makeDigest("fallback-skill")],
+            isDone: false,
+            continueCursor: "next-updated-page",
+          },
+        ],
+        {
+          firstByIndex: {
+            by_active_recommended_score_version: { _id: "skillSearchDigest:stale" },
+          },
+          indexNames,
+        },
+      ),
+      {
+        sort: "recommended",
+        paginationOpts: { cursor: null, numItems: 1 },
+      },
+    );
+
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_recommended_score_version",
+      "by_active_updated",
+    ]);
+    expect(result.page).toEqual([expect.objectContaining({ name: "fallback-skill" })]);
+    expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
   });
 
   it("searches skills with package-style lexical scoring", async () => {
