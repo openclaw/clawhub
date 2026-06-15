@@ -42,6 +42,26 @@ const MAX_STATIC_SCAN_TEXT_FILE_BYTES = 256 * 1024;
 const DEFAULT_SOURCE_SYNC_BATCH_SIZE = 20;
 const MAX_SOURCE_SYNC_BATCH_SIZE = 50;
 
+const githubStaticScanFindingValidator = v.object({
+  code: v.string(),
+  severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
+  file: v.string(),
+  line: v.number(),
+  message: v.string(),
+  evidence: v.string(),
+});
+
+const githubStaticScanResultValidator = v.object({
+  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+  reasonCodes: v.array(v.string()),
+  findings: v.array(githubStaticScanFindingValidator),
+  summary: v.string(),
+  engineVersion: v.string(),
+  checkedAt: v.number(),
+});
+
+type GitHubStaticScanResult = ReturnType<typeof runStaticModerationScan>;
+
 function githubScanStatusFromStaticScan(staticScan: ReturnType<typeof runStaticModerationScan>) {
   if (
     staticScan.status === "suspicious" &&
@@ -51,6 +71,29 @@ function githubScanStatusFromStaticScan(staticScan: ReturnType<typeof runStaticM
     return "clean" as const;
   }
   return staticScan.status;
+}
+
+function retainedStaticScanModerationPatch(
+  staticScan: GitHubStaticScanResult | undefined,
+  scanStatus: GitHubSkillScanStatus,
+) {
+  if (!staticScan || staticScan.status === scanStatus || staticScan.reasonCodes.length === 0) {
+    return {};
+  }
+
+  return {
+    moderationReason: `scanner.aggregate.${staticScan.status}`,
+    moderationVerdict: staticScan.status,
+    moderationFlags:
+      staticScan.status === "malicious" ? ["blocked.malware"] : ["flagged.suspicious"],
+    moderationReasonCodes: staticScan.reasonCodes,
+    moderationEvidence: staticScan.findings.length ? staticScan.findings : undefined,
+    moderationSummary: staticScan.summary,
+    moderationEngineVersion: staticScan.engineVersion,
+    moderationEvaluatedAt: staticScan.checkedAt,
+    moderationSourceVersionId: undefined,
+    isSuspicious: staticScan.status !== "clean",
+  };
 }
 
 type SourceForSync = Pick<
@@ -820,6 +863,7 @@ export type ApplyGitHubSkillVerificationResultArgs = {
   skillId: Id<"skills">;
   contentHash: string;
   scanStatus: GitHubSkillScanStatus;
+  staticScan?: GitHubStaticScanResult;
   now?: number;
 };
 
@@ -846,11 +890,16 @@ export async function applyGitHubSkillVerificationResultHandler(
   const now = args.now ?? Date.now();
   const promote = args.scanStatus === "clean";
   const moderation = githubBackedSkillModeration(args.scanStatus);
+  const retainedStaticScanModeration = retainedStaticScanModerationPatch(
+    args.staticScan,
+    args.scanStatus,
+  );
   const previousSkill = { ...skill };
   const patch = {
     githubScanStatus: args.scanStatus,
     updatedAt: now,
     ...moderation,
+    ...retainedStaticScanModeration,
   };
   await ctx.db.patch(args.skillId, patch);
   const nextSkill = { ...previousSkill, ...patch };
@@ -865,6 +914,7 @@ export const applyGitHubSkillVerificationResultInternal = internalMutation({
     skillId: v.id("skills"),
     contentHash: v.string(),
     scanStatus: githubSkillScanStatusValidator,
+    staticScan: v.optional(githubStaticScanResultValidator),
     now: v.optional(v.number()),
   },
   handler: applyGitHubSkillVerificationResultHandler,
@@ -913,6 +963,7 @@ export async function verifyGitHubSkillHandler(
     skillId: target.skill._id,
     contentHash: args.contentHash,
     scanStatus,
+    staticScan,
   });
 
   return {

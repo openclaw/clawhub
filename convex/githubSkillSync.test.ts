@@ -1636,6 +1636,110 @@ describe("applyGitHubSkillVerificationResultHandler", () => {
       updatedAt: 123,
     });
   });
+
+  it("retains padding-only static evidence while keeping GitHub installability clean", async () => {
+    const { db, tables } = createDb({
+      skills: [
+        {
+          _id: "skills:padded",
+          slug: "padded",
+          displayName: "Padded",
+          ownerUserId: "users:nvidia",
+          ownerPublisherId: "publishers:nvidia",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/padded",
+          githubCurrentCommit: "4".repeat(40),
+          githubCurrentContentHash: "padded-hash",
+          githubCurrentStatus: "present",
+          githubScanStatus: "pending",
+          tags: {},
+          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          moderationStatus: "active",
+          moderationReason: "pending.scan",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          ownerUserId: "users:nvidia",
+          ownerPublisherId: "publishers:nvidia",
+          defaultBranch: "main",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      globalStats: [
+        {
+          _id: "globalStats:default",
+          key: "default",
+          activeSkillsCount: 10,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    const staticScan = {
+      status: "suspicious" as const,
+      reasonCodes: ["suspicious.context_padding_truncation"],
+      findings: [
+        {
+          code: "suspicious.context_padding_truncation",
+          severity: "warn" as const,
+          file: "SKILL.md",
+          line: 2,
+          message:
+            "Extreme context padding hides later artifact content from context-limited review.",
+          evidence:
+            "2100 consecutive blank/whitespace-only lines before later artifact content; content resumes at line 2102.",
+        },
+      ],
+      summary: "Detected: suspicious.context_padding_truncation",
+      engineVersion: "test-engine",
+      checkedAt: 456,
+    };
+
+    const promoted = await applyGitHubSkillVerificationResultHandler({ db } as never, {
+      skillId: "skills:padded" as never,
+      contentHash: "padded-hash",
+      scanStatus: "clean",
+      staticScan,
+      now: 789,
+    });
+
+    expect(promoted).toEqual({ ok: true, promoted: true });
+    expect(tables.skills[0]).toMatchObject({
+      githubScanStatus: "clean",
+      moderationStatus: "active",
+      moderationReason: "scanner.aggregate.suspicious",
+      moderationVerdict: "suspicious",
+      moderationFlags: ["flagged.suspicious"],
+      moderationReasonCodes: ["suspicious.context_padding_truncation"],
+      moderationEvidence: [
+        expect.objectContaining({
+          code: "suspicious.context_padding_truncation",
+          file: "SKILL.md",
+        }),
+      ],
+      moderationSummary: "Detected: suspicious.context_padding_truncation",
+      moderationEngineVersion: "test-engine",
+      moderationEvaluatedAt: 456,
+      isSuspicious: true,
+    });
+    expect(resolveInstallFromTables(tables, "padded")).toMatchObject({
+      ok: true,
+      installKind: "github",
+      github: {
+        repo: "NVIDIA/skills",
+        path: "skills/padded",
+        commit: "4".repeat(40),
+        contentHash: "padded-hash",
+      },
+    });
+  });
 });
 
 describe("verifyGitHubSkillHandler", () => {
@@ -1769,6 +1873,16 @@ describe("verifyGitHubSkillHandler", () => {
         skillId: "skills:padded",
         contentHash,
         scanStatus: "clean",
+        staticScan: expect.objectContaining({
+          status: "suspicious",
+          reasonCodes: ["suspicious.context_padding_truncation"],
+          findings: [
+            expect.objectContaining({
+              code: "suspicious.context_padding_truncation",
+              file: "SKILL.md",
+            }),
+          ],
+        }),
       }),
     );
   });
