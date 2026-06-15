@@ -36,6 +36,7 @@ type SkillDetailTabsProps = {
   hasSkillCard: boolean;
   latestFiles: SkillFile[];
   latestVersionId: Id<"skillVersions"> | null;
+  canDeleteVersions?: boolean;
   skill: Doc<"skills">;
   diffVersions: Doc<"skillVersions">[] | undefined;
   versions: Doc<"skillVersions">[] | undefined;
@@ -59,6 +60,7 @@ export function SkillDetailTabs({
   hasSkillCard,
   latestFiles,
   latestVersionId,
+  canDeleteVersions = false,
   skill,
   diffVersions,
   versions,
@@ -233,6 +235,9 @@ export function SkillDetailTabs({
       {showArchiveTabs && activeTab === "versions" ? (
         <SkillVersionsPanel
           versions={versions}
+          latestVersionId={latestVersionId}
+          latestTaggedVersionId={skill.tags.latest ?? null}
+          canDeleteVersions={canDeleteVersions}
           nixPlugin={nixPlugin}
           skillSlug={skill.slug}
           suppressScanResults={suppressVersionScanResults}

@@ -1,4 +1,10 @@
-import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { AlertTriangle, Download, Info, Upload } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -367,6 +373,7 @@ export function PluginDetailPage(props: PluginDetailPageProps) {
 
 function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const { detail, version, versions, readme, rateLimited } = loaderData;
+  const router = useRouter();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
   const isNestedPluginRoute =
@@ -375,6 +382,12 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const manageLookupName = detail.package?.name ?? manageCandidateNames[0] ?? name;
   const manageContext = useQuery(
     api.packages.getManageContext,
+    me && !isNestedPluginRoute && detail.package
+      ? { name: manageLookupName, candidateNames: manageCandidateNames }
+      : "skip",
+  );
+  const canDeleteVersions = useQuery(
+    api.packages.canDeleteVersions,
     me && !isNestedPluginRoute && detail.package
       ? { name: manageLookupName, candidateNames: manageCandidateNames }
       : "skip",
@@ -481,7 +494,15 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       <p className="empty-state-body">This plugin doesn't have a README yet.</p>
     </div>
   );
-  const versionsPanel = <PluginVersionsPanel packageName={pkg.name} versions={versions} />;
+  const versionsPanel = (
+    <PluginVersionsPanel
+      packageName={pkg.name}
+      versions={versions}
+      latestVersion={pkg.latestVersion ?? null}
+      canDeleteVersions={canDeleteVersions === true}
+      onVersionDeleted={() => router.invalidate()}
+    />
+  );
   const compatibilityPanel =
     compatEntries.length > 0 || artifact ? (
       <div className="plugin-tab-panel">
