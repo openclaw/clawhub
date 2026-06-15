@@ -939,6 +939,8 @@ function makeCanDeleteVersionsCtx(options: {
   ownerUserId: string;
   ownerPublisherId?: string;
   membershipRole?: "owner" | "admin" | "publisher";
+  packageLookupNames?: string[];
+  packageMatchName?: string | null;
 }) {
   const pkg = makePackageDoc({
     ownerUserId: options.ownerUserId,
@@ -963,11 +965,41 @@ function makeCanDeleteVersionsCtx(options: {
         return null;
       }),
       query: vi.fn((table: string) => {
-        if (table === "packages") {
+        if (table === "users") {
           return {
             withIndex: vi.fn(() => ({
-              unique: vi.fn().mockResolvedValue(pkg),
+              unique: vi.fn().mockResolvedValue(null),
             })),
+          };
+        }
+        if (table === "packages") {
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+              ) => {
+                let normalizedName = "";
+                const queryBuilder = {
+                  eq: (field: string, value: string) => {
+                    if (field === "normalizedName") normalizedName = value;
+                    return queryBuilder;
+                  },
+                };
+                builder?.(queryBuilder);
+                options.packageLookupNames?.push(normalizedName);
+                return {
+                  unique: vi
+                    .fn()
+                    .mockResolvedValue(
+                      options.packageMatchName === undefined ||
+                        normalizedName === options.packageMatchName
+                        ? pkg
+                        : null,
+                    ),
+                };
+              },
+            ),
           };
         }
         if (table === "publisherMembers") {
@@ -9735,6 +9767,40 @@ describe("packages public queries", () => {
       expect(result).toBe(false);
     },
   );
+
+  it("bounds normalized unique candidate lookups when checking version delete capability", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const packageLookupNames: string[] = [];
+
+    const result = await canDeleteVersionsHandler(
+      makeCanDeleteVersionsCtx({
+        viewerId: "users:owner",
+        ownerUserId: "users:owner",
+        packageLookupNames,
+        packageMatchName: null,
+      }) as never,
+      {
+        name: " primary-plugin ",
+        candidateNames: [
+          "PRIMARY-PLUGIN",
+          "candidate-one",
+          "candidate-two",
+          "candidate-three",
+          "candidate-four",
+          "candidate-five",
+          "candidate-one",
+        ],
+      },
+    );
+
+    expect(result).toBe(false);
+    expect(packageLookupNames).toEqual([
+      "primary-plugin",
+      "candidate-one",
+      "candidate-two",
+      "candidate-three",
+    ]);
+  });
 
   it("returns only slim package identifiers for package manage context", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);

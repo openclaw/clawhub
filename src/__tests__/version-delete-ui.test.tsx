@@ -28,6 +28,8 @@ vi.mock("../lib/packageApi", () => ({
 
 const latestSkillVersionId = "skillVersions:latest" as Id<"skillVersions">;
 const olderSkillVersionId = "skillVersions:older" as Id<"skillVersions">;
+const otherLatestSkillVersionId = "skillVersions:other-latest" as Id<"skillVersions">;
+const otherOlderSkillVersionId = "skillVersions:other-older" as Id<"skillVersions">;
 
 const skillVersions = [
   {
@@ -43,6 +45,25 @@ const skillVersions = [
     version: "1.0.0",
     createdAt: 1,
     changelog: "Older skill release",
+    files: [],
+    parsed: {},
+  },
+] as unknown as Doc<"skillVersions">[];
+
+const otherSkillVersions = [
+  {
+    _id: otherLatestSkillVersionId,
+    version: "3.0.0",
+    createdAt: 3,
+    changelog: "Current other skill release",
+    files: [],
+    parsed: {},
+  },
+  {
+    _id: otherOlderSkillVersionId,
+    version: "2.5.0",
+    createdAt: 2,
+    changelog: "Older other skill release",
     files: [],
     parsed: {},
   },
@@ -66,18 +87,32 @@ const pluginVersions = {
   nextCursor: null,
 };
 
-function renderSkillVersions(canDeleteVersions = true) {
-  return render(
+function makeSkillVersionsPanel({
+  versions = skillVersions,
+  latestVersionId = latestSkillVersionId,
+  canDeleteVersions = true,
+  skillSlug = "weather",
+}: {
+  versions?: Doc<"skillVersions">[];
+  latestVersionId?: Id<"skillVersions">;
+  canDeleteVersions?: boolean;
+  skillSlug?: string;
+} = {}) {
+  return (
     <SkillVersionsPanel
-      versions={skillVersions}
-      latestVersionId={latestSkillVersionId}
+      versions={versions}
+      latestVersionId={latestVersionId}
       canDeleteVersions={canDeleteVersions}
       nixPlugin={false}
-      skillSlug="weather"
+      skillSlug={skillSlug}
       suppressScanResults={false}
       suppressedMessage={null}
-    />,
+    />
   );
+}
+
+function renderSkillVersions(canDeleteVersions = true) {
+  return render(makeSkillVersionsPanel({ canDeleteVersions }));
 }
 
 function renderPluginVersions({
@@ -138,6 +173,64 @@ describe("version Delete UI", () => {
     expect(screen.queryByText("Older skill release")).toBeNull();
     expect(screen.getByText("Current skill release")).toBeTruthy();
     expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
+  });
+
+  it("cannot confirm a pending skill deletion after navigating to another skill", () => {
+    const deleteOwnedVersion = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "skills:deleteOwnedVersion" ? deleteOwnedVersion : vi.fn(),
+    );
+    const { rerender } = renderSkillVersions();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+    expectIrreversibleConfirmation("1.0.0");
+
+    rerender(
+      makeSkillVersionsPanel({
+        versions: otherSkillVersions.slice(0, 1),
+        latestVersionId: otherLatestSkillVersionId,
+        skillSlug: "other-skill",
+      }),
+    );
+
+    expect(screen.queryByRole("heading", { name: "Delete version 1.0.0?" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete version" })).toBeNull();
+    expect(deleteOwnedVersion).not.toHaveBeenCalled();
+  });
+
+  it("does not let a deletion response from the previous skill reset the current skill dialog", async () => {
+    let resolveDelete: (result: { ok: true }) => void = () => undefined;
+    const pendingDelete = new Promise<{ ok: true }>((resolve) => {
+      resolveDelete = resolve;
+    });
+    const deleteOwnedVersion = vi.fn().mockReturnValue(pendingDelete);
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "skills:deleteOwnedVersion" ? deleteOwnedVersion : vi.fn(),
+    );
+    const { rerender } = renderSkillVersions();
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete version" }));
+    await waitFor(() => {
+      expect(deleteOwnedVersion).toHaveBeenCalledWith({ versionId: olderSkillVersionId });
+    });
+
+    rerender(
+      makeSkillVersionsPanel({
+        versions: otherSkillVersions,
+        latestVersionId: otherLatestSkillVersionId,
+        skillSlug: "other-skill",
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Delete version 2.5.0" }));
+    expectIrreversibleConfirmation("2.5.0");
+
+    resolveDelete({ ok: true });
+
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Delete version 2.5.0?" })).toBeTruthy();
+    });
+    expect(toast.success).not.toHaveBeenCalled();
   });
 
   it("hides skill Delete actions without owner capability", () => {

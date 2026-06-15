@@ -1,5 +1,5 @@
 import { useMutation } from "convex/react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -39,20 +39,32 @@ export function SkillVersionsPanel({
   const [removedVersionIds, setRemovedVersionIds] = useState<Set<Id<"skillVersions">>>(
     () => new Set(),
   );
+  const deleteContextIdRef = useRef(0);
   const visibleVersions = (versions ?? []).filter((version) => !removedVersionIds.has(version._id));
+
+  useEffect(() => {
+    deleteContextIdRef.current += 1;
+    setDeletingVersion(null);
+    setIsDeleting(false);
+    setRemovedVersionIds(new Set());
+  }, [skillSlug]);
 
   const handleDelete = async () => {
     if (!deletingVersion) return;
+    const deleteContextId = deleteContextIdRef.current;
+    const version = deletingVersion;
     setIsDeleting(true);
     try {
-      await deleteOwnedVersion({ versionId: deletingVersion._id });
-      setRemovedVersionIds((current) => new Set(current).add(deletingVersion._id));
-      toast.success(`Deleted version ${deletingVersion.version}.`);
+      await deleteOwnedVersion({ versionId: version._id });
+      if (deleteContextIdRef.current !== deleteContextId) return;
+      setRemovedVersionIds((current) => new Set(current).add(version._id));
+      toast.success(`Deleted version ${version.version}.`);
       setDeletingVersion(null);
     } catch (error) {
+      if (deleteContextIdRef.current !== deleteContextId) return;
       toast.error(getUserFacingConvexError(error, "Version could not be deleted. Try again."));
     } finally {
-      setIsDeleting(false);
+      if (deleteContextIdRef.current === deleteContextId) setIsDeleting(false);
     }
   };
 

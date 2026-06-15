@@ -104,6 +104,7 @@ const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
+const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
@@ -2312,7 +2313,10 @@ export const canDeleteVersions = query({
     const candidates = [args.name, ...(args.candidateNames ?? [])]
       .map((name) => normalizePackageName(name))
       .filter(Boolean);
-    const uniqueCandidates = Array.from(new Set(candidates));
+    const uniqueCandidates = Array.from(new Set(candidates)).slice(
+      0,
+      MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES,
+    );
 
     let pkg: Doc<"packages"> | null = null;
     for (const candidate of uniqueCandidates) {
