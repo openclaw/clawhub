@@ -12495,11 +12495,11 @@ describe("owned package sanction batches", () => {
     expect(deleteDoc).toHaveBeenCalledWith("packages:demo");
   });
 
-  it("bounds install metric dedupe cleanup during package hard delete", async () => {
+  it("continues install metric dedupe cleanup before package hard delete finalizes", async () => {
     const packageInstallMetricDedupes = Array.from({ length: 201 }, (_, index) => ({
       _id: `packageInstallMetricDedupes:${index}`,
     }));
-    const { ctx, deleteDoc, installDedupeTake } = makeOwnedPackageBatchCtx({
+    const { ctx, deleteDoc, installDedupeTake, runAfter } = makeOwnedPackageBatchCtx({
       packageInstallMetricDedupes,
     });
 
@@ -12510,12 +12510,23 @@ describe("owned package sanction batches", () => {
       source: "account.delete",
     });
 
-    expect(result).toMatchObject({ ok: true, packageId: "packages:demo", deleted: true });
+    expect(result).toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      deleted: false,
+      cleanupPending: true,
+    });
     expect(installDedupeTake).toHaveBeenCalledWith(200);
     expect(deleteDoc).toHaveBeenCalledWith("packageInstallMetricDedupes:0");
     expect(deleteDoc).toHaveBeenCalledWith("packageInstallMetricDedupes:199");
     expect(deleteDoc).not.toHaveBeenCalledWith("packageInstallMetricDedupes:200");
-    expect(deleteDoc).toHaveBeenCalledWith("packages:demo");
+    expect(deleteDoc).not.toHaveBeenCalledWith("packages:demo");
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      packageId: "packages:demo",
+      actorUserId: "users:owner",
+      deletedAt: 3_000,
+      source: "account.delete",
+    });
   });
 
   it("schedules hard deletes for account-deleted packages owned through the user's personal publisher", async () => {

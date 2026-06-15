@@ -6116,10 +6116,16 @@ export const listPackageCatalogPage = query({
     let offset = decodedCursor.offset;
     let pageSize = decodedCursor.pageSize;
     let done = decodedCursor.done;
+    const isFreshRecommendedRequest =
+      args.sort === "recommended" &&
+      !args.paginationOpts.cursor &&
+      !cursor &&
+      offset === 0 &&
+      !done;
     const useUpdatedRecommendationFallback =
       args.sort === "recommended" &&
       (decodedCursor.recommendedFallback === "updated" ||
-        (!cursor && (await hasMissingRecommendedScores(ctx, false, null))));
+        (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))));
     const effectiveSort = useUpdatedRecommendationFallback ? "updated" : args.sort;
     let loops = 0;
     let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;

@@ -353,6 +353,50 @@ describe("skills package catalog queries", () => {
     expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
   });
 
+  it("keeps recommendation sort for non-fallback in-page package catalog cursors", async () => {
+    const indexNames: string[] = [];
+    const cursor = `skillcat:${JSON.stringify({
+      cursor: null,
+      offset: 1,
+      pageSize: 2,
+      done: false,
+    })}`;
+    const result = await listPackageCatalogPageHandler(
+      makeCtx(
+        [
+          {
+            page: [
+              makeDigest("recommended-first", {
+                recommendedScore: 500,
+                recommendedScoreVersion: 3,
+              }),
+              makeDigest("recommended-second", {
+                recommendedScore: 400,
+                recommendedScoreVersion: 3,
+              }),
+            ],
+            isDone: false,
+            continueCursor: "next-recommended-page",
+          },
+        ],
+        {
+          firstByIndex: {
+            by_active_recommended_score_version: { _id: "skillSearchDigest:stale" },
+          },
+          indexNames,
+        },
+      ),
+      {
+        sort: "recommended",
+        paginationOpts: { cursor, numItems: 1 },
+      },
+    );
+
+    expect(indexNames).toEqual(["by_active_recommended_score"]);
+    expect(result.page).toEqual([expect.objectContaining({ name: "recommended-second" })]);
+    expect(result.continueCursor).not.toContain('"recommendedFallback":"updated"');
+  });
+
   it("searches skills with package-style lexical scoring", async () => {
     const result = await searchPackageCatalogPublicHandler(
       makeCtx([
