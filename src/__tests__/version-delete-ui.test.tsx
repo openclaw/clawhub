@@ -169,10 +169,10 @@ describe("version Delete UI", () => {
 
     await waitFor(() => {
       expect(deleteOwnedVersion).toHaveBeenCalledWith({ versionId: olderSkillVersionId });
+      expect(screen.queryByText("Older skill release")).toBeNull();
+      expect(screen.getByText("Current skill release")).toBeTruthy();
+      expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
     });
-    expect(screen.queryByText("Older skill release")).toBeNull();
-    expect(screen.getByText("Current skill release")).toBeTruthy();
-    expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
   });
 
   it("cannot confirm a pending skill deletion after navigating to another skill", () => {
