@@ -51,6 +51,7 @@ import {
   usersPostRouterV1Http,
   verifyDocsSessionV1Http,
   whoamiV1Http,
+  contentRightsV1Http,
 } from "./httpApiV1";
 import { preflightHandler } from "./httpPreflight";
 import {
@@ -265,6 +266,18 @@ http.route({
   path: ApiRoutes.whoami,
   method: "GET",
   handler: whoamiV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.contentRights}/`,
+  method: "GET",
+  handler: contentRightsV1Http,
+});
+
+http.route({
+  pathPrefix: `${ApiRoutes.contentRights}/`,
+  method: "POST",
+  handler: contentRightsV1Http,
 });
 
 http.route({

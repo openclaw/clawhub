@@ -30,6 +30,7 @@ import type * as githubSkillSyncNode from "../githubSkillSyncNode.js";
 import type * as http from "../http.js";
 import type * as httpApi from "../httpApi.js";
 import type * as httpApiV1 from "../httpApiV1.js";
+import type * as httpApiV1_contentRightsV1 from "../httpApiV1/contentRightsV1.js";
 import type * as httpApiV1_docsSessionV1 from "../httpApiV1/docsSessionV1.js";
 import type * as httpApiV1_packagesV1 from "../httpApiV1/packagesV1.js";
 import type * as httpApiV1_publishersV1 from "../httpApiV1/publishersV1.js";
@@ -174,6 +175,7 @@ declare const fullApi: ApiFromModules<{
   http: typeof http;
   httpApi: typeof httpApi;
   httpApiV1: typeof httpApiV1;
+  "httpApiV1/contentRightsV1": typeof httpApiV1_contentRightsV1;
   "httpApiV1/docsSessionV1": typeof httpApiV1_docsSessionV1;
   "httpApiV1/packagesV1": typeof httpApiV1_packagesV1;
   "httpApiV1/publishersV1": typeof httpApiV1_publishersV1;

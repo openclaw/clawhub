@@ -27,6 +27,7 @@ export const ApiRoutes = {
   transfers: "/api/v1/transfers",
   publishers: "/api/v1/publishers",
   users: "/api/v1/users",
+  contentRights: "/api/v1/content-rights",
   whoami: "/api/v1/whoami",
   skillsExport: "/api/v1/skills/export",
 } as const;

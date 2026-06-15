@@ -40,6 +40,7 @@ Policy, API, and trust docs:
 - `docs/security.md`: reporting ClawHub security issues and vulnerability disclosure policy.
 - `docs/security-audits.md`: user-facing security audit status, risk levels, findings, and interpretation.
 - `docs/moderation.md`: reports, moderation holds, hidden listings, bans, and account standing.
+- `docs/content-rights.md`: copyright and other content rights requests involving ClawHub listings.
 
 Maintainer records:
 
