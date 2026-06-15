@@ -6482,14 +6482,23 @@ export const countPublicSkills = query({
 export const listVersions = query({
   args: { skillId: v.id("skills"), limit: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const limit = args.limit ?? 20;
-    const versions = await ctx.db
-      .query("skillVersions")
-      .withIndex("by_skill_active_created", (q) =>
-        q.eq("skillId", args.skillId).eq("softDeletedAt", undefined),
-      )
-      .order("desc")
-      .take(limit);
+    const limit = clampInt(args.limit ?? 20, 1, MAX_PUBLIC_LIST_LIMIT);
+    const authUserId = await getAuthUserId(ctx);
+    const actor = authUserId ? await ctx.db.get(authUserId) : null;
+    const isStaff = actor?.role === "admin" || actor?.role === "moderator";
+    const versions = isStaff
+      ? await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill", (q) => q.eq("skillId", args.skillId))
+          .order("desc")
+          .take(limit)
+      : await ctx.db
+          .query("skillVersions")
+          .withIndex("by_skill_active_created", (q) =>
+            q.eq("skillId", args.skillId).eq("softDeletedAt", undefined),
+          )
+          .order("desc")
+          .take(limit);
     return versions.map((version) => toPublicSkillVersion(version)!);
   },
 });
