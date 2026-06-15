@@ -50,3 +50,23 @@ or GitHub source state that would be orphaned by the handoff. It must also fail
 closed if recovered publisher resources are already attributed to a third user,
 or if the affected primary resource rows exceed the bounded single-transaction
 limit; those cases require an explicit resumable migration before recovery.
+
+## Docs auth token destination
+
+The `/auth/docs` broker (Ask Molty) POSTs the signed-in user's ClawHub auth
+token to a `return_to` origin. That origin is a bearer-token destination, so its
+allowlist is a security boundary, not a convenience.
+
+Permitted destinations (`src/lib/docsAuth.ts`):
+
+- The fixed production docs origins: `https://clawhub.ai`,
+  `https://documentation.openclaw.ai`, `https://docs.openclaw.ai`.
+- A loopback origin (`http://localhost` / `http://127.0.0.1`) only when the app
+  is itself served from a loopback origin. The allowance is coupled to the
+  current app origin, not to a runtime env flag, so a public staging, preview,
+  or misconfigured deployment can never POST the token to a localhost listener.
+
+The deployed Content-Security-Policy `form-action` (`vercel.json`) must stay
+aligned with this allowlist: it lists `'self'` plus the cross-origin docs hosts
+and must not include loopback origins in production. The CSP is the browser-side
+backstop if the application allowlist ever regresses.
