@@ -89,6 +89,8 @@ export function SkillVersionsPanel({
             {visibleVersions.map((version) => {
               const isLatest =
                 version._id === latestVersionId || version._id === latestTaggedVersionId;
+              const isAvailable =
+                version.softDeletedAt === undefined && version.ownerDeletedAt === undefined;
               return (
                 <div
                   key={version._id}
@@ -117,7 +119,7 @@ export function SkillVersionsPanel({
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
                     {isLatest ? <Badge variant="compact">Latest</Badge> : null}
-                    {!nixPlugin ? (
+                    {!nixPlugin && isAvailable ? (
                       <a
                         href={`${convexSiteUrl}/api/v1/download?slug=${skillSlug}&version=${version.version}`}
                         className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold text-xs min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] transition-all duration-200 no-underline"
@@ -125,7 +127,7 @@ export function SkillVersionsPanel({
                         Zip
                       </a>
                     ) : null}
-                    {canDeleteVersions && !isLatest ? (
+                    {canDeleteVersions && isAvailable && !isLatest ? (
                       <Button
                         type="button"
                         variant="destructive"

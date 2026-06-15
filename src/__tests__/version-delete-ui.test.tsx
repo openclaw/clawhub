@@ -258,6 +258,52 @@ describe("version Delete UI", () => {
     expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
   });
 
+  it("keeps unavailable staff-history skill versions visible without Zip or Delete actions", () => {
+    useMutationMock.mockReturnValue(vi.fn());
+    const unavailableVersions = [
+      skillVersions[0],
+      {
+        ...skillVersions[1],
+        softDeletedAt: 3,
+        ownerDeletedAt: 3,
+      },
+      {
+        ...skillVersions[1],
+        _id: "skillVersions:owner-deleted" as Id<"skillVersions">,
+        version: "0.9.0",
+        changelog: "Owner-deleted skill release",
+        ownerDeletedAt: 2,
+      },
+    ] as Doc<"skillVersions">[];
+
+    render(makeSkillVersionsPanel({ versions: unavailableVersions }));
+
+    expect(screen.getByText("Older skill release")).toBeTruthy();
+    expect(screen.getByText("Owner-deleted skill release")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete version 1.0.0" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete version 0.9.0" })).toBeNull();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Zip" })
+        .map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get("version")),
+    ).toEqual(["2.0.0"]);
+  });
+
+  it("keeps Zip and Delete actions on active skill version rows", () => {
+    useMutationMock.mockReturnValue(vi.fn());
+
+    renderSkillVersions();
+
+    expect(screen.getByText("Latest")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Delete version 2.0.0" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Delete version 1.0.0" })).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("link", { name: "Zip" })
+        .map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get("version")),
+    ).toEqual(["2.0.0", "1.0.0"]);
+  });
+
   it("treats the skill latest tag as current when latest version metadata is stale", () => {
     useMutationMock.mockReturnValue(vi.fn());
 
