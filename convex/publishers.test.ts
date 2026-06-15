@@ -190,6 +190,8 @@ const listPublishedPageHandler = (
   listPublishedPage as unknown as WrappedHandler<
     {
       handle: string;
+      kind?: "skill" | "plugin";
+      sort?: "installs" | "recent" | "downloads";
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
