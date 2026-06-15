@@ -11,6 +11,8 @@ const DEFAULT_PACKAGES_ROOT = "packages";
 const META_FILENAME = "_meta.json";
 const INDEX_FILENAME = "_index.json";
 const MAX_INDEX_WRITE_ATTEMPTS = 5;
+const MIN_INDEX_WRITE_RETRY_DELAY_MS = 25;
+const MAX_INDEX_WRITE_RETRY_DELAY_MS = 250;
 
 type BackupFile = {
   path: string;
@@ -183,6 +185,34 @@ export async function backupPackageReleaseToObjectStorage(
   });
 
   await putJsonObject(context, planned.metaPath, planned.meta);
+  await putMergedJsonIndex(context, planned.indexPath, (existingIndex: PackageIndexFile | null) =>
+    buildPackageIndexFile(planned, existingIndex),
+  );
+}
+
+export async function repairSkillVersionBackupIndex(
+  _ctx: Pick<ActionCtx, "storage">,
+  params: SkillBackupParams & { root?: string },
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  const planned = buildSkillVersionBackupManifest({
+    root: params.root ?? context.skillsRoot,
+    ...params,
+  });
+  await putMergedJsonIndex(context, planned.indexPath, (existingIndex: SkillIndexFile | null) =>
+    buildSkillIndexFile(planned, existingIndex),
+  );
+}
+
+export async function repairPackageReleaseBackupIndex(
+  _ctx: Pick<ActionCtx, "storage">,
+  params: PackageBackupParams & { root?: string },
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  const planned = buildPackageReleaseBackupManifest({
+    root: params.root ?? context.packagesRoot,
+    ...params,
+  });
   await putMergedJsonIndex(context, planned.indexPath, (existingIndex: PackageIndexFile | null) =>
     buildPackageIndexFile(planned, existingIndex),
   );
@@ -534,9 +564,22 @@ async function putMergedJsonIndex<T>(
       },
     );
     if (result === "ok") return;
+    await sleep(indexWriteRetryDelayMs(attempt));
   }
 
   throw new Error(`Registry artifact backup index ${key} changed too frequently`);
+}
+
+function indexWriteRetryDelayMs(attempt: number) {
+  const base = Math.min(
+    MAX_INDEX_WRITE_RETRY_DELAY_MS,
+    MIN_INDEX_WRITE_RETRY_DELAY_MS * 2 ** attempt,
+  );
+  return base + Math.floor(Math.random() * MIN_INDEX_WRITE_RETRY_DELAY_MS);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function putObject(
