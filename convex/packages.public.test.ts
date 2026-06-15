@@ -5915,7 +5915,7 @@ describe("packages public queries", () => {
     });
   });
 
-  it("rejects duplicate package versions by default", async () => {
+  it("rejects an owner-deleted package version even when matching workflow retries are allowed", async () => {
     const ctx = makeInsertReleaseCtx(makePackageDoc(), [
       makeReleaseDoc({
         _id: "packageReleases:existing",
@@ -5940,6 +5940,7 @@ describe("packages public queries", () => {
         summary: "demo",
         files: [],
         integritySha256: "abc123",
+        allowExistingRelease: true,
       }),
     ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
   });

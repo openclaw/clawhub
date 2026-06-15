@@ -1,6 +1,6 @@
 /* @vitest-environment node */
 
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
@@ -9,8 +9,20 @@ vi.mock("@convex-dev/auth/server", () => ({
 
 const skillsModule = (await import("./skills")) as unknown as Record<string, unknown>;
 const packagesModule = (await import("./packages")) as unknown as Record<string, unknown>;
+const { getAuthUserId } = await import("@convex-dev/auth/server");
 
 type DeletionHelper<TArgs> = (ctx: unknown, actor: unknown, args: TArgs) => Promise<unknown>;
+type WrappedHandler<TArgs, TResult = unknown> = {
+  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
+};
+
+const deleteOwnedReleaseHandler = (
+  packagesModule.deleteOwnedRelease as WrappedHandler<{ name: string; version: string }>
+)._handler;
+
+afterEach(() => {
+  vi.mocked(getAuthUserId).mockReset();
+});
 
 function getDeletionHelper<TArgs>(
   module: Record<string, unknown>,
@@ -175,9 +187,35 @@ function makeSkillDeletionCtx(options: {
 function makePackageRelease(id: string, version: string, overrides: Record<string, unknown> = {}) {
   return {
     _id: id,
+    _creationTime: version === "2.0.0" ? 20 : 10,
     packageId: "packages:demo",
     version,
+    changelog: `${version} changes`,
+    summary: `${version} summary`,
     distTags: version === "2.0.0" ? ["latest"] : ["stable"],
+    files: [],
+    integritySha256: `${version}-integrity`,
+    artifactKind: "npm-pack",
+    clawpackSha256: `${version}-sha256`,
+    clawpackSize: version === "2.0.0" ? 200 : 100,
+    clawpackFormat: "tgz",
+    compatibility: { openclaw: `^${version}` },
+    capabilities: {
+      capabilityTags: [`cap-${version}`],
+      executesCode: version === "2.0.0",
+      runtimeId: `runtime.${version}`,
+    },
+    runtimeId: `runtime.${version}`,
+    sourceRepo: `openclaw/demo-${version}`,
+    verification: { tier: version === "2.0.0" ? "community" : "verified" },
+    staticScan: {
+      status: "clean",
+      reasonCodes: [],
+      findings: [],
+      summary: "clean",
+      engineVersion: "test",
+      checkedAt: version === "2.0.0" ? 20 : 10,
+    },
     createdAt: version === "2.0.0" ? 20 : 10,
     createdBy: "users:owner",
     softDeletedAt: undefined,
@@ -271,6 +309,160 @@ function makePackageDeletionCtx(options: {
     },
   };
   return { actors, audits, ctx, patches, pkg, releases };
+}
+
+function makeTriggerWrappedPackageDeletionCtx(options?: {
+  pkg?: Record<string, unknown>;
+  releases?: Array<Record<string, unknown>>;
+}) {
+  vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+  const owner = {
+    _id: "users:owner",
+    _creationTime: 1,
+    role: "user",
+    handle: "owner",
+    name: "Owner",
+    displayName: "Owner",
+    createdAt: 1,
+    updatedAt: 1,
+    deletedAt: undefined,
+    deactivatedAt: undefined,
+  };
+  const releases = options?.releases ?? [
+    makePackageRelease("packageReleases:v1", "1.0.0"),
+    makePackageRelease("packageReleases:v2", "2.0.0"),
+  ];
+  const pkg =
+    options?.pkg ??
+    ({
+      _id: "packages:demo",
+      _creationTime: 1,
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      ownerUserId: "users:owner",
+      ownerPublisherId: undefined,
+      tags: {
+        latest: "packageReleases:v2",
+        stable: "packageReleases:v2",
+        legacy: "packageReleases:v1",
+      },
+      latestReleaseId: "packageReleases:v2",
+      latestVersionSummary: { version: "2.0.0" },
+      summary: "2.0.0 summary",
+      runtimeId: "runtime.2.0.0",
+      sourceRepo: "openclaw/demo-2.0.0",
+      capabilityTags: ["cap-2.0.0"],
+      executesCode: true,
+      compatibility: { openclaw: "^2.0.0" },
+      capabilities: {
+        capabilityTags: ["cap-2.0.0"],
+        executesCode: true,
+        runtimeId: "runtime.2.0.0",
+      },
+      verification: { tier: "community" },
+      scanStatus: "clean",
+      stats: { downloads: 5, installs: 3, stars: 2, versions: 2 },
+      createdAt: 1,
+      updatedAt: 20,
+      softDeletedAt: undefined,
+    } as Record<string, unknown>);
+  const docs = new Map<string, Record<string, unknown>>([
+    [owner._id, owner],
+    [pkg._id as string, pkg],
+    ...releases.map((release) => [release._id as string, release] as const),
+  ]);
+  let insertedCount = 0;
+
+  function rowsForTable(table: string) {
+    return [...docs.values()].filter(
+      (row) => typeof row._id === "string" && row._id.startsWith(`${table}:`),
+    );
+  }
+
+  const db = {
+    system: {},
+    normalizeId: vi.fn((table: string, id: string) => (id.startsWith(`${table}:`) ? id : null)),
+    get: vi.fn(async (arg0: string, arg1?: string) => docs.get(arg1 ?? arg0) ?? null),
+    query: vi.fn((table: string) => ({
+      withIndex: vi.fn(
+        (
+          _index: string,
+          buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+        ) => {
+          const filters = new Map<string, unknown>();
+          const query = {
+            eq(field: string, value: unknown) {
+              filters.set(field, value);
+              return query;
+            },
+          };
+          buildQuery?.(query);
+          const matches = () =>
+            rowsForTable(table).filter((row) =>
+              [...filters].every(([field, value]) => row[field] === value),
+            );
+          const paginate = vi.fn(async () => ({
+            page: matches(),
+            isDone: true,
+            continueCursor: "",
+          }));
+          return {
+            unique: vi.fn(async () => matches()[0] ?? null),
+            collect: vi.fn(async () => matches()),
+            take: vi.fn(async (limit: number) => matches().slice(0, limit)),
+            paginate,
+            order: vi.fn(() => ({ paginate })),
+          };
+        },
+      ),
+    })),
+    insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+      insertedCount += 1;
+      const id = `${table}:inserted-${insertedCount}`;
+      docs.set(id, { ...value, _id: id, _creationTime: insertedCount });
+      return id;
+    }),
+    patch: vi.fn(
+      async (
+        arg0: string,
+        arg1: string | Record<string, unknown>,
+        arg2?: Record<string, unknown>,
+      ) => {
+        const id = typeof arg1 === "string" ? arg1 : arg0;
+        const patch = typeof arg1 === "string" ? arg2 : arg1;
+        if (!patch) throw new Error(`Missing patch for ${id}`);
+        const existing = docs.get(id);
+        if (!existing) throw new Error(`Missing test document ${id}`);
+        docs.set(id, { ...existing, ...patch });
+      },
+    ),
+    replace: vi.fn(
+      async (
+        arg0: string,
+        arg1: string | Record<string, unknown>,
+        arg2?: Record<string, unknown>,
+      ) => {
+        const id = typeof arg1 === "string" ? arg1 : arg0;
+        const value = typeof arg1 === "string" ? arg2 : arg1;
+        if (!value) throw new Error(`Missing replacement for ${id}`);
+        docs.set(id, { ...value, _id: id });
+      },
+    ),
+    delete: vi.fn(async (arg0: string, arg1?: string) => {
+      docs.delete(arg1 ?? arg0);
+    }),
+  };
+
+  return {
+    ctx: { db },
+    docs,
+    pkgId: pkg._id as string,
+    releaseIds: releases.map((release) => release._id as string),
+  };
 }
 
 describe("owner skill version deletion", () => {
@@ -393,6 +585,26 @@ describe("owner skill version deletion", () => {
     expect(patches).toEqual([]);
   });
 
+  it("rejects an already-unavailable skill version", async () => {
+    const deleteOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "deleteOwnedSkillVersionForActor",
+    );
+    const unavailable = makeSkillVersion("skillVersions:v2", "2.0.0", {
+      softDeletedAt: 30,
+      ownerDeletedAt: 30,
+      ownerDeletedBy: "users:owner",
+    });
+    const { actors, ctx, patches } = makeSkillDeletionCtx({
+      versions: [makeSkillVersion("skillVersions:v1", "1.0.0"), unavailable],
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v2" }),
+    ).rejects.toThrow(/already unavailable/i);
+    expect(patches).toEqual([]);
+  });
+
   it("allows an org admin to delete an owned skill version", async () => {
     const deleteOwned = getDeletionHelper<{ versionId: string }>(
       skillsModule,
@@ -440,6 +652,95 @@ describe("owner skill version deletion", () => {
 describe("owner package release deletion", () => {
   it("exports the public mutation contract", () => {
     expect(packagesModule.deleteOwnedRelease).toBeTypeOf("function");
+  });
+
+  it("deletes latest through the public trigger-wrapped mutation and repairs package metadata", async () => {
+    const { ctx, docs, pkgId, releaseIds } = makeTriggerWrappedPackageDeletionCtx();
+
+    await deleteOwnedReleaseHandler(ctx, { name: "demo-plugin", version: "2.0.0" });
+
+    const deletedRelease = docs.get(releaseIds[1] as string);
+    expect(deletedRelease).toMatchObject({
+      softDeletedAt: expect.any(Number),
+      ownerDeletedAt: expect.any(Number),
+      ownerDeletedBy: "users:owner",
+      manualRevocation: { reason: "preserve-me" },
+    });
+    expect(deletedRelease?.softDeletedAt).toBe(deletedRelease?.ownerDeletedAt);
+    expect(docs.get(pkgId)).toMatchObject({
+      latestReleaseId: "packageReleases:v1",
+      latestVersionSummary: expect.objectContaining({
+        version: "1.0.0",
+        changelog: "1.0.0 changes",
+        compatibility: { openclaw: "^1.0.0" },
+      }),
+      summary: "1.0.0 summary",
+      runtimeId: "runtime.1.0.0",
+      sourceRepo: "openclaw/demo-1.0.0",
+      capabilityTags: ["cap-1.0.0"],
+      executesCode: false,
+      compatibility: { openclaw: "^1.0.0" },
+      capabilities: {
+        capabilityTags: ["cap-1.0.0"],
+        executesCode: false,
+        runtimeId: "runtime.1.0.0",
+      },
+      verification: { tier: "verified" },
+      scanStatus: "not-run",
+      stats: { downloads: 5, installs: 3, stars: 2, versions: 2 },
+    });
+    expect(docs.get(pkgId)?.tags).toEqual({
+      latest: "packageReleases:v1",
+      legacy: "packageReleases:v1",
+    });
+    expect(docs.get("packageReleases:v1")).toMatchObject({
+      distTags: ["stable", "latest"],
+    });
+    expect([...docs.values()].find((row) => row.action === "package.release.delete")).toMatchObject(
+      {
+        actorUserId: "users:owner",
+        targetType: "packageRelease",
+        targetId: "packageReleases:v2",
+        metadata: {
+          packageId: "packages:demo",
+          name: "demo-plugin",
+          version: "2.0.0",
+        },
+      },
+    );
+  });
+
+  it("deletes non-latest through the public trigger-wrapped mutation without changing latest metadata", async () => {
+    const { ctx, docs, pkgId } = makeTriggerWrappedPackageDeletionCtx();
+    const pkgBefore = docs.get(pkgId);
+    const latestBefore = {
+      latestReleaseId: pkgBefore?.latestReleaseId,
+      latestVersionSummary: pkgBefore?.latestVersionSummary,
+      summary: pkgBefore?.summary,
+      runtimeId: pkgBefore?.runtimeId,
+      sourceRepo: pkgBefore?.sourceRepo,
+      capabilityTags: pkgBefore?.capabilityTags,
+      executesCode: pkgBefore?.executesCode,
+      compatibility: pkgBefore?.compatibility,
+      capabilities: pkgBefore?.capabilities,
+      verification: pkgBefore?.verification,
+      scanStatus: pkgBefore?.scanStatus,
+    };
+
+    await deleteOwnedReleaseHandler(ctx, { name: "demo-plugin", version: "1.0.0" });
+
+    expect(docs.get("packageReleases:v1")).toMatchObject({
+      softDeletedAt: expect.any(Number),
+      ownerDeletedAt: expect.any(Number),
+      ownerDeletedBy: "users:owner",
+    });
+    expect(docs.get(pkgId)).toMatchObject({
+      ...latestBefore,
+    });
+    expect(docs.get(pkgId)?.tags).toEqual({
+      latest: "packageReleases:v2",
+      stable: "packageReleases:v2",
+    });
   });
 
   it("deletes a release with provenance and audit while preserving unrelated metadata", async () => {
@@ -548,6 +849,44 @@ describe("owner package release deletion", () => {
     await expect(
       deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "2.0.0" }),
     ).rejects.toThrow(/only active release.*remove the whole package/i);
+    expect(patches).toEqual([]);
+  });
+
+  it("rejects an already-unavailable package release", async () => {
+    const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "deleteOwnedPackageReleaseForActor",
+    );
+    const unavailable = makePackageRelease("packageReleases:v2", "2.0.0", {
+      softDeletedAt: 30,
+      ownerDeletedAt: 30,
+      ownerDeletedBy: "users:owner",
+    });
+    const { actors, ctx, patches } = makePackageDeletionCtx({
+      releases: [makePackageRelease("packageReleases:v1", "1.0.0"), unavailable],
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "2.0.0" }),
+    ).rejects.toThrow(/already unavailable/i);
+    expect(patches).toEqual([]);
+  });
+
+  it("rejects release deletion when the parent package is inactive", async () => {
+    const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "deleteOwnedPackageReleaseForActor",
+    );
+    const { actors, ctx, patches } = makePackageDeletionCtx({
+      pkg: {
+        ...makePackageDeletionCtx({}).pkg,
+        softDeletedAt: 30,
+      },
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "2.0.0" }),
+    ).rejects.toThrow(/package is unavailable/i);
     expect(patches).toEqual([]);
   });
 
