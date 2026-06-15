@@ -275,6 +275,18 @@ export async function fetchSkillBackupIndex(
   return getJsonObject<SkillIndexFile>(context, path);
 }
 
+export async function fetchPackageBackupIndex(
+  context: RegistryArtifactBackupContext,
+  ownerHandle: string,
+  normalizedName: string,
+) {
+  const owner = normalizeOwner(ownerHandle);
+  const path = `${context.packagesRoot}/${owner}/${encodeBackupPathSegment(
+    normalizedName,
+  )}/${INDEX_FILENAME}`;
+  return getJsonObject<PackageIndexFile>(context, path);
+}
+
 export async function fetchPackageReleaseBackupMeta(
   context: RegistryArtifactBackupContext,
   ownerHandle: string,

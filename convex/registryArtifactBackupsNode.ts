@@ -9,7 +9,9 @@ import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   backupPackageReleaseToObjectStorage,
   backupSkillVersionToObjectStorage,
+  fetchPackageBackupIndex,
   fetchPackageReleaseBackupMeta,
+  fetchSkillBackupIndex,
   fetchSkillVersionBackupMeta,
   getRegistryArtifactBackupContext,
   isRegistryArtifactBackupConfigured,
@@ -636,19 +638,35 @@ async function flushPackageIndexRepairs(
   result: { succeeded: number; failed: number },
 ) {
   if (workItems.length === 0) return;
+  let splitItems: {
+    indexed: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>;
+    missing: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>;
+  };
   try {
-    await repairPackageReleaseBackupIndexes(
-      ctx,
-      workItems.map((workItem) => workItem.item),
-      context,
-    );
-    for (const workItem of workItems) {
-      await markRetryJobSucceeded(ctx, workItem.job);
-    }
-    result.succeeded += workItems.length;
+    splitItems = await splitPackageIndexRepairItems(context, workItems);
   } catch (error) {
     result.failed += workItems.length;
     await markRetryJobsFailed(ctx, workItems, error);
+    return;
+  }
+
+  const { indexed, missing } = splitItems;
+  await markIndexedRetryJobsSucceeded(ctx, indexed, result);
+  if (missing.length === 0) return;
+
+  try {
+    await repairPackageReleaseBackupIndexes(
+      ctx,
+      missing.map((workItem) => workItem.item),
+      context,
+    );
+    for (const workItem of missing) {
+      await markRetryJobSucceeded(ctx, workItem.job);
+    }
+    result.succeeded += missing.length;
+  } catch (error) {
+    result.failed += missing.length;
+    await markRetryJobsFailed(ctx, missing, error);
   }
 }
 
@@ -659,19 +677,121 @@ async function flushSkillIndexRepairs(
   result: { succeeded: number; failed: number },
 ) {
   if (workItems.length === 0) return;
+  let splitItems: {
+    indexed: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>;
+    missing: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>;
+  };
   try {
-    await repairSkillVersionBackupIndexes(
-      ctx,
-      workItems.map((workItem) => workItem.item),
-      context,
-    );
-    for (const workItem of workItems) {
-      await markRetryJobSucceeded(ctx, workItem.job);
-    }
-    result.succeeded += workItems.length;
+    splitItems = await splitSkillIndexRepairItems(context, workItems);
   } catch (error) {
     result.failed += workItems.length;
     await markRetryJobsFailed(ctx, workItems, error);
+    return;
+  }
+
+  const { indexed, missing } = splitItems;
+  await markIndexedRetryJobsSucceeded(ctx, indexed, result);
+  if (missing.length === 0) return;
+
+  try {
+    await repairSkillVersionBackupIndexes(
+      ctx,
+      missing.map((workItem) => workItem.item),
+      context,
+    );
+    for (const workItem of missing) {
+      await markRetryJobSucceeded(ctx, workItem.job);
+    }
+    result.succeeded += missing.length;
+  } catch (error) {
+    result.failed += missing.length;
+    await markRetryJobsFailed(ctx, missing, error);
+  }
+}
+
+async function splitPackageIndexRepairItems(
+  context: RegistryArtifactBackupContext,
+  workItems: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>,
+) {
+  const first = workItems[0];
+  const index = first
+    ? await fetchPackageBackupIndex(context, first.item.ownerHandle, first.item.normalizedName)
+    : null;
+  const indexed: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
+  const missing: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
+  for (const workItem of workItems) {
+    const present = packageIndexEntryMatchesRetry(index, workItem.item);
+    (present ? indexed : missing).push(workItem);
+  }
+  return { indexed, missing };
+}
+
+async function splitSkillIndexRepairItems(
+  context: RegistryArtifactBackupContext,
+  workItems: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>,
+) {
+  const first = workItems[0];
+  const index = first
+    ? await fetchSkillBackupIndex(context, first.item.ownerHandle, first.item.slug)
+    : null;
+  const indexed: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
+  const missing: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
+  for (const workItem of workItems) {
+    const present = skillIndexEntryMatchesRetry(index, workItem.item);
+    (present ? indexed : missing).push(workItem);
+  }
+  return { indexed, missing };
+}
+
+function packageIndexEntryMatchesRetry(
+  index: Awaited<ReturnType<typeof fetchPackageBackupIndex>>,
+  item: Extract<RetryJobWorkItem, { kind: "packageRelease" }>["item"],
+) {
+  const entry = index?.versions.find(
+    (candidate) => candidate.releaseId === item.releaseId && candidate.version === item.version,
+  );
+  if (!entry) return false;
+  if (typeof item.isLatest !== "boolean") return true;
+  if (entry.isLatest !== item.isLatest) return false;
+  const latestMatches = Boolean(
+    index && index.latest.releaseId === item.releaseId && index.latest.version === item.version,
+  );
+  return item.isLatest ? latestMatches : !latestMatches;
+}
+
+function skillIndexEntryMatchesRetry(
+  index: Awaited<ReturnType<typeof fetchSkillBackupIndex>>,
+  item: Extract<RetryJobWorkItem, { kind: "skillVersion" }>["item"],
+) {
+  const entry = index?.versions.find(
+    (candidate) => candidate.versionId === item.versionId && candidate.version === item.version,
+  );
+  if (!entry) return false;
+  if (typeof item.isLatest !== "boolean") return true;
+  if (entry.isLatest !== item.isLatest) return false;
+  const latestMatches = Boolean(
+    index && index.latest.versionId === item.versionId && index.latest.version === item.version,
+  );
+  return item.isLatest ? latestMatches : !latestMatches;
+}
+
+async function markIndexedRetryJobsSucceeded(
+  ctx: ActionCtx,
+  workItems: ArtifactRetryJobWorkItem[],
+  result: { succeeded: number; failed: number },
+) {
+  for (const workItem of workItems) {
+    try {
+      await markRetryJobSucceeded(ctx, workItem.job);
+      result.succeeded += 1;
+    } catch (error) {
+      result.failed += 1;
+      try {
+        await markRetryJobsFailed(ctx, [workItem], error);
+      } catch (markFailedError) {
+        console.error("Registry artifact backup retry status update failed", markFailedError);
+      }
+    }
   }
 }
 
