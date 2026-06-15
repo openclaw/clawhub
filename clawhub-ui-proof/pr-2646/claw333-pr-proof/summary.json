@@ -1,0 +1,33 @@
+{
+  "baseline": "origin/main",
+  "candidate": "7c2fbd1498d5269c22c0b9c7aa169a3f51041631",
+  "generatedAt": "2026-06-15T03:34:00.000Z",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "7c2fbd1498d5269c22c0b9c7aa169a3f51041631",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Plugin Versions tab - desktop",
+          "screenshot": "screenshots/plugin-versions-desktop.png",
+          "slug": "plugin-versions-desktop",
+          "status": "pass"
+        },
+        {
+          "lane": "candidate",
+          "name": "Plugin Versions tab - mobile",
+          "screenshot": "screenshots/plugin-versions-mobile.png",
+          "slug": "plugin-versions-mobile",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "outputDir": ".artifacts/clawhub-ui-proof/claw333-final",
+  "provider": "local-codex-browser",
+  "scenario": "Plugin detail Versions tab for @contexory/openclaw-plugin",
+  "status": "pass"
+}
