@@ -132,6 +132,12 @@ When verification succeeds cleanly:
 - set `githubScanStatus: "clean"`
 - make the skill active/installable
 
+Context-padding-only static findings are a compatibility exception for
+GitHub-backed installability: they may map to `githubScanStatus: "clean"` so the
+exact upstream content remains installable, but ClawHub must retain the static
+reason codes, findings, summary, engine version, and evaluated timestamp on the
+skill's structured moderation fields for reviewer visibility.
+
 When verification fails, is suspicious, or is malicious:
 
 - keep/block the skill from normal install
