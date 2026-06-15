@@ -941,10 +941,12 @@ function makeCanDeleteVersionsCtx(options: {
   membershipRole?: "owner" | "admin" | "publisher";
   packageLookupNames?: string[];
   packageMatchName?: string | null;
+  packageOverrides?: Partial<Record<string, unknown>>;
 }) {
   const pkg = makePackageDoc({
     ownerUserId: options.ownerUserId,
     ownerPublisherId: options.ownerPublisherId,
+    ...options.packageOverrides,
   });
   const publisher = options.ownerPublisherId
     ? {
@@ -9710,6 +9712,21 @@ describe("packages public queries", () => {
     );
 
     expect(result).toBe(true);
+  });
+
+  it("does not let package owners delete versions when the package is blocked from public use", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+
+    const result = await canDeleteVersionsHandler(
+      makeCanDeleteVersionsCtx({
+        viewerId: "users:owner",
+        ownerUserId: "users:owner",
+        packageOverrides: { scanStatus: "malicious" },
+      }) as never,
+      { name: "demo-plugin" },
+    );
+
+    expect(result).toBe(false);
   });
 
   it.each(["owner", "admin"] as const)(

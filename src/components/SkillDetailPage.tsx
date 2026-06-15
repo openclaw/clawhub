@@ -228,6 +228,7 @@ export function SkillDetailPage({
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
+  const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
   const shouldLoadRelatedSkills = Boolean(
     skill && relatedCategory && relatedCategory.keywords.length > 0,
@@ -310,6 +311,15 @@ export function SkillDetailPage({
   const canDeleteSkillFromSettings =
     canManagePersonalPublisherSkill ||
     Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId));
+  const skillSoftDeletedAt = skill && "softDeletedAt" in skill ? skill.softDeletedAt : undefined;
+  const skillModerationStatus =
+    skill && "moderationStatus" in skill ? skill.moderationStatus : undefined;
+  const isSkillUnavailableForVersionDeletion =
+    Boolean(skillSoftDeletedAt) ||
+    (skillModerationStatus ?? "active") !== "active" ||
+    Boolean(modInfo?.isPendingScan || modInfo?.isHiddenByMod || modInfo?.isRemoved);
+  const canDeleteSkillVersions =
+    canDeleteSkillFromSettings && !isSkillUnavailableForVersionDeletion;
   const ownedSkills = useQuery(
     api.skills.list,
     canAccessSettings && skill
@@ -343,7 +353,6 @@ export function SkillDetailPage({
 
   const forkOf = result?.forkOf ?? null;
   const canonical = result?.canonical ?? null;
-  const modInfo = result?.moderationInfo ?? null;
   const suppressVersionScanResults =
     !isStaff &&
     Boolean(modInfo?.overrideActive) &&
@@ -864,7 +873,7 @@ export function SkillDetailPage({
             hasSkillCard={hasSkillCard}
             latestFiles={latestFiles}
             latestVersionId={latestVersion?._id ?? null}
-            canDeleteVersions={canDeleteSkillFromSettings}
+            canDeleteVersions={canDeleteSkillVersions}
             skill={skill as Doc<"skills">}
             diffVersions={diffVersions}
             versions={versions}

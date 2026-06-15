@@ -2324,7 +2324,7 @@ export const canDeleteVersions = query({
       if (pkg && !pkg.softDeletedAt && pkg.family !== "skill") break;
       pkg = null;
     }
-    if (!pkg) return false;
+    if (!pkg || isPackageBlockedFromPublic(pkg.scanStatus)) return false;
 
     const actor = await ctx.db.get(viewerUserId);
     if (!actor || actor.deletedAt || actor.deactivatedAt) return false;
