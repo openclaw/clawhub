@@ -228,7 +228,7 @@ function packageReleaseToExportRow(
       ),
       publicSlug: stringOrNull(pkg.name),
       version: requiredString(release.version, "packageReleases.version"),
-      artifactSha256: stringOrNull(release.sha256hash) ?? stringOrNull(release.integritySha256),
+      artifactSha256: packageReleaseArtifactSha256(release),
       createdAt: numberValue(release.createdAt, "packageReleases.createdAt"),
       softDeletedAt: numberOrNull(release.softDeletedAt),
       files: filesFromExport(release.files),
@@ -244,6 +244,13 @@ function packageReleaseToExportRow(
       moderationConsensus: null,
     },
   ];
+}
+
+function packageReleaseArtifactSha256(release: ConvexDoc) {
+  if (stringOrNull(release.artifactKind) === "npm-pack") {
+    return stringOrNull(release.clawpackSha256);
+  }
+  return stringOrNull(release.sha256hash);
 }
 
 function publicOwnerHandleFromExport(

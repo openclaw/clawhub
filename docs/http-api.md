@@ -722,7 +722,12 @@ Notes:
   `npm-pack` for ClawPack-backed releases.
 - ClawPack releases include npm-compatible `npmIntegrity`, `npmShasum`, and
   `npmTarballName` fields.
-- `version.sha256hash`, `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are included when scan data exists.
+- `version.sha256hash` is deprecated compatibility metadata for old clients. It
+  hashes the exact ZIP bytes returned by `/api/v1/packages/{name}/download`.
+  Modern clients should use `version.artifact.sha256`, which identifies the
+  canonical release artifact.
+- `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are
+  included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
 
 ### `GET /api/v1/packages/{name}/versions/{version}/security`

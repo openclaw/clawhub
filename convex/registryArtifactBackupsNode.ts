@@ -13,6 +13,8 @@ import {
   fetchSkillVersionBackupMeta,
   getRegistryArtifactBackupContext,
   isRegistryArtifactBackupConfigured,
+  repairPackageReleaseBackupIndexes,
+  repairSkillVersionBackupIndexes,
   type RegistryArtifactBackupContext,
 } from "./lib/registryArtifactBackup";
 
@@ -20,7 +22,12 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 5;
 const MAX_MAX_BATCHES = 200;
-const DEFAULT_JOB_BATCH_SIZE = 25;
+const DEFAULT_JOB_BATCH_SIZE = 200;
+const MAX_RETRY_REPAIR_ATTEMPTS = 16;
+const MAX_PARALLEL_RETRY_ROOTS = 25;
+const UNKNOWN_PACKAGE_ARTIFACT_BYTES = 120 * 1024 * 1024;
+const UNKNOWN_SKILL_ARTIFACT_BYTES = 50 * 1024 * 1024;
+const MAX_PARALLEL_RETRY_ARTIFACT_BYTES = UNKNOWN_PACKAGE_ARTIFACT_BYTES;
 const STALE_BACKUP_JOB_MS = 24 * 60 * 60 * 1000;
 
 type BackupPageItem =
@@ -462,38 +469,301 @@ async function processDueRegistryArtifactBackupJobs(
   const jobs = (await ctx.runQuery(
     internal.registryArtifactBackups.getDueRegistryArtifactBackupJobsInternal,
     {
+      includeExhaustedRepair: true,
       limit: DEFAULT_JOB_BATCH_SIZE,
+      maxRepairAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
     },
   )) as Array<Doc<"registryArtifactBackupJobs">>;
 
+  const groups = await groupRetryJobsByRoot(ctx, jobs);
+  const chunks = chunkRetryJobGroups(groups);
+  for (const chunk of chunks) {
+    const results = await Promise.all(
+      chunk.map((group) => processRetryJobGroup(ctx, context, group)),
+    );
+    for (const result of results) {
+      stats.retryJobsProcessed += result.processed;
+      stats.retryJobsSucceeded += result.succeeded;
+      stats.retryJobsFailed += result.failed;
+    }
+  }
+}
+
+type RetryJobWorkItem =
+  | {
+      error: unknown;
+      kind: "lookupFailed";
+      job: Doc<"registryArtifactBackupJobs">;
+    }
+  | {
+      kind: "missing";
+      job: Doc<"registryArtifactBackupJobs">;
+    }
+  | {
+      kind: "packageRelease";
+      job: Doc<"registryArtifactBackupJobs">;
+      item: Extract<PackageBackupPageItem, { kind: "ok" }>;
+      rootKey: string;
+      estimatedBytes: number;
+    }
+  | {
+      kind: "skillVersion";
+      job: Doc<"registryArtifactBackupJobs">;
+      item: Parameters<typeof backupSkillVersionToObjectStorage>[1];
+      rootKey: string;
+      estimatedBytes: number;
+    };
+
+type ArtifactRetryJobWorkItem =
+  | Extract<RetryJobWorkItem, { kind: "packageRelease" }>
+  | Extract<RetryJobWorkItem, { kind: "skillVersion" }>;
+
+type RetryJobGroup = {
+  estimatedBytes: number;
+  items: RetryJobWorkItem[];
+};
+
+async function groupRetryJobsByRoot(
+  ctx: ActionCtx,
+  jobs: Array<Doc<"registryArtifactBackupJobs">>,
+) {
+  const groups = new Map<string, RetryJobGroup>();
   for (const job of jobs) {
-    stats.retryJobsProcessed += 1;
+    const workItem = await toRetryJobWorkItem(ctx, job).catch((error: unknown) => ({
+      error,
+      kind: "lookupFailed" as const,
+      job,
+    }));
+    const rootKey =
+      workItem.kind === "missing" || workItem.kind === "lookupFailed"
+        ? `${workItem.kind}:${job._id}`
+        : workItem.rootKey;
+    const group = groups.get(rootKey);
+    const estimatedBytes = estimatedRetryJobBytes(workItem);
+    if (group) {
+      group.items.push(workItem);
+      group.estimatedBytes = Math.max(group.estimatedBytes, estimatedBytes);
+    } else {
+      groups.set(rootKey, { estimatedBytes, items: [workItem] });
+    }
+  }
+  return Array.from(groups.values());
+}
+
+async function toRetryJobWorkItem(
+  ctx: ActionCtx,
+  job: Doc<"registryArtifactBackupJobs">,
+): Promise<RetryJobWorkItem> {
+  if (job.targetKind === "packageRelease" && job.packageReleaseId) {
+    const item = await getPackageBackupItemForRelease(ctx, job.packageReleaseId);
+    if (!item) return { kind: "missing", job };
+    return {
+      estimatedBytes: item.artifactSize ?? UNKNOWN_PACKAGE_ARTIFACT_BYTES,
+      kind: "packageRelease",
+      job,
+      item,
+      rootKey: `package:${item.ownerHandle}/${item.normalizedName}`,
+    };
+  }
+  if (job.targetKind === "skillVersion" && job.skillVersionId) {
+    const item = await getSkillBackupItemForVersion(ctx, job.skillVersionId);
+    if (!item) return { kind: "missing", job };
+    return {
+      estimatedBytes: estimateSkillBackupBytes(item),
+      kind: "skillVersion",
+      job,
+      item,
+      rootKey: `skill:${item.ownerHandle}/${item.slug}`,
+    };
+  }
+  return { kind: "missing", job };
+}
+
+async function processRetryJobGroup(
+  ctx: ActionCtx,
+  context: RegistryArtifactBackupContext,
+  group: RetryJobGroup,
+) {
+  const result = { processed: 0, succeeded: 0, failed: 0 };
+  const packageIndexRepairs: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
+  const skillIndexRepairs: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
+  for (const workItem of group.items) {
+    result.processed += 1;
     try {
-      if (job.targetKind === "packageRelease" && job.packageReleaseId) {
-        const item = await getPackageBackupItemForRelease(ctx, job.packageReleaseId);
-        if (item) await backupPackageReleaseToObjectStorage(ctx, item, context);
-      } else if (job.targetKind === "skillVersion" && job.skillVersionId) {
-        const item = await getSkillBackupItemForVersion(ctx, job.skillVersionId);
-        if (item) await backupSkillVersionToObjectStorage(ctx, item, context);
+      if (workItem.kind === "lookupFailed") {
+        throw workItem.error;
+      } else if (workItem.kind === "missing") {
+        await markRetryJobSucceeded(ctx, workItem.job);
+        result.succeeded += 1;
+      } else if (workItem.kind === "packageRelease") {
+        if (await hasMatchingPackageReleaseMeta(context, workItem.item)) {
+          packageIndexRepairs.push(workItem);
+        } else {
+          await backupPackageReleaseToObjectStorage(ctx, workItem.item, context);
+          await markRetryJobSucceeded(ctx, workItem.job);
+          result.succeeded += 1;
+        }
+      } else {
+        if (await hasMatchingSkillVersionMeta(context, workItem.item)) {
+          skillIndexRepairs.push(workItem);
+        } else {
+          await backupSkillVersionToObjectStorage(ctx, workItem.item, context);
+          await markRetryJobSucceeded(ctx, workItem.job);
+          result.succeeded += 1;
+        }
       }
-      await ctx.runMutation(
-        internal.registryArtifactBackups.markRegistryArtifactBackupJobSucceededInternal,
-        {
-          jobId: job._id,
-        },
-      );
-      stats.retryJobsSucceeded += 1;
     } catch (error) {
-      stats.retryJobsFailed += 1;
+      result.failed += 1;
       await ctx.runMutation(
         internal.registryArtifactBackups.markRegistryArtifactBackupJobFailedInternal,
         {
-          jobId: job._id,
+          jobId: workItem.job._id,
           error: errorMessage(error),
+          maxAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
         },
       );
     }
   }
+  await flushPackageIndexRepairs(ctx, context, packageIndexRepairs, result);
+  await flushSkillIndexRepairs(ctx, context, skillIndexRepairs, result);
+  return result;
+}
+
+async function flushPackageIndexRepairs(
+  ctx: ActionCtx,
+  context: RegistryArtifactBackupContext,
+  workItems: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>,
+  result: { succeeded: number; failed: number },
+) {
+  if (workItems.length === 0) return;
+  try {
+    await repairPackageReleaseBackupIndexes(
+      ctx,
+      workItems.map((workItem) => workItem.item),
+      context,
+    );
+    for (const workItem of workItems) {
+      await markRetryJobSucceeded(ctx, workItem.job);
+    }
+    result.succeeded += workItems.length;
+  } catch (error) {
+    result.failed += workItems.length;
+    await markRetryJobsFailed(ctx, workItems, error);
+  }
+}
+
+async function flushSkillIndexRepairs(
+  ctx: ActionCtx,
+  context: RegistryArtifactBackupContext,
+  workItems: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>,
+  result: { succeeded: number; failed: number },
+) {
+  if (workItems.length === 0) return;
+  try {
+    await repairSkillVersionBackupIndexes(
+      ctx,
+      workItems.map((workItem) => workItem.item),
+      context,
+    );
+    for (const workItem of workItems) {
+      await markRetryJobSucceeded(ctx, workItem.job);
+    }
+    result.succeeded += workItems.length;
+  } catch (error) {
+    result.failed += workItems.length;
+    await markRetryJobsFailed(ctx, workItems, error);
+  }
+}
+
+async function markRetryJobsFailed(
+  ctx: ActionCtx,
+  workItems: ArtifactRetryJobWorkItem[],
+  error: unknown,
+) {
+  for (const workItem of workItems) {
+    await ctx.runMutation(
+      internal.registryArtifactBackups.markRegistryArtifactBackupJobFailedInternal,
+      {
+        jobId: workItem.job._id,
+        error: errorMessage(error),
+        maxAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
+      },
+    );
+  }
+}
+
+async function markRetryJobSucceeded(ctx: ActionCtx, job: Doc<"registryArtifactBackupJobs">) {
+  await ctx.runMutation(
+    internal.registryArtifactBackups.markRegistryArtifactBackupJobSucceededInternal,
+    {
+      jobId: job._id,
+    },
+  );
+}
+
+async function hasMatchingSkillVersionMeta(
+  context: RegistryArtifactBackupContext,
+  item: Parameters<typeof backupSkillVersionToObjectStorage>[1],
+) {
+  const meta = await fetchSkillVersionBackupMeta(
+    context,
+    item.ownerHandle,
+    item.slug,
+    item.version,
+  );
+  return meta?.version === item.version && meta.restore.versionId === item.versionId;
+}
+
+async function hasMatchingPackageReleaseMeta(
+  context: RegistryArtifactBackupContext,
+  item: Extract<PackageBackupPageItem, { kind: "ok" }>,
+) {
+  const meta = await fetchPackageReleaseBackupMeta(
+    context,
+    item.ownerHandle,
+    item.normalizedName,
+    item.version,
+  );
+  return (
+    meta?.restore?.releaseId === item.releaseId && meta.artifact.sha256 === item.artifactSha256
+  );
+}
+
+function estimatedRetryJobBytes(workItem: RetryJobWorkItem) {
+  if (workItem.kind === "packageRelease" || workItem.kind === "skillVersion") {
+    return workItem.estimatedBytes;
+  }
+  return 0;
+}
+
+function estimateSkillBackupBytes(item: Parameters<typeof backupSkillVersionToObjectStorage>[1]) {
+  const total = item.files.reduce((sum, file) => sum + file.size, 0);
+  return total || UNKNOWN_SKILL_ARTIFACT_BYTES;
+}
+
+function chunkRetryJobGroups(groups: RetryJobGroup[]) {
+  const chunks: RetryJobGroup[][] = [];
+  let current: RetryJobGroup[] = [];
+  let currentBytes = 0;
+
+  for (const group of groups) {
+    const groupBytes = group.estimatedBytes;
+    const wouldExceedRootLimit = current.length >= MAX_PARALLEL_RETRY_ROOTS;
+    const wouldExceedByteLimit =
+      current.length > 0 && currentBytes + groupBytes > MAX_PARALLEL_RETRY_ARTIFACT_BYTES;
+    if (wouldExceedRootLimit || wouldExceedByteLimit) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 0;
+    }
+    current.push(group);
+    currentBytes += groupBytes;
+  }
+
+  if (current.length > 0) {
+    chunks.push(current);
+  }
+  return chunks;
 }
 
 async function getPackageBackupItemForRelease(

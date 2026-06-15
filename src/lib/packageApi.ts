@@ -64,6 +64,7 @@ export type PackageVersionDetail = {
       npmUnpackedSize?: number;
       npmFileCount?: number;
     } | null;
+    /** @deprecated Compatibility hash for exact /download ZIP bytes. Use artifact.sha256. */
     sha256hash?: string | null;
     vtAnalysis?: {
       status: string;

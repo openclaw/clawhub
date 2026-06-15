@@ -36,6 +36,7 @@ import {
 } from "../lib/githubActionsOidc";
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
+import { getPackageReleaseArtifactSha256 } from "../lib/packageArtifacts";
 import { tryNormalizePackageName } from "../lib/packageRegistry";
 import {
   getPackageDownloadSecurityBlock,
@@ -612,19 +613,12 @@ function toReleaseArtifact(release: ReleaseLike, packageName?: string) {
   };
 }
 
-function packageReleaseArtifactSha256(release: ReleaseLike) {
-  if (release.artifactKind === "npm-pack") {
-    return release.sha256hash ?? release.clawpackSha256 ?? null;
-  }
-  return release.sha256hash ?? null;
-}
-
 function toPackageReleaseSecurityResponse(params: {
   pkg: PublicPackageDocLike;
   release: ReleaseLike;
 }) {
   const scanStatus = resolvePackageReleaseScanStatus(params.release);
-  const artifactSha256 = packageReleaseArtifactSha256(params.release);
+  const artifactSha256 = getPackageReleaseArtifactSha256(params.release);
   const packageBlockedFromDownload = params.pkg.publicDownloadBlocked === true;
   const reasons = getPackageTrustReasons(params.release, scanStatus);
   if (packageBlockedFromDownload) reasons.push("package:malicious");

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import {
   enqueueRegistryArtifactBackupJobHandler,
+  getDueRegistryArtifactBackupJobsInternal,
   getRegistryArtifactBackupHealthHandler,
   getRegistryArtifactBackupPageInternal,
   getPackageRegistryArtifactBackupPageInternal,
@@ -20,6 +21,10 @@ const registryBackupMocks = vi.hoisted(() => ({
   fetchSkillVersionBackupMeta: vi.fn(),
   getRegistryArtifactBackupContext: vi.fn(),
   isRegistryArtifactBackupConfigured: vi.fn(),
+  repairPackageReleaseBackupIndex: vi.fn(),
+  repairPackageReleaseBackupIndexes: vi.fn(),
+  repairSkillVersionBackupIndex: vi.fn(),
+  repairSkillVersionBackupIndexes: vi.fn(),
 }));
 
 vi.mock("./lib/registryArtifactBackup", () => registryBackupMocks);
@@ -28,6 +33,9 @@ const handler = (getRegistryArtifactBackupPageInternal as unknown as { _handler:
   ._handler;
 const packagePageHandler = (
   getPackageRegistryArtifactBackupPageInternal as unknown as { _handler: Function }
+)._handler;
+const dueJobsHandler = (
+  getDueRegistryArtifactBackupJobsInternal as unknown as { _handler: Function }
 )._handler;
 const backupSkillForPublishHandler = (
   backupSkillForPublishInternal as unknown as { _handler: Function }
@@ -654,6 +662,437 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     );
   });
 
+  it("requests a larger retry batch so publish bursts drain promptly", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
+
+    await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation: vi.fn() } as never,
+      {},
+    );
+
+    expect(runQuery.mock.calls[0]?.[1]).toMatchObject({
+      includeExhaustedRepair: true,
+      limit: 200,
+      maxRepairAttempts: 16,
+    });
+  });
+
+  it("gives repaired exhausted jobs a finite second retry budget", async () => {
+    const dueJob = {
+      _id: "registryArtifactBackupJobs:demo",
+      targetKind: "skillVersion",
+      skillVersionId: "skillVersions:demo",
+      status: "exhausted",
+      attempts: 8,
+      nextRunAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const version = {
+      _id: "skillVersions:demo",
+      skillId: "skills:demo",
+      version: "1.0.0",
+      createdAt: 1,
+      files: [{ path: "SKILL.md", size: 5, storageId: "storage:skill", sha256: "sha" }],
+      softDeletedAt: undefined,
+    };
+    const skill = {
+      _id: "skills:demo",
+      ownerUserId: "users:owner",
+      ownerPublisherId: undefined,
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      latestVersionId: "skillVersions:demo",
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return [dueJob];
+      if (args.versionId === "skillVersions:demo") return version;
+      if (args.skillId === "skills:demo") return skill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const runMutation = vi.fn();
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
+    registryBackupMocks.backupSkillVersionToObjectStorage.mockRejectedValueOnce(
+      new Error("R2 still down"),
+    );
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsFailed).toBe(1);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        jobId: "registryArtifactBackupJobs:demo",
+        error: "R2 still down",
+        maxAttempts: 16,
+      }),
+    );
+  });
+
+  it("repairs the index without reuploading skill files when retry metadata already exists", async () => {
+    const dueJob = {
+      _id: "registryArtifactBackupJobs:demo",
+      targetKind: "skillVersion",
+      skillVersionId: "skillVersions:demo",
+      status: "pending",
+      attempts: 1,
+      nextRunAt: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const version = {
+      _id: "skillVersions:demo",
+      skillId: "skills:demo",
+      version: "1.0.0",
+      createdAt: 1,
+      files: [{ path: "SKILL.md", size: 5, storageId: "storage:skill", sha256: "sha" }],
+      softDeletedAt: undefined,
+    };
+    const skill = {
+      _id: "skills:demo",
+      ownerUserId: "users:owner",
+      ownerPublisherId: undefined,
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      latestVersionId: "skillVersions:demo",
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+    };
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return [dueJob];
+      if (args.versionId === "skillVersions:demo") {
+        return version;
+      }
+      if (args.skillId === "skills:demo") return skill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const runMutation = vi.fn();
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValueOnce({
+      version: "1.0.0",
+      restore: { versionId: "skillVersions:demo" },
+    });
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(1);
+    expect(registryBackupMocks.backupSkillVersionToObjectStorage).not.toHaveBeenCalled();
+    expect(registryBackupMocks.repairSkillVersionBackupIndexes).toHaveBeenCalledWith(
+      expect.anything(),
+      [
+        expect.objectContaining({
+          slug: "demo-skill",
+          version: "1.0.0",
+          ownerHandle: "alice",
+        }),
+      ],
+      expect.anything(),
+    );
+  });
+
+  it("repairs multiple retry index misses for the same skill root with one index write", async () => {
+    const jobs = [
+      makeSkillBackupJob("demo-1", "skillVersions:demo-1"),
+      makeSkillBackupJob("demo-2", "skillVersions:demo-2"),
+    ];
+    const versions = new Map([
+      ["skillVersions:demo-1", makeSkillVersion("skillVersions:demo-1", "skills:demo", "1.0.0")],
+      ["skillVersions:demo-2", makeSkillVersion("skillVersions:demo-2", "skills:demo", "1.1.0")],
+    ]);
+    const skill = makeSkill("skills:demo", "demo-skill");
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.versionId) return versions.get(args.versionId) ?? null;
+      if (args.skillId === "skills:demo") return skill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const versionIdsByVersion = new Map([
+      ["1.0.0", "skillVersions:demo-1"],
+      ["1.1.0", "skillVersions:demo-2"],
+    ]);
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockImplementation(
+      async (_context, _ownerHandle, _slug, version) => ({
+        version,
+        restore: { versionId: versionIdsByVersion.get(version) },
+      }),
+    );
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation: vi.fn() } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(2);
+    expect(result.stats.retryJobsFailed).toBe(0);
+    expect(registryBackupMocks.backupSkillVersionToObjectStorage).not.toHaveBeenCalled();
+    expect(registryBackupMocks.repairSkillVersionBackupIndexes).toHaveBeenCalledOnce();
+    expect(registryBackupMocks.repairSkillVersionBackupIndexes).toHaveBeenCalledWith(
+      expect.anything(),
+      [
+        expect.objectContaining({ ownerHandle: "alice", slug: "demo-skill", version: "1.0.0" }),
+        expect.objectContaining({ ownerHandle: "alice", slug: "demo-skill", version: "1.1.0" }),
+      ],
+      expect.anything(),
+    );
+  });
+
+  it("repairs multiple retry index misses for the same package root with one index write", async () => {
+    const jobs = [
+      makePackageBackupJob("demo-1", "packageReleases:demo-1"),
+      makePackageBackupJob("demo-2", "packageReleases:demo-2"),
+    ];
+    const releases = new Map([
+      [
+        "packageReleases:demo-1",
+        makePackageRelease("packageReleases:demo-1", "packages:demo", "1.0.0"),
+      ],
+      [
+        "packageReleases:demo-2",
+        makePackageRelease("packageReleases:demo-2", "packages:demo", "1.1.0"),
+      ],
+    ]);
+    const pkg = makePackage("packages:demo", "@openclaw/demo");
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.releaseId) return releases.get(args.releaseId) ?? null;
+      if (args.packageId === "packages:demo") return pkg;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const releaseIdsByVersion = new Map([
+      ["1.0.0", "packageReleases:demo-1"],
+      ["1.1.0", "packageReleases:demo-2"],
+    ]);
+    const shaByVersion = new Map([
+      ["1.0.0", "sha:packageReleases:demo-1"],
+      ["1.1.0", "sha:packageReleases:demo-2"],
+    ]);
+    registryBackupMocks.fetchPackageReleaseBackupMeta.mockImplementation(
+      async (_context, _ownerHandle, _normalizedName, version) => ({
+        restore: { releaseId: releaseIdsByVersion.get(version) },
+        artifact: { sha256: shaByVersion.get(version) },
+      }),
+    );
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation: vi.fn() } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(2);
+    expect(result.stats.retryJobsFailed).toBe(0);
+    expect(registryBackupMocks.backupPackageReleaseToObjectStorage).not.toHaveBeenCalled();
+    expect(registryBackupMocks.repairPackageReleaseBackupIndexes).toHaveBeenCalledOnce();
+    expect(registryBackupMocks.repairPackageReleaseBackupIndexes).toHaveBeenCalledWith(
+      expect.anything(),
+      [
+        expect.objectContaining({
+          ownerHandle: "alice",
+          normalizedName: "@openclaw/demo",
+          version: "1.0.0",
+        }),
+        expect.objectContaining({
+          ownerHandle: "alice",
+          normalizedName: "@openclaw/demo",
+          version: "1.1.0",
+        }),
+      ],
+      expect.anything(),
+    );
+  });
+
+  it("processes different retry roots in parallel while keeping one root sequential", async () => {
+    const jobs = [
+      makeSkillBackupJob("same-1", "skillVersions:same-1"),
+      makeSkillBackupJob("same-2", "skillVersions:same-2"),
+      makeSkillBackupJob("other", "skillVersions:other"),
+    ];
+    const versions = new Map([
+      ["skillVersions:same-1", makeSkillVersion("skillVersions:same-1", "skills:same", "1.0.0")],
+      ["skillVersions:same-2", makeSkillVersion("skillVersions:same-2", "skills:same", "1.1.0")],
+      ["skillVersions:other", makeSkillVersion("skillVersions:other", "skills:other", "1.0.0")],
+    ]);
+    const skills = new Map([
+      ["skills:same", makeSkill("skills:same", "same-root")],
+      ["skills:other", makeSkill("skills:other", "other-root")],
+    ]);
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.versionId) return versions.get(args.versionId) ?? null;
+      if (args.skillId) return skills.get(args.skillId) ?? null;
+      if (args.userId) return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
+
+    const activeByRoot = new Map<string, number>();
+    let maxActiveTotal = 0;
+    let activeTotal = 0;
+    registryBackupMocks.backupSkillVersionToObjectStorage.mockImplementation(async (_ctx, item) => {
+      const root = `${item.ownerHandle}/${item.slug}`;
+      const active = activeByRoot.get(root) ?? 0;
+      if (active > 0) {
+        throw new Error(`same root overlapped: ${root}`);
+      }
+      activeByRoot.set(root, active + 1);
+      activeTotal += 1;
+      maxActiveTotal = Math.max(maxActiveTotal, activeTotal);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeTotal -= 1;
+      activeByRoot.set(root, active);
+    });
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation: vi.fn() } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(3);
+    expect(result.stats.retryJobsFailed).toBe(0);
+    expect(maxActiveTotal).toBeGreaterThan(1);
+  });
+
+  it("caps parallel full-artifact retry work by estimated bytes", async () => {
+    const jobs = [
+      makePackageBackupJob("one", "packageReleases:one"),
+      makePackageBackupJob("two", "packageReleases:two"),
+      makePackageBackupJob("three", "packageReleases:three"),
+    ];
+    const releases = new Map([
+      ["packageReleases:one", makePackageRelease("packageReleases:one", "packages:one")],
+      ["packageReleases:two", makePackageRelease("packageReleases:two", "packages:two")],
+      ["packageReleases:three", makePackageRelease("packageReleases:three", "packages:three")],
+    ]);
+    const packages = new Map([
+      ["packages:one", makePackage("packages:one", "@openclaw/one")],
+      ["packages:two", makePackage("packages:two", "@openclaw/two")],
+      ["packages:three", makePackage("packages:three", "@openclaw/three")],
+    ]);
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.releaseId) return releases.get(args.releaseId) ?? null;
+      if (args.packageId) return packages.get(args.packageId) ?? null;
+      if (args.userId) return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    registryBackupMocks.fetchPackageReleaseBackupMeta.mockResolvedValue(null);
+
+    let activeTotal = 0;
+    let maxActiveTotal = 0;
+    registryBackupMocks.backupPackageReleaseToObjectStorage.mockImplementation(async () => {
+      activeTotal += 1;
+      maxActiveTotal = Math.max(maxActiveTotal, activeTotal);
+      await new Promise((resolve) => setTimeout(resolve, 10));
+      activeTotal -= 1;
+    });
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation: vi.fn() } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsSucceeded).toBe(3);
+    expect(maxActiveTotal).toBe(1);
+  });
+
+  it("keeps retry source lookup failures isolated to their own jobs", async () => {
+    const jobs = [
+      makeSkillBackupJob("bad", "skillVersions:bad"),
+      makeSkillBackupJob("good", "skillVersions:good"),
+    ];
+    const goodVersion = makeSkillVersion("skillVersions:good", "skills:good", "1.0.0");
+    const goodSkill = makeSkill("skills:good", "good-root");
+    const owner = {
+      _id: "users:owner",
+      handle: "alice",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const runQuery = vi.fn(async (_ref, args) => {
+      if ("limit" in args) return jobs;
+      if (args.versionId === "skillVersions:bad") throw new Error("lookup failed");
+      if (args.versionId === "skillVersions:good") return goodVersion;
+      if (args.skillId === "skills:good") return goodSkill;
+      if (args.userId === "users:owner") return owner;
+      if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
+      throw new Error(`unexpected query ${JSON.stringify(args)}`);
+    });
+    const runMutation = vi.fn();
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
+
+    const result = await processRegistryArtifactBackupRetriesInternalHandler(
+      { runQuery, runMutation } as never,
+      {},
+    );
+
+    expect(result.stats.retryJobsProcessed).toBe(2);
+    expect(result.stats.retryJobsSucceeded).toBe(1);
+    expect(result.stats.retryJobsFailed).toBe(1);
+    expect(registryBackupMocks.backupSkillVersionToObjectStorage).toHaveBeenCalledOnce();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        jobId: "registryArtifactBackupJobs:bad",
+        error: "lookup failed",
+      }),
+    );
+  });
+
   it("skips queued skill version retries after the skill is no longer public", async () => {
     const dueJob = {
       _id: "registryArtifactBackupJobs:hidden",
@@ -704,7 +1143,167 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
   });
 });
 
+function makeSkillBackupJob(suffix: string, skillVersionId: string) {
+  return {
+    _id: `registryArtifactBackupJobs:${suffix}`,
+    targetKind: "skillVersion",
+    skillVersionId,
+    status: "pending",
+    attempts: 0,
+    nextRunAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function makeSkillVersion(id: string, skillId: string, version: string) {
+  return {
+    _id: id,
+    skillId,
+    version,
+    createdAt: 1,
+    files: [{ path: "SKILL.md", size: 5, storageId: `storage:${id}`, sha256: `sha:${id}` }],
+    softDeletedAt: undefined,
+  };
+}
+
+function makeSkill(id: string, slug: string) {
+  return {
+    _id: id,
+    ownerUserId: "users:owner",
+    ownerPublisherId: undefined,
+    slug,
+    displayName: slug,
+    latestVersionId: "skillVersions:latest",
+    softDeletedAt: undefined,
+    moderationStatus: "active",
+  };
+}
+
+function makePackageBackupJob(suffix: string, packageReleaseId: string) {
+  return {
+    _id: `registryArtifactBackupJobs:${suffix}`,
+    targetKind: "packageRelease",
+    packageReleaseId,
+    status: "pending",
+    attempts: 0,
+    nextRunAt: 1,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function makePackageRelease(id: string, packageId: string, version = "1.0.0") {
+  return {
+    _id: id,
+    packageId,
+    version,
+    createdAt: 1,
+    files: [],
+    clawpackStorageId: `storage:${id}`,
+    clawpackSha256: `sha:${id}`,
+    clawpackSize: 120 * 1024 * 1024,
+    clawpackFormat: "tgz",
+    softDeletedAt: undefined,
+  };
+}
+
+function makePackage(id: string, name: string) {
+  return {
+    _id: id,
+    ownerUserId: "users:owner",
+    ownerPublisherId: undefined,
+    name,
+    normalizedName: name,
+    displayName: name,
+    family: "code-plugin",
+    latestReleaseId: "packageReleases:latest",
+    softDeletedAt: undefined,
+  };
+}
+
 describe("registry artifact backup jobs", () => {
+  it("can include exhausted jobs that still have repair attempts left", async () => {
+    const now = 1_700_000_000_000;
+    const pendingJobs = [
+      {
+        _id: "registryArtifactBackupJobs:pending",
+        status: "pending",
+        attempts: 1,
+        nextRunAt: now - 1000,
+      },
+    ];
+    const exhaustedJobs = [
+      {
+        _id: "registryArtifactBackupJobs:maxed",
+        status: "exhausted",
+        attempts: 16,
+        nextRunAt: now - 1000,
+      },
+      {
+        _id: "registryArtifactBackupJobs:repairable",
+        status: "exhausted",
+        attempts: 8,
+        nextRunAt: now - 1000,
+      },
+    ];
+    let repairAttemptLimit = Number.POSITIVE_INFINITY;
+    const pendingTake = vi.fn((limit: number) => Promise.resolve(pendingJobs.slice(0, limit)));
+    const exhaustedTake = vi.fn((limit: number) =>
+      Promise.resolve(
+        exhaustedJobs.filter((job) => job.attempts < repairAttemptLimit).slice(0, limit),
+      ),
+    );
+    const withIndex = vi.fn(
+      (
+        indexName: string,
+        buildIndex:
+          | ((q: {
+              eq: (
+                field: string,
+                value: unknown,
+              ) => {
+                lt: (field: string, value: number) => unknown;
+                lte: (field: string, value: number) => unknown;
+              };
+            }) => unknown)
+          | undefined,
+      ) => {
+        buildIndex?.({
+          eq: () => ({
+            lt: (_field: string, value: number) => {
+              repairAttemptLimit = value;
+              return {};
+            },
+            lte: () => ({}),
+          }),
+        });
+        return { take: indexName === "by_status_attempts" ? exhaustedTake : pendingTake };
+      },
+    );
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ withIndex })),
+      },
+    };
+
+    const result = await dueJobsHandler(ctx as never, {
+      includeExhaustedRepair: true,
+      limit: 3,
+      maxRepairAttempts: 16,
+      now,
+    });
+
+    expect(result.map((job: { _id: string }) => job._id)).toEqual([
+      "registryArtifactBackupJobs:pending",
+      "registryArtifactBackupJobs:repairable",
+    ]);
+    expect(withIndex).toHaveBeenNthCalledWith(1, "by_status_nextRunAt", expect.any(Function));
+    expect(withIndex).toHaveBeenNthCalledWith(2, "by_status_attempts", expect.any(Function));
+    expect(pendingTake).toHaveBeenCalledWith(3);
+    expect(exhaustedTake).toHaveBeenCalledWith(2);
+  });
+
   it("upserts package release backup failures into a retryable backlog", async () => {
     const now = 1_700_000_000_000;
     const existing = {

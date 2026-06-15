@@ -440,13 +440,7 @@ describe("package VT retries", () => {
       { releaseId: "packageReleases:demo" },
     );
 
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        releaseId: "packageReleases:demo",
-        sha256hash: expect.any(String),
-      }),
-    );
+    expect(mutationPayloads(runMutation).every((payload) => !("sha256hash" in payload))).toBe(true);
     expect(scheduler.runAfter).toHaveBeenCalledWith(5 * 60 * 1000, expect.anything(), {
       releaseId: "packageReleases:demo",
       attempt: 2,
@@ -503,13 +497,7 @@ describe("package VT retries", () => {
       { releaseId: "packageReleases:demo" },
     );
 
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        releaseId: "packageReleases:demo",
-        sha256hash: clawpackSha256,
-      }),
-    );
+    expect(mutationPayloads(runMutation).every((payload) => !("sha256hash" in payload))).toBe(true);
     expect(fetchMock).toHaveBeenNthCalledWith(
       1,
       `https://www.virustotal.com/api/v3/files/${clawpackSha256}`,
@@ -807,7 +795,8 @@ describe("package VT retries", () => {
 
   it("retries package poll when VT lookup throws", async () => {
     process.env.VT_API_KEY = "test-key";
-    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network error")));
+    const fetchMock = vi.fn().mockRejectedValue(new Error("network error"));
+    vi.stubGlobal("fetch", fetchMock);
 
     const scheduler = { runAfter: vi.fn(async () => null) };
     await pollPackageReleaseScanResultsHandler(
@@ -816,7 +805,9 @@ describe("package VT retries", () => {
           _id: "packageReleases:demo",
           packageId: "packages:demo",
           version: "1.0.0",
-          sha256hash: "abc123",
+          artifactKind: "npm-pack",
+          sha256hash: "legacy-zip-sha",
+          clawpackSha256: "tgz-sha",
         }),
         runMutation: vi.fn(async () => null),
         scheduler,
@@ -824,10 +815,37 @@ describe("package VT retries", () => {
       { releaseId: "packageReleases:demo", attempt: 3 },
     );
 
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://www.virustotal.com/api/v3/files/tgz-sha",
+      expect.objectContaining({ method: "GET" }),
+    );
     expect(scheduler.runAfter).toHaveBeenCalledWith(5 * 60 * 1000, expect.anything(), {
       releaseId: "packageReleases:demo",
       attempt: 4,
     });
+  });
+
+  it("does not poll a legacy ZIP hash when an npm-pack artifact hash is missing", async () => {
+    process.env.VT_API_KEY = "test-key";
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    await pollPackageReleaseScanResultsHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          _id: "packageReleases:demo",
+          packageId: "packages:demo",
+          version: "1.0.0",
+          artifactKind: "npm-pack",
+          sha256hash: "legacy-zip-sha",
+        }),
+        runMutation: vi.fn(async () => null),
+        scheduler: { runAfter: vi.fn(async () => null) },
+      } as never,
+      { releaseId: "packageReleases:demo", attempt: 3 },
+    );
+
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("stores undetected-only package VT telemetry during polling even when static scan is suspicious", async () => {

@@ -3,9 +3,6 @@
  * triple duplication of nav link definitions.
  */
 
-/** Lucide icon name used as a key to look up the component at render time. */
-type NavIconName = "wrench" | "plug" | "user";
-
 interface NavItemBase {
   /** Visible link text */
   label: string;
@@ -19,16 +16,13 @@ interface RouteNavItem extends NavItemBase {
   href?: never;
   /** Optional search params object passed to `<Link search>` */
   search?: Record<string, unknown>;
-  /** Optional lucide icon name shown beside the label in navbar tabs */
-  icon?: NavIconName;
 }
 
 interface ExternalNavItem extends NavItemBase {
-  /** External URL rendered as a normal anchor */
+  /** URL rendered as a normal anchor, including external and static app paths. */
   href: string;
   to?: never;
   search?: never;
-  icon?: never;
 }
 
 type NavItem = RouteNavItem | ExternalNavItem;
@@ -46,8 +40,6 @@ const SKILLS_SEARCH = {
   focus: undefined,
 } as const;
 
-const PUBLISHERS_SEARCH = { q: undefined } as const;
-
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
 // These map to the content-type tabs: Skills | Plugins | Publishers
@@ -58,20 +50,12 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     label: "Skills",
     to: "/skills",
     search: SKILLS_SEARCH,
-    icon: "wrench",
     activePathPrefixes: ["/skill/"],
   },
   {
     label: "Plugins",
     to: "/plugins",
-    icon: "plug",
     activePathPrefixes: ["/plugin/"],
-  },
-  {
-    label: "Publishers",
-    to: "/publishers",
-    search: PUBLISHERS_SEARCH,
-    icon: "user",
   },
 ];
 
@@ -83,6 +67,7 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
   {
     label: "Docs",
     href: "https://docs.openclaw.ai/clawhub/",
+    activePathPrefixes: ["/docs"],
   },
 ];
 

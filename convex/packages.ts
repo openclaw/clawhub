@@ -51,6 +51,7 @@ import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
+import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
   assertPackageVersion,
   ensurePluginNameMatchesPackage,
@@ -95,6 +96,7 @@ import {
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
+import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import schema from "./schema";
 
@@ -1056,8 +1058,8 @@ function packageArtifactSummary(
   release: Pick<
     Doc<"packageReleases">,
     | "artifactKind"
-    | "integritySha256"
     | "clawpackSha256"
+    | "sha256hash"
     | "clawpackSize"
     | "clawpackFormat"
     | "npmIntegrity"
@@ -1070,7 +1072,7 @@ function packageArtifactSummary(
   if (release.artifactKind === "npm-pack") {
     return {
       kind: "npm-pack",
-      sha256: release.clawpackSha256,
+      sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
       size: release.clawpackSize,
       format: release.clawpackFormat ?? "tgz",
       npmIntegrity: release.npmIntegrity,
@@ -1082,7 +1084,7 @@ function packageArtifactSummary(
   }
   return {
     kind: "legacy-zip",
-    sha256: release.integritySha256,
+    sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
     format: "zip",
   };
 }
@@ -5964,7 +5966,7 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       const pkg = await ctx.db.get(release.packageId);
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
 
-      const needsVt = !release.sha256hash || !release.vtAnalysis;
+      const needsVt = !release.vtAnalysis;
       const needsLlm = !release.llmAnalysis || release.llmAnalysis.status === "error";
       const needsStatic = !release.staticScan;
       if (!needsVt && !needsLlm && !needsStatic) continue;
@@ -6103,19 +6105,26 @@ async function verifyPublishFileStorageMetadata(
   ctx: Pick<ActionCtx, "storage">,
   files: ReturnType<typeof normalizePublishFiles>,
 ) {
-  return await Promise.all(
+  const verified = await Promise.all(
     files.map(async (file) => {
       const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
       if (!blob) throw new ConvexError(`Uploaded file no longer exists: ${file.path}`);
       const bytes = new Uint8Array(await blob.arrayBuffer());
       return {
-        ...file,
-        size: blob.size,
-        sha256: await sha256Hex(bytes),
-        contentType: file.contentType?.trim() || blob.type || undefined,
+        file: {
+          ...file,
+          size: blob.size,
+          sha256: await sha256Hex(bytes),
+          contentType: file.contentType?.trim() || blob.type || undefined,
+        },
+        zipEntry: { path: file.path, bytes },
       };
     }),
   );
+  return {
+    files: verified.map(({ file }) => file),
+    legacyZipEntries: verified.map(({ zipEntry }) => zipEntry),
+  };
 }
 
 async function publishPackageImpl(
@@ -6247,7 +6256,10 @@ async function publishPackageImpl(
   }
 
   const displayName = payload.displayName?.trim() || name;
-  const files = await verifyPublishFileStorageMetadata(ctx, normalizePublishFiles(payload.files));
+  const { files, legacyZipEntries } = await verifyPublishFileStorageMetadata(
+    ctx,
+    normalizePublishFiles(payload.files),
+  );
   if (payload.artifact?.kind !== "npm-pack") {
     const oversizedFile = findOversizedPublishFile(files);
     if (oversizedFile) {
@@ -6258,6 +6270,7 @@ async function publishPackageImpl(
   if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
     throw new ConvexError(getPublishTotalSizeError("package"));
   }
+  const legacyZipSha256 = await sha256Hex(buildDeterministicPackageZip(legacyZipEntries));
 
   const existingSkill = await runQueryRef(ctx, internalRefs.skills.getSkillBySlugInternal, {
     slug: name,
@@ -6434,6 +6447,7 @@ async function publishPackageImpl(
     staticScan,
     files,
     integritySha256,
+    sha256hash: legacyZipSha256,
     artifactKind: payload.artifact?.kind ?? "legacy-zip",
     clawpackStorageId: payload.artifact?.storageId as Id<"_storage"> | undefined,
     clawpackSha256: payload.artifact?.sha256,
@@ -7606,6 +7620,7 @@ export const insertReleaseInternal = internalMutation({
       }),
     ),
     integritySha256: v.string(),
+    sha256hash: v.string(),
     artifactKind: v.optional(v.union(v.literal("legacy-zip"), v.literal("npm-pack"))),
     clawpackStorageId: v.optional(v.id("_storage")),
     clawpackSha256: v.optional(v.string()),
@@ -7812,6 +7827,7 @@ export const insertReleaseInternal = internalMutation({
       distTags: effectiveTags,
       files: args.files,
       integritySha256: args.integritySha256,
+      sha256hash: args.sha256hash,
       artifactKind: args.artifactKind,
       clawpackStorageId: args.clawpackStorageId,
       clawpackSha256: args.clawpackSha256,
@@ -7906,6 +7922,7 @@ async function recordMaliciousPluginReleaseFinding(
   release: Doc<"packageReleases">,
   trigger: string,
 ) {
+  const artifactSha256 = getPackageReleaseArtifactSha256(release);
   await ctx.scheduler.runAfter(0, internal.users.recordMaliciousArtifactFindingInternal, {
     ownerUserId: release.createdBy,
     artifactKind: "plugin",
@@ -7913,7 +7930,7 @@ async function recordMaliciousPluginReleaseFinding(
     version: release.version,
     trigger,
     ...(release.llmAnalysis?.summary ? { findingSummary: release.llmAnalysis.summary } : {}),
-    ...(release.sha256hash ? { sha256hash: release.sha256hash } : {}),
+    ...(artifactSha256 ? { sha256hash: artifactSha256 } : {}),
   });
 }
 
@@ -8125,7 +8142,6 @@ async function syncLatestPackageVerification(
 export const updateReleaseScanResultsInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
-    sha256hash: v.optional(v.string()),
     vtAnalysis: v.optional(vtAnalysisValidator),
   },
   handler: async (ctx, args) => {
@@ -8133,7 +8149,6 @@ export const updateReleaseScanResultsInternal = internalMutation({
     if (!release || release.softDeletedAt) return;
 
     const patch: Partial<Doc<"packageReleases">> = {};
-    if (args.sha256hash !== undefined) patch.sha256hash = args.sha256hash;
     if (args.vtAnalysis !== undefined) {
       patch.vtAnalysis = args.vtAnalysis;
     }

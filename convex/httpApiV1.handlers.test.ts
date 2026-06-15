@@ -9081,7 +9081,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("package security endpoint returns exact release trust and blocked reasons", async () => {
+  it("package security endpoint uses the canonical npm artifact hash", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("name" in args && !("version" in args)) {
         return {
@@ -9161,7 +9161,7 @@ describe("httpApiV1 handlers", () => {
         releaseId: "packageReleases:1",
         version: "1.0.0",
         artifactKind: "npm-pack",
-        artifactSha256: "c".repeat(64),
+        artifactSha256: "e".repeat(64),
         npmIntegrity: "sha512-demo",
         npmShasum: "d".repeat(40),
         npmTarballName: "demo-plugin-1.0.0.tgz",
@@ -9248,6 +9248,7 @@ describe("httpApiV1 handlers", () => {
             files: [],
             artifactKind: "npm-pack",
             integritySha256: "a".repeat(64),
+            sha256hash: "b".repeat(64),
             npmIntegrity: "sha512-demo",
             npmShasum: "d".repeat(40),
             npmTarballName: "demo-plugin-1.0.0.tgz",

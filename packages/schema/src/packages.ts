@@ -451,6 +451,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     capabilities: PackageCapabilitySummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
+    // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
     sha256hash: "string|null?",
     vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
     skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),

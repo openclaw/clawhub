@@ -80,4 +80,22 @@ describe("plugin security audit route", () => {
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Download security audit" })).toBeNull();
   });
+
+  it("links VirusTotal to the canonical npm-pack artifact hash", () => {
+    const loaderData = makeLoaderData();
+    loaderData.version.version = {
+      ...loaderData.version.version,
+      sha256hash: "legacy-zip-sha",
+      artifact: {
+        kind: "npm-pack",
+        sha256: "tgz-sha",
+      },
+    } as never;
+
+    render(<PluginSecurityAuditPage name="demo-plugin" loaderData={loaderData as never} />);
+
+    expect(screen.getByRole("link", { name: "View on VirusTotal" }).getAttribute("href")).toBe(
+      "https://www.virustotal.com/gui/file/tgz-sha",
+    );
+  });
 });

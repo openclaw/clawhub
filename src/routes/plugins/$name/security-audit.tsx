@@ -145,7 +145,7 @@ export function PluginSecurityAuditPage({
         ownerPublisherId: null,
         detailPath: buildPluginDetailHref(name),
       }}
-      sha256hash={release.sha256hash ?? null}
+      sha256hash={release.artifact?.sha256 ?? null}
       vtAnalysis={release.vtAnalysis ?? null}
       llmAnalysis={release.llmAnalysis ?? null}
       skillSpectorAnalysis={release.skillSpectorAnalysis ?? null}

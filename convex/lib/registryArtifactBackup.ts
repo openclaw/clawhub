@@ -11,6 +11,8 @@ const DEFAULT_PACKAGES_ROOT = "packages";
 const META_FILENAME = "_meta.json";
 const INDEX_FILENAME = "_index.json";
 const MAX_INDEX_WRITE_ATTEMPTS = 5;
+const MIN_INDEX_WRITE_RETRY_DELAY_MS = 25;
+const MAX_INDEX_WRITE_RETRY_DELAY_MS = 250;
 
 type BackupFile = {
   path: string;
@@ -185,6 +187,68 @@ export async function backupPackageReleaseToObjectStorage(
   await putJsonObject(context, planned.metaPath, planned.meta);
   await putMergedJsonIndex(context, planned.indexPath, (existingIndex: PackageIndexFile | null) =>
     buildPackageIndexFile(planned, existingIndex),
+  );
+}
+
+export async function repairSkillVersionBackupIndex(
+  _ctx: Pick<ActionCtx, "storage">,
+  params: SkillBackupParams & { root?: string },
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  await repairSkillVersionBackupIndexes(_ctx, [params], context);
+}
+
+export async function repairSkillVersionBackupIndexes(
+  _ctx: Pick<ActionCtx, "storage">,
+  params: Array<SkillBackupParams & { root?: string }>,
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  if (params.length === 0) return;
+  const planned = params.map((item) =>
+    buildSkillVersionBackupManifest({
+      root: item.root ?? context.skillsRoot,
+      ...item,
+    }),
+  );
+  const [first, ...rest] = planned;
+  if (!first) return;
+  const indexPath = sharedIndexPath(planned.map((item) => item.indexPath));
+  await putMergedJsonIndex(context, indexPath, (existingIndex: SkillIndexFile | null) =>
+    rest.reduce(
+      (nextIndex, plannedItem) => buildSkillIndexFile(plannedItem, nextIndex),
+      buildSkillIndexFile(first, existingIndex),
+    ),
+  );
+}
+
+export async function repairPackageReleaseBackupIndex(
+  _ctx: Pick<ActionCtx, "storage">,
+  params: PackageBackupParams & { root?: string },
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  await repairPackageReleaseBackupIndexes(_ctx, [params], context);
+}
+
+export async function repairPackageReleaseBackupIndexes(
+  _ctx: Pick<ActionCtx, "storage">,
+  params: Array<PackageBackupParams & { root?: string }>,
+  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
+) {
+  if (params.length === 0) return;
+  const planned = params.map((item) =>
+    buildPackageReleaseBackupManifest({
+      root: item.root ?? context.packagesRoot,
+      ...item,
+    }),
+  );
+  const [first, ...rest] = planned;
+  if (!first) return;
+  const indexPath = sharedIndexPath(planned.map((item) => item.indexPath));
+  await putMergedJsonIndex(context, indexPath, (existingIndex: PackageIndexFile | null) =>
+    rest.reduce(
+      (nextIndex, plannedItem) => buildPackageIndexFile(plannedItem, nextIndex),
+      buildPackageIndexFile(first, existingIndex),
+    ),
   );
 }
 
@@ -381,6 +445,14 @@ function buildSkillIndexFile(
   };
 }
 
+function sharedIndexPath(paths: string[]) {
+  const [first, ...rest] = paths;
+  if (!first || rest.some((path) => path !== first)) {
+    throw new Error("Registry artifact backup bulk index repair received mixed roots");
+  }
+  return first;
+}
+
 function compareSkillIndexEntriesForLatest(left: SkillIndexEntry, right: SkillIndexEntry) {
   const leftValid = semver.valid(left.version);
   const rightValid = semver.valid(right.version);
@@ -534,9 +606,22 @@ async function putMergedJsonIndex<T>(
       },
     );
     if (result === "ok") return;
+    await sleep(indexWriteRetryDelayMs(attempt));
   }
 
   throw new Error(`Registry artifact backup index ${key} changed too frequently`);
+}
+
+function indexWriteRetryDelayMs(attempt: number) {
+  const base = Math.min(
+    MAX_INDEX_WRITE_RETRY_DELAY_MS,
+    MIN_INDEX_WRITE_RETRY_DELAY_MS * 2 ** attempt,
+  );
+  return base + Math.floor(Math.random() * MIN_INDEX_WRITE_RETRY_DELAY_MS);
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 async function putObject(

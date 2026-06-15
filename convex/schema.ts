@@ -1230,6 +1230,7 @@ const packageReleases = defineTable({
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
   verification: packageVerificationValidator,
+  // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
   sha256hash: v.optional(v.string()),
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
@@ -2439,6 +2440,7 @@ const registryArtifactBackupJobs = defineTable({
   updatedAt: v.number(),
 })
   .index("by_status_nextRunAt", ["status", "nextRunAt"])
+  .index("by_status_attempts", ["status", "attempts"])
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"])
   .index("by_updatedAt", ["updatedAt"]);

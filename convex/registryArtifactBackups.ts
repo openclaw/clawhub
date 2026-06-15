@@ -14,6 +14,9 @@ const PACKAGE_SYNC_STATE_KEY = "packageReleases";
 const MAX_BACKUP_JOB_ERROR_LENGTH = 4000;
 const DEFAULT_BACKUP_HEALTH_SAMPLE_LIMIT = 500;
 const MAX_BACKUP_HEALTH_SAMPLE_LIMIT = 1000;
+const DEFAULT_BACKUP_JOB_LIMIT = 25;
+const MAX_BACKUP_JOB_LIMIT = 200;
+const DEFAULT_BACKUP_JOB_REPAIR_ATTEMPTS = 16;
 
 type BackupPageItem =
   | {
@@ -407,16 +410,33 @@ export const markRegistryArtifactBackupJobFailedInternal = internalMutation({
 
 export const getDueRegistryArtifactBackupJobsInternal = internalQuery({
   args: {
+    includeExhaustedRepair: v.optional(v.boolean()),
+    maxRepairAttempts: v.optional(v.number()),
     now: v.optional(v.number()),
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const now = args.now ?? Date.now();
-    const limit = clampInt(args.limit ?? 25, 1, 100);
-    return await ctx.db
+    const limit = clampInt(args.limit ?? DEFAULT_BACKUP_JOB_LIMIT, 1, MAX_BACKUP_JOB_LIMIT);
+    const pending = await ctx.db
       .query("registryArtifactBackupJobs")
       .withIndex("by_status_nextRunAt", (q) => q.eq("status", "pending").lte("nextRunAt", now))
       .take(limit);
+    if (!args.includeExhaustedRepair || pending.length >= limit) return pending;
+
+    const maxRepairAttempts = Math.max(
+      1,
+      Math.floor(args.maxRepairAttempts ?? DEFAULT_BACKUP_JOB_REPAIR_ATTEMPTS),
+    );
+    const remaining = limit - pending.length;
+    const exhausted = await ctx.db
+      .query("registryArtifactBackupJobs")
+      .withIndex("by_status_attempts", (q) =>
+        q.eq("status", "exhausted").lt("attempts", maxRepairAttempts),
+      )
+      .take(remaining);
+
+    return [...pending, ...exhausted];
   },
 });
 
