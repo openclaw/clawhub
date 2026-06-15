@@ -13,6 +13,7 @@ import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { OfficialTag } from "../../components/OfficialBadge";
+import { PluginVersionsPanel } from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Alert, AlertDescription } from "../../components/ui/alert";
@@ -26,8 +27,9 @@ import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlu
 import {
   fetchPackageDetail,
   fetchPackageReadme,
-  getPackageArtifactDownloadPath,
   fetchPackageVersion,
+  fetchPackageVersions,
+  getPackageArtifactDownloadPath,
   getPackageDownloadPath,
   isRateLimitedPackageApiError,
   type PackageDetailResponse,
@@ -47,7 +49,7 @@ type PluginDetailRateLimitState = {
   retryAfterSeconds: number | null;
 } | null;
 
-type PluginDetailTab = "readme" | "compatibility" | "validation";
+type PluginDetailTab = "readme" | "versions" | "compatibility" | "validation";
 
 type PluginInspectorFinding = {
   packageName: string;
@@ -79,6 +81,7 @@ type PluginInspectorValidationSummary = {
 export type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
+  versions: Awaited<ReturnType<typeof fetchPackageVersions>> | null;
   readme: string | null;
   rateLimited: PluginDetailRateLimitState;
 };
@@ -98,6 +101,7 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
         return {
           detail: { package: null, owner: null },
           version: null,
+          versions: null,
           readme: null,
           rateLimited: {
             scope: "detail",
@@ -116,23 +120,28 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
   }
 
   if (!detail.package) {
-    return { detail, version: null, readme: null, rateLimited: null };
+    return { detail, version: null, versions: null, readme: null, rateLimited: null };
   }
 
   try {
-    const [version, readme] = await Promise.all([
+    const [version, versions, readme] = await Promise.all([
       detail.package.latestVersion
         ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
         : Promise.resolve(null),
+      fetchPackageVersions(resolvedName, { limit: 100 }).catch((error: unknown) => {
+        if (isRateLimitedPackageApiError(error)) throw error;
+        return null;
+      }),
       fetchPackageReadme(resolvedName),
     ]);
 
-    return { detail, version, readme, rateLimited: null };
+    return { detail, version, versions, readme, rateLimited: null };
   } catch (error) {
     if (isRateLimitedPackageApiError(error)) {
       return {
         detail,
         version: null,
+        versions: null,
         readme: null,
         rateLimited: {
           scope: "metadata",
@@ -227,13 +236,14 @@ function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
   const hash = hashValue.replace("#", "");
   if (hash === "warnings") return "validation";
   if (hash === "capabilities" || hash === "verification") return "compatibility";
-  return hash === "compatibility" || hash === "validation" ? hash : "readme";
+  return hash === "versions" || hash === "compatibility" || hash === "validation" ? hash : "readme";
 }
 
 function PluginDetailTabs({
   activeTab,
   setActiveTab,
   readmePanel,
+  versionsPanel,
   compatibilityPanel,
   validationPanel,
   validationCount,
@@ -241,6 +251,7 @@ function PluginDetailTabs({
   activeTab: PluginDetailTab;
   setActiveTab: (tab: PluginDetailTab) => void;
   readmePanel: ReactNode;
+  versionsPanel: ReactNode;
   compatibilityPanel: ReactNode | null;
   validationPanel: ReactNode | null;
   validationCount: number;
@@ -257,17 +268,21 @@ function PluginDetailTabs({
   };
 
   const effectiveActiveTab =
-    activeTab === "compatibility" && compatibilityPanel
-      ? "compatibility"
-      : activeTab === "validation" && validationPanel
-        ? "validation"
-        : "readme";
+    activeTab === "versions"
+      ? "versions"
+      : activeTab === "compatibility" && compatibilityPanel
+        ? "compatibility"
+        : activeTab === "validation" && validationPanel
+          ? "validation"
+          : "readme";
   const activePanel =
-    effectiveActiveTab === "compatibility" && compatibilityPanel
-      ? compatibilityPanel
-      : effectiveActiveTab === "validation" && validationPanel
-        ? validationPanel
-        : readmePanel;
+    effectiveActiveTab === "versions"
+      ? versionsPanel
+      : effectiveActiveTab === "compatibility" && compatibilityPanel
+        ? compatibilityPanel
+        : effectiveActiveTab === "validation" && validationPanel
+          ? validationPanel
+          : readmePanel;
 
   return (
     <div className="tab-card">
@@ -280,6 +295,15 @@ function PluginDetailTabs({
           onClick={() => selectTab("readme")}
         >
           README
+        </button>
+        <button
+          className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={effectiveActiveTab === "versions"}
+          onClick={() => selectTab("versions")}
+        >
+          Versions
         </button>
         {compatibilityPanel ? (
           <button
@@ -332,7 +356,7 @@ export function PluginDetailPage({
   name: string;
   loaderData: PluginDetailLoaderData;
 }) {
-  const { detail, version, readme, rateLimited } = loaderData;
+  const { detail, version, versions, readme, rateLimited } = loaderData;
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
   const isNestedPluginRoute =
@@ -450,6 +474,7 @@ export function PluginDetailPage({
       <p className="empty-state-body">This plugin doesn't have a README yet.</p>
     </div>
   );
+  const versionsPanel = <PluginVersionsPanel packageName={pkg.name} versions={versions?.items} />;
   const compatibilityPanel =
     compatEntries.length > 0 || artifact ? (
       <div className="plugin-tab-panel">
@@ -775,6 +800,7 @@ export function PluginDetailPage({
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             readmePanel={readmePanel}
+            versionsPanel={versionsPanel}
             compatibilityPanel={compatibilityPanel}
             validationPanel={validationPanel}
             validationCount={validationCount}

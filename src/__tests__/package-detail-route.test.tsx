@@ -8,6 +8,7 @@ import {
   fetchPackageDetail,
   fetchPackageReadme,
   fetchPackageVersion,
+  fetchPackageVersions,
   type PackageDetailResponse,
   type PackageVersionDetail,
 } from "../lib/packageApi";
@@ -23,12 +24,15 @@ let pathnameMock = "/plugins/demo-plugin";
 type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
+  versions: Awaited<ReturnType<typeof fetchPackageVersions>> | null;
   readme: string | null;
   rateLimited: {
     scope: "detail" | "metadata";
     retryAfterSeconds: number | null;
   } | null;
 };
+
+const emptyVersions = { items: [], nextCursor: null };
 
 let paramsMock = { name: "demo-plugin" };
 let loaderDataMock: PluginDetailLoaderData = {
@@ -51,6 +55,7 @@ let loaderDataMock: PluginDetailLoaderData = {
     owner: null,
   },
   version: null,
+  versions: emptyVersions,
   readme: null as string | null,
   rateLimited: null,
 };
@@ -94,6 +99,7 @@ vi.mock("../lib/packageApi", () => ({
   fetchPackageDetail: vi.fn(),
   fetchPackageReadme: vi.fn(),
   fetchPackageVersion: vi.fn(),
+  fetchPackageVersions: vi.fn(),
   isRateLimitedPackageApiError: (error: unknown) => isRateLimitedPackageApiErrorMock(error),
   getPackageArtifactDownloadPath: vi.fn(
     (name: string, version: string) =>
@@ -133,6 +139,8 @@ describe("plugin detail route", () => {
     vi.mocked(fetchPackageDetail).mockReset();
     vi.mocked(fetchPackageReadme).mockReset();
     vi.mocked(fetchPackageVersion).mockReset();
+    vi.mocked(fetchPackageVersions).mockReset();
+    vi.mocked(fetchPackageVersions).mockResolvedValue(emptyVersions);
     loaderDataMock = {
       detail: {
         package: {
@@ -153,6 +161,7 @@ describe("plugin detail route", () => {
         owner: null,
       },
       version: null,
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -175,6 +184,107 @@ describe("plugin detail route", () => {
 
     expect(screen.queryByText(/Latest release:/)).toBeNull();
     expect(screen.queryByRole("link", { name: "Download zip" })).toBeNull();
+  });
+
+  it("renders populated active release history on the versions tab", async () => {
+    const publishedAt = new Date("2026-06-01T12:00:00Z").getTime();
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "2.0.0",
+        },
+        owner: null,
+      },
+      versions: {
+        items: [
+          {
+            version: "2.0.0",
+            createdAt: publishedAt,
+            changelog: "Adds package release history.",
+            distTags: ["latest", "stable"],
+          },
+          {
+            version: "2.0.0-beta.1",
+            createdAt: publishedAt - 86_400_000,
+            changelog: "Previews package release history.",
+            distTags: ["beta"],
+          },
+        ],
+        nextCursor: null,
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    expect(screen.getByText(`v2.0.0 · ${new Date(publishedAt).toLocaleDateString()}`)).toBeTruthy();
+    expect(screen.getByText("Adds package release history.")).toBeTruthy();
+    expect(screen.getByText("Previews package release history.")).toBeTruthy();
+    expect(screen.getByText("latest")).toBeTruthy();
+    expect(screen.getByText("stable")).toBeTruthy();
+    expect(screen.getByText("beta")).toBeTruthy();
+    expect(
+      screen.getAllByRole("link", { name: "Zip" }).map((link) => link.getAttribute("href")),
+    ).toEqual([
+      "/api/v1/packages/demo-plugin/download?version=2.0.0",
+      "/api/v1/packages/demo-plugin/download?version=2.0.0-beta.1",
+    ]);
+  });
+
+  it("selects the versions tab from the versions hash", async () => {
+    window.location.hash = "#versions";
+    loaderDataMock = {
+      ...loaderDataMock,
+      versions: {
+        items: [
+          {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: null,
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("tab", { name: "Versions" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByText("Initial release")).toBeTruthy();
+  });
+
+  it("keeps the versions tab available for empty active release histories", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    expect(screen.getByText("No active releases are available.")).toBeTruthy();
+  });
+
+  it("distinguishes unavailable release history from an empty history", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      versions: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    expect(screen.getByText("Release history is temporarily unavailable.")).toBeTruthy();
+    expect(screen.queryByText("No active releases are available.")).toBeNull();
   });
 
   it("links plugin breadcrumb owners to canonical publisher profiles", async () => {
@@ -281,6 +391,7 @@ describe("plugin detail route", () => {
           staticScan: null,
         },
       },
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -339,6 +450,7 @@ describe("plugin detail route", () => {
         owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
       },
       version: null,
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -394,6 +506,7 @@ describe("plugin detail route", () => {
           },
         },
       },
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -460,6 +573,7 @@ describe("plugin detail route", () => {
           staticScan: null,
         },
       },
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -523,6 +637,7 @@ describe("plugin detail route", () => {
           staticScan: null,
         },
       },
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -581,6 +696,7 @@ describe("plugin detail route", () => {
           staticScan: null,
         },
       },
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -645,6 +761,7 @@ describe("plugin detail route", () => {
           staticScan: null,
         },
       },
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -751,6 +868,7 @@ describe("plugin detail route", () => {
           staticScan: null,
         },
       },
+      versions: emptyVersions,
       readme: null,
       rateLimited: null,
     };
@@ -819,6 +937,7 @@ describe("plugin detail route", () => {
     loaderDataMock = {
       detail: { package: null, owner: null },
       version: null,
+      versions: emptyVersions,
       readme: null,
       rateLimited: {
         scope: "detail",
@@ -871,10 +990,38 @@ describe("plugin detail route", () => {
     expect(result.detail.package?.name).toBe("demo-plugin");
     expect(result.readme).toBeNull();
     expect(result.version).toBeNull();
+    expect(result.versions).toBeNull();
     expect(result.rateLimited).toEqual({
       scope: "metadata",
       retryAfterSeconds: 11,
     });
+  });
+
+  it("keeps plugin detail available when active release history is unavailable", async () => {
+    const route = await loadRoute();
+    const loader = route.__config.loader as ({
+      params,
+    }: {
+      params: { name: string };
+    }) => Promise<PluginDetailLoaderData>;
+
+    vi.mocked(fetchPackageDetail).mockResolvedValueOnce({
+      package: {
+        ...loaderDataMock.detail.package!,
+        latestVersion: "1.0.0",
+      },
+      owner: null,
+    });
+    vi.mocked(fetchPackageVersion).mockResolvedValueOnce({ package: null, version: null });
+    vi.mocked(fetchPackageReadme).mockResolvedValueOnce("README");
+    vi.mocked(fetchPackageVersions).mockRejectedValueOnce(new Error("versions unavailable"));
+
+    const result = await loader({ params: { name: "demo-plugin" } });
+
+    expect(result.readme).toBe("README");
+    expect(result.version).toEqual({ package: null, version: null });
+    expect(result.versions).toBeNull();
+    expect(result.rateLimited).toBeNull();
   });
 
   it("prefers the official scoped package name for short plugin routes", async () => {
@@ -915,6 +1062,8 @@ describe("plugin detail route", () => {
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
+    expect(fetchPackageVersions).toHaveBeenCalledWith("@openclaw/matrix", { limit: 100 });
+    expect(result.versions).toEqual(emptyVersions);
     expect(result.detail.package?.name).toBe("@openclaw/matrix");
     expect(result.rateLimited).toBeNull();
   });
