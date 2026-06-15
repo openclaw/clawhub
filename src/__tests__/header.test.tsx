@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import type { AriaAttributes, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type HeaderAuthStatus = {
@@ -142,9 +142,19 @@ vi.mock("../components/ui/dropdown-menu", () => ({
     children: ReactNode;
     className?: string;
     onClick?: () => void;
+    "aria-current"?: AriaAttributes["aria-current"];
+    "aria-label"?: string;
     "data-status"?: string;
+    title?: string;
   }) => (
-    <div className={className} data-status={props["data-status"]} onClick={onClick}>
+    <div
+      aria-current={props["aria-current"]}
+      aria-label={props["aria-label"]}
+      className={className}
+      data-status={props["data-status"]}
+      onClick={onClick}
+      title={props.title}
+    >
       {children}
     </div>
   ),
@@ -247,7 +257,7 @@ describe("Header", () => {
     expect(screen.queryByText("About")).toBeNull();
   });
 
-  it("moves theme mode controls into the signed-in profile menu", () => {
+  it("renders theme mode controls as a compact row between Settings and Sign out", () => {
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -263,16 +273,29 @@ describe("Header", () => {
     render(<Header />);
 
     expect(document.querySelector(".theme-mode-toggle")).toBeNull();
-    expect(screen.getByText("Theme")).toBeTruthy();
-    expect(
-      screen
-        .getByText("System theme")
-        .closest(".user-dropdown-theme-item")
-        ?.getAttribute("data-status"),
-    ).toBe("active");
-    fireEvent.click(screen.getByText("Light theme").closest(".user-dropdown-theme-item")!);
+    expect(screen.queryByText("Theme")).toBeNull();
+
+    const themeRow = document.querySelector(".user-dropdown-theme-row");
+    const settings = screen.getByText("Settings");
+    const signOut = screen.getByText("Sign out");
+
+    expect(themeRow).toBeTruthy();
+    expect(themeRow?.children).toHaveLength(3);
+    expect(settings.compareDocumentPosition(themeRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(themeRow!.compareDocumentPosition(signOut) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(themeRow?.previousElementSibling?.tagName).toBe("HR");
+    expect(signOut.previousElementSibling?.tagName).toBe("HR");
+
+    expect(screen.getByLabelText("System theme").getAttribute("aria-current")).toBe("true");
+    expect(screen.getByLabelText("System theme").getAttribute("data-status")).toBe("active");
+    expect(screen.getByLabelText("Light theme").getAttribute("aria-current")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Light theme"));
     expect(setModeMock).toHaveBeenCalledWith("light");
-    fireEvent.click(screen.getByText("Dark theme").closest(".user-dropdown-theme-item")!);
+    fireEvent.click(screen.getByLabelText("Dark theme"));
     expect(setModeMock).toHaveBeenCalledWith("dark");
   });
 

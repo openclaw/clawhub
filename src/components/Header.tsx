@@ -411,22 +411,6 @@ export default function Header() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="user-dropdown-content">
-                  <div className="user-dropdown-section-label">Theme</div>
-                  {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
-                    <DropdownMenuItem
-                      key={themeMode}
-                      className="user-dropdown-theme-item"
-                      data-status={mode === themeMode ? "active" : undefined}
-                      onClick={() => setThemeMode(themeMode)}
-                    >
-                      <Icon size={14} aria-hidden="true" />
-                      <span>{label}</span>
-                      {mode === themeMode ? (
-                        <span className="user-dropdown-current">Current</span>
-                      ) : null}
-                    </DropdownMenuItem>
-                  ))}
-                  <DropdownMenuSeparator />
                   <DropdownMenuItem asChild>
                     <Link to="/dashboard" className="flex items-center gap-2">
                       <LayoutDashboard size={14} aria-hidden="true" />
@@ -445,6 +429,23 @@ export default function Header() {
                       Settings
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <div className="user-dropdown-theme-row" role="group" aria-label="Theme">
+                    {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
+                      <DropdownMenuItem
+                        key={themeMode}
+                        aria-label={label}
+                        aria-current={mode === themeMode ? "true" : undefined}
+                        className="user-dropdown-theme-button"
+                        data-status={mode === themeMode ? "active" : undefined}
+                        title={label}
+                        onClick={() => setThemeMode(themeMode)}
+                      >
+                        <Icon size={15} aria-hidden="true" />
+                        <span className="sr-only">{label}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
                 </DropdownMenuContent>

@@ -1016,28 +1016,21 @@ code {
   outline: none;
 }
 
-.user-dropdown-section-label {
-  padding: 4px 8px 6px;
-  font-size: var(--fs-xs);
-  font-weight: 650;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--ink-soft);
+.user-dropdown-theme-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 4px;
 }
 
-.user-dropdown-theme-item {
-  min-width: 220px;
+.user-dropdown-theme-button {
+  min-width: 0;
+  justify-content: center;
+  padding-inline: 0;
 }
 
-.user-dropdown-theme-item[data-status="active"] {
+.user-dropdown-theme-button[data-status="active"] {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--ink);
-}
-
-.user-dropdown-current {
-  margin-left: auto;
-  font-size: var(--fs-xs);
-  color: var(--ink-soft);
 }
 
 /* @deprecated — use <Button> from components/ui/button.tsx */
