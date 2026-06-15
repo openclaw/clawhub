@@ -219,13 +219,6 @@ describe("package digest sync", () => {
       compatibility: { openclaw: "^1.0.0" },
       capabilities: { capabilityTags: ["stable"], executesCode: false },
       verification: { tier: "verified" },
-      runtimeId: "demo.fallback",
-      sourceRepo: "openclaw/fallback",
-      artifactKind: "npm-pack",
-      clawpackSha256: "a".repeat(64),
-      clawpackSize: 123,
-      clawpackFormat: "tgz",
-      npmIntegrity: "sha512-fallback",
       distTags: ["stable"],
       createdAt: 10,
       softDeletedAt: undefined,
@@ -244,49 +237,6 @@ describe("package digest sync", () => {
       createdAt: 20,
       softDeletedAt: undefined,
     };
-    const revokedRelease = {
-      _id: "packageReleases:demo-revoked",
-      _creationTime: 30,
-      packageId: "packages:demo",
-      version: "1.5.0",
-      changelog: "revoked",
-      summary: "revoked summary",
-      compatibility: { openclaw: "^1.5.0" },
-      capabilities: { capabilityTags: ["revoked"], executesCode: true },
-      verification: { tier: "verified" },
-      manualModeration: {
-        state: "revoked",
-        reason: "unsafe",
-        reviewerUserId: "users:moderator",
-        updatedAt: 30,
-      },
-      distTags: ["beta"],
-      createdAt: 30,
-      softDeletedAt: undefined,
-    };
-    const ownerDeletedRelease = {
-      _id: "packageReleases:demo-ownerDeleted",
-      _creationTime: 40,
-      packageId: "packages:demo",
-      version: "3.0.0",
-      changelog: "ownerDeleted",
-      summary: "ownerDeleted summary",
-      compatibility: { openclaw: "^3.0.0" },
-      capabilities: { capabilityTags: ["ownerDeleted"], executesCode: true },
-      verification: { tier: "verified" },
-      distTags: ["next"],
-      ownerDeletedAt: 40,
-      createdAt: 40,
-      softDeletedAt: undefined,
-    };
-    const takeActiveReleases = vi
-      .fn()
-      .mockResolvedValue([
-        ownerDeletedRelease,
-        revokedRelease,
-        legacyHotfixRelease,
-        fallbackRelease,
-      ]);
     const owner = {
       _id: "users:owner",
       handle: "owner",
@@ -305,10 +255,13 @@ describe("package digest sync", () => {
           if (table === "packageReleases") {
             return {
               withIndex: vi.fn(() => ({
-                take: takeActiveReleases,
-                paginate: vi.fn(() => {
-                  throw new Error("package fallback must not paginate");
-                }),
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [legacyHotfixRelease, fallbackRelease],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                })),
               })),
             };
           }
@@ -353,20 +306,10 @@ describe("package digest sync", () => {
       expect.objectContaining({
         latestReleaseId: "packageReleases:demo-1",
         tags: { latest: "packageReleases:demo-1" },
+        latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
         summary: "stable summary",
         capabilityTags: ["stable"],
         executesCode: false,
-        runtimeId: "demo.fallback",
-        sourceRepo: "openclaw/fallback",
-        latestVersionSummary: expect.objectContaining({
-          version: "1.0.0",
-          artifact: expect.objectContaining({
-            kind: "npm-pack",
-            sha256: "a".repeat(64),
-            size: 123,
-            npmIntegrity: "sha512-fallback",
-          }),
-        }),
       }),
     );
     expect(ctx.db.insert).toHaveBeenCalledWith(
@@ -376,8 +319,6 @@ describe("package digest sync", () => {
         ownerHandle: "owner",
       }),
     );
-    expect(takeActiveReleases).toHaveBeenCalledTimes(1);
-    expect(takeActiveReleases).toHaveBeenCalledWith(101);
   });
 
   it("repoints bundle packages to the newest surviving release, not semver-looking versions", async () => {
@@ -435,7 +376,6 @@ describe("package digest sync", () => {
       createdAt: 20,
       softDeletedAt: undefined,
     };
-    const takeActiveReleases = vi.fn().mockResolvedValue([newestRelease, semverLookingRelease]);
     const owner = {
       _id: "users:owner",
       handle: "owner",
@@ -454,10 +394,13 @@ describe("package digest sync", () => {
           if (table === "packageReleases") {
             return {
               withIndex: vi.fn(() => ({
-                take: takeActiveReleases,
-                paginate: vi.fn(() => {
-                  throw new Error("package fallback must not paginate");
-                }),
+                order: vi.fn(() => ({
+                  paginate: vi.fn().mockResolvedValue({
+                    page: [newestRelease, semverLookingRelease],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                })),
               })),
             };
           }
@@ -513,45 +456,6 @@ describe("package digest sync", () => {
         ownerHandle: "owner",
       }),
     );
-    expect(takeActiveReleases).toHaveBeenCalledTimes(1);
-    expect(takeActiveReleases).toHaveBeenCalledWith(101);
-  });
-
-  it("rejects package latest repair when active history exceeds the bounded fallback limit", async () => {
-    const pkg = {
-      _id: "packages:demo",
-      family: "code-plugin",
-      tags: { latest: "packageReleases:deleted" },
-      latestReleaseId: "packageReleases:deleted",
-      softDeletedAt: undefined,
-    };
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => (id === pkg._id ? pkg : null)),
-        query: vi.fn((table: string) => {
-          if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
-          return {
-            withIndex: vi.fn(() => ({
-              take: vi.fn().mockResolvedValue(
-                Array.from({ length: 101 }, (_, index) => ({
-                  _id: `packageReleases:${index}`,
-                })),
-              ),
-            })),
-          };
-        }),
-        patch: vi.fn(),
-      },
-    };
-
-    await expect(
-      repointPackageLatestRelease(
-        ctx as never,
-        "packages:demo" as never,
-        "packageReleases:deleted" as never,
-      ),
-    ).rejects.toThrow(/too many active releases.*remove the whole package/i);
-    expect(ctx.db.patch).not.toHaveBeenCalled();
   });
 
   it("re-syncs package digests when an owner handle changes", async () => {

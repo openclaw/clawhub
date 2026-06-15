@@ -24,7 +24,6 @@ import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import {
   action,
-  getBoundedAvailablePackageReleases,
   internalAction,
   internalMutation,
   internalQuery,
@@ -4244,8 +4243,6 @@ async function restorePackageDoc(
         }
       : undefined,
     summary: nextLatest?.summary,
-    runtimeId: packageRuntimeIdFromRelease(nextLatest),
-    sourceRepo: packageSourceRepoFromRelease(nextLatest),
     capabilityTags: nextLatest?.capabilities?.capabilityTags,
     executesCode:
       typeof nextLatest?.capabilities?.executesCode === "boolean"
@@ -4840,10 +4837,26 @@ export async function deleteOwnedPackageReleaseForActor(
     throw new ConvexError("This package release is already unavailable and cannot be deleted.");
   }
 
-  const activeReleases = await getBoundedAvailablePackageReleases(ctx, pkg._id);
-  if (!activeReleases.some((candidate) => candidate._id !== release._id)) {
+  let mustPublishReplacement =
+    pkg.latestReleaseId === release._id || pkg.tags.latest === release._id;
+  if (!mustPublishReplacement && !pkg.latestReleaseId && !pkg.tags.latest) {
+    // Admin cleanup can clear latest pointers, so prove a survivor with one tiny indexed read.
+    const candidates = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_package_active_created", (q) =>
+        q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
+      )
+      .take(2);
+    mustPublishReplacement = !candidates.some(
+      (candidate) =>
+        candidate._id !== release._id &&
+        candidate.ownerDeletedAt === undefined &&
+        resolvePackageReleaseScanStatus(candidate) !== "malicious",
+    );
+  }
+  if (mustPublishReplacement) {
     throw new ConvexError(
-      "You cannot delete the only active release. Remove the whole package instead.",
+      "Publish a replacement release before deleting the current latest release.",
     );
   }
 

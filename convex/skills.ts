@@ -12,7 +12,6 @@ import {
   internalAction,
   internalMutation,
   internalQuery,
-  MAX_OWNER_DELETE_ACTIVE_CHILDREN,
   mutation,
   query,
 } from "./functions";
@@ -7649,28 +7648,6 @@ async function setSkillEmbeddingsLatestVersion(
   }
 }
 
-async function setSkillVersionEmbeddingLatestPointers(
-  ctx: MutationCtx,
-  previousLatestVersionIds: Id<"skillVersions">[],
-  latestVersionId: Id<"skillVersions">,
-  now: number,
-) {
-  const versionIds = new Set([...previousLatestVersionIds, latestVersionId]);
-  for (const versionId of versionIds) {
-    const embedding = await ctx.db
-      .query("skillEmbeddings")
-      .withIndex("by_version", (q) => q.eq("versionId", versionId))
-      .unique();
-    if (!embedding) continue;
-    const isLatest = versionId === latestVersionId;
-    await ctx.db.patch(embedding._id, {
-      isLatest,
-      visibility: embeddingVisibilityFor(isLatest, embedding.isApproved),
-      updatedAt: now,
-    });
-  }
-}
-
 async function setSkillEmbeddingsApproved(
   ctx: MutationCtx,
   skillId: Id<"skills">,
@@ -8664,23 +8641,6 @@ export const getVersionBySkillAndVersion = query({
   },
 });
 
-async function getBoundedAvailableSkillVersions(ctx: MutationCtx, skillId: Id<"skills">) {
-  const versions = await ctx.db
-    .query("skillVersions")
-    .withIndex("by_skill_active_created", (q) =>
-      q.eq("skillId", skillId).eq("softDeletedAt", undefined),
-    )
-    .take(MAX_OWNER_DELETE_ACTIVE_CHILDREN + 1);
-  if (versions.length > MAX_OWNER_DELETE_ACTIVE_CHILDREN) {
-    throw new ConvexError(
-      "This skill has too many active versions to safely delete an individual version. Remove the whole skill instead.",
-    );
-  }
-  return versions.filter(
-    (version) => version.ownerDeletedAt === undefined && !isKnownMaliciousSkillVersion(version),
-  );
-}
-
 export async function deleteOwnedSkillVersionForActor(
   ctx: MutationCtx,
   actor: Doc<"users">,
@@ -8708,23 +8668,26 @@ export async function deleteOwnedSkillVersionForActor(
     allowedPublisherRoles: ["admin"],
   });
 
-  const activeVersions = await getBoundedAvailableSkillVersions(ctx, skill._id);
-  if (!activeVersions.some((candidate) => candidate._id !== version._id)) {
-    throw new ConvexError(
-      "You cannot delete the only active version. Remove the whole skill instead.",
+  let mustPublishReplacement =
+    skill.latestVersionId === version._id || skill.tags.latest === version._id;
+  if (!mustPublishReplacement && !skill.latestVersionId && !skill.tags.latest) {
+    // Admin cleanup can clear latest pointers, so prove a survivor with one tiny indexed read.
+    const candidates = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_active_created", (q) =>
+        q.eq("skillId", skill._id).eq("softDeletedAt", undefined),
+      )
+      .take(2);
+    mustPublishReplacement = !candidates.some(
+      (candidate) =>
+        candidate._id !== version._id &&
+        candidate.ownerDeletedAt === undefined &&
+        !isKnownMaliciousSkillVersion(candidate),
     );
   }
-
-  const latestPointerAffected =
-    skill.latestVersionId === version._id || skill.tags.latest === version._id;
-  const replacement = latestPointerAffected
-    ? (activeVersions
-        .filter((candidate) => candidate._id !== version._id)
-        .sort(compareSkillVersionsForRestore)[0] ?? null)
-    : null;
-  if (latestPointerAffected && !replacement) {
+  if (mustPublishReplacement) {
     throw new ConvexError(
-      "You cannot delete the only active version. Remove the whole skill instead.",
+      "Publish a replacement version before deleting the current latest version.",
     );
   }
 
@@ -8739,44 +8702,7 @@ export async function deleteOwnedSkillVersionForActor(
     Object.entries(skill.tags ?? {}).filter(([, versionId]) => versionId !== version._id),
   ) as Doc<"skills">["tags"];
 
-  if (latestPointerAffected && replacement) {
-    nextTags.latest = replacement._id;
-    const patch: Partial<Doc<"skills">> = {
-      displayName: skillDisplayNameFromSkillVersion(replacement) ?? skill.slug,
-      summary: skillSummaryFromSkillVersion(replacement),
-      icon: skillIconFromSkillVersion(replacement) ?? skill.icon,
-      latestVersionId: replacement._id,
-      latestVersionSummary: latestVersionSummaryFromSkillVersion(replacement),
-      tags: nextTags,
-      capabilityTags: replacement.capabilityTags,
-      updatedAt: now,
-    };
-    if (!shouldPreserveExistingModerationLock(skill)) {
-      const owner = skill.ownerUserId ? await ctx.db.get(skill.ownerUserId) : null;
-      Object.assign(
-        patch,
-        applySkillManualOverrideToSkillPatch({
-          skill,
-          basePatch: buildScannerModerationPatchFromVersion({
-            owner,
-            version: replacement,
-            now,
-          }),
-          now,
-          stripUpdatedAt: true,
-        }),
-      );
-    }
-    const nextSkill = { ...skill, ...patch } as Doc<"skills">;
-    await ctx.db.patch(skill._id, patch);
-    await adjustGlobalPublicCountForSkillChange(ctx, skill, nextSkill);
-    await setSkillVersionEmbeddingLatestPointers(
-      ctx,
-      [version._id, ...(skill.latestVersionId ? [skill.latestVersionId] : [])],
-      replacement._id,
-      now,
-    );
-  } else if (Object.keys(nextTags).length !== Object.keys(skill.tags ?? {}).length) {
+  if (Object.keys(nextTags).length !== Object.keys(skill.tags ?? {}).length) {
     await ctx.db.patch(skill._id, {
       tags: nextTags,
       updatedAt: now,

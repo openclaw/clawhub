@@ -67,7 +67,6 @@ function makeSkillVersion(id: string, version: string, overrides: Record<string,
 function makeSkillDeletionCtx(options: {
   skill?: Record<string, unknown>;
   versions?: Array<Record<string, unknown>>;
-  embeddings?: Array<Record<string, unknown>>;
   membership?: Record<string, unknown> | null;
 }) {
   const versions = options.versions ?? [
@@ -105,29 +104,6 @@ function makeSkillDeletionCtx(options: {
       softDeletedAt: undefined,
       updatedAt: 20,
     } as Record<string, unknown>);
-  const embeddings = options.embeddings ?? [
-    {
-      _id: "skillEmbeddings:v1",
-      versionId: "skillVersions:v1",
-      isLatest: false,
-      isApproved: false,
-      visibility: "public",
-    },
-    {
-      _id: "skillEmbeddings:v2",
-      versionId: "skillVersions:v2",
-      isLatest: true,
-      isApproved: false,
-      visibility: "public",
-    },
-    {
-      _id: "skillEmbeddings:unrelated",
-      versionId: "skillVersions:unrelated",
-      isLatest: false,
-      isApproved: true,
-      visibility: "public",
-    },
-  ];
   const actors: Record<string, Record<string, unknown>> = {
     "users:owner": { _id: "users:owner", role: "user" },
     "users:admin": { _id: "users:admin", role: "admin" },
@@ -136,54 +112,29 @@ function makeSkillDeletionCtx(options: {
   };
   const audits: Array<Record<string, unknown>> = [];
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const skillVersionTakeLimits: number[] = [];
   const ctx = {
     db: {
       get: vi.fn(async (id: string) => {
         if (id === skill._id) return skill;
         if (id === "publishers:org") return { _id: id, kind: "org" };
-        return (
-          actors[id] ??
-          versions.find((version) => version._id === id) ??
-          embeddings.find((embedding) => embedding._id === id) ??
-          null
-        );
+        return actors[id] ?? versions.find((version) => version._id === id) ?? null;
       }),
       query: vi.fn((table: string) => {
         if (table === "skillVersions") {
           return {
-            withIndex: vi.fn(() => ({
-              take: vi.fn(async (limit: number) => versions.slice(0, limit)),
+            withIndex: vi.fn((index: string) => ({
+              take: vi.fn(async (limit: number) => {
+                if (index !== "by_skill_active_created") {
+                  throw new Error(`Unexpected skillVersions index ${index}`);
+                }
+                skillVersionTakeLimits.push(limit);
+                return versions.filter((version) => !version.softDeletedAt).slice(0, limit);
+              }),
               collect: vi.fn(() => {
-                throw new Error("skill deletion must not collect active versions");
+                throw new Error("skill deletion must not scan version history");
               }),
             })),
-          };
-        }
-        if (table === "skillEmbeddings") {
-          return {
-            withIndex: vi.fn(
-              (
-                _index: string,
-                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
-              ) => {
-                let versionId: unknown;
-                const query = {
-                  eq(field: string, value: unknown) {
-                    if (field === "versionId") versionId = value;
-                    return query;
-                  },
-                };
-                buildQuery?.(query);
-                return {
-                  unique: vi.fn(async () =>
-                    embeddings.find((embedding) => embedding.versionId === versionId),
-                  ),
-                  collect: vi.fn(() => {
-                    throw new Error("skill deletion must not collect embeddings");
-                  }),
-                };
-              },
-            ),
           };
         }
         if (table === "publisherMembers") {
@@ -198,9 +149,7 @@ function makeSkillDeletionCtx(options: {
       patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
         patches.push({ id, patch });
         const row =
-          (id === skill._id ? skill : null) ??
-          versions.find((version) => version._id === id) ??
-          embeddings.find((embedding) => embedding._id === id);
+          (id === skill._id ? skill : null) ?? versions.find((version) => version._id === id);
         if (row) Object.assign(row, patch);
       }),
       insert: vi.fn(async (table: string, row: Record<string, unknown>) => {
@@ -210,7 +159,7 @@ function makeSkillDeletionCtx(options: {
       }),
     },
   };
-  return { actors, audits, ctx, embeddings, patches, skill, versions };
+  return { actors, audits, ctx, patches, skill, skillVersionTakeLimits, versions };
 }
 
 function makePackageRelease(id: string, version: string, overrides: Record<string, unknown> = {}) {
@@ -270,6 +219,13 @@ function makePackageDeletionCtx(options: {
       family: "code-plugin",
       ownerUserId: "users:owner",
       ownerPublisherId: undefined,
+      tags: {
+        latest: "packageReleases:v2",
+        stable: "packageReleases:v2",
+        legacy: "packageReleases:v1",
+      },
+      latestReleaseId: "packageReleases:v2",
+      latestVersionSummary: { version: "2.0.0" },
       softDeletedAt: undefined,
     } as Record<string, unknown>);
   const actors: Record<string, Record<string, unknown>> = {
@@ -279,6 +235,7 @@ function makePackageDeletionCtx(options: {
     "users:org-admin": { _id: "users:org-admin", role: "user" },
   };
   const audits: Array<Record<string, unknown>> = [];
+  const packageReleaseTakeLimits: number[] = [];
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const ctx = {
     db: {
@@ -296,23 +253,35 @@ function makePackageDeletionCtx(options: {
         }
         if (table === "packageReleases") {
           return {
-            withIndex: vi.fn((index: string) => ({
-              unique: vi
-                .fn()
-                .mockResolvedValue(
-                  index === "by_package_version"
-                    ? releases.find((release) => release.version === "2.0.0")
-                    : null,
-                ),
-              take: vi
-                .fn()
-                .mockImplementation(async (limit: number) =>
-                  releases.filter((release) => !release.softDeletedAt).slice(0, limit),
-                ),
-              collect: vi.fn(() => {
-                throw new Error("package deletion must not collect active releases");
-              }),
-            })),
+            withIndex: vi.fn(
+              (
+                index: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                let version: unknown;
+                const query = {
+                  eq(field: string, value: unknown) {
+                    if (field === "version") version = value;
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return {
+                  unique: vi.fn(async () =>
+                    index === "by_package_version"
+                      ? releases.find((release) => release.version === version)
+                      : null,
+                  ),
+                  take: vi.fn(async (limit: number) => {
+                    packageReleaseTakeLimits.push(limit);
+                    return releases.filter((release) => !release.softDeletedAt).slice(0, limit);
+                  }),
+                  collect: vi.fn(() => {
+                    throw new Error("package deletion must not scan release history");
+                  }),
+                };
+              },
+            ),
           };
         }
         if (table === "publisherMembers") {
@@ -336,7 +305,7 @@ function makePackageDeletionCtx(options: {
       }),
     },
   };
-  return { actors, audits, ctx, patches, pkg, releases };
+  return { actors, audits, ctx, packageReleaseTakeLimits, patches, pkg, releases };
 }
 
 function makeTriggerWrappedPackageDeletionCtx(options?: {
@@ -506,7 +475,6 @@ function makeTriggerWrappedPackageDeletionCtx(options?: {
     docs,
     packageReleaseTakeLimits,
     pkgId: pkg._id as string,
-    releaseIds: releases.map((release) => release._id as string),
   };
 }
 
@@ -515,85 +483,88 @@ describe("owner skill version deletion", () => {
     expect(skillsModule.deleteOwnedVersion).toBeTypeOf("function");
   });
 
-  it("deletes latest with provenance, audit, and fallback metadata without changing stats", async () => {
+  it("rejects the latestVersionId target before patching", async () => {
     const deleteOwned = getDeletionHelper<{ versionId: string }>(
       skillsModule,
       "deleteOwnedSkillVersionForActor",
     );
-    const { actors, audits, ctx, embeddings, patches, skill } = makeSkillDeletionCtx({});
-
-    await deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v2" });
-
-    const ownerDeletedPatch = patches.find(({ id }) => id === "skillVersions:v2")?.patch;
-    expect(ownerDeletedPatch).toEqual({
-      softDeletedAt: expect.any(Number),
-      ownerDeletedAt: expect.any(Number),
-      ownerDeletedBy: "users:owner",
-    });
-    expect(ownerDeletedPatch?.softDeletedAt).toBe(ownerDeletedPatch?.ownerDeletedAt);
-    expect(skill).toMatchObject({
-      latestVersionId: "skillVersions:v1",
-      latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
-      displayName: "Demo 1.0.0",
-      summary: "Description 1.0.0",
-      icon: "lucide:1.0.0",
-      capabilityTags: ["cap-1.0.0"],
-      moderationSourceVersionId: "skillVersions:v1",
+    const skill = {
+      ...makeSkillDeletionCtx({}).skill,
       tags: {
         latest: "skillVersions:v1",
-        legacy: "skillVersions:v1",
+        stable: "skillVersions:v2",
       },
-      stats: skillStats,
+    };
+    const { actors, audits, ctx, patches, skillVersionTakeLimits } = makeSkillDeletionCtx({
+      skill,
     });
-    expect(embeddings).toEqual([
-      expect.objectContaining({ versionId: "skillVersions:v1", isLatest: true }),
-      expect.objectContaining({ versionId: "skillVersions:v2", isLatest: false }),
-      expect.objectContaining({
-        versionId: "skillVersions:unrelated",
-        isLatest: false,
-        isApproved: true,
-      }),
-    ]);
-    expect(patches.some(({ id }) => id === "skillEmbeddings:unrelated")).toBe(false);
-    expect(audits).toContainEqual(
-      expect.objectContaining({
-        actorUserId: "users:owner",
-        action: "skill.version.delete",
-        targetType: "skillVersion",
-        targetId: "skillVersions:v2",
-        metadata: expect.objectContaining({
-          skillId: "skills:demo",
-          slug: "demo",
-          version: "2.0.0",
-        }),
-      }),
-    );
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v2" }),
+    ).rejects.toThrow("Publish a replacement version before deleting the current latest version.");
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+    expect(skillVersionTakeLimits).toEqual([]);
   });
 
-  it("deletes a non-latest version without changing latest metadata", async () => {
+  it("rejects the tags.latest target before patching", async () => {
     const deleteOwned = getDeletionHelper<{ versionId: string }>(
       skillsModule,
       "deleteOwnedSkillVersionForActor",
     );
-    const { actors, ctx, skill } = makeSkillDeletionCtx({
-      skill: {
-        ...makeSkillDeletionCtx({}).skill,
-        tags: {
-          latest: "skillVersions:v2",
-          stable: "skillVersions:v2",
-          legacy: "skillVersions:v1",
-        },
+    const skill = {
+      ...makeSkillDeletionCtx({}).skill,
+      tags: {
+        latest: "skillVersions:v1",
+        stable: "skillVersions:v2",
       },
+    };
+    const { actors, audits, ctx, patches, skillVersionTakeLimits } = makeSkillDeletionCtx({
+      skill,
     });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v1" }),
+    ).rejects.toThrow("Publish a replacement version before deleting the current latest version.");
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+    expect(skillVersionTakeLimits).toEqual([]);
+  });
+
+  it("deletes a non-latest version with provenance and audit, removes its tags, and preserves latest metadata", async () => {
+    const deleteOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "deleteOwnedSkillVersionForActor",
+    );
+    const { actors, audits, ctx, patches, skill, skillVersionTakeLimits, versions } =
+      makeSkillDeletionCtx({
+        skill: {
+          ...makeSkillDeletionCtx({}).skill,
+          tags: {
+            latest: "skillVersions:v2",
+            stable: "skillVersions:v2",
+            legacy: "skillVersions:v1",
+          },
+        },
+      });
     const before = {
       latestVersionId: skill.latestVersionId,
       latestVersionSummary: skill.latestVersionSummary,
       displayName: skill.displayName,
       stats: skill.stats,
     };
+    const parsedBefore = versions[0]?.parsed;
 
     await deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v1" });
 
+    const ownerDeletedPatch = patches.find(({ id }) => id === "skillVersions:v1")?.patch;
+    expect(ownerDeletedPatch).toEqual({
+      softDeletedAt: expect.any(Number),
+      ownerDeletedAt: expect.any(Number),
+      ownerDeletedBy: "users:owner",
+    });
+    expect(ownerDeletedPatch?.softDeletedAt).toBe(ownerDeletedPatch?.ownerDeletedAt);
+    expect(versions[0]?.parsed).toEqual(parsedBefore);
     expect(skill).toMatchObject({
       ...before,
       tags: {
@@ -601,39 +572,44 @@ describe("owner skill version deletion", () => {
         stable: "skillVersions:v2",
       },
     });
+    expect(audits).toContainEqual(
+      expect.objectContaining({
+        actorUserId: "users:owner",
+        action: "skill.version.delete",
+        targetType: "skillVersion",
+        targetId: "skillVersions:v1",
+        metadata: expect.objectContaining({
+          skillId: "skills:demo",
+          slug: "demo",
+          version: "1.0.0",
+        }),
+      }),
+    );
+    expect(skillVersionTakeLimits).toEqual([]);
   });
 
-  it("rejects the only active skill version with whole-skill guidance", async () => {
+  it("rejects a pointerless sole active skill version with a two-row compatibility read", async () => {
     const deleteOwned = getDeletionHelper<{ versionId: string }>(
       skillsModule,
       "deleteOwnedSkillVersionForActor",
     );
-    const onlyVersion = makeSkillVersion("skillVersions:v2", "2.0.0");
-    const { actors, ctx, patches } = makeSkillDeletionCtx({ versions: [onlyVersion] });
+    const onlyVersion = makeSkillVersion("skillVersions:v1", "1.0.0");
+    const { actors, audits, ctx, patches, skillVersionTakeLimits } = makeSkillDeletionCtx({
+      skill: {
+        ...makeSkillDeletionCtx({}).skill,
+        latestVersionId: undefined,
+        latestVersionSummary: undefined,
+        tags: {},
+      },
+      versions: [onlyVersion],
+    });
 
     await expect(
-      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v2" }),
-    ).rejects.toThrow(/only active version.*remove the whole skill/i);
+      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v1" }),
+    ).rejects.toThrow("Publish a replacement version before deleting the current latest version.");
+    expect(skillVersionTakeLimits).toEqual([2]);
     expect(patches).toEqual([]);
-  });
-
-  it("rejects individual deletion when active skill history exceeds the bounded repair limit", async () => {
-    const deleteOwned = getDeletionHelper<{ versionId: string }>(
-      skillsModule,
-      "deleteOwnedSkillVersionForActor",
-    );
-    const versions = Array.from({ length: 101 }, (_, index) =>
-      makeSkillVersion(
-        index === 100 ? "skillVersions:v2" : `skillVersions:history-${index}`,
-        index === 100 ? "2.0.0" : `1.0.${index}`,
-      ),
-    );
-    const { actors, ctx, patches } = makeSkillDeletionCtx({ versions });
-
-    await expect(
-      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:v2" }),
-    ).rejects.toThrow(/too many active versions.*remove the whole skill/i);
-    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
   });
 
   it("rejects deletion when the parent skill is not active", async () => {
@@ -712,11 +688,11 @@ describe("owner skill version deletion", () => {
     });
 
     await expect(
-      deleteOwned(ctx, actors["users:org-admin"], { versionId: "skillVersions:v2" }),
+      deleteOwned(ctx, actors["users:org-admin"], { versionId: "skillVersions:v1" }),
     ).resolves.toMatchObject({ ok: true });
     expect(patches).toContainEqual(
       expect.objectContaining({
-        id: "skillVersions:v2",
+        id: "skillVersions:v1",
         patch: expect.objectContaining({ ownerDeletedBy: "users:org-admin" }),
       }),
     );
@@ -743,61 +719,44 @@ describe("owner package release deletion", () => {
     expect(packagesModule.deleteOwnedRelease).toBeTypeOf("function");
   });
 
-  it("deletes latest through the public trigger-wrapped mutation and repairs package metadata", async () => {
-    const { ctx, docs, packageReleaseTakeLimits, pkgId, releaseIds } =
-      makeTriggerWrappedPackageDeletionCtx();
-
-    await deleteOwnedReleaseHandler(ctx, { name: "demo-plugin", version: "2.0.0" });
-
-    const deletedRelease = docs.get(releaseIds[1] as string);
-    expect(deletedRelease).toMatchObject({
-      softDeletedAt: expect.any(Number),
-      ownerDeletedAt: expect.any(Number),
-      ownerDeletedBy: "users:owner",
-    });
-    expect(deletedRelease?.softDeletedAt).toBe(deletedRelease?.ownerDeletedAt);
-    expect(docs.get(pkgId)).toMatchObject({
-      latestReleaseId: "packageReleases:v1",
-      latestVersionSummary: expect.objectContaining({
-        version: "1.0.0",
-        changelog: "1.0.0 changes",
-        compatibility: { openclaw: "^1.0.0" },
-      }),
-      summary: "1.0.0 summary",
-      runtimeId: "runtime.1.0.0",
-      sourceRepo: "openclaw/demo-1.0.0",
-      capabilityTags: ["cap-1.0.0"],
-      executesCode: false,
-      compatibility: { openclaw: "^1.0.0" },
-      capabilities: {
-        capabilityTags: ["cap-1.0.0"],
-        executesCode: false,
-        runtimeId: "runtime.1.0.0",
-      },
-      verification: { tier: "verified" },
-      scanStatus: "not-run",
-      stats: { downloads: 5, installs: 3, stars: 2, versions: 2 },
-    });
-    expect(docs.get(pkgId)?.tags).toEqual({
+  it("rejects latestReleaseId through the public mutation before patching or reading release history", async () => {
+    const { ctx, docs, packageReleaseTakeLimits, pkgId } = makeTriggerWrappedPackageDeletionCtx();
+    const pkg = docs.get(pkgId);
+    if (!pkg) throw new Error("missing package fixture");
+    pkg.tags = {
       latest: "packageReleases:v1",
-      legacy: "packageReleases:v1",
-    });
-    expect(docs.get("packageReleases:v1")).toMatchObject({
-      distTags: ["stable", "latest"],
-    });
-    expect([...docs.values()].find((row) => row.action === "package.release.delete")).toMatchObject(
-      {
-        actorUserId: "users:owner",
-        targetType: "packageRelease",
-        targetId: "packageReleases:v2",
-        metadata: {
-          packageId: "packages:demo",
-          name: "demo-plugin",
-          version: "2.0.0",
-        },
-      },
+      stable: "packageReleases:v2",
+    };
+
+    await expect(
+      deleteOwnedReleaseHandler(ctx, { name: "demo-plugin", version: "2.0.0" }),
+    ).rejects.toThrow("Publish a replacement release before deleting the current latest release.");
+
+    expect(docs.get("packageReleases:v2")?.softDeletedAt).toBeUndefined();
+    expect(docs.get(pkgId)?.latestReleaseId).toBe("packageReleases:v2");
+    expect([...docs.values()].some((row) => row.action === "package.release.delete")).toBe(false);
+    expect(packageReleaseTakeLimits).toEqual([]);
+  });
+
+  it("rejects a tags.latest release before patching", async () => {
+    const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "deleteOwnedPackageReleaseForActor",
     );
-    expect(packageReleaseTakeLimits).toEqual([101, 101]);
+    const pkg = {
+      ...makePackageDeletionCtx({}).pkg,
+      tags: {
+        latest: "packageReleases:v1",
+        stable: "packageReleases:v2",
+      },
+    };
+    const { actors, audits, ctx, patches } = makePackageDeletionCtx({ pkg });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "1.0.0" }),
+    ).rejects.toThrow("Publish a replacement release before deleting the current latest release.");
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
   });
 
   it("deletes non-latest through the public trigger-wrapped mutation without changing latest metadata", async () => {
@@ -831,7 +790,7 @@ describe("owner package release deletion", () => {
       latest: "packageReleases:v2",
       stable: "packageReleases:v2",
     });
-    expect(packageReleaseTakeLimits).toEqual([101]);
+    expect(packageReleaseTakeLimits).toEqual([]);
   });
 
   it("deletes a release with provenance and audit while preserving unrelated metadata", async () => {
@@ -839,29 +798,31 @@ describe("owner package release deletion", () => {
       packagesModule,
       "deleteOwnedPackageReleaseForActor",
     );
-    const { actors, audits, ctx, patches, releases } = makePackageDeletionCtx({});
-    const staticScanBefore = releases[1]?.staticScan;
+    const { actors, audits, ctx, packageReleaseTakeLimits, patches, releases } =
+      makePackageDeletionCtx({});
+    const staticScanBefore = releases[0]?.staticScan;
 
-    await deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "2.0.0" });
+    await deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "1.0.0" });
 
-    const ownerDeletedPatch = patches.find(({ id }) => id === "packageReleases:v2")?.patch;
+    const ownerDeletedPatch = patches.find(({ id }) => id === "packageReleases:v1")?.patch;
     expect(ownerDeletedPatch).toEqual({
       softDeletedAt: expect.any(Number),
       ownerDeletedAt: expect.any(Number),
       ownerDeletedBy: "users:owner",
     });
     expect(ownerDeletedPatch?.softDeletedAt).toBe(ownerDeletedPatch?.ownerDeletedAt);
-    expect(releases[1]?.staticScan).toEqual(staticScanBefore);
+    expect(releases[0]?.staticScan).toEqual(staticScanBefore);
+    expect(packageReleaseTakeLimits).toEqual([]);
     expect(audits).toContainEqual(
       expect.objectContaining({
         actorUserId: "users:owner",
         action: "package.release.delete",
         targetType: "packageRelease",
-        targetId: "packageReleases:v2",
+        targetId: "packageReleases:v1",
         metadata: expect.objectContaining({
           packageId: "packages:demo",
           name: "demo-plugin",
-          version: "2.0.0",
+          version: "1.0.0",
         }),
       }),
     );
@@ -885,11 +846,11 @@ describe("owner package release deletion", () => {
     });
 
     await expect(
-      deleteOwned(ctx, actors["users:org-admin"], { name: "demo-plugin", version: "2.0.0" }),
+      deleteOwned(ctx, actors["users:org-admin"], { name: "demo-plugin", version: "1.0.0" }),
     ).resolves.toMatchObject({ ok: true });
     expect(patches).toContainEqual(
       expect.objectContaining({
-        id: "packageReleases:v2",
+        id: "packageReleases:v1",
         patch: expect.objectContaining({ ownerDeletedBy: "users:org-admin" }),
       }),
     );
@@ -910,57 +871,28 @@ describe("owner package release deletion", () => {
     }
   });
 
-  it("rejects the only active package release with whole-package guidance", async () => {
+  it("rejects a pointerless sole active release with a two-row compatibility read", async () => {
     const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
       packagesModule,
       "deleteOwnedPackageReleaseForActor",
     );
-    const onlyRelease = makePackageRelease("packageReleases:v2", "2.0.0");
-    const { actors, ctx, patches } = makePackageDeletionCtx({ releases: [onlyRelease] });
-
-    await expect(
-      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "2.0.0" }),
-    ).rejects.toThrow(/only active release.*remove the whole package/i);
-    expect(patches).toEqual([]);
-  });
-
-  it("rejects individual deletion when active package history exceeds the bounded repair limit", async () => {
-    const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
-      packagesModule,
-      "deleteOwnedPackageReleaseForActor",
-    );
-    const releases = Array.from({ length: 101 }, (_, index) =>
-      makePackageRelease(
-        index === 100 ? "packageReleases:v2" : `packageReleases:history-${index}`,
-        index === 100 ? "2.0.0" : `1.0.${index}`,
-      ),
-    );
-    const { actors, ctx, patches } = makePackageDeletionCtx({ releases });
-
-    await expect(
-      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "2.0.0" }),
-    ).rejects.toThrow(/too many active releases.*remove the whole package/i);
-    expect(patches).toEqual([]);
-  });
-
-  it("does not count owner-deleted provenance as another active package release", async () => {
-    const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
-      packagesModule,
-      "deleteOwnedPackageReleaseForActor",
-    );
-    const target = makePackageRelease("packageReleases:v2", "2.0.0");
-    const ownerDeleted = makePackageRelease("packageReleases:v1", "1.0.0", {
-      ownerDeletedAt: 10,
-      ownerDeletedBy: "users:owner",
-    });
-    const { actors, ctx, patches } = makePackageDeletionCtx({
-      releases: [ownerDeleted, target],
+    const onlyRelease = makePackageRelease("packageReleases:v1", "1.0.0");
+    const { actors, audits, ctx, packageReleaseTakeLimits, patches } = makePackageDeletionCtx({
+      pkg: {
+        ...makePackageDeletionCtx({}).pkg,
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        tags: {},
+      },
+      releases: [onlyRelease],
     });
 
     await expect(
-      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "2.0.0" }),
-    ).rejects.toThrow(/only active release.*remove the whole package/i);
+      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "1.0.0" }),
+    ).rejects.toThrow("Publish a replacement release before deleting the current latest release.");
+    expect(packageReleaseTakeLimits).toEqual([2]);
     expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
   });
 
   it("rejects an already-unavailable package release", async () => {

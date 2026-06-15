@@ -4289,8 +4289,6 @@ describe("packages public queries", () => {
         latestReleaseId: undefined,
         latestVersionSummary: undefined,
         tags: {},
-        runtimeId: "ownerDeleted.runtime",
-        sourceRepo: "owner/ownerDeleted",
       }),
       releases: [
         makeReleaseDoc({
@@ -4300,8 +4298,6 @@ describe("packages public queries", () => {
           ownerDeletedAt: 100,
           ownerDeletedBy: "users:owner",
           distTags: ["latest"],
-          runtimeId: "ownerDeleted.runtime",
-          sourceRepo: "owner/ownerDeleted",
           createdAt: 20,
         }),
         makeReleaseDoc({
@@ -4309,8 +4305,6 @@ describe("packages public queries", () => {
           version: "1.0.0",
           softDeletedAt: 123,
           distTags: ["stable"],
-          runtimeId: "restored.runtime",
-          sourceRepo: "owner/restored",
           createdAt: 10,
         }),
       ],
@@ -4333,8 +4327,6 @@ describe("packages public queries", () => {
       expect.objectContaining({
         latestReleaseId: "packageReleases:restorable",
         latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
-        runtimeId: "restored.runtime",
-        sourceRepo: "owner/restored",
       }),
     );
   });
