@@ -44,7 +44,7 @@ import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { getClawHubSiteUrl, getSiteMode, getSiteName, getSiteUrlForMode } from "../lib/site";
+import { getClawHubSiteUrl, SITE_NAME } from "../lib/site";
 import {
   ALLOWED_LUCIDE_ICON_NAMES,
   ALLOWED_LUCIDE_ICONS,
@@ -56,10 +56,8 @@ import { useAuthStatus } from "../lib/useAuthStatus";
 
 export const Route = createFileRoute("/import")({
   head: () => {
-    const mode = getSiteMode();
-    const siteName = getSiteName(mode);
-    const siteUrl = getSiteUrlForMode(mode);
-    const title = `Import from GitHub | ${siteName}`;
+    const siteUrl = getClawHubSiteUrl();
+    const title = `Import from GitHub | ${SITE_NAME}`;
     const description =
       "Import SKILL.md and skills.md files from your public GitHub repositories into ClawHub.";
 
@@ -1253,7 +1251,7 @@ function ReviewSkillCard({
   const slug = draft.slug.trim();
   const slugCollision =
     slug && !(slugResult instanceof Error)
-      ? getPublicSlugCollision({ isSoulMode: false, slug, result: slugResult })
+      ? getPublicSlugCollision({ slug, result: slugResult })
       : null;
   const isSlugPending = Boolean(slug && SLUG_PATTERN.test(slug) && slugResult === undefined);
   const showSlugAvailableIcon =
@@ -1546,7 +1544,7 @@ function getDraftIssues({
   } else if (slugResult instanceof Error) {
     issues.push("Could not check slug availability.");
   } else {
-    const collision = getPublicSlugCollision({ isSoulMode: false, slug, result: slugResult });
+    const collision = getPublicSlugCollision({ slug, result: slugResult });
     if (collision) issues.push(collision.message);
   }
   if (Object.values(draft.selected).filter(Boolean).length === 0) {

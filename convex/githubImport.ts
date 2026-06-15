@@ -160,7 +160,7 @@ export const previewGitHubImportCandidate = action({
 });
 
 async function previewGitHubImportCandidateForUser(
-  ctx: Pick<ActionCtx, "runQuery">,
+  ctx: ActionCtx,
   userId: Id<"users">,
   args: { url: string; candidatePath: string },
   fetcher: typeof fetch,
