@@ -225,9 +225,10 @@ type PackageTrustedPublisherDeleteOptions = {
 type PackageDeleteOptions = {
   yes?: boolean;
   json?: boolean;
+  version?: string;
 };
 
-type PackageUndeleteOptions = PackageDeleteOptions;
+type PackageUndeleteOptions = Omit<PackageDeleteOptions, "version">;
 
 type PackageTransferOptions = {
   to: string;
@@ -1306,27 +1307,36 @@ export async function cmdDeletePackage(
 ) {
   const name = nameArg.trim();
   if (!name) fail("Package name required");
+  const version = normalizeDeleteVersion(options.version);
 
   if (!options.yes) {
     if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(`Delete ${name}? (soft delete package and all releases)`);
+    const ok = await promptConfirm(
+      version
+        ? `Delete ${name} version ${version}? (permanent; cannot be restored or republished; publish a replacement first if deleting the current latest version)`
+        : `Delete ${name}? (soft delete package and all releases)`,
+    );
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Deleting ${name}`);
+  const target = version ? `${name} version ${version}` : name;
+  const spinner = createSpinner(`Deleting ${target}`);
   try {
     const result = await apiRequest(
       registry,
       {
         method: "DELETE",
-        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}`,
+        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}${
+          version ? `/versions/${encodeURIComponent(version)}` : ""
+        }`,
         token,
+        ...(version ? { body: { version }, retryCount: 0 } : {}),
       },
       ApiV1DeleteResponseSchema,
     );
-    spinner.succeed(`OK. Deleted ${name}`);
+    spinner.succeed(`OK. Deleted ${target}`);
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     }
@@ -1335,6 +1345,13 @@ export async function cmdDeletePackage(
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+function normalizeDeleteVersion(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const version = value.trim();
+  if (!version) fail("--version cannot be empty");
+  return version;
 }
 
 export async function cmdUndeletePackage(

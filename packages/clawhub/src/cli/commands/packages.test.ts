@@ -18,7 +18,7 @@ import {
 const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
 const httpMocks = createHttpModuleMocks();
-const uiMocks = createUiModuleMocks();
+const uiMocks = createUiModuleMocks({ interactive: true });
 const inspectorMocks = {
   pluginRoot: {
     runCheck: vi.fn(),
@@ -3063,6 +3063,84 @@ describe("package commands", () => {
     );
   });
 
+  it("deletes one package version through the existing endpoint and preserves JSON output", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdDeletePackage(
+      makeOpts(),
+      "@openclaw/zalo",
+      { yes: true, version: " 1.2.3 ", json: true },
+      false,
+    );
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/packages/%40openclaw%2Fzalo/versions/1.2.3",
+        token: "tkn",
+        body: { version: "1.2.3" },
+        retryCount: 0,
+      }),
+      expect.anything(),
+    );
+    expect(mockLog).toHaveBeenCalledWith(JSON.stringify({ ok: true }, null, 2));
+  });
+
+  it("keeps whole-package delete requests unchanged without --version", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdDeletePackage(makeOpts(), "@openclaw/zalo", { yes: true }, false);
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/packages/%40openclaw%2Fzalo",
+        token: "tkn",
+      }),
+      expect.anything(),
+    );
+    expect(httpMocks.apiRequest.mock.calls[0]?.[1]).not.toHaveProperty("body");
+    expect(httpMocks.apiRequest.mock.calls[0]?.[1]).not.toHaveProperty("retryCount");
+  });
+
+  it("confirms that package version deletion is permanent", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdDeletePackage(makeOpts(), "@openclaw/zalo", { version: "1.2.3" }, true);
+
+    expect(uiMocks.promptConfirm).toHaveBeenCalledWith(expect.stringContaining("version 1.2.3"));
+    expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("cannot be restored or republished"),
+    );
+    expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("publish a replacement first"),
+    );
+  });
+
+  it("rejects an empty package version", async () => {
+    await expect(
+      cmdDeletePackage(makeOpts(), "@openclaw/zalo", { yes: true, version: "   " }, false),
+    ).rejects.toThrow(/version.*empty/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("registers --version only on package delete, not package undelete", async () => {
+    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
+    const deleteBlock = cliSource
+      .split('registerCommand(packageCmd, ["package", "delete"])')[1]
+      ?.split('registerCommand(packageCmd, ["package", "undelete"])')[0];
+    const undeleteBlock = cliSource
+      .split('registerCommand(packageCmd, ["package", "undelete"])')[1]
+      ?.split('registerCommand(packageCmd, ["package", "transfer"])')[0];
+
+    expect(deleteBlock).toContain('"--version <version>"');
+    expect(deleteBlock).toContain("cannot be restored or republished");
+    expect(deleteBlock).toContain("publish a replacement first");
+    expect(undeleteBlock).not.toContain('"--version <version>"');
+  });
+
   it("transfers a package to another publisher", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
@@ -3093,6 +3171,9 @@ describe("package commands", () => {
     await expect(cmdDeletePackage(makeOpts(), "@openclaw/zalo", {}, false)).rejects.toThrow(
       /--yes/i,
     );
+    await expect(
+      cmdDeletePackage(makeOpts(), "@openclaw/zalo", { version: "1.2.3" }, false),
+    ).rejects.toThrow(/--yes/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 

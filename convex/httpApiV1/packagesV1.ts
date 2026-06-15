@@ -1,4 +1,5 @@
 import {
+  ApiRoutes,
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageModerationStatusResponseSchema,
@@ -115,6 +116,7 @@ const internalRefs = internal as unknown as {
     setTrustedPublisherForUserInternal: unknown;
     transferPackageOwnerForUserInternal: unknown;
     deleteTrustedPublisherForUserInternal: unknown;
+    deleteOwnedReleaseForUserInternal: unknown;
     getReleasesByIdsInternal: unknown;
     getReleaseByPackageAndVersionInternal: unknown;
     getReleaseByIdInternal: unknown;
@@ -185,6 +187,46 @@ function optionalStringField(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const field = (value as Record<string, unknown>)[key];
   return typeof field === "string" ? field : undefined;
+}
+
+function hasOwnField(value: unknown, key: string) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
+  );
+}
+
+function resolveVersionPathTarget(
+  pathVersion: string | undefined,
+  body: unknown,
+): { version?: string; error?: string } {
+  const rawBodyVersion = optionalStringField(body, "version");
+  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
+    return { error: "Version must be a non-empty string" };
+  }
+  const version = pathVersion?.trim();
+  const bodyVersion = rawBodyVersion?.trim();
+  if (!version || (rawBodyVersion !== undefined && !bodyVersion)) {
+    return { error: "Version cannot be empty" };
+  }
+  if (bodyVersion && bodyVersion !== version) {
+    return { error: "Version does not match request target" };
+  }
+  return { version };
+}
+
+function hasVersionDeleteSelector(request: Request, body: unknown) {
+  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
+}
+
+function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
+  const version =
+    optionalStringField(body, "version")?.trim() ??
+    new URL(request.url).searchParams.get("version")?.trim();
+  return `Version deletion requires DELETE ${basePath}/versions/${
+    version ? encodeURIComponent(version) : "<version>"
+  }.`;
 }
 
 function isTransientConvexContentionMessage(message: string) {
@@ -2789,14 +2831,44 @@ export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Req
   const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
   if (!auth.ok) return auth.response;
 
+  if (packageSegments.length === 2 && packageSegments[0] === "versions" && packageSegments[1]) {
+    try {
+      const body = await readOptionalJson(request);
+      const versionTarget = resolveVersionPathTarget(packageSegments[1], body);
+      if (versionTarget.error) return text(versionTarget.error, 400, rate.headers);
+      await runMutationRef(ctx, internalRefs.packages.deleteOwnedReleaseForUserInternal, {
+        actorUserId: auth.userId,
+        name: packageName,
+        version: versionTarget.version!,
+      });
+      return json({ ok: true }, 200, rate.headers);
+    } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+      return packageOperationErrorToResponse(error, rate.headers, "Package version delete failed");
+    }
+  }
+
   if (packageSegments.length === 0) {
     try {
+      const body = await readOptionalJson(request);
+      if (hasVersionDeleteSelector(request, body)) {
+        return text(
+          versionDeleteRouteGuidance(
+            `${ApiRoutes.packages}/${encodeURIComponent(packageName)}`,
+            request,
+            body,
+          ),
+          400,
+          rate.headers,
+        );
+      }
       await runMutationRef(ctx, internalRefs.packages.softDeletePackageInternal, {
         userId: auth.userId,
         name: packageName,
       });
       return json({ ok: true }, 200, rate.headers);
     } catch (error) {
+      if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
       return softDeleteErrorToResponse("package", error, rate.headers);
     }
   }

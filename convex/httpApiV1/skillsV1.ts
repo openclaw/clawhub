@@ -51,6 +51,7 @@ import { publishVersionForUser } from "../skills";
 import {
   MAX_RAW_FILE_BYTES,
   formatAuthzMessage,
+  formatUserFacingErrorMessage,
   getPathSegments,
   json,
   parseJsonPayload,
@@ -319,6 +320,7 @@ const internalRefs = internal as unknown as {
     repairPendingSkillVtAnalysis: unknown;
   };
   skills: {
+    deleteOwnedVersionForUserInternal: unknown;
     getSecurityVerdictTargetInternal: unknown;
     getVerifyTargetBySlugInternal: unknown;
     getSkillBySlugInternal: unknown;
@@ -2987,11 +2989,34 @@ export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Reque
   if (!rate.ok) return rate.response;
 
   const segments = getPathSegments(request, "/api/v1/skills/");
-  if (segments.length !== 1) return text("Not found", 404, rate.headers);
+  const isWholeDelete = segments.length === 1;
+  const isVersionDelete = segments.length === 3 && segments[1] === "versions";
+  if (!isWholeDelete && !isVersionDelete) return text("Not found", 404, rate.headers);
   const slug = segments[0]?.trim().toLowerCase() ?? "";
   try {
     const { userId } = await requireApiTokenUser(ctx, request);
     const body = await readOptionalJson(request);
+    if (isVersionDelete) {
+      const versionTarget = resolveVersionPathTarget(segments[2], body);
+      if (versionTarget.error) return text(versionTarget.error, 400, rate.headers);
+      await runMutationRef(ctx, internalRefs.skills.deleteOwnedVersionForUserInternal, {
+        actorUserId: userId,
+        slug,
+        version: versionTarget.version!,
+      });
+      return json({ ok: true }, 200, rate.headers);
+    }
+    if (hasVersionDeleteSelector(request, body)) {
+      return text(
+        versionDeleteRouteGuidance(
+          `${ApiRoutes.skills}/${encodeURIComponent(slug)}`,
+          request,
+          body,
+        ),
+        400,
+        rate.headers,
+      );
+    }
     const reason = optionalStringField(body, "reason");
     const result = await ctx.runMutation(internal.skills.setSkillSoftDeletedInternal, {
       userId,
@@ -3001,8 +3026,23 @@ export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Reque
     });
     return json(result, 200, rate.headers);
   } catch (error) {
+    if (error instanceof SyntaxError) return text("Invalid JSON", 400, rate.headers);
+    if (isVersionDelete) return skillVersionDeleteErrorToResponse(error, rate.headers);
     return softDeleteErrorToResponse("skill", error, rate.headers);
   }
+}
+
+function skillVersionDeleteErrorToResponse(error: unknown, headers: HeadersInit) {
+  const message = formatUserFacingErrorMessage(error, "Skill version delete failed");
+  const lower = message.toLowerCase();
+  if (lower.includes("unauthorized")) {
+    return text(formatAuthzMessage(error, "Unauthorized"), 401, headers);
+  }
+  if (lower.includes("forbidden")) {
+    return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
+  }
+  if (lower.includes("not found")) return text(message, 404, headers);
+  return text(message, 400, headers);
 }
 
 async function readOptionalJson(request: Request): Promise<unknown> {
@@ -3015,6 +3055,46 @@ function optionalStringField(value: unknown, key: string): string | undefined {
   if (!value || typeof value !== "object") return undefined;
   const field = (value as Record<string, unknown>)[key];
   return typeof field === "string" ? field : undefined;
+}
+
+function hasOwnField(value: unknown, key: string) {
+  return Boolean(
+    value &&
+    typeof value === "object" &&
+    Object.prototype.hasOwnProperty.call(value as Record<string, unknown>, key),
+  );
+}
+
+function resolveVersionPathTarget(
+  pathVersion: string | undefined,
+  body: unknown,
+): { version?: string; error?: string } {
+  const rawBodyVersion = optionalStringField(body, "version");
+  if (hasOwnField(body, "version") && rawBodyVersion === undefined) {
+    return { error: "Version must be a non-empty string" };
+  }
+  const version = pathVersion?.trim();
+  const bodyVersion = rawBodyVersion?.trim();
+  if (!version || (rawBodyVersion !== undefined && !bodyVersion)) {
+    return { error: "Version cannot be empty" };
+  }
+  if (bodyVersion && bodyVersion !== version) {
+    return { error: "Version does not match request target" };
+  }
+  return { version };
+}
+
+function hasVersionDeleteSelector(request: Request, body: unknown) {
+  return hasOwnField(body, "version") || new URL(request.url).searchParams.has("version");
+}
+
+function versionDeleteRouteGuidance(basePath: string, request: Request, body: unknown) {
+  const version =
+    optionalStringField(body, "version")?.trim() ??
+    new URL(request.url).searchParams.get("version")?.trim();
+  return `Version deletion requires DELETE ${basePath}/versions/${
+    version ? encodeURIComponent(version) : "<version>"
+  }.`;
 }
 
 async function chunkedParallel<T, R>(

@@ -1,5 +1,6 @@
 /* @vitest-environment node */
 
+import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -12,7 +13,7 @@ import {
 const authTokenMocks = createAuthTokenModuleMocks();
 const registryMocks = createRegistryModuleMocks();
 const httpMocks = createHttpModuleMocks();
-const uiMocks = createUiModuleMocks();
+const uiMocks = createUiModuleMocks({ interactive: true });
 
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
@@ -41,6 +42,95 @@ describe("delete/undelete", () => {
       expect.objectContaining({ method: "DELETE", path: "/api/v1/skills/demo" }),
       expect.anything(),
     );
+  });
+
+  it("deletes one skill version through the existing endpoint", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdDeleteSkill(makeGlobalOpts(), "demo", { yes: true, version: " 1.2.3 " }, false);
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/skills/demo/versions/1.2.3",
+        body: { version: "1.2.3" },
+        retryCount: 0,
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("keeps whole-skill delete requests unchanged without --version", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdDeleteSkill(makeGlobalOpts(), "demo", { yes: true }, false);
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        method: "DELETE",
+        path: "/api/v1/skills/demo",
+        body: undefined,
+      }),
+      expect.anything(),
+    );
+    expect(httpMocks.apiRequest.mock.calls[0]?.[1]).not.toHaveProperty("retryCount");
+  });
+
+  it("confirms that skill version deletion is permanent", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({ ok: true });
+
+    await cmdDeleteSkill(makeGlobalOpts(), "demo", { version: "1.2.3" }, true);
+
+    expect(uiMocks.promptConfirm).toHaveBeenCalledWith(expect.stringContaining("version 1.2.3"));
+    expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("cannot be restored or republished"),
+    );
+    expect(uiMocks.promptConfirm).toHaveBeenCalledWith(
+      expect.stringContaining("publish a replacement first"),
+    );
+  });
+
+  it("requires --yes for non-interactive skill version deletion", async () => {
+    await expect(
+      cmdDeleteSkill(makeGlobalOpts(), "demo", { version: "1.2.3" }, false),
+    ).rejects.toThrow(/--yes/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty skill version", async () => {
+    await expect(
+      cmdDeleteSkill(makeGlobalOpts(), "demo", { yes: true, version: "   " }, false),
+    ).rejects.toThrow(/version.*empty/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects whole-skill moderation reasons for version deletion", async () => {
+    await expect(
+      cmdDeleteSkill(
+        makeGlobalOpts(),
+        "demo",
+        { yes: true, version: "1.2.3", reason: "cleanup" },
+        false,
+      ),
+    ).rejects.toThrow(/whole-skill deletion/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+
+  it("registers --version only on delete, not undelete", async () => {
+    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
+    const deleteBlock = cliSource
+      .split('registerCommand(program, ["delete"])')[1]
+      ?.split('registerCommand(program, ["hide"])')[0];
+    const undeleteBlock = cliSource
+      .split('registerCommand(program, ["undelete"])')[1]
+      ?.split('registerCommand(program, ["unhide"])')[0];
+
+    expect(deleteBlock).toContain('"--version <version>"');
+    expect(deleteBlock).toContain("cannot be restored or republished");
+    expect(deleteBlock).toContain("publish a replacement first");
+    expect(undeleteBlock).not.toContain('"--version <version>"');
   });
 
   it("prints the slug reservation expiry returned by delete", async () => {

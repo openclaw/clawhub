@@ -8725,6 +8725,37 @@ export async function deleteOwnedSkillVersionForActor(
   return { ok: true as const, skillId: skill._id, versionId: version._id };
 }
 
+export const deleteOwnedVersionForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    slug: v.string(),
+    version: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const slug = args.slug.trim().toLowerCase();
+    if (!slug) throw new ConvexError("Slug required");
+    const version = args.version.trim();
+    if (!version) throw new ConvexError("Version required");
+
+    const skill = await ctx.db
+      .query("skills")
+      .withIndex("by_slug", (q) => q.eq("slug", slug))
+      .unique();
+    if (!skill) throw new ConvexError("Skill not found");
+
+    const skillVersion = await ctx.db
+      .query("skillVersions")
+      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", version))
+      .unique();
+    if (!skillVersion) throw new ConvexError("Skill version not found");
+
+    return await deleteOwnedSkillVersionForActor(ctx, actor, { versionId: skillVersion._id });
+  },
+});
+
 export const deleteOwnedVersion = mutation({
   args: { versionId: v.id("skillVersions") },
   handler: async (ctx, args) => {

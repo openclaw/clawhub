@@ -407,9 +407,13 @@ registerCommand(scanCmd, ["scan", "download"])
   });
 
 registerCommand(program, ["delete"])
-  .description("Soft-delete one of your skills")
+  .description("Soft-delete a skill or permanently delete one version")
   .argument("<slug>", "Skill slug")
-  .option("--reason <text>", "Moderation note/reason")
+  .option(
+    "--version <version>",
+    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+  )
+  .option("--reason <text>", "Whole-skill moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
@@ -591,8 +595,12 @@ registerCommand(packageCmd, ["package", "validate"])
   });
 
 registerCommand(packageCmd, ["package", "delete"])
-  .description("Soft-delete a package and all releases")
+  .description("Soft-delete a package or permanently delete one version")
   .argument("<name>", "Package name")
+  .option(
+    "--version <version>",
+    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+  )
   .option("--yes", "Skip confirmation")
   .option("--json", "Output JSON")
   .action(async (name, options) => {

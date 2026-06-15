@@ -4882,6 +4882,26 @@ export async function deleteOwnedPackageReleaseForActor(
   return { ok: true as const, packageId: pkg._id, releaseId: release._id };
 }
 
+export const deleteOwnedReleaseForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const version = args.version.trim();
+    if (!version) throw new ConvexError("Version required");
+
+    return await deleteOwnedPackageReleaseForActor(ctx, actor, {
+      name: args.name,
+      version,
+    });
+  },
+});
+
 export const deleteOwnedRelease = mutation({
   args: { name: v.string(), version: v.string() },
   handler: async (ctx, args) => {
