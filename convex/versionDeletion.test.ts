@@ -1146,6 +1146,42 @@ describe("owner package release deletion", () => {
     expect(audits).toEqual([]);
   });
 
+  it("rejects a release whose own distTags mark it latest despite stale package pointers", async () => {
+    const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "deleteOwnedPackageReleaseForActor",
+    );
+    const { actors, audits, ctx, packageReleaseTakeLimits, patches } = makePackageDeletionCtx({
+      pkg: {
+        ...makePackageDeletionCtx({}).pkg,
+        latestReleaseId: "packageReleases:revoked",
+        latestVersionSummary: { version: "2.0.0" },
+        tags: { latest: "packageReleases:revoked" },
+      },
+      releases: [
+        makePackageRelease("packageReleases:target", "1.0.0", {
+          distTags: ["latest", "stable"],
+        }),
+        makePackageRelease("packageReleases:revoked", "2.0.0", {
+          manualModeration: {
+            state: "revoked",
+            reason: "confirmed compromise",
+            reviewerUserId: "users:moderator",
+            reviewedAt: 30,
+          },
+        }),
+        makePackageRelease("packageReleases:survivor", "3.0.0"),
+      ],
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "1.0.0" }),
+    ).rejects.toThrow("Publish a replacement release before deleting the current latest release.");
+    expect(packageReleaseTakeLimits).toEqual([]);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
   it("deletes non-latest through the public trigger-wrapped mutation without changing latest metadata", async () => {
     const { ctx, docs, packageReleaseTakeLimits, pkgId } = makeTriggerWrappedPackageDeletionCtx();
     const pkgBefore = docs.get(pkgId);

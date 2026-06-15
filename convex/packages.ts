@@ -4920,7 +4920,9 @@ export async function deleteOwnedPackageReleaseForActor(
   }
 
   let mustPublishReplacement =
-    pkg.latestReleaseId === release._id || pkg.tags.latest === release._id;
+    pkg.latestReleaseId === release._id ||
+    pkg.tags.latest === release._id ||
+    release.distTags?.includes("latest") === true;
   if (!mustPublishReplacement && !(await hasAvailableLatestPackageReleasePointer(ctx, pkg))) {
     // Admin cleanup can clear latest pointers, so prove a survivor with a bounded indexed read.
     mustPublishReplacement = !(await hasBoundedAvailablePackageReleaseSurvivor(
