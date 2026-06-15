@@ -128,7 +128,6 @@ import type * as registryArtifactBackups from "../registryArtifactBackups.js";
 import type * as registryArtifactBackupsNode from "../registryArtifactBackupsNode.js";
 import type * as registryArtifactRestore from "../registryArtifactRestore.js";
 import type * as registryArtifactRestoreMutations from "../registryArtifactRestoreMutations.js";
-import type * as removeApiKeyRequiredData from "../removeApiKeyRequiredData.js";
 import type * as search from "../search.js";
 import type * as securityDataset from "../securityDataset.js";
 import type * as securityDatasetNode from "../securityDatasetNode.js";
@@ -273,7 +272,6 @@ declare const fullApi: ApiFromModules<{
   registryArtifactBackupsNode: typeof registryArtifactBackupsNode;
   registryArtifactRestore: typeof registryArtifactRestore;
   registryArtifactRestoreMutations: typeof registryArtifactRestoreMutations;
-  removeApiKeyRequiredData: typeof removeApiKeyRequiredData;
   search: typeof search;
   securityDataset: typeof securityDataset;
   securityDatasetNode: typeof securityDatasetNode;

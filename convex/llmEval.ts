@@ -56,16 +56,6 @@ const MAX_PACKAGE_ENV_DECLARATIONS = 50;
 const MAX_PACKAGE_CONFIG_DECLARATIONS = 50;
 const MAX_PACKAGE_ENV_VALUE_LENGTH = 200;
 
-export async function drainLegacyApiKeyRequirementEvaluation(): Promise<null> {
-  return null;
-}
-
-// Temporary drain for jobs scheduled before the API-key badge evaluator was retired.
-export const evaluateApiKeyRequirement = internalAction({
-  args: { versionId: v.id("skillVersions") },
-  handler: drainLegacyApiKeyRequirementEvaluation,
-});
-
 async function runQueryRef<T>(
   ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
   ref: unknown,

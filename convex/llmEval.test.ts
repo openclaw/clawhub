@@ -2,12 +2,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { assembleEvalUserMessage, type SkillEvalContext } from "./lib/securityPrompt";
-import {
-  backfillLlmEval,
-  drainLegacyApiKeyRequirementEvaluation,
-  evaluateWithLlm,
-  packageOpenClawEnvironmentForPrompt,
-} from "./llmEval";
+import { backfillLlmEval, evaluateWithLlm, packageOpenClawEnvironmentForPrompt } from "./llmEval";
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -37,12 +32,6 @@ const evaluateWithLlmHandler = (
 )._handler;
 const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
 const originalFetch = globalThis.fetch;
-
-describe("retired API key evaluator drain", () => {
-  it("keeps legacy scheduled jobs harmless until the cleanup deploy", async () => {
-    await expect(drainLegacyApiKeyRequirementEvaluation()).resolves.toBeNull();
-  });
-});
 
 afterEach(() => {
   if (originalOpenAiApiKey === undefined) {
