@@ -553,6 +553,33 @@ function isKnownMaliciousSkillVersion(
   return patch.moderationVerdict === "malicious";
 }
 
+type SkillVersionOwnerDeleteAvailability = Pick<
+  Doc<"skillVersions">,
+  | "_id"
+  | "skillId"
+  | "softDeletedAt"
+  | "ownerDeletedAt"
+  | "staticScan"
+  | "vtAnalysis"
+  | "llmAnalysis"
+> & {
+  // Exact-version moderator revocation lands separately; stay compatible before its schema does.
+  manualRevocation?: unknown;
+};
+
+function isSkillVersionAvailableForOwnerDeleteSafety(
+  version: SkillVersionOwnerDeleteAvailability | null | undefined,
+  skillId: Id<"skills">,
+) {
+  return Boolean(
+    version &&
+    isPublicSkillVersionAvailableForSkill(version, skillId) &&
+    version.ownerDeletedAt === undefined &&
+    !version.manualRevocation &&
+    !isKnownMaliciousSkillVersion(version),
+  );
+}
+
 function compareSkillVersionsForRestore(
   left: Pick<Doc<"skillVersions">, "version" | "createdAt">,
   right: Pick<Doc<"skillVersions">, "version" | "createdAt">,
@@ -8653,14 +8680,28 @@ async function hasBoundedAvailableSkillVersionSurvivor(
   const hasSurvivor = candidates.some(
     (candidate) =>
       candidate._id !== targetVersionId &&
-      candidate.ownerDeletedAt === undefined &&
-      !isKnownMaliciousSkillVersion(candidate),
+      isSkillVersionAvailableForOwnerDeleteSafety(candidate, skillId),
   );
   if (hasSurvivor) return true;
   if (candidates.length > MAX_POINTERLESS_VERSION_SURVIVOR_SCAN) {
     throw new ConvexError(
       "This skill has too many active versions to safely delete an individual version.",
     );
+  }
+  return false;
+}
+
+async function hasAvailableLatestSkillVersionPointer(
+  ctx: MutationCtx,
+  skill: Pick<Doc<"skills">, "_id" | "latestVersionId" | "tags">,
+) {
+  const pointerIds = new Set<Id<"skillVersions">>();
+  if (skill.latestVersionId) pointerIds.add(skill.latestVersionId);
+  if (skill.tags.latest) pointerIds.add(skill.tags.latest);
+
+  for (const pointerId of pointerIds) {
+    const pointer = await ctx.db.get(pointerId);
+    if (isSkillVersionAvailableForOwnerDeleteSafety(pointer, skill._id)) return true;
   }
   return false;
 }
@@ -8683,11 +8724,7 @@ export async function deleteOwnedSkillVersionForActor(
     allowedPublisherRoles: ["admin"],
   });
 
-  if (
-    version.softDeletedAt ||
-    version.ownerDeletedAt !== undefined ||
-    isKnownMaliciousSkillVersion(version)
-  ) {
+  if (!isSkillVersionAvailableForOwnerDeleteSafety(version, skill._id)) {
     throw new ConvexError("This skill version is already unavailable and cannot be deleted.");
   }
   if (skill.softDeletedAt || (skill.moderationStatus ?? "active") !== "active") {
@@ -8696,7 +8733,7 @@ export async function deleteOwnedSkillVersionForActor(
 
   let mustPublishReplacement =
     skill.latestVersionId === version._id || skill.tags.latest === version._id;
-  if (!mustPublishReplacement && !skill.latestVersionId && !skill.tags.latest) {
+  if (!mustPublishReplacement && !(await hasAvailableLatestSkillVersionPointer(ctx, skill))) {
     // Admin cleanup can clear latest pointers, so prove a survivor with a bounded indexed read.
     mustPublishReplacement = !(await hasBoundedAvailableSkillVersionSurvivor(
       ctx,

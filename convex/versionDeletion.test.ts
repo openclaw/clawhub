@@ -695,6 +695,155 @@ describe("owner skill version deletion", () => {
     expect(audits).toEqual([]);
   });
 
+  it("does not count a manually revoked pointerless version as an available survivor", async () => {
+    const deleteOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "deleteOwnedSkillVersionForActor",
+    );
+    const { actors, audits, ctx, patches, skillVersionTakeLimits } = makeSkillDeletionCtx({
+      skill: {
+        ...makeSkillDeletionCtx({}).skill,
+        latestVersionId: undefined,
+        latestVersionSummary: undefined,
+        tags: {},
+      },
+      versions: [
+        makeSkillVersion("skillVersions:target", "1.0.0"),
+        makeSkillVersion("skillVersions:revoked", "2.0.0", {
+          manualRevocation: {
+            reason: "confirmed compromise",
+            reviewerUserId: "users:moderator",
+            revokedAt: 30,
+          },
+        }),
+      ],
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:target" }),
+    ).rejects.toThrow("Publish a replacement version before deleting the current latest version.");
+    expect(skillVersionTakeLimits).toEqual([101]);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
+  it("requires a survivor when latest pointers reference an unavailable version", async () => {
+    const deleteOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "deleteOwnedSkillVersionForActor",
+    );
+    const unavailableCases = [
+      { softDeletedAt: 30 },
+      { ownerDeletedAt: 30 },
+      {
+        llmAnalysis: {
+          status: "malicious",
+          checkedAt: 30,
+        },
+      },
+      {
+        manualRevocation: {
+          reason: "confirmed compromise",
+          reviewerUserId: "users:moderator",
+          revokedAt: 30,
+        },
+      },
+    ];
+
+    for (const unavailable of unavailableCases) {
+      const { actors, audits, ctx, patches, skillVersionTakeLimits } = makeSkillDeletionCtx({
+        skill: {
+          ...makeSkillDeletionCtx({}).skill,
+          latestVersionId: "skillVersions:unavailable",
+          latestVersionSummary: { version: "2.0.0" },
+          tags: { latest: "skillVersions:unavailable" },
+        },
+        versions: [
+          makeSkillVersion("skillVersions:target", "1.0.0"),
+          makeSkillVersion("skillVersions:unavailable", "2.0.0", unavailable),
+        ],
+      });
+
+      await expect(
+        deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:target" }),
+      ).rejects.toThrow(
+        "Publish a replacement version before deleting the current latest version.",
+      );
+      expect(skillVersionTakeLimits).toEqual([101]);
+      expect(patches).toEqual([]);
+      expect(audits).toEqual([]);
+    }
+  });
+
+  it("allows deletion when unavailable latest pointers have another available survivor", async () => {
+    const deleteOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "deleteOwnedSkillVersionForActor",
+    );
+    const { actors, ctx, patches, skillVersionTakeLimits, versions } = makeSkillDeletionCtx({
+      skill: {
+        ...makeSkillDeletionCtx({}).skill,
+        latestVersionId: "skillVersions:revoked",
+        latestVersionSummary: { version: "2.0.0" },
+        tags: { latest: "skillVersions:revoked" },
+      },
+      versions: [
+        makeSkillVersion("skillVersions:target", "1.0.0"),
+        makeSkillVersion("skillVersions:revoked", "2.0.0", {
+          manualRevocation: {
+            reason: "confirmed compromise",
+            reviewerUserId: "users:moderator",
+            revokedAt: 30,
+          },
+        }),
+        makeSkillVersion("skillVersions:survivor", "3.0.0"),
+      ],
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:target" }),
+    ).resolves.toMatchObject({ ok: true });
+    expect(skillVersionTakeLimits).toEqual([101]);
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        id: "skillVersions:target",
+        patch: expect.objectContaining({ ownerDeletedBy: "users:owner" }),
+      }),
+    );
+    expect((versions[1] as Record<string, unknown> | undefined)?.manualRevocation).toEqual({
+      reason: "confirmed compromise",
+      reviewerUserId: "users:moderator",
+      revokedAt: 30,
+    });
+  });
+
+  it("rejects deletion of a manually revoked version without overwriting revocation evidence", async () => {
+    const deleteOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "deleteOwnedSkillVersionForActor",
+    );
+    const manualRevocation = {
+      reason: "confirmed compromise",
+      reviewerUserId: "users:moderator",
+      revokedAt: 30,
+    };
+    const { actors, audits, ctx, patches, versions } = makeSkillDeletionCtx({
+      versions: [
+        makeSkillVersion("skillVersions:revoked", "1.0.0", { manualRevocation }),
+        makeSkillVersion("skillVersions:v2", "2.0.0"),
+      ],
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:revoked" }),
+    ).rejects.toThrow(/already unavailable/i);
+    expect((versions[0] as Record<string, unknown> | undefined)?.manualRevocation).toEqual(
+      manualRevocation,
+    );
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
   it("allows pointerless skill deletion when unavailable candidates precede a valid survivor", async () => {
     const deleteOwned = getDeletionHelper<{ versionId: string }>(
       skillsModule,
