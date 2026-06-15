@@ -889,14 +889,15 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   if (normalized === "rating" || normalized === "stars" || normalized === "star") {
     return { sort: "rating", apiSort: "stars" };
   }
+  if (normalized === "installs" || normalized === "install") {
+    return { sort: "installs", apiSort: "installsAllTime" };
+  }
   if (
-    normalized === "installs" ||
-    normalized === "install" ||
     normalized === "installscurrent" ||
     normalized === "installs-current" ||
     normalized === "current"
   ) {
-    return { sort: "installs", apiSort: "installsAllTime" };
+    return { sort: "installs", apiSort: "installsCurrent" };
   }
   if (normalized === "installsalltime" || normalized === "installs-all-time") {
     return { sort: "installsAllTime", apiSort: "installsAllTime" };

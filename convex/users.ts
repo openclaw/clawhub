@@ -26,6 +26,10 @@ import {
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
 import {
+  getPackagePublisherContribution,
+  getSkillPublisherContribution,
+} from "./lib/publisherStats";
+import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
   normalizeReservedHandle,
@@ -1252,17 +1256,44 @@ export const getByHandle = query({
   },
 });
 
+async function getPublisherInstallFallback(
+  ctx: Pick<QueryCtx, "db">,
+  publisherId: Id<"publishers">,
+) {
+  const [skills, packages] = await Promise.all([
+    ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+      )
+      .collect(),
+    ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+      )
+      .collect(),
+  ]);
+  return [
+    ...skills.map(getSkillPublisherContribution),
+    ...packages.map(getPackagePublisherContribution),
+  ].reduce((total, contribution) => total + contribution.totalInstalls, 0);
+}
+
 /** Lightweight aggregate stats for user hover tooltips. */
 export const getHoverStats = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
     const publisher = user ? await getPersonalPublisherForUserOrFallback(ctx, user) : null;
+    const totalInstalls = publisher
+      ? (publisher.totalInstalls ?? (await getPublisherInstallFallback(ctx, publisher._id)))
+      : 0;
 
     return {
       publishedSkills: publisher?.publishedSkills ?? user?.publishedSkills ?? 0,
       totalStars: publisher?.totalStars ?? user?.totalStars ?? 0,
-      totalInstalls: publisher?.totalInstalls ?? 0,
+      totalInstalls,
     };
   },
 });

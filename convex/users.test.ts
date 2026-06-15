@@ -1400,6 +1400,86 @@ describe("users.getHoverStats", () => {
       totalInstalls: 37,
     });
   });
+
+  it("computes installs when a personal publisher aggregate is not backfilled", async () => {
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:owner") {
+        return {
+          _id: "users:owner",
+          _creationTime: 1,
+          handle: "owner",
+          displayName: "Owner",
+          name: "Owner",
+          email: "owner@example.com",
+          role: "user",
+          createdAt: 1,
+          personalPublisherId: "publishers:owner",
+        };
+      }
+      if (id === "publishers:owner") {
+        return {
+          _id: "publishers:owner",
+          _creationTime: 1,
+          kind: "user",
+          handle: "owner",
+          displayName: "Owner",
+          publishedSkills: 1,
+          totalStars: 2,
+          createdAt: 1,
+          updatedAt: 1,
+        };
+      }
+      return null;
+    });
+    const query = vi.fn((table: string) => ({
+      withIndex: (indexName: string) => {
+        if (indexName !== "by_owner_publisher_active_updated") {
+          throw new Error(`Unexpected ${table} index ${indexName}`);
+        }
+        return {
+          collect: async () =>
+            table === "skills"
+              ? [
+                  {
+                    _id: "skills:demo",
+                    _creationTime: 1,
+                    ownerPublisherId: "publishers:owner",
+                    slug: "demo",
+                    stats: {
+                      downloads: 0,
+                      stars: 2,
+                      installsCurrent: 7,
+                      installsAllTime: 12,
+                      comments: 0,
+                      versions: 1,
+                    },
+                    statsInstallsAllTime: 12,
+                    createdAt: 1,
+                    updatedAt: 1,
+                  },
+                ]
+              : [
+                  {
+                    _id: "packages:demo",
+                    _creationTime: 1,
+                    ownerPublisherId: "publishers:owner",
+                    stats: { downloads: 0, installs: 8, stars: 0, versions: 1 },
+                    createdAt: 1,
+                    updatedAt: 1,
+                  },
+                ],
+        };
+      },
+    }));
+
+    const result = await getHoverStatsHandler({ db: { get, query } }, { userId: "users:owner" });
+
+    expect(result).toEqual({
+      publishedSkills: 1,
+      totalStars: 2,
+      totalInstalls: 20,
+    });
+  });
 });
 
 describe("users.ensurePublisherHandleInternal", () => {

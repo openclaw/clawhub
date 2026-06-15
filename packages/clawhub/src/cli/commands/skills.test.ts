@@ -234,6 +234,19 @@ describe("cmdExplore", () => {
     expect(third.searchParams.get("sort")).toBe("trending");
   });
 
+  it("keeps explicit current-install aliases on the current install sort", async () => {
+    mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
+
+    await cmdExplore(makeOpts(), { sort: "installsCurrent" });
+    await cmdExplore(makeOpts(), { sort: "installs-current" });
+    await cmdExplore(makeOpts(), { sort: "current" });
+
+    for (const call of mockApiRequest.mock.calls) {
+      const url = new URL(String(call[1]?.url));
+      expect(url.searchParams.get("sort")).toBe("installsCurrent");
+    }
+  });
+
   it("does not expose downloads as an explore sort", async () => {
     await expect(cmdExplore(makeOpts(), { sort: "downloads" })).rejects.toThrow(
       'Invalid sort "downloads". Use newest, updated, rating, installs, installsAllTime, or trending.',

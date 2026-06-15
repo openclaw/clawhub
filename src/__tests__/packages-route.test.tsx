@@ -163,7 +163,12 @@ describe("plugins route", () => {
       search: Record<string, unknown>,
     ) => Record<string, unknown>;
 
-    expect(validateSearch({ sort: "downloads" }).sort).toBe("installs");
+    expect(validateSearch({ sort: "downloads", cursor: "legacy-download-cursor" })).toEqual(
+      expect.objectContaining({
+        sort: "installs",
+        cursor: undefined,
+      }),
+    );
   });
 
   it("redirects search-only sorts back to default when there is no query", async () => {

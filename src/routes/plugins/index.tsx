@@ -196,7 +196,10 @@ export const Route = createFileRoute("/plugins/")({
       typeof search.category === "string" && isPluginCategorySlug(search.category)
         ? search.category
         : undefined,
-    cursor: typeof search.cursor === "string" && search.cursor ? search.cursor : undefined,
+    cursor:
+      search.sort !== "downloads" && typeof search.cursor === "string" && search.cursor
+        ? search.cursor
+        : undefined,
     featured:
       search.featured === true || search.featured === "true" || search.featured === "1"
         ? true
