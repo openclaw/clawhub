@@ -118,6 +118,7 @@ import {
 import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import {
   computeIsSuspicious,
+  isSoftDeletedSkillEligibleForAdminTransfer,
   isSkillReviewFlagged,
   isSkillSuspicious,
   isSkillTransferBlockedByModeration,
@@ -9872,6 +9873,7 @@ async function transferSkillOwnershipAndEmbeddings(
     ownerUserId: Id<"users">;
     ownerPublisherId?: Id<"publishers"> | null;
     now: number;
+    allowSoftDeleted?: boolean;
   },
 ) {
   const patch: Partial<Doc<"skills">> = {
@@ -9887,7 +9889,10 @@ async function transferSkillOwnershipAndEmbeddings(
   const publisherChanged =
     "ownerPublisherId" in params && params.skill.ownerPublisherId !== params.ownerPublisherId;
   if (!ownerChanged && !publisherChanged) return;
-  if (isSkillTransferBlockedByModeration(params.skill)) {
+  if (
+    isSkillTransferBlockedByModeration(params.skill) &&
+    !(params.allowSoftDeleted && isSoftDeletedSkillEligibleForAdminTransfer(params.skill))
+  ) {
     throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
   }
 
@@ -9939,6 +9944,8 @@ async function canManagePublisherDestination(
   actor: Doc<"users">,
   publisher: Doc<"publishers">,
 ) {
+  // Platform-admin transfers are audited staff recovery/moderation operations,
+  // so they may select any verified active destination without publisher membership.
   if (actor.role === "admin") return true;
   if (publisher.kind === "user") {
     return publisher.linkedUserId
@@ -9966,7 +9973,9 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       .query("skills")
       .withIndex("by_slug", (q) => q.eq("slug", slug))
       .unique();
-    if (!skill || skill.softDeletedAt) throw new ConvexError("Skill not found");
+    if (!skill || (skill.softDeletedAt && actor.role !== "admin")) {
+      throw new ConvexError("Skill not found");
+    }
 
     await assertCanManageOwnedResource(ctx, {
       actor,
@@ -9975,8 +9984,15 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       allowedPublisherRoles: ["admin"],
       allowPlatformAdmin: true,
     });
-    if (isSkillTransferBlockedByModeration(skill)) {
+    const allowSoftDeletedTransfer =
+      actor.role === "admin" &&
+      isSoftDeletedSkillEligibleForAdminTransfer(skill) &&
+      (await isOwnerInitiatedSkillHideForAdminTransfer(ctx, skill));
+    if (isSkillTransferBlockedByModeration(skill) && !allowSoftDeletedTransfer) {
       throw new ConvexError("Skill is not eligible for ownership transfer while under moderation");
+    }
+    if (allowSoftDeletedTransfer && !args.reason?.trim()) {
+      throw new ConvexError("Reason required for soft-deleted skill ownership transfer");
     }
 
     const destinationHandle = normalizePublisherHandle(args.toOwner);
@@ -10005,6 +10021,7 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       ownerUserId: nextOwner._id,
       ownerPublisherId: destinationPublisher._id,
       now,
+      allowSoftDeleted: allowSoftDeletedTransfer,
     });
     await syncSkillSearchDigestForSkillDoc(ctx, {
       ...skill,
@@ -11295,6 +11312,70 @@ async function isOwnerInitiatedSkillHideForActor(
   const hiddenBy = await ctx.db.get(skill.hiddenBy);
   if (!hiddenBy || hiddenBy.deletedAt || hiddenBy.deactivatedAt) return false;
   if (hiddenBy.role === "admin" || hiddenBy.role === "moderator") return false;
+
+  try {
+    await assertCanManageOwnedResource(ctx, {
+      actor: hiddenBy,
+      ownerUserId: skill.ownerUserId,
+      ownerPublisherId: skill.ownerPublisherId,
+      allowedPublisherRoles: ["admin"],
+    });
+    return true;
+  } catch (error) {
+    if (error instanceof ConvexError || error instanceof Error) return false;
+    throw error;
+  }
+}
+
+async function isOwnerInitiatedSkillHideForAdminTransfer(
+  ctx: MutationCtx,
+  skill: Pick<
+    Doc<"skills">,
+    "_id" | "ownerUserId" | "ownerPublisherId" | "hiddenBy" | "softDeletedAt" | "forkOf"
+  >,
+) {
+  if (!skill.hiddenBy || skill.softDeletedAt === undefined) return false;
+  const softDeletedAt = skill.softDeletedAt;
+  const hiddenBy = await ctx.db.get(skill.hiddenBy);
+  if (!hiddenBy || hiddenBy.deletedAt || hiddenBy.deactivatedAt) return false;
+
+  const hideAuditLogs = await ctx.db
+    .query("auditLogs")
+    .withIndex("by_target_createdAt", (q) =>
+      q.eq("targetType", "skill").eq("targetId", skill._id).eq("createdAt", softDeletedAt),
+    )
+    .take(10);
+  const hasOrdinaryOwnerDeleteAudit = hideAuditLogs.some((log) => {
+    const metadata =
+      typeof log.metadata === "object" && log.metadata !== null
+        ? (log.metadata as Record<string, unknown>)
+        : null;
+    return (
+      log.action === "skill.delete" &&
+      log.actorUserId === skill.hiddenBy &&
+      metadata?.actorRole === "user" &&
+      metadata.softDeletedAt === softDeletedAt
+    );
+  });
+  if (!hasOrdinaryOwnerDeleteAudit) return false;
+
+  const duplicate = skill.forkOf?.kind === "duplicate" ? skill.forkOf : null;
+  if (duplicate) {
+    const relationshipAuditLogs = await ctx.db
+      .query("auditLogs")
+      .withIndex("by_target_createdAt", (q) =>
+        q.eq("targetType", "skill").eq("targetId", skill._id).eq("createdAt", duplicate.at),
+      )
+      .take(10);
+    const hasMergeProvenance = relationshipAuditLogs.some((log) => {
+      const metadata =
+        typeof log.metadata === "object" && log.metadata !== null
+          ? (log.metadata as Record<string, unknown>)
+          : null;
+      return log.action === "skill.merge" && metadata?.targetSkillId === duplicate.skillId;
+    });
+    if (hasMergeProvenance) return false;
+  }
 
   try {
     await assertCanManageOwnedResource(ctx, {

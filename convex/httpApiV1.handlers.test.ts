@@ -6763,6 +6763,118 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("allows platform admins to transfer soft-deleted skills", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", handle: "admin", role: "admin" },
+    } as never);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: "skills:deleted", slug: "deleted-demo", softDeletedAt: 123 })
+      .mockResolvedValueOnce({ _id: "publishers:team", kind: "org", handle: "team" });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        transferred: true,
+        skillSlug: "deleted-demo",
+        toPublisherHandle: "team",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/deleted-demo/transfer", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({ toUserHandle: "@team", message: "Publisher recovery" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        slug: "deleted-demo",
+        toOwner: "@team",
+        reason: "Publisher recovery",
+      }),
+    );
+  });
+
+  it("prefers a live merged-alias target before admin soft-delete recovery lookup", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", handle: "admin", role: "admin" },
+    } as never);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ _id: "skills:canonical", slug: "canonical-demo" })
+      .mockResolvedValueOnce({ _id: "publishers:team", kind: "org", handle: "team" });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        transferred: true,
+        skillSlug: "canonical-demo",
+        toPublisherHandle: "team",
+      };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/merged-demo/transfer", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({ toOwner: "@team" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        slug: "canonical-demo",
+        toOwner: "@team",
+      }),
+    );
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("requires an audit reason for soft-deleted skill transfers", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", handle: "admin", role: "admin" },
+    } as never);
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ _id: "skills:deleted", slug: "deleted-demo", softDeletedAt: 123 });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      throw new Error(`unexpected mutation ${JSON.stringify(args)}`);
+    });
+    const ctx = makeCtx({ runQuery, runMutation });
+
+    const missingReason = await __handlers.skillsPostRouterV1Handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills/deleted-demo/transfer", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({ toOwner: "@team" }),
+      }),
+    );
+
+    expect(missingReason.status).toBe(400);
+    expect(await missingReason.text()).toBe("message required for soft-deleted skill transfer");
+  });
+
   it("skill transfer maps ownership denials to 403", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:stranger",

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  isSoftDeletedSkillEligibleForAdminTransfer,
   isSkillReviewFlagged,
   isSkillSuspicious,
   isSkillTransferBlockedByModeration,
@@ -69,6 +70,66 @@ describe("isSkillTransferBlockedByModeration", () => {
         moderationReason: undefined,
         moderationReasonCodes: undefined,
         softDeletedAt: 123,
+      }),
+    ).toBe(true);
+  });
+
+  it("allows admins to relocate clean soft-deleted skills without allowing unsafe moderation", () => {
+    expect(
+      isSoftDeletedSkillEligibleForAdminTransfer({
+        moderationStatus: "hidden",
+        moderationVerdict: "clean",
+        isSuspicious: false,
+        moderationFlags: undefined,
+        moderationReason: undefined,
+        moderationReasonCodes: undefined,
+        softDeletedAt: 123,
+      }),
+    ).toBe(true);
+    expect(
+      isSoftDeletedSkillEligibleForAdminTransfer({
+        moderationStatus: "hidden",
+        moderationVerdict: "malicious",
+        isSuspicious: false,
+        moderationFlags: undefined,
+        moderationReason: undefined,
+        moderationReasonCodes: undefined,
+        softDeletedAt: 123,
+      }),
+    ).toBe(false);
+  });
+
+  it("blocks known administrative delete reasons even when the owner performed the action", () => {
+    for (const moderationReason of ["owner.merged", "user.banned", "security.redaction"]) {
+      expect(
+        isSoftDeletedSkillEligibleForAdminTransfer({
+          moderationStatus: "hidden",
+          moderationVerdict: "clean",
+          isSuspicious: false,
+          moderationFlags: undefined,
+          moderationReason,
+          moderationReasonCodes: undefined,
+          softDeletedAt: 123,
+        }),
+      ).toBe(false);
+    }
+  });
+
+  it("does not treat an ordinary duplicate relationship as merge provenance", () => {
+    expect(
+      isSoftDeletedSkillEligibleForAdminTransfer({
+        moderationStatus: "hidden",
+        moderationVerdict: "clean",
+        isSuspicious: false,
+        moderationFlags: undefined,
+        moderationReason: undefined,
+        moderationReasonCodes: undefined,
+        softDeletedAt: 123,
+        forkOf: {
+          skillId: "skills:canonical" as never,
+          kind: "duplicate",
+          at: 100,
+        },
       }),
     ).toBe(true);
   });
