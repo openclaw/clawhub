@@ -8768,10 +8768,12 @@ export async function deleteOwnedSkillVersionForActor(
   ) as Doc<"skills">["tags"];
 
   if (Object.keys(nextTags).length !== Object.keys(skill.tags ?? {}).length) {
-    await ctx.db.patch(skill._id, {
+    const skillPatch: Partial<Doc<"skills">> = {
       tags: nextTags,
       updatedAt: now,
-    });
+    };
+    await ctx.db.patch(skill._id, skillPatch);
+    await syncSkillSearchDigestForSkillDoc(ctx, { ...skill, ...skillPatch });
   }
 
   await ctx.db.insert("auditLogs", {

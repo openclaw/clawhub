@@ -4943,6 +4943,17 @@ export async function deleteOwnedPackageReleaseForActor(
     ownerDeletedAt: now,
     ownerDeletedBy: actor._id,
   });
+
+  const nextTags = Object.fromEntries(
+    Object.entries(pkg.tags ?? {}).filter(([, releaseId]) => releaseId !== release._id),
+  ) as Doc<"packages">["tags"];
+  if (Object.keys(nextTags).length !== Object.keys(pkg.tags ?? {}).length) {
+    await ctx.db.patch(pkg._id, {
+      tags: nextTags,
+      updatedAt: now,
+    });
+  }
+
   await ctx.db.insert("auditLogs", {
     actorUserId: actor._id,
     action: "package.release.delete",

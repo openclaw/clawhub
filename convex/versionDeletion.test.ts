@@ -115,6 +115,11 @@ function makeSkillDeletionCtx(options: {
     "users:moderator": { _id: "users:moderator", role: "moderator" },
     "users:org-admin": { _id: "users:org-admin", role: "user" },
   };
+  const digest: Record<string, unknown> = {
+    _id: "skillSearchDigest:demo",
+    skillId: skill._id,
+    tags: skill.tags,
+  };
   const audits: Array<Record<string, unknown>> = [];
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
   const skillVersionExactLookups: Array<{ skillId: unknown; version: unknown }> = [];
@@ -211,6 +216,13 @@ function makeSkillDeletionCtx(options: {
             ),
           };
         }
+        if (table === "skillSearchDigest") {
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(digest),
+            })),
+          };
+        }
         if (table === "publisherMembers") {
           return {
             withIndex: vi.fn(() => ({
@@ -223,7 +235,9 @@ function makeSkillDeletionCtx(options: {
       patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
         patches.push({ id, patch });
         const row =
-          (id === skill._id ? skill : null) ?? versions.find((version) => version._id === id);
+          (id === skill._id ? skill : null) ??
+          (id === digest._id ? digest : null) ??
+          versions.find((version) => version._id === id);
         if (row) Object.assign(row, patch);
       }),
       insert: vi.fn(async (table: string, row: Record<string, unknown>) => {
@@ -237,6 +251,7 @@ function makeSkillDeletionCtx(options: {
     actors,
     audits,
     ctx,
+    digest,
     patches,
     skill,
     skillVersionExactLookups,
@@ -378,8 +393,8 @@ function makePackageDeletionCtx(options: {
       }),
       patch: vi.fn(async (id: string, patch: Record<string, unknown>) => {
         patches.push({ id, patch });
-        const release = releases.find((candidate) => candidate._id === id);
-        if (release) Object.assign(release, patch);
+        const row = (id === pkg._id ? pkg : null) ?? releases.find((candidate) => candidate._id === id);
+        if (row) Object.assign(row, patch);
       }),
       insert: vi.fn(async (table: string, row: Record<string, unknown>) => {
         if (table !== "auditLogs") throw new Error(`Unexpected insert table ${table}`);
@@ -614,12 +629,12 @@ describe("owner skill version deletion", () => {
     expect(skillVersionTakeLimits).toEqual([]);
   });
 
-  it("deletes a non-latest version with provenance and audit, removes its tags, and preserves latest metadata", async () => {
+  it("deletes a non-latest version with provenance and audit, removes its tags, synchronizes its digest, and preserves latest metadata", async () => {
     const deleteOwned = getDeletionHelper<{ versionId: string }>(
       skillsModule,
       "deleteOwnedSkillVersionForActor",
     );
-    const { actors, audits, ctx, patches, skill, skillVersionTakeLimits, versions } =
+    const { actors, audits, ctx, digest, patches, skill, skillVersionTakeLimits, versions } =
       makeSkillDeletionCtx({
         skill: {
           ...makeSkillDeletionCtx({}).skill,
@@ -654,6 +669,10 @@ describe("owner skill version deletion", () => {
         latest: "skillVersions:v2",
         stable: "skillVersions:v2",
       },
+    });
+    expect(digest.tags).toEqual({
+      latest: "skillVersions:v2",
+      stable: "skillVersions:v2",
     });
     expect(audits).toContainEqual(
       expect.objectContaining({
@@ -1249,6 +1268,41 @@ describe("owner package release deletion", () => {
         }),
       }),
     );
+  });
+
+  it("removes every package tag targeting the deleted release", async () => {
+    const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "deleteOwnedPackageReleaseForActor",
+    );
+    const { actors, ctx, patches, pkg } = makePackageDeletionCtx({
+      pkg: {
+        ...makePackageDeletionCtx({}).pkg,
+        tags: {
+          latest: "packageReleases:v2",
+          stable: "packageReleases:v2",
+          legacy: "packageReleases:v1",
+          previous: "packageReleases:v1",
+        },
+      },
+    });
+
+    await deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "1.0.0" });
+
+    expect(pkg.tags).toEqual({
+      latest: "packageReleases:v2",
+      stable: "packageReleases:v2",
+    });
+    expect(patches).toContainEqual({
+      id: "packages:demo",
+      patch: {
+        tags: {
+          latest: "packageReleases:v2",
+          stable: "packageReleases:v2",
+        },
+        updatedAt: expect.any(Number),
+      },
+    });
   });
 
   it("allows an org admin to delete an owned package release", async () => {
