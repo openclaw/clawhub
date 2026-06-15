@@ -235,8 +235,8 @@ function PublisherProfile() {
             <div className="publisher-profile-hero-stats" aria-label="Publisher stats">
               <PublisherStat
                 icon={ArrowDownToLine}
-                value={formatCompactStat(publisher.stats.downloads)}
-                label="downloads"
+                value={formatCompactStat(publisher.stats.installs)}
+                label="installs"
               />
               <PublisherStat
                 icon={Star}
