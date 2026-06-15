@@ -250,8 +250,6 @@ export function useSkillsBrowseModel({
       switch (sort) {
         case "relevance":
           return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier;
-        case "downloads":
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak();
         case "installs":
           return (
             ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
@@ -334,13 +332,10 @@ export function useSkillsBrowseModel({
           search: (prev) => {
             const hadQuery = typeof prev.q === "string" && prev.q.trim().length > 0;
             const enteringSearch = Boolean(trimmed) && !hadQuery;
-            const usesStaleImplicitDownloadsDefault =
-              prev.sort === "downloads" && prev.dir === undefined && !prev.category;
             return {
               ...prev,
               q: trimmed ? next : undefined,
-              ...(enteringSearch &&
-              (parseSort(prev.sort) === "recommended" || usesStaleImplicitDownloadsDefault)
+              ...(enteringSearch && parseSort(prev.sort) === "recommended"
                 ? { sort: undefined, dir: undefined }
                 : null),
             };

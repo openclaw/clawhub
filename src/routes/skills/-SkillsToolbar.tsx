@@ -187,7 +187,6 @@ export function SkillsToolbar({
             {hasQuery ? <SelectItem value="relevance">Relevance</SelectItem> : null}
             <SelectItem value="newest">Newest</SelectItem>
             <SelectItem value="updated">Recently updated</SelectItem>
-            <SelectItem value="downloads">Downloads</SelectItem>
             <SelectItem value="installs">Installs</SelectItem>
             <SelectItem value="stars">Stars</SelectItem>
             <SelectItem value="name">Name</SelectItem>

@@ -157,6 +157,15 @@ describe("plugins route", () => {
     });
   });
 
+  it("normalizes legacy downloads sort links to installs", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ sort: "downloads" }).sort).toBe("installs");
+  });
+
   it("redirects search-only sorts back to default when there is no query", async () => {
     const route = await loadRoute();
     const beforeLoad = (
@@ -187,7 +196,7 @@ describe("plugins route", () => {
     ).not.toThrow();
     expect(() =>
       beforeLoad?.({
-        search: { q: "security", sort: "downloads" },
+        search: { q: "security", sort: "installs" },
       }),
     ).not.toThrow();
     expect(() =>
@@ -347,7 +356,7 @@ describe("plugins route", () => {
 
     await loadPluginsPageData({
       q: "security",
-      sort: "downloads",
+      sort: "installs",
       cursor: "cursor:search",
     });
 
@@ -364,17 +373,6 @@ describe("plugins route", () => {
   it("forwards explicit plugin browse sorts", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
-
-    await loadPluginsPageData({
-      sort: "downloads",
-    });
-
-    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        sort: "downloads",
-        limit: 25,
-      }),
-    );
 
     await loadPluginsPageData({
       sort: "installs",
@@ -1056,7 +1054,7 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Most downloaded" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Most installed" }));
 
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
@@ -1066,12 +1064,12 @@ describe("plugins route", () => {
       cursor: undefined,
       family: undefined,
       featured: undefined,
-      sort: "downloads",
+      sort: "installs",
     });
   });
 
   it("sorts loaded search results by the selected search sort", async () => {
-    searchMock = { q: "security", sort: "downloads" };
+    searchMock = { q: "security", sort: "installs" };
     loaderDataMock = {
       items: [
         {
@@ -1083,7 +1081,7 @@ describe("plugins route", () => {
           executesCode: true,
           createdAt: 2,
           updatedAt: 20,
-          stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
+          stats: { downloads: 1, installs: 10, stars: 0, versions: 1 },
         },
         {
           name: "alpha-plugin",
@@ -1094,7 +1092,7 @@ describe("plugins route", () => {
           executesCode: true,
           createdAt: 1,
           updatedAt: 10,
-          stats: { downloads: 10, installs: 0, stars: 0, versions: 1 },
+          stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
         },
       ],
       nextCursor: null,
@@ -1106,9 +1104,9 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    const alpha = screen.getByText("Alpha Plugin");
     const zulu = screen.getByText("Zulu Plugin");
-    expect(alpha.compareDocumentPosition(zulu) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    const alpha = screen.getByText("Alpha Plugin");
+    expect(zulu.compareDocumentPosition(alpha) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps search sort visible even if a stale featured flag is present", async () => {
@@ -1135,12 +1133,8 @@ describe("plugins route", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual([
-      "Recommended",
-      "Most installed",
-      "Most downloaded",
-      "Recently updated",
-    ]);
+    expect(sortOptions).toEqual(["Recommended", "Most installed", "Recently updated"]);
+    expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
   });

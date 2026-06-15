@@ -27,7 +27,7 @@ export type GitHubSkillCatalogItem = {
   summary: string | null;
   icon: string | null;
   href: string;
-  downloads: number;
+  installs: number;
   stars: number;
   isOfficial: boolean;
   updatedAt: number;

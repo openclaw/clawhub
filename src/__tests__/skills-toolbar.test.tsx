@@ -10,7 +10,7 @@ function renderToolbar(overrides?: Partial<ComponentProps<typeof SkillsToolbar>>
       searchInputRef={createRef<HTMLInputElement>()}
       query=""
       hasQuery={false}
-      sort="downloads"
+      sort="installs"
       dir="desc"
       view="list"
       highlightedOnly={false}

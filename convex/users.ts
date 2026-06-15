@@ -22,6 +22,7 @@ import {
   getPublisherByHandle,
   getPublisherMembership,
   getPersonalPublisherForUser,
+  getPersonalPublisherForUserOrFallback,
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
 import {
@@ -1251,16 +1252,17 @@ export const getByHandle = query({
   },
 });
 
-/** Lightweight stats for user hover tooltips. Uses the skills by_owner index. */
+/** Lightweight aggregate stats for user hover tooltips. */
 export const getHoverStats = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
+    const publisher = user ? await getPersonalPublisherForUserOrFallback(ctx, user) : null;
 
     return {
-      publishedSkills: user?.publishedSkills ?? 0,
-      totalStars: user?.totalStars ?? 0,
-      totalDownloads: user?.totalDownloads ?? 0,
+      publishedSkills: publisher?.publishedSkills ?? user?.publishedSkills ?? 0,
+      totalStars: publisher?.totalStars ?? user?.totalStars ?? 0,
+      totalInstalls: publisher?.totalInstalls ?? 0,
     };
   },
 });

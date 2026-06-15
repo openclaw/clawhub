@@ -21,7 +21,7 @@ type PublicPublisherStats = {
 export type PublicPublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
-  downloads: number;
+  installs: number;
 };
 
 export type PublicPublisherListItem = PublicPublisher & {
@@ -45,7 +45,7 @@ export type PublicPublisherCatalogItem = {
    */
   icon: string | null;
   href: string;
-  downloads: number;
+  installs: number;
   stars: number;
   isOfficial: boolean;
   updatedAt: number;

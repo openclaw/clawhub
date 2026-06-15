@@ -5500,7 +5500,7 @@ export const listAuditPage = query({
     const { numItems, cursor } = normalizePublicListPagination(args.paginationOpts);
     const result = await ctx.db
       .query("skillSearchDigest")
-      .withIndex("by_active_stats_downloads", (q) => q.eq("softDeletedAt", undefined))
+      .withIndex("by_active_stats_installs_all_time", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
       .paginate({ cursor, numItems });
 

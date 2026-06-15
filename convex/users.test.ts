@@ -19,6 +19,7 @@ const { insertStatEvent } = await import("./skillStatEvents");
 const {
   ensureHandler,
   getByHandle,
+  getHoverStats,
   getBanAppealContextByGitHubProviderAccountIdInternal,
   list,
   searchInternal,
@@ -46,6 +47,9 @@ type WrappedHandler<TArgs, TResult> = {
 const meHandler = (me as unknown as WrappedHandler<Record<string, never>, unknown>)._handler;
 const getByHandleHandler = (getByHandle as unknown as WrappedHandler<{ handle: string }, unknown>)
   ._handler;
+const getHoverStatsHandler = (
+  getHoverStats as unknown as WrappedHandler<{ userId: string }, unknown>
+)._handler;
 const updateProfileHandler = (
   updateProfile as unknown as WrappedHandler<{ displayName: string; bio?: string }, void>
 )._handler;
@@ -1342,6 +1346,59 @@ describe("users.getByHandle", () => {
     expect(publisherUnique).toHaveBeenCalledOnce();
     expect(get).not.toHaveBeenCalled();
     expect(result).toBeNull();
+  });
+});
+
+describe("users.getHoverStats", () => {
+  it("uses install aggregates from a legacy personal publisher link", async () => {
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:owner") {
+        return {
+          _id: "users:owner",
+          _creationTime: 1,
+          handle: "owner",
+          displayName: "Owner",
+          name: "Owner",
+          email: "owner@example.com",
+          role: "user",
+          createdAt: 1,
+          personalPublisherId: "publishers:owner",
+        };
+      }
+      if (id === "publishers:owner") {
+        return {
+          _id: "publishers:owner",
+          _creationTime: 1,
+          kind: "user",
+          handle: "owner",
+          displayName: "Owner",
+          publishedSkills: 4,
+          totalStars: 5,
+          totalInstalls: 37,
+          createdAt: 1,
+          updatedAt: 1,
+        };
+      }
+      return null;
+    });
+
+    const result = await getHoverStatsHandler(
+      {
+        db: {
+          get,
+          query: vi.fn(() => {
+            throw new Error("publisher lookup should use personalPublisherId");
+          }),
+        },
+      },
+      { userId: "users:owner" },
+    );
+
+    expect(result).toEqual({
+      publishedSkills: 4,
+      totalStars: 5,
+      totalInstalls: 37,
+    });
   });
 });
 

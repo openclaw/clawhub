@@ -63,10 +63,10 @@ type PublisherListStats = {
 type PublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
-  downloads: number;
+  installs: number;
 };
 type PublisherPublishedPreviewItem = PublisherPublishedItem & {
-  installs: number;
+  downloads: number;
 };
 
 type PublisherCatalogItem = {
@@ -81,7 +81,7 @@ type PublisherCatalogItem = {
   // Always `null` for plugins in Phase 1.
   icon: string | null;
   href: string;
-  downloads: number;
+  installs: number;
   stars: number;
   isOfficial: boolean;
   updatedAt: number;
@@ -92,7 +92,8 @@ type PublisherCatalogItem = {
   sourceVerifiedCommit?: string | null;
 };
 
-type PublisherCatalogSort = "downloads" | "recent";
+type PublisherCatalogSort = "installs" | "recent";
+type PublisherCatalogSortArg = PublisherCatalogSort | "downloads";
 
 type PublisherListItem = NonNullable<ReturnType<typeof toPublicPublisher>> & {
   stats: PublisherListStats;
@@ -324,7 +325,7 @@ function getPublisherPublishedItems(
     .map((item) => ({
       kind: item.kind,
       displayName: item.displayName,
-      downloads: item.downloads,
+      installs: item.installs,
     }));
 }
 
@@ -346,14 +347,14 @@ function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
     if (sort === "recent") {
       return (
         b.updatedAt - a.updatedAt ||
-        b.downloads - a.downloads ||
+        b.installs - a.installs ||
         b.stars - a.stars ||
         a.displayName.localeCompare(b.displayName)
       );
     }
 
     return (
-      b.downloads - a.downloads ||
+      b.installs - a.installs ||
       b.stars - a.stars ||
       b.updatedAt - a.updatedAt ||
       a.displayName.localeCompare(b.displayName)
@@ -361,11 +362,15 @@ function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
   };
 }
 
+function normalizePublisherCatalogSort(sort?: PublisherCatalogSortArg): PublisherCatalogSort {
+  return sort === "recent" ? "recent" : "installs";
+}
+
 function getPublisherCatalogItems(
   publisher: Doc<"publishers">,
   rows: PublisherPublishedRows,
   publisherOfficial: boolean,
-  sort: PublisherCatalogSort = "downloads",
+  sort: PublisherCatalogSort = "installs",
 ): PublisherCatalogItem[] {
   return [
     ...rows.skills.map((skill) => ({
@@ -376,7 +381,7 @@ function getPublisherCatalogItems(
       summary: skill.summary ?? null,
       icon: skill.icon ?? null,
       href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
-      downloads: readCanonicalStat(skill, "downloads"),
+      installs: readCanonicalStat(skill, "installsAllTime"),
       stars: readCanonicalStat(skill, "stars"),
       isOfficial: publisherOfficial || Boolean(skill.badges?.official),
       updatedAt: skill.updatedAt,
@@ -392,7 +397,7 @@ function getPublisherCatalogItems(
       summary: pkg.summary ?? null,
       icon: null,
       href: buildPluginDetailHref(pkg.name),
-      downloads: pkg.stats.downloads,
+      installs: pkg.stats.installs,
       stars: pkg.stats.stars,
       isOfficial: publisherOfficial || pkg.isOfficial,
       updatedAt: pkg.updatedAt,
@@ -422,7 +427,7 @@ function toGitHubSkillCatalogItem(
     summary: item.summary,
     icon: item.icon,
     href: item.href,
-    downloads: item.downloads,
+    installs: item.installs,
     stars: item.stars,
     isOfficial: item.isOfficial,
     updatedAt: item.updatedAt,
@@ -609,7 +614,7 @@ function comparePublisherListItems(a: PublisherListItem, b: PublisherListItem) {
   const bPublishedCount = b.stats.skills + b.stats.packages;
 
   return (
-    b.stats.downloads - a.stats.downloads ||
+    b.stats.installs - a.stats.installs ||
     b.stats.stars - a.stats.stars ||
     bPublishedCount - aPublishedCount ||
     a.displayName.localeCompare(b.displayName)
@@ -1851,7 +1856,7 @@ export const getProfileByHandle = query({
 export const listStarredPage = query({
   args: {
     handle: v.string(),
-    sort: v.optional(v.union(v.literal("downloads"), v.literal("recent"))),
+    sort: v.optional(v.union(v.literal("installs"), v.literal("recent"), v.literal("downloads"))),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -1891,7 +1896,7 @@ export const listStarredPage = query({
             summary: skill.summary ?? null,
             icon: skill.icon ?? null,
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
-            downloads: readCanonicalStat(skill, "downloads"),
+            installs: readCanonicalStat(skill, "installsAllTime"),
             stars: readCanonicalStat(skill, "stars"),
             isOfficial: official || Boolean(skill.badges?.official),
             updatedAt: skill.updatedAt,
@@ -1900,7 +1905,7 @@ export const listStarredPage = query({
       )
     )
       .filter((item): item is PublisherCatalogItem => Boolean(item))
-      .sort(comparePublisherCatalogItems(args.sort ?? "downloads"));
+      .sort(comparePublisherCatalogItems(normalizePublisherCatalogSort(args.sort)));
     const nextOffset = safeOffset + numItems;
     const page = items.slice(safeOffset, nextOffset);
 
@@ -1916,7 +1921,7 @@ export const listPublishedPage = query({
   args: {
     handle: v.string(),
     kind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
-    sort: v.optional(v.union(v.literal("downloads"), v.literal("recent"))),
+    sort: v.optional(v.union(v.literal("installs"), v.literal("recent"), v.literal("downloads"))),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -1934,7 +1939,7 @@ export const listPublishedPage = query({
       visiblePublisher,
       await getPublisherPublishedRows(ctx, visiblePublisher._id),
       await isOfficialPublisher(ctx, visiblePublisher),
-      args.sort ?? "downloads",
+      normalizePublisherCatalogSort(args.sort),
     ).filter((item) => !args.kind || item.kind === args.kind);
     const nextOffset = safeOffset + numItems;
     const page = items.slice(safeOffset, nextOffset);
@@ -1951,7 +1956,7 @@ export const getPublishedDisplayManifest = query({
   args: {
     handle: v.string(),
     kind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
-    sort: v.optional(v.union(v.literal("downloads"), v.literal("recent"))),
+    sort: v.optional(v.union(v.literal("installs"), v.literal("recent"), v.literal("downloads"))),
   },
   handler: async (ctx, args): Promise<GitHubSkillCatalogDisplay | null> => {
     if (args.kind === "plugin") return null;
@@ -1975,7 +1980,7 @@ export const getPublishedDisplayManifest = query({
       visiblePublisher,
       rows,
       await isOfficialPublisher(ctx, visiblePublisher),
-      args.sort ?? "downloads",
+      normalizePublisherCatalogSort(args.sort),
     )
       .filter((item) => !args.kind || item.kind === args.kind)
       .map((item) => toGitHubSkillCatalogItem(item, sourceById));
@@ -2001,7 +2006,7 @@ export const listPublic = query({
     const kindFilter = args.kind as PublicPublisherKindFilter | undefined;
     const activeRows = await ctx.db
       .query("publishers")
-      .withIndex("by_active_total_downloads", (q) =>
+      .withIndex("by_active_total_installs", (q) =>
         q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
       )
       .order("desc")
@@ -2049,14 +2054,14 @@ export const listPublicPage = query({
     const activeRows = kindFilter
       ? await ctx.db
           .query("publishers")
-          .withIndex("by_active_kind_total_downloads", (q) =>
+          .withIndex("by_active_kind_total_installs", (q) =>
             q.eq("deletedAt", undefined).eq("deactivatedAt", undefined).eq("kind", kindFilter),
           )
           .order("desc")
           .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
       : await ctx.db
           .query("publishers")
-          .withIndex("by_active_total_downloads", (q) =>
+          .withIndex("by_active_total_installs", (q) =>
             q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
           )
           .order("desc")
@@ -2074,7 +2079,7 @@ export const listPublicPage = query({
           ctx,
           await ctx.db
             .query("publishers")
-            .withIndex("by_active_total_downloads", (q) =>
+            .withIndex("by_active_total_installs", (q) =>
               q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
             )
             .order("desc")

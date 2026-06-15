@@ -6,7 +6,7 @@ const baseItem = {
   summary: null,
   icon: null,
   href: "/nvidia/example",
-  downloads: 0,
+  installs: 0,
   stars: 0,
   isOfficial: true,
   updatedAt: 1,
