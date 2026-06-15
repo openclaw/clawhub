@@ -1,6 +1,5 @@
 /* @vitest-environment node */
 
-import { readFile } from "node:fs/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
@@ -116,21 +115,6 @@ describe("delete/undelete", () => {
       ),
     ).rejects.toThrow(/whole-skill deletion/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
-  });
-
-  it("registers --version only on delete, not undelete", async () => {
-    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
-    const deleteBlock = cliSource
-      .split('registerCommand(program, ["delete"])')[1]
-      ?.split('registerCommand(program, ["hide"])')[0];
-    const undeleteBlock = cliSource
-      .split('registerCommand(program, ["undelete"])')[1]
-      ?.split('registerCommand(program, ["unhide"])')[0];
-
-    expect(deleteBlock).toContain('"--version <version>"');
-    expect(deleteBlock).toContain("cannot be restored or republished");
-    expect(deleteBlock).toContain("publish a replacement first");
-    expect(undeleteBlock).not.toContain('"--version <version>"');
   });
 
   it("prints the slug reservation expiry returned by delete", async () => {

@@ -199,6 +199,7 @@ function hasOwnField(value: unknown, key: string) {
 
 function resolveVersionPathTarget(
   pathVersion: string | undefined,
+  request: Request,
   body: unknown,
 ): { version?: string; error?: string } {
   const rawBodyVersion = optionalStringField(body, "version");
@@ -207,10 +208,20 @@ function resolveVersionPathTarget(
   }
   const version = pathVersion?.trim();
   const bodyVersion = rawBodyVersion?.trim();
-  if (!version || (rawBodyVersion !== undefined && !bodyVersion)) {
+  const queryVersions = new URL(request.url).searchParams
+    .getAll("version")
+    .map((queryVersion) => queryVersion.trim());
+  if (
+    !version ||
+    (rawBodyVersion !== undefined && !bodyVersion) ||
+    queryVersions.some((queryVersion) => !queryVersion)
+  ) {
     return { error: "Version cannot be empty" };
   }
-  if (bodyVersion && bodyVersion !== version) {
+  if (
+    (bodyVersion && bodyVersion !== version) ||
+    queryVersions.some((queryVersion) => queryVersion !== version)
+  ) {
     return { error: "Version does not match request target" };
   }
   return { version };
@@ -2834,7 +2845,7 @@ export async function packagesDeleteRouterV1Handler(ctx: ActionCtx, request: Req
   if (packageSegments.length === 2 && packageSegments[0] === "versions" && packageSegments[1]) {
     try {
       const body = await readOptionalJson(request);
-      const versionTarget = resolveVersionPathTarget(packageSegments[1], body);
+      const versionTarget = resolveVersionPathTarget(packageSegments[1], request, body);
       if (versionTarget.error) return text(versionTarget.error, 400, rate.headers);
       await runMutationRef(ctx, internalRefs.packages.deleteOwnedReleaseForUserInternal, {
         actorUserId: auth.userId,

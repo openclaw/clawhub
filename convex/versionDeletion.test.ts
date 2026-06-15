@@ -19,6 +19,10 @@ type WrappedHandler<TArgs, TResult = unknown> = {
 const deleteOwnedReleaseHandler = (
   packagesModule.deleteOwnedRelease as WrappedHandler<{ name: string; version: string }>
 )._handler;
+const deleteOwnedSkillVersionForUser = skillsModule.deleteOwnedSkillVersionForUser as (
+  ctx: unknown,
+  args: { actorUserId: string; slug: string; version: string },
+) => Promise<unknown>;
 
 afterEach(() => {
   vi.mocked(getAuthUserId).mockReset();
@@ -68,6 +72,7 @@ function makeSkillDeletionCtx(options: {
   skill?: Record<string, unknown>;
   versions?: Array<Record<string, unknown>>;
   membership?: Record<string, unknown> | null;
+  alias?: Record<string, unknown> | null;
 }) {
   const versions = options.versions ?? [
     makeSkillVersion("skillVersions:v1", "1.0.0"),
@@ -112,6 +117,7 @@ function makeSkillDeletionCtx(options: {
   };
   const audits: Array<Record<string, unknown>> = [];
   const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const skillVersionExactLookups: Array<{ skillId: unknown; version: unknown }> = [];
   const skillVersionTakeLimits: number[] = [];
   const ctx = {
     db: {
@@ -121,20 +127,88 @@ function makeSkillDeletionCtx(options: {
         return actors[id] ?? versions.find((version) => version._id === id) ?? null;
       }),
       query: vi.fn((table: string) => {
+        if (table === "skills") {
+          return {
+            withIndex: vi.fn(
+              (
+                _index: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                let slug: unknown;
+                const query = {
+                  eq(field: string, value: unknown) {
+                    if (field === "slug") slug = value;
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return {
+                  unique: vi.fn(async () => (skill.slug === slug ? skill : null)),
+                };
+              },
+            ),
+          };
+        }
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: vi.fn(
+              (
+                _index: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                let slug: unknown;
+                const query = {
+                  eq(field: string, value: unknown) {
+                    if (field === "slug") slug = value;
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return {
+                  unique: vi.fn(async () => (options.alias?.slug === slug ? options.alias : null)),
+                };
+              },
+            ),
+          };
+        }
         if (table === "skillVersions") {
           return {
-            withIndex: vi.fn((index: string) => ({
-              take: vi.fn(async (limit: number) => {
-                if (index !== "by_skill_active_created") {
-                  throw new Error(`Unexpected skillVersions index ${index}`);
-                }
-                skillVersionTakeLimits.push(limit);
-                return versions.filter((version) => !version.softDeletedAt).slice(0, limit);
-              }),
-              collect: vi.fn(() => {
-                throw new Error("skill deletion must not scan version history");
-              }),
-            })),
+            withIndex: vi.fn(
+              (
+                index: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                let skillId: unknown;
+                let version: unknown;
+                const query = {
+                  eq(field: string, value: unknown) {
+                    if (field === "skillId") skillId = value;
+                    if (field === "version") version = value;
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return {
+                  unique: vi.fn(async () => {
+                    if (index !== "by_skill_version") return null;
+                    skillVersionExactLookups.push({ skillId, version });
+                    return versions.find(
+                      (candidate) => candidate.skillId === skillId && candidate.version === version,
+                    );
+                  }),
+                  take: vi.fn(async (limit: number) => {
+                    if (index !== "by_skill_active_created") {
+                      throw new Error(`Unexpected skillVersions index ${index}`);
+                    }
+                    skillVersionTakeLimits.push(limit);
+                    return versions.filter((candidate) => !candidate.softDeletedAt).slice(0, limit);
+                  }),
+                  collect: vi.fn(() => {
+                    throw new Error("skill deletion must not scan version history");
+                  }),
+                };
+              },
+            ),
           };
         }
         if (table === "publisherMembers") {
@@ -159,7 +233,16 @@ function makeSkillDeletionCtx(options: {
       }),
     },
   };
-  return { actors, audits, ctx, patches, skill, skillVersionTakeLimits, versions };
+  return {
+    actors,
+    audits,
+    ctx,
+    patches,
+    skill,
+    skillVersionExactLookups,
+    skillVersionTakeLimits,
+    versions,
+  };
 }
 
 function makePackageRelease(id: string, version: string, overrides: Record<string, unknown> = {}) {
@@ -711,6 +794,84 @@ describe("owner skill version deletion", () => {
       ).rejects.toThrow("Forbidden");
       expect(patches).toEqual([]);
     }
+  });
+
+  it("does not reveal skill version state to a non-owner", async () => {
+    const deleteOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "deleteOwnedSkillVersionForActor",
+    );
+    const cases = [
+      [],
+      [makeSkillVersion("skillVersions:target", "1.0.0")],
+      [
+        makeSkillVersion("skillVersions:target", "1.0.0", {
+          softDeletedAt: 30,
+          ownerDeletedAt: 30,
+          ownerDeletedBy: "users:owner",
+        }),
+      ],
+      [
+        makeSkillVersion("skillVersions:target", "1.0.0", {
+          staticScan: {
+            status: "malicious",
+            reasonCodes: ["malicious.crypto_mining"],
+            findings: [],
+            summary: "malicious",
+            engineVersion: "test",
+            checkedAt: 30,
+          },
+        }),
+      ],
+    ];
+
+    for (const versions of cases) {
+      const { actors, ctx, patches } = makeSkillDeletionCtx({ versions });
+      await expect(
+        deleteOwned(ctx, actors["users:admin"], { versionId: "skillVersions:target" }),
+      ).rejects.toThrow("Forbidden");
+      expect(patches).toEqual([]);
+    }
+  });
+
+  it("resolves skill aliases before deleting an exact version through the internal wrapper", async () => {
+    const { ctx, patches } = makeSkillDeletionCtx({
+      alias: {
+        _id: "skillSlugAliases:legacy-demo",
+        slug: "legacy-demo",
+        skillId: "skills:demo",
+      },
+    });
+
+    await expect(
+      deleteOwnedSkillVersionForUser(ctx, {
+        actorUserId: "users:owner",
+        slug: " Legacy-Demo ",
+        version: " 1.0.0 ",
+      }),
+    ).resolves.toMatchObject({ ok: true, skillId: "skills:demo" });
+    expect(patches).toContainEqual(
+      expect.objectContaining({
+        id: "skillVersions:v1",
+        patch: expect.objectContaining({ ownerDeletedBy: "users:owner" }),
+      }),
+    );
+  });
+
+  it("authorizes the resolved skill before looking up exact version state in the internal wrapper", async () => {
+    const { ctx, patches, skillVersionExactLookups } = makeSkillDeletionCtx({
+      versions: [],
+    });
+
+    await expect(
+      deleteOwnedSkillVersionForUser(ctx, {
+        actorUserId: "users:admin",
+        slug: "demo",
+        version: "does-not-exist",
+      }),
+    ).rejects.toThrow("Forbidden");
+    expect(patches).toEqual([]);
+    expect(skillVersionExactLookups).toEqual([]);
   });
 });
 

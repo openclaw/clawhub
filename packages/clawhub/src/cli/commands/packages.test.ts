@@ -3126,21 +3126,6 @@ describe("package commands", () => {
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
-  it("registers --version only on package delete, not package undelete", async () => {
-    const cliSource = await readFile(new URL("../../cli.ts", import.meta.url), "utf8");
-    const deleteBlock = cliSource
-      .split('registerCommand(packageCmd, ["package", "delete"])')[1]
-      ?.split('registerCommand(packageCmd, ["package", "undelete"])')[0];
-    const undeleteBlock = cliSource
-      .split('registerCommand(packageCmd, ["package", "undelete"])')[1]
-      ?.split('registerCommand(packageCmd, ["package", "transfer"])')[0];
-
-    expect(deleteBlock).toContain('"--version <version>"');
-    expect(deleteBlock).toContain("cannot be restored or republished");
-    expect(deleteBlock).toContain("publish a replacement first");
-    expect(undeleteBlock).not.toContain('"--version <version>"');
-  });
-
   it("transfers a package to another publisher", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,

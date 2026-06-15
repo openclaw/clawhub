@@ -8647,19 +8647,10 @@ export async function deleteOwnedSkillVersionForActor(
   args: { versionId: Id<"skillVersions"> },
 ) {
   const version = await ctx.db.get(args.versionId);
-  if (
-    !version ||
-    version.softDeletedAt ||
-    version.ownerDeletedAt !== undefined ||
-    isKnownMaliciousSkillVersion(version)
-  ) {
-    throw new ConvexError("This skill version is already unavailable and cannot be deleted.");
-  }
+  if (!version) throw new ConvexError("Forbidden");
 
   const skill = await ctx.db.get(version.skillId);
-  if (!skill || skill.softDeletedAt || (skill.moderationStatus ?? "active") !== "active") {
-    throw new ConvexError("This skill is unavailable and its versions cannot be deleted.");
-  }
+  if (!skill) throw new ConvexError("Forbidden");
 
   await assertCanManageOwnedResource(ctx, {
     actor,
@@ -8667,6 +8658,17 @@ export async function deleteOwnedSkillVersionForActor(
     ownerPublisherId: skill.ownerPublisherId,
     allowedPublisherRoles: ["admin"],
   });
+
+  if (
+    version.softDeletedAt ||
+    version.ownerDeletedAt !== undefined ||
+    isKnownMaliciousSkillVersion(version)
+  ) {
+    throw new ConvexError("This skill version is already unavailable and cannot be deleted.");
+  }
+  if (skill.softDeletedAt || (skill.moderationStatus ?? "active") !== "active") {
+    throw new ConvexError("This skill is unavailable and its versions cannot be deleted.");
+  }
 
   let mustPublishReplacement =
     skill.latestVersionId === version._id || skill.tags.latest === version._id;
@@ -8725,6 +8727,42 @@ export async function deleteOwnedSkillVersionForActor(
   return { ok: true as const, skillId: skill._id, versionId: version._id };
 }
 
+export async function deleteOwnedSkillVersionForUser(
+  ctx: MutationCtx,
+  args: {
+    actorUserId: Id<"users">;
+    slug: string;
+    version: string;
+  },
+) {
+  const actor = await ctx.db.get(args.actorUserId);
+  if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+  const slug = args.slug.trim();
+  if (!slug) throw new ConvexError("Slug required");
+  const version = args.version.trim();
+  if (!version) throw new ConvexError("Version required");
+
+  const resolved = await resolveSkillBySlugOrAlias(ctx, slug);
+  const skill = resolved.skill;
+  if (!skill) throw new ConvexError("Skill not found");
+
+  await assertCanManageOwnedResource(ctx, {
+    actor,
+    ownerUserId: skill.ownerUserId,
+    ownerPublisherId: skill.ownerPublisherId,
+    allowedPublisherRoles: ["admin"],
+  });
+
+  const skillVersion = await ctx.db
+    .query("skillVersions")
+    .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", version))
+    .unique();
+  if (!skillVersion) throw new ConvexError("Skill version not found");
+
+  return await deleteOwnedSkillVersionForActor(ctx, actor, { versionId: skillVersion._id });
+}
+
 export const deleteOwnedVersionForUserInternal = internalMutation({
   args: {
     actorUserId: v.id("users"),
@@ -8732,27 +8770,7 @@ export const deleteOwnedVersionForUserInternal = internalMutation({
     version: v.string(),
   },
   handler: async (ctx, args) => {
-    const actor = await ctx.db.get(args.actorUserId);
-    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
-
-    const slug = args.slug.trim().toLowerCase();
-    if (!slug) throw new ConvexError("Slug required");
-    const version = args.version.trim();
-    if (!version) throw new ConvexError("Version required");
-
-    const skill = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .unique();
-    if (!skill) throw new ConvexError("Skill not found");
-
-    const skillVersion = await ctx.db
-      .query("skillVersions")
-      .withIndex("by_skill_version", (q) => q.eq("skillId", skill._id).eq("version", version))
-      .unique();
-    if (!skillVersion) throw new ConvexError("Skill version not found");
-
-    return await deleteOwnedSkillVersionForActor(ctx, actor, { versionId: skillVersion._id });
+    return await deleteOwnedSkillVersionForUser(ctx, args);
   },
 });
 

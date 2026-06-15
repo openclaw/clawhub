@@ -6451,6 +6451,38 @@ describe("httpApiV1 handlers", () => {
     expect(mutationArgs).not.toHaveProperty("deleted");
   });
 
+  it("rejects conflicting skill version selectors across query, body, and path", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+
+    for (const { bodyVersion, queryVersion } of [
+      { bodyVersion: "1.2.3", queryVersion: "9.9.9" },
+      { bodyVersion: "9.9.9", queryVersion: "1.2.3" },
+    ]) {
+      const response = await __handlers.skillsDeleteRouterV1Handler(
+        makeCtx({ runMutation }),
+        new Request(
+          `https://example.com/api/v1/skills/demo/versions/1.2.3?version=${queryVersion}`,
+          {
+            method: "DELETE",
+            headers: { Authorization: "Bearer clh_test" },
+            body: JSON.stringify({ version: bodyVersion }),
+          },
+        ),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Version does not match request target");
+    }
+    expect(runMutation.mock.calls.filter(([, args]) => !("key" in args))).toHaveLength(0);
+  });
+
   it("rejects a body-only skill version selector on the whole-skill route", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:1",
@@ -13149,6 +13181,38 @@ describe("httpApiV1 handlers", () => {
       version: "1.2.3",
     });
     expect(mutationArgs).not.toHaveProperty("userId");
+  });
+
+  it("rejects conflicting package version selectors across query, body, and path", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { _id: "users:1", handle: "p" },
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+
+    for (const { bodyVersion, queryVersion } of [
+      { bodyVersion: "1.2.3", queryVersion: "9.9.9" },
+      { bodyVersion: "9.9.9", queryVersion: "1.2.3" },
+    ]) {
+      const response = await __handlers.packagesDeleteRouterV1Handler(
+        makeCtx({ runMutation }),
+        new Request(
+          `https://example.com/api/v1/packages/%40openclaw%2Fdemo-plugin/versions/1.2.3?version=${queryVersion}`,
+          {
+            method: "DELETE",
+            headers: { Authorization: "Bearer clh_test" },
+            body: JSON.stringify({ version: bodyVersion }),
+          },
+        ),
+      );
+
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Version does not match request target");
+    }
+    expect(runMutation.mock.calls.filter(([, args]) => !("key" in args))).toHaveLength(0);
   });
 
   it("rejects a body-only package version selector on the whole-package route", async () => {

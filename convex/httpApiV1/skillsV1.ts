@@ -2997,7 +2997,7 @@ export async function skillsDeleteRouterV1Handler(ctx: ActionCtx, request: Reque
     const { userId } = await requireApiTokenUser(ctx, request);
     const body = await readOptionalJson(request);
     if (isVersionDelete) {
-      const versionTarget = resolveVersionPathTarget(segments[2], body);
+      const versionTarget = resolveVersionPathTarget(segments[2], request, body);
       if (versionTarget.error) return text(versionTarget.error, 400, rate.headers);
       await runMutationRef(ctx, internalRefs.skills.deleteOwnedVersionForUserInternal, {
         actorUserId: userId,
@@ -3067,6 +3067,7 @@ function hasOwnField(value: unknown, key: string) {
 
 function resolveVersionPathTarget(
   pathVersion: string | undefined,
+  request: Request,
   body: unknown,
 ): { version?: string; error?: string } {
   const rawBodyVersion = optionalStringField(body, "version");
@@ -3075,10 +3076,20 @@ function resolveVersionPathTarget(
   }
   const version = pathVersion?.trim();
   const bodyVersion = rawBodyVersion?.trim();
-  if (!version || (rawBodyVersion !== undefined && !bodyVersion)) {
+  const queryVersions = new URL(request.url).searchParams
+    .getAll("version")
+    .map((queryVersion) => queryVersion.trim());
+  if (
+    !version ||
+    (rawBodyVersion !== undefined && !bodyVersion) ||
+    queryVersions.some((queryVersion) => !queryVersion)
+  ) {
     return { error: "Version cannot be empty" };
   }
-  if (bodyVersion && bodyVersion !== version) {
+  if (
+    (bodyVersion && bodyVersion !== version) ||
+    queryVersions.some((queryVersion) => queryVersion !== version)
+  ) {
     return { error: "Version does not match request target" };
   }
   return { version };
