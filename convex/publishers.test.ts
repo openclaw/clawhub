@@ -176,7 +176,7 @@ const listPublicPageHandler = (
         handle: string;
         kind: "user" | "org";
         stats: { installs: number };
-        publishedItems: Array<{ displayName: string; installs: number }>;
+        publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
       }>;
       counts: { all: number; individuals: number; organizations: number };
       globalCounts: { all: number; individuals: number; organizations: number };
@@ -1611,7 +1611,7 @@ describe("publishers membership controls", () => {
       "Popular Skill",
     ]);
     expect(result.page[0]?.publishedItems.map((item) => item.installs)).toEqual([50, 40, 35]);
-    expect(result.page[0]?.publishedItems[0]).not.toHaveProperty("downloads");
+    expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([12, 10, 98]);
   });
 
   it("does not hydrate every publisher catalog preview before filtering public publisher pages", async () => {
@@ -1809,11 +1809,11 @@ describe("publishers membership controls", () => {
     expect(result.page).toMatchObject([
       {
         displayName: "Example Plugin",
+        downloads: 7,
         href: "/plugins/@openclaw/example-plugin",
         installs: 3,
       },
     ]);
-    expect(result.page[0]).not.toHaveProperty("downloads");
   });
 
   it("excludes hidden and removed skills from publisher catalogs", async () => {

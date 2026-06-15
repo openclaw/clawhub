@@ -28,6 +28,8 @@ export type GitHubSkillCatalogItem = {
   icon: string | null;
   href: string;
   installs: number;
+  /** Legacy response field retained while older frontend bundles are cached. */
+  downloads: number;
   stars: number;
   isOfficial: boolean;
   updatedAt: number;

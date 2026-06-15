@@ -28,6 +28,18 @@ describe("PublisherListItem", () => {
     expect(screen.queryByText("downloads")).toBeNull();
     expect(screen.queryByText("12")).toBeNull();
   });
+
+  it("renders legacy preview metrics as installs during rollout", () => {
+    const publisher = makePublisher();
+    publisher.publishedItems = [
+      { kind: "skill", displayName: "Legacy Skill", downloads: 12 } as never,
+    ];
+
+    render(<PublisherListItem publisher={publisher} variant="highlight" />);
+
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.queryByText("downloads")).toBeNull();
+  });
 });
 
 function makePublisher(): PublicPublisherListItem {

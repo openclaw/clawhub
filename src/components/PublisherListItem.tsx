@@ -1,7 +1,11 @@
 import { Link } from "@tanstack/react-router";
 import { PackageCheck } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
-import type { PublicPublisherListItem, PublicPublisherPublishedItem } from "../lib/publicUser";
+import {
+  type PublicPublisherListItem,
+  type PublicPublisherPublishedItem,
+  readPublicInstallCount,
+} from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 
@@ -65,7 +69,7 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
                   <span className="publisher-card-featured-label">{item.displayName}</span>
                   <span className="publisher-card-featured-installs">
                     <PackageCheck size={12} aria-hidden="true" />
-                    <span>{formatCompactStat(item.installs)}</span>
+                    <span>{formatCompactStat(readPublicInstallCount(item))}</span>
                   </span>
                 </span>
               ))}

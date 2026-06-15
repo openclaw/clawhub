@@ -1329,6 +1329,8 @@ export const getHoverStats = query({
     return {
       publishedSkills: publisher?.publishedSkills ?? user?.publishedSkills ?? 0,
       totalStars: publisher?.totalStars ?? user?.totalStars ?? 0,
+      // Older cached frontend bundles still read this field during rollout.
+      totalDownloads: publisher?.totalDownloads ?? user?.totalDownloads ?? 0,
       totalInstalls,
     };
   },

@@ -64,10 +64,10 @@ type PublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
   installs: number;
-};
-type PublisherPublishedPreviewItem = PublisherPublishedItem & {
+  /** Legacy response field retained while older frontend bundles are cached. */
   downloads: number;
 };
+type PublisherPublishedPreviewItem = PublisherPublishedItem;
 
 type PublisherCatalogItem = {
   _id: Id<"skills"> | Id<"packages">;
@@ -82,6 +82,8 @@ type PublisherCatalogItem = {
   icon: string | null;
   href: string;
   installs: number;
+  /** Legacy response field retained while older frontend bundles are cached. */
+  downloads: number;
   stars: number;
   isOfficial: boolean;
   updatedAt: number;
@@ -315,17 +317,13 @@ function getPublisherPublishedItems(
     })),
   ];
   return items
-    .sort(
-      (a, b) =>
-        b.installs - a.installs ||
-        b.downloads - a.downloads ||
-        a.displayName.localeCompare(b.displayName),
-    )
+    .sort((a, b) => b.installs - a.installs || a.displayName.localeCompare(b.displayName))
     .slice(0, limit)
     .map((item) => ({
       kind: item.kind,
       displayName: item.displayName,
       installs: item.installs,
+      downloads: item.downloads,
     }));
 }
 
@@ -382,6 +380,7 @@ function getPublisherCatalogItems(
       icon: skill.icon ?? null,
       href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
       installs: readCanonicalStat(skill, "installsAllTime"),
+      downloads: readCanonicalStat(skill, "downloads"),
       stars: readCanonicalStat(skill, "stars"),
       isOfficial: publisherOfficial || Boolean(skill.badges?.official),
       updatedAt: skill.updatedAt,
@@ -398,6 +397,7 @@ function getPublisherCatalogItems(
       icon: null,
       href: buildPluginDetailHref(pkg.name),
       installs: pkg.stats.installs,
+      downloads: pkg.stats.downloads,
       stars: pkg.stats.stars,
       isOfficial: publisherOfficial || pkg.isOfficial,
       updatedAt: pkg.updatedAt,
@@ -428,6 +428,7 @@ function toGitHubSkillCatalogItem(
     icon: item.icon,
     href: item.href,
     installs: item.installs,
+    downloads: item.downloads,
     stars: item.stars,
     isOfficial: item.isOfficial,
     updatedAt: item.updatedAt,
@@ -1897,6 +1898,7 @@ export const listStarredPage = query({
             icon: skill.icon ?? null,
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
             installs: readCanonicalStat(skill, "installsAllTime"),
+            downloads: readCanonicalStat(skill, "downloads"),
             stars: readCanonicalStat(skill, "stars"),
             isOfficial: official || Boolean(skill.badges?.official),
             updatedAt: skill.updatedAt,

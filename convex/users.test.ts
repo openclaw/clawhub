@@ -1374,6 +1374,7 @@ describe("users.getHoverStats", () => {
           displayName: "Owner",
           publishedSkills: 4,
           totalStars: 5,
+          totalDownloads: 91,
           totalInstalls: 37,
           createdAt: 1,
           updatedAt: 1,
@@ -1397,6 +1398,7 @@ describe("users.getHoverStats", () => {
     expect(result).toEqual({
       publishedSkills: 4,
       totalStars: 5,
+      totalDownloads: 91,
       totalInstalls: 37,
     });
   });
@@ -1425,6 +1427,7 @@ describe("users.getHoverStats", () => {
           displayName: "Owner",
           publishedSkills: 1,
           totalStars: 2,
+          totalDownloads: 30,
           createdAt: 1,
           updatedAt: 1,
         };
@@ -1476,6 +1479,7 @@ describe("users.getHoverStats", () => {
     expect(result).toEqual({
       publishedSkills: 1,
       totalStars: 2,
+      totalDownloads: 30,
       totalInstalls: 20,
     });
     expect(takeLimits).toHaveLength(4);

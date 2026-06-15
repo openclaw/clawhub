@@ -103,7 +103,16 @@ export function UserBadge({
   );
 }
 
-type HoverStats = { publishedSkills: number; totalStars: number; totalInstalls: number };
+type HoverStats = {
+  publishedSkills: number;
+  totalStars: number;
+  totalInstalls?: number;
+  totalDownloads?: number;
+};
+
+export function getHoverTotalInstalls(stats: HoverStats) {
+  return stats.totalInstalls ?? stats.totalDownloads ?? 0;
+}
 
 function UserStatsTooltipContent({
   userId,
@@ -165,7 +174,7 @@ function UserStatsTooltipContent({
               title="Total installs"
             >
               <PackageCheck size={12} />
-              {formatCompactStat(stats.totalInstalls)}
+              {formatCompactStat(getHoverTotalInstalls(stats))}
             </span>
           </>
         )}

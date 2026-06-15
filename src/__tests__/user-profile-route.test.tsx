@@ -84,4 +84,14 @@ describe("user profile route", () => {
     expect(within(stats).getByText("installs")).toBeTruthy();
     expect(within(stats).queryByText("downloads")).toBeNull();
   });
+
+  it("uses the legacy sort alias while the backend rollout remains compatible", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const args = paginatedQueryMock.mock.calls.map((call) => call[1]);
+    expect(args).toContainEqual(expect.objectContaining({ handle: "nvidia", sort: "downloads" }));
+  });
 });

@@ -21,7 +21,8 @@ type PublicPublisherStats = {
 export type PublicPublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
-  installs: number;
+  installs?: number;
+  downloads?: number;
 };
 
 export type PublicPublisherListItem = PublicPublisher & {
@@ -45,7 +46,8 @@ export type PublicPublisherCatalogItem = {
    */
   icon: string | null;
   href: string;
-  installs: number;
+  installs?: number;
+  downloads?: number;
   stars: number;
   isOfficial: boolean;
   updatedAt: number;
@@ -68,6 +70,10 @@ export type PublicPublisherCatalogDisplay = {
   sourceRepos: string[];
   sections: PublicPublisherCatalogSection[];
 };
+
+export function readPublicInstallCount(value: { installs?: number; downloads?: number }) {
+  return value.installs ?? value.downloads ?? 0;
+}
 
 export type PublicSkill = Pick<
   Doc<"skills">,

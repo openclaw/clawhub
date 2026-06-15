@@ -27,6 +27,7 @@ import type {
   PublicPublisherCatalogItem,
   PublicPublisherListItem,
 } from "../../lib/publicUser";
+import { readPublicInstallCount } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/user/$handle")({
   loader: async ({ params }) => {
@@ -104,11 +105,12 @@ function PublisherProfile() {
     | null
     | undefined;
   const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
+  // The backend normalizes this legacy validator-compatible alias to install ranking.
   const publishedQueryArgs: {
     handle: string;
     kind: "skill" | "plugin";
-    sort: "installs";
-  } = { handle, kind: publishedKind, sort: "installs" };
+    sort: "downloads";
+  } = { handle, kind: publishedKind, sort: "downloads" };
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
     publishedQueryArgs,
@@ -130,7 +132,7 @@ function PublisherProfile() {
     loadMore: loadMoreStarred,
   } = usePaginatedQuery(
     api.publishers.listStarredPage,
-    { handle, sort: "installs" },
+    { handle, sort: "downloads" },
     {
       initialNumItems: 12,
     },
@@ -536,7 +538,7 @@ export function PublishedItemCard({
           <div className="skill-card-footer-inline publisher-published-card-stats">
             <span className="skill-list-item-meta-item">
               <PackageCheck size={14} aria-hidden="true" />
-              <strong>{formatCompactStat(item.installs)}</strong> installs
+              <strong>{formatCompactStat(readPublicInstallCount(item))}</strong> installs
             </span>
             <span className="skill-list-item-meta-item">
               <Star size={14} aria-hidden="true" />
@@ -565,7 +567,7 @@ export function PublishedItemCard({
       <div className="skill-list-item-meta publisher-published-row-stats">
         <span className="skill-list-item-meta-item">
           <PackageCheck size={14} aria-hidden="true" />
-          <strong>{formatCompactStat(item.installs)}</strong> installs
+          <strong>{formatCompactStat(readPublicInstallCount(item))}</strong> installs
         </span>
         <span className="skill-list-item-meta-item">
           <Star size={14} aria-hidden="true" />
