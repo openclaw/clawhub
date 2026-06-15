@@ -118,7 +118,6 @@ import type * as maintenance from "../maintenance.js";
 import type * as managementDevSeed from "../managementDevSeed.js";
 import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageInspectorNode from "../packageInspectorNode.js";
-import type * as packageLegacyZipHashBackfill from "../packageLegacyZipHashBackfill.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
 import type * as publisherAbuse from "../publisherAbuse.js";
@@ -263,7 +262,6 @@ declare const fullApi: ApiFromModules<{
   managementDevSeed: typeof managementDevSeed;
   packageInspectorHttp: typeof packageInspectorHttp;
   packageInspectorNode: typeof packageInspectorNode;
-  packageLegacyZipHashBackfill: typeof packageLegacyZipHashBackfill;
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;
   publisherAbuse: typeof publisherAbuse;
