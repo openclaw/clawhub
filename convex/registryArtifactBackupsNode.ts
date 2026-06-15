@@ -24,13 +24,14 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const DEFAULT_MAX_BATCHES = 5;
 const MAX_MAX_BATCHES = 200;
-const DEFAULT_JOB_BATCH_SIZE = 200;
+const DEFAULT_JOB_BATCH_SIZE = 500;
 const MAX_RETRY_REPAIR_ATTEMPTS = 16;
-const MAX_PARALLEL_RETRY_ROOTS = 25;
+const MAX_PARALLEL_RETRY_ROOTS = 50;
 const UNKNOWN_PACKAGE_ARTIFACT_BYTES = 120 * 1024 * 1024;
 const UNKNOWN_SKILL_ARTIFACT_BYTES = 50 * 1024 * 1024;
 const MAX_PARALLEL_RETRY_ARTIFACT_BYTES = UNKNOWN_PACKAGE_ARTIFACT_BYTES;
 const STALE_BACKUP_JOB_MS = 24 * 60 * 60 * 1000;
+const RETRY_LEASE_TTL_MS = 20 * 60 * 1000;
 
 type BackupPageItem =
   | {
@@ -119,6 +120,11 @@ export type SeedRegistryArtifactBackupsInternalResult = {
 
 export type ProcessRegistryArtifactBackupRetriesInternalResult = {
   stats: RegistryArtifactBackupSyncStats;
+};
+
+export type ProcessRegistryArtifactBackupRetriesInternalArgs = {
+  dryRun?: boolean;
+  forceDue?: boolean;
 };
 
 export const backupSkillForPublishInternal = internalAction({
@@ -466,12 +472,14 @@ async function processDueRegistryArtifactBackupJobs(
   context: RegistryArtifactBackupContext,
   dryRun: boolean,
   stats: RegistryArtifactBackupSyncStats,
+  options: { forceDue?: boolean } = {},
 ) {
   if (dryRun) return;
   const jobs = (await ctx.runQuery(
     internal.registryArtifactBackups.getDueRegistryArtifactBackupJobsInternal,
     {
       includeExhaustedRepair: true,
+      ignoreNextRunAt: options.forceDue,
       limit: DEFAULT_JOB_BATCH_SIZE,
       maxRepairAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
     },
@@ -992,7 +1000,7 @@ async function alertOnUnhealthyBackupBacklog(
 
 export async function processRegistryArtifactBackupRetriesInternalHandler(
   ctx: ActionCtx,
-  args: { dryRun?: boolean },
+  args: ProcessRegistryArtifactBackupRetriesInternalArgs,
 ): Promise<ProcessRegistryArtifactBackupRetriesInternalResult> {
   const stats = initialRegistryArtifactBackupSyncStats();
 
@@ -1001,8 +1009,35 @@ export async function processRegistryArtifactBackupRetriesInternalHandler(
   }
 
   const context = getRegistryArtifactBackupContext();
-  await processDueRegistryArtifactBackupJobs(ctx, context, Boolean(args.dryRun), stats);
-  await alertOnUnhealthyBackupBacklog(ctx, stats);
+  if (args.dryRun) {
+    await processDueRegistryArtifactBackupJobs(ctx, context, true, stats);
+    await alertOnUnhealthyBackupBacklog(ctx, stats);
+    return { stats };
+  }
+
+  const token = `retry-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const lease = (await ctx.runMutation(
+    internal.registryArtifactBackups.tryAcquireRegistryArtifactBackupRetryLeaseInternal,
+    {
+      token,
+      ttlMs: RETRY_LEASE_TTL_MS,
+    },
+  )) as { acquired: boolean };
+  if (!lease.acquired) return { stats };
+
+  try {
+    await processDueRegistryArtifactBackupJobs(ctx, context, false, stats, {
+      forceDue: args.forceDue,
+    });
+    await alertOnUnhealthyBackupBacklog(ctx, stats);
+  } finally {
+    await ctx.runMutation(
+      internal.registryArtifactBackups.releaseRegistryArtifactBackupRetryLeaseInternal,
+      {
+        token,
+      },
+    );
+  }
   return { stats };
 }
 
@@ -1018,6 +1053,7 @@ export const seedRegistryArtifactBackupsInternal = internalAction({
 export const processRegistryArtifactBackupRetriesInternal = internalAction({
   args: {
     dryRun: v.optional(v.boolean()),
+    forceDue: v.optional(v.boolean()),
   },
   handler: processRegistryArtifactBackupRetriesInternalHandler,
 });

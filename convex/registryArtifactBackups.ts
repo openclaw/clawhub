@@ -11,12 +11,15 @@ const DEFAULT_BATCH_SIZE = 50;
 const MAX_BATCH_SIZE = 200;
 const SYNC_STATE_KEY = "default";
 const PACKAGE_SYNC_STATE_KEY = "packageReleases";
+const RETRY_LEASE_KEY = "retryLease";
 const MAX_BACKUP_JOB_ERROR_LENGTH = 4000;
 const DEFAULT_BACKUP_HEALTH_SAMPLE_LIMIT = 500;
 const MAX_BACKUP_HEALTH_SAMPLE_LIMIT = 1000;
 const DEFAULT_BACKUP_JOB_LIMIT = 25;
-const MAX_BACKUP_JOB_LIMIT = 200;
+const MAX_BACKUP_JOB_LIMIT = 500;
 const DEFAULT_BACKUP_JOB_REPAIR_ATTEMPTS = 16;
+const DEFAULT_RETRY_LEASE_TTL_MS = 20 * 60 * 1000;
+const MAX_RETRY_LEASE_TTL_MS = 60 * 60 * 1000;
 
 type BackupPageItem =
   | {
@@ -342,6 +345,71 @@ export const setPackageRegistryArtifactBackupSyncStateInternal = internalMutatio
   },
 });
 
+export async function tryAcquireRegistryArtifactBackupRetryLeaseHandler(
+  ctx: Pick<MutationCtx, "db">,
+  args: { now?: number; token: string; ttlMs?: number },
+) {
+  const now = args.now ?? Date.now();
+  const ttlMs = clampInt(args.ttlMs ?? DEFAULT_RETRY_LEASE_TTL_MS, 1_000, MAX_RETRY_LEASE_TTL_MS);
+  const state = await ctx.db
+    .query("registryArtifactBackupSyncState")
+    .withIndex("by_key", (q) => q.eq("key", RETRY_LEASE_KEY))
+    .unique();
+  if (state?.cursor && state.updatedAt + ttlMs > now) {
+    return { acquired: false as const, holderUpdatedAt: state.updatedAt };
+  }
+
+  if (!state) {
+    await ctx.db.insert("registryArtifactBackupSyncState", {
+      key: RETRY_LEASE_KEY,
+      cursor: args.token,
+      updatedAt: now,
+    });
+    return { acquired: true as const };
+  }
+
+  await ctx.db.patch(state._id, {
+    cursor: args.token,
+    updatedAt: now,
+  });
+  return { acquired: true as const };
+}
+
+export const tryAcquireRegistryArtifactBackupRetryLeaseInternal = internalMutation({
+  args: {
+    now: v.optional(v.number()),
+    token: v.string(),
+    ttlMs: v.optional(v.number()),
+  },
+  handler: tryAcquireRegistryArtifactBackupRetryLeaseHandler,
+});
+
+export async function releaseRegistryArtifactBackupRetryLeaseHandler(
+  ctx: Pick<MutationCtx, "db">,
+  args: { now?: number; token: string },
+) {
+  const now = args.now ?? Date.now();
+  const state = await ctx.db
+    .query("registryArtifactBackupSyncState")
+    .withIndex("by_key", (q) => q.eq("key", RETRY_LEASE_KEY))
+    .unique();
+  if (!state || state.cursor !== args.token) return { released: false as const };
+
+  await ctx.db.patch(state._id, {
+    cursor: undefined,
+    updatedAt: now,
+  });
+  return { released: true as const };
+}
+
+export const releaseRegistryArtifactBackupRetryLeaseInternal = internalMutation({
+  args: {
+    now: v.optional(v.number()),
+    token: v.string(),
+  },
+  handler: releaseRegistryArtifactBackupRetryLeaseHandler,
+});
+
 const registryArtifactBackupTargetKindValidator = v.union(
   v.literal("skillVersion"),
   v.literal("packageRelease"),
@@ -411,6 +479,7 @@ export const markRegistryArtifactBackupJobFailedInternal = internalMutation({
 export const getDueRegistryArtifactBackupJobsInternal = internalQuery({
   args: {
     includeExhaustedRepair: v.optional(v.boolean()),
+    ignoreNextRunAt: v.optional(v.boolean()),
     maxRepairAttempts: v.optional(v.number()),
     now: v.optional(v.number()),
     limit: v.optional(v.number()),
@@ -420,7 +489,10 @@ export const getDueRegistryArtifactBackupJobsInternal = internalQuery({
     const limit = clampInt(args.limit ?? DEFAULT_BACKUP_JOB_LIMIT, 1, MAX_BACKUP_JOB_LIMIT);
     const pending = await ctx.db
       .query("registryArtifactBackupJobs")
-      .withIndex("by_status_nextRunAt", (q) => q.eq("status", "pending").lte("nextRunAt", now))
+      .withIndex("by_status_nextRunAt", (q) => {
+        const byStatus = q.eq("status", "pending");
+        return args.ignoreNextRunAt ? byStatus : byStatus.lte("nextRunAt", now);
+      })
       .take(limit);
     if (!args.includeExhaustedRepair || pending.length >= limit) return pending;
 
