@@ -4,6 +4,8 @@ import { fetchPackageVersions } from "../lib/packageApi";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 
+export const PLUGIN_VERSIONS_PAGE_SIZE = 20;
+
 type PluginVersionsPanelProps = {
   packageName: string;
   versions: ApiV1PackageVersionListResponse | null | undefined;
@@ -35,7 +37,10 @@ export function PluginVersionsPanel({ packageName, versions }: PluginVersionsPan
     setIsLoadingMore(true);
     setLoadMoreError(null);
     try {
-      const page = await fetchPackageVersions(packageName, { cursor, limit: 100 });
+      const page = await fetchPackageVersions(packageName, {
+        cursor,
+        limit: PLUGIN_VERSIONS_PAGE_SIZE,
+      });
       if (requestGeneration !== requestGenerationRef.current) return;
       setReleases((current) => [...current, ...page.items]);
       setNextCursor(page.nextCursor);

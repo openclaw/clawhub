@@ -1,5 +1,6 @@
 /* @vitest-environment jsdom */
 
+import { createRequire } from "node:module";
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { AnchorHTMLAttributes, ComponentType, ReactNode } from "react";
@@ -273,7 +274,7 @@ describe("plugin detail route", () => {
 
     expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
       cursor: "versions:next",
-      limit: 100,
+      limit: 20,
     });
     expect(screen.getByText("Current page")).toBeTruthy();
     expect(screen.getByText("Loaded next page")).toBeTruthy();
@@ -366,7 +367,7 @@ describe("plugin detail route", () => {
 
     expect(fetchPackageVersions).toHaveBeenLastCalledWith("demo-plugin", {
       cursor: "versions:next",
-      limit: 100,
+      limit: 20,
     });
     expect(screen.getByText("Loaded after retry")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
@@ -460,11 +461,43 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
+    await act(async () => {});
 
     expect(screen.getByRole("tab", { name: "Versions" }).getAttribute("aria-selected")).toBe(
       "true",
     );
     expect(screen.getByText("Initial release")).toBeTruthy();
+  });
+
+  it("keeps the first render on README when the URL hash targets versions", async () => {
+    window.location.hash = "#versions";
+    loaderDataMock = {
+      ...loaderDataMock,
+      versions: {
+        items: [
+          {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Initial release",
+            distTags: ["latest"],
+          },
+        ],
+        nextCursor: null,
+      },
+      readme: "SSR README",
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+    const { renderToString } = createRequire(`${process.cwd()}/package.json`)(
+      "react-dom/server",
+    ) as {
+      renderToString: (node: ReactNode) => string;
+    };
+
+    const html = renderToString(<Component />);
+
+    expect(html).toContain("SSR README");
+    expect(html).not.toContain("Initial release");
   });
 
   it("keeps the versions tab available for empty active release histories", async () => {
@@ -1229,6 +1262,34 @@ describe("plugin detail route", () => {
     expect(result.rateLimited).toBeNull();
   });
 
+  it("keeps latest version and README when active release history is rate limited", async () => {
+    const route = await loadRoute();
+    const loader = route.__config.loader as ({
+      params,
+    }: {
+      params: { name: string };
+    }) => Promise<PluginDetailLoaderData>;
+    const latestVersion = { package: null, version: null };
+
+    vi.mocked(fetchPackageDetail).mockResolvedValueOnce({
+      package: {
+        ...loaderDataMock.detail.package!,
+        latestVersion: "1.0.0",
+      },
+      owner: null,
+    });
+    vi.mocked(fetchPackageVersion).mockResolvedValueOnce(latestVersion);
+    vi.mocked(fetchPackageReadme).mockResolvedValueOnce("README");
+    vi.mocked(fetchPackageVersions).mockRejectedValueOnce({ status: 429, retryAfterSeconds: 11 });
+
+    const result = await loader({ params: { name: "demo-plugin" } });
+
+    expect(result.version).toBe(latestVersion);
+    expect(result.readme).toBe("README");
+    expect(result.versions).toBeNull();
+    expect(result.rateLimited).toBeNull();
+  });
+
   it("prefers the official scoped package name for short plugin routes", async () => {
     const route = await loadRoute();
     const loader = route.__config.loader as ({
@@ -1267,7 +1328,7 @@ describe("plugin detail route", () => {
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
-    expect(fetchPackageVersions).toHaveBeenCalledWith("@openclaw/matrix", { limit: 100 });
+    expect(fetchPackageVersions).toHaveBeenCalledWith("@openclaw/matrix", { limit: 20 });
     expect(result.versions).toEqual(emptyVersions);
     expect(result.detail.package?.name).toBe("@openclaw/matrix");
     expect(result.rateLimited).toBeNull();

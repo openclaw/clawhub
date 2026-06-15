@@ -13,7 +13,10 @@ import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { OfficialTag } from "../../components/OfficialBadge";
-import { PluginVersionsPanel } from "../../components/PluginVersionsPanel";
+import {
+  PLUGIN_VERSIONS_PAGE_SIZE,
+  PluginVersionsPanel,
+} from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Alert, AlertDescription } from "../../components/ui/alert";
@@ -128,10 +131,7 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
       detail.package.latestVersion
         ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
         : Promise.resolve(null),
-      fetchPackageVersions(resolvedName, { limit: 100 }).catch((error: unknown) => {
-        if (isRateLimitedPackageApiError(error)) throw error;
-        return null;
-      }),
+      fetchPackageVersions(resolvedName, { limit: PLUGIN_VERSIONS_PAGE_SIZE }).catch(() => null),
       fetchPackageReadme(resolvedName),
     ]);
 
@@ -380,10 +380,7 @@ export function PluginDetailPage({
   const authorInspectorFindings = Array.isArray(inspectorFindings)
     ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
     : undefined;
-  const [activeTab, setActiveTab] = useState<PluginDetailTab>(() => {
-    if (typeof window === "undefined") return "readme";
-    return pluginDetailTabFromHash(window.location.hash);
-  });
+  const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
   useEffect(() => {
     const syncTabFromHash = () => setActiveTab(pluginDetailTabFromHash(window.location.hash));
     window.addEventListener("hashchange", syncTabFromHash);
