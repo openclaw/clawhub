@@ -3556,7 +3556,7 @@ async function listPackagePageImpl(
       return ctx.db.query("packages").withIndex(indexName, (q) => q.eq("softDeletedAt", undefined));
     };
 
-    while ((pageOffset > 0 || !done) && collected.length < targetCount) {
+    if ((pageOffset > 0 || !done) && collected.length < targetCount) {
       const scanPageSize = Math.min(
         MAX_PUBLIC_LIST_PAGE_SIZE,
         pageOffset > 0 && pageSize
@@ -3653,11 +3653,7 @@ async function listPackagePageImpl(
   let pageOffset = offset;
   let pageSize: number | null = decodedCursor.pageSize ?? null;
   let done = decodedCursor.done;
-  const requiresDigestPostFilterScan = Boolean(
-    (topic && (category || args.capabilityTag)) || (category && args.capabilityTag),
-  );
-
-  while ((pageOffset > 0 || !done) && collected.length < targetCount) {
+  if ((pageOffset > 0 || !done) && collected.length < targetCount) {
     const scanPageSize = Math.min(
       MAX_PUBLIC_LIST_PAGE_SIZE,
       pageOffset > 0 && pageSize
@@ -3712,7 +3708,6 @@ async function listPackagePageImpl(
     cursor = page.continueCursor;
     pageOffset = 0;
     pageSize = scanPageSize;
-    if (!requiresDigestPostFilterScan) break;
   }
 
   return {
@@ -3768,28 +3763,14 @@ async function listOfficialFirstPackageCategoryPage(
         }),
       };
     }
-    if (collected.length >= targetCount) {
-      const communityProbe = await listPackagePageImpl(ctx, {
-        ...args,
-        officialFirst: false,
-        isOfficial: false,
-        paginationOpts: {
-          cursor: null,
-          numItems: 1,
-        },
-      });
-      const hasCommunityPage = communityProbe.page.length > 0 || !communityProbe.isDone;
-      return {
-        page: collected,
-        isDone: !hasCommunityPage,
-        continueCursor: hasCommunityPage
-          ? encodeOfficialFirstPackageCategoryCursor({
-              phase: "community",
-              cursor: communityProbe.page.length > 0 ? null : communityProbe.continueCursor,
-            })
-          : "",
-      };
-    }
+    return {
+      page: collected,
+      isDone: false,
+      continueCursor: encodeOfficialFirstPackageCategoryCursor({
+        phase: "community",
+        cursor: null,
+      }),
+    };
   }
 
   const communityPage = await listPackagePageImpl(ctx, {

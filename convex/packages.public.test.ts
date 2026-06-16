@@ -2824,7 +2824,7 @@ describe("packages public queries", () => {
     expect(indexFilters).toEqual([]);
   });
 
-  it("continues scanning global download-sorted pages for non-indexed filters", async () => {
+  it("continues global download-sorted filtering across separate paginated queries", async () => {
     const { ctx, indexNames, paginate } = makeDigestCtx({
       packagePages: [
         {
@@ -2860,14 +2860,21 @@ describe("packages public queries", () => {
       ],
     });
 
-    const result = await listPublicPageHandler(ctx, {
+    const first = await listPublicPageHandler(ctx, {
       executesCode: true,
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 1 },
     });
+    const second = await listPublicPageHandler(ctx, {
+      executesCode: true,
+      sort: "downloads",
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin"]);
-    expect(result.isDone).toBe(true);
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(second.page.map((entry) => entry.name)).toEqual(["code-plugin"]);
+    expect(second.isDone).toBe(true);
     expect(indexNames).toEqual(["by_active_downloads", "by_active_downloads"]);
     expect(paginate).toHaveBeenCalledTimes(2);
   });
@@ -3572,7 +3579,7 @@ describe("packages public queries", () => {
     expect(tableNames).toEqual([]);
   });
 
-  it("scans topic digest pages until a combined category match is found", async () => {
+  it("continues combined topic and category filtering across separate paginated queries", async () => {
     const { ctx, indexNames, tableNames, paginate } = makeDigestCtx({
       topicPages: [
         {
@@ -3600,13 +3607,21 @@ describe("packages public queries", () => {
       ],
     });
 
-    const result = await listPublicPageHandler(ctx, {
+    const first = await listPublicPageHandler(ctx, {
       topic: "calendar",
       category: "data",
       paginationOpts: { cursor: null, numItems: 1 },
     });
+    const second = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      category: "data",
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-api"]);
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(second.page.map((entry) => entry.name)).toEqual(["calendar-api"]);
+    expect(second.isDone).toBe(true);
     expect(tableNames).toEqual(["packageTopicSearchDigest", "packageTopicSearchDigest"]);
     expect(indexNames).toEqual(["by_active_topic_updated", "by_active_topic_updated"]);
     expect(paginate).toHaveBeenCalledTimes(2);
@@ -3659,8 +3674,8 @@ describe("packages public queries", () => {
     expect(third.isDone).toBe(true);
   });
 
-  it("does not advertise an empty community page after a full official category page", async () => {
-    const { ctx } = makeDigestCtx({
+  it("transitions from official to community with one paginated query", async () => {
+    const { ctx, paginate } = makeDigestCtx({
       categoryPages: [
         {
           page: [
@@ -3683,8 +3698,9 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
-    expect(result.isDone).toBe(true);
-    expect(result.continueCursor).toBe("");
+    expect(result.isDone).toBe(false);
+    expect(result.continueCursor).toContain('"phase":"community"');
+    expect(paginate).toHaveBeenCalledTimes(1);
   });
 
   it("uses plugin category digests for category-filtered search", async () => {
