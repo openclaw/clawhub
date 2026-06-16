@@ -77,6 +77,9 @@ describe("cmdPublish", () => {
       const folder = join(workdir, "new-skill");
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequest.mockRejectedValueOnce(
+        new Error("Skill not found or unavailable to this account."),
+      );
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         skillId: "skill_1",

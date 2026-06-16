@@ -192,11 +192,18 @@ async function resolveSkillVersion(
   const url = registryUrl(ApiRoutes.resolve, registry);
   url.searchParams.set("slug", slug);
   url.searchParams.set("hash", fingerprint);
-  return apiRequest(
-    registry,
-    { method: "GET", url: url.toString(), token },
-    ApiV1SkillResolveResponseSchema,
-  );
+  try {
+    return await apiRequest(
+      registry,
+      { method: "GET", url: url.toString(), token },
+      ApiV1SkillResolveResponseSchema,
+    );
+  } catch (error) {
+    if (/skill not found|HTTP 404/i.test(formatError(error))) {
+      return { match: null, latestVersion: null };
+    }
+    throw error;
+  }
 }
 
 function resolveAutomaticVersion(latestVersion: string | null) {

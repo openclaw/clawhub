@@ -193,6 +193,11 @@ async function startLocalRegistry() {
     }
 
     if (request.method === "GET" && url.pathname === "/api/v1/resolve") {
+      if (url.searchParams.get("slug") === "new-skill") {
+        response.writeHead(404, { "Content-Type": "text/plain" });
+        response.end("Skill not found");
+        return;
+      }
       if (url.searchParams.get("slug") === "changed-skill") {
         writeJson(response, 200, {
           match: null,
@@ -278,6 +283,36 @@ describe("built CLI artifact", () => {
     });
     expect(requests.map((request) => request.method)).toEqual(["GET"]);
     expect(requests[0]?.path).toMatch(/^\/api\/v1\/resolve\?slug=changed-skill&hash=/);
+  });
+
+  it("defaults a new skill to 1.0.0 when the resolver returns 404", async () => {
+    const { registry } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-new-skill-publish-");
+    const skillDir = join(workdir, "new-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# New skill\n", "utf8");
+
+    const result = await runNodeAsync([
+      binPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      registry,
+      "skill",
+      "publish",
+      "new-skill",
+      "--dry-run",
+      "--json",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: "would-publish",
+      slug: "new-skill",
+      version: "1.0.0",
+      latestVersion: null,
+    });
   });
 
   it("runs help from the published bin entrypoint", async () => {
