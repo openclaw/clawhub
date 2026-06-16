@@ -3749,6 +3749,22 @@ describe("packages public queries", () => {
     });
     expect(first.page.map((entry) => entry.name)).toEqual(["official-security-z"]);
     expect(first.isDone).toBe(false);
+    const firstCursorState = JSON.parse(first.continueCursor.slice("pkgofficialfirst:".length)) as {
+      cursor: string;
+    };
+    const firstPageCursorState = JSON.parse(firstCursorState.cursor.slice("pkgpage:".length)) as {
+      cursor: string;
+    };
+    const firstIndexCursor = JSON.parse(firstPageCursorState.cursor) as {
+      v: number;
+      index: string;
+      key: unknown[];
+    };
+    expect(firstIndexCursor).toMatchObject({
+      v: 1,
+      index: "by_active_official_category_updated",
+    });
+    expect(firstIndexCursor.key).toHaveLength(6);
 
     const second = await listPublicPageHandler(ctx, {
       category: "security",

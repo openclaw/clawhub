@@ -3867,6 +3867,7 @@ async function listManualPackagePluginCategoryDigestPage(
   const decodedCursor = decodePackageIndexCursor({
     cursor: args.cursor,
     indexName,
+    // Self-describing getPage cursors also allow the `_creationTime` and `_id` tie-breakers.
     maxIndexKeyLength: eqPrefix.length + 1,
     eqPrefix,
   });
