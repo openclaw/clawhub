@@ -3465,6 +3465,7 @@ async function listPackagePageImpl(
     category?: string;
     topic?: string;
     officialFirst?: boolean;
+    manualPagination?: boolean;
     sort?: "updated" | "downloads" | "recommended" | "installs";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
@@ -3483,6 +3484,7 @@ async function listPackagePageImpl(
   const targetCount = args.paginationOpts.numItems;
   const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
+  const manualPagination = args.manualPagination ?? false;
   if (args.topic !== undefined && !topic) {
     return { page: [], isDone: true, continueCursor: "" };
   }
@@ -3541,21 +3543,23 @@ async function listPackagePageImpl(
     let pageOffset = offset;
     let pageSize: number | null = decodedCursor.pageSize ?? null;
     let done = decodedCursor.done;
+    const sortedIndexName = family
+      ? args.sort === "installs"
+        ? "by_active_family_installs"
+        : (recommendedIndexName ?? "by_active_family_downloads")
+      : args.sort === "installs"
+        ? "by_active_installs"
+        : (recommendedIndexName ?? "by_active_downloads");
+    const sortedEqPrefix: IndexKey = family ? [undefined, family] : [undefined];
     const buildSortedQuery = () => {
       if (family) {
-        const indexName =
-          args.sort === "installs"
-            ? "by_active_family_installs"
-            : (recommendedIndexName ?? "by_active_family_downloads");
         return ctx.db
           .query("packages")
-          .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined).eq("family", family));
+          .withIndex(sortedIndexName, (q) => q.eq("softDeletedAt", undefined).eq("family", family));
       }
-      const indexName =
-        args.sort === "installs"
-          ? "by_active_installs"
-          : (recommendedIndexName ?? "by_active_downloads");
-      return ctx.db.query("packages").withIndex(indexName, (q) => q.eq("softDeletedAt", undefined));
+      return ctx.db
+        .query("packages")
+        .withIndex(sortedIndexName, (q) => q.eq("softDeletedAt", undefined));
     };
 
     if ((pageOffset > 0 || !done) && collected.length < targetCount) {
@@ -3566,9 +3570,43 @@ async function listPackagePageImpl(
           : Math.max(targetCount * 5, targetCount, 50),
       );
       const currentCursor = cursor;
-      const page = await buildSortedQuery()
-        .order("desc")
-        .paginate({ cursor: currentCursor, numItems: scanPageSize });
+      const page = manualPagination
+        ? await (async () => {
+            const decodedManualCursor = decodePackageIndexCursor({
+              cursor: currentCursor,
+              indexName: sortedIndexName,
+              maxIndexKeyLength: sortedEqPrefix.length + 2,
+              eqPrefix: sortedEqPrefix,
+            });
+            if (currentCursor && !decodedManualCursor) {
+              throw new Error("Invalid cursor format");
+            }
+            const result = await getPage(ctx, {
+              table: "packages",
+              startIndexKey: decodedManualCursor ?? sortedEqPrefix,
+              startInclusive: !decodedManualCursor,
+              endIndexKey: sortedEqPrefix,
+              endInclusive: true,
+              absoluteMaxRows: scanPageSize,
+              order: "desc",
+              index: sortedIndexName,
+              schema,
+            });
+            return {
+              page: result.page,
+              isDone: !result.hasMore,
+              continueCursor:
+                result.hasMore && result.indexKeys.length > 0
+                  ? encodePackageIndexCursor(
+                      sortedIndexName,
+                      result.indexKeys[result.indexKeys.length - 1],
+                    )
+                  : "",
+            };
+          })()
+        : await buildSortedQuery()
+            .order("desc")
+            .paginate({ cursor: currentCursor, numItems: scanPageSize });
 
       for (let index = pageOffset; index < page.page.length; index += 1) {
         const pkg = page.page[index];
@@ -3667,9 +3705,17 @@ async function listPackagePageImpl(
       page: PackageDigestLike[];
       isDone: boolean;
       continueCursor: string;
-    } = await buildDigestQuery()
-      .order("desc")
-      .paginate({ cursor: currentCursor, numItems: scanPageSize });
+    } =
+      manualPagination && category
+        ? await listManualPackagePluginCategoryDigestPage(ctx, {
+            ...args,
+            category,
+            cursor: currentCursor,
+            numItems: scanPageSize,
+          })
+        : await buildDigestQuery()
+            .order("desc")
+            .paginate({ cursor: currentCursor, numItems: scanPageSize });
 
     for (let index = pageOffset; index < page.page.length; index += 1) {
       const digest = page.page[index] as PackageDigestLike;
@@ -3725,6 +3771,129 @@ async function listPackagePageImpl(
   };
 }
 
+function resolvePackagePluginCategoryDigestIndex(args: {
+  category: PluginCategorySlug;
+  family?: PackageFamily;
+  channel?: PackageChannel;
+  isOfficial: boolean;
+  executesCode?: boolean;
+}) {
+  const prefix = [undefined] satisfies IndexKey;
+  if (args.family && args.channel && typeof args.executesCode === "boolean") {
+    return {
+      indexName: "by_active_family_channel_category_executes_updated" as const,
+      eqPrefix: [
+        ...prefix,
+        args.family,
+        args.channel,
+        args.category,
+        args.executesCode,
+      ] as IndexKey,
+    };
+  }
+  if (args.family && typeof args.executesCode === "boolean") {
+    return {
+      indexName: "by_active_family_official_category_executes_updated" as const,
+      eqPrefix: [
+        ...prefix,
+        args.family,
+        args.isOfficial,
+        args.category,
+        args.executesCode,
+      ] as IndexKey,
+    };
+  }
+  if (args.channel && typeof args.executesCode === "boolean") {
+    return {
+      indexName: "by_active_channel_official_category_executes_updated" as const,
+      eqPrefix: [
+        ...prefix,
+        args.channel,
+        args.isOfficial,
+        args.category,
+        args.executesCode,
+      ] as IndexKey,
+    };
+  }
+  if (args.family && args.channel) {
+    return {
+      indexName: "by_active_family_channel_category_updated" as const,
+      eqPrefix: [...prefix, args.family, args.channel, args.category] as IndexKey,
+    };
+  }
+  if (args.family) {
+    return {
+      indexName: "by_active_family_official_category_updated" as const,
+      eqPrefix: [...prefix, args.family, args.isOfficial, args.category] as IndexKey,
+    };
+  }
+  if (args.channel) {
+    return {
+      indexName: "by_active_channel_official_category_updated" as const,
+      eqPrefix: [...prefix, args.channel, args.isOfficial, args.category] as IndexKey,
+    };
+  }
+  if (typeof args.executesCode === "boolean") {
+    return {
+      indexName: "by_active_official_category_executes_updated" as const,
+      eqPrefix: [...prefix, args.isOfficial, args.category, args.executesCode] as IndexKey,
+    };
+  }
+  return {
+    indexName: "by_active_official_category_updated" as const,
+    eqPrefix: [...prefix, args.isOfficial, args.category] as IndexKey,
+  };
+}
+
+async function listManualPackagePluginCategoryDigestPage(
+  ctx: DbReaderCtx,
+  args: {
+    category: PluginCategorySlug;
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    executesCode?: boolean;
+    cursor: string | null;
+    numItems: number;
+  },
+) {
+  if (typeof args.isOfficial !== "boolean") {
+    throw new Error("Manual category pagination requires an official filter");
+  }
+  const { indexName, eqPrefix } = resolvePackagePluginCategoryDigestIndex({
+    ...args,
+    isOfficial: args.isOfficial,
+  });
+  const decodedCursor = decodePackageIndexCursor({
+    cursor: args.cursor,
+    indexName,
+    maxIndexKeyLength: eqPrefix.length + 1,
+    eqPrefix,
+  });
+  if (args.cursor && !decodedCursor) {
+    throw new Error("Invalid cursor format");
+  }
+  const result = await getPage(ctx, {
+    table: "packagePluginCategorySearchDigest",
+    index: indexName,
+    startIndexKey: decodedCursor ?? eqPrefix,
+    startInclusive: !decodedCursor,
+    endIndexKey: eqPrefix,
+    endInclusive: true,
+    absoluteMaxRows: args.numItems,
+    order: "desc",
+    schema,
+  });
+  return {
+    page: result.page,
+    isDone: !result.hasMore,
+    continueCursor:
+      result.hasMore && result.indexKeys.length > 0
+        ? encodePackageIndexCursor(indexName, result.indexKeys[result.indexKeys.length - 1])
+        : "",
+  };
+}
+
 async function listOfficialFirstPackageCategoryPage(
   ctx: DbReaderCtx,
   args: {
@@ -3748,6 +3917,7 @@ async function listOfficialFirstPackageCategoryPage(
     const officialPage = await listPackagePageImpl(ctx, {
       ...args,
       officialFirst: false,
+      manualPagination: true,
       isOfficial: true,
       paginationOpts: {
         cursor: state.cursor,
@@ -3780,6 +3950,7 @@ async function listOfficialFirstPackageCategoryPage(
   const communityPage = await listPackagePageImpl(ctx, {
     ...args,
     officialFirst: false,
+    manualPagination: true,
     isOfficial: false,
     paginationOpts: {
       cursor: state.phase === "community" ? state.cursor : null,

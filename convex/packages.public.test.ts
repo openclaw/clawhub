@@ -1205,21 +1205,83 @@ function makeDigestCtx(options: {
     return next;
   };
 
-  const withIndex = vi.fn((table: string, indexName: string) => {
-    indexNames.push(indexName);
-    let ordered = false;
-    return {
-      first: vi.fn(async () => null),
-      order: vi.fn(() => {
-        if (ordered) throw new Error("query builder reused after iteration");
-        ordered = true;
-        return {
-          paginate: getPaginate(table),
-          take: getTake(table),
-        };
-      }),
-    };
-  });
+  const withIndex = vi.fn(
+    (
+      table: string,
+      indexName: string,
+      builder?: (q: {
+        eq: (field: string, value: unknown) => unknown;
+        gt: (field: string, value: unknown) => unknown;
+        gte: (field: string, value: unknown) => unknown;
+        lt: (field: string, value: unknown) => unknown;
+        lte: (field: string, value: unknown) => unknown;
+      }) => unknown,
+    ) => {
+      const filters: Array<{
+        op: "eq" | "gt" | "gte" | "lt" | "lte";
+        field: string;
+        value: unknown;
+      }> = [];
+      const queryBuilder = {
+        eq: (field: string, value: unknown) => {
+          filters.push({ op: "eq" as const, field, value });
+          return queryBuilder;
+        },
+        gt: (field: string, value: unknown) => {
+          filters.push({ op: "gt" as const, field, value });
+          return queryBuilder;
+        },
+        gte: (field: string, value: unknown) => {
+          filters.push({ op: "gte" as const, field, value });
+          return queryBuilder;
+        },
+        lt: (field: string, value: unknown) => {
+          filters.push({ op: "lt" as const, field, value });
+          return queryBuilder;
+        },
+        lte: (field: string, value: unknown) => {
+          filters.push({ op: "lte" as const, field, value });
+          return queryBuilder;
+        },
+      };
+      builder?.(queryBuilder);
+      indexNames.push(indexName);
+      let ordered = false;
+      return {
+        first: vi.fn(async () => null),
+        order: vi.fn((direction: "asc" | "desc" = "asc") => {
+          if (ordered) throw new Error("query builder reused after iteration");
+          ordered = true;
+          const rows = (rowsByTable.get(table) ?? [])
+            .filter((row) =>
+              filters.every(({ op, field, value }) => {
+                const current = readTestField(row, field);
+                if (op === "eq") return current === value;
+                if (op === "gt") return String(current) > String(value);
+                if (op === "gte") return String(current) >= String(value);
+                if (op === "lt") return String(current) < String(value);
+                return String(current) <= String(value);
+              }),
+            )
+            .sort((a, b) => {
+              const updatedDiff = Number(a.updatedAt) - Number(b.updatedAt);
+              if (updatedDiff !== 0) return direction === "desc" ? -updatedDiff : updatedDiff;
+              const idDiff = String(a._id).localeCompare(String(b._id));
+              return direction === "desc" ? -idDiff : idDiff;
+            });
+          return {
+            paginate: getPaginate(table),
+            take: getTake(table),
+            async *[Symbol.asyncIterator]() {
+              for (const row of rows) {
+                yield row;
+              }
+            },
+          };
+        }),
+      };
+    },
+  );
 
   return {
     indexNames,
@@ -1426,7 +1488,8 @@ function makeDigestCtx(options: {
           }
           tableNames.push(table);
           return {
-            withIndex: (indexName: string) => withIndex(table, indexName),
+            withIndex: (indexName: string, builder?: Parameters<typeof withIndex>[2]) =>
+              withIndex(table, indexName, builder),
           };
         }),
       },
@@ -3641,7 +3704,7 @@ describe("packages public queries", () => {
   });
 
   it("paginates official category plugins before community fallback", async () => {
-    const { ctx } = makeDigestCtx({
+    const { ctx, paginate } = makeDigestCtx({
       categoryPages: [
         {
           page: [
@@ -3650,7 +3713,12 @@ describe("packages public queries", () => {
               pluginCategory: "security",
               pluginCategoryTags: ["security"],
             }),
-            makeDigest("official-security", {
+            makeDigest("official-security-a", {
+              isOfficial: true,
+              pluginCategory: "security",
+              pluginCategoryTags: ["security"],
+            }),
+            makeDigest("official-security-z", {
               isOfficial: true,
               pluginCategory: "security",
               pluginCategoryTags: ["security"],
@@ -3667,7 +3735,7 @@ describe("packages public queries", () => {
       officialFirst: true,
       paginationOpts: { cursor: null, numItems: 1 },
     });
-    expect(first.page.map((entry) => entry.name)).toEqual(["official-security"]);
+    expect(first.page.map((entry) => entry.name)).toEqual(["official-security-z"]);
     expect(first.isDone).toBe(false);
 
     const second = await listPublicPageHandler(ctx, {
@@ -3675,7 +3743,7 @@ describe("packages public queries", () => {
       officialFirst: true,
       paginationOpts: { cursor: first.continueCursor, numItems: 1 },
     });
-    expect(second.page.map((entry) => entry.name)).toEqual(["community-security"]);
+    expect(second.page.map((entry) => entry.name)).toEqual(["official-security-a"]);
     expect(second.isDone).toBe(false);
 
     const third = await listPublicPageHandler(ctx, {
@@ -3683,11 +3751,46 @@ describe("packages public queries", () => {
       officialFirst: true,
       paginationOpts: { cursor: second.continueCursor, numItems: 1 },
     });
-    expect(third.page).toEqual([]);
+    expect(third.page.map((entry) => entry.name)).toEqual(["community-security"]);
     expect(third.isDone).toBe(true);
+    expect(paginate).not.toHaveBeenCalled();
   });
 
-  it("transitions from official to community with one paginated query", async () => {
+  it("fills a sorted official-first page without native pagination", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:community-security",
+              name: "community-security",
+              normalizedName: "community-security",
+              displayName: "Community Security",
+              isOfficial: false,
+              primaryCategory: "security",
+              pluginCategoryTags: ["security"],
+              stats: { downloads: 100, installs: 1, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["community-security"]);
+    expect(result.isDone).toBe(true);
+    expect(paginate).not.toHaveBeenCalled();
+  });
+
+  it("transitions from official to community without native pagination", async () => {
     const { ctx, paginate } = makeDigestCtx({
       categoryPages: [
         {
@@ -3713,7 +3816,7 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor).toContain('"phase":"community"');
-    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).not.toHaveBeenCalled();
   });
 
   it("fills an empty official-first page with community category plugins", async () => {
@@ -3741,7 +3844,7 @@ describe("packages public queries", () => {
 
     expect(result.page.map((entry) => entry.name)).toEqual(["community-security"]);
     expect(result.isDone).toBe(true);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(paginate).not.toHaveBeenCalled();
   });
 
   it("uses plugin category digests for category-filtered search", async () => {
