@@ -110,6 +110,71 @@ function makeCtx({
   };
 }
 
+function makeLegacyCommentHardDeleteCtx({
+  comments = [],
+  commentReports = [],
+}: {
+  comments?: Array<Record<string, unknown>>;
+  commentReports?: Array<Record<string, unknown>>;
+}) {
+  const deleteDoc = vi.fn();
+  const scheduler = { runAfter: vi.fn() };
+  const skill = {
+    _id: "skills:legacy",
+    slug: "legacy",
+    ownerUserId: "users:owner",
+    softDeletedAt: 1_000,
+    moderationStatus: "removed",
+    hiddenAt: 1_000,
+    hiddenBy: "users:admin",
+    stats: {
+      downloads: 0,
+      stars: 0,
+      comments: 0,
+      versions: 1,
+      installsCurrent: 0,
+      installsAllTime: 0,
+    },
+  };
+  const query = vi.fn((table: string) => {
+    if (table === "comments") {
+      return {
+        withIndex: () => ({
+          take: async () => comments,
+        }),
+      };
+    }
+    if (table === "commentReports") {
+      return {
+        withIndex: () => ({
+          take: async () => commentReports,
+        }),
+      };
+    }
+    throw new Error(`Unexpected table ${table}`);
+  });
+
+  return {
+    ctx: {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id, role: "admin" };
+          if (id === "skills:legacy") return skill;
+          return null;
+        }),
+        normalizeId: vi.fn(),
+        patch: vi.fn(),
+        delete: deleteDoc,
+        query,
+      },
+      scheduler,
+    } as never,
+    deleteDoc,
+    query,
+    scheduler,
+  };
+}
+
 describe("skills ban/unban batches", () => {
   it("starts hard-delete cleanup for active skills owned by a deleted publisher", async () => {
     const { ctx, patch, scheduler } = makeCtx({
@@ -718,5 +783,56 @@ describe("skills ban/unban batches", () => {
     });
 
     expect(patch).not.toHaveBeenCalledWith("skills:removed", expect.anything());
+  });
+
+  it("deletes legacy skill comments during hard-delete cleanup", async () => {
+    const { ctx, deleteDoc, query, scheduler } = makeLegacyCommentHardDeleteCtx({
+      comments: [{ _id: "comments:1" }, { _id: "comments:2" }],
+    });
+
+    await hardDeleteHandler(ctx, {
+      skillId: "skills:legacy",
+      actorUserId: "users:admin",
+      phase: "comments",
+    });
+
+    expect(query).toHaveBeenCalledWith("comments");
+    expect(deleteDoc).toHaveBeenCalledWith("comments:1");
+    expect(deleteDoc).toHaveBeenCalledWith("comments:2");
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:legacy",
+        actorUserId: "users:admin",
+        phase: "commentReports",
+        source: "admin",
+      }),
+    );
+  });
+
+  it("deletes legacy comment reports during hard-delete cleanup", async () => {
+    const { ctx, deleteDoc, query, scheduler } = makeLegacyCommentHardDeleteCtx({
+      commentReports: [{ _id: "commentReports:1" }],
+    });
+
+    await hardDeleteHandler(ctx, {
+      skillId: "skills:legacy",
+      actorUserId: "users:admin",
+      phase: "commentReports",
+    });
+
+    expect(query).toHaveBeenCalledWith("commentReports");
+    expect(deleteDoc).toHaveBeenCalledWith("commentReports:1");
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:legacy",
+        actorUserId: "users:admin",
+        phase: "reports",
+        source: "admin",
+      }),
+    );
   });
 });
