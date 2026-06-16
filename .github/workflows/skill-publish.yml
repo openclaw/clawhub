@@ -28,11 +28,6 @@ on:
         required: false
         type: string
         default: latest
-      bump:
-        description: Deprecated compatibility input. Updates always use the next patch version.
-        required: false
-        type: string
-        default: patch
       registry:
         description: ClawHub registry URL.
         required: false
