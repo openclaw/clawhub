@@ -61,3 +61,7 @@ export declare function resolvePluginPrimaryCategory(input: Parameters<typeof de
     primaryCategory?: string | null;
 }): PluginCategorySlug | undefined;
 export declare function resolveStoredPluginPrimaryCategory(input: Parameters<typeof resolvePluginPrimaryCategory>[0]): PluginCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY;
+export declare function resolvePublishedPluginPrimaryCategory(input: Omit<Parameters<typeof resolvePluginPrimaryCategory>[0], "primaryCategory"> & {
+    requestedPrimaryCategory?: string;
+    existingPrimaryCategory?: string | null;
+}): PluginCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY;

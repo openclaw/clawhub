@@ -7,7 +7,7 @@ import {
   normalizeInferredCatalogTopics,
   parseArk,
   resolvePluginPrimaryCategory,
-  resolveStoredPluginPrimaryCategory,
+  resolvePublishedPluginPrimaryCategory,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
   type PackageChannel,
@@ -6981,8 +6981,16 @@ async function publishPackageImpl(
     packageJson,
     readmeText: readmeEntry?.text ?? null,
   });
-  const primaryCategory = resolveStoredPluginPrimaryCategory({
-    primaryCategory: payload.primaryCategory ?? existingPackage?.primaryCategory,
+  if (
+    payload.primaryCategory !== undefined &&
+    payload.primaryCategory !== "" &&
+    !isPluginCategorySlug(payload.primaryCategory)
+  ) {
+    throw new ConvexError(`Unknown plugin category: ${payload.primaryCategory}`);
+  }
+  const primaryCategory = resolvePublishedPluginPrimaryCategory({
+    requestedPrimaryCategory: payload.primaryCategory,
+    existingPrimaryCategory: existingPackage?.primaryCategory,
     family,
     name,
     displayName,
@@ -6991,9 +6999,6 @@ async function publishPackageImpl(
     capabilityTags:
       codeArtifacts?.capabilities?.capabilityTags ?? bundleArtifacts?.capabilities?.capabilityTags,
   });
-  if (payload.primaryCategory !== undefined && !isPluginCategorySlug(payload.primaryCategory)) {
-    throw new ConvexError(`Unknown plugin category: ${payload.primaryCategory}`);
-  }
   const packageJsonTopics =
     packageJson && Array.isArray(packageJson.keywords)
       ? packageJson.keywords.filter((value): value is string => typeof value === "string")

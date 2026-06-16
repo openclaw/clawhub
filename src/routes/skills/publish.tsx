@@ -692,7 +692,7 @@ export function Upload() {
         changelog: trimmedChangelog,
         acceptLicenseTerms: acceptedLicenseTerms,
         tags: parsedTags,
-        ...(primaryCategory ? { primaryCategory } : {}),
+        primaryCategory,
         topics: parseCatalogTopicsInput(topics),
         files: uploaded,
       });

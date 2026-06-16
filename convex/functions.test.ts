@@ -624,6 +624,30 @@ describe("publisher digest scheduling", () => {
     ).toBe(false);
   });
 
+  it("skips redundant digest sync when a deactivated publisher is hard-deleted", () => {
+    expect(
+      shouldScheduleOwnerPublisherDigestSyncForPublisherChange({
+        id: "publishers:demo",
+        operation: "delete",
+        oldDoc: {
+          ...publisherChangeDoc,
+          deletedAt: 1_700_000_000_000,
+          deactivatedAt: 1_700_000_000_000,
+        },
+      } as never),
+    ).toBe(false);
+  });
+
+  it("schedules digest sync when an active publisher is directly hard-deleted", () => {
+    expect(
+      shouldScheduleOwnerPublisherDigestSyncForPublisherChange({
+        id: "publishers:demo",
+        operation: "delete",
+        oldDoc: publisherChangeDoc,
+      } as never),
+    ).toBe(true);
+  });
+
   it("skips unchanged publisher updates", () => {
     expect(
       shouldScheduleOwnerPublisherDigestSyncForPublisherChange({

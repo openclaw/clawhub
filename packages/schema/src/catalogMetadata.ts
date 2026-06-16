@@ -245,6 +245,22 @@ export function resolveStoredSkillPrimaryCategory(
   return resolveSkillPrimaryCategory(skill) ?? INTERNAL_UNCATEGORIZED_CATEGORY;
 }
 
+export function resolvePublishedSkillPrimaryCategory(
+  skill: Omit<SkillCategoryCandidate, "primaryCategory"> & {
+    requestedPrimaryCategory?: string;
+    existingPrimaryCategory?: string | null;
+  },
+): SkillCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY {
+  const { requestedPrimaryCategory, existingPrimaryCategory, ...candidate } = skill;
+  return resolveStoredSkillPrimaryCategory({
+    ...candidate,
+    primaryCategory:
+      requestedPrimaryCategory === undefined
+        ? existingPrimaryCategory
+        : requestedPrimaryCategory || undefined,
+  });
+}
+
 export function normalizeCatalogTopic(value: string): string | undefined {
   const normalized = value
     .trim()

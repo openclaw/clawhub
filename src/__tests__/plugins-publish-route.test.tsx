@@ -276,6 +276,7 @@ describe("plugins publish route", () => {
         family: "code-plugin",
         version: "1.2.3",
         changelog: "",
+        primaryCategory: "",
         source: expect.objectContaining({
           kind: "github",
           repo: "openclaw/demo-plugin",

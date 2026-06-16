@@ -4,6 +4,7 @@ import {
   deriveSkillPrimaryCategory,
   normalizeCatalogTopics,
   normalizeInferredCatalogTopics,
+  resolvePublishedSkillPrimaryCategory,
   resolveSkillPrimaryCategory,
   resolveStoredSkillPrimaryCategory,
   SKILL_CATEGORY_DEFINITIONS,
@@ -54,6 +55,23 @@ describe("catalog metadata", () => {
         summary: "A focused helper",
       }),
     ).toBe("uncategorized");
+  });
+
+  it("preserves omitted publish categories but re-infers explicit auto-detect selections", () => {
+    const candidate = {
+      existingPrimaryCategory: "security-review",
+      slug: "todoist-cli",
+      displayName: "Todoist CLI",
+      summary: "Manage tasks, projects, and planning.",
+    };
+
+    expect(resolvePublishedSkillPrimaryCategory(candidate)).toBe("security-review");
+    expect(
+      resolvePublishedSkillPrimaryCategory({
+        ...candidate,
+        requestedPrimaryCategory: "",
+      }),
+    ).toBe("productivity-tasks");
   });
 
   it("normalizes, deduplicates, and preserves author topic order", () => {

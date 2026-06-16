@@ -275,9 +275,10 @@ describe("Upload route", () => {
       ).toBe(true);
     });
     const args = publishVersion.mock.calls
-      .map((call) => call[0] as { files?: Array<{ path: string }> })
+      .map((call) => call[0] as { files?: Array<{ path: string }>; primaryCategory?: string })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
+    expect(args?.primaryCategory).toBe("");
   });
 
   it("blocks non-text folder uploads (png)", async () => {

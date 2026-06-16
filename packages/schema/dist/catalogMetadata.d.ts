@@ -104,6 +104,10 @@ export declare function isSkillCategorySlug(value: string | null | undefined): v
 export declare function deriveSkillPrimaryCategory(skill: Omit<SkillCategoryCandidate, "primaryCategory">): SkillCategorySlug | undefined;
 export declare function resolveSkillPrimaryCategory(skill: SkillCategoryCandidate): SkillCategorySlug | undefined;
 export declare function resolveStoredSkillPrimaryCategory(skill: SkillCategoryCandidate): SkillCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY;
+export declare function resolvePublishedSkillPrimaryCategory(skill: Omit<SkillCategoryCandidate, "primaryCategory"> & {
+    requestedPrimaryCategory?: string;
+    existingPrimaryCategory?: string | null;
+}): SkillCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY;
 export declare function normalizeCatalogTopic(value: string): string | undefined;
 export declare function normalizeCatalogTopics(values: readonly string[] | null | undefined): string[];
 export declare function normalizeInferredCatalogTopics(values: readonly string[] | null | undefined): string[];

@@ -306,7 +306,9 @@ export function shouldScheduleOwnerUserPackageDigestSyncForUserChange(
 export function shouldScheduleOwnerPublisherDigestSyncForPublisherChange(
   change: Change<DataModel, "publishers">,
 ) {
-  if (change.operation === "delete") return true;
+  if (change.operation === "delete") {
+    return !change.oldDoc.deletedAt && !change.oldDoc.deactivatedAt;
+  }
   if (
     change.operation === "update" &&
     change.oldDoc.handle === change.newDoc.handle &&

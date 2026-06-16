@@ -6,7 +6,7 @@ import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { formatBrowseCount } from "../../lib/browseCount";
 import { parseCatalogTopicFilter } from "../../lib/catalogTopics";
-import { SKILL_CATEGORIES } from "../../lib/categories";
+import { normalizeSkillCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import {
@@ -31,12 +31,6 @@ const SKILLS_SORT_OPTIONS = [
   ...BROWSE_SORT_OPTIONS.slice(1),
 ];
 
-const SKILL_CATEGORY_SLUGS = new Set(SKILL_CATEGORIES.map((category) => category.slug));
-
-function parseSkillCategorySlug(value: unknown) {
-  return typeof value === "string" && SKILL_CATEGORY_SLUGS.has(value) ? value : undefined;
-}
-
 export const Route = createFileRoute("/skills/")({
   validateSearch: (search): SkillsSearchState => {
     return {
@@ -51,7 +45,7 @@ export const Route = createFileRoute("/skills/")({
         search.featured === "1" || search.featured === "true" || search.featured === true
           ? true
           : undefined,
-      category: parseSkillCategorySlug(search.category),
+      category: normalizeSkillCategorySlug(search.category),
       topic: parseCatalogTopicFilter(search.topic),
       view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
@@ -125,7 +119,7 @@ export function SkillsIndex() {
 
   const handleCategoryChange = useCallback(
     (slug: string | undefined) => {
-      const category = parseSkillCategorySlug(slug);
+      const category = normalizeSkillCategorySlug(slug);
       void navigate({
         search: (prev: SkillsSearchState) => ({
           ...prev,

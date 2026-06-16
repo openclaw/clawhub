@@ -163,6 +163,7 @@ describe("Import route", () => {
     await waitFor(() => {
       expect(importSkill).toHaveBeenCalled();
     });
+    expect(importSkill.mock.calls[0]?.[0]).toHaveProperty("primaryCategory", "");
     expect(importSkill.mock.calls[0]?.[0]).not.toHaveProperty("topics");
   });
 });

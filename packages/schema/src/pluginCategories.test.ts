@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   derivePluginCategoryTags,
   isPluginCategorySlug,
+  resolvePublishedPluginPrimaryCategory,
   resolvePluginPrimaryCategory,
   resolveStoredPluginPrimaryCategory,
 } from "./pluginCategories";
@@ -91,5 +92,24 @@ describe("plugin categories", () => {
         displayName: "Misc",
       }),
     ).toBe("uncategorized");
+  });
+
+  it("preserves omitted publish categories but re-infers explicit auto-detect selections", () => {
+    const candidate = {
+      existingPrimaryCategory: "security",
+      family: "code-plugin",
+      name: "@openclaw/anthropic",
+      displayName: "Anthropic Provider",
+      summary: "Text inference provider",
+      capabilityTags: ["capability:model-provider"],
+    };
+
+    expect(resolvePublishedPluginPrimaryCategory(candidate)).toBe("security");
+    expect(
+      resolvePublishedPluginPrimaryCategory({
+        ...candidate,
+        requestedPrimaryCategory: "",
+      }),
+    ).toBe("model-providers");
   });
 });

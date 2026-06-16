@@ -64,4 +64,13 @@ describe("skills route default sort", () => {
   it("preserves invalid topic filters so they cannot become unfiltered requests", () => {
     expect(validateSearch({ topic: "!!!" })).toEqual(expect.objectContaining({ topic: "!!!" }));
   });
+
+  it("maps legacy category links to the current taxonomy instead of dropping the filter", () => {
+    expect(validateSearch({ category: "workflows" })).toEqual(
+      expect.objectContaining({ category: "automation-workflows" }),
+    );
+    expect(validateSearch({ category: "other" })).toEqual(
+      expect.objectContaining({ category: "domain-utilities" }),
+    );
+  });
 });

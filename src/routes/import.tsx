@@ -210,7 +210,7 @@ export function ImportGitHub() {
         displayName: displayName.trim(),
         version: version.trim(),
         tags: tagList,
-        ...(primaryCategory ? { primaryCategory } : {}),
+        primaryCategory,
         ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
       });
       const nextSlug = result.slug;

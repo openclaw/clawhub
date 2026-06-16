@@ -2,7 +2,7 @@ import {
   isSkillCategorySlug,
   normalizeCatalogTopics,
   normalizeTextContentType,
-  resolveStoredSkillPrimaryCategory,
+  resolvePublishedSkillPrimaryCategory,
 } from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import semver from "semver";
@@ -296,21 +296,21 @@ export async function publishVersionForUser(
     readmeText,
     fileContents,
   });
-  const primaryCategory =
-    args.primaryCategory === undefined
-      ? resolveStoredSkillPrimaryCategory({
-          primaryCategory: existingSkill?.primaryCategory,
-          slug,
-          displayName,
-          summary,
-          capabilityTags,
-        })
-      : isSkillCategorySlug(args.primaryCategory)
-        ? args.primaryCategory
-        : undefined;
-  if (args.primaryCategory !== undefined && !primaryCategory) {
+  if (
+    args.primaryCategory !== undefined &&
+    args.primaryCategory !== "" &&
+    !isSkillCategorySlug(args.primaryCategory)
+  ) {
     throw new ConvexError(`Unknown skill category: ${args.primaryCategory}`);
   }
+  const primaryCategory = resolvePublishedSkillPrimaryCategory({
+    requestedPrimaryCategory: args.primaryCategory,
+    existingPrimaryCategory: existingSkill?.primaryCategory,
+    slug,
+    displayName,
+    summary,
+    capabilityTags,
+  });
   let topics: string[] | undefined;
   try {
     const normalizedTopics =

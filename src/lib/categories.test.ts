@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildSkillCategoryBrowseHref,
   getSkillCategoryForSkill,
+  normalizeSkillCategorySlug,
   SKILL_CATEGORIES,
 } from "./categories";
 
@@ -94,5 +95,18 @@ describe("skill category helpers", () => {
     });
 
     expect(category?.slug).toBe("security-review");
+  });
+
+  it.each([
+    ["mcp-tools", "data-apis"],
+    ["prompts", "agent-behavior"],
+    ["workflows", "automation-workflows"],
+    ["dev-tools", "dev-tools"],
+    ["data", "data-apis"],
+    ["security", "security-review"],
+    ["automation", "automation-workflows"],
+    ["other", "domain-utilities"],
+  ])("maps the legacy %s browse slug to %s", (legacySlug, currentSlug) => {
+    expect(normalizeSkillCategorySlug(legacySlug)).toBe(currentSlug);
   });
 });

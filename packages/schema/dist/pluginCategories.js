@@ -184,4 +184,13 @@ export function resolvePluginPrimaryCategory(input) {
 export function resolveStoredPluginPrimaryCategory(input) {
     return resolvePluginPrimaryCategory(input) ?? INTERNAL_UNCATEGORIZED_CATEGORY;
 }
+export function resolvePublishedPluginPrimaryCategory(input) {
+    const { requestedPrimaryCategory, existingPrimaryCategory, ...candidate } = input;
+    return resolveStoredPluginPrimaryCategory({
+        ...candidate,
+        primaryCategory: requestedPrimaryCategory === undefined
+            ? existingPrimaryCategory
+            : requestedPrimaryCategory || undefined,
+    });
+}
 //# sourceMappingURL=pluginCategories.js.map

@@ -778,7 +778,7 @@ export function PublishPluginRoute() {
                           family,
                           version: version.trim(),
                           changelog: changelog.trim(),
-                          ...(primaryCategory ? { primaryCategory } : {}),
+                          primaryCategory,
                           ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
                           ...(sourceRepo.trim() && sourceCommit.trim()
                             ? {

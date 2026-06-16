@@ -213,3 +213,19 @@ export function resolveStoredPluginPrimaryCategory(
 ): PluginCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY {
   return resolvePluginPrimaryCategory(input) ?? INTERNAL_UNCATEGORIZED_CATEGORY;
 }
+
+export function resolvePublishedPluginPrimaryCategory(
+  input: Omit<Parameters<typeof resolvePluginPrimaryCategory>[0], "primaryCategory"> & {
+    requestedPrimaryCategory?: string;
+    existingPrimaryCategory?: string | null;
+  },
+): PluginCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY {
+  const { requestedPrimaryCategory, existingPrimaryCategory, ...candidate } = input;
+  return resolveStoredPluginPrimaryCategory({
+    ...candidate,
+    primaryCategory:
+      requestedPrimaryCategory === undefined
+        ? existingPrimaryCategory
+        : requestedPrimaryCategory || undefined,
+  });
+}
