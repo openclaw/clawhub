@@ -451,7 +451,7 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
 
 export async function buildAdminOneOffEmail(args: AdminOneOffEmailArgs) {
   const title = args.title?.trim() || args.subject.trim();
-  const lines = [greeting(args.recipientHandle), "", title, "", args.body.trim()];
+  const lines = [title, "", greeting(args.recipientHandle), "", args.body.trim()];
   if (args.primaryActionLabel?.trim() && args.primaryActionUrl?.trim()) {
     lines.push("", `${args.primaryActionLabel.trim()}: ${args.primaryActionUrl.trim()}`);
   }
