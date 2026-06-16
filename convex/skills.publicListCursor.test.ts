@@ -135,41 +135,54 @@ function makeSearchDigest(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function makeOfficialFirstCategoryCtx(curatedDigests: Array<ReturnType<typeof makeSearchDigest>>) {
+function makeOfficialFirstCategoryCtx(
+  curatedDigests: Array<ReturnType<typeof makeSearchDigest>>,
+  officialBadgePages: Array<Array<{ skillId: string }>> = [
+    curatedDigests.map((digest) => ({ skillId: digest.skillId })),
+  ],
+  publicDigestPages: Array<{
+    page: Array<ReturnType<typeof makeSearchDigest>>;
+    hasMore: boolean;
+    indexKeys: unknown[][];
+  }> = [],
+) {
   const digestsBySkillId = new Map(curatedDigests.map((digest) => [digest.skillId, digest]));
+  let publicDigestPageIndex = 0;
+  getPageMock.mockImplementation(
+    async (
+      _ctx: unknown,
+      request: {
+        table: string;
+        endIndexKey?: unknown[];
+        startIndexKey?: unknown[];
+      },
+    ) => {
+      if (request.table !== "skillBadges") {
+        return (
+          publicDigestPages[publicDigestPageIndex++] ?? {
+            page: [],
+            hasMore: false,
+            indexKeys: [],
+          }
+        );
+      }
+      const kind = request.endIndexKey?.[0];
+      const pageIndex =
+        request.startIndexKey && request.startIndexKey.length > 1
+          ? Number(request.startIndexKey[1]) + 1
+          : 0;
+      const pages = kind === "official" ? officialBadgePages : [[]];
+      const page = pages[pageIndex] ?? [];
+      return {
+        page,
+        hasMore: pageIndex < pages.length - 1,
+        indexKeys: page.map((badge, index) => [kind, pageIndex, index, badge.skillId]),
+      };
+    },
+  );
   return {
     db: {
       query: vi.fn((table: string) => {
-        if (table === "skillBadges") {
-          return {
-            withIndex: vi.fn(
-              (
-                _indexName: string,
-                builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-              ) => {
-                let kind = "";
-                const queryBuilder = {
-                  eq: (_field: string, value: string) => {
-                    kind = value;
-                    return queryBuilder;
-                  },
-                };
-                builder(queryBuilder);
-                return {
-                  order: vi.fn(() => ({
-                    take: vi
-                      .fn()
-                      .mockResolvedValue(
-                        kind === "official"
-                          ? curatedDigests.map((digest) => ({ skillId: digest.skillId }))
-                          : [],
-                      ),
-                  })),
-                };
-              },
-            ),
-          };
-        }
         if (table === "skillSearchDigest") {
           return {
             withIndex: vi.fn(
@@ -509,29 +522,29 @@ describe("public skill list deterministic cursors", () => {
       primaryCategory: "dev-tools",
       updatedAt: 2,
     });
-    const ctx = makeOfficialFirstCategoryCtx([official]);
-    getPageMock
-      .mockResolvedValueOnce({
+    const ctx = makeOfficialFirstCategoryCtx([official], undefined, [
+      {
         page: [community, official],
         hasMore: false,
         indexKeys: [
           [undefined, 2, 2, "skillSearchDigest:community-dev"],
           [undefined, 1, 1, "skillSearchDigest:official-dev"],
         ],
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         page: [community, official],
         hasMore: false,
         indexKeys: [
           [undefined, 2, 2, "skillSearchDigest:community-dev"],
           [undefined, 1, 1, "skillSearchDigest:official-dev"],
         ],
-      })
-      .mockResolvedValueOnce({
+      },
+      {
         page: [official],
         hasMore: false,
         indexKeys: [[undefined, 1, 1, "skillSearchDigest:official-dev"]],
-      });
+      },
+    ]);
 
     const first = await listPublicPageV4Handler(ctx as never, {
       categorySlug: "dev-tools",
@@ -567,6 +580,46 @@ describe("public skill list deterministic cursors", () => {
     expect(third.nextCursor).toBeNull();
   });
 
+  it("loads older curated badges beyond the first badge page", async () => {
+    const official = makeSearchDigest({
+      skillId: "skills:older-official-dev",
+      slug: "older-official-dev",
+      displayName: "Older Official Dev",
+      primaryCategory: "dev-tools",
+      badges: { official: { byUserId: "users:admin", at: 1 } },
+      updatedAt: 1,
+    });
+    const community = makeSearchDigest({
+      skillId: "skills:newer-community-dev",
+      slug: "newer-community-dev",
+      displayName: "Newer Community Dev",
+      primaryCategory: "dev-tools",
+      updatedAt: 2,
+    });
+    const ctx = makeOfficialFirstCategoryCtx(
+      [official],
+      [[{ skillId: "skills:unrelated-newer-official" }], [{ skillId: official.skillId }]],
+      [
+        {
+          page: [community],
+          hasMore: false,
+          indexKeys: [[undefined, 2, 2, "skillSearchDigest:newer-community-dev"]],
+        },
+      ],
+    );
+
+    const result = await listPublicPageV4Handler(ctx as never, {
+      categorySlug: "dev-tools",
+      officialFirst: true,
+      numItems: 1,
+      sort: "updated",
+    });
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["older-official-dev"]);
+  });
+
   it("does not advertise an empty community page after a full curated category page", async () => {
     const official = makeSearchDigest({
       skillId: "skills:official-dev",
@@ -576,12 +629,13 @@ describe("public skill list deterministic cursors", () => {
       badges: { official: { byUserId: "users:admin", at: 1 } },
       updatedAt: 1,
     });
-    const ctx = makeOfficialFirstCategoryCtx([official]);
-    getPageMock.mockResolvedValue({
-      page: [official],
-      hasMore: false,
-      indexKeys: [[undefined, 1, 1, "skillSearchDigest:official-dev"]],
-    });
+    const ctx = makeOfficialFirstCategoryCtx([official], undefined, [
+      {
+        page: [official],
+        hasMore: false,
+        indexKeys: [[undefined, 1, 1, "skillSearchDigest:official-dev"]],
+      },
+    ]);
 
     const result = await listPublicPageV4Handler(ctx as never, {
       categorySlug: "dev-tools",

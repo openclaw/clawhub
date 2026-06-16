@@ -7007,8 +7007,9 @@ async function publishPackageImpl(
     packageJson && Array.isArray(packageJson.keywords)
       ? packageJson.keywords.filter((value): value is string => typeof value === "string")
       : undefined;
+  const hasExplicitTopics = payload.topics !== undefined || existingPackage?.topics !== undefined;
   let normalizedTopics: string[];
-  if (payload.topics === undefined && existingPackage?.topics === undefined) {
+  if (!hasExplicitTopics) {
     normalizedTopics = normalizeInferredCatalogTopics(packageJsonTopics);
   } else {
     try {
@@ -7017,7 +7018,7 @@ async function publishPackageImpl(
       throw new ConvexError(error instanceof Error ? error.message : "Invalid topics");
     }
   }
-  const topics = normalizedTopics.length ? normalizedTopics : undefined;
+  const topics = normalizedTopics.length || hasExplicitTopics ? normalizedTopics : undefined;
   const staticScan = await runStaticPublishScan(ctx, {
     slug: name,
     displayName,

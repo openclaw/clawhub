@@ -6534,17 +6534,31 @@ async function loadCuratedSkillCategoryDigests(
     nonSuspiciousOnly: boolean;
   },
 ) {
+  const loadBadges = async (kind: "official" | "highlighted") => {
+    const badges: Doc<"skillBadges">[] = [];
+    let startIndexKey: IndexKey = [kind];
+    let startInclusive = true;
+    for (;;) {
+      const page = await getPage(ctx, {
+        table: "skillBadges",
+        startIndexKey,
+        startInclusive,
+        endIndexKey: [kind],
+        endInclusive: true,
+        absoluteMaxRows: MAX_LIST_TAKE,
+        order: "desc",
+        index: "by_kind_at",
+        schema,
+      });
+      badges.push(...page.page);
+      if (!page.hasMore || page.indexKeys.length === 0) return badges;
+      startIndexKey = page.indexKeys[page.indexKeys.length - 1];
+      startInclusive = false;
+    }
+  };
   const [officialBadges, highlightedBadges] = await Promise.all([
-    ctx.db
-      .query("skillBadges")
-      .withIndex("by_kind_at", (q) => q.eq("kind", "official"))
-      .order("desc")
-      .take(MAX_LIST_TAKE),
-    ctx.db
-      .query("skillBadges")
-      .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
-      .order("desc")
-      .take(MAX_LIST_TAKE),
+    loadBadges("official"),
+    loadBadges("highlighted"),
   ]);
   const skillIds = new Set<string>();
   for (const badge of [...officialBadges, ...highlightedBadges]) {

@@ -7198,6 +7198,72 @@ describe("packages public queries", () => {
     );
   });
 
+  it("preserves an explicit empty topic list instead of re-inferring package keywords", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("minimumRole" in args) return null;
+      return { ok: true, packageId: "packages:demo", releaseId: "packageReleases:demo-2" };
+    });
+    const storedFiles = new Map<string, string>([
+      [
+        "storage:package",
+        JSON.stringify({
+          name: "demo-plugin",
+          keywords: ["inferred-topic"],
+        }),
+      ],
+      ["storage:manifest", JSON.stringify({ id: "demo.plugin" })],
+    ]);
+    const user = {
+      _id: "users:owner",
+      role: "user",
+      githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+    };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(makePackageDoc({ family: "bundle-plugin", topics: [] }))
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(user)
+        .mockResolvedValueOnce(user)
+        .mockResolvedValueOnce(null),
+      runMutation,
+      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content ? new Blob([content]) : null;
+        }),
+      },
+    };
+
+    await publishPackageForUserInternalHandler(ctx as never, {
+      actorUserId: "users:owner",
+      payload: {
+        name: "demo-plugin",
+        family: "bundle-plugin",
+        version: "1.0.1",
+        changelog: "republish",
+        bundle: { hostTargets: ["desktop"] },
+        files: [
+          {
+            path: "package.json",
+            size: 1,
+            storageId: "storage:package",
+            sha256: "package",
+            contentType: "application/json",
+          },
+          packageManifestFile,
+        ],
+      },
+    });
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ topics: [] }),
+    );
+  });
+
   it("blocks plugin publishes when plugin inspector reports hard breakages", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => {
       if (typeof args === "object" && args !== null && "minimumRole" in args) return null;
