@@ -36,6 +36,7 @@ export type SkillsSearchState = {
   featured?: boolean;
   category?: string;
   tag?: string;
+  topic?: string;
   view?: LegacySkillsView;
   focus?: "search";
 };
@@ -80,6 +81,7 @@ export function useSkillsBrowseModel({
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
   const capabilityTag = search.tag;
+  const activeTopic = search.topic;
   const searchSkills = useAction(api.search.searchSkills);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
@@ -100,7 +102,7 @@ export function useSkillsBrowseModel({
   const listSort = toListSort(sort);
   const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
   const searchKey = hasQuery
-    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${capabilityTag ?? ""}`
+    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${capabilityTag ?? ""}::${activeTopic ?? ""}`
     : "";
 
   // One-shot paginated fetches (no reactive subscription)
@@ -119,7 +121,9 @@ export function useSkillsBrowseModel({
           dir,
           highlightedOnly: featuredOnly,
           capabilityTag,
+          topic: activeTopic,
           categorySlug: activeCategory?.slug,
+          officialFirst: Boolean(activeCategory),
           categoryKeywords,
           excludeCategoryKeywords,
         });
@@ -139,6 +143,7 @@ export function useSkillsBrowseModel({
     },
     [
       activeCategory?.slug,
+      activeTopic,
       capabilityTag,
       categoryKeywords,
       dir,
@@ -202,6 +207,7 @@ export function useSkillsBrowseModel({
             query: trimmedQuery,
             highlightedOnly: featuredOnly,
             capabilityTag,
+            topic: activeTopic,
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
           if (requestId === searchRequest.current) {
@@ -215,7 +221,7 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [capabilityTag, hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
+  }, [activeTopic, capabilityTag, hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -231,11 +237,14 @@ export function useSkillsBrowseModel({
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
+    const topicItems = activeTopic
+      ? baseItems.filter((entry) => (entry.skill.topics ?? []).includes(activeTopic))
+      : baseItems;
     const categoryItems = activeCategory
-      ? baseItems.filter(
+      ? topicItems.filter(
           (entry) => getSkillCategoryForSkill(entry.skill)?.slug === activeCategory.slug,
         )
-      : baseItems;
+      : topicItems;
     if (!hasQuery) {
       return categoryItems;
     }
@@ -275,7 +284,20 @@ export function useSkillsBrowseModel({
       }
     });
     return results;
-  }, [activeCategory, baseItems, dir, hasQuery, sort]);
+  }, [activeCategory, activeTopic, baseItems, dir, hasQuery, sort]);
+
+  const availableTopics = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const entry of baseItems) {
+      for (const topic of entry.skill.topics ?? []) {
+        counts.set(topic, (counts.get(topic) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8)
+      .map(([topic]) => topic);
+  }, [baseItems]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
@@ -366,6 +388,7 @@ export function useSkillsBrowseModel({
         ...prev,
         q: undefined,
         category: undefined,
+        topic: undefined,
         featured: undefined,
         highlighted: undefined,
       }),
@@ -454,9 +477,24 @@ export function useSkillsBrowseModel({
     [navigate],
   );
 
+  const onTopicChange = useCallback(
+    (value: string | undefined) => {
+      void navigate({
+        search: (prev) => ({
+          ...prev,
+          topic: value,
+        }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
   return {
     activeFilters,
     activeCategory: activeCategory?.slug,
+    activeTopic,
+    availableTopics,
     capabilityTag,
     canAutoLoad,
     canLoadMore,
@@ -475,6 +513,7 @@ export function useSkillsBrowseModel({
     onToggleDir,
     onToggleFeatured,
     onToggleView,
+    onTopicChange,
     query,
     sort,
     sorted,

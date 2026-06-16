@@ -10411,6 +10411,26 @@ a.agentic-risk-finding-title:focus-visible {
   justify-content: flex-end;
 }
 
+.catalog-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.catalog-topic {
+  max-width: 100%;
+  overflow: hidden;
+  padding: 2px 7px;
+  border: 1px solid rgba(29, 59, 78, 0.14);
+  border-radius: var(--radius-sm);
+  color: var(--ink-soft);
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .user-list-item .skill-list-item-owner {
   font-size: 0.82rem;
 }

@@ -1,4 +1,9 @@
-import { normalizeTextContentType } from "clawhub-schema";
+import {
+  isSkillCategorySlug,
+  normalizeCatalogTopics,
+  normalizeTextContentType,
+  resolveStoredSkillPrimaryCategory,
+} from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
@@ -61,6 +66,8 @@ export type PublishVersionArgs = {
   version: string;
   changelog: string;
   tags?: string[];
+  primaryCategory?: string;
+  topics?: string[];
   forkOf?: { slug: string; version?: string };
   source?: {
     kind: "github";
@@ -289,6 +296,29 @@ export async function publishVersionForUser(
     readmeText,
     fileContents,
   });
+  const primaryCategory =
+    args.primaryCategory === undefined
+      ? resolveStoredSkillPrimaryCategory({
+          primaryCategory: existingSkill?.primaryCategory,
+          slug,
+          displayName,
+          summary,
+          capabilityTags,
+        })
+      : isSkillCategorySlug(args.primaryCategory)
+        ? args.primaryCategory
+        : undefined;
+  if (args.primaryCategory !== undefined && !primaryCategory) {
+    throw new ConvexError(`Unknown skill category: ${args.primaryCategory}`);
+  }
+  let topics: string[] | undefined;
+  try {
+    const normalizedTopics =
+      args.topics === undefined ? existingSkill?.topics : normalizeCatalogTopics(args.topics);
+    topics = normalizedTopics?.length ? normalizedTopics : undefined;
+  } catch (error) {
+    throw new ConvexError(error instanceof Error ? error.message : "Invalid topics");
+  }
 
   const fingerprintPromise = buildPublishSourceFingerprint(
     publishFiles.map((file) => ({ path: file.path, sha256: file.sha256 })),
@@ -345,6 +375,8 @@ export async function publishVersionForUser(
       license: PLATFORM_SKILL_LICENSE,
     },
     capabilityTags,
+    primaryCategory,
+    topics,
     summary,
     staticScan,
     embedding,

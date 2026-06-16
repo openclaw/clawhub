@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import type { PublicSkill } from "../lib/publicUser";
+import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 import { Badge } from "./ui/badge";
@@ -29,7 +30,7 @@ export function SkillCard({
   const owner = encodeURIComponent(String(skill.ownerUserId));
   const link = href ?? `/${owner}/${skill.slug}`;
   const badges = Array.isArray(badge) ? badge : badge ? [badge] : [];
-  const hasTags = badges.length || chip || platformLabels?.length;
+  const hasTags = badges.length || chip || platformLabels?.length || skill.topics?.length;
 
   return (
     <Link to={link} className={["card skill-card", className].filter(Boolean).join(" ")}>
@@ -53,6 +54,7 @@ export function SkillCard({
               {label}
             </Badge>
           ))}
+          <CatalogTopicList topics={skill.topics} limit={3} />
         </div>
       ) : null}
       <div className="skill-card-footer">{meta}</div>

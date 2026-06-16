@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { isPluginCategorySlug } from "clawhub-schema";
+import { isPluginCategorySlug, normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { PackageSearch, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +25,7 @@ const PLUGINS_PAGE_SIZE = 25;
 type PluginSearchState = {
   q?: string;
   category?: string;
+  topic?: string;
   cursor?: string;
   family?: undefined;
   featured?: boolean;
@@ -62,6 +63,7 @@ type PluginsLoaderData = {
 type PluginsPageDataRequest = {
   q?: string;
   category?: string;
+  topic?: string;
   cursor?: string;
   featured?: boolean;
   official?: boolean;
@@ -142,6 +144,8 @@ export async function loadPluginsPageData(
     const data = await fetchPluginCatalog({
       q: args.q,
       category: args.category,
+      topic: args.topic,
+      officialFirst: Boolean(args.category && !args.q),
       cursor: args.q ? undefined : args.cursor,
       featured: args.featured,
       isOfficial: args.official,
@@ -196,6 +200,7 @@ export const Route = createFileRoute("/plugins/")({
       typeof search.category === "string" && isPluginCategorySlug(search.category)
         ? search.category
         : undefined,
+    topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
     cursor:
       search.sort !== "downloads" && typeof search.cursor === "string" && search.cursor
         ? search.cursor
@@ -333,6 +338,7 @@ function PluginsIndex() {
   const hasActiveFilters =
     hasQuery ||
     Boolean(search.category) ||
+    Boolean(search.topic) ||
     Boolean(search.official) ||
     Boolean(search.executesCode) ||
     Boolean(search.featured);
@@ -348,6 +354,7 @@ function PluginsIndex() {
     void loadPluginsPageData({
       q: search.q,
       category: search.category,
+      topic: search.topic,
       cursor: search.cursor,
       featured: search.featured,
       official: search.official,
@@ -377,6 +384,7 @@ function PluginsIndex() {
     search.official,
     search.q,
     search.sort,
+    search.topic,
   ]);
 
   const activeCategory = search.category;
@@ -385,10 +393,21 @@ function PluginsIndex() {
     search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
       ? "recommended"
       : (search.sort ?? "recommended");
-  const visibleItems = useMemo(
-    () => (hasQuery ? sortPluginSearchItems(items, activeSort) : items),
-    [activeSort, hasQuery, items],
-  );
+  const visibleItems = useMemo(() => {
+    return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
+  }, [activeSort, hasQuery, items]);
+  const availableTopics = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items) {
+      for (const topic of item.topics ?? []) {
+        counts.set(topic, (counts.get(topic) ?? 0) + 1);
+      }
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+      .slice(0, 8)
+      .map(([topic]) => topic);
+  }, [items]);
 
   const handleFilterToggle = (key: string) => {
     if (key === "official") {
@@ -440,8 +459,20 @@ function PluginsIndex() {
         cursor: undefined,
         family: undefined,
         category,
+        topic: undefined,
         featured: undefined,
         sort: undefined,
+      }),
+      replace: true,
+    });
+  };
+
+  const handleTopicChange = (topic: string | undefined) => {
+    void navigate({
+      search: (prev: PluginSearchState) => ({
+        ...prev,
+        cursor: undefined,
+        topic,
       }),
       replace: true,
     });
@@ -578,6 +609,22 @@ function PluginsIndex() {
           sortOptions={PLUGIN_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}
+          radioGroups={
+            availableTopics.length
+              ? [
+                  {
+                    title: "Topics",
+                    ariaLabel: "Topic filter",
+                    activeValue: search.topic,
+                    onChange: handleTopicChange,
+                    options: [
+                      { value: undefined, label: "All topics" },
+                      ...availableTopics.map((topic) => ({ value: topic, label: topic })),
+                    ],
+                  },
+                ]
+              : []
+          }
           filters={[
             { key: "official", label: "Official only", active: search.official ?? false },
             { key: "executesCode", label: "Executes code", active: search.executesCode ?? false },

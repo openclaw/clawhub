@@ -324,6 +324,7 @@ function makeLegacyPublisherOwnershipDb() {
     ],
   ]);
   const packageCapabilitySearchDigest = new Map<string, Record<string, unknown>>();
+  const packageTopicSearchDigest = new Map<string, Record<string, unknown>>();
   const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
 
   const tableMap: Record<string, Map<string, Record<string, unknown>>> = {
@@ -338,6 +339,7 @@ function makeLegacyPublisherOwnershipDb() {
     packages,
     packageSearchDigest,
     packageCapabilitySearchDigest,
+    packageTopicSearchDigest,
     packagePluginCategorySearchDigest,
   };
   const patchCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];

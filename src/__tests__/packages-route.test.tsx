@@ -391,21 +391,38 @@ describe("plugins route", () => {
     );
   });
 
-  it("forwards category through catalog loading without changing the query", async () => {
+  it("forwards category and topic through catalog loading without changing the query", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
 
     await loadPluginsPageData({
       q: "api",
       category: "data",
+      topic: "postgres",
     });
 
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         q: "api",
         category: "data",
+        topic: "postgres",
+        officialFirst: false,
         cursor: undefined,
         limit: 25,
+      }),
+    );
+  });
+
+  it("requests official-first pagination for category browse", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    const { loadPluginsPageData } = await import("../routes/plugins/index");
+
+    await loadPluginsPageData({ category: "security" });
+
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "security",
+        officialFirst: true,
       }),
     );
   });
@@ -909,6 +926,44 @@ describe("plugins route", () => {
         category: "security",
       }),
     );
+  });
+
+  it("preserves backend official-first ordering on category pages", async () => {
+    searchMock = { category: "security" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "official-security",
+          displayName: "Official Security",
+          family: "code-plugin",
+          channel: "official",
+          isOfficial: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          name: "community-security",
+          displayName: "Community Security",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const titles = Array.from(document.querySelectorAll(".skill-list-item-name")).map(
+      (node) => node.textContent,
+    );
+    expect(titles).toEqual(["Official Security", "Community Security"]);
   });
 
   it("does not render unsupported plugin categories", async () => {

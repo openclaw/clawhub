@@ -1,4 +1,4 @@
-import { derivePluginCategoryTags } from "clawhub-schema";
+import { resolvePluginPrimaryCategory } from "clawhub-schema";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { adjustGlobalPublicPluginsCount, getPublicPluginVisibilityDelta } from "./globalStats";
@@ -20,6 +20,8 @@ const SHARED_KEYS = [
   "ownerPublisherId",
   "summary",
   "capabilityTags",
+  "primaryCategory",
+  "topics",
   "executesCode",
   "stats",
   "runtimeId",
@@ -45,6 +47,8 @@ const CAPABILITY_SHARED_KEYS = [
   "latestVersion",
   "runtimeId",
   "capabilityTags",
+  "primaryCategory",
+  "topics",
   "executesCode",
   "verificationTier",
   "stats",
@@ -53,6 +57,34 @@ const CAPABILITY_SHARED_KEYS = [
   "createdAt",
   "updatedAt",
 ] as const satisfies readonly (keyof Doc<"packageCapabilitySearchDigest">)[];
+
+const TOPIC_SHARED_KEYS = [
+  "packageId",
+  "name",
+  "normalizedName",
+  "displayName",
+  "family",
+  "channel",
+  "isOfficial",
+  "ownerUserId",
+  "ownerPublisherId",
+  "ownerHandle",
+  "ownerKind",
+  "summary",
+  "latestVersion",
+  "runtimeId",
+  "capabilityTags",
+  "primaryCategory",
+  "topics",
+  "pluginCategoryTags",
+  "executesCode",
+  "verificationTier",
+  "stats",
+  "scanStatus",
+  "softDeletedAt",
+  "createdAt",
+  "updatedAt",
+] as const satisfies readonly (keyof Doc<"packageTopicSearchDigest">)[];
 
 const PLUGIN_CATEGORY_SHARED_KEYS = [
   "packageId",
@@ -70,6 +102,8 @@ const PLUGIN_CATEGORY_SHARED_KEYS = [
   "latestVersion",
   "runtimeId",
   "capabilityTags",
+  "primaryCategory",
+  "topics",
   "pluginCategoryTags",
   "executesCode",
   "verificationTier",
@@ -96,6 +130,13 @@ type PackageCapabilitySearchDigestFields = Pick<
   capabilityTag: string;
 };
 
+type PackageTopicSearchDigestFields = Pick<
+  PackageSearchDigestFields,
+  (typeof TOPIC_SHARED_KEYS)[number]
+> & {
+  topic: string;
+};
+
 type PackagePluginCategorySearchDigestFields = Pick<
   PackageSearchDigestFields,
   (typeof PLUGIN_CATEGORY_SHARED_KEYS)[number]
@@ -104,19 +145,13 @@ type PackagePluginCategorySearchDigestFields = Pick<
 };
 
 export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchDigestFields {
+  const primaryCategory = resolvePluginPrimaryCategory(pkg);
   return {
     ...pick(pkg, [...SHARED_KEYS]),
     packageId: pkg._id,
     latestVersion: pkg.latestVersionSummary?.version,
     verificationTier: pkg.verification?.tier,
-    pluginCategoryTags: derivePluginCategoryTags({
-      family: pkg.family,
-      name: pkg.name,
-      displayName: pkg.displayName,
-      runtimeId: pkg.runtimeId,
-      summary: pkg.summary,
-      capabilityTags: pkg.capabilityTags,
-    }),
+    pluginCategoryTags: primaryCategory ? [primaryCategory] : [],
   };
 }
 
@@ -134,12 +169,14 @@ export async function upsertPackageSearchDigest(
       await ctx.db.patch(existing._id, fields);
     }
     await syncPackageCapabilitySearchDigests(ctx, fields);
+    await syncPackageTopicSearchDigests(ctx, fields);
     await syncPackagePluginCategorySearchDigests(ctx, fields);
     await adjustGlobalPublicPluginsCount(ctx, visibilityDelta);
     return;
   }
   await ctx.db.insert("packageSearchDigest", fields);
   await syncPackageCapabilitySearchDigests(ctx, fields);
+  await syncPackageTopicSearchDigests(ctx, fields);
   await syncPackagePluginCategorySearchDigests(ctx, fields);
   await adjustGlobalPublicPluginsCount(ctx, getPublicPluginVisibilityDelta(null, fields));
 }
@@ -212,6 +249,40 @@ async function syncPackagePluginCategorySearchDigests(
   }
 }
 
+async function syncPackageTopicSearchDigests(
+  ctx: Pick<MutationCtx, "db">,
+  fields: PackageSearchDigestFields,
+) {
+  const existing = await ctx.db
+    .query("packageTopicSearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", fields.packageId))
+    .collect();
+  const topics = [...new Set((fields.topics ?? []).filter(Boolean))];
+  const nextByTopic = new Map<string, PackageTopicSearchDigestFields>();
+  for (const topic of topics) {
+    nextByTopic.set(topic, {
+      ...pick(fields, [...TOPIC_SHARED_KEYS]),
+      topic,
+    });
+  }
+  for (const row of existing) {
+    const next = nextByTopic.get(row.topic);
+    if (!next) {
+      await ctx.db.delete(row._id);
+      continue;
+    }
+    if (!hasDigestChanged(row, next)) {
+      nextByTopic.delete(row.topic);
+      continue;
+    }
+    await ctx.db.patch(row._id, next);
+    nextByTopic.delete(row.topic);
+  }
+  for (const next of nextByTopic.values()) {
+    await ctx.db.insert("packageTopicSearchDigest", next);
+  }
+}
+
 export async function deletePackageSearchDigests(
   ctx: Pick<MutationCtx, "db">,
   packageId: Id<"packages">,
@@ -226,6 +297,12 @@ export async function deletePackageSearchDigests(
   }
   for (const row of await ctx.db
     .query("packageCapabilitySearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", packageId))
+    .collect()) {
+    await ctx.db.delete(row._id);
+  }
+  for (const row of await ctx.db
+    .query("packageTopicSearchDigest")
     .withIndex("by_package", (q) => q.eq("packageId", packageId))
     .collect()) {
     await ctx.db.delete(row._id);

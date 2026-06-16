@@ -79,6 +79,8 @@ function buildExistingSkill(overrides: Partial<SkillDoc> = {}): SkillDoc {
     },
     tags: { latest: PREV_LATEST_VERSION_ID },
     capabilityTags: ["cap-v2"],
+    primaryCategory: "dev-tools",
+    topics: ["typescript"],
     stats: {
       downloads: 0,
       installsCurrent: 0,
@@ -115,6 +117,8 @@ function buildPublishArgs(overrides?: Partial<Record<string, unknown>>) {
     changelogSource: "user",
     tags: [] as string[],
     capabilityTags: ["cap-v1-backport"],
+    primaryCategory: "security-review",
+    topics: ["backport-only"],
     summary: "Summary of v1.0.1 backport",
     fingerprint: "f".repeat(64),
     files: [
@@ -490,6 +494,8 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect(finalPatch.displayName).toBe("My Skill v2");
     expect(finalPatch.summary).toBe("Summary of v2.0.0");
     expect(finalPatch.capabilityTags).toEqual(["cap-v2"]);
+    expect(finalPatch.primaryCategory).toBe("dev-tools");
+    expect(finalPatch.topics).toEqual(["typescript"]);
 
     // `tags.latest` still points to the previous version.
     expect(finalPatch.tags).toEqual(expect.objectContaining({ latest: PREV_LATEST_VERSION_ID }));

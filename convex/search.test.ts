@@ -113,6 +113,49 @@ describe("search helpers", () => {
     );
   });
 
+  it("applies normalized author topics before slicing search results", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const directMatches = [
+      {
+        skill: makePublicSkill({
+          id: "skills:calendar",
+          slug: "calendar-workflow",
+          displayName: "Calendar Workflow",
+          topics: ["google-calendar"],
+        }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:legacy",
+          slug: "calendar-workflow-legacy",
+          displayName: "Calendar Workflow Legacy",
+          topics: ["legacy"],
+        }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+    ];
+    const runQuery = vi.fn().mockResolvedValueOnce(directMatches).mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn(),
+        runQuery,
+      },
+      { query: "calendar workflow", topic: "Google Calendar", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["calendar-workflow"]);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ topic: "google-calendar" }),
+    );
+  });
+
   it("uses normalized prefix matches so lowercase name queries do not depend on vector recall", async () => {
     const scienceClawSkills = [
       "ScienceClaw: Query (Dry Run)",
@@ -1567,6 +1610,7 @@ function makePublicSkill(params: {
   installsAllTime?: number;
   stars?: number;
   capabilityTags?: string[];
+  topics?: string[];
 }) {
   return {
     _id: params.id,
@@ -1580,6 +1624,7 @@ function makePublicSkill(params: {
     latestVersionId: "skillVersions:1",
     tags: {},
     capabilityTags: params.capabilityTags,
+    topics: params.topics,
     badges: {},
     stats: {
       downloads: params.downloads ?? 0,

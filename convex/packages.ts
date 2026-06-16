@@ -1,9 +1,13 @@
 import {
   ServerPackagePublishRequestSchema,
-  derivePluginCategoryTags,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
+  normalizeCatalogTopic,
+  normalizeCatalogTopics,
+  normalizeInferredCatalogTopics,
   parseArk,
+  resolvePluginPrimaryCategory,
+  resolveStoredPluginPrimaryCategory,
   validateOpenClawExternalCodePluginPackageContents,
   type PackageArtifactSummary,
   type PackageChannel,
@@ -540,6 +544,8 @@ type PublicPackageListItem = {
   updatedAt: number;
   latestVersion: string | null;
   capabilityTags: string[];
+  primaryCategory: string | null;
+  topics: string[];
   executesCode: boolean;
   verificationTier: PackageVerificationTier | null;
   stats: Doc<"packages">["stats"];
@@ -790,6 +796,8 @@ type PackageDigestLike = Pick<
   | "updatedAt"
   | "latestVersion"
   | "capabilityTags"
+  | "primaryCategory"
+  | "topics"
   | "pluginCategoryTags"
   | "executesCode"
   | "verificationTier"
@@ -810,6 +818,16 @@ type PublicPageCursorState = {
   mode?: "packages" | "digest";
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
+type OfficialFirstPackageCategoryCursorState = {
+  phase: "official" | "community";
+  cursor: string | null;
+};
+type PublicPackageListPage = {
+  page: PublicPackageListItem[];
+  isDone: boolean;
+  continueCursor: string;
+};
+const OFFICIAL_FIRST_PACKAGE_CATEGORY_CURSOR_PREFIX = "pkgofficialfirst:";
 
 async function runQueryRef<T>(
   ctx: { runQuery: (ref: never, args: never) => Promise<unknown> },
@@ -1129,6 +1147,7 @@ function digestMatchesFilters(
     executesCode?: boolean;
     capabilityTag?: string;
     category?: string;
+    topic?: string;
   },
 ) {
   if (
@@ -1151,6 +1170,7 @@ function digestMatchesFilters(
       return false;
     }
   }
+  if (args.topic && !(digest.topics ?? []).includes(args.topic)) return false;
   return true;
 }
 
@@ -1163,6 +1183,7 @@ function digestMatchesSearchFilters(
     executesCode?: boolean;
     capabilityTag?: string;
     category?: string;
+    topic?: string;
   },
 ) {
   if (args.family && digest.family !== args.family) return false;
@@ -1182,6 +1203,7 @@ function packageMatchesListFilters(
     executesCode?: boolean;
     capabilityTag?: string;
     category?: string;
+    topic?: string;
   },
 ) {
   if (args.family && pkg.family !== args.family) return false;
@@ -1194,7 +1216,8 @@ function packageMatchesListFilters(
     return false;
   }
   if (args.category) {
-    const categories = derivePluginCategoryTags({
+    const category = resolvePluginPrimaryCategory({
+      primaryCategory: pkg.primaryCategory,
       family: pkg.family,
       name: pkg.name,
       displayName: pkg.displayName,
@@ -1202,8 +1225,9 @@ function packageMatchesListFilters(
       summary: pkg.summary,
       capabilityTags: pkg.capabilityTags,
     });
-    if (!categories.includes(args.category as PluginCategorySlug)) return false;
+    if (category !== args.category) return false;
   }
+  if (args.topic && !(pkg.topics ?? []).includes(args.topic)) return false;
   return true;
 }
 
@@ -1271,6 +1295,8 @@ async function toPublicPackageListItem(
     updatedAt: digest.updatedAt,
     latestVersion: digest.latestVersion ?? null,
     capabilityTags: digest.capabilityTags ?? [],
+    primaryCategory: digest.primaryCategory ?? null,
+    topics: digest.topics ?? [],
     executesCode: digest.executesCode ?? false,
     verificationTier: digest.verificationTier ?? null,
     stats: await resolvePackageListStats(ctx, digest),
@@ -1300,6 +1326,8 @@ async function toPublicPackageListItemFromPackage(
     updatedAt: pkg.updatedAt,
     latestVersion: pkg.latestVersionSummary?.version ?? null,
     capabilityTags: pkg.capabilityTags ?? [],
+    primaryCategory: pkg.primaryCategory ?? null,
+    topics: pkg.topics ?? [],
     executesCode: pkg.executesCode ?? false,
     verificationTier: pkg.verification?.tier ?? null,
     stats: pkg.stats,
@@ -1478,6 +1506,30 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
+  }
+}
+
+function encodeOfficialFirstPackageCategoryCursor(state: OfficialFirstPackageCategoryCursorState) {
+  return `${OFFICIAL_FIRST_PACKAGE_CATEGORY_CURSOR_PREFIX}${JSON.stringify(state)}`;
+}
+
+function decodeOfficialFirstPackageCategoryCursor(
+  raw: string | null | undefined,
+): OfficialFirstPackageCategoryCursorState {
+  if (!raw) return { phase: "official", cursor: null };
+  if (!raw.startsWith(OFFICIAL_FIRST_PACKAGE_CATEGORY_CURSOR_PREFIX)) {
+    return { phase: "community", cursor: raw };
+  }
+  try {
+    const parsed = JSON.parse(
+      raw.slice(OFFICIAL_FIRST_PACKAGE_CATEGORY_CURSOR_PREFIX.length),
+    ) as Partial<OfficialFirstPackageCategoryCursorState>;
+    return {
+      phase: parsed.phase === "community" ? "community" : "official",
+      cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
+    };
+  } catch {
+    return { phase: "official", cursor: null };
   }
 }
 
@@ -1924,6 +1976,158 @@ function buildPackageCapabilityDigestQuery(
     );
 }
 
+function buildPackageTopicDigestQuery(
+  ctx: DbReaderCtx,
+  args: {
+    topic: string;
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    executesCode?: boolean;
+  },
+) {
+  const family = args.family;
+  const channel = args.channel;
+  const isOfficial = args.isOfficial;
+  const executesCode = args.executesCode;
+
+  if (family && channel && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_family_channel_topic_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("channel", channel)
+          .eq("topic", args.topic)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_family_official_topic_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("isOfficial", isOfficial)
+          .eq("topic", args.topic)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_channel_official_topic_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("isOfficial", isOfficial)
+          .eq("topic", args.topic)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family && channel) {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_family_channel_topic_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("channel", channel)
+          .eq("topic", args.topic),
+      );
+  }
+  if (family && typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_family_official_topic_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("isOfficial", isOfficial)
+          .eq("topic", args.topic),
+      );
+  }
+  if (channel && typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_channel_official_topic_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("isOfficial", isOfficial)
+          .eq("topic", args.topic),
+      );
+  }
+  if (family && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_family_topic_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("topic", args.topic)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (channel && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_channel_topic_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("channel", channel)
+          .eq("topic", args.topic)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_official_topic_executes_updated", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("isOfficial", isOfficial)
+          .eq("topic", args.topic)
+          .eq("executesCode", executesCode),
+      );
+  }
+  if (family) {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_family_topic_updated", (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", family).eq("topic", args.topic),
+      );
+  }
+  if (channel) {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_channel_topic_updated", (q) =>
+        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("topic", args.topic),
+      );
+  }
+  if (typeof isOfficial === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_official_topic_updated", (q) =>
+        q.eq("softDeletedAt", undefined).eq("isOfficial", isOfficial).eq("topic", args.topic),
+      );
+  }
+  if (typeof executesCode === "boolean") {
+    return ctx.db
+      .query("packageTopicSearchDigest")
+      .withIndex("by_active_topic_executes_updated", (q) =>
+        q.eq("softDeletedAt", undefined).eq("topic", args.topic).eq("executesCode", executesCode),
+      );
+  }
+  return ctx.db
+    .query("packageTopicSearchDigest")
+    .withIndex("by_active_topic_updated", (q) =>
+      q.eq("softDeletedAt", undefined).eq("topic", args.topic),
+    );
+}
+
 function buildPackagePluginCategoryDigestQuery(
   ctx: DbReaderCtx,
   args: {
@@ -2091,6 +2295,7 @@ async function fetchHighlightedPackageDigests(
     executesCode?: boolean;
     capabilityTag?: string;
     category?: string;
+    topic?: string;
     viewerUserId?: Id<"users">;
   },
 ) {
@@ -2123,6 +2328,8 @@ async function fetchHighlightedPackagePage(
     isOfficial?: boolean;
     executesCode?: boolean;
     capabilityTag?: string;
+    category?: string;
+    topic?: string;
     viewerUserId?: Id<"users">;
     numItems: number;
   },
@@ -2717,6 +2924,8 @@ export const listPublicPage = query({
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
+    topic: v.optional(v.string()),
+    officialFirst: v.optional(v.boolean()),
     sort: v.optional(
       v.union(
         v.literal("updated"),
@@ -3192,6 +3401,8 @@ export const listPageForViewerInternal = internalQuery({
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
+    topic: v.optional(v.string()),
+    officialFirst: v.optional(v.boolean()),
     sort: v.optional(
       v.union(
         v.literal("updated"),
@@ -3250,11 +3461,13 @@ async function listPackagePageImpl(
     executesCode?: boolean;
     capabilityTag?: string;
     category?: string;
+    topic?: string;
+    officialFirst?: boolean;
     sort?: "updated" | "downloads" | "recommended" | "installs";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
-) {
+): Promise<PublicPackageListPage> {
   if (args.channel === "private" && !args.viewerUserId) {
     return { page: [], isDone: true, continueCursor: "" };
   }
@@ -3266,10 +3479,25 @@ async function listPackagePageImpl(
   const canViewPackage = async (digest: PackageDigestLike) =>
     await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
   const targetCount = args.paginationOpts.numItems;
+  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
+  const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
+  if (args.topic !== undefined && !topic) {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+
+  if (args.officialFirst && category && typeof args.isOfficial !== "boolean") {
+    return await listOfficialFirstPackageCategoryPage(ctx, {
+      ...args,
+      category,
+      topic,
+    });
+  }
 
   if (args.highlightedOnly) {
     const page = await fetchHighlightedPackagePage(ctx, {
       ...args,
+      category,
+      topic,
       numItems: targetCount,
     });
     return { page, isDone: true, continueCursor: "" };
@@ -3279,7 +3507,6 @@ async function listPackagePageImpl(
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
-  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const decodedCursor = decodePublicPageCursor(args.paginationOpts.cursor);
   if (decodedCursor.done && decodedCursor.offset === 0) {
     return { page: collected, isDone: true, continueCursor: "" };
@@ -3344,7 +3571,7 @@ async function listPackagePageImpl(
       for (let index = pageOffset; index < page.page.length; index += 1) {
         const pkg = page.page[index];
         if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
-        if (!packageMatchesListFilters(pkg, { ...args, category })) continue;
+        if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
         collected.push(await toPublicPackageListItemFromPackage(ctx, pkg));
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
@@ -3391,78 +3618,199 @@ async function listPackagePageImpl(
     };
   }
 
-  const builder = category
-    ? buildPackagePluginCategoryDigestQuery(ctx, {
-        category,
-        family,
-        channel,
-        isOfficial,
-        executesCode: args.executesCode,
-      })
-    : args.capabilityTag
-      ? buildPackageCapabilityDigestQuery(ctx, {
-          capabilityTag: args.capabilityTag,
+  const buildDigestQuery = () =>
+    topic
+      ? buildPackageTopicDigestQuery(ctx, {
+          topic,
           family,
           channel,
           isOfficial,
           executesCode: args.executesCode,
         })
-      : buildPackageDigestQuery(ctx, {
-          family,
-          channel,
-          isOfficial,
-          executesCode: args.executesCode,
-        });
-  const page: {
-    page: PackageDigestLike[];
-    isDone: boolean;
-    continueCursor: string;
-  } = await builder.order("desc").paginate({ cursor: pageCursor, numItems: effectivePageSize });
-  for (let index = offset; index < page.page.length; index += 1) {
-    const digest = page.page[index] as PackageDigestLike;
-    if (!(await canViewPackage(digest))) continue;
-    if (channel && digest.channel !== channel) continue;
-    if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
-      continue;
+      : category
+        ? buildPackagePluginCategoryDigestQuery(ctx, {
+            category,
+            family,
+            channel,
+            isOfficial,
+            executesCode: args.executesCode,
+          })
+        : args.capabilityTag
+          ? buildPackageCapabilityDigestQuery(ctx, {
+              capabilityTag: args.capabilityTag,
+              family,
+              channel,
+              isOfficial,
+              executesCode: args.executesCode,
+            })
+          : buildPackageDigestQuery(ctx, {
+              family,
+              channel,
+              isOfficial,
+              executesCode: args.executesCode,
+            });
+  let cursor = pageCursor;
+  let pageOffset = offset;
+  let pageSize: number | null = decodedCursor.pageSize ?? null;
+  let done = decodedCursor.done;
+  const requiresDigestPostFilterScan = Boolean(
+    (topic && (category || args.capabilityTag)) || (category && args.capabilityTag),
+  );
+
+  while ((pageOffset > 0 || !done) && collected.length < targetCount) {
+    const scanPageSize = Math.min(
+      MAX_PUBLIC_LIST_PAGE_SIZE,
+      pageOffset > 0 && pageSize
+        ? Math.max(pageSize, pageOffset + targetCount)
+        : Math.max(effectivePageSize, targetCount),
+    );
+    const currentCursor = cursor;
+    const page: {
+      page: PackageDigestLike[];
+      isDone: boolean;
+      continueCursor: string;
+    } = await buildDigestQuery()
+      .order("desc")
+      .paginate({ cursor: currentCursor, numItems: scanPageSize });
+
+    for (let index = pageOffset; index < page.page.length; index += 1) {
+      const digest = page.page[index] as PackageDigestLike;
+      if (!(await canViewPackage(digest))) continue;
+      if (channel && digest.channel !== channel) continue;
+      if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
+        continue;
+      }
+      if (!digestMatchesFilters(digest, { ...args, topic })) continue;
+      collected.push(await toPublicPackageListItem(ctx, digest));
+      if (collected.length >= targetCount) {
+        const nextOffset = index + 1;
+        const nextState =
+          nextOffset < page.page.length
+            ? {
+                cursor: currentCursor,
+                offset: nextOffset,
+                pageSize: scanPageSize,
+                done: page.isDone,
+                mode: "digest" as const,
+              }
+            : {
+                cursor: page.continueCursor,
+                offset: 0,
+                pageSize: scanPageSize,
+                done: page.isDone,
+                mode: "digest" as const,
+              };
+        return {
+          page: collected,
+          isDone: nextState.done && nextState.offset === 0,
+          continueCursor: encodePublicPageCursor(nextState),
+        };
+      }
     }
-    if (!digestMatchesFilters(digest, args)) continue;
-    collected.push(await toPublicPackageListItem(ctx, digest));
-    if (collected.length >= targetCount) {
-      const nextOffset = index + 1;
-      const nextState =
-        nextOffset < page.page.length
-          ? {
-              cursor: pageCursor,
-              offset: nextOffset,
-              pageSize: effectivePageSize,
-              done: page.isDone,
-              mode: "digest" as const,
-            }
-          : {
-              cursor: page.continueCursor,
-              offset: 0,
-              pageSize: effectivePageSize,
-              done: page.isDone,
-              mode: "digest" as const,
-            };
-      return {
-        page: collected,
-        isDone: nextState.done && nextState.offset === 0,
-        continueCursor: encodePublicPageCursor(nextState),
-      };
-    }
+
+    done = page.isDone;
+    cursor = page.continueCursor;
+    pageOffset = 0;
+    pageSize = scanPageSize;
+    if (!requiresDigestPostFilterScan) break;
   }
 
   return {
     page: collected,
-    isDone: page.isDone,
+    isDone: done,
     continueCursor: encodePublicPageCursor({
-      cursor: page.continueCursor,
-      offset: 0,
-      pageSize: effectivePageSize,
-      done: page.isDone,
+      cursor,
+      offset: pageOffset,
+      pageSize,
+      done,
       mode: "digest",
     }),
+  };
+}
+
+async function listOfficialFirstPackageCategoryPage(
+  ctx: DbReaderCtx,
+  args: {
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    highlightedOnly?: boolean;
+    executesCode?: boolean;
+    capabilityTag?: string;
+    category: PluginCategorySlug;
+    topic?: string;
+    sort?: "updated" | "downloads" | "recommended" | "installs";
+    viewerUserId?: Id<"users">;
+    paginationOpts: { cursor: string | null; numItems: number };
+  },
+): Promise<PublicPackageListPage> {
+  const state = decodeOfficialFirstPackageCategoryCursor(args.paginationOpts.cursor);
+  const targetCount = args.paginationOpts.numItems;
+  const collected: PublicPackageListItem[] = [];
+
+  if (state.phase === "official") {
+    const officialPage = await listPackagePageImpl(ctx, {
+      ...args,
+      officialFirst: false,
+      isOfficial: true,
+      paginationOpts: {
+        cursor: state.cursor,
+        numItems: targetCount,
+      },
+    });
+    collected.push(...officialPage.page);
+    if (!officialPage.isDone) {
+      return {
+        page: collected,
+        isDone: false,
+        continueCursor: encodeOfficialFirstPackageCategoryCursor({
+          phase: "official",
+          cursor: officialPage.continueCursor,
+        }),
+      };
+    }
+    if (collected.length >= targetCount) {
+      const communityProbe = await listPackagePageImpl(ctx, {
+        ...args,
+        officialFirst: false,
+        isOfficial: false,
+        paginationOpts: {
+          cursor: null,
+          numItems: 1,
+        },
+      });
+      const hasCommunityPage = communityProbe.page.length > 0 || !communityProbe.isDone;
+      return {
+        page: collected,
+        isDone: !hasCommunityPage,
+        continueCursor: hasCommunityPage
+          ? encodeOfficialFirstPackageCategoryCursor({
+              phase: "community",
+              cursor: communityProbe.page.length > 0 ? null : communityProbe.continueCursor,
+            })
+          : "",
+      };
+    }
+  }
+
+  const communityPage = await listPackagePageImpl(ctx, {
+    ...args,
+    officialFirst: false,
+    isOfficial: false,
+    paginationOpts: {
+      cursor: state.phase === "community" ? state.cursor : null,
+      numItems: targetCount - collected.length,
+    },
+  });
+  collected.push(...communityPage.page);
+  return {
+    page: collected,
+    isDone: communityPage.isDone,
+    continueCursor: communityPage.isDone
+      ? ""
+      : encodeOfficialFirstPackageCategoryCursor({
+          phase: "community",
+          cursor: communityPage.continueCursor,
+        }),
   };
 }
 
@@ -3481,6 +3829,7 @@ export const searchPublic = query({
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
+    topic: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     return (await searchPackagesImpl(ctx, args)).map(toPublicPackageSearchEntry);
@@ -3502,6 +3851,7 @@ export const searchForViewerInternal = internalQuery({
     executesCode: v.optional(v.boolean()),
     capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
+    topic: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -3521,6 +3871,7 @@ async function searchPackagesImpl(
     executesCode?: boolean;
     capabilityTag?: string;
     category?: string;
+    topic?: string;
     viewerUserId?: Id<"users">;
   },
 ) {
@@ -3533,8 +3884,11 @@ async function searchPackagesImpl(
   const membershipCache = new Map<string, Promise<boolean>>();
   const canViewPackage = async (digest: PackageDigestLike) =>
     await canViewerReadPackage(ctx, digest, viewerUserId, membershipCache);
+  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
+  const topic = args.topic ? normalizeCatalogTopic(args.topic) : undefined;
+  if (args.topic !== undefined && !topic) return [];
   if (args.highlightedOnly) {
-    const digests = await fetchHighlightedPackageDigests(ctx, args);
+    const digests = await fetchHighlightedPackageDigests(ctx, { ...args, category, topic });
     const entries = digests
       .map((digest) => {
         const match = packageSearchMatch(digest, queryText);
@@ -3556,39 +3910,46 @@ async function searchPackagesImpl(
     return results;
   }
 
-  const category = isPluginCategorySlug(args.category) ? args.category : undefined;
   const buildSearchDigestQuery = () =>
-    category
-      ? buildPackagePluginCategoryDigestQuery(ctx, {
-          category,
+    topic
+      ? buildPackageTopicDigestQuery(ctx, {
+          topic,
           family: args.family,
           channel: args.channel,
           isOfficial: args.isOfficial,
           executesCode: args.executesCode,
         })
-      : args.capabilityTag
-        ? buildPackageCapabilityDigestQuery(ctx, {
-            capabilityTag: args.capabilityTag,
+      : category
+        ? buildPackagePluginCategoryDigestQuery(ctx, {
+            category,
             family: args.family,
             channel: args.channel,
             isOfficial: args.isOfficial,
             executesCode: args.executesCode,
           })
-        : buildPackageDigestQuery(ctx, {
-            family: args.family,
-            channel: args.channel,
-            isOfficial: args.isOfficial,
-            executesCode: args.executesCode,
-          });
+        : args.capabilityTag
+          ? buildPackageCapabilityDigestQuery(ctx, {
+              capabilityTag: args.capabilityTag,
+              family: args.family,
+              channel: args.channel,
+              isOfficial: args.isOfficial,
+              executesCode: args.executesCode,
+            })
+          : buildPackageDigestQuery(ctx, {
+              family: args.family,
+              channel: args.channel,
+              isOfficial: args.isOfficial,
+              executesCode: args.executesCode,
+            });
   const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
   const directDigests =
-    args.capabilityTag || args.category
+    args.capabilityTag || args.category || topic
       ? []
       : await resolveDirectPackageSearchDigests(ctx, queryText);
   for (const digest of directDigests) {
     if (!(await canViewPackage(digest))) continue;
-    if (!digestMatchesSearchFilters(digest, args)) continue;
+    if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
     const match = packageSearchMatch(digest, queryText);
     if (!match || seen.has(digest.packageId)) continue;
     seen.add(digest.packageId);
@@ -3606,7 +3967,7 @@ async function searchPackagesImpl(
 
     for (const digest of digests) {
       if (!(await canViewPackage(digest))) continue;
-      if (!digestMatchesSearchFilters(digest, args)) continue;
+      if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
       const match = packageSearchMatch(digest, queryText);
       if (!match || seen.has(digest.packageId)) continue;
       seen.add(digest.packageId);
@@ -6639,6 +7000,34 @@ async function publishPackageImpl(
     packageJson,
     readmeText: readmeEntry?.text ?? null,
   });
+  const primaryCategory = resolveStoredPluginPrimaryCategory({
+    primaryCategory: payload.primaryCategory ?? existingPackage?.primaryCategory,
+    family,
+    name,
+    displayName,
+    runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
+    summary,
+    capabilityTags:
+      codeArtifacts?.capabilities?.capabilityTags ?? bundleArtifacts?.capabilities?.capabilityTags,
+  });
+  if (payload.primaryCategory !== undefined && !isPluginCategorySlug(payload.primaryCategory)) {
+    throw new ConvexError(`Unknown plugin category: ${payload.primaryCategory}`);
+  }
+  const packageJsonTopics =
+    packageJson && Array.isArray(packageJson.keywords)
+      ? packageJson.keywords.filter((value): value is string => typeof value === "string")
+      : undefined;
+  let normalizedTopics: string[];
+  if (payload.topics === undefined && existingPackage?.topics === undefined) {
+    normalizedTopics = normalizeInferredCatalogTopics(packageJsonTopics);
+  } else {
+    try {
+      normalizedTopics = normalizeCatalogTopics(payload.topics ?? existingPackage?.topics);
+    } catch (error) {
+      throw new ConvexError(error instanceof Error ? error.message : "Invalid topics");
+    }
+  }
+  const topics = normalizedTopics.length ? normalizedTopics : undefined;
   const staticScan = await runStaticPublishScan(ctx, {
     slug: name,
     displayName,
@@ -6698,6 +7087,8 @@ async function publishPackageImpl(
     changelog: payload.changelog.trim(),
     tags: payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"],
     summary,
+    primaryCategory,
+    topics,
     sourceRepo: effectiveSource?.repo || effectiveSource?.url,
     runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
     channel: payload.channel,
@@ -7389,6 +7780,64 @@ export const repairPackageIdentityInternal = internalMutation({
   },
 });
 
+export const setPackageCatalogMetadata = mutation({
+  args: {
+    packageId: v.id("packages"),
+    primaryCategory: v.string(),
+    topics: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    assertModerator(user);
+    if (!isPluginCategorySlug(args.primaryCategory)) {
+      throw new ConvexError(`Unknown plugin category: ${args.primaryCategory}`);
+    }
+
+    const pkg = await ctx.db.get(args.packageId);
+    if (!pkg || pkg.softDeletedAt) throw new ConvexError("Package not found");
+
+    let normalizedTopics: string[];
+    try {
+      normalizedTopics = normalizeCatalogTopics(args.topics);
+    } catch (error) {
+      throw new ConvexError(error instanceof Error ? error.message : "Invalid topics");
+    }
+
+    const now = Date.now();
+    const nextPackage = {
+      ...pkg,
+      primaryCategory: args.primaryCategory,
+      topics: normalizedTopics.length ? normalizedTopics : undefined,
+      updatedAt: now,
+    };
+    await ctx.db.patch(pkg._id, {
+      primaryCategory: nextPackage.primaryCategory,
+      topics: nextPackage.topics,
+      updatedAt: now,
+    });
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: nextPackage.ownerPublisherId,
+      ownerUserId: nextPackage.ownerUserId,
+    });
+    await upsertPackageSearchDigest(ctx, {
+      ...extractPackageDigestFields(nextPackage),
+      ownerHandle: owner?.handle ?? "",
+      ownerKind: owner?.kind,
+    });
+    await ctx.db.insert("auditLogs", {
+      actorUserId: user._id,
+      action: "package.catalog_metadata.set",
+      targetType: "package",
+      targetId: pkg._id,
+      metadata: {
+        previous: { primaryCategory: pkg.primaryCategory, topics: pkg.topics },
+        next: { primaryCategory: nextPackage.primaryCategory, topics: nextPackage.topics },
+      },
+      createdAt: now,
+    });
+  },
+});
+
 export const insertPackageInspectorWarningsInternal = internalMutation({
   args: {
     packageId: v.id("packages"),
@@ -7860,6 +8309,8 @@ export const insertReleaseInternal = internalMutation({
     changelog: v.string(),
     tags: v.array(v.string()),
     summary: v.string(),
+    primaryCategory: v.optional(v.string()),
+    topics: v.optional(v.array(v.string())),
     sourceRepo: v.optional(v.string()),
     runtimeId: v.optional(v.string()),
     channel: v.optional(
@@ -8027,6 +8478,8 @@ export const insertReleaseInternal = internalMutation({
         sourceRepo: args.sourceRepo,
         tags: {},
         capabilityTags: nextCapabilityTags,
+        primaryCategory: args.primaryCategory,
+        topics: args.topics,
         executesCode: nextCapabilities?.executesCode,
         compatibility: args.compatibility,
         capabilities: nextCapabilities,
@@ -8150,6 +8603,8 @@ export const insertReleaseInternal = internalMutation({
         : pkg.latestVersionSummary,
       tags: nextTags,
       capabilityTags: shouldPromoteLatest ? nextCapabilityTags : pkg.capabilityTags,
+      primaryCategory: shouldPromoteLatest ? args.primaryCategory : pkg.primaryCategory,
+      topics: shouldPromoteLatest ? args.topics : pkg.topics,
       executesCode: shouldPromoteLatest
         ? typeof nextCapabilities?.executesCode === "boolean"
           ? nextCapabilities.executesCode

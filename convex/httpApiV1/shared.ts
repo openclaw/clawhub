@@ -355,6 +355,10 @@ export async function parseMultipartPublish(
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
     ...(hasAcceptLicenseTerms ? { acceptLicenseTerms: payload.acceptLicenseTerms } : {}),
     tags: Array.isArray(payload.tags) ? payload.tags : undefined,
+    ...(typeof payload.primaryCategory === "string"
+      ? { primaryCategory: payload.primaryCategory }
+      : {}),
+    ...(Array.isArray(payload.topics) ? { topics: payload.topics } : {}),
     ...(payload.source ? { source: payload.source } : {}),
     files,
     ...(forkOf ? { forkOf } : {}),
@@ -441,6 +445,8 @@ export function parsePublishBody(body: unknown) {
     changelog: parsed.changelog,
     acceptLicenseTerms: parsed.acceptLicenseTerms,
     tags,
+    primaryCategory: parsed.primaryCategory,
+    topics: parsed.topics,
     source: parsed.source ?? undefined,
     forkOf: parsed.forkOf
       ? {

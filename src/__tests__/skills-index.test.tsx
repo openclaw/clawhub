@@ -351,9 +351,9 @@ describe("SkillsIndex", () => {
     });
 
     expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Dev Tools" }).getAttribute("aria-checked")).toBe(
-      "false",
-    );
+    expect(
+      screen.getByRole("radio", { name: "Coding & Dev Tools" }).getAttribute("aria-checked"),
+    ).toBe("false");
     expect(actionFn).toHaveBeenCalledWith(
       expect.objectContaining({
         query: "test",
@@ -579,6 +579,7 @@ describe("SkillsIndex", () => {
     expect(args).toEqual(
       expect.objectContaining({
         categorySlug: "dev-tools",
+        officialFirst: true,
         categoryKeywords: expect.arrayContaining(["dev"]),
         excludeCategoryKeywords: undefined,
       }),
@@ -587,6 +588,56 @@ describe("SkillsIndex", () => {
     expect(screen.getByText("Developer Utils")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+  });
+
+  it("passes author topics to browse filtering and renders the active topic facet", async () => {
+    searchMock = { topic: "google-calendar" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("calendar-helper", "Calendar Helper", {
+          topics: ["google-calendar", "productivity"],
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(getLastListPageArgs()).toEqual(
+      expect.objectContaining({
+        topic: "google-calendar",
+      }),
+    );
+    expect(
+      screen.getByRole("radio", { name: "google-calendar" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getAllByText("google-calendar")).toHaveLength(2);
+  });
+
+  it("preserves backend official-first ordering on category pages", async () => {
+    searchMock = { category: "dev-tools" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("official-dev", "Official Dev", {
+          primaryCategory: "dev-tools",
+          official: true,
+        }),
+        makeListResult("community-dev", "Community Dev", { primaryCategory: "dev-tools" }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const titles = Array.from(document.querySelectorAll(".skill-list-item-name")).map(
+      (node) => node.textContent,
+    );
+    expect(titles).toEqual(["Official Dev", "Community Dev"]);
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ officialFirst: true }));
   });
 
   it("does not render the warning filter", async () => {
@@ -699,7 +750,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function makeListResult(
   slug: string,
   displayName: string,
-  options: { isSuspicious?: boolean; summary?: string } = {},
+  options: {
+    isSuspicious?: boolean;
+    summary?: string;
+    topics?: string[];
+    primaryCategory?: string;
+    official?: boolean;
+  } = {},
 ) {
   return {
     skill: {
@@ -707,6 +764,9 @@ function makeListResult(
       slug,
       displayName,
       summary: options.summary ?? `${displayName} summary`,
+      topics: options.topics,
+      primaryCategory: options.primaryCategory,
+      badges: options.official ? { official: { byUserId: "users:admin", at: 1 } } : {},
       tags: {},
       stats: {
         downloads: 0,

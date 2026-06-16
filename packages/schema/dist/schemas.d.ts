@@ -85,6 +85,8 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
     migrateOwner?: boolean | undefined;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
+    primaryCategory?: string | undefined;
+    topics?: string[] | undefined;
     source?: {
         kind: "github";
         url: string;

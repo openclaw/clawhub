@@ -1,3 +1,5 @@
+import { INTERNAL_UNCATEGORIZED_CATEGORY } from "./catalogMetadata.js";
+
 export const PLUGIN_CATEGORY_DEFINITIONS = [
   {
     slug: "channels",
@@ -24,10 +26,24 @@ export const PLUGIN_CATEGORY_DEFINITIONS = [
     ],
   },
   {
+    slug: "model-providers",
+    label: "Model & Inference Providers",
+    icon: "brain",
+    signals: [
+      "model provider",
+      "model-provider",
+      "inference",
+      "language model",
+      "llm",
+      "text generation",
+      "image generation",
+    ],
+  },
+  {
     slug: "mcp-tooling",
     label: "MCP & Tooling",
     icon: "plug",
-    signals: ["mcp", "server", "protocol", "provider", "harness", "adapter"],
+    signals: ["mcp", "server", "protocol", "harness", "adapter"],
   },
   {
     slug: "data",
@@ -179,4 +195,21 @@ export function derivePluginCategoryTags(input: {
   return PLUGIN_CATEGORY_DEFINITIONS.filter((category) =>
     category.signals.some((signal) => signalMatches(text, signal)),
   ).map((category) => category.slug);
+}
+
+export function resolvePluginPrimaryCategory(
+  input: Parameters<typeof derivePluginCategoryTags>[0] & {
+    primaryCategory?: string | null;
+  },
+): PluginCategorySlug | undefined {
+  if (input.family !== "skill" && isPluginCategorySlug(input.primaryCategory)) {
+    return input.primaryCategory;
+  }
+  return derivePluginCategoryTags(input)[0];
+}
+
+export function resolveStoredPluginPrimaryCategory(
+  input: Parameters<typeof resolvePluginPrimaryCategory>[0],
+): PluginCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY {
+  return resolvePluginPrimaryCategory(input) ?? INTERNAL_UNCATEGORIZED_CATEGORY;
 }

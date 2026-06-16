@@ -723,12 +723,12 @@ describe("SkillDetailPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Related skills" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "View Workflows skills" }).getAttribute("href")).toBe(
-      "/skills?category=workflows",
-    );
-    expect(screen.getByRole("link", { name: "More in Workflows" }).getAttribute("href")).toBe(
-      "/skills?category=workflows",
-    );
+    expect(
+      screen.getByRole("link", { name: "View Automation & Workflows skills" }).getAttribute("href"),
+    ).toBe("/skills?category=automation-workflows");
+    expect(
+      screen.getByRole("link", { name: "More in Automation & Workflows" }).getAttribute("href"),
+    ).toBe("/skills?category=automation-workflows");
     expect(screen.getByRole("link", { name: /Pipeline Builder/i })).toBeTruthy();
     expect(screen.getByText(/Compose agent workflow pipelines\./i)).toBeTruthy();
     expect(screen.getByText("steipete/pipeline-builder")).toBeTruthy();

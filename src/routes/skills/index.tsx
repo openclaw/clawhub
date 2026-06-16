@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { Search, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
@@ -51,6 +52,7 @@ export const Route = createFileRoute("/skills/")({
           ? true
           : undefined,
       category: parseSkillCategorySlug(search.category),
+      topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
       view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
     };
@@ -76,7 +78,11 @@ export function SkillsIndex() {
       ? "recommended"
       : model.sort;
   const hasActiveFilters =
-    model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly || Boolean(search.tag);
+    model.hasQuery ||
+    Boolean(model.activeCategory) ||
+    model.featuredOnly ||
+    Boolean(search.tag) ||
+    Boolean(search.topic);
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
 
@@ -124,6 +130,7 @@ export function SkillsIndex() {
         search: (prev: SkillsSearchState) => ({
           ...prev,
           category,
+          topic: undefined,
           featured: undefined,
           highlighted: undefined,
         }),
@@ -199,6 +206,22 @@ export function SkillsIndex() {
           sortOptions={SKILLS_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}
+          radioGroups={
+            model.availableTopics.length
+              ? [
+                  {
+                    title: "Topics",
+                    ariaLabel: "Topic filter",
+                    activeValue: model.activeTopic,
+                    onChange: model.onTopicChange,
+                    options: [
+                      { value: undefined, label: "All topics" },
+                      ...model.availableTopics.map((topic) => ({ value: topic, label: topic })),
+                    ],
+                  },
+                ]
+              : []
+          }
         />
         <div className="browse-results">
           <SkillsResults

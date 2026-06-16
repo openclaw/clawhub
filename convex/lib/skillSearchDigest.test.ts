@@ -28,6 +28,8 @@ function makeSkillDoc(overrides: Record<string, unknown> = {}) {
       changelog: "Initial release",
     },
     tags: {} as Record<string, never>,
+    primaryCategory: "security-review",
+    topics: ["supply-chain", "vetting"],
     softDeletedAt: undefined,
     badges: undefined,
     moderationStatus: "active" as const,
@@ -79,6 +81,8 @@ describe("extractDigestFields", () => {
     expect(digest.displayName).toBe("Test Skill");
     expect(digest.summary).toBe("A test skill summary");
     expect(digest.ownerUserId).toBe("users:owner");
+    expect(digest.primaryCategory).toBe("security-review");
+    expect(digest.topics).toEqual(["supply-chain", "vetting"]);
     expect(digest.statsDownloads).toBe(42);
     expect(digest.statsStars).toBe(5);
     expect(digest.statsInstallsCurrent).toBe(10);
@@ -187,6 +191,14 @@ describe("extractDigestFields", () => {
     const hydratable = digestToHydratableSkill(digest as never);
 
     expect(hydratable.isSuspicious).toBe(true);
+  });
+
+  it("preserves catalog metadata through public hydration", () => {
+    const digest = extractDigestFields(makeSkillDoc() as never);
+    const publicSkill = toPublicSkill(digestToHydratableSkill(digest as never));
+
+    expect(publicSkill?.primaryCategory).toBe("security-review");
+    expect(publicSkill?.topics).toEqual(["supply-chain", "vetting"]);
   });
 
   it("preserves malicious moderation verdicts through digest hydration", () => {

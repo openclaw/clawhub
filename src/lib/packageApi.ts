@@ -22,6 +22,8 @@ export type PackageListItem = {
   updatedAt: number;
   latestVersion?: string | null;
   capabilityTags?: string[];
+  primaryCategory?: string | null;
+  topics?: string[];
   executesCode?: boolean;
   verificationTier?: string | null;
   stats?: {
@@ -370,6 +372,8 @@ export async function fetchPackages(params: {
   executesCode?: boolean;
   capabilityTag?: string;
   category?: string;
+  topic?: string;
+  officialFirst?: boolean;
   sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
@@ -388,6 +392,8 @@ export async function fetchPackages(params: {
     }
     if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
     if (params.category) url.searchParams.set("category", params.category);
+    if (params.topic) url.searchParams.set("topic", params.topic);
+    if (params.officialFirst) url.searchParams.set("officialFirst", "true");
     return await fetchJson<{
       results: Array<{
         score: number;
@@ -415,6 +421,8 @@ export async function fetchPackages(params: {
   }
   if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
   if (params.category) url.searchParams.set("category", params.category);
+  if (params.topic) url.searchParams.set("topic", params.topic);
+  if (params.officialFirst) url.searchParams.set("officialFirst", "true");
   if (params.sort) url.searchParams.set("sort", params.sort);
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
     url,
@@ -430,6 +438,8 @@ export async function fetchPluginCatalog(params: {
   featured?: boolean;
   executesCode?: boolean;
   category?: string;
+  topic?: string;
+  officialFirst?: boolean;
   sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
@@ -443,6 +453,8 @@ export async function fetchPluginCatalog(params: {
       featured: params.featured,
       executesCode: params.executesCode,
       category: params.category,
+      topic: params.topic,
+      officialFirst: params.officialFirst,
       sort: params.sort,
       limit: params.limit,
       signal: params.signal,
@@ -474,6 +486,7 @@ export async function fetchPluginCatalog(params: {
       url.searchParams.set("executesCode", String(params.executesCode));
     }
     if (params.category) url.searchParams.set("category", params.category);
+    if (params.topic) url.searchParams.set("topic", params.topic);
     const response = await fetchJson<{
       results?: Array<{
         score: number;
@@ -497,6 +510,8 @@ export async function fetchPluginCatalog(params: {
     url.searchParams.set("executesCode", String(params.executesCode));
   }
   if (params.category) url.searchParams.set("category", params.category);
+  if (params.topic) url.searchParams.set("topic", params.topic);
+  if (params.officialFirst) url.searchParams.set("officialFirst", "true");
   if (params.sort) url.searchParams.set("sort", params.sort);
   const result = await fetchJson<PluginCatalogResult>(url, params.signal);
   return {

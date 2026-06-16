@@ -93,6 +93,35 @@ describe("Upload route", () => {
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
 
+  it("keeps internal uncategorized metadata in auto-detect mode on republish", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "uncategorized-skill" });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: {
+            slug: "uncategorized-skill",
+            displayName: "Uncategorized Skill",
+            primaryCategory: "uncategorized",
+          },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      if (name === "publishers:listMine") return [];
+      return null;
+    });
+
+    render(<Upload />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Primary category" }).textContent).toContain(
+        "Auto-detect",
+      );
+    });
+  });
+
   it("keeps required validation quiet before submit", async () => {
     render(<Upload />);
     const publishButton = screen.getByRole("button", { name: /publish/i });

@@ -34,6 +34,8 @@ const SHARED_KEYS = [
   "latestVersionSummary",
   "tags",
   "capabilityTags",
+  "primaryCategory",
+  "topics",
   "badges",
   "stats",
   "statsDownloads",

@@ -13,17 +13,17 @@ describe("skill category helpers", () => {
       summary: "Build repeatable agent pipelines.",
     });
 
-    expect(category?.slug).toBe("workflows");
+    expect(category?.slug).toBe("automation-workflows");
   });
 
-  it("falls back to the Other category when no keyword matches", () => {
+  it("keeps unmatched skills internally uncategorized", () => {
     const category = getSkillCategoryForSkill({
       slug: "weather",
       displayName: "Weather",
       summary: "Get current forecasts.",
     });
 
-    expect(category?.slug).toBe("other");
+    expect(category?.slug).toBe("domain-utilities");
   });
 
   it("does not let generated slug prefixes outweigh the skill summary", () => {
@@ -33,7 +33,7 @@ describe("skill category helpers", () => {
       summary: "Local fixture for security bucket rendering.",
     });
 
-    expect(category?.slug).toBe("security");
+    expect(category?.slug).toBe("security-review");
   });
 
   it("ignores generated dev slug prefixes when no skill content matches a category", () => {
@@ -43,7 +43,7 @@ describe("skill category helpers", () => {
       summary: "Get current forecasts.",
     });
 
-    expect(category?.slug).toBe("other");
+    expect(category?.slug).toBe("domain-utilities");
   });
 
   it("does not classify unrelated digital device text as Dev Tools", () => {
@@ -53,7 +53,7 @@ describe("skill category helpers", () => {
       summary: "Physical navigation skills without digital devices. Use for learning maps.",
     });
 
-    expect(category?.slug).toBe("other");
+    expect(category?.slug).not.toBe("dev-tools");
   });
 
   it("prefers Data & APIs when web3 developer wording is outweighed by API data terms", () => {
@@ -64,7 +64,7 @@ describe("skill category helpers", () => {
         "Build web3 applications, scripts, CLIs, bots, mobile apps, and desktop apps that need blockchain data via the Blockscout PRO API over HTTP.",
     });
 
-    expect(category?.slug).toBe("data");
+    expect(category?.slug).toBe("data-apis");
   });
 
   it("still recognizes developer utility wording as Dev Tools", () => {
@@ -78,10 +78,21 @@ describe("skill category helpers", () => {
   });
 
   it("builds browse links from the category filter slug", () => {
-    const workflows = SKILL_CATEGORIES.find((category) => category.slug === "workflows");
+    const workflows = SKILL_CATEGORIES.find((category) => category.slug === "automation-workflows");
 
     expect(workflows ? buildSkillCategoryBrowseHref(workflows) : null).toBe(
-      "/skills?category=workflows",
+      "/skills?category=automation-workflows",
     );
+  });
+
+  it("prefers a stored category over inferred skill text", () => {
+    const category = getSkillCategoryForSkill({
+      primaryCategory: "security-review",
+      slug: "todoist-cli",
+      displayName: "Todoist CLI",
+      summary: "Manage tasks, projects, and planning.",
+    });
+
+    expect(category?.slug).toBe("security-review");
   });
 });

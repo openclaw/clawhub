@@ -343,6 +343,8 @@ const PackagePublishMetadataFields = {
   manualOverrideReason: "string?",
   channel: PackageChannelSchema.optional(),
   tags: "string[]?",
+  primaryCategory: "string?",
+  topics: "string[]?",
   source: PublishSourceSchema.optional(),
   bundle: BundlePublishMetadataSchema.optional(),
 } as const;
@@ -373,6 +375,8 @@ export const PackageListItemSchema = type({
   createdAt: "number",
   updatedAt: "number",
   latestVersion: "string|null?",
+  primaryCategory: "string|null?",
+  topics: "string[]?",
   capabilityTags: "string[]?",
   executesCode: "boolean?",
   verificationTier: PackageVerificationTierSchema.or("null").optional(),

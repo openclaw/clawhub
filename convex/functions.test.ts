@@ -275,6 +275,7 @@ describe("package digest sync", () => {
           }
           if (
             table === "packageCapabilitySearchDigest" ||
+            table === "packageTopicSearchDigest" ||
             table === "packagePluginCategorySearchDigest"
           ) {
             return {
@@ -414,6 +415,7 @@ describe("package digest sync", () => {
           }
           if (
             table === "packageCapabilitySearchDigest" ||
+            table === "packageTopicSearchDigest" ||
             table === "packagePluginCategorySearchDigest"
           ) {
             return {
@@ -516,6 +518,7 @@ describe("package digest sync", () => {
           }
           if (
             table === "packageCapabilitySearchDigest" ||
+            table === "packageTopicSearchDigest" ||
             table === "packagePluginCategorySearchDigest"
           ) {
             return {

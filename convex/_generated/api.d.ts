@@ -47,6 +47,7 @@ import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
 import type * as lib_artifactModeration from "../lib/artifactModeration.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_batching from "../lib/batching.js";
+import type * as lib_catalogMetadataBackfill from "../lib/catalogMetadataBackfill.js";
 import type * as lib_changelog from "../lib/changelog.js";
 import type * as lib_clawpack from "../lib/clawpack.js";
 import type * as lib_commentScamPrompt from "../lib/commentScamPrompt.js";
@@ -119,6 +120,7 @@ import type * as lib_webhooks from "../lib/webhooks.js";
 import type * as llmEval from "../llmEval.js";
 import type * as maintenance from "../maintenance.js";
 import type * as managementDevSeed from "../managementDevSeed.js";
+import type * as migrations from "../migrations.js";
 import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageInspectorNode from "../packageInspectorNode.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
@@ -194,6 +196,7 @@ declare const fullApi: ApiFromModules<{
   "lib/artifactModeration": typeof lib_artifactModeration;
   "lib/badges": typeof lib_badges;
   "lib/batching": typeof lib_batching;
+  "lib/catalogMetadataBackfill": typeof lib_catalogMetadataBackfill;
   "lib/changelog": typeof lib_changelog;
   "lib/clawpack": typeof lib_clawpack;
   "lib/commentScamPrompt": typeof lib_commentScamPrompt;
@@ -266,6 +269,7 @@ declare const fullApi: ApiFromModules<{
   llmEval: typeof llmEval;
   maintenance: typeof maintenance;
   managementDevSeed: typeof managementDevSeed;
+  migrations: typeof migrations;
   packageInspectorHttp: typeof packageInspectorHttp;
   packageInspectorNode: typeof packageInspectorNode;
   packagePublishTokens: typeof packagePublishTokens;
@@ -322,4 +326,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;
+};

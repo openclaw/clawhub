@@ -25,6 +25,7 @@ const listPackageCatalogPageHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      topic?: string;
       sort?: "updated" | "downloads" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -51,6 +52,7 @@ const searchPackageCatalogPublicHandler = (
       isOfficial?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
+      topic?: string;
     },
     Array<{ score: number; package: { name: string; family: "skill"; isOfficial: boolean } }>
   >
@@ -220,6 +222,45 @@ describe("skills package catalog queries", () => {
     ]);
   });
 
+  it("normalizes and filters skill package catalog topics", async () => {
+    const result = await listPackageCatalogPageHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("calendar-skill", { topics: ["calendar"] }),
+            makeDigest("notes-skill", { topics: ["notes"] }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        topic: " Calendar ",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-skill"]);
+  });
+
+  it("rejects invalid skill package catalog topics instead of returning an unfiltered page", async () => {
+    const result = await listPackageCatalogPageHandler(
+      makeCtx([
+        {
+          page: [makeDigest("unfiltered-skill")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        topic: "!!!",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(result).toEqual({ page: [], isDone: true, continueCursor: "" });
+  });
+
   it("searches skills with package-style lexical scoring", async () => {
     const result = await searchPackageCatalogPublicHandler(
       makeCtx([
@@ -245,6 +286,47 @@ describe("skills package catalog queries", () => {
       },
     });
     expect(result[0]?.score).toBeGreaterThan(0);
+  });
+
+  it("normalizes and filters skill package catalog search topics", async () => {
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("calendar-demo", { topics: ["calendar"] }),
+            makeDigest("notes-demo", { topics: ["notes"] }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "demo",
+        topic: " Calendar ",
+        limit: 5,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["calendar-demo"]);
+  });
+
+  it("rejects invalid skill package catalog search topics instead of returning unfiltered results", async () => {
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [makeDigest("unfiltered-skill")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "skill",
+        topic: "!!!",
+        limit: 5,
+      },
+    );
+
+    expect(result).toEqual([]);
   });
 
   it("does not let official status make unrelated skills eligible for package search", async () => {

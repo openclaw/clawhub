@@ -255,6 +255,8 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
+    primaryCategory?: string | undefined;
+    topics?: string[] | undefined;
     source?: {
         kind: "github";
         url: string;
@@ -300,6 +302,8 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
+    primaryCategory?: string | undefined;
+    topics?: string[] | undefined;
     source?: {
         kind: "github";
         url: string;
@@ -328,6 +332,8 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     summary?: string | null | undefined;
     ownerHandle?: string | null | undefined;
     latestVersion?: string | null | undefined;
+    primaryCategory?: string | null | undefined;
+    topics?: string[] | undefined;
     capabilityTags?: string[] | undefined;
     executesCode?: boolean | undefined;
     verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
@@ -352,6 +358,8 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         summary?: string | null | undefined;
         ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
+        primaryCategory?: string | null | undefined;
+        topics?: string[] | undefined;
         capabilityTags?: string[] | undefined;
         executesCode?: boolean | undefined;
         verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
@@ -380,6 +388,8 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             summary?: string | null | undefined;
             ownerHandle?: string | null | undefined;
             latestVersion?: string | null | undefined;
+            primaryCategory?: string | null | undefined;
+            topics?: string[] | undefined;
             capabilityTags?: string[] | undefined;
             executesCode?: boolean | undefined;
             verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;

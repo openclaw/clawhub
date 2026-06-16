@@ -7,6 +7,10 @@ import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
+import {
+  CatalogMetadataFields,
+  parseCatalogTopicsInput,
+} from "../../components/CatalogMetadataFields";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import {
@@ -195,6 +199,8 @@ export function PublishPluginRoute() {
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
+  const [primaryCategory, setPrimaryCategory] = useState("");
+  const [topics, setTopics] = useState("");
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
   const [sourceRef, setSourceRef] = useState("");
@@ -525,6 +531,14 @@ export function PublishPluginRoute() {
                     onValueChange={setVersion}
                   />
                 </div>
+                <CatalogMetadataFields
+                  kind="plugin"
+                  primaryCategory={primaryCategory}
+                  topics={topics}
+                  disabled={metadataDisabled}
+                  onPrimaryCategoryChange={setPrimaryCategory}
+                  onTopicsChange={setTopics}
+                />
                 {family === "bundle-plugin" ? (
                   <>
                     <div className="flex flex-col gap-2">
@@ -764,6 +778,8 @@ export function PublishPluginRoute() {
                           family,
                           version: version.trim(),
                           changelog: changelog.trim(),
+                          ...(primaryCategory ? { primaryCategory } : {}),
+                          ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
                           ...(sourceRepo.trim() && sourceCommit.trim()
                             ? {
                                 source: {

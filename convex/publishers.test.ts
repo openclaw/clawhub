@@ -4639,6 +4639,7 @@ describe("legacy publisher migration", () => {
           ]
         : [],
     );
+    const packageTopicSearchDigest = new Map<string, Record<string, unknown>>();
     const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
     const packageInspectorWarnings = new Map<string, Record<string, unknown>>(
       options.legacyResources
@@ -4703,6 +4704,7 @@ describe("legacy publisher migration", () => {
       packages,
       packageSearchDigest,
       packageCapabilitySearchDigest,
+      packageTopicSearchDigest,
       packagePluginCategorySearchDigest,
       packageInspectorWarnings,
       githubSkillSources,
@@ -4724,6 +4726,7 @@ describe("legacy publisher migration", () => {
       if (table === "skillSearchDigest") skillSearchDigest.set(id, row);
       if (table === "packageSearchDigest") packageSearchDigest.set(id, row);
       if (table === "packageCapabilitySearchDigest") packageCapabilitySearchDigest.set(id, row);
+      if (table === "packageTopicSearchDigest") packageTopicSearchDigest.set(id, row);
       if (table === "packagePluginCategorySearchDigest") {
         packagePluginCategorySearchDigest.set(id, row);
       }
@@ -4733,6 +4736,7 @@ describe("legacy publisher migration", () => {
       deletes.push(id);
       publisherMembers.delete(id);
       packageCapabilitySearchDigest.delete(id);
+      packageTopicSearchDigest.delete(id);
       packagePluginCategorySearchDigest.delete(id);
     });
     const query = vi.fn((table: string) => ({
@@ -4840,6 +4844,11 @@ describe("legacy publisher migration", () => {
             collect: vi.fn(async () => {
               if (table === "packageCapabilitySearchDigest" && fields.packageId) {
                 return [...packageCapabilitySearchDigest.values()].filter(
+                  (digest) => digest.packageId === fields.packageId,
+                );
+              }
+              if (table === "packageTopicSearchDigest" && fields.packageId) {
+                return [...packageTopicSearchDigest.values()].filter(
                   (digest) => digest.packageId === fields.packageId,
                 );
               }

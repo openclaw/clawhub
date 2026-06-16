@@ -288,6 +288,7 @@ describe("fetchPackages", () => {
       cursor: "pkgpage:test",
       isOfficial: true,
       category: "data",
+      officialFirst: true,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -301,6 +302,7 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("cursor")).toBe("pkgpage:test");
     expect(url.searchParams.get("isOfficial")).toBe("true");
     expect(url.searchParams.get("category")).toBe("data");
+    expect(url.searchParams.get("officialFirst")).toBe("true");
   });
 
   it("uses the dedicated plugins search endpoint for mixed plugin search", async () => {

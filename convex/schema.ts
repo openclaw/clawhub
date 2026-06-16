@@ -660,6 +660,8 @@ const skills = defineTable({
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
   capabilityTags: v.optional(v.array(v.string())),
+  primaryCategory: v.optional(v.string()),
+  topics: v.optional(v.array(v.string())),
   softDeletedAt: v.optional(v.number()),
   badges: badgesValidator,
   moderationStatus: moderationStatusValidator,
@@ -1017,6 +1019,8 @@ const skillSearchDigest = defineTable({
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
   capabilityTags: v.optional(v.array(v.string())),
+  primaryCategory: v.optional(v.string()),
+  topics: v.optional(v.array(v.string())),
   badges: badgesValidator,
   stats: statsValidator,
   statsDownloads: v.optional(v.number()),
@@ -1147,6 +1151,8 @@ const packages = defineTable({
   ),
   tags: v.record(v.string(), v.id("packageReleases")),
   capabilityTags: v.optional(v.array(v.string())),
+  primaryCategory: v.optional(v.string()),
+  topics: v.optional(v.array(v.string())),
   executesCode: v.optional(v.boolean()),
   compatibility: packageCompatibilityValidator,
   capabilities: packageCapabilitiesValidator,
@@ -1563,6 +1569,8 @@ const packageSearchDigest = defineTable({
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
   capabilityTags: v.optional(v.array(v.string())),
+  primaryCategory: v.optional(v.string()),
+  topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
@@ -1650,6 +1658,8 @@ const packageCapabilitySearchDigest = defineTable({
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
   capabilityTags: v.optional(v.array(v.string())),
+  primaryCategory: v.optional(v.string()),
+  topics: v.optional(v.array(v.string())),
   capabilityTag: v.string(),
   executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
@@ -1747,6 +1757,112 @@ const packageCapabilitySearchDigest = defineTable({
     "updatedAt",
   ]);
 
+const packageTopicSearchDigest = defineTable({
+  packageId: v.id("packages"),
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+  summary: v.optional(v.string()),
+  latestVersion: v.optional(v.string()),
+  runtimeId: v.optional(v.string()),
+  capabilityTags: v.optional(v.array(v.string())),
+  primaryCategory: v.optional(v.string()),
+  topics: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
+  topic: v.string(),
+  executesCode: v.optional(v.boolean()),
+  verificationTier: v.optional(packageVerificationTierValidator),
+  stats: v.optional(packageStatsValidator),
+  scanStatus: packageScanStatusValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId", "topic"])
+  .index("by_active_topic_updated", ["softDeletedAt", "topic", "updatedAt"])
+  .index("by_active_topic_executes_updated", [
+    "softDeletedAt",
+    "topic",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_topic_updated", ["softDeletedAt", "family", "topic", "updatedAt"])
+  .index("by_active_family_topic_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "topic",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_topic_updated", ["softDeletedAt", "channel", "topic", "updatedAt"])
+  .index("by_active_channel_topic_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "topic",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_official_topic_updated", ["softDeletedAt", "isOfficial", "topic", "updatedAt"])
+  .index("by_active_official_topic_executes_updated", [
+    "softDeletedAt",
+    "isOfficial",
+    "topic",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_topic_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "topic",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_topic_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "topic",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_topic_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "topic",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_topic_executes_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "topic",
+    "executesCode",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_topic_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "topic",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_topic_executes_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "topic",
+    "executesCode",
+    "updatedAt",
+  ]);
+
 const packagePluginCategorySearchDigest = defineTable({
   packageId: v.id("packages"),
   name: v.string(),
@@ -1763,6 +1879,8 @@ const packagePluginCategorySearchDigest = defineTable({
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
   capabilityTags: v.optional(v.array(v.string())),
+  primaryCategory: v.optional(v.string()),
+  topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
   pluginCategory: v.string(),
   executesCode: v.optional(v.boolean()),
@@ -2585,6 +2703,7 @@ export default defineSchema({
   packageBadges,
   packageSearchDigest,
   packageCapabilitySearchDigest,
+  packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
   depRegistryCache,
