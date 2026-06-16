@@ -8746,7 +8746,9 @@ export async function deleteOwnedSkillVersionForActor(
   }
 
   let mustPublishReplacement =
-    skill.latestVersionId === version._id || skill.tags.latest === version._id;
+    skill.latestVersionId === version._id ||
+    skill.tags.latest === version._id ||
+    skill.latestVersionSummary?.version === version.version;
   if (!mustPublishReplacement && !(await hasAvailableLatestSkillVersionPointer(ctx, skill))) {
     // Admin cleanup can clear latest pointers, so prove a survivor with a bounded indexed read.
     mustPublishReplacement = !(await hasBoundedAvailableSkillVersionSurvivor(

@@ -883,6 +883,39 @@ describe("owner skill version deletion", () => {
     });
   });
 
+  it("rejects deleting the latestVersionSummary version despite stale unavailable pointers and another survivor", async () => {
+    const deleteOwned = getDeletionHelper<{ versionId: string }>(
+      skillsModule,
+      "deleteOwnedSkillVersionForActor",
+    );
+    const { actors, audits, ctx, patches, skillVersionTakeLimits } = makeSkillDeletionCtx({
+      skill: {
+        ...makeSkillDeletionCtx({}).skill,
+        latestVersionId: "skillVersions:revoked",
+        latestVersionSummary: { version: "1.0.0" },
+        tags: { latest: "skillVersions:revoked" },
+      },
+      versions: [
+        makeSkillVersion("skillVersions:target", "1.0.0"),
+        makeSkillVersion("skillVersions:revoked", "2.0.0", {
+          manualRevocation: {
+            reason: "confirmed compromise",
+            reviewerUserId: "users:moderator",
+            revokedAt: 30,
+          },
+        }),
+        makeSkillVersion("skillVersions:survivor", "3.0.0"),
+      ],
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { versionId: "skillVersions:target" }),
+    ).rejects.toThrow("Publish a replacement version before deleting the current latest version.");
+    expect(skillVersionTakeLimits).toEqual([]);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
+  });
+
   it("rejects deletion of a manually revoked version without overwriting revocation evidence", async () => {
     const deleteOwned = getDeletionHelper<{ versionId: string }>(
       skillsModule,
@@ -1515,6 +1548,40 @@ describe("owner package release deletion", () => {
         patch: expect.objectContaining({ ownerDeletedBy: "users:owner" }),
       }),
     );
+  });
+
+  it("rejects deleting the latestVersionSummary release despite stale unavailable pointers and another survivor", async () => {
+    const deleteOwned = getDeletionHelper<{ name: string; version: string }>(
+      packagesModule,
+      "deleteOwnedPackageReleaseForActor",
+    );
+    const { actors, audits, ctx, packageReleaseTakeLimits, patches } = makePackageDeletionCtx({
+      pkg: {
+        ...makePackageDeletionCtx({}).pkg,
+        latestReleaseId: "packageReleases:revoked",
+        latestVersionSummary: { version: "1.0.0" },
+        tags: { latest: "packageReleases:revoked" },
+      },
+      releases: [
+        makePackageRelease("packageReleases:target", "1.0.0"),
+        makePackageRelease("packageReleases:revoked", "2.0.0", {
+          manualModeration: {
+            state: "revoked",
+            reason: "confirmed compromise",
+            reviewerUserId: "users:moderator",
+            reviewedAt: 30,
+          },
+        }),
+        makePackageRelease("packageReleases:survivor", "3.0.0"),
+      ],
+    });
+
+    await expect(
+      deleteOwned(ctx, actors["users:owner"], { name: "demo-plugin", version: "1.0.0" }),
+    ).rejects.toThrow("Publish a replacement release before deleting the current latest release.");
+    expect(packageReleaseTakeLimits).toEqual([]);
+    expect(patches).toEqual([]);
+    expect(audits).toEqual([]);
   });
 
   it("allows pointerless release deletion when unavailable candidates precede a valid survivor", async () => {
