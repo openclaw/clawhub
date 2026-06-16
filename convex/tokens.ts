@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import type { Doc } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query } from "./functions";
-import { requireUser } from "./lib/access";
+import { getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { generateToken, hashToken } from "./lib/tokens";
 
 const TOKEN_TOUCH_MIN_INTERVAL_MS = 15 * 60_000;
@@ -9,7 +9,8 @@ const TOKEN_TOUCH_MIN_INTERVAL_MS = 15 * 60_000;
 export const listMine = query({
   args: {},
   handler: async (ctx) => {
-    const { userId } = await requireUser(ctx);
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return [];
     const tokens = await ctx.db
       .query("apiTokens")
       .withIndex("by_user", (q) => q.eq("userId", userId))
