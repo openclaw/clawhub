@@ -9,7 +9,7 @@ vi.mock("node:child_process", () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
 }));
 
-const { openInBrowser } = await import("./ui");
+const { formatError, openInBrowser } = await import("./ui");
 
 type ErrorHandler = (error: NodeJS.ErrnoException) => void;
 
@@ -73,5 +73,53 @@ describe("openInBrowser", () => {
     expect(logSpy).not.toHaveBeenCalledWith("Could not open browser automatically.");
     expect(child.unref).toHaveBeenCalledOnce();
     logSpy.mockRestore();
+  });
+});
+
+describe("formatError", () => {
+  it("keeps ordinary errors concise", () => {
+    expect(formatError(new Error("HTTP 404: skill not found"))).toBe("HTTP 404: skill not found");
+  });
+
+  it("adds DNS guidance for nested fetch failures", () => {
+    const cause = Object.assign(new Error("getaddrinfo ENOTFOUND clawhub.ai"), {
+      code: "ENOTFOUND",
+    });
+    const error = new TypeError("fetch failed", { cause });
+
+    const formatted = formatError(error);
+
+    expect(formatted).toContain("Network request failed: DNS lookup failed.");
+    expect(formatted).toContain("fetch failed: getaddrinfo ENOTFOUND clawhub.ai");
+    expect(formatted).toContain("HTTPS_PROXY");
+  });
+
+  it("redacts tokens, callback URLs, and proxy credentials in transport details", () => {
+    const error = new Error(
+      "curl failed for https://clawhub.ai/login?token=clh_secret&redirect_uri=http://127.0.0.1:54321/callback Authorization: Bearer clh_other",
+      {
+        cause: new Error("proxy http://user:password@proxy.example:8080 failed"),
+      },
+    );
+
+    const formatted = formatError(error);
+
+    expect(formatted).toContain("Network request failed");
+    expect(formatted).not.toContain("clh_secret");
+    expect(formatted).not.toContain("clh_other");
+    expect(formatted).not.toContain("127.0.0.1:54321");
+    expect(formatted).not.toContain("user:password");
+    expect(formatted).toContain("token=[redacted]");
+    expect(formatted).toContain("redirect_uri=[redacted]");
+    expect(formatted).toContain("Authorization: Bearer [redacted]");
+    expect(formatted).toContain("http://[redacted]@proxy.example:8080");
+  });
+
+  it("classifies TLS and timeout failures", () => {
+    const tls = new Error("self signed certificate in certificate chain");
+    const timeout = new Error("Request timed out after 30s");
+
+    expect(formatError(tls)).toContain("TLS or certificate validation failed");
+    expect(formatError(timeout)).toContain("the request timed out");
   });
 });
