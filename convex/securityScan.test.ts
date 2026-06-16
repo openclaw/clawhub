@@ -3008,6 +3008,122 @@ describe("securityScan", () => {
     },
   );
 
+  it("lets forced GitHub-backed rescans recover incomplete pending requests without jobs", async () => {
+    const now = 1_781_570_600_000;
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        "skills:1",
+        {
+          _id: "skills:1",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:new",
+          githubPath: "skills/demo",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+          ownerUserId: "users:1",
+          slug: "demo",
+          displayName: "Demo",
+        },
+      ],
+      [
+        "githubSkillScans:1",
+        {
+          _id: "githubSkillScans:1",
+          skillId: "skills:1",
+          githubSourceId: "githubSkillSources:new",
+          contentHash: "content-hash",
+          commit: "a".repeat(40),
+          path: "skills/demo",
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:stale",
+          createdAt: now - 1_000,
+          updatedAt: now - 1_000,
+        },
+      ],
+      [
+        "skillScanRequests:stale",
+        {
+          _id: "skillScanRequests:stale",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:1",
+          status: "queued",
+          fileChunkCount: 0,
+          fileManifestBytes: 0,
+          createdAt: now - 1_000,
+          updatedAt: now - 1_000,
+        },
+      ],
+    ]);
+    const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
+    const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+      const id = `${table}:new-${inserts.length + 1}`;
+      docs.set(id, { _id: id, ...doc });
+      inserts.push({ table, doc });
+      return id;
+    });
+    const patch = vi.fn(async (id: string, next: Record<string, unknown>) => {
+      Object.assign(docs.get(id) ?? {}, next);
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => docs.get(id) ?? null),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => docs.get("githubSkillScans:1")),
+          })),
+        })),
+        insert,
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+
+    try {
+      const prepared = await prepareGitHubSkillScanRequestInternalHandler(ctx as never, {
+        skillId: "skills:1",
+        contentHash: "content-hash",
+        commit: "a".repeat(40),
+        force: true,
+        parsed: { frontmatter: {} },
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "No static findings.",
+          engineVersion: "test",
+          checkedAt: now,
+        },
+      });
+
+      expect(prepared).toMatchObject({
+        ok: true,
+        prepared: true,
+        scanId: "githubSkillScans:1",
+        requestId: expect.stringMatching(/^skillScanRequests:new-/),
+      });
+      expect(inserts).toHaveLength(1);
+      expect(inserts[0]).toMatchObject({
+        table: "skillScanRequests",
+        doc: expect.objectContaining({
+          sourceKind: "github",
+          fileChunkCount: 0,
+          fileManifestBytes: 0,
+        }),
+      });
+      expect(docs.get("githubSkillScans:1")).toMatchObject({
+        skillScanRequestId: expect.stringMatching(/^skillScanRequests:new-/),
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reassociates a reused GitHub scan with the skill's current source", async () => {
     const docs = new Map<string, Record<string, unknown>>([
       [

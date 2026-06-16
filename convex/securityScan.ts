@@ -1211,7 +1211,11 @@ export const prepareGitHubSkillScanRequestInternal = internalMutation({
           jobId: job._id,
         };
       }
-      if (request && request.updatedAt > Date.now() - GITHUB_SKILL_SCAN_ACTION_LEASE_MS) {
+      if (
+        request &&
+        !args.force &&
+        request.updatedAt > Date.now() - GITHUB_SKILL_SCAN_ACTION_LEASE_MS
+      ) {
         return {
           ok: true as const,
           alreadyQueued: true as const,
