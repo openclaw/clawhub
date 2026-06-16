@@ -11683,9 +11683,8 @@ a.agentic-risk-finding-title:focus-visible {
     padding-top: 0;
     padding-right: 0;
     padding-bottom: 16px;
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 8px;
+    flex-direction: column;
+    gap: 0;
   }
 
   .browse-layout.sidebar-open .browse-sidebar {
@@ -11707,13 +11706,26 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .sidebar-section {
-    flex-direction: row;
-    flex-wrap: wrap;
-    gap: 4px;
+    width: 100%;
+    flex-direction: column;
+    gap: 0;
   }
 
   .sidebar-title {
     width: 100%;
+    padding-bottom: var(--space-1);
+  }
+
+  .sidebar-option,
+  .sidebar-checkbox {
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 44px;
+    padding: var(--space-2) 0;
+  }
+
+  .sidebar-option-icon {
+    flex: 0 0 18px;
   }
 }
 
