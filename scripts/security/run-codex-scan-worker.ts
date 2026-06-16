@@ -1087,6 +1087,19 @@ async function processJob(
   }
 }
 
+export async function claimCodexScanJobBatch(
+  claimLimit: number,
+  claimOne: () => Promise<ClaimedJob[]>,
+) {
+  const results = await Promise.allSettled(Array.from({ length: claimLimit }, () => claimOne()));
+  return results.flatMap((result) => {
+    if (result.status === "fulfilled") return result.value;
+    const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
+    console.error(`failed to claim security scan job: ${message}`);
+    return [];
+  });
+}
+
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, diagnosticsRoot } = parseArgs();
   assertCodexWorkerExecutionAllowed(process.env);
@@ -1111,12 +1124,16 @@ async function main() {
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
     const claimLimit = Math.min(batchLimit, remainingJobs);
-    const jobs = (await client.action(api.securityScan.claimCodexScanJobs, {
-      token,
-      workerId,
-      limit: claimLimit,
-      leaseMs,
-    })) as ClaimedJob[];
+    const jobs = await claimCodexScanJobBatch(
+      claimLimit,
+      async () =>
+        (await client.action(api.securityScan.claimCodexScanJobs, {
+          token,
+          workerId,
+          limit: 1,
+          leaseMs,
+        })) as ClaimedJob[],
+    );
     console.log(`claimed ${jobs.length} job(s)`);
     if (jobs.length === 0) break;
 

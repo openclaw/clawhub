@@ -20,7 +20,8 @@ This page covers moderation and account standing. For audit labels such as
 [Security Audits](./security-audits.md).
 
 See also [Security](./security.md) and
-[Acceptable usage](./acceptable-usage.md).
+[Acceptable usage](./acceptable-usage.md). For copyright or other content
+rights concerns, use [Content Rights Requests](./content-rights.md).
 
 ## Reports
 

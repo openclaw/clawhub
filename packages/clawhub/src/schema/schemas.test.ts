@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parseArk } from "./ark";
 import {
   ApiV1SearchResponseSchema,
+  ApiV1SkillRescanResponseSchema,
   ApiV1SkillVerifyResponseSchema,
   ClawdisSkillMetadataSchema,
 } from "./schemas";
@@ -84,5 +85,24 @@ describe("packages/clawhub skill metadata schema", () => {
 
     expect(parsed.slug).toBe("demo");
     expect(parsed.version).toBe("1.0.0");
+  });
+
+  it("parses GitHub-backed skill rescan responses", () => {
+    const parsed = parseArk(
+      ApiV1SkillRescanResponseSchema,
+      {
+        ok: true,
+        slug: "github-demo",
+        version: "abc123",
+        skillId: "skills:github-demo",
+        githubContentHash: "content-hash",
+        scheduled: true,
+        alreadyQueued: false,
+      },
+      "GitHub skill rescan response",
+    );
+
+    if (!("githubContentHash" in parsed)) throw new Error("expected GitHub rescan response");
+    expect(parsed.githubContentHash).toBe("content-hash");
   });
 });

@@ -92,6 +92,16 @@ describe("home route", () => {
     expect(screen.getByText("Publishers")).toBeTruthy();
   });
 
+  it("does not render the homepage social proof stats strip", async () => {
+    await renderHome();
+
+    expect(document.querySelector(".home-v2-proof-bar")).toBeNull();
+    expect(screen.queryByText("52.7k")).toBeNull();
+    expect(screen.queryByText("180k")).toBeNull();
+    expect(screen.queryByText("12M")).toBeNull();
+    expect(screen.queryByText("avg rating")).toBeNull();
+  });
+
   it("keeps the featured skill carousel as a duplicated scrolling track", async () => {
     convexQueryMock.mockResolvedValue([
       {

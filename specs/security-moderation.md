@@ -129,6 +129,23 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   storage. Published scan requests may patch a version only when the caller can
   manage the skill and explicitly sets `update: true`; local uploads must reject
   update mode.
+- GitHub-backed skill verification also uses ephemeral `skillScanRequests` to
+  feed exact current skill-folder bytes into the normal ClawScan worker. Large
+  file manifests use a prepare, bounded child-chunk append, and finalize sequence
+  rather than one oversized Convex document or function argument. The request
+  must exist before blob storage begins, each bounded chunk is durably attached
+  as it is stored, descriptor metadata is capped at 4 MiB, and worker claims
+  hydrate one signed-URL-heavy job at a time. A recently prepared request remains
+  leased until finalization so concurrent syncs cannot replace it. Unlike
+  user-submitted upload scans, its completed ClawScan, SkillSpector, and static
+  context are persisted on `githubSkillScans` by skill and content hash so the
+  public Security audit remains available after request files are pruned through
+  bounded continuation batches. Cleanup cancels the linked worker job before
+  deleting the first chunk. Legacy source-backed statuses without a durable
+  `githubSkillScans` result must return to pending on sync rather than remain
+  trusted. Explicit owner/moderator rescans use the manual worker queue.
+  GitHub-backed verification must not create or patch a hosted `skillVersions`
+  row, and static findings remain input context rather than a blocking verdict.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.

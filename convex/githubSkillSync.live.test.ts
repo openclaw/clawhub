@@ -8,6 +8,11 @@ import {
   verifyGitHubSkillHandler,
 } from "./githubSkillSync";
 import { buildSkillInstallResolution } from "./lib/installResolver";
+import {
+  appendGitHubSkillScanRequestFilesInternal,
+  finalizeGitHubSkillScanRequestInternal,
+  prepareGitHubSkillScanRequestInternal,
+} from "./securityScan";
 
 type Row = Record<string, unknown> & { _id: string };
 
@@ -35,10 +40,12 @@ function createDb(initial: Record<string, Row[]> = {}) {
   };
 
   const db = {
-    get: async (id: string) => {
+    get: async (idOrTable: string, maybeId?: string) => {
+      const id = maybeId ?? idOrTable;
       const table = id.split(":")[0] ?? "";
       return list(table).find((row) => row._id === id) ?? null;
     },
+    normalizeId: (table: string, id: string) => (id.startsWith(`${table}:`) ? id : null),
     insert: async (table: string, doc: Record<string, unknown>) => {
       counters[table] = (counters[table] ?? 0) + 1;
       const inserted = {
@@ -58,6 +65,18 @@ function createDb(initial: Record<string, Row[]> = {}) {
         else row[key] = value;
       }
     },
+    replace: async (id: string, doc: Record<string, unknown>) => {
+      const table = id.split(":")[0] ?? "";
+      const rows = list(table);
+      const index = rows.findIndex((candidate) => candidate._id === id);
+      if (index >= 0) rows[index] = { _id: id, ...doc };
+    },
+    delete: async (id: string) => {
+      const table = id.split(":")[0] ?? "";
+      const rows = list(table);
+      const index = rows.findIndex((candidate) => candidate._id === id);
+      if (index >= 0) rows.splice(index, 1);
+    },
     query: (table: string) => ({
       withIndex: (_indexName: string, build?: (q: ReturnType<typeof chainEq>) => unknown) => {
         const constraints: Record<string, unknown> = {};
@@ -65,6 +84,7 @@ function createDb(initial: Record<string, Row[]> = {}) {
         const matched = () => list(table).filter((row) => matches(row, constraints));
         return {
           collect: async () => matched(),
+          take: async (limit: number) => matched().slice(0, limit),
           unique: async () => matched()[0] ?? null,
         };
       },
@@ -114,6 +134,7 @@ describe("GitHub-backed skills live canary", () => {
         ],
       });
       const scheduler = { runAfter: async () => undefined };
+      let storedFile = 0;
       let now = Date.now();
       const actionCtx = {
         runQuery: async (_query: unknown, args: Record<string, unknown>) => {
@@ -165,6 +186,27 @@ describe("GitHub-backed skills live canary", () => {
               } as never,
             );
           }
+          if ("requestId" in args && "files" in args) {
+            return await (
+              appendGitHubSkillScanRequestFilesInternal as unknown as {
+                _handler: (ctx: never, args: never) => unknown;
+              }
+            )._handler({ db } as never, args as never);
+          }
+          if ("requestId" in args) {
+            return await (
+              finalizeGitHubSkillScanRequestInternal as unknown as {
+                _handler: (ctx: never, args: never) => unknown;
+              }
+            )._handler({ db } as never, args as never);
+          }
+          if ("staticScan" in args && "commit" in args && "contentHash" in args) {
+            return await (
+              prepareGitHubSkillScanRequestInternal as unknown as {
+                _handler: (ctx: never, args: never) => unknown;
+              }
+            )._handler({ db } as never, args as never);
+          }
           if ("scanStatus" in args && "contentHash" in args) {
             return await applyGitHubSkillVerificationResultHandler(
               { db } as never,
@@ -184,6 +226,13 @@ describe("GitHub-backed skills live canary", () => {
             );
           }
           throw new Error(`unexpected live canary mutation args: ${JSON.stringify(args)}`);
+        },
+        storage: {
+          store: async () => {
+            storedFile += 1;
+            return `storage:live-${storedFile}`;
+          },
+          delete: async () => undefined,
         },
         auth: { getUserIdentity: async () => null },
       };
@@ -227,7 +276,18 @@ describe("GitHub-backed skills live canary", () => {
         fetch,
       );
 
-      expect(verified).toMatchObject({ ok: true, scanStatus: "clean" });
+      expect(verified).toMatchObject({ ok: true, queued: true });
+      expect(storedFile).toBeGreaterThan(0);
+      expect(resolveInstallFromTables(tables, skillSlug)).toMatchObject({
+        ok: false,
+        reason: "github_verification_pending",
+      });
+      await applyGitHubSkillVerificationResultHandler({ db } as never, {
+        skillId: skill._id as never,
+        contentHash: skill.githubCurrentContentHash as string,
+        scanStatus: "clean",
+        now,
+      });
       skill = getSkill(tables, skillSlug);
       expect(skill).toMatchObject({
         githubCurrentCommit: configured.commit,

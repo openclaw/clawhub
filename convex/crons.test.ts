@@ -69,4 +69,15 @@ describe("crons", () => {
       {},
     );
   });
+
+  it("prunes expired skill scan requests in bounded continuation batches", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-scan-request-prune",
+      { hours: 6 },
+      expect.anything(),
+      { batchSize: 10 },
+    );
+  });
 });

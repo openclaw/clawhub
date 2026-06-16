@@ -663,29 +663,6 @@ function SkillsHome() {
         </div>
       </section>
 
-      {/* ═══ PROOF BAR ═══ */}
-      <div className="home-v2-proof-bar">
-        <div className="home-v2-proof-item">
-          <span className="home-v2-proof-num">52.7k</span>
-          <span className="home-v2-proof-label">tools</span>
-        </div>
-        <span className="home-v2-proof-sep" />
-        <div className="home-v2-proof-item">
-          <span className="home-v2-proof-num">180k</span>
-          <span className="home-v2-proof-label">users</span>
-        </div>
-        <span className="home-v2-proof-sep" />
-        <div className="home-v2-proof-item">
-          <span className="home-v2-proof-num">12M</span>
-          <span className="home-v2-proof-label">installs</span>
-        </div>
-        <span className="home-v2-proof-sep" />
-        <div className="home-v2-proof-item">
-          <span className="home-v2-proof-num">4.8</span>
-          <span className="home-v2-proof-label">avg rating</span>
-        </div>
-      </div>
-
       {/* ═══ TRENDING ═══ */}
       {trendingCards.length > 0 && (
         <section className="home-v2-trending-section">

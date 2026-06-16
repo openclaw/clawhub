@@ -14,6 +14,7 @@ vi.mock("./lib/badges", () => ({
 
 const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { getSkillBadgeMap } = await import("./lib/badges");
+const skillsModule = await import("./skills");
 const {
   getBySlug,
   getVerifyTargetBySlugInternal,
@@ -22,7 +23,7 @@ const {
   resolveSkillAppealForUserInternal,
   submitSkillAppealForUserInternal,
   triageSkillReportForUserInternal,
-} = await import("./skills");
+} = skillsModule;
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -53,6 +54,12 @@ const getBySlugHandler = (
           contentType?: string;
         }>;
       } | null;
+      githubScan?: {
+        contentHash: string;
+        commit: string;
+        status: string;
+        llmAnalysis?: { status: string };
+      } | null;
       forkOf?: {
         skill: {
           slug: string;
@@ -76,6 +83,22 @@ const getBySlugHandler = (
     } | null
   >
 )._handler;
+
+const getGitHubScanForAuditHandler = (
+  skillsModule as typeof skillsModule & {
+    getGitHubScanForAudit?: WrappedHandler<
+      { slug: string },
+      {
+        contentHash: string;
+        commit: string;
+        path: string;
+        status: string;
+        version: string;
+        llmAnalysis?: { status: string };
+      } | null
+    >;
+  }
+).getGitHubScanForAudit?._handler;
 
 const getVerifyTargetBySlugInternalHandler = (
   getVerifyTargetBySlugInternal as unknown as WrappedHandler<
@@ -187,6 +210,7 @@ function makeCtx(args: {
   ownerPublisher?: Record<string, unknown> | null;
   membership?: Record<string, unknown> | null;
   latestVersion?: Record<string, unknown> | null;
+  githubScan?: Record<string, unknown> | null;
   skillsById?: Record<string, Record<string, unknown>>;
   ownersById?: Record<string, Record<string, unknown>>;
 }) {
@@ -197,6 +221,13 @@ function makeCtx(args: {
       return {
         withIndex: vi.fn(() => ({
           unique: vi.fn().mockResolvedValue(args.membership ?? null),
+        })),
+      };
+    }
+    if (table === "githubSkillScans") {
+      return {
+        withIndex: vi.fn(() => ({
+          unique: vi.fn().mockResolvedValue(args.githubScan ?? null),
         })),
       };
     }
@@ -358,6 +389,114 @@ describe("skills.getBySlug", () => {
     expect(result?.owner).not.toHaveProperty("githubCreatedAt");
     expect(result?.owner).not.toHaveProperty("githubFetchedAt");
     expect(result?.owner).not.toHaveProperty("githubProfileSyncedAt");
+  });
+
+  it("does not load the durable current-content scan in the general skill lookup", async () => {
+    const contentHash = "a".repeat(64);
+    const currentCommit = "b".repeat(40);
+    const scanOriginCommit = "c".repeat(40);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        installKind: "github",
+        githubPath: "skills/demo",
+        githubCurrentCommit: currentCommit,
+        githubCurrentContentHash: contentHash,
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+        latestVersionSummary: {
+          version: "1.2.3",
+          createdAt: 2,
+          changelog: "Synced from GitHub source.",
+        },
+      }),
+      owner: makeOwner("users:1", "demo-owner"),
+      githubScan: {
+        _id: "githubSkillScans:1",
+        skillId: "skills:1",
+        githubSourceId: "githubSkillSources:1",
+        contentHash,
+        commit: scanOriginCommit,
+        path: "skills/old-demo",
+        status: "clean",
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "No findings.",
+          engineVersion: "test",
+          checkedAt: 2,
+        },
+        llmAnalysis: { status: "clean", checkedAt: 3 },
+        createdAt: 2,
+        updatedAt: 3,
+        completedAt: 3,
+      },
+    });
+
+    const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
+
+    expect(result?.latestVersion).toBeNull();
+    expect(result).not.toHaveProperty("githubScan");
+    expect(
+      (ctx as unknown as { db: { query: ReturnType<typeof vi.fn> } }).db.query,
+    ).not.toHaveBeenCalledWith("githubSkillScans");
+  });
+
+  it("returns the durable current-content scan from the audit-specific query", async () => {
+    expect(getGitHubScanForAuditHandler).toBeTypeOf("function");
+    if (!getGitHubScanForAuditHandler) return;
+
+    const contentHash = "a".repeat(64);
+    const currentCommit = "b".repeat(40);
+    const scanOriginCommit = "c".repeat(40);
+    const ctx = makeCtx({
+      skill: makeSkill({
+        installKind: "github",
+        githubPath: "skills/demo",
+        githubCurrentCommit: currentCommit,
+        githubCurrentContentHash: contentHash,
+        githubCurrentStatus: "present",
+        githubScanStatus: "clean",
+        latestVersionSummary: {
+          version: "1.2.3",
+          createdAt: 2,
+          changelog: "Synced from GitHub source.",
+        },
+      }),
+      owner: makeOwner("users:1", "demo-owner"),
+      githubScan: {
+        _id: "githubSkillScans:1",
+        skillId: "skills:1",
+        githubSourceId: "githubSkillSources:1",
+        contentHash,
+        commit: scanOriginCommit,
+        path: "skills/old-demo",
+        status: "clean",
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "No findings.",
+          engineVersion: "test",
+          checkedAt: 2,
+        },
+        llmAnalysis: { status: "clean", checkedAt: 3 },
+        createdAt: 2,
+        updatedAt: 3,
+        completedAt: 3,
+      },
+    });
+
+    const result = await getGitHubScanForAuditHandler(ctx, { slug: "demo" });
+
+    expect(result).toMatchObject({
+      contentHash,
+      commit: currentCommit,
+      path: "skills/demo",
+      status: "clean",
+      version: "1.2.3",
+      llmAnalysis: { status: "clean", checkedAt: 3 },
+    });
   });
 
   it("hides skills whose owner is deleted or banned", async () => {

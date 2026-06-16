@@ -3,10 +3,18 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
 import { action, internalMutation, internalQuery, mutation } from "./functions";
+import { applyGitHubSkillVerificationResultHandler } from "./githubSkillSync";
 import { assertAdmin, assertModerator, requireUser } from "./lib/access";
 import { normalizePackageName } from "./lib/packageRegistry";
+import { normalizePackageScanStatus } from "./lib/packageSecurity";
 import { assertCanManageOwnedResource } from "./lib/publishers";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
+import {
+  chunkSkillScanRequestFiles,
+  MAX_SKILL_SCAN_REQUEST_FILE_CHUNKS,
+  MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES,
+  serializedSkillScanRequestFilesBytes,
+} from "./lib/skillScanRequestFiles";
 
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
@@ -18,8 +26,8 @@ const DEFAULT_CANCEL_SCAN_LIMIT = 1000;
 const DEFAULT_CANCEL_DELETE_LIMIT = 500;
 const MAX_CANCEL_SCAN_LIMIT = 5000;
 const CANCEL_SAMPLE_LIMIT = 20;
-const DEFAULT_PRUNE_SKILL_SCAN_REQUEST_LIMIT = 250;
-const MAX_PRUNE_SKILL_SCAN_REQUEST_LIMIT = 1000;
+const DEFAULT_PRUNE_SKILL_SCAN_REQUEST_LIMIT = 10;
+const MAX_PRUNE_SKILL_SCAN_REQUEST_LIMIT = 10;
 const DEFAULT_BULK_RESCAN_BATCH_SIZE = 50;
 const MAX_BULK_RESCAN_BATCH_SIZE = 100;
 const MAX_BULK_RESCAN_STATUS_JOB_IDS = 200;
@@ -30,6 +38,7 @@ const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const DEFAULT_SKILL_SCAN_REQUEST_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 const MAX_SKILL_SCAN_QUEUE_POSITION_READS = 250;
 const MAX_SKILL_SCAN_RUNNING_COUNT_READS = 512;
+const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
 const SKILL_SCAN_ASYNC_NOTE = "Scans are asynchronous and may take time to complete.";
 
 const finalLlmAnalysisStatuses = new Set(["clean", "suspicious", "malicious"]);
@@ -52,6 +61,8 @@ type JobTarget = {
   version?: Doc<"skillVersions">;
   release?: Doc<"packageReleases">;
   scanRequest?: Doc<"skillScanRequests">;
+  scanRequestFiles?: Doc<"skillScanRequests">["files"];
+  githubScan?: Doc<"githubSkillScans">;
   missing?: true;
 };
 
@@ -216,6 +227,32 @@ const scanRequestFileValidator = v.object({
   contentType: v.optional(v.string()),
 });
 
+const staticScanResultValidator = v.object({
+  status: v.union(v.literal("clean"), v.literal("suspicious"), v.literal("malicious")),
+  reasonCodes: v.array(v.string()),
+  findings: v.array(
+    v.object({
+      code: v.string(),
+      severity: v.union(v.literal("info"), v.literal("warn"), v.literal("critical")),
+      file: v.string(),
+      line: v.number(),
+      message: v.string(),
+      evidence: v.string(),
+    }),
+  ),
+  summary: v.string(),
+  engineVersion: v.string(),
+  checkedAt: v.number(),
+});
+
+const githubSkillScanStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("pending"),
+  v.literal("failed"),
+);
+
 const internalRefs = internal as unknown as {
   packages: {
     getPackageByIdInternal: unknown;
@@ -232,6 +269,7 @@ const internalRefs = internal as unknown as {
     failJobInternal: unknown;
     getSkillScanRequestForUserInternal: unknown;
     getJobTargetInternal: unknown;
+    recordGitHubSkillScanResultInternal: unknown;
     recordSkillScanRequestFailedInternal: unknown;
     recordSkillScanRequestSucceededInternal: unknown;
     succeedJobInternal: unknown;
@@ -275,6 +313,14 @@ function defaultVtWaitMs() {
   const parsed = Number(raw);
   if (!Number.isFinite(parsed)) return DEFAULT_VT_WAIT_MS;
   return Math.max(0, Math.min(parsed, DEFAULT_VT_WAIT_MS));
+}
+
+function githubSkillScanStatusFromLlmAnalysis(
+  analysis: Pick<NonNullable<Doc<"skillVersions">["llmAnalysis"]>, "status" | "verdict">,
+) {
+  const status = normalizePackageScanStatus(analysis.verdict ?? analysis.status);
+  if (status === "clean" || status === "suspicious" || status === "malicious") return status;
+  return "failed" as const;
 }
 
 function publicWorkerErrorDetail(error: string) {
@@ -686,6 +732,100 @@ async function requestSkillRescanForActor(
     allowPlatformModerator: true,
   });
 
+  if (args.skill.installKind === "github") {
+    if (
+      args.skill.githubCurrentStatus !== "present" ||
+      !args.skill.githubSourceId ||
+      !args.skill.githubPath ||
+      !args.skill.githubCurrentCommit ||
+      !args.skill.githubCurrentContentHash
+    ) {
+      throw new ConvexError("GitHub-backed skill content is not available");
+    }
+    const now = Date.now();
+    const { scan, activeJob, actionPending } = await getGitHubSkillScanState(
+      ctx,
+      args.skill._id,
+      args.skill.githubCurrentContentHash,
+      now,
+    );
+    const alreadyQueued = Boolean(activeJob || actionPending);
+    if (activeJob?.status === "queued") {
+      await ctx.db.patch(activeJob._id, {
+        source: "manual",
+        priority: Math.max(activeJob.priority, 100),
+        waitForVtUntil: Math.min(activeJob.waitForVtUntil, now),
+        nextRunAt: Math.min(activeJob.nextRunAt, now),
+        updatedAt: now,
+      });
+    } else if (actionPending && scan?.skillScanRequestId) {
+      await ctx.db.patch(scan.skillScanRequestId, {
+        requestedJobSource: "manual",
+        requestedJobPriority: 100,
+        updatedAt: now,
+      });
+    }
+    if (!alreadyQueued) {
+      const pendingScanInsert = {
+        githubSourceId: args.skill.githubSourceId,
+        commit: args.skill.githubCurrentCommit,
+        path: args.skill.githubPath,
+        status: "pending" as const,
+        updatedAt: now,
+      };
+      if (scan) {
+        await ctx.db.patch(scan._id, {
+          ...pendingScanInsert,
+          skillScanRequestId: undefined,
+          skillSpectorAnalysis: undefined,
+          llmAnalysis: undefined,
+          lastError: undefined,
+          runId: undefined,
+          completedAt: undefined,
+        });
+      } else {
+        await ctx.db.insert("githubSkillScans", {
+          skillId: args.skill._id,
+          contentHash: args.skill.githubCurrentContentHash,
+          ...pendingScanInsert,
+          createdAt: now,
+        });
+      }
+      await ctx.scheduler.runAfter(0, internal.githubSkillSyncNode.verifyGitHubSkillInternal, {
+        skillId: args.skill._id,
+        contentHash: args.skill.githubCurrentContentHash,
+        force: true,
+      });
+    }
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actor._id,
+      action: "skill.clawscan.rescan",
+      targetType: "skill",
+      targetId: args.skill._id,
+      metadata: {
+        skillId: args.skill._id,
+        slug: args.skill.slug,
+        commit: args.skill.githubCurrentCommit,
+        contentHash: args.skill.githubCurrentContentHash,
+        scheduled: !alreadyQueued,
+        alreadyQueued,
+        jobId: activeJob?._id,
+      },
+      createdAt: now,
+    });
+    return {
+      ok: true as const,
+      slug: args.skill.slug,
+      version:
+        args.skill.latestVersionSummary?.version ?? args.skill.githubCurrentCommit.slice(0, 12),
+      skillId: args.skill._id,
+      githubContentHash: args.skill.githubCurrentContentHash,
+      ...(activeJob ? { jobId: activeJob._id } : {}),
+      scheduled: !alreadyQueued,
+      alreadyQueued,
+    };
+  }
+
   const requestedVersion = args.version?.trim();
   const version = requestedVersion
     ? await ctx.db
@@ -730,6 +870,44 @@ async function requestSkillRescanForActor(
     skillVersionId: version._id,
     jobId: queued.jobId,
     alreadyQueued: queued.alreadyQueued === true,
+  };
+}
+
+async function getGitHubSkillScanState(
+  ctx: MutationCtx,
+  skillId: Id<"skills">,
+  contentHash: string,
+  now: number,
+) {
+  const scan = await ctx.db
+    .query("githubSkillScans")
+    .withIndex("by_skill_and_content_hash", (q) =>
+      q.eq("skillId", skillId).eq("contentHash", contentHash),
+    )
+    .unique();
+  if (scan?.status !== "pending") return { scan, activeJob: null, actionPending: false };
+  if (!scan.skillScanRequestId) {
+    return {
+      scan,
+      activeJob: null,
+      actionPending: scan.updatedAt > now - GITHUB_SKILL_SCAN_ACTION_LEASE_MS,
+    };
+  }
+  const request = await ctx.db.get(scan.skillScanRequestId);
+  if (!request?.securityScanJobId) {
+    return {
+      scan,
+      activeJob: null,
+      actionPending: Boolean(
+        request && request.updatedAt > now - GITHUB_SKILL_SCAN_ACTION_LEASE_MS,
+      ),
+    };
+  }
+  const job = await ctx.db.get(request.securityScanJobId);
+  return {
+    scan,
+    activeJob: job && (job.status === "queued" || job.status === "running") ? job : null,
+    actionPending: false,
   };
 }
 
@@ -948,7 +1126,11 @@ async function skillScanStatusResponse(
   };
 }
 
-async function enqueueSkillScanRequestJob(ctx: MutationCtx, requestId: Id<"skillScanRequests">) {
+async function enqueueSkillScanRequestJob(
+  ctx: MutationCtx,
+  requestId: Id<"skillScanRequests">,
+  options?: { source?: SecurityScanJobSource; priority?: number },
+) {
   const request = await ctx.db.get(requestId);
   if (!request) throw new ConvexError("Scan request not found");
   const now = Date.now();
@@ -956,8 +1138,8 @@ async function enqueueSkillScanRequestJob(ctx: MutationCtx, requestId: Id<"skill
     targetKind: "skillScanRequest",
     skillScanRequestId: request._id,
     status: "queued",
-    source: "manual",
-    priority: 100,
+    source: options?.source ?? "manual",
+    priority: options?.priority ?? 100,
     hasMaliciousSignal: false,
     waitForVtUntil: now,
     nextRunAt: now,
@@ -971,6 +1153,264 @@ async function enqueueSkillScanRequestJob(ctx: MutationCtx, requestId: Id<"skill
   });
   return jobId;
 }
+
+export const prepareGitHubSkillScanRequestInternal = internalMutation({
+  args: {
+    skillId: v.id("skills"),
+    contentHash: v.string(),
+    commit: v.string(),
+    force: v.optional(v.boolean()),
+    parsed: v.object({
+      frontmatter: v.record(v.string(), v.any()),
+    }),
+    staticScan: staticScanResultValidator,
+  },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
+    if (
+      !skill ||
+      skill.installKind !== "github" ||
+      !skill.githubSourceId ||
+      !skill.githubPath ||
+      skill.githubCurrentStatus !== "present" ||
+      skill.githubCurrentCommit !== args.commit ||
+      skill.githubCurrentContentHash !== args.contentHash
+    ) {
+      return { ok: true as const, skipped: "stale-or-missing" as const };
+    }
+    const existing = await ctx.db
+      .query("githubSkillScans")
+      .withIndex("by_skill_and_content_hash", (q) =>
+        q.eq("skillId", skill._id).eq("contentHash", args.contentHash),
+      )
+      .unique();
+    if (existing && !args.force && existing.status !== "pending" && existing.status !== "failed") {
+      await ctx.db.patch(existing._id, {
+        githubSourceId: skill.githubSourceId,
+        commit: args.commit,
+        path: skill.githubPath,
+        staticScan: args.staticScan,
+        updatedAt: Date.now(),
+      });
+      return {
+        ok: true as const,
+        reused: true as const,
+        scanId: existing._id,
+        scanStatus: existing.status,
+      };
+    }
+    if (existing?.status === "pending" && existing.skillScanRequestId) {
+      const request = await ctx.db.get(existing.skillScanRequestId);
+      const job = request?.securityScanJobId ? await ctx.db.get(request.securityScanJobId) : null;
+      if (request && job && (job.status === "queued" || job.status === "running")) {
+        return {
+          ok: true as const,
+          alreadyQueued: true as const,
+          scanId: existing._id,
+          requestId: request._id,
+          jobId: job._id,
+        };
+      }
+      if (request && request.updatedAt > Date.now() - GITHUB_SKILL_SCAN_ACTION_LEASE_MS) {
+        return {
+          ok: true as const,
+          alreadyQueued: true as const,
+          scanId: existing._id,
+          requestId: request._id,
+        };
+      }
+    }
+
+    const now = Date.now();
+    const scanId =
+      existing?._id ??
+      (await ctx.db.insert("githubSkillScans", {
+        skillId: skill._id,
+        githubSourceId: skill.githubSourceId,
+        contentHash: args.contentHash,
+        commit: args.commit,
+        path: skill.githubPath,
+        status: "pending",
+        staticScan: args.staticScan,
+        createdAt: now,
+        updatedAt: now,
+      }));
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        githubSourceId: skill.githubSourceId,
+        commit: args.commit,
+        path: skill.githubPath,
+        status: "pending",
+        staticScan: args.staticScan,
+        skillSpectorAnalysis: undefined,
+        llmAnalysis: undefined,
+        lastError: undefined,
+        runId: undefined,
+        completedAt: undefined,
+        updatedAt: now,
+      });
+    }
+
+    const requestId = await ctx.db.insert("skillScanRequests", {
+      actorUserId: skill.ownerUserId,
+      sourceKind: "github",
+      update: false,
+      writtenBack: false,
+      status: "queued",
+      slug: skill.slug,
+      displayName: skill.displayName,
+      version: skill.latestVersionSummary?.version ?? args.commit.slice(0, 12),
+      skillId: skill._id,
+      githubSkillScanId: scanId,
+      files: [],
+      fileChunkCount: 0,
+      fileManifestBytes: 0,
+      parsed: args.parsed,
+      staticScan: args.staticScan,
+      expiresAt: skillScanRequestExpiresAt(now),
+      createdAt: now,
+      updatedAt: now,
+    });
+    await ctx.db.patch(scanId, { skillScanRequestId: requestId, updatedAt: now });
+
+    return {
+      ok: true as const,
+      prepared: true as const,
+      scanId,
+      requestId,
+    };
+  },
+});
+
+export const appendGitHubSkillScanRequestFilesInternal = internalMutation({
+  args: {
+    requestId: v.id("skillScanRequests"),
+    chunkIndex: v.number(),
+    files: v.array(scanRequestFileValidator),
+  },
+  handler: async (ctx, args) => {
+    if (!Number.isInteger(args.chunkIndex) || args.chunkIndex < 0) {
+      throw new ConvexError("Invalid file chunk index");
+    }
+    if (args.files.length === 0 || chunkSkillScanRequestFiles(args.files).length !== 1) {
+      throw new ConvexError("Invalid file chunk");
+    }
+    const request = await ctx.db.get(args.requestId);
+    if (
+      !request ||
+      request.sourceKind !== "github" ||
+      !request.githubSkillScanId ||
+      request.securityScanJobId
+    ) {
+      throw new ConvexError("GitHub scan request is not accepting files");
+    }
+    const scan = await ctx.db.get(request.githubSkillScanId);
+    if (!scan || scan.status !== "pending" || scan.skillScanRequestId !== request._id) {
+      throw new ConvexError("GitHub scan request is no longer current");
+    }
+    const existing = await ctx.db
+      .query("skillScanRequestFileChunks")
+      .withIndex("by_skill_scan_request_id_and_chunk_index", (q) =>
+        q.eq("skillScanRequestId", request._id).eq("chunkIndex", args.chunkIndex),
+      )
+      .unique();
+    if (existing) {
+      return { ok: true as const, appended: true as const };
+    }
+    const fileChunkCount = request.fileChunkCount ?? 0;
+    const fileManifestBytes = request.fileManifestBytes ?? 0;
+    const chunkBytes = serializedSkillScanRequestFilesBytes(args.files);
+    if (
+      args.chunkIndex !== fileChunkCount ||
+      fileChunkCount >= MAX_SKILL_SCAN_REQUEST_FILE_CHUNKS ||
+      fileManifestBytes + chunkBytes > MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES
+    ) {
+      throw new ConvexError("GitHub scan request file manifest exceeds the hydration limit");
+    }
+    const now = Date.now();
+    await ctx.db.insert("skillScanRequestFileChunks", {
+      skillScanRequestId: request._id,
+      chunkIndex: args.chunkIndex,
+      files: args.files,
+      createdAt: now,
+    });
+    await ctx.db.patch(request._id, {
+      fileChunkCount: fileChunkCount + 1,
+      fileManifestBytes: fileManifestBytes + chunkBytes,
+      updatedAt: now,
+    });
+    return { ok: true as const, appended: true as const };
+  },
+});
+
+export const finalizeGitHubSkillScanRequestInternal = internalMutation({
+  args: {
+    requestId: v.id("skillScanRequests"),
+    force: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const request = await ctx.db.get(args.requestId);
+    if (!request || request.sourceKind !== "github" || !request.githubSkillScanId) {
+      throw new ConvexError("GitHub scan request not found");
+    }
+    if (request.securityScanJobId) {
+      const job = await ctx.db.get(request.securityScanJobId);
+      if (job && (job.status === "queued" || job.status === "running")) {
+        return {
+          ok: true as const,
+          alreadyQueued: true as const,
+          scanId: request.githubSkillScanId,
+          requestId: request._id,
+          jobId: job._id,
+        };
+      }
+      throw new ConvexError("GitHub scan request was already finalized");
+    }
+    const scan = await ctx.db.get(request.githubSkillScanId);
+    const skill = scan ? await ctx.db.get(scan.skillId) : null;
+    if (
+      !scan ||
+      scan.status !== "pending" ||
+      scan.skillScanRequestId !== request._id ||
+      !skill ||
+      skill.installKind !== "github" ||
+      skill.githubCurrentStatus !== "present" ||
+      skill.githubSourceId !== scan.githubSourceId ||
+      skill.githubPath !== scan.path ||
+      skill.githubCurrentCommit !== scan.commit ||
+      skill.githubCurrentContentHash !== scan.contentHash
+    ) {
+      throw new ConvexError("GitHub scan request is no longer current");
+    }
+    const firstChunk = await ctx.db
+      .query("skillScanRequestFileChunks")
+      .withIndex("by_skill_scan_request_id_and_chunk_index", (q) =>
+        q.eq("skillScanRequestId", request._id),
+      )
+      .take(1);
+    if (
+      firstChunk.length === 0 ||
+      !request.fileChunkCount ||
+      !request.fileManifestBytes ||
+      request.fileChunkCount > MAX_SKILL_SCAN_REQUEST_FILE_CHUNKS ||
+      request.fileManifestBytes > MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES
+    ) {
+      throw new ConvexError("GitHub scan request files are missing");
+    }
+
+    const jobId = await enqueueSkillScanRequestJob(ctx, request._id, {
+      source: args.force ? "manual" : (request.requestedJobSource ?? "publish"),
+      priority: Math.max(args.force ? 100 : 0, request.requestedJobPriority ?? 0),
+    });
+    return {
+      ok: true as const,
+      queued: true as const,
+      scanId: scan._id,
+      requestId: request._id,
+      jobId,
+    };
+  },
+});
 
 export const createUploadedSkillScanRequestInternal = internalMutation({
   args: {
@@ -1342,6 +1782,37 @@ export const recordSkillScanRequestFailedInternal = internalMutation({
   },
 });
 
+export const recordGitHubSkillScanResultInternal = internalMutation({
+  args: {
+    githubSkillScanId: v.id("githubSkillScans"),
+    scanStatus: githubSkillScanStatusValidator,
+    llmAnalysis: v.optional(llmAnalysisValidator),
+    skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+    error: v.optional(v.string()),
+    runId: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const scan = await ctx.db.get(args.githubSkillScanId);
+    if (!scan) return { ok: true as const, skipped: "missing-scan" as const };
+    const now = Date.now();
+    await ctx.db.patch(scan._id, {
+      status: args.scanStatus,
+      llmAnalysis: args.llmAnalysis,
+      skillSpectorAnalysis: args.skillSpectorAnalysis,
+      lastError: args.error?.slice(0, 2000),
+      runId: args.runId,
+      completedAt: now,
+      updatedAt: now,
+    });
+    return await applyGitHubSkillVerificationResultHandler(ctx, {
+      skillId: scan.skillId,
+      contentHash: scan.contentHash,
+      scanStatus: args.scanStatus,
+      now,
+    });
+  },
+});
+
 export const pruneExpiredSkillScanRequestsInternal = internalMutation({
   args: {
     batchSize: v.optional(v.number()),
@@ -1362,6 +1833,8 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
 
     let deletedJobs = 0;
     let deletedFiles = 0;
+    let deletedRequests = 0;
+    let deferredRequests = 0;
     for (const request of requests) {
       if (request.securityScanJobId) {
         const job = await ctx.db.get(request.securityScanJobId);
@@ -1370,8 +1843,33 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
           deletedJobs += 1;
         }
       }
-      if (request.sourceKind === "upload") {
-        for (const file of request.files) {
+      const fileChunks =
+        request.sourceKind === "github"
+          ? await ctx.db
+              .query("skillScanRequestFileChunks")
+              .withIndex("by_skill_scan_request_id_and_chunk_index", (q) =>
+                q.eq("skillScanRequestId", request._id),
+              )
+              .take(2)
+          : [];
+      if (fileChunks.length > 1) {
+        const chunk = fileChunks[0];
+        if (chunk) {
+          for (const file of chunk.files) {
+            try {
+              await ctx.storage.delete(file.storageId);
+              deletedFiles += 1;
+            } catch {
+              // Missing storage objects should not block expiry of the request row.
+            }
+          }
+          await ctx.db.delete(chunk._id);
+        }
+        deferredRequests += 1;
+        continue;
+      }
+      if (request.sourceKind === "upload" || request.sourceKind === "github") {
+        for (const file of [...request.files, ...fileChunks.flatMap((chunk) => chunk.files)]) {
           try {
             await ctx.storage.delete(file.storageId);
             deletedFiles += 1;
@@ -1380,15 +1878,24 @@ export const pruneExpiredSkillScanRequestsInternal = internalMutation({
           }
         }
       }
+      for (const chunk of fileChunks) await ctx.db.delete(chunk._id);
       await ctx.db.delete(request._id);
+      deletedRequests += 1;
     }
 
+    const done = requests.length < batchSize && deferredRequests === 0;
+    if (!done) {
+      await ctx.scheduler.runAfter(0, internal.securityScan.pruneExpiredSkillScanRequestsInternal, {
+        batchSize,
+      });
+    }
     return {
       ok: true as const,
-      deletedRequests: requests.length,
+      deletedRequests,
+      deferredRequests,
       deletedJobs,
       deletedFiles,
-      done: requests.length < batchSize,
+      done,
     };
   },
 });
@@ -1859,7 +2366,41 @@ export const getJobTargetInternal = internalQuery({
         ? await ctx.db.get(scanRequest.skillVersionId)
         : null;
       const skill = scanRequest.skillId ? await ctx.db.get(scanRequest.skillId) : null;
-      return { job, skill, version: version ?? undefined, scanRequest };
+      const githubScan = scanRequest.githubSkillScanId
+        ? await ctx.db.get(scanRequest.githubSkillScanId)
+        : null;
+      let scanRequestFiles = scanRequest.files;
+      if (scanRequest.sourceKind === "github") {
+        const chunks = await ctx.db
+          .query("skillScanRequestFileChunks")
+          .withIndex("by_skill_scan_request_id_and_chunk_index", (q) =>
+            q.eq("skillScanRequestId", scanRequest._id),
+          )
+          .take(MAX_SKILL_SCAN_REQUEST_FILE_CHUNKS + 1);
+        const manifestBytes = chunks.reduce(
+          (total, chunk) => total + serializedSkillScanRequestFilesBytes(chunk.files),
+          0,
+        );
+        const declaredChunkCount = scanRequest.fileChunkCount ?? chunks.length;
+        if (
+          chunks.length > MAX_SKILL_SCAN_REQUEST_FILE_CHUNKS ||
+          chunks.length !== declaredChunkCount ||
+          manifestBytes > MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES ||
+          (scanRequest.fileManifestBytes !== undefined &&
+            manifestBytes !== scanRequest.fileManifestBytes)
+        ) {
+          return { job, missing: true as const };
+        }
+        scanRequestFiles = chunks.flatMap((chunk) => chunk.files);
+      }
+      return {
+        job,
+        skill,
+        version: version ?? undefined,
+        scanRequest,
+        scanRequestFiles,
+        githubScan: githubScan ?? undefined,
+      };
     }
     return { job, missing: true as const };
   },
@@ -1933,7 +2474,8 @@ export const claimCodexScanJobs = action({
       internalRefs.securityScan.claimQueuedJobsInternal,
       {
         workerId: args.workerId,
-        limit: normalizeLimit(args.limit),
+        // Hydrated jobs contain signed URLs, so claim one at a time to stay below action limits.
+        limit: Math.min(normalizeLimit(args.limit), 1),
         leaseMs: args.leaseMs,
       },
     );
@@ -1965,7 +2507,9 @@ export const claimCodexScanJobs = action({
         contentType?: string;
       }> = [];
       if (scanRequest) {
-        files = scanRequest.files;
+        files =
+          (target.scanRequestFiles as Doc<"skillScanRequests">["files"] | undefined) ??
+          scanRequest.files;
       } else if (version) {
         const fingerprintEntries = await runQueryRef<
           Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>
@@ -2091,12 +2635,25 @@ export const completeCodexScanJob = action({
         });
         writtenBack = true;
       }
+      const skillSpectorAnalysis = args.skillSpectorAnalysis
+        ? capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis)
+        : undefined;
+      if (target.scanRequest.sourceKind === "github" && target.githubScan) {
+        await runMutationRef(ctx, internalRefs.securityScan.recordGitHubSkillScanResultInternal, {
+          githubSkillScanId: target.githubScan._id,
+          scanStatus: githubSkillScanStatusFromLlmAnalysis(args.llmAnalysis),
+          llmAnalysis: args.llmAnalysis,
+          skillSpectorAnalysis,
+          runId: args.runId,
+        });
+        writtenBack = true;
+      }
       await runMutationRef(ctx, internalRefs.securityScan.recordSkillScanRequestSucceededInternal, {
         scanId: target.scanRequest._id,
         jobId: args.jobId,
         runId: args.runId,
         llmAnalysis: args.llmAnalysis,
-        skillSpectorAnalysis: args.skillSpectorAnalysis,
+        skillSpectorAnalysis,
         writtenBack,
       });
     } else {
@@ -2156,6 +2713,18 @@ export const failCodexScanJob = action({
             });
           }
         } else if (target.job.targetKind === "skillScanRequest" && target.scanRequest) {
+          if (target.scanRequest.sourceKind === "github" && target.githubScan) {
+            await runMutationRef(
+              ctx,
+              internalRefs.securityScan.recordGitHubSkillScanResultInternal,
+              {
+                githubSkillScanId: target.githubScan._id,
+                scanStatus: "failed",
+                error: args.error,
+                llmAnalysis,
+              },
+            );
+          }
           await runMutationRef(
             ctx,
             internalRefs.securityScan.recordSkillScanRequestFailedInternal,
