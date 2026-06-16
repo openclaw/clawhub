@@ -16,7 +16,6 @@ query-filters:
 paths:
   - convex/auth.config.ts
   - convex/auth.ts
-  - convex/commentModeration.ts
   - convex/http.ts
   - convex/httpApi.ts
   - convex/httpApiV1

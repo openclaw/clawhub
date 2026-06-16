@@ -11,7 +11,6 @@
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
 import type * as cliDeviceAuth from "../cliDeviceAuth.js";
-import type * as commentModeration from "../commentModeration.js";
 import type * as crons from "../crons.js";
 import type * as depRegistryScan from "../depRegistryScan.js";
 import type * as devSeed from "../devSeed.js";
@@ -114,7 +113,6 @@ import type * as lib_tokens from "../lib/tokens.js";
 import type * as lib_userSearch from "../lib/userSearch.js";
 import type * as lib_userSkillStats from "../lib/userSkillStats.js";
 import type * as lib_webhooks from "../lib/webhooks.js";
-import type * as llmEval from "../llmEval.js";
 import type * as maintenance from "../maintenance.js";
 import type * as managementDevSeed from "../managementDevSeed.js";
 import type * as packageInspectorHttp from "../packageInspectorHttp.js";
@@ -156,7 +154,6 @@ declare const fullApi: ApiFromModules<{
   appMeta: typeof appMeta;
   auth: typeof auth;
   cliDeviceAuth: typeof cliDeviceAuth;
-  commentModeration: typeof commentModeration;
   crons: typeof crons;
   depRegistryScan: typeof depRegistryScan;
   devSeed: typeof devSeed;
@@ -259,7 +256,6 @@ declare const fullApi: ApiFromModules<{
   "lib/userSearch": typeof lib_userSearch;
   "lib/userSkillStats": typeof lib_userSkillStats;
   "lib/webhooks": typeof lib_webhooks;
-  llmEval: typeof llmEval;
   maintenance: typeof maintenance;
   managementDevSeed: typeof managementDevSeed;
   packageInspectorHttp: typeof packageInspectorHttp;

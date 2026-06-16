@@ -204,10 +204,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
-- The retired `llmEval:*` Convex actions are scheduled-job tombstones only.
-  They must not read artifacts, call OpenAI, patch scanner state, or be used as
-  active scan entrypoints. Current skill and plugin scans are queued through
-  `securityScanJobs` and completed by the external Codex worker.
+- Current skill and plugin scans are queued through `securityScanJobs` and
+  completed by the external Codex worker.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
@@ -330,9 +328,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ### Retired skill-comment data purge
 
-Before removing the legacy `comments` and `commentReports` tables from the
-schema, purge their production rows with a single-table Convex import that
-replaces each table with an empty JSON array:
+Before running the schema cleanup migration that removes the legacy `comments`
+and `commentReports` tables, purge their production rows with a single-table
+Convex import that replaces each table with an empty JSON array:
 
 ```sh
 printf '[]\n' > /tmp/clawhub-empty-table.json
