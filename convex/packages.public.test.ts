@@ -4131,7 +4131,11 @@ describe("packages public queries", () => {
       versionsPage: {
         page: [
           makeReleaseDoc({ version: "1.1.0", softDeletedAt: 10 }),
-          makeReleaseDoc({ _id: "packageReleases:demo-2", version: "1.0.0" }),
+          makeReleaseDoc({
+            _id: "packageReleases:demo-2",
+            version: "1.0.0",
+            capabilities: { capabilityTags: ["legacy"], executesCode: true },
+          }),
         ],
         isDone: true,
         continueCursor: "",
@@ -4144,6 +4148,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.version)).toEqual(["1.0.0"]);
+    expect(result.page[0]).not.toHaveProperty("capabilities");
     expect(releaseIndexNames).toContain("by_package_active_created");
   });
 

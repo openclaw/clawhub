@@ -2155,7 +2155,10 @@ export const listVersions = query({
       )
       .order("desc")
       .paginate(args.paginationOpts);
-    return result;
+    return {
+      ...result,
+      page: result.page.map(toPublicPackageRelease),
+    };
   },
 });
 
@@ -2175,7 +2178,10 @@ export const listVersionsForViewerInternal = internalQuery({
       )
       .order("desc")
       .paginate(args.paginationOpts);
-    return result;
+    return {
+      ...result,
+      page: result.page.map(toPublicPackageRelease),
+    };
   },
 });
 
