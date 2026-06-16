@@ -1862,11 +1862,21 @@ async function hardDeleteSkillStep(
         await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
         return;
       }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
       return;
     }
     case "rootInstalls": {
-      // Compatibility for jobs queued before root-install telemetry was removed.
+      const rootInstalls = await ctx.db
+        .query("userSkillRootInstalls")
+        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
+        .take(HARD_DELETE_BATCH_SIZE);
+      for (const rootInstall of rootInstalls) {
+        await ctx.db.delete(rootInstall._id);
+      }
+      if (rootInstalls.length === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
+        return;
+      }
       await scheduleHardDelete(ctx, skill._id, actorUserId, "leaderboards", scope);
       return;
     }
