@@ -59,6 +59,7 @@ import {
   repairPackageIdentityInternal,
   searchForViewerInternal,
   searchPublic,
+  setPackageCatalogMetadata,
 } from "./packages";
 
 vi.mock("@convex-dev/auth/server", () => ({
@@ -441,6 +442,12 @@ const getManageContextHandler = (
       };
       latestRelease: { _id: string; version: string };
     } | null
+  >
+)._handler;
+const setPackageCatalogMetadataHandler = (
+  setPackageCatalogMetadata as unknown as WrappedHandler<
+    { packageId: string; primaryCategory: string; topics: string[] },
+    unknown
   >
 )._handler;
 const canDeleteVersionsHandler = (
@@ -3787,7 +3794,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["calendar-demo"]);
-    expect(tableNames).toEqual(["packageTopicSearchDigest"]);
+    expect(tableNames).toEqual([
+      "packageSearchDigest",
+      "packageSearchDigest",
+      "packageTopicSearchDigest",
+    ]);
     expect(indexNames).toEqual(["by_active_topic_updated"]);
   });
 
@@ -3867,6 +3878,33 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
     expect(take).toHaveBeenCalledTimes(1);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
+  });
+
+  it("includes older exact package-name matches in topic-filtered search", async () => {
+    const exactPkg = makePackageDoc({
+      _id: "packages:exact",
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+      topics: ["calendar"],
+    });
+    const exactDigest = makeDigest("demo-plugin", {
+      packageId: "packages:exact",
+      topics: ["calendar"],
+      updatedAt: 1,
+    });
+    const { ctx } = makeDigestCtx({
+      topicPages: [],
+      exactPackages: [exactPkg],
+      exactDigests: [exactDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo-plugin",
+      topic: "calendar",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
   });
 
   it("includes exact runtime-id matches before digest scanning", async () => {
@@ -7262,6 +7300,54 @@ describe("packages public queries", () => {
       expect.anything(),
       expect.objectContaining({ topics: [] }),
     );
+  });
+
+  it("keeps moderator-cleared package topics explicit", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:moderator" as never);
+    const pkg = makePackageDoc({
+      ownerPublisherId: "publishers:owner",
+      primaryCategory: "dev-tools",
+      topics: ["legacy"],
+    });
+    const existingDigest = makeDigest("demo-plugin", {
+      packageId: pkg._id,
+      primaryCategory: "dev-tools",
+      topics: ["legacy"],
+    });
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:moderator") return { _id: id, role: "moderator" };
+          if (id === pkg._id) return pkg;
+          if (id === "publishers:owner") {
+            return { _id: id, kind: "org", handle: "owner", displayName: "Owner" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(() => ({
+            unique: vi
+              .fn()
+              .mockResolvedValue(table === "packageSearchDigest" ? existingDigest : null),
+            collect: vi.fn().mockResolvedValue([]),
+          })),
+        })),
+        patch,
+        insert: vi.fn().mockResolvedValue("auditLogs:1"),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await setPackageCatalogMetadataHandler(ctx as never, {
+      packageId: pkg._id as string,
+      primaryCategory: "dev-tools",
+      topics: [],
+    });
+
+    expect(patch).toHaveBeenCalledWith(pkg._id, expect.objectContaining({ topics: [] }));
   });
 
   it("blocks plugin publishes when plugin inspector reports hard breakages", async () => {

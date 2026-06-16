@@ -3929,7 +3929,7 @@ async function searchPackagesImpl(
   const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
   const directDigests =
-    args.capabilityTag || args.category || topic
+    args.capabilityTag || args.category
       ? []
       : await resolveDirectPackageSearchDigests(ctx, queryText);
   for (const digest of directDigests) {
@@ -7798,7 +7798,7 @@ export const setPackageCatalogMetadata = mutation({
     const nextPackage = {
       ...pkg,
       primaryCategory: args.primaryCategory,
-      topics: normalizedTopics.length ? normalizedTopics : undefined,
+      topics: normalizedTopics,
       updatedAt: now,
     };
     await ctx.db.patch(pkg._id, {

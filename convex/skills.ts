@@ -5073,8 +5073,8 @@ type SkillSearchDigestSortIndexName =
   | (typeof NONSUSPICIOUS_SORT_INDEXES)[keyof typeof NONSUSPICIOUS_SORT_INDEXES]
   | (typeof RECOMMENDED_RANK_INDEXES)[keyof typeof RECOMMENDED_RANK_INDEXES];
 type OfficialFirstSkillCategoryCursorState = {
-  curatedOffset: number;
-  communityCursor: string | null;
+  phase: "curated" | "community";
+  cursor: string | null;
 };
 type PublicSkillListPage = {
   page: PublicSkillEntry[];
@@ -5206,23 +5206,20 @@ function encodeOfficialFirstSkillCategoryCursor(state: OfficialFirstSkillCategor
 function decodeOfficialFirstSkillCategoryCursor(
   raw: string | null | undefined,
 ): OfficialFirstSkillCategoryCursorState {
-  if (!raw) return { curatedOffset: 0, communityCursor: null };
+  if (!raw) return { phase: "curated", cursor: null };
   if (!raw.startsWith(OFFICIAL_FIRST_SKILL_CATEGORY_CURSOR_PREFIX)) {
-    return { curatedOffset: Number.MAX_SAFE_INTEGER, communityCursor: raw };
+    return { phase: "community", cursor: raw };
   }
   try {
     const parsed = JSON.parse(
       raw.slice(OFFICIAL_FIRST_SKILL_CATEGORY_CURSOR_PREFIX.length),
     ) as Partial<OfficialFirstSkillCategoryCursorState>;
     return {
-      curatedOffset:
-        typeof parsed.curatedOffset === "number" && parsed.curatedOffset > 0
-          ? parsed.curatedOffset
-          : 0,
-      communityCursor: typeof parsed.communityCursor === "string" ? parsed.communityCursor : null,
+      phase: parsed.phase === "community" ? "community" : "curated",
+      cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
     };
   } catch {
-    return { curatedOffset: 0, communityCursor: null };
+    return { phase: "curated", cursor: null };
   }
 }
 
@@ -5275,7 +5272,7 @@ export const listPublicPageV4 = query({
         ? decodeOfficialFirstSkillCategoryCursor(args.cursor)
         : null;
     const publicListCursor = officialFirstCursor
-      ? (officialFirstCursor.communityCursor ?? undefined)
+      ? (officialFirstCursor.cursor ?? undefined)
       : args.cursor;
     const requestedSort = normalizePublicListSort(args.sort);
     const dir = resolvePublicListDir(requestedSort, args.dir);
@@ -6521,75 +6518,6 @@ function compareSkillDigestsForPublicSort(
   }
 }
 
-async function loadCuratedSkillCategoryDigests(
-  ctx: Pick<QueryCtx, "db">,
-  opts: {
-    sort: PublicListSort;
-    dir: "asc" | "desc";
-    capabilityTag?: string;
-    topic?: string;
-    categorySlug: ServerSkillCategorySlug;
-    categoryKeywords: string[];
-    excludeCategoryKeywords: string[];
-    nonSuspiciousOnly: boolean;
-  },
-) {
-  const loadBadges = async (kind: "official" | "highlighted") => {
-    const badges: Doc<"skillBadges">[] = [];
-    let startIndexKey: IndexKey = [kind];
-    let startInclusive = true;
-    for (;;) {
-      const page = await getPage(ctx, {
-        table: "skillBadges",
-        startIndexKey,
-        startInclusive,
-        endIndexKey: [kind],
-        endInclusive: true,
-        absoluteMaxRows: MAX_LIST_TAKE,
-        order: "desc",
-        index: "by_kind_at",
-        schema,
-      });
-      badges.push(...page.page);
-      if (!page.hasMore || page.indexKeys.length === 0) return badges;
-      startIndexKey = page.indexKeys[page.indexKeys.length - 1];
-      startInclusive = false;
-    }
-  };
-  const [officialBadges, highlightedBadges] = await Promise.all([
-    loadBadges("official"),
-    loadBadges("highlighted"),
-  ]);
-  const skillIds = new Set<string>();
-  for (const badge of [...officialBadges, ...highlightedBadges]) {
-    skillIds.add(String(badge.skillId));
-  }
-
-  const digests: Doc<"skillSearchDigest">[] = [];
-  for (const skillId of skillIds) {
-    const digest = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_skill", (q) => q.eq("skillId", skillId as Id<"skills">))
-      .unique();
-    if (!digest || digest.softDeletedAt) continue;
-    if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
-    if (
-      !digestPassesPublicListFilters(digest, {
-        capabilityTag: opts.capabilityTag,
-        topic: opts.topic,
-        categorySlug: opts.categorySlug,
-        categoryKeywords: opts.categoryKeywords,
-        excludeCategoryKeywords: opts.excludeCategoryKeywords,
-      })
-    ) {
-      continue;
-    }
-    digests.push(digest);
-  }
-  digests.sort((a, b) => compareSkillDigestsForPublicSort(a, b, opts.sort, opts.dir));
-  return digests;
-}
-
 async function listOfficialFirstSkillCategoryPage(
   ctx: QueryCtx,
   opts: {
@@ -6609,55 +6537,13 @@ async function listOfficialFirstSkillCategoryPage(
     nonSuspiciousOnly: boolean;
   },
 ): Promise<PublicSkillListPage> {
-  const curatedDigests = await loadCuratedSkillCategoryDigests(ctx, opts);
-  const curatedSkillIds = new Set(curatedDigests.map((digest) => String(digest.skillId)));
-  const curatedItems: PublicSkillEntry[] = [];
-  for (const digest of curatedDigests) {
-    const item = await buildPublicSkillEntryFromDigest(ctx, digest);
-    if (item) curatedItems.push(item);
-  }
-
-  const curatedOffset = Math.min(opts.state.curatedOffset, curatedItems.length);
-  const items = curatedItems.slice(curatedOffset, curatedOffset + opts.numItems);
-  const nextCuratedOffset = curatedOffset + items.length;
-  if (nextCuratedOffset < curatedItems.length) {
-    return {
-      page: items,
-      hasMore: true,
-      nextCursor: encodeOfficialFirstSkillCategoryCursor({
-        curatedOffset: nextCuratedOffset,
-        communityCursor: null,
-      }),
-    };
-  }
-  if (items.length >= opts.numItems) {
-    const communityProbe = await listOfficialFirstSkillCategoryPage(ctx, {
-      ...opts,
-      state: {
-        curatedOffset: curatedItems.length,
-        communityCursor: null,
-      },
-      numItems: 1,
-    });
-    const hasCommunityPage = communityProbe.page.length > 0 || communityProbe.hasMore;
-    return {
-      page: items,
-      hasMore: hasCommunityPage,
-      nextCursor: hasCommunityPage
-        ? encodeOfficialFirstSkillCategoryCursor({
-            curatedOffset: nextCuratedOffset,
-            communityCursor: null,
-          })
-        : null,
-    };
-  }
-
+  const items: PublicSkillEntry[] = [];
   let scanCursor = opts.startIndexKey;
   let scanInclusive = opts.startInclusive;
   let hasMore = false;
-  let nextCommunityCursor: string | null = null;
+  let nextPhaseCursor: string | null = null;
   let remainingRows = Math.max(
-    opts.numItems - items.length,
+    opts.numItems,
     Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, opts.numItems * 12),
   );
 
@@ -6681,15 +6567,16 @@ async function listOfficialFirstSkillCategoryPage(
     remainingRows -= batchSize;
     if (result.indexKeys.length === 0) {
       hasMore = false;
-      nextCommunityCursor = null;
+      nextPhaseCursor = null;
       break;
     }
 
     for (let index = 0; index < result.page.length; index += 1) {
       const digest = result.page[index];
       const cursor = result.indexKeys[index];
+      const isCurated = Boolean(digest.badges?.official || digest.badges?.highlighted);
       if (
-        !curatedSkillIds.has(String(digest.skillId)) &&
+        (opts.state.phase === "curated" ? isCurated : !isCurated) &&
         digestPassesPublicListFilters(digest, {
           capabilityTag: opts.capabilityTag,
           topic: opts.topic,
@@ -6703,40 +6590,69 @@ async function listOfficialFirstSkillCategoryPage(
       }
       if (items.length >= opts.numItems) {
         hasMore = result.hasMore || index < result.page.length - 1;
-        nextCommunityCursor = hasMore ? encodeIndexKey(opts.indexName, cursor) : null;
-        return {
-          page: items,
-          hasMore,
-          nextCursor: hasMore
-            ? encodeOfficialFirstSkillCategoryCursor({
-                curatedOffset: curatedItems.length,
-                communityCursor: nextCommunityCursor,
-              })
-            : null,
-        };
+        nextPhaseCursor = hasMore ? encodeIndexKey(opts.indexName, cursor) : null;
+        break;
       }
     }
+    if (items.length >= opts.numItems) break;
 
     if (!result.hasMore) {
       hasMore = false;
-      nextCommunityCursor = null;
+      nextPhaseCursor = null;
       break;
     }
     scanCursor = result.indexKeys[result.indexKeys.length - 1];
     scanInclusive = false;
     hasMore = true;
-    nextCommunityCursor = encodeIndexKey(opts.indexName, scanCursor);
+    nextPhaseCursor = encodeIndexKey(opts.indexName, scanCursor);
   }
 
+  if (hasMore) {
+    return {
+      page: items,
+      hasMore: true,
+      nextCursor: encodeOfficialFirstSkillCategoryCursor({
+        phase: opts.state.phase,
+        cursor: nextPhaseCursor,
+      }),
+    };
+  }
+  if (opts.state.phase === "community") {
+    return { page: items, hasMore: false, nextCursor: null };
+  }
+
+  const remainingItems = opts.numItems - items.length;
+  if (remainingItems > 0) {
+    const communityPage = await listOfficialFirstSkillCategoryPage(ctx, {
+      ...opts,
+      state: { phase: "community", cursor: null },
+      numItems: remainingItems,
+      startIndexKey: opts.eqPrefix,
+      startInclusive: true,
+    });
+    return {
+      page: [...items, ...communityPage.page],
+      hasMore: communityPage.hasMore,
+      nextCursor: communityPage.nextCursor,
+    };
+  }
+
+  const communityProbe = await listOfficialFirstSkillCategoryPage(ctx, {
+    ...opts,
+    state: { phase: "community", cursor: null },
+    numItems: 1,
+    startIndexKey: opts.eqPrefix,
+    startInclusive: true,
+  });
+  const hasCommunityPage = communityProbe.page.length > 0 || communityProbe.hasMore;
   return {
     page: items,
-    hasMore,
-    nextCursor: hasMore
-      ? encodeOfficialFirstSkillCategoryCursor({
-          curatedOffset: curatedItems.length,
-          communityCursor: nextCommunityCursor,
-        })
-      : null,
+    hasMore: hasCommunityPage,
+    nextCursor: !hasCommunityPage
+      ? null
+      : communityProbe.page.length > 0
+        ? encodeOfficialFirstSkillCategoryCursor({ phase: "community", cursor: null })
+        : communityProbe.nextCursor,
   };
 }
 
