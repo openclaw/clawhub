@@ -4060,6 +4060,32 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
   });
 
+  it("excludes exact package-name matches outside the requested topic", async () => {
+    const exactPkg = makePackageDoc({
+      _id: "packages:exact",
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+      topics: ["security"],
+    });
+    const exactDigest = makeDigest("demo-plugin", {
+      packageId: "packages:exact",
+      topics: ["security"],
+    });
+    const { ctx } = makeDigestCtx({
+      topicPages: [],
+      exactPackages: [exactPkg],
+      exactDigests: [exactDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo-plugin",
+      topic: "calendar",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+  });
+
   it("includes exact runtime-id matches before digest scanning", async () => {
     const exactPkg = makePackageDoc({
       _id: "packages:runtime",
