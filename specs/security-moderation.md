@@ -45,6 +45,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse scoring is a staff review signal for bulk-publishing abuse.
   It must not directly ban users; staff action goes through the publisher abuse
   nomination review path.
+- Catalog volume pressure is linear up to the 100-skill pivot and superlinear
+  above it. Doubling an already-bulk catalog should raise review pressure
+  meaningfully more than 2x while still allowing legitimate high-engagement
+  publishers to stay below review thresholds.
 - Official publishers are excluded from publisher abuse scoring and
   enforcement. An excluded publisher must not contribute to score-run cohort
   statistics, receive a score label/rank, open or update a nomination, appear in
