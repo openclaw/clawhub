@@ -1,5 +1,5 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const interval = vi.fn();
@@ -48,6 +48,24 @@ vi.mock("./_generated/api", () => ({
 }));
 
 describe("crons", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mocks.interval.mockReset();
+    delete process.env.CLAWHUB_DISABLE_CRONS;
+  });
+
+  afterEach(() => {
+    delete process.env.CLAWHUB_DISABLE_CRONS;
+  });
+
+  it("does not register production cron work when explicitly disabled", async () => {
+    process.env.CLAWHUB_DISABLE_CRONS = "1";
+
+    await import("./crons");
+
+    expect(mocks.interval).not.toHaveBeenCalled();
+  });
+
   it("drains registry artifact backup retries frequently enough for publish bursts", async () => {
     await import("./crons");
 
