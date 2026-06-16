@@ -3715,6 +3715,41 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
+  it("keeps official-first combined category and topic listings on topic digest pagination", async () => {
+    const { ctx, indexNames, tableNames, paginate } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("official-calendar-api", {
+              isOfficial: true,
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["data"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "data",
+      topic: "calendar",
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-calendar-api"]);
+    expect(result.isDone).toBe(true);
+    expect(tableNames).toEqual(["packageTopicSearchDigest", "packageTopicSearchDigest"]);
+    expect(indexNames).toEqual([
+      "by_active_official_topic_updated",
+      "by_active_official_topic_updated",
+    ]);
+    expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
   it("paginates official category plugins before community fallback", async () => {
     const { ctx, paginate } = makeDigestCtx({
       categoryPages: [

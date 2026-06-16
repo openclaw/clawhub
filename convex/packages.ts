@@ -3706,7 +3706,7 @@ async function listPackagePageImpl(
       isDone: boolean;
       continueCursor: string;
     } =
-      manualPagination && category
+      manualPagination && category && !topic
         ? await listManualPackagePluginCategoryDigestPage(ctx, {
             ...args,
             category,
