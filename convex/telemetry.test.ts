@@ -18,20 +18,17 @@ vi.mock("./_generated/api", () => ({
   },
 }));
 
-const { reportCliInstallInternal, reportCliLegacyInstallBatchInternal } =
-  await import("./telemetry");
+const {
+  clearUserTelemetryInternal,
+  reportCliInstallInternal,
+  reportCliLegacyInstallBatchInternal,
+} = await import("./telemetry");
 
 const reportCliInstallHandler = (
   reportCliInstallInternal as unknown as {
     _handler: (
       ctx: unknown,
-      args: {
-        userId: string;
-        slug: string;
-        version?: string;
-        rootId?: string;
-        rootLabel?: string;
-      },
+      args: { userId: string; slug: string; version?: string },
     ) => Promise<void>;
   }
 )._handler;
@@ -40,13 +37,14 @@ const reportCliLegacyInstallBatchHandler = (
   reportCliLegacyInstallBatchInternal as unknown as {
     _handler: (
       ctx: unknown,
-      args: {
-        userId: string;
-        rootId: string;
-        rootLabel: string;
-        skills: Array<{ slug: string; version?: string }>;
-      },
+      args: { userId: string; skills: Array<{ slug: string; version?: string }> },
     ) => Promise<void>;
+  }
+)._handler;
+
+const clearUserTelemetryHandler = (
+  clearUserTelemetryInternal as unknown as {
+    _handler: (ctx: unknown, args: { userId: string }) => Promise<void>;
   }
 )._handler;
 
@@ -57,55 +55,57 @@ function makeIndexBuilder() {
   return builder;
 }
 
-describe("telemetry install events", () => {
-  it("records legacy snapshot batches additively", async () => {
-    const skills = [
-      { _id: "skills:weather", slug: "weather" },
-      { _id: "skills:calendar", slug: "calendar" },
-    ];
-    const insert = vi.fn();
-    const ctx = {
-      db: {
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn(
-            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
-              callback(makeIndexBuilder());
-              if (table === "skills" && indexName === "by_slug") {
-                return { unique: async () => skills.shift() ?? null };
-              }
-              if (table === "userSyncRoots" && indexName === "by_user_root") {
-                return { unique: async () => null };
-              }
-              if (table === "userSkillRootInstalls" && indexName === "by_user_root_skill") {
-                return { unique: async () => null };
-              }
-              if (table === "userSkillInstalls" && indexName === "by_user_skill") {
-                return { unique: async () => null };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          ),
-        })),
-        insert,
-        patch: vi.fn(),
+function makeInstallCtx(params: {
+  skills: Array<{ _id: string; slug: string } | null>;
+  installs: Array<Record<string, unknown> | null>;
+}) {
+  const skills = [...params.skills];
+  const installs = [...params.installs];
+  const insert = vi.fn();
+  const patch = vi.fn();
+  const query = vi.fn((table: string) => ({
+    withIndex: vi.fn(
+      (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+        callback(makeIndexBuilder());
+        if (table === "skills" && indexName === "by_slug") {
+          return { unique: async () => skills.shift() ?? null };
+        }
+        if (table === "userSkillInstalls" && indexName === "by_user_skill") {
+          return { unique: async () => installs.shift() ?? null };
+        }
+        throw new Error(`unexpected query ${table}.${indexName}`);
       },
-    };
+    ),
+  }));
+
+  return { ctx: { db: { insert, patch, query } }, insert, patch, query };
+}
+
+describe("telemetry install events", () => {
+  it("records legacy snapshot batches as rootless user-skill installs", async () => {
+    const { ctx, insert, query } = makeInstallCtx({
+      skills: [
+        { _id: "skills:weather", slug: "weather" },
+        { _id: "skills:calendar", slug: "calendar" },
+      ],
+      installs: [null, null],
+    });
 
     await reportCliLegacyInstallBatchHandler(ctx, {
       userId: "users:one",
-      rootId: "root",
-      rootLabel: "~/skills",
       skills: [{ slug: "weather", version: "1.0.0" }, { slug: "calendar" }],
     });
 
-    expect(insert).toHaveBeenCalledTimes(7);
+    expect(query).not.toHaveBeenCalledWith("userSyncRoots");
+    expect(query).not.toHaveBeenCalledWith("userSkillRootInstalls");
+    expect(insert).toHaveBeenCalledTimes(4);
     expect(insert).toHaveBeenCalledWith(
-      "userSyncRoots",
-      expect.objectContaining({ userId: "users:one", rootId: "root", label: "~/skills" }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "skillStatEvents",
-      expect.objectContaining({ skillId: "skills:weather", kind: "install_new" }),
+      "userSkillInstalls",
+      expect.objectContaining({
+        userId: "users:one",
+        skillId: "skills:weather",
+        lastVersion: "1.0.0",
+      }),
     );
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
@@ -113,110 +113,45 @@ describe("telemetry install events", () => {
     );
   });
 
-  it("records the first CLI install as an install stat event", async () => {
-    const skill = { _id: "skills:demo", slug: "demo" };
-    const insert = vi.fn();
-    const ctx = {
-      db: {
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn(
-            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
-              callback(makeIndexBuilder());
-              if (table === "skills" && indexName === "by_slug") {
-                return { unique: async () => skill };
-              }
-              if (table === "userSyncRoots" && indexName === "by_user_root") {
-                return { unique: async () => null };
-              }
-              if (table === "userSkillRootInstalls" && indexName === "by_user_root_skill") {
-                return { unique: async () => null };
-              }
-              if (table === "userSkillInstalls" && indexName === "by_user_skill") {
-                return { unique: async () => null };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          ),
-        })),
-        insert,
-        patch: vi.fn(),
-      },
-    };
+  it("records the first CLI install without root state", async () => {
+    const { ctx, insert } = makeInstallCtx({
+      skills: [{ _id: "skills:demo", slug: "demo" }],
+      installs: [null],
+    });
 
     await reportCliInstallHandler(ctx, {
       userId: "users:one",
       slug: "demo",
       version: "1.0.0",
-      rootId: "root",
-      rootLabel: "~/skills",
     });
 
-    expect(insert).toHaveBeenCalledWith(
-      "userSkillInstalls",
-      expect.objectContaining({
-        userId: "users:one",
-        skillId: "skills:demo",
-        activeRoots: 1,
-        lastVersion: "1.0.0",
-      }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "userSyncRoots",
-      expect.objectContaining({
-        userId: "users:one",
-        rootId: "root",
-        label: "~/skills",
-      }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "userSkillRootInstalls",
-      expect.objectContaining({
-        userId: "users:one",
-        rootId: "root",
-        skillId: "skills:demo",
-        lastVersion: "1.0.0",
-      }),
-    );
+    expect(insert).toHaveBeenCalledWith("userSkillInstalls", {
+      userId: "users:one",
+      skillId: "skills:demo",
+      firstSeenAt: expect.any(Number),
+      lastSeenAt: expect.any(Number),
+      lastVersion: "1.0.0",
+    });
+    expect(insert).not.toHaveBeenCalledWith("userSyncRoots", expect.anything());
+    expect(insert).not.toHaveBeenCalledWith("userSkillRootInstalls", expect.anything());
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
-      expect.objectContaining({
-        skillId: "skills:demo",
-        kind: "install_new",
-      }),
+      expect.objectContaining({ skillId: "skills:demo", kind: "install_new" }),
     );
   });
 
   it("keeps repeated CLI install events idempotent per user and skill", async () => {
-    const skill = { _id: "skills:demo", slug: "demo" };
-    const existingInstall = {
-      _id: "userSkillInstalls:one",
-      userId: "users:one",
-      skillId: "skills:demo",
-      activeRoots: 1,
-      lastVersion: "1.0.0",
-    };
-    const insert = vi.fn();
-    const patch = vi.fn();
-    const ctx = {
-      db: {
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn(
-            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
-              callback(makeIndexBuilder());
-              if (table === "skills" && indexName === "by_slug") {
-                return { unique: async () => skill };
-              }
-              if (table === "userSkillInstalls" && indexName === "by_user_skill") {
-                return { unique: async () => existingInstall };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          ),
-        })),
-        insert,
-        patch,
-      },
-    };
+    const { ctx, insert, patch } = makeInstallCtx({
+      skills: [{ _id: "skills:demo", slug: "demo" }],
+      installs: [
+        {
+          _id: "userSkillInstalls:one",
+          userId: "users:one",
+          skillId: "skills:demo",
+          lastVersion: "1.0.0",
+        },
+      ],
+    });
 
     await reportCliInstallHandler(ctx, {
       userId: "users:one",
@@ -224,44 +159,27 @@ describe("telemetry install events", () => {
       version: "1.0.1",
     });
 
-    expect(patch).toHaveBeenCalledWith(
-      "userSkillInstalls:one",
-      expect.objectContaining({ activeRoots: 1, lastVersion: "1.0.1" }),
-    );
+    expect(patch).toHaveBeenCalledWith("userSkillInstalls:one", {
+      activeRoots: undefined,
+      lastSeenAt: expect.any(Number),
+      lastVersion: "1.0.1",
+    });
     expect(insert).not.toHaveBeenCalledWith("skillStatEvents", expect.anything());
   });
 
-  it("reactivates an inactive CLI install for current install counts", async () => {
-    const skill = { _id: "skills:demo", slug: "demo" };
-    const existingInstall = {
-      _id: "userSkillInstalls:one",
-      userId: "users:one",
-      skillId: "skills:demo",
-      activeRoots: 0,
-      lastVersion: "1.0.0",
-    };
-    const insert = vi.fn();
-    const patch = vi.fn();
-    const ctx = {
-      db: {
-        query: vi.fn((table: string) => ({
-          withIndex: vi.fn(
-            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
-              callback(makeIndexBuilder());
-              if (table === "skills" && indexName === "by_slug") {
-                return { unique: async () => skill };
-              }
-              if (table === "userSkillInstalls" && indexName === "by_user_skill") {
-                return { unique: async () => existingInstall };
-              }
-              throw new Error(`unexpected query ${table}.${indexName}`);
-            },
-          ),
-        })),
-        insert,
-        patch,
-      },
-    };
+  it("reactivates a legacy inactive install while removing its root count", async () => {
+    const { ctx, insert, patch } = makeInstallCtx({
+      skills: [{ _id: "skills:demo", slug: "demo" }],
+      installs: [
+        {
+          _id: "userSkillInstalls:one",
+          userId: "users:one",
+          skillId: "skills:demo",
+          activeRoots: 0,
+          lastVersion: "1.0.0",
+        },
+      ],
+    });
 
     await reportCliInstallHandler(ctx, {
       userId: "users:one",
@@ -271,14 +189,64 @@ describe("telemetry install events", () => {
 
     expect(patch).toHaveBeenCalledWith(
       "userSkillInstalls:one",
-      expect.objectContaining({ activeRoots: 1, lastVersion: "1.0.1" }),
+      expect.objectContaining({ activeRoots: undefined, lastVersion: "1.0.1" }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "skillStatEvents",
+      expect.objectContaining({ skillId: "skills:demo", kind: "install_reactivate" }),
+    );
+  });
+
+  it("clears rootless installs while preserving legacy inactive count semantics", async () => {
+    const insert = vi.fn();
+    const deleteDoc = vi.fn();
+    const installs = [
+      { _id: "installs:rootless", skillId: "skills:rootless" },
+      { _id: "installs:inactive", skillId: "skills:inactive", activeRoots: 0 },
+    ];
+    const roots = [{ _id: "roots:one" }];
+    const rootInstalls = [{ _id: "rootInstalls:one" }];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((_name, callback) => {
+            callback(makeIndexBuilder());
+            return {
+              take: async () =>
+                table === "userSkillInstalls"
+                  ? installs
+                  : table === "userSyncRoots"
+                    ? roots
+                    : rootInstalls,
+            };
+          }),
+        })),
+        get: vi.fn(async (id: string) => ({ _id: id })),
+        insert,
+        delete: deleteDoc,
+      },
+    };
+
+    await clearUserTelemetryHandler(ctx, { userId: "users:one" });
+
+    expect(insert).toHaveBeenCalledWith(
+      "skillStatEvents",
+      expect.objectContaining({
+        skillId: "skills:rootless",
+        kind: "install_clear",
+        delta: { allTime: -1, current: -1 },
+      }),
     );
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
       expect.objectContaining({
-        skillId: "skills:demo",
-        kind: "install_reactivate",
+        skillId: "skills:inactive",
+        kind: "install_clear",
+        delta: { allTime: -1, current: 0 },
       }),
     );
+    expect(deleteDoc).toHaveBeenCalledTimes(4);
+    expect(deleteDoc).toHaveBeenCalledWith("roots:one");
+    expect(deleteDoc).toHaveBeenCalledWith("rootInstalls:one");
   });
 });

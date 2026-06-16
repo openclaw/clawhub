@@ -498,8 +498,6 @@ describe("built CLI artifact", () => {
         event: "install",
         slug: "demo",
         version: "1.0.0",
-        rootId: expect.any(String),
-        rootLabel: expect.stringContaining("skills"),
       },
     });
 
