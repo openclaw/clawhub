@@ -8,13 +8,13 @@ env = "bun run setup:worktree -- --quiet"
 deps = "wt step copy-ignored || true; test -x node_modules/.bin/vite || bun install"
 
 [post-start]
-dev = "bun scripts/dev-worktree.ts --detach --port {{ (repo ~ '-' ~ branch) | hash_port }}"
+dev = "bun scripts/dev-worktree.ts --detach --seed --port {{ (repo ~ '-' ~ branch) | hash_port }}"
 
 [pre-remove]
 dev = "if test -f .codex/runtime/dev-worktree.pid; then pid=$(cat .codex/runtime/dev-worktree.pid); kill -TERM -$pid 2>/dev/null || kill $pid 2>/dev/null || true; rm -f .codex/runtime/dev-worktree.pid; fi"
 
 [aliases]
-dev = "wt --yes hook pre-start && bun scripts/dev-worktree.ts --detach --port {{ (repo ~ '-' ~ branch) | hash_port }}"
+dev = "wt --yes hook pre-start && bun scripts/dev-worktree.ts --detach --seed --port {{ (repo ~ '-' ~ branch) | hash_port }}"
 setup = "wt --yes hook pre-start"
 stop = "if test -f .codex/runtime/dev-worktree.pid; then pid=$(cat .codex/runtime/dev-worktree.pid); kill -TERM -$pid 2>/dev/null || kill $pid 2>/dev/null || true; rm -f .codex/runtime/dev-worktree.pid; fi"
 url = "echo http://127.0.0.1:{{ (repo ~ '-' ~ branch) | hash_port }}"

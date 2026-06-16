@@ -24,8 +24,8 @@ Keep this section as the command map agents normally need, not a full `package.j
 - `bunx convex dev --typecheck=disable` — local Convex backend/function watcher for manual setup.
 - `bunx convex codegen` — regenerate `convex/_generated` after Convex API/schema changes.
 - `bun run setup:worktree` — link `.env.local` and `.convex` from a usable source worktree into the current worktree. Use `-- --from <path>` or `CLAWHUB_WORKTREE_SOURCE=<path>` when auto-discovery picks the wrong source.
-- `bun run dev:worktree` — Worktrunk-managed detached worktree server. Requires `wt` on `PATH`; from that worktree use `wt --yes url` to print the branch URL and `wt --yes stop` to stop it.
-- `bun run seed:dev` — canonical local seed path; runs worktree setup, waits for local Convex, seeds local fixtures plus the public corpus, and refreshes stats.
+- `bun run dev:worktree` — Worktrunk-managed detached worktree server that also seeds local fixtures plus the public corpus once before starting the app when `VITE_CONVEX_URL` and `CONVEX_DEPLOYMENT` are local. Requires `wt` on `PATH`; from that worktree use `wt --yes url` to print the branch URL and `wt --yes stop` to stop it.
+- `bun run seed:dev` — manual reseed path; runs worktree setup, waits for local Convex, seeds local fixtures plus the public corpus, and refreshes stats.
 - `bun run build` — production build (Vite + Nitro).
 - `bun run ci:static` — required pre-handoff static gate: peer checks, audit, formatting, lint, and dead-code checks.
 - `bun run ci:unit` — Vitest coverage gate; required for source/test PRs unless docs/config-only.

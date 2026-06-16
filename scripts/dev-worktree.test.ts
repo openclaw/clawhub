@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   applyLocalDevWorkerToken,
@@ -12,10 +13,22 @@ import {
   isRunningPid,
   parseArgs,
   parseEnv,
+  shouldSeedLocalData,
   shouldStartDevWorkers,
 } from "./dev-worktree";
 
 describe("dev-worktree helpers", () => {
+  it("seeds local fixtures and public corpus when Worktrunk starts dev services", () => {
+    const config = readFileSync(".config/wt.toml", "utf8");
+
+    expect(config).toContain(
+      '[post-start]\ndev = "bun scripts/dev-worktree.ts --detach --seed --port',
+    );
+    expect(config).toContain(
+      '[aliases]\ndev = "wt --yes hook pre-start && bun scripts/dev-worktree.ts --detach --seed --port',
+    );
+  });
+
   it("parses env files without treating inline comments as values", () => {
     expect(
       parseEnv(`
@@ -162,6 +175,106 @@ describe("dev-worktree helpers", () => {
     expect(shouldStartDevWorkers({ workers: false }, "http://127.0.0.1:3210")).toEqual({
       start: false,
       reason: "--no-workers was passed",
+    });
+  });
+
+  it("seeds local data only for local Convex URLs", () => {
+    expect(
+      shouldSeedLocalData(
+        { seed: true, seedOnly: false },
+        "http://127.0.0.1:3210",
+        "anonymous:anonymous-agent",
+      ),
+    ).toEqual({
+      seed: true,
+      fatal: false,
+      reason: null,
+    });
+
+    expect(
+      shouldSeedLocalData(
+        { seed: false, seedOnly: false },
+        "http://127.0.0.1:3210",
+        "anonymous:anonymous-agent",
+      ),
+    ).toEqual({
+      seed: false,
+      fatal: false,
+      reason: "--seed was not passed",
+    });
+
+    expect(
+      shouldSeedLocalData(
+        { seed: true, seedOnly: false },
+        "https://example.convex.cloud",
+        "prod:shared-deployment",
+      ),
+    ).toEqual({
+      seed: false,
+      fatal: false,
+      reason: "VITE_CONVEX_URL is not local",
+    });
+
+    expect(
+      shouldSeedLocalData(
+        { seed: true, seedOnly: true },
+        "https://example.convex.cloud",
+        "prod:shared-deployment",
+      ),
+    ).toEqual({
+      seed: false,
+      fatal: true,
+      reason: "VITE_CONVEX_URL is not local",
+    });
+
+    expect(
+      shouldSeedLocalData(
+        { seed: true, seedOnly: false },
+        "http://127.0.0.1:3210",
+        "prod:shared-deployment",
+      ),
+    ).toEqual({
+      seed: false,
+      fatal: false,
+      reason: "CONVEX_DEPLOYMENT is missing or not local",
+    });
+
+    expect(
+      shouldSeedLocalData(
+        { seed: true, seedOnly: true },
+        "http://127.0.0.1:3210",
+        "prod:shared-deployment",
+      ),
+    ).toEqual({
+      seed: false,
+      fatal: true,
+      reason: "CONVEX_DEPLOYMENT is missing or not local",
+    });
+
+    expect(
+      shouldSeedLocalData(
+        { seed: true, seedOnly: false },
+        "http://127.0.0.1:3210",
+        "anonymous:anonymous-agent",
+        "anonymous:anonymous-agent\nhttp://127.0.0.1:3210",
+      ),
+    ).toEqual({
+      seed: false,
+      fatal: false,
+      reason: "local seed already completed for this Convex deployment",
+    });
+
+    expect(
+      shouldSeedLocalData(
+        { seed: true, seedOnly: true },
+        "http://127.0.0.1:3210",
+        "anonymous:anonymous-agent",
+        "anonymous:anonymous-agent\nhttp://127.0.0.1:3210",
+      ),
+    ).toEqual({
+      seed: true,
+      fatal: false,
+      reason: null,
     });
   });
 
