@@ -12,7 +12,6 @@ const MAX_BATCH_SIZE = 200;
 const SYNC_STATE_KEY = "default";
 const PACKAGE_SYNC_STATE_KEY = "packageReleases";
 const RETRY_LEASE_KEY = "retryLease";
-const INDEX_LEASE_KEY_PREFIX = "index:";
 const MAX_BACKUP_JOB_ERROR_LENGTH = 4000;
 const DEFAULT_BACKUP_HEALTH_SAMPLE_LIMIT = 500;
 const MAX_BACKUP_HEALTH_SAMPLE_LIMIT = 1000;
@@ -21,8 +20,6 @@ const MAX_BACKUP_JOB_LIMIT = 500;
 const DEFAULT_BACKUP_JOB_REPAIR_ATTEMPTS = 16;
 const DEFAULT_RETRY_LEASE_TTL_MS = 20 * 60 * 1000;
 const MAX_RETRY_LEASE_TTL_MS = 60 * 60 * 1000;
-const DEFAULT_INDEX_LEASE_TTL_MS = 5 * 60 * 1000;
-const MAX_INDEX_LEASE_TTL_MS = 30 * 60 * 1000;
 
 type BackupPageItem =
   | {
@@ -413,69 +410,6 @@ export const releaseRegistryArtifactBackupRetryLeaseInternal = internalMutation(
   handler: releaseRegistryArtifactBackupRetryLeaseHandler,
 });
 
-export async function tryAcquireRegistryArtifactBackupIndexLeaseHandler(
-  ctx: Pick<MutationCtx, "db">,
-  args: { indexPath: string; now?: number; token: string; ttlMs?: number },
-) {
-  const now = args.now ?? Date.now();
-  const ttlMs = clampInt(args.ttlMs ?? DEFAULT_INDEX_LEASE_TTL_MS, 1_000, MAX_INDEX_LEASE_TTL_MS);
-  const key = registryArtifactBackupIndexLeaseKey(args.indexPath);
-  const state = await ctx.db
-    .query("registryArtifactBackupSyncState")
-    .withIndex("by_key", (q) => q.eq("key", key))
-    .unique();
-  if (state?.cursor && state.updatedAt + ttlMs > now) {
-    return { acquired: false as const, holderUpdatedAt: state.updatedAt };
-  }
-
-  if (!state) {
-    await ctx.db.insert("registryArtifactBackupSyncState", {
-      key,
-      cursor: args.token,
-      updatedAt: now,
-    });
-    return { acquired: true as const };
-  }
-
-  await ctx.db.patch(state._id, {
-    cursor: args.token,
-    updatedAt: now,
-  });
-  return { acquired: true as const };
-}
-
-export const tryAcquireRegistryArtifactBackupIndexLeaseInternal = internalMutation({
-  args: {
-    indexPath: v.string(),
-    now: v.optional(v.number()),
-    token: v.string(),
-    ttlMs: v.optional(v.number()),
-  },
-  handler: tryAcquireRegistryArtifactBackupIndexLeaseHandler,
-});
-
-export async function releaseRegistryArtifactBackupIndexLeaseHandler(
-  ctx: Pick<MutationCtx, "db">,
-  args: { indexPath: string; token: string },
-) {
-  const state = await ctx.db
-    .query("registryArtifactBackupSyncState")
-    .withIndex("by_key", (q) => q.eq("key", registryArtifactBackupIndexLeaseKey(args.indexPath)))
-    .unique();
-  if (!state || state.cursor !== args.token) return { released: false as const };
-
-  await ctx.db.delete(state._id);
-  return { released: true as const };
-}
-
-export const releaseRegistryArtifactBackupIndexLeaseInternal = internalMutation({
-  args: {
-    indexPath: v.string(),
-    token: v.string(),
-  },
-  handler: releaseRegistryArtifactBackupIndexLeaseHandler,
-});
-
 const registryArtifactBackupTargetKindValidator = v.union(
   v.literal("skillVersion"),
   v.literal("packageRelease"),
@@ -722,10 +656,6 @@ export async function getRegistryArtifactBackupHealthHandler(
 function truncateBackupJobError(error: string | undefined) {
   if (!error) return undefined;
   return error.slice(0, MAX_BACKUP_JOB_ERROR_LENGTH);
-}
-
-function registryArtifactBackupIndexLeaseKey(indexPath: string) {
-  return `${INDEX_LEASE_KEY_PREFIX}${indexPath}`;
 }
 
 function retryDelayMs(attempts: number) {

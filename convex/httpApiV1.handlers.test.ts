@@ -405,6 +405,7 @@ describe("httpApiV1 handlers", () => {
         body: JSON.stringify({
           handle: "Target",
           slugs: ["a", "b"],
+          versionsBySlug: { a: "1.0.0", b: "1.1.0" },
           forceOverwriteSquatter: true,
         }),
       }),
@@ -415,8 +416,40 @@ describe("httpApiV1 handlers", () => {
       ownerHandle: "target",
       ownerUserId: "users:target",
       slugs: ["a", "b"],
+      versionsBySlug: { a: "1.0.0", b: "1.1.0" },
       forceOverwriteSquatter: true,
     });
+  });
+
+  it("users/restore requires a backup version for every slug", async () => {
+    const runAction = vi.fn();
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return { ok: true };
+    });
+    const runQuery = vi.fn();
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runAction, runMutation }),
+      new Request("https://example.com/api/v1/users/restore", {
+        method: "POST",
+        body: JSON.stringify({
+          handle: "Target",
+          slugs: ["a", "b"],
+          versionsBySlug: { a: "1.0.0" },
+          forceOverwriteSquatter: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Missing backup version for slug b");
+    expect(runQuery).not.toHaveBeenCalled();
+    expect(runAction).not.toHaveBeenCalled();
   });
 
   it("skills export allows authenticated non-admin users at the key rate limit", async () => {

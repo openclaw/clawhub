@@ -557,7 +557,7 @@ export async function usersGetRouterV1Handler(ctx: ActionCtx, request: Request) 
 /**
  * POST /api/v1/users/restore
  * Admin-only: restore skills from registry artifact backup for a user.
- * Body: { handle: string, slugs: string[], forceOverwriteSquatter?: boolean }
+ * Body: { handle: string, slugs: string[], versionsBySlug: Record<string, string>, forceOverwriteSquatter?: boolean }
  */
 async function handleAdminRestore(
   ctx: ActionCtx,
@@ -575,6 +575,20 @@ async function handleAdminRestore(
   if (slugs.length === 0) return text("Missing slugs array", 400, headers);
   if (slugs.length > 100) return text("Too many slugs (max 100)", 400, headers);
 
+  const versionsBySlug =
+    payload.versionsBySlug && typeof payload.versionsBySlug === "object"
+      ? Object.fromEntries(
+          Object.entries(payload.versionsBySlug).filter(
+            (entry): entry is [string, string] =>
+              typeof entry[0] === "string" && typeof entry[1] === "string",
+          ),
+        )
+      : undefined;
+  if (!versionsBySlug) return text("Missing versionsBySlug", 400, headers);
+  const missingVersionSlug = slugs.find((slug) => !versionsBySlug[slug]?.trim());
+  if (missingVersionSlug) {
+    return text(`Missing backup version for slug ${missingVersionSlug}`, 400, headers);
+  }
   const forceOverwriteSquatter = Boolean(payload.forceOverwriteSquatter);
 
   const targetUser = await ctx.runQuery(api.users.getByHandle, { handle });
@@ -588,6 +602,7 @@ async function handleAdminRestore(
         ownerHandle: handle,
         ownerUserId: targetUser._id,
         slugs,
+        versionsBySlug,
         forceOverwriteSquatter,
       },
     );
