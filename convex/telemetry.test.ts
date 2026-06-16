@@ -108,7 +108,7 @@ describe("telemetry install events", () => {
   });
 
   it("records legacy snapshot batches as rootless user-skill installs", async () => {
-    const { ctx, insert, query } = makeInstallCtx({
+    const { ctx, insert } = makeInstallCtx({
       skills: [
         { _id: "skills:weather", slug: "weather" },
         { _id: "skills:calendar", slug: "calendar" },
@@ -122,8 +122,6 @@ describe("telemetry install events", () => {
       skills: [{ slug: "weather", version: "1.0.0" }, { slug: "calendar" }],
     });
 
-    expect(query).not.toHaveBeenCalledWith("userSyncRoots");
-    expect(query).not.toHaveBeenCalledWith("userSkillRootInstalls");
     expect(insert).toHaveBeenCalledTimes(6);
     expect(insert).toHaveBeenCalledWith(
       "installTelemetryDedupes",
@@ -174,8 +172,6 @@ describe("telemetry install events", () => {
       lastSeenAt: expect.any(Number),
       lastVersion: "1.0.0",
     });
-    expect(insert).not.toHaveBeenCalledWith("userSyncRoots", expect.anything());
-    expect(insert).not.toHaveBeenCalledWith("userSkillRootInstalls", expect.anything());
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
       expect.objectContaining({ skillId: "skills:demo", kind: "install_new" }),
@@ -203,7 +199,6 @@ describe("telemetry install events", () => {
     });
 
     expect(patch).toHaveBeenCalledWith("userSkillInstalls:one", {
-      activeRoots: undefined,
       lastSeenAt: expect.any(Number),
       lastVersion: "1.0.1",
     });
@@ -212,37 +207,6 @@ describe("telemetry install events", () => {
       expect.objectContaining({ userId: "users:one", skillId: "skills:demo" }),
     );
     expect(insert).not.toHaveBeenCalledWith("skillStatEvents", expect.anything());
-  });
-
-  it("reactivates a legacy inactive install while removing its root count", async () => {
-    const { ctx, insert, patch } = makeInstallCtx({
-      skills: [{ _id: "skills:demo", slug: "demo" }],
-      dedupes: [null],
-      installs: [
-        {
-          _id: "userSkillInstalls:one",
-          userId: "users:one",
-          skillId: "skills:demo",
-          activeRoots: 0,
-          lastVersion: "1.0.0",
-        },
-      ],
-    });
-
-    await reportCliInstallHandler(ctx, {
-      userId: "users:one",
-      slug: "demo",
-      version: "1.0.1",
-    });
-
-    expect(patch).toHaveBeenCalledWith(
-      "userSkillInstalls:one",
-      expect.objectContaining({ activeRoots: undefined, lastVersion: "1.0.1" }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "skillStatEvents",
-      expect.objectContaining({ skillId: "skills:demo", kind: "install_reactivate" }),
-    );
   });
 
   it("dedupes repeated install telemetry for the same user, skill, and day", async () => {
@@ -285,15 +249,13 @@ describe("telemetry install events", () => {
     expect(patch).not.toHaveBeenCalled();
   });
 
-  it("clears rootless installs and dedupe rows while preserving legacy inactive count semantics", async () => {
+  it("clears installs and dedupe rows", async () => {
     const insert = vi.fn();
     const deleteDoc = vi.fn();
     const installs = [
-      { _id: "installs:rootless", skillId: "skills:rootless" },
-      { _id: "installs:inactive", skillId: "skills:inactive", activeRoots: 0 },
+      { _id: "installs:one", skillId: "skills:one" },
+      { _id: "installs:two", skillId: "skills:two" },
     ];
-    const roots = [{ _id: "roots:one" }];
-    const rootInstalls = [{ _id: "rootInstalls:one" }];
     const dedupes = [{ _id: "installTelemetryDedupes:one" }];
     const ctx = {
       db: {
@@ -303,12 +265,6 @@ describe("telemetry install events", () => {
               callback(makeIndexBuilder());
               if (table === "userSkillInstalls" && indexName === "by_user_lastSeenAt") {
                 return { take: async () => installs };
-              }
-              if (table === "userSyncRoots" && indexName === "by_user_lastSeenAt") {
-                return { take: async () => roots };
-              }
-              if (table === "userSkillRootInstalls" && indexName === "by_user_lastSeenAt") {
-                return { take: async () => rootInstalls };
               }
               if (table === "installTelemetryDedupes" && indexName === "by_user_createdAt") {
                 return { take: async () => dedupes };
@@ -329,7 +285,7 @@ describe("telemetry install events", () => {
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
       expect.objectContaining({
-        skillId: "skills:rootless",
+        skillId: "skills:one",
         kind: "install_clear",
         delta: { allTime: -1, current: -1 },
       }),
@@ -337,14 +293,12 @@ describe("telemetry install events", () => {
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
       expect.objectContaining({
-        skillId: "skills:inactive",
+        skillId: "skills:two",
         kind: "install_clear",
-        delta: { allTime: -1, current: 0 },
+        delta: { allTime: -1, current: -1 },
       }),
     );
-    expect(deleteDoc).toHaveBeenCalledTimes(5);
-    expect(deleteDoc).toHaveBeenCalledWith("roots:one");
-    expect(deleteDoc).toHaveBeenCalledWith("rootInstalls:one");
+    expect(deleteDoc).toHaveBeenCalledTimes(3);
     expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:one");
   });
 
@@ -353,18 +307,6 @@ describe("telemetry install events", () => {
       table: "userSkillInstalls",
       indexName: "by_user_lastSeenAt",
       batchSize: 5_000,
-      laterTables: ["userSyncRoots", "userSkillRootInstalls", "installTelemetryDedupes"],
-    },
-    {
-      table: "userSyncRoots",
-      indexName: "by_user_lastSeenAt",
-      batchSize: 5_000,
-      laterTables: ["userSkillRootInstalls", "installTelemetryDedupes"],
-    },
-    {
-      table: "userSkillRootInstalls",
-      indexName: "by_user_lastSeenAt",
-      batchSize: 10_000,
       laterTables: ["installTelemetryDedupes"],
     },
     {
@@ -379,7 +321,6 @@ describe("telemetry install events", () => {
       const rows = Array.from({ length: batchSize }, (_, index) => ({
         _id: `${table}:${index}`,
         skillId: "skills:demo",
-        activeRoots: 1,
       }));
       const queriedTables: string[] = [];
       const deleteDoc = vi.fn();
@@ -427,10 +368,7 @@ describe("telemetry install events", () => {
 
   it("prunes stale install telemetry dedupe rows by day bucket", async () => {
     vi.setSystemTime(20 * 86_400_000);
-    const stale = [
-      { _id: "installTelemetryDedupes:one" },
-      { _id: "installTelemetryDedupes:two" },
-    ];
+    const stale = [{ _id: "installTelemetryDedupes:one" }, { _id: "installTelemetryDedupes:two" }];
     const deleteDoc = vi.fn();
     const take = vi.fn(async () => stale);
     const ctx = {

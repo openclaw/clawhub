@@ -248,6 +248,77 @@ describe("skills ban/unban batches", () => {
     );
   });
 
+  it("forwards an already-scheduled legacy root install phase to dedupe cleanup", async () => {
+    const skill = {
+      _id: "skills:deleted",
+      ownerUserId: "users:owner",
+      softDeletedAt: 1_000,
+      hiddenAt: 1_000,
+      hiddenBy: "users:admin",
+      moderationStatus: "removed",
+      stats: {
+        downloads: 0,
+        stars: 0,
+        comments: 0,
+        versions: 1,
+        installsCurrent: 0,
+        installsAllTime: 0,
+      },
+    };
+    const query = vi.fn((table: string) => {
+      expect(table).toBe("installTelemetryDedupes");
+      return {
+        withIndex: (indexName: string) => {
+          expect(indexName).toBe("by_skill");
+          return { take: async () => [] };
+        },
+      };
+    });
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") {
+            return {
+              _id: "users:admin",
+              role: "admin",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
+          if (id === "skills:deleted") return skill;
+          return null;
+        }),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        query,
+        normalizeId: vi.fn(),
+      },
+      scheduler,
+    } as never;
+
+    await expect(
+      hardDeleteHandler(ctx, {
+        skillId: "skills:deleted",
+        actorUserId: "users:admin",
+        phase: "rootInstalls",
+      }),
+    ).resolves.toBeUndefined();
+
+    expect(query).toHaveBeenCalledOnce();
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:deleted",
+        actorUserId: "users:admin",
+        phase: "leaderboards",
+      }),
+    );
+  });
+
   it("reschedules install telemetry dedupe cleanup when a hard-delete batch fills", async () => {
     const skill = {
       _id: "skills:deleted",

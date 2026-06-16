@@ -10,8 +10,6 @@ const DAY_MS = 86_400_000;
 const INSTALL_TELEMETRY_DEDUPE_RETENTION_MS = 14 * DAY_MS;
 const PRUNE_BATCH_SIZE = 200;
 const CLEAR_INSTALLS_BATCH_SIZE = 5_000;
-const CLEAR_ROOTS_BATCH_SIZE = 5_000;
-const CLEAR_ROOT_INSTALLS_BATCH_SIZE = 10_000;
 const CLEAR_DEDUPES_BATCH_SIZE = 10_000;
 
 export const reportCliInstallInternal = internalMutation({
@@ -118,15 +116,10 @@ async function upsertUserSkillInstall(
     .unique();
 
   if (existing) {
-    const wasLegacyInactive = typeof existing.activeRoots === "number" && existing.activeRoots <= 0;
     await ctx.db.patch(existing._id, {
-      activeRoots: undefined,
       lastSeenAt: now,
       lastVersion: version ?? existing.lastVersion,
     });
-    if (wasLegacyInactive) {
-      await insertStatEvent(ctx, { skillId: skill._id, kind: "install_reactivate" });
-    }
     return;
   }
 
@@ -157,47 +150,17 @@ async function clearTelemetryForUser(
       await ctx.db.delete(entry._id);
       continue;
     }
-    const wasLegacyInactive = typeof entry.activeRoots === "number" && entry.activeRoots <= 0;
     await insertStatEvent(ctx, {
       skillId: skill._id,
       kind: "install_clear",
       delta: {
         allTime: -1,
-        current: wasLegacyInactive ? 0 : -1,
+        current: -1,
       },
     });
     await ctx.db.delete(entry._id);
   }
   if (installs.length === CLEAR_INSTALLS_BATCH_SIZE) {
-    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
-    return;
-  }
-
-  // Keep per-user privacy deletion complete until the global cleanup removes these tables.
-  const roots = await ctx.db
-    .query("userSyncRoots")
-    .withIndex("by_user_lastSeenAt", (q) =>
-      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
-    )
-    .take(CLEAR_ROOTS_BATCH_SIZE);
-  for (const root of roots) {
-    await ctx.db.delete(root._id);
-  }
-  if (roots.length === CLEAR_ROOTS_BATCH_SIZE) {
-    await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
-    return;
-  }
-
-  const rootInstalls = await ctx.db
-    .query("userSkillRootInstalls")
-    .withIndex("by_user_lastSeenAt", (q) =>
-      q.eq("userId", params.userId).lte("lastSeenAt", params.clearStartedAt),
-    )
-    .take(CLEAR_ROOT_INSTALLS_BATCH_SIZE);
-  for (const entry of rootInstalls) {
-    await ctx.db.delete(entry._id);
-  }
-  if (rootInstalls.length === CLEAR_ROOT_INSTALLS_BATCH_SIZE) {
     await scheduleClearUserTelemetry(ctx, params.userId, params.clearStartedAt);
     return;
   }

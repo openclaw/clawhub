@@ -1605,7 +1605,6 @@ const HARD_DELETE_PHASES = [
   "dailyStats",
   "statEvents",
   "installs",
-  "rootInstalls",
   "installTelemetryDedupes",
   "leaderboards",
   "canonical",
@@ -1861,21 +1860,6 @@ async function hardDeleteSkillStep(
       }
       if (installs.length === HARD_DELETE_BATCH_SIZE) {
         await scheduleHardDelete(ctx, skill._id, actorUserId, "installs", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
-      return;
-    }
-    case "rootInstalls": {
-      const rootInstalls = await ctx.db
-        .query("userSkillRootInstalls")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const rootInstall of rootInstalls) {
-        await ctx.db.delete(rootInstall._id);
-      }
-      if (rootInstalls.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "rootInstalls", scope);
         return;
       }
       await scheduleHardDelete(ctx, skill._id, actorUserId, "installTelemetryDedupes", scope);
@@ -10933,7 +10917,13 @@ export const hardDeleteInternal = internalMutation({
         throw new Error("Skill is outside publisher deletion scope");
       }
     }
-    const phase = isHardDeletePhase(args.phase) ? args.phase : "versions";
+    // Jobs scheduled before root telemetry removal should continue at the next durable phase.
+    const phase =
+      args.phase === "rootInstalls"
+        ? "installTelemetryDedupes"
+        : isHardDeletePhase(args.phase)
+          ? args.phase
+          : "versions";
     await hardDeleteSkillStep(ctx, skill, args.actorUserId, phase, {
       source,
       ownerPublisherId: args.ownerPublisherId,

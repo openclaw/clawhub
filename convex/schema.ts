@@ -2523,47 +2523,15 @@ const registryArtifactBackupJobs = defineTable({
   .index("by_package_release", ["packageReleaseId"])
   .index("by_updatedAt", ["updatedAt"]);
 
-// Temporary cleanup target. Remove after root-install telemetry cleanup is verified in production.
-const userSyncRoots = defineTable({
-  userId: v.id("users"),
-  rootId: v.string(),
-  label: v.string(),
-  firstSeenAt: v.number(),
-  lastSeenAt: v.number(),
-  expiredAt: v.optional(v.number()),
-})
-  .index("by_user", ["userId"])
-  .index("by_user_lastSeenAt", ["userId", "lastSeenAt"])
-  .index("by_user_root", ["userId", "rootId"]);
-
 const userSkillInstalls = defineTable({
   userId: v.id("users"),
   skillId: v.id("skills"),
   firstSeenAt: v.number(),
   lastSeenAt: v.number(),
-  // Temporary compatibility field. New writes omit it; cleanup removes stored values.
-  activeRoots: v.optional(v.number()),
   lastVersion: v.optional(v.string()),
 })
   .index("by_user", ["userId"])
   .index("by_user_lastSeenAt", ["userId", "lastSeenAt"])
-  .index("by_user_skill", ["userId", "skillId"])
-  .index("by_skill", ["skillId"]);
-
-// Temporary cleanup target. Remove after root-install telemetry cleanup is verified in production.
-const userSkillRootInstalls = defineTable({
-  userId: v.id("users"),
-  rootId: v.string(),
-  skillId: v.id("skills"),
-  firstSeenAt: v.number(),
-  lastSeenAt: v.number(),
-  lastVersion: v.optional(v.string()),
-  removedAt: v.optional(v.number()),
-})
-  .index("by_user", ["userId"])
-  .index("by_user_lastSeenAt", ["userId", "lastSeenAt"])
-  .index("by_user_root", ["userId", "rootId"])
-  .index("by_user_root_skill", ["userId", "rootId", "skillId"])
   .index("by_user_skill", ["userId", "skillId"])
   .index("by_skill", ["skillId"]);
 
@@ -2661,8 +2629,6 @@ export default defineSchema({
   githubBackupSyncState,
   registryArtifactBackupSyncState,
   registryArtifactBackupJobs,
-  userSyncRoots,
   userSkillInstalls,
-  userSkillRootInstalls,
   skillOwnershipTransfers,
 });
