@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.0 - 2026-06-15
+
+### Changes
+
+- CLI: remove the `clawhub sync` command. `clawhub skill publish <path>` now skips unchanged content, defaults new skills to `1.0.0`, defaults changed skills to the next patch version, and supports dry-run/JSON output.
+- GitHub Actions: preserve catalog publishing through the reusable `skill-publish.yml` workflow, which invokes ordinary `skill publish` once per skill folder.
+
 ## 0.21.0 - 2026-06-11
 
 ### Changes
