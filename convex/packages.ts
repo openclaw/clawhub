@@ -3936,13 +3936,26 @@ async function listOfficialFirstPackageCategoryPage(
       };
     }
     if (collected.length >= targetCount) {
+      const communityProbe = await listPackagePageImpl(ctx, {
+        ...args,
+        officialFirst: false,
+        manualPagination: true,
+        isOfficial: false,
+        paginationOpts: {
+          cursor: null,
+          numItems: 1,
+        },
+      });
+      const hasCommunityPage = communityProbe.page.length > 0 || !communityProbe.isDone;
       return {
         page: collected,
-        isDone: false,
-        continueCursor: encodeOfficialFirstPackageCategoryCursor({
-          phase: "community",
-          cursor: null,
-        }),
+        isDone: !hasCommunityPage,
+        continueCursor: !hasCommunityPage
+          ? ""
+          : encodeOfficialFirstPackageCategoryCursor({
+              phase: "community",
+              cursor: communityProbe.page.length > 0 ? null : communityProbe.continueCursor,
+            }),
       };
     }
   }

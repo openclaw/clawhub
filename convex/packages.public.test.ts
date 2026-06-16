@@ -3790,7 +3790,7 @@ describe("packages public queries", () => {
     expect(paginate).not.toHaveBeenCalled();
   });
 
-  it("transitions from official to community without native pagination", async () => {
+  it("does not advertise a community page when only official plugins match", async () => {
     const { ctx, paginate } = makeDigestCtx({
       categoryPages: [
         {
@@ -3814,8 +3814,8 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
-    expect(result.isDone).toBe(false);
-    expect(result.continueCursor).toContain('"phase":"community"');
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
     expect(paginate).not.toHaveBeenCalled();
   });
 
