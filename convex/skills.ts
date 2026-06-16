@@ -7442,12 +7442,12 @@ export const scanSkillVersionStaticallyInternal: ReturnType<typeof internalActio
         return { ok: true as const, skipped: "missing" as const };
       }
 
-      const fingerprintEntries = await ctx.runQuery(
+      const fingerprintEntries = (await ctx.runQuery(
         internal.skills.listVersionFingerprintsInternal,
         {
           skillVersionId: version._id,
         },
-      );
+      )) as Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>;
       const generatedBundleFingerprints = fingerprintEntries
         .filter((entry) => entry.kind === "generated-bundle")
         .map((entry) => entry.fingerprint);

@@ -1931,6 +1931,17 @@ const skillStatUpdateCursors = defineTable({
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
+const skillStatDocSyncLeases = defineTable({
+  key: v.string(),
+  leaseOwner: v.string(),
+  leaseExpiresAt: v.number(),
+  updatedAt: v.number(),
+  lastStartedAt: v.optional(v.number()),
+  lastFinishedAt: v.optional(v.number()),
+  lastProcessedAt: v.optional(v.number()),
+  lastProcessedCount: v.optional(v.number()),
+}).index("by_key", ["key"]);
+
 const comments = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2597,6 +2608,7 @@ export default defineSchema({
   globalStats,
   skillStatEvents,
   skillStatUpdateCursors,
+  skillStatDocSyncLeases,
   comments,
   commentReports,
   skillReports,

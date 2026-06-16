@@ -178,34 +178,178 @@ function aggregateEvents(events: Doc<"skillStatEvents">[]): AggregatedDeltas {
   return result;
 }
 
+const DOC_SYNC_LEASE_KEY = "skill_doc_stat_sync";
+const DOC_SYNC_LEASE_MS = 2 * 60 * 1_000;
+const DEFAULT_DOC_SYNC_BATCH_SIZE = 100;
+const MAX_DOC_SYNC_BATCH_SIZE = 100;
+const DEFAULT_DOC_SYNC_MAX_BATCHES = 20;
+const MAX_DOC_SYNC_MAX_BATCHES = 100;
+
+type ClaimSkillStatDocSyncLeaseResult =
+  | {
+      acquired: true;
+      leaseOwner: string;
+      leaseExpiresAt: number;
+      now: number;
+    }
+  | {
+      acquired: false;
+      leaseOwner: string;
+      leaseExpiresAt: number;
+      now: number;
+    };
+
+type SkillStatDocSyncBatchResult = {
+  processed: number;
+  skillsUpdated: number;
+  hasMore: boolean;
+  skipped?: "lease_lost";
+};
+
+type SkillStatDocSyncActionResult =
+  | {
+      acquired: false;
+      processed: number;
+      skillsUpdated: number;
+      scheduledContinuation: false;
+      leaseExpiresAt: number;
+      now: number;
+    }
+  | {
+      acquired: true;
+      processed: number;
+      skillsUpdated: number;
+      batches: number;
+      stoppedReason: "empty" | "max_batches" | "lease_lost";
+      scheduledContinuation: boolean;
+    };
+
+function clampInt(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(Math.floor(value), max));
+}
+
+function normalizeDocSyncBatchSize(batchSize: number | undefined) {
+  return clampInt(batchSize ?? DEFAULT_DOC_SYNC_BATCH_SIZE, 1, MAX_DOC_SYNC_BATCH_SIZE);
+}
+
+function normalizeDocSyncMaxBatches(maxBatches: number | undefined) {
+  return clampInt(maxBatches ?? DEFAULT_DOC_SYNC_MAX_BATCHES, 1, MAX_DOC_SYNC_MAX_BATCHES);
+}
+
+export const claimSkillStatDocSyncLeaseInternal = internalMutation({
+  args: { leaseMs: v.optional(v.number()) },
+  handler: async (ctx, args): Promise<ClaimSkillStatDocSyncLeaseResult> => {
+    const now = Date.now();
+    const leaseMs = clampInt(args.leaseMs ?? DOC_SYNC_LEASE_MS, 30_000, 10 * 60 * 1_000);
+    const existing = await ctx.db
+      .query("skillStatDocSyncLeases")
+      .withIndex("by_key", (q) => q.eq("key", DOC_SYNC_LEASE_KEY))
+      .unique();
+
+    if (existing && existing.leaseExpiresAt > now) {
+      return {
+        acquired: false as const,
+        leaseOwner: existing.leaseOwner,
+        leaseExpiresAt: existing.leaseExpiresAt,
+        now,
+      };
+    }
+
+    const leaseOwner = `${now}`;
+    const patch = {
+      leaseOwner,
+      leaseExpiresAt: now + leaseMs,
+      updatedAt: now,
+      lastStartedAt: now,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, patch);
+    } else {
+      await ctx.db.insert("skillStatDocSyncLeases", {
+        key: DOC_SYNC_LEASE_KEY,
+        ...patch,
+      });
+    }
+
+    return {
+      acquired: true as const,
+      leaseOwner,
+      leaseExpiresAt: now + leaseMs,
+      now,
+    };
+  },
+});
+
+export const releaseSkillStatDocSyncLeaseInternal = internalMutation({
+  args: {
+    leaseOwner: v.string(),
+    processed: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const lease = await ctx.db
+      .query("skillStatDocSyncLeases")
+      .withIndex("by_key", (q) => q.eq("key", DOC_SYNC_LEASE_KEY))
+      .unique();
+
+    if (!lease || lease.leaseOwner !== args.leaseOwner) {
+      return { released: false as const };
+    }
+
+    await ctx.db.patch(lease._id, {
+      leaseExpiresAt: now,
+      updatedAt: now,
+      lastFinishedAt: now,
+      lastProcessedCount: args.processed ?? lease.lastProcessedCount,
+    });
+
+    return { released: true as const };
+  },
+});
+
 /**
  * Process a batch of unprocessed stat events.
  *
- * Called by the 6-hour cron to sync stats to skill docs. Processes up to batchSize events (default 500).
- * If the batch is full, schedules an immediate follow-up run to drain the queue.
+ * Called by the leased action drain to sync stats to skill docs. Processes up to
+ * batchSize events. The committed lease check keeps overlapping cron/manual
+ * kicks from doing the same heavy work before Convex's OCC retry machinery
+ * chooses a winner.
  *
  * Processing steps:
- * 1. Query unprocessed events (processedAt is undefined)
- * 2. Group events by skillId to minimize skill document fetches
- * 3. For each skill:
+ * 1. Verify the committed lease owner
+ * 2. Query unprocessed events (processedAt is undefined)
+ * 3. Group events by skillId to minimize skill document fetches
+ * 4. For each skill:
  *    a. Fetch the skill document once
  *    b. Aggregate all events for this skill into net deltas
  *    c. Apply deltas to skill stats (downloads, stars, installs)
- *    d. Update daily stats for trending (using original event timestamps)
- *    e. Mark all events as processed
- * 4. If batch was full, schedule another run immediately
+ *    d. Mark all events as processed
  *
  * Aggregation levels:
  * - Level 1: Batch of 100 events from the queue
  * - Level 2: Group by skillId (e.g., 100 events → 30 unique skills)
  * - Level 3: Aggregate events per skill (e.g., 5 events → 1 skill update)
- * - Level 4: Daily stats may coalesce (e.g., 3 downloads same day → 1 upsert)
  */
-export const processSkillStatEventsInternal = internalMutation({
-  args: { batchSize: v.optional(v.number()) },
-  handler: async (ctx, args) => {
-    const batchSize = Math.max(1, Math.min(args.batchSize ?? 100, 100));
+export const processSkillStatEventBatchInternal = internalMutation({
+  args: { batchSize: v.optional(v.number()), leaseOwner: v.string() },
+  handler: async (ctx, args): Promise<SkillStatDocSyncBatchResult> => {
+    const batchSize = normalizeDocSyncBatchSize(args.batchSize);
     const now = Date.now();
+    const lease = await ctx.db
+      .query("skillStatDocSyncLeases")
+      .withIndex("by_key", (q) => q.eq("key", DOC_SYNC_LEASE_KEY))
+      .unique();
+
+    if (!lease || lease.leaseOwner !== args.leaseOwner || lease.leaseExpiresAt <= now) {
+      return {
+        processed: 0,
+        skillsUpdated: 0,
+        hasMore: false,
+        skipped: "lease_lost" as const,
+      };
+    }
 
     // Level 1: Fetch a batch of unprocessed events
     const events = await ctx.db
@@ -214,7 +358,7 @@ export const processSkillStatEventsInternal = internalMutation({
       .take(batchSize);
 
     if (events.length === 0) {
-      return { processed: 0 };
+      return { processed: 0, skillsUpdated: 0, hasMore: false };
     }
 
     // Level 2: Group events by skillId to minimize database reads
@@ -228,6 +372,7 @@ export const processSkillStatEventsInternal = internalMutation({
     }
 
     // Process each skill's events
+    let skillsUpdated = 0;
     for (const [skillId, skillEvents] of eventsBySkill) {
       const skill = await ctx.db.get(skillId);
 
@@ -262,6 +407,7 @@ export const processSkillStatEventsInternal = internalMutation({
         // skill's position in the by_active_updated index.
         await ctx.db.patch(skill._id, patch);
         await adjustUserSkillStatsForSkillChange(ctx, skill, { ...skill, ...patch });
+        skillsUpdated += 1;
       }
 
       // NOTE: Daily stats (skillDailyStats) are written by the 15-minute
@@ -273,16 +419,160 @@ export const processSkillStatEventsInternal = internalMutation({
       }
     }
 
-    // If we hit the batch limit, there may be more events waiting.
-    // Schedule an immediate follow-up run to drain the queue.
-    // This ensures high-volume periods don't create a backlog.
-    if (events.length === batchSize) {
+    await ctx.db.patch(lease._id, {
+      leaseExpiresAt: now + DOC_SYNC_LEASE_MS,
+      updatedAt: now,
+      lastProcessedAt: now,
+      lastProcessedCount: events.length,
+    });
+
+    return {
+      processed: events.length,
+      skillsUpdated,
+      hasMore: events.length === batchSize,
+    };
+  },
+});
+
+/**
+ * Leased skill-document stat sync drain.
+ *
+ * This action is the cron/manual entrypoint. It commits a lease before doing
+ * batch work so concurrent scheduled runs skip quickly instead of processing
+ * the same first unprocessed rows and relying on OCC to throw one away.
+ */
+export const processSkillStatEventsInternal: ReturnType<typeof internalAction> = internalAction({
+  args: {
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<SkillStatDocSyncActionResult> => {
+    const batchSize = normalizeDocSyncBatchSize(args.batchSize);
+    const maxBatches = normalizeDocSyncMaxBatches(args.maxBatches);
+    const claim: ClaimSkillStatDocSyncLeaseResult = await ctx.runMutation(
+      internal.skillStatEvents.claimSkillStatDocSyncLeaseInternal,
+      {
+        leaseMs: DOC_SYNC_LEASE_MS,
+      },
+    );
+
+    if (!claim.acquired) {
+      return {
+        acquired: false as const,
+        processed: 0,
+        skillsUpdated: 0,
+        scheduledContinuation: false,
+        leaseExpiresAt: claim.leaseExpiresAt,
+        now: claim.now,
+      };
+    }
+
+    let processed = 0;
+    let skillsUpdated = 0;
+    let batches = 0;
+    let hasMore = false;
+    let stoppedReason: "empty" | "max_batches" | "lease_lost" = "empty";
+
+    for (let index = 0; index < maxBatches; index += 1) {
+      const batch: SkillStatDocSyncBatchResult = await ctx.runMutation(
+        internal.skillStatEvents.processSkillStatEventBatchInternal,
+        {
+          batchSize,
+          leaseOwner: claim.leaseOwner,
+        },
+      );
+
+      if (batch.skipped === "lease_lost") {
+        stoppedReason = "lease_lost";
+        hasMore = false;
+        break;
+      }
+
+      batches += 1;
+      processed += batch.processed;
+      skillsUpdated += batch.skillsUpdated;
+      hasMore = batch.hasMore;
+
+      if (!batch.hasMore) {
+        stoppedReason = "empty";
+        break;
+      }
+
+      stoppedReason = "max_batches";
+    }
+
+    await ctx.runMutation(internal.skillStatEvents.releaseSkillStatDocSyncLeaseInternal, {
+      leaseOwner: claim.leaseOwner,
+      processed,
+    });
+
+    if (hasMore && stoppedReason === "max_batches") {
       await ctx.scheduler.runAfter(0, internal.skillStatEvents.processSkillStatEventsInternal, {
         batchSize,
+        maxBatches,
       });
     }
 
-    return { processed: events.length };
+    return {
+      acquired: true as const,
+      processed,
+      skillsUpdated,
+      batches,
+      stoppedReason,
+      scheduledContinuation: hasMore && stoppedReason === "max_batches",
+    };
+  },
+});
+
+export const kickSkillStatDocSyncInternal = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = normalizeDocSyncBatchSize(args.batchSize);
+    const maxBatches = normalizeDocSyncMaxBatches(args.maxBatches);
+    await ctx.scheduler.runAfter(0, internal.skillStatEvents.processSkillStatEventsInternal, {
+      batchSize,
+      maxBatches,
+    });
+    return { ok: true as const, batchSize, maxBatches };
+  },
+});
+
+export const getSkillStatDocSyncStatusInternal = internalQuery({
+  args: { sampleLimit: v.optional(v.number()) },
+  handler: async (ctx, args) => {
+    const now = Date.now();
+    const sampleLimit = clampInt(args.sampleLimit ?? 1_000, 1, 10_000);
+    const events = await ctx.db
+      .query("skillStatEvents")
+      .withIndex("by_unprocessed", (q) => q.eq("processedAt", undefined))
+      .take(sampleLimit);
+    const lease = await ctx.db
+      .query("skillStatDocSyncLeases")
+      .withIndex("by_key", (q) => q.eq("key", DOC_SYNC_LEASE_KEY))
+      .unique();
+
+    return {
+      hasPending: events.length > 0,
+      samplePendingCount: events.length,
+      sampleLimit,
+      sampledToLimit: events.length === sampleLimit,
+      oldestPendingAt: events[0]?.occurredAt,
+      newestPendingAt: events[events.length - 1]?.occurredAt,
+      lease: lease
+        ? {
+            active: lease.leaseExpiresAt > now,
+            leaseExpiresAt: lease.leaseExpiresAt,
+            lastStartedAt: lease.lastStartedAt,
+            lastFinishedAt: lease.lastFinishedAt,
+            lastProcessedAt: lease.lastProcessedAt,
+            lastProcessedCount: lease.lastProcessedCount,
+          }
+        : null,
+      now,
+    };
   },
 });
 

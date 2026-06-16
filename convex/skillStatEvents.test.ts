@@ -10,17 +10,23 @@ vi.mock("./functions", () => ({
 vi.mock("./_generated/api", () => ({
   internal: {
     skillStatEvents: {
+      claimSkillStatDocSyncLeaseInternal: Symbol("claimSkillStatDocSyncLeaseInternal"),
+      processSkillStatEventBatchInternal: Symbol("processSkillStatEventBatchInternal"),
       processSkillStatEventsAction: Symbol("processSkillStatEventsAction"),
       processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
+      releaseSkillStatDocSyncLeaseInternal: Symbol("releaseSkillStatDocSyncLeaseInternal"),
     },
   },
 }));
 
-const { processSkillStatEventsInternal } = await import("./skillStatEvents");
+const { processSkillStatEventBatchInternal } = await import("./skillStatEvents");
 
-const processSkillStatEventsInternalHandler = (
-  processSkillStatEventsInternal as unknown as {
-    _handler: (ctx: unknown, args: { batchSize?: number }) => Promise<{ processed: number }>;
+const processSkillStatEventBatchInternalHandler = (
+  processSkillStatEventBatchInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: { batchSize?: number; leaseOwner: string },
+    ) => Promise<{ processed: number }>;
   }
 )._handler;
 
@@ -54,11 +60,25 @@ describe("skill stat events - comment delta handling", () => {
       },
     };
     const patch = vi.fn();
+    const lease = {
+      _id: "skillStatDocSyncLeases:1",
+      key: "skill_doc_stat_sync",
+      leaseOwner: "test-lease",
+      leaseExpiresAt: Date.now() + 60_000,
+      updatedAt: Date.now(),
+    };
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => (id === "skills:1" ? skill : null)),
         patch,
         query: vi.fn((table: string) => {
+          if (table === "skillStatDocSyncLeases") {
+            return {
+              withIndex: () => ({
+                unique: async () => lease,
+              }),
+            };
+          }
           if (table !== "skillStatEvents") throw new Error(`unexpected table ${table}`);
           return {
             withIndex: () => ({
@@ -70,14 +90,25 @@ describe("skill stat events - comment delta handling", () => {
       scheduler: { runAfter: vi.fn() },
     };
 
-    await expect(processSkillStatEventsInternalHandler(ctx, { batchSize: 10 })).resolves.toEqual({
+    await expect(
+      processSkillStatEventBatchInternalHandler(ctx, {
+        batchSize: 10,
+        leaseOwner: "test-lease",
+      }),
+    ).resolves.toEqual({
+      hasMore: false,
       processed: 1,
+      skillsUpdated: 0,
     });
 
-    expect(patch).toHaveBeenCalledTimes(1);
+    expect(patch).toHaveBeenCalledTimes(2);
     expect(patch).toHaveBeenCalledWith(
       "skillStatEvents:star",
       expect.objectContaining({ processedAt: expect.any(Number) }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "skillStatDocSyncLeases:1",
+      expect.objectContaining({ lastProcessedCount: 1 }),
     );
   });
 
