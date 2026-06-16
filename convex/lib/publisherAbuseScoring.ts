@@ -105,7 +105,7 @@ export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
   installsPerSkillPivot: 2,
   starsPerSkillPivot: 0.05,
   downloadsPerSkillPivot: 250,
-  outputElasticity: 1.2,
+  outputElasticity: 1.5,
   installTrustElasticity: 0.8,
   starTrustElasticity: 1,
   downloadDemandElasticity: 0.2,

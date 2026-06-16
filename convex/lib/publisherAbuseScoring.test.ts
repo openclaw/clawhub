@@ -14,9 +14,9 @@ import {
 } from "./publisherAbuseScoring";
 
 describe("publisher abuse scoring", () => {
-  it("uses a mild superlinear output elasticity for bulk publishers", () => {
+  it("uses a stronger superlinear output elasticity for bulk publishers", () => {
     expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.modelVersion).toBe("publisher-abuse-pressure.v2");
-    expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.outputElasticity).toBe(1.2);
+    expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.outputElasticity).toBe(1.5);
   });
 
   it("uses the dry-run z-score thresholds", () => {
@@ -150,7 +150,7 @@ describe("publisher abuse scoring", () => {
     );
 
     expect(score200.pressure).toBeGreaterThan(0);
-    expect(score400.pressure / score200.pressure).toBeCloseTo(2 ** 1.2);
+    expect(score400.pressure / score200.pressure).toBeCloseTo(2 ** 1.5);
     expect(score400.pressure / score200.pressure).toBeGreaterThan(2);
   });
 
