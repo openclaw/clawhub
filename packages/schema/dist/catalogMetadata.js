@@ -153,6 +153,15 @@ export const SKILL_CATEGORY_DEFINITIONS = [
         keywords: ["weather", "travel", "transit", "health", "fitness", "cooking", "sports", "home"],
     },
 ];
+const LEGACY_SKILL_CATEGORY_SLUGS = {
+    "mcp-tools": "data-apis",
+    prompts: "agent-behavior",
+    workflows: "automation-workflows",
+    data: "data-apis",
+    security: "security-review",
+    automation: "automation-workflows",
+    other: "domain-utilities",
+};
 const SKILL_CATEGORY_SLUG_SET = new Set(SKILL_CATEGORY_DEFINITIONS.map((category) => category.slug));
 function normalizeCategoryText(value) {
     return value.trim().toLowerCase();
@@ -182,6 +191,14 @@ function stripGeneratedSlugPrefixTokens(tokens) {
 }
 export function isSkillCategorySlug(value) {
     return Boolean(value && SKILL_CATEGORY_SLUG_SET.has(value));
+}
+export function normalizeSkillCategorySlug(value) {
+    if (typeof value !== "string")
+        return undefined;
+    const normalized = value.trim().toLowerCase();
+    if (isSkillCategorySlug(normalized))
+        return normalized;
+    return LEGACY_SKILL_CATEGORY_SLUGS[normalized];
 }
 export function deriveSkillPrimaryCategory(skill) {
     const primaryTokens = tokenizeCategoryText([skill.displayName, skill.summary ?? "", ...(skill.capabilityTags ?? [])].join(" "));

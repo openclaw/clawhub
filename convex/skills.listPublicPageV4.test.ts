@@ -192,13 +192,13 @@ describe("skills.listPublicPageV4", () => {
   it("keeps highlighted category listings on the highlighted path when official-first is enabled", async () => {
     const ctx = makeHighlightedCtx([
       makeDigest({
-        id: "productivity",
-        slug: "productivity-skill",
+        id: "workflows",
+        slug: "workflows-skill",
         stars: 1,
         installsAllTime: 1,
         downloads: 1,
         updatedAt: 200,
-        primaryCategory: "productivity-tasks",
+        primaryCategory: "automation-workflows",
       }),
       makeDigest({
         id: "development",
@@ -214,11 +214,11 @@ describe("skills.listPublicPageV4", () => {
     const result = await listPublicPageV4Handler(ctx, {
       highlightedOnly: true,
       officialFirst: true,
-      categorySlug: "productivity-tasks",
+      categorySlug: "workflows",
       numItems: 10,
     });
 
-    expect(result.page.map((entry) => entry.skill.slug)).toEqual(["productivity-skill"]);
+    expect(result.page.map((entry) => entry.skill.slug)).toEqual(["workflows-skill"]);
     expect(ctx.db.query).toHaveBeenCalledWith("skillBadges");
   });
 });

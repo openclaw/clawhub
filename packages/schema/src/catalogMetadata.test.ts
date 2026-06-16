@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   CATALOG_TOPIC_LIMIT,
   deriveSkillPrimaryCategory,
+  normalizeSkillCategorySlug,
   normalizeCatalogTopics,
   normalizeInferredCatalogTopics,
   resolvePublishedSkillPrimaryCategory,
@@ -45,6 +46,18 @@ describe("catalog metadata", () => {
         summary: "Manage tasks, projects, and planning.",
       }),
     ).toBe("security-review");
+  });
+
+  it.each([
+    ["mcp-tools", "data-apis"],
+    ["prompts", "agent-behavior"],
+    ["workflows", "automation-workflows"],
+    ["data", "data-apis"],
+    ["security", "security-review"],
+    ["automation", "automation-workflows"],
+    ["other", "domain-utilities"],
+  ])("maps the legacy %s category slug to %s", (legacySlug, currentSlug) => {
+    expect(normalizeSkillCategorySlug(legacySlug)).toBe(currentSlug);
   });
 
   it("stores an internal uncategorized value when no public category matches", () => {

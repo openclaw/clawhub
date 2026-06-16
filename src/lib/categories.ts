@@ -1,4 +1,5 @@
 import {
+  normalizeSkillCategorySlug as normalizeSchemaSkillCategorySlug,
   PLUGIN_CATEGORY_DEFINITIONS,
   resolveSkillPrimaryCategory,
   SKILL_CATEGORY_DEFINITIONS,
@@ -36,16 +37,6 @@ export const PLUGIN_CATEGORIES: BrowseCategory[] = PLUGIN_CATEGORY_DEFINITIONS.m
 
 export const ALL_CATEGORY_KEYWORDS = SKILL_CATEGORIES.flatMap((c) => c.keywords);
 
-const LEGACY_SKILL_CATEGORY_SLUGS: Record<string, string> = {
-  "mcp-tools": "data-apis",
-  prompts: "agent-behavior",
-  workflows: "automation-workflows",
-  data: "data-apis",
-  security: "security-review",
-  automation: "automation-workflows",
-  other: "domain-utilities",
-};
-
 type SkillCategoryCandidate = {
   primaryCategory?: string | null;
   slug: string;
@@ -66,9 +57,7 @@ export function getSkillCategoryBySlug(slug: string | null | undefined) {
 }
 
 export function normalizeSkillCategorySlug(value: unknown) {
-  if (typeof value !== "string") return undefined;
-  if (SKILL_CATEGORIES.some((category) => category.slug === value)) return value;
-  return LEGACY_SKILL_CATEGORY_SLUGS[value];
+  return normalizeSchemaSkillCategorySlug(value);
 }
 
 export function buildSkillCategoryBrowseHref(category: SkillCategory) {

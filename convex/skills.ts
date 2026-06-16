@@ -3,6 +3,7 @@ import {
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
+  normalizeSkillCategorySlug,
   normalizeTextContentType,
   resolveSkillPrimaryCategory,
   type SkillCategorySlug,
@@ -5484,8 +5485,7 @@ export const listPublicPageV4 = query({
 type ServerSkillCategorySlug = SkillCategorySlug;
 
 function normalizeRelatedCategorySlug(categorySlug: string | undefined) {
-  const value = categorySlug?.trim().toLowerCase();
-  return isSkillCategorySlug(value) ? value : null;
+  return normalizeSkillCategorySlug(categorySlug) ?? null;
 }
 
 function normalizeRelatedCategoryKeywords(keywords: string[]) {

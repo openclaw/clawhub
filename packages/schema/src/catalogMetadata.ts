@@ -157,6 +157,16 @@ export const SKILL_CATEGORY_DEFINITIONS = [
 
 export type SkillCategorySlug = (typeof SKILL_CATEGORY_DEFINITIONS)[number]["slug"];
 
+const LEGACY_SKILL_CATEGORY_SLUGS = {
+  "mcp-tools": "data-apis",
+  prompts: "agent-behavior",
+  workflows: "automation-workflows",
+  data: "data-apis",
+  security: "security-review",
+  automation: "automation-workflows",
+  other: "domain-utilities",
+} as const satisfies Record<string, SkillCategorySlug>;
+
 const SKILL_CATEGORY_SLUG_SET = new Set<string>(
   SKILL_CATEGORY_DEFINITIONS.map((category) => category.slug),
 );
@@ -199,6 +209,13 @@ function stripGeneratedSlugPrefixTokens(tokens: string[]) {
 
 export function isSkillCategorySlug(value: string | null | undefined): value is SkillCategorySlug {
   return Boolean(value && SKILL_CATEGORY_SLUG_SET.has(value));
+}
+
+export function normalizeSkillCategorySlug(value: unknown): SkillCategorySlug | undefined {
+  if (typeof value !== "string") return undefined;
+  const normalized = value.trim().toLowerCase();
+  if (isSkillCategorySlug(normalized)) return normalized;
+  return LEGACY_SKILL_CATEGORY_SLUGS[normalized as keyof typeof LEGACY_SKILL_CATEGORY_SLUGS];
 }
 
 export function deriveSkillPrimaryCategory(

@@ -101,6 +101,7 @@ type SkillCategoryCandidate = {
     capabilityTags?: string[] | null;
 };
 export declare function isSkillCategorySlug(value: string | null | undefined): value is SkillCategorySlug;
+export declare function normalizeSkillCategorySlug(value: unknown): SkillCategorySlug | undefined;
 export declare function deriveSkillPrimaryCategory(skill: Omit<SkillCategoryCandidate, "primaryCategory">): SkillCategorySlug | undefined;
 export declare function resolveSkillPrimaryCategory(skill: SkillCategoryCandidate): SkillCategorySlug | undefined;
 export declare function resolveStoredSkillPrimaryCategory(skill: SkillCategoryCandidate): SkillCategorySlug | typeof INTERNAL_UNCATEGORIZED_CATEGORY;
