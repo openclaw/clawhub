@@ -30,7 +30,6 @@ let loaderDataMock:
         family: "skill" | "code-plugin" | "bundle-plugin";
         channel: "official" | "community" | "private";
         isOfficial: boolean;
-        executesCode?: boolean;
         summary?: string | null;
         ownerHandle?: string | null;
         latestVersion?: string | null;
@@ -116,7 +115,6 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       official: undefined,
-      executesCode: undefined,
       sort: undefined,
       view: undefined,
     });
@@ -133,7 +131,6 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       official: undefined,
-      executesCode: undefined,
       sort: undefined,
       view: undefined,
     });
@@ -151,7 +148,6 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       official: true,
-      executesCode: undefined,
       sort: undefined,
       view: undefined,
     });
@@ -419,7 +415,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -456,7 +451,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
           stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
@@ -481,7 +475,6 @@ describe("plugins route", () => {
       family: "code-plugin" as const,
       channel: "community" as const,
       isOfficial: false,
-      executesCode: true,
       createdAt: 1,
       updatedAt: 1,
     };
@@ -518,7 +511,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -546,7 +538,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -608,7 +599,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -672,7 +662,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -799,7 +788,6 @@ describe("plugins route", () => {
 
     const result = await loadPluginsPageData({
       q: "demo",
-      executesCode: true,
     });
 
     expect(result).toEqual({
@@ -1030,7 +1018,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -1083,7 +1070,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 2,
           updatedAt: 20,
           stats: { downloads: 1, installs: 10, stars: 0, versions: 1 },
@@ -1094,7 +1080,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 10,
           stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },

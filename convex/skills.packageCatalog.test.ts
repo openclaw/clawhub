@@ -23,8 +23,6 @@ const listPackageCatalogPageHandler = (
     {
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
-      executesCode?: boolean;
-      capabilityTag?: string;
       sort?: "updated" | "downloads" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -34,7 +32,6 @@ const listPackageCatalogPageHandler = (
         family: "skill";
         channel: "official" | "community";
         isOfficial: boolean;
-        capabilityTags: string[];
       }>;
       isDone: boolean;
       continueCursor: string;
@@ -49,8 +46,6 @@ const searchPackageCatalogPublicHandler = (
       limit?: number;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
-      executesCode?: boolean;
-      capabilityTag?: string;
     },
     Array<{ score: number; package: { name: string; family: "skill"; isOfficial: boolean } }>
   >
@@ -82,7 +77,6 @@ function makeDigest(
       changelog: "init",
     },
     tags: { latest: `skillVersions:${slug}-1` },
-    capabilityTags: [],
     badges: {},
     stats: {
       downloads: 1,
@@ -303,15 +297,14 @@ describe("skills package catalog queries", () => {
     expect(result[0]).not.toHaveProperty("matchReason");
   });
 
-  it("uses capability tags as skill package search evidence", async () => {
+  it("uses skill summary as package search evidence", async () => {
     const result = await searchPackageCatalogPublicHandler(
       makeCtx([
         {
           page: [
             makeDigest("wallet-helper", {
               displayName: "Wallet Helper",
-              summary: "Payment helper.",
-              capabilityTags: ["crypto", "requires-wallet"],
+              summary: "Crypto payment helper.",
             }),
             makeDigest("weather"),
           ],
@@ -337,7 +330,6 @@ describe("skills package catalog queries", () => {
             makeDigest("database-tools", {
               displayName: "Database Tools",
               summary: "Postgres database helper.",
-              capabilityTags: ["postgres"],
             }),
           ],
           isDone: true,
@@ -353,14 +345,11 @@ describe("skills package catalog queries", () => {
     expect(result).toEqual([]);
   });
 
-  it("filters skills by capability tag", async () => {
+  it("ignores retired capability filter args in skill package listings", async () => {
     const result = await listPackageCatalogPageHandler(
       makeCtx([
         {
-          page: [
-            makeDigest("paytoll", { capabilityTags: ["crypto", "requires-wallet"] }),
-            makeDigest("weather"),
-          ],
+          page: [makeDigest("paytoll"), makeDigest("weather")],
           isDone: true,
           continueCursor: "",
         },
@@ -368,32 +357,16 @@ describe("skills package catalog queries", () => {
       {
         capabilityTag: "crypto",
         paginationOpts: { cursor: null, numItems: 10 },
-      },
+      } as Parameters<typeof listPackageCatalogPageHandler>[1] & { capabilityTag?: string },
     );
 
     expect(result.page).toEqual([
       expect.objectContaining({
         name: "paytoll",
-        capabilityTags: ["crypto", "requires-wallet"],
+      }),
+      expect.objectContaining({
+        name: "weather",
       }),
     ]);
-  });
-
-  it("returns empty immediately for unknown capability tags", async () => {
-    const result = await listPackageCatalogPageHandler(
-      makeCtx([
-        {
-          page: [makeDigest("paytoll", { capabilityTags: ["crypto", "requires-wallet"] })],
-          isDone: true,
-          continueCursor: "",
-        },
-      ]),
-      {
-        capabilityTag: "not-a-real-tag",
-        paginationOpts: { cursor: null, numItems: 10 },
-      },
-    );
-
-    expect(result).toEqual({ page: [], isDone: true, continueCursor: "" });
   });
 });

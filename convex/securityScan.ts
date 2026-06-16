@@ -1542,7 +1542,6 @@ export const createPublishedSkillScanRequestInternal = internalMutation({
       parsed: version.parsed,
       sha256hash: version.sha256hash,
       vtAnalysis: version.vtAnalysis,
-      capabilityTags: version.capabilityTags,
       staticScan: version.staticScan,
       expiresAt: skillScanRequestExpiresAt(now),
       createdAt: now,

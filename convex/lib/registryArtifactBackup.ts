@@ -52,7 +52,6 @@ type PackageBackupParams = {
   runtimeId?: string;
   sourceRepo?: string;
   compatibility?: unknown;
-  capabilities?: unknown;
   extractedPackageJson?: unknown;
   extractedPluginManifest?: unknown;
   normalizedBundleManifest?: unknown;
@@ -265,7 +264,6 @@ export function buildPackageReleaseBackupManifest(params: PackageBackupParams & 
     },
     metadata: {
       compatibility: params.compatibility,
-      capabilities: params.capabilities,
       extractedPackageJson: params.extractedPackageJson,
       extractedPluginManifest: params.extractedPluginManifest,
       normalizedBundleManifest: params.normalizedBundleManifest,

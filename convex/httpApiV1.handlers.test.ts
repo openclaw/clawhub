@@ -3781,11 +3781,7 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.security.status).toBe("suspicious");
     expect(json.security.hasScanResult).toBe(true);
-    expect(json.security.capabilityTags).toEqual([
-      "crypto",
-      "requires-wallet",
-      "can-make-purchases",
-    ]);
+    expect(json.security).not.toHaveProperty("capabilityTags");
     expect(json.security.scanners.llm.verdict).toBe("suspicious");
     expect(json.moderation.scope).toBe("skill");
     expect(json.moderation.sourceVersion).toEqual({
@@ -3932,7 +3928,7 @@ describe("httpApiV1 handlers", () => {
     });
   }
 
-  it("returns capability tags even when no scanner result exists yet", async () => {
+  it("omits security when no scanner result exists yet", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
         return {
@@ -3975,8 +3971,7 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(json.security.capabilityTags).toEqual(["posts-externally", "requires-oauth-token"]);
-    expect(json.security.hasScanResult).toBe(false);
+    expect(json.security).toBeNull();
   });
 
   it("blocks exact scan status for moderated skills", async () => {
@@ -7860,7 +7855,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.unstarred).toBe(true);
   });
 
-  it("packages search forwards executesCode and capabilityTag", async () => {
+  it("packages search ignores retired execution and capability filters", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("query" in args) return [];
       return null;
@@ -7877,8 +7872,16 @@ describe("httpApiV1 handlers", () => {
       expect.objectContaining({
         query: "test",
         limit: 5,
-        executesCode: true,
-        capabilityTag: "tools",
+      }),
+    );
+    expect(runQuery.mock.calls.map(([, args]) => args)).not.toContainEqual(
+      expect.objectContaining({
+        executesCode: expect.anything(),
+      }),
+    );
+    expect(runQuery.mock.calls.map(([, args]) => args)).not.toContainEqual(
+      expect.objectContaining({
+        capabilityTag: expect.anything(),
       }),
     );
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
@@ -7888,7 +7891,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
   });
 
-  it("packages search maps environment filters to capability tags", async () => {
+  it("packages search ignores retired environment capability shorthands", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("query" in args) return [];
       return null;
@@ -7899,14 +7902,14 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/search?q=test&requiresBrowser=true"),
     );
     if (response.status !== 200) throw new Error(await response.text());
-    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
+    expect(runQuery.mock.calls.map(([, args]) => args)).not.toContainEqual(
       expect.objectContaining({
-        capabilityTag: "requires:browser",
+        capabilityTag: expect.anything(),
       }),
     );
   });
 
-  it("packages search maps artifact filters to capability tags", async () => {
+  it("packages search ignores retired artifact capability shorthands", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("query" in args) return [];
       return null;
@@ -7917,9 +7920,9 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/search?q=test&artifactKind=npm-pack"),
     );
     if (response.status !== 200) throw new Error(await response.text());
-    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
+    expect(runQuery.mock.calls.map(([, args]) => args)).not.toContainEqual(
       expect.objectContaining({
-        capabilityTag: "artifact:npm-pack",
+        capabilityTag: expect.anything(),
       }),
     );
   });
@@ -7932,10 +7935,7 @@ describe("httpApiV1 handlers", () => {
       ["family=bad", "Invalid family query parameter"],
       ["channel=bad", "Invalid channel query parameter"],
       ["isOfficial=maybe", "Invalid isOfficial query parameter"],
-      ["executesCode=maybe", "Invalid executesCode query parameter"],
       ["featured=maybe", "Invalid featured query parameter"],
-      ["artifactKind=bad", "Invalid artifactKind query parameter"],
-      ["requiresBrowser=maybe", "Invalid requiresBrowser query parameter"],
     ]) {
       const response = await __handlers.packagesGetRouterV1Handler(
         makeCtx({ runQuery, runMutation }),
@@ -8916,6 +8916,13 @@ describe("httpApiV1 handlers", () => {
             isOfficial: false,
             summary: "Plugin summary",
             latestVersion: "1.2.3",
+            capabilityTags: ["tools"],
+            executesCode: true,
+            capabilities: {
+              executesCode: true,
+              toolNames: ["demoTool"],
+              capabilityTags: ["tools"],
+            },
             stats: { downloads: 7, installs: 3, stars: 2, versions: 4 },
             createdAt: 1,
             updatedAt: 2,
@@ -8934,7 +8941,8 @@ describe("httpApiV1 handlers", () => {
     );
 
     if (response.status !== 200) throw new Error(await response.text());
-    await expect(response.json()).resolves.toMatchObject({
+    const json = await response.json();
+    expect(json).toMatchObject({
       package: {
         name: "demo-plugin",
         latestVersion: "1.2.3",
@@ -8944,6 +8952,9 @@ describe("httpApiV1 handlers", () => {
         handle: "owner",
       },
     });
+    expect(json.package).not.toHaveProperty("capabilityTags");
+    expect(json.package).not.toHaveProperty("capabilities");
+    expect(json.package).not.toHaveProperty("executesCode");
   });
 
   it("packages detail accepts double-encoded scoped package names", async () => {
@@ -10310,8 +10321,8 @@ describe("httpApiV1 handlers", () => {
       checks: expect.arrayContaining([
         expect.objectContaining({ id: "official", status: "fail" }),
         expect.objectContaining({ id: "clawpack", status: "fail" }),
-        expect.objectContaining({ id: "host-targets", status: "pass" }),
-        expect.objectContaining({ id: "environment", status: "pass" }),
+        expect.objectContaining({ id: "compatibility", status: "pass" }),
+        expect.objectContaining({ id: "scan", status: "pass" }),
       ]),
     });
   });

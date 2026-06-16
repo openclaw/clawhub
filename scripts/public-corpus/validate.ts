@@ -7,7 +7,6 @@ export type PublicCorpusSkillRow = {
   version: string;
   skillMd: string;
   summary?: string;
-  capabilityTags?: string[];
   createdAt?: number;
 };
 
@@ -18,10 +17,8 @@ export type PublicCorpusPluginRow = {
   version: string;
   readme: string;
   summary?: string;
-  capabilityTags?: string[];
   family?: "skill" | "code-plugin" | "bundle-plugin";
   channel?: "official" | "community" | "private";
-  executesCode?: boolean;
   sourceRepoHost?: string | null;
   createdAt?: number;
 };

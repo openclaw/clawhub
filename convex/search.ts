@@ -14,7 +14,6 @@ import {
   matchesExploratoryTokenPrefixes,
   tokenize,
 } from "./lib/searchText";
-import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { isSkillSuspicious } from "./lib/skillSafety";
 import {
   digestToHydratableSkill,
@@ -84,7 +83,6 @@ const MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES = 40;
 const MIN_VECTOR_SEARCH_CANDIDATES = 50;
 const MAX_VECTOR_SEARCH_CANDIDATES = 128;
 const EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH = 3;
-const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
 function getNextCandidateLimit(current: number, max: number) {
   const next = Math.min(current * 2, max);
@@ -145,7 +143,7 @@ function scoreSkillResult(
 function classifySkillMatch(
   query: string,
   queryTokens: string[],
-  skill: Pick<HydratableSkill, "displayName" | "slug" | "summary" | "capabilityTags">,
+  skill: Pick<HydratableSkill, "displayName" | "slug" | "summary">,
 ): SearchMatch | null {
   const needle = query.toLowerCase();
   const normalizedSlugQuery = queryTokens.join("-");
@@ -168,15 +166,6 @@ function classifySkillMatch(
   }
   if (matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a.startsWith(b))) {
     return { rankTier: 1 };
-  }
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      skill.capabilityTags ?? [],
-      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    return { rankTier: 2 };
   }
   if (
     matchesExploratoryTokenPrefixes(
@@ -218,26 +207,16 @@ function prefixUpperBound(value: string) {
   return `${value}\uffff`;
 }
 
-function matchesCapabilityTag(
-  skill: Pick<HydratableSkill, "capabilityTags">,
-  capabilityTag?: string,
-) {
-  if (!capabilityTag) return true;
-  return (skill.capabilityTags ?? []).includes(capabilityTag);
-}
-
 export const searchSkills: ReturnType<typeof action> = action({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<PublicSearchResult[]> => {
     const query = args.query.trim();
     if (!query) return [];
-    if (args.capabilityTag && !SKILL_CAPABILITY_TAG_SET.has(args.capabilityTag)) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
     const rawExactSlugMatch = isSlugLikeQuery(query)
@@ -247,16 +226,13 @@ export const searchSkills: ReturnType<typeof action> = action({
         })) as SkillSearchEntry | null)
       : null;
     const exactSlugMatch =
-      rawExactSlugMatch &&
-      (!args.highlightedOnly || isSkillHighlighted(rawExactSlugMatch.skill)) &&
-      matchesCapabilityTag(rawExactSlugMatch.skill, args.capabilityTag)
+      rawExactSlugMatch && (!args.highlightedOnly || isSkillHighlighted(rawExactSlugMatch.skill))
         ? rawExactSlugMatch
         : null;
     const directPrefixMatches = (await ctx.runQuery(internal.search.directPrefixSkillMatches, {
       query,
       highlightedOnly: args.highlightedOnly,
       nonSuspiciousOnly: args.nonSuspiciousOnly,
-      capabilityTag: args.capabilityTag,
     })) as SkillSearchEntry[];
     let vector: number[] | null;
     try {
@@ -310,9 +286,7 @@ export const searchSkills: ReturnType<typeof action> = action({
         // Skills already have badges from their docs (via toPublicSkill).
         // No need for a separate badge table lookup.
         const filtered = hydrated.filter(
-          (entry) =>
-            (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-            matchesCapabilityTag(entry.skill, args.capabilityTag),
+          (entry) => !args.highlightedOnly || isSkillHighlighted(entry.skill),
         );
 
         exactMatches = filtered.filter((entry) =>
@@ -350,7 +324,6 @@ export const searchSkills: ReturnType<typeof action> = action({
             ),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
-            capabilityTag: args.capabilityTag,
             skipExactSlugLookup: true,
           })) as SkillSearchEntry[]);
     const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches);
@@ -420,10 +393,8 @@ export const directPrefixSkillMatches = internalQuery({
     query: v.string(),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
-    if (args.capabilityTag && !SKILL_CAPABILITY_TAG_SET.has(args.capabilityTag)) return [];
     const normalizedQuery = normalizeSkillSearchText(args.query);
     if (!normalizedQuery) return [];
     const firstToken = getFirstSearchToken(args.query);
@@ -588,7 +559,6 @@ export const directPrefixSkillMatches = internalQuery({
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
         if (args.highlightedOnly && !isSkillHighlighted(skill)) return null;
-        if (!matchesCapabilityTag(skill, args.capabilityTag)) return null;
         const preResolved = digestToOwnerInfo(digest);
         const resolved = preResolved?.owner
           ? preResolved
@@ -668,11 +638,9 @@ export const lexicalFallbackSkills = internalQuery({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     skipExactSlugLookup: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
-    if (args.capabilityTag && !SKILL_CAPABILITY_TAG_SET.has(args.capabilityTag)) return [];
     const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
     const scanLimit = limit;
     const seenSkillIds = new Set<Id<"skills">>();
@@ -696,8 +664,7 @@ export const lexicalFallbackSkills = internalQuery({
       if (
         exactSlugSkill &&
         !exactSlugSkill.softDeletedAt &&
-        (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
-        matchesCapabilityTag(exactSlugSkill, args.capabilityTag)
+        (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill))
       ) {
         seenSkillIds.add(exactSlugSkill._id);
         candidates.push(exactSlugSkill);
@@ -736,7 +703,6 @@ export const lexicalFallbackSkills = internalQuery({
         if (seenSkillIds.has(digest.skillId)) continue;
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
-        if (!matchesCapabilityTag(skill, args.capabilityTag)) continue;
         seenSkillIds.add(digest.skillId);
         candidates.push(skill);
         // Pre-resolve owner from digest to avoid users table reads.

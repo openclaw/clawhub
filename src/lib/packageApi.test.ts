@@ -32,7 +32,7 @@ describe("fetchPackages", () => {
     vi.unstubAllEnvs();
   });
 
-  it("preserves search filters when using /packages/search", async () => {
+  it("omits retired execution and capability filters when using /packages/search", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -45,7 +45,7 @@ describe("fetchPackages", () => {
       capabilityTag: "tools",
       limit: 12,
       isOfficial: true,
-    });
+    } as Parameters<typeof fetchPackages>[0] & { executesCode?: boolean; capabilityTag?: string });
 
     const requestUrl = fetchMock.mock.calls[0]?.[0];
     if (typeof requestUrl !== "string") {
@@ -55,8 +55,8 @@ describe("fetchPackages", () => {
     expect(url.pathname).toBe("/api/v1/packages/search");
     expect(url.searchParams.get("q")).toBe("demo");
     expect(url.searchParams.get("family")).toBe("code-plugin");
-    expect(url.searchParams.get("executesCode")).toBe("true");
-    expect(url.searchParams.get("capabilityTag")).toBe("tools");
+    expect(url.searchParams.has("executesCode")).toBe(false);
+    expect(url.searchParams.has("capabilityTag")).toBe(false);
     expect(url.searchParams.get("limit")).toBe("12");
     expect(url.searchParams.get("isOfficial")).toBe("true");
   });
@@ -107,7 +107,7 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("limit")).toBe("12");
   });
 
-  it("preserves non-search listing filters on package listings", async () => {
+  it("omits retired execution and capability filters on package listings", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -120,7 +120,7 @@ describe("fetchPackages", () => {
       executesCode: false,
       capabilityTag: "storage",
       limit: 7,
-    });
+    } as Parameters<typeof fetchPackages>[0] & { executesCode?: boolean; capabilityTag?: string });
 
     const requestUrl = fetchMock.mock.calls[0]?.[0];
     if (typeof requestUrl !== "string") {
@@ -129,8 +129,8 @@ describe("fetchPackages", () => {
     const url = new URL(requestUrl);
     expect(url.pathname).toBe("/api/v1/packages");
     expect(url.searchParams.get("isOfficial")).toBe("false");
-    expect(url.searchParams.get("executesCode")).toBe("false");
-    expect(url.searchParams.get("capabilityTag")).toBe("storage");
+    expect(url.searchParams.has("executesCode")).toBe(false);
+    expect(url.searchParams.has("capabilityTag")).toBe(false);
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
@@ -312,7 +312,6 @@ describe("fetchPackages", () => {
     await fetchPluginCatalog({
       q: "demo",
       limit: 8,
-      executesCode: false,
       category: "dev-tools",
     });
 
@@ -325,7 +324,7 @@ describe("fetchPackages", () => {
     expect(url.pathname).toBe("/api/v1/plugins/search");
     expect(url.searchParams.get("q")).toBe("demo");
     expect(url.searchParams.get("limit")).toBe("8");
-    expect(url.searchParams.get("executesCode")).toBe("false");
+    expect(url.searchParams.has("executesCode")).toBe(false);
     expect(url.searchParams.get("category")).toBe("dev-tools");
   });
 

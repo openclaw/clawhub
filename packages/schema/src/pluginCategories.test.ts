@@ -9,7 +9,6 @@ describe("plugin categories", () => {
         name: "@openclaw/postgres-api",
         displayName: "Postgres API",
         summary: "Fetch data from Postgres",
-        capabilityTags: ["external-service:postgres"],
       }),
     ).toContain("data");
   });
@@ -21,7 +20,6 @@ describe("plugin categories", () => {
         name: "capability-helper",
         displayName: "Capability Helper",
         summary: "Capability metadata formatter",
-        capabilityTags: ["capability"],
       }),
     ).not.toContain("data");
 
@@ -31,7 +29,6 @@ describe("plugin categories", () => {
         name: "official-helper",
         displayName: "Official Helper",
         summary: "Official metadata helper",
-        capabilityTags: ["official"],
       }),
     ).not.toContain("deployment");
   });

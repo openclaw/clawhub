@@ -14,7 +14,6 @@ import {
 } from "./lib/publishers";
 import { recomputePublisherStats } from "./lib/publisherStats";
 import { buildSkillSummaryBackfillPatch, type ParsedSkillData } from "./lib/skillBackfill";
-import { deriveSkillCapabilityTags } from "./lib/skillCapabilityTags";
 import { isSkillCardPath } from "./lib/skillCards";
 import {
   computeQualitySignals,
@@ -22,7 +21,7 @@ import {
   getTrustTier,
   type TrustTier,
 } from "./lib/skillQuality";
-import { getFrontmatterValue, hashSkillFiles, isTextFile } from "./lib/skills";
+import { getFrontmatterValue, hashSkillFiles } from "./lib/skills";
 import { computeIsSuspicious } from "./lib/skillSafety";
 import { generateSkillSummary } from "./lib/skillSummary";
 
@@ -32,7 +31,6 @@ const DEFAULT_MAX_BATCHES = 20;
 const MAX_MAX_BATCHES = 200;
 const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
-const DEFAULT_CAPABILITY_BACKFILL_DELAY_MS = 500;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
 type BackfillStats = {
@@ -652,233 +650,384 @@ export const continueSkillSummaryBackfillJobInternal = internalAction({
   },
 });
 
-type CapabilityBackfillStats = {
-  skillsScanned: number;
-  skillsPatched: number;
-  versionsPatched: number;
-  digestsPatched: number;
-  missingVersions: number;
-  missingStorageBlob: number;
-};
+const RETIRED_CAPABILITY_CLEANUP_CONFIRM = "remove-retired-capability-metadata" as const;
+const RETIRED_CAPABILITY_CLEANUP_TABLES = [
+  "skills",
+  "skillVersions",
+  "skillSearchDigest",
+  "skillScanRequests",
+  "packages",
+  "packageReleases",
+  "packageSearchDigest",
+  "packagePluginCategorySearchDigest",
+  "packageCapabilitySearchDigest",
+] as const;
+type RetiredCapabilityCleanupTable = (typeof RETIRED_CAPABILITY_CLEANUP_TABLES)[number];
 
-type CapabilityBackfillResult = {
-  ok: true;
-  stats: CapabilityBackfillStats;
+const retiredCapabilityCleanupTableValidator = v.union(
+  v.literal("skills"),
+  v.literal("skillVersions"),
+  v.literal("skillSearchDigest"),
+  v.literal("skillScanRequests"),
+  v.literal("packages"),
+  v.literal("packageReleases"),
+  v.literal("packageSearchDigest"),
+  v.literal("packagePluginCategorySearchDigest"),
+  v.literal("packageCapabilitySearchDigest"),
+);
+
+type RetiredCapabilityCleanupStats = Record<
+  RetiredCapabilityCleanupTable,
+  { scanned: number; matched: number; mutated: number }
+>;
+
+type RetiredCapabilityCleanupBatchResult = {
+  table: RetiredCapabilityCleanupTable;
   cursor: string | null;
   isDone: boolean;
+  scanned: number;
+  matched: number;
+  mutated: number;
 };
 
-export const applySkillCapabilityTagsInternal = internalMutation({
-  args: {
-    skillId: v.id("skills"),
-    versionId: v.id("skillVersions"),
-    capabilityTags: v.array(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const version = await ctx.db.get(args.versionId);
-    if (!version) return { ok: false as const, reason: "missing_version" as const };
-    const skill = await ctx.db.get(args.skillId);
-    if (!skill) return { ok: false as const, reason: "missing_skill" as const };
+type RetiredCapabilityCleanupActionResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: typeof RETIRED_CAPABILITY_CLEANUP_CONFIRM;
+  table: RetiredCapabilityCleanupTable | null;
+  cursor: string | null;
+  isDone: boolean;
+  stats: RetiredCapabilityCleanupStats;
+};
 
-    const normalizedTags = [...new Set(args.capabilityTags)];
-    const nextCapabilityTags = normalizedTags.length ? normalizedTags : undefined;
-    let versionPatched = false;
-    let skillPatched = false;
-    let digestPatched = false;
-    let skillUpdatedAt: number | undefined;
-
-    if (JSON.stringify(version.capabilityTags ?? []) !== JSON.stringify(normalizedTags)) {
-      await ctx.db.patch(version._id, {
-        capabilityTags: nextCapabilityTags,
-      });
-      versionPatched = true;
-    }
-
-    if (
-      skill.latestVersionId === version._id &&
-      JSON.stringify(skill.capabilityTags ?? []) !== JSON.stringify(normalizedTags)
-    ) {
-      skillUpdatedAt = Date.now();
-      await ctx.db.patch(skill._id, {
-        capabilityTags: nextCapabilityTags,
-        updatedAt: skillUpdatedAt,
-      });
-      skillPatched = true;
-      digestPatched = true;
-    }
-
-    if (skill.latestVersionId === version._id) {
-      const digest = await ctx.db
-        .query("skillSearchDigest")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .unique();
-      if (
-        digest &&
-        JSON.stringify(digest.capabilityTags ?? []) !== JSON.stringify(normalizedTags)
-      ) {
-        await ctx.db.patch(digest._id, {
-          capabilityTags: nextCapabilityTags,
-          updatedAt: skillUpdatedAt ?? skill.updatedAt,
-        });
-        digestPatched = true;
-      }
-    }
-
-    return { ok: true as const, versionPatched, skillPatched, digestPatched };
-  },
-});
-
-export async function backfillSkillCapabilityTagsInternalHandler(
-  ctx: ActionCtx,
-  args: {
-    dryRun?: boolean;
-    cursor?: string;
-    batchSize?: number;
-    maxBatches?: number;
-    delayMs?: number;
-  },
-): Promise<CapabilityBackfillResult> {
-  const dryRun = Boolean(args.dryRun);
-  const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
-  const maxBatches = dryRun
-    ? clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES)
-    : 1;
-
-  const stats: CapabilityBackfillStats = {
-    skillsScanned: 0,
-    skillsPatched: 0,
-    versionsPatched: 0,
-    digestsPatched: 0,
-    missingVersions: 0,
-    missingStorageBlob: 0,
-  };
-
-  let cursor = args.cursor ?? null;
-  let isDone = false;
-
-  for (let batchIndex = 0; batchIndex < maxBatches; batchIndex += 1) {
-    const page = await ctx.runQuery(internal.maintenance.getSkillBackfillPageInternal, {
-      cursor: cursor ?? undefined,
-      batchSize,
-    });
-
-    cursor = page.cursor;
-    isDone = page.isDone;
-
-    for (const item of page.items) {
-      if (item.kind !== "ok") {
-        if (item.kind === "missingVersionDoc" || item.kind === "missingLatestVersion") {
-          stats.missingVersions += 1;
-        }
-        continue;
-      }
-
-      stats.skillsScanned += 1;
-
-      const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
-        versionId: item.versionId,
-      })) as Doc<"skillVersions"> | null;
-      if (!version) {
-        stats.missingVersions += 1;
-        continue;
-      }
-
-      const readmeBlob = await ctx.storage.get(item.readmeStorageId);
-      if (!readmeBlob) {
-        stats.missingStorageBlob += 1;
-        continue;
-      }
-
-      const readmeText = await readmeBlob.text();
-      const fileContents: Array<{ path: string; content: string }> = [];
-      let hasMissingTextBlob = false;
-      for (const file of version.files) {
-        const lower = file.path.toLowerCase();
-        if (lower === "skill.md" || lower === "skills.md") continue;
-        if (!isTextFile(file.path, file.contentType ?? undefined)) continue;
-        const blob = await ctx.storage.get(file.storageId);
-        if (!blob) {
-          stats.missingStorageBlob += 1;
-          hasMissingTextBlob = true;
-          break;
-        }
-        fileContents.push({ path: file.path, content: await blob.text() });
-      }
-
-      if (hasMissingTextBlob) continue;
-
-      const capabilityTags = deriveSkillCapabilityTags({
-        slug: item.skillSlug,
-        displayName: item.skillDisplayName,
-        summary: item.skillSummary ?? undefined,
-        frontmatter: item.versionParsed?.frontmatter,
-        readmeText,
-        fileContents,
-      });
-
-      if (dryRun) continue;
-
-      const result = await ctx.runMutation(internal.maintenance.applySkillCapabilityTagsInternal, {
-        skillId: item.skillId,
-        versionId: item.versionId,
-        capabilityTags,
-      });
-
-      if (result.ok) {
-        if (result.skillPatched) stats.skillsPatched += 1;
-        if (result.versionPatched) stats.versionsPatched += 1;
-        if (result.digestPatched) stats.digestsPatched += 1;
-      }
-    }
-
-    if (isDone) break;
-  }
-
-  return { ok: true, stats, cursor, isDone };
+function emptyRetiredCapabilityCleanupStats(): RetiredCapabilityCleanupStats {
+  return Object.fromEntries(
+    RETIRED_CAPABILITY_CLEANUP_TABLES.map((table) => [
+      table,
+      { scanned: 0, matched: 0, mutated: 0 },
+    ]),
+  ) as RetiredCapabilityCleanupStats;
 }
 
-export const backfillSkillCapabilityTagsInternal = internalAction({
+function mergeRetiredCapabilityCleanupStats(
+  target: RetiredCapabilityCleanupStats,
+  table: RetiredCapabilityCleanupTable,
+  batch: { scanned: number; matched: number; mutated: number },
+) {
+  target[table].scanned += batch.scanned;
+  target[table].matched += batch.matched;
+  target[table].mutated += batch.mutated;
+}
+
+function nextRetiredCapabilityCleanupTable(table: RetiredCapabilityCleanupTable) {
+  const index = RETIRED_CAPABILITY_CLEANUP_TABLES.indexOf(table);
+  return RETIRED_CAPABILITY_CLEANUP_TABLES[index + 1] ?? null;
+}
+
+function hasOwnField(value: object, key: string) {
+  return Object.prototype.hasOwnProperty.call(value, key);
+}
+
+function packageLatestVersionSummaryWithoutCapabilities(
+  summary: Doc<"packages">["latestVersionSummary"],
+) {
+  if (!summary || !hasOwnField(summary, "capabilities")) return undefined;
+  const { capabilities: _capabilities, ...rest } = summary;
+  return rest;
+}
+
+function packageFieldCleanupPatch(pkg: Doc<"packages">): Partial<Doc<"packages">> {
+  const patch: Partial<Doc<"packages">> = {};
+  if (hasOwnField(pkg, "capabilityTags")) patch.capabilityTags = undefined;
+  if (hasOwnField(pkg, "executesCode")) patch.executesCode = undefined;
+  if (hasOwnField(pkg, "capabilities")) patch.capabilities = undefined;
+  const nextLatestVersionSummary = packageLatestVersionSummaryWithoutCapabilities(
+    pkg.latestVersionSummary,
+  );
+  if (nextLatestVersionSummary) patch.latestVersionSummary = nextLatestVersionSummary;
+  return patch;
+}
+
+export const cleanupRetiredCapabilityMetadataBatchInternal = internalMutation({
   args: {
+    table: retiredCapabilityCleanupTableValidator,
     dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
-    maxBatches: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<CapabilityBackfillResult> => {
-    const result = await backfillSkillCapabilityTagsInternalHandler(ctx, args);
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== RETIRED_CAPABILITY_CLEANUP_CONFIRM) {
+      throw new ConvexError(`Pass confirm="${RETIRED_CAPABILITY_CLEANUP_CONFIRM}" to apply.`);
+    }
+    const numItems = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const paginationOpts = { cursor: args.cursor ?? null, numItems };
+    let scanned = 0;
+    let matched = 0;
+    let mutated = 0;
 
-    if (!args.dryRun && !result.isDone && result.cursor) {
-      const delayMs = clampInt(args.delayMs ?? DEFAULT_CAPABILITY_BACKFILL_DELAY_MS, 0, 60_000);
-      await ctx.scheduler.runAfter(
-        delayMs,
-        internal.maintenance.backfillSkillCapabilityTagsInternal,
-        {
-          dryRun: false,
-          cursor: result.cursor,
-          batchSize: args.batchSize,
-          maxBatches: 1,
-          delayMs,
-        },
-      );
+    if (args.table === "skills") {
+      const page = await ctx.db.query("skills").paginate(paginationOpts);
+      scanned = page.page.length;
+      for (const row of page.page) {
+        if (!hasOwnField(row, "capabilityTags")) continue;
+        matched += 1;
+        if (!dryRun) {
+          await ctx.db.patch(row._id, { capabilityTags: undefined });
+          mutated += 1;
+        }
+      }
+      return {
+        table: args.table,
+        cursor: page.continueCursor,
+        isDone: page.isDone,
+        scanned,
+        matched,
+        mutated,
+      };
     }
 
-    return result;
+    if (args.table === "skillVersions") {
+      const page = await ctx.db.query("skillVersions").paginate(paginationOpts);
+      scanned = page.page.length;
+      for (const row of page.page) {
+        if (!hasOwnField(row, "capabilityTags")) continue;
+        matched += 1;
+        if (!dryRun) {
+          await ctx.db.patch(row._id, { capabilityTags: undefined });
+          mutated += 1;
+        }
+      }
+      return {
+        table: args.table,
+        cursor: page.continueCursor,
+        isDone: page.isDone,
+        scanned,
+        matched,
+        mutated,
+      };
+    }
+
+    if (args.table === "skillSearchDigest") {
+      const page = await ctx.db.query("skillSearchDigest").paginate(paginationOpts);
+      scanned = page.page.length;
+      for (const row of page.page) {
+        if (!hasOwnField(row, "capabilityTags")) continue;
+        matched += 1;
+        if (!dryRun) {
+          await ctx.db.patch(row._id, { capabilityTags: undefined });
+          mutated += 1;
+        }
+      }
+      return {
+        table: args.table,
+        cursor: page.continueCursor,
+        isDone: page.isDone,
+        scanned,
+        matched,
+        mutated,
+      };
+    }
+
+    if (args.table === "skillScanRequests") {
+      const page = await ctx.db.query("skillScanRequests").paginate(paginationOpts);
+      scanned = page.page.length;
+      for (const row of page.page) {
+        if (!hasOwnField(row, "capabilityTags")) continue;
+        matched += 1;
+        if (!dryRun) {
+          await ctx.db.patch(row._id, { capabilityTags: undefined });
+          mutated += 1;
+        }
+      }
+      return {
+        table: args.table,
+        cursor: page.continueCursor,
+        isDone: page.isDone,
+        scanned,
+        matched,
+        mutated,
+      };
+    }
+
+    if (args.table === "packages") {
+      const page = await ctx.db.query("packages").paginate(paginationOpts);
+      scanned = page.page.length;
+      for (const row of page.page) {
+        const patch = packageFieldCleanupPatch(row);
+        if (Object.keys(patch).length === 0) continue;
+        matched += 1;
+        if (!dryRun) {
+          await ctx.db.patch(row._id, patch);
+          mutated += 1;
+        }
+      }
+      return {
+        table: args.table,
+        cursor: page.continueCursor,
+        isDone: page.isDone,
+        scanned,
+        matched,
+        mutated,
+      };
+    }
+
+    if (args.table === "packageReleases") {
+      const page = await ctx.db.query("packageReleases").paginate(paginationOpts);
+      scanned = page.page.length;
+      for (const row of page.page) {
+        if (!hasOwnField(row, "capabilities")) continue;
+        matched += 1;
+        if (!dryRun) {
+          await ctx.db.patch(row._id, { capabilities: undefined });
+          mutated += 1;
+        }
+      }
+      return {
+        table: args.table,
+        cursor: page.continueCursor,
+        isDone: page.isDone,
+        scanned,
+        matched,
+        mutated,
+      };
+    }
+
+    if (args.table === "packageSearchDigest") {
+      const page = await ctx.db.query("packageSearchDigest").paginate(paginationOpts);
+      scanned = page.page.length;
+      for (const row of page.page) {
+        const patch: Partial<Doc<"packageSearchDigest">> = {};
+        if (hasOwnField(row, "capabilityTags")) patch.capabilityTags = undefined;
+        if (hasOwnField(row, "executesCode")) patch.executesCode = undefined;
+        if (Object.keys(patch).length === 0) continue;
+        matched += 1;
+        if (!dryRun) {
+          await ctx.db.patch(row._id, patch);
+          mutated += 1;
+        }
+      }
+      return {
+        table: args.table,
+        cursor: page.continueCursor,
+        isDone: page.isDone,
+        scanned,
+        matched,
+        mutated,
+      };
+    }
+
+    if (args.table === "packagePluginCategorySearchDigest") {
+      const page = await ctx.db.query("packagePluginCategorySearchDigest").paginate(paginationOpts);
+      scanned = page.page.length;
+      for (const row of page.page) {
+        const patch: Partial<Doc<"packagePluginCategorySearchDigest">> = {};
+        if (hasOwnField(row, "capabilityTags")) patch.capabilityTags = undefined;
+        if (hasOwnField(row, "executesCode")) patch.executesCode = undefined;
+        if (Object.keys(patch).length === 0) continue;
+        matched += 1;
+        if (!dryRun) {
+          await ctx.db.patch(row._id, patch);
+          mutated += 1;
+        }
+      }
+      return {
+        table: args.table,
+        cursor: page.continueCursor,
+        isDone: page.isDone,
+        scanned,
+        matched,
+        mutated,
+      };
+    }
+
+    const page = await ctx.db.query("packageCapabilitySearchDigest").paginate(paginationOpts);
+    scanned = page.page.length;
+    matched = page.page.length;
+    if (!dryRun) {
+      for (const row of page.page) {
+        await ctx.db.delete(row._id);
+        mutated += 1;
+      }
+    }
+    return {
+      table: args.table,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+      scanned,
+      matched,
+      mutated,
+    };
   },
 });
 
-export const backfillSkillCapabilityTags: ReturnType<typeof action> = action({
+export const cleanupRetiredCapabilityMetadataInternal: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      dryRun: v.optional(v.boolean()),
+      confirm: v.optional(v.string()),
+      table: v.optional(retiredCapabilityCleanupTableValidator),
+      cursor: v.optional(v.string()),
+      batchSize: v.optional(v.number()),
+      maxBatches: v.optional(v.number()),
+    },
+    handler: async (ctx, args): Promise<RetiredCapabilityCleanupActionResult> => {
+      const dryRun = args.dryRun !== false;
+      const maxBatches = dryRun
+        ? clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES)
+        : clampInt(args.maxBatches ?? 1, 1, MAX_MAX_BATCHES);
+      const stats = emptyRetiredCapabilityCleanupStats();
+      let table: RetiredCapabilityCleanupTable | null = args.table ?? "skills";
+      let cursor: string | null = args.cursor ?? null;
+      let isDone = false;
+
+      for (let batchIndex = 0; table && batchIndex < maxBatches; batchIndex += 1) {
+        const result = (await ctx.runMutation(
+          internal.maintenance.cleanupRetiredCapabilityMetadataBatchInternal,
+          {
+            table,
+            cursor: cursor ?? undefined,
+            batchSize: args.batchSize,
+            dryRun,
+            confirm: args.confirm,
+          },
+        )) as RetiredCapabilityCleanupBatchResult;
+        mergeRetiredCapabilityCleanupStats(stats, table, result);
+        if (!result.isDone) {
+          cursor = result.cursor;
+          break;
+        }
+        table = nextRetiredCapabilityCleanupTable(table);
+        cursor = null;
+      }
+      if (!table) isDone = true;
+
+      return {
+        ok: true as const,
+        dryRun,
+        confirmRequired: dryRun ? RETIRED_CAPABILITY_CLEANUP_CONFIRM : undefined,
+        table,
+        cursor,
+        isDone,
+        stats,
+      };
+    },
+  });
+
+export const cleanupRetiredCapabilityMetadata: ReturnType<typeof action> = action({
   args: {
     dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    table: v.optional(retiredCapabilityCleanupTableValidator),
     cursor: v.optional(v.string()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
-    delayMs: v.optional(v.number()),
   },
-  handler: async (ctx, args): Promise<CapabilityBackfillResult> => {
+  handler: async (ctx, args) => {
     const { user } = await requireUserFromAction(ctx);
     assertRole(user, ["admin"]);
-    return ctx.runAction(internal.maintenance.backfillSkillCapabilityTagsInternal, args);
+    return ctx.runAction(internal.maintenance.cleanupRetiredCapabilityMetadataInternal, args);
   },
 });
 

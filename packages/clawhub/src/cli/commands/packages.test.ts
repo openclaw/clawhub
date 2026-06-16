@@ -512,12 +512,6 @@ describe("package commands", () => {
 
     await cmdExplorePackages(makeOpts(), "demo plugin", {
       family: "code-plugin",
-      executesCode: true,
-      os: "darwin",
-      requiresBrowser: true,
-      externalService: "GitHub",
-      artifactKind: "npm-pack",
-      npmMirror: true,
     });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
@@ -525,12 +519,6 @@ describe("package commands", () => {
     expect(url.pathname).toBe("/api/v1/packages/search");
     expect(url.searchParams.get("q")).toBe("demo plugin");
     expect(url.searchParams.get("family")).toBe("code-plugin");
-    expect(url.searchParams.get("executesCode")).toBe("true");
-    expect(url.searchParams.get("os")).toBe("darwin");
-    expect(url.searchParams.get("requiresBrowser")).toBe("true");
-    expect(url.searchParams.get("externalService")).toBe("GitHub");
-    expect(url.searchParams.get("artifactKind")).toBe("npm-pack");
-    expect(url.searchParams.get("npmMirror")).toBe("true");
   });
 
   it("supports skill family package browse requests", async () => {
@@ -539,13 +527,12 @@ describe("package commands", () => {
       nextCursor: null,
     });
 
-    await cmdExplorePackages(makeOpts(), "", { family: "skill", target: "linux-x64", limit: 7 });
+    await cmdExplorePackages(makeOpts(), "", { family: "skill", limit: 7 });
 
     const request = httpMocks.apiRequest.mock.calls[0]?.[1] as { url?: string } | undefined;
     const url = new URL(String(request?.url));
     expect(url.pathname).toBe("/api/v1/packages");
     expect(url.searchParams.get("family")).toBe("skill");
-    expect(url.searchParams.get("target")).toBe("linux-x64");
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
@@ -565,7 +552,6 @@ describe("package commands", () => {
           updatedAt: 2,
           tags: { latest: "2.0.0" },
           compatibility: null,
-          capabilities: { executesCode: true },
           verification: {
             tier: "structural",
             scope: "artifact-only",

@@ -539,8 +539,6 @@ type PublicPackageListItem = {
   createdAt: number;
   updatedAt: number;
   latestVersion: string | null;
-  capabilityTags: string[];
-  executesCode: boolean;
   verificationTier: PackageVerificationTier | null;
   stats: Doc<"packages">["stats"];
 };
@@ -789,17 +787,12 @@ type PackageDigestLike = Pick<
   | "createdAt"
   | "updatedAt"
   | "latestVersion"
-  | "capabilityTags"
   | "pluginCategoryTags"
-  | "executesCode"
   | "verificationTier"
   | "stats"
   | "scanStatus"
   | "softDeletedAt"
-> & {
-  capabilityTag?: string;
-  pluginCategory?: string;
-};
+> & { pluginCategory?: string };
 type PackageOwnerAccessRef = Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId"> &
   Partial<Pick<PackageDigestLike, "ownerKind">>;
 type PublicPageCursorState = {
@@ -861,7 +854,6 @@ type PublicPackageDoc = {
   latestReleaseId?: Id<"packageReleases">;
   latestVersion?: string | null;
   compatibility?: Doc<"packages">["compatibility"];
-  capabilities?: Doc<"packages">["capabilities"];
   verification?: Doc<"packages">["verification"];
   artifact?: PackageArtifactSummary;
   scanStatus?: Doc<"packages">["scanStatus"];
@@ -1029,7 +1021,6 @@ function toPublicPackage(
     latestReleaseId: pkg.latestReleaseId,
     latestVersion,
     compatibility: pkg.compatibility,
-    capabilities: pkg.capabilities,
     verification: resolvePublicPackageVerification(pkg, latestRelease),
     artifact:
       latestRelease === undefined
@@ -1045,10 +1036,11 @@ function toPublicPackage(
 }
 
 function toPublicPackageRelease(release: Doc<"packageReleases">) {
+  const { capabilities: _capabilities, ...publicRelease } = release;
   const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
-  if (!release.verification || !sourcePath) return release;
+  if (!release.verification || !sourcePath) return publicRelease;
   return {
-    ...release,
+    ...publicRelease,
     verification: {
       ...release.verification,
       sourcePath,
@@ -1091,59 +1083,7 @@ function packageArtifactSummary(
   };
 }
 
-function packageArtifactCapabilityTags(
-  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
-) {
-  const artifactKind =
-    release.artifactKind === "npm-pack" || release.clawpackStorageId || release.npmIntegrity
-      ? "npm-pack"
-      : "legacy-zip";
-  return artifactKind === "npm-pack"
-    ? ["artifact:npm-pack", "npm-mirror:available"]
-    : ["artifact:legacy-zip"];
-}
-
-function mergeArtifactCapabilityTags(
-  capabilityTags: Doc<"packageReleases">["capabilities"] extends { capabilityTags?: infer Tags }
-    ? Tags
-    : string[] | undefined,
-  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
-) {
-  return [...new Set([...(capabilityTags ?? []), ...packageArtifactCapabilityTags(release)])];
-}
-
-function withArtifactCapabilityTags(
-  capabilities: Doc<"packageReleases">["capabilities"],
-  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
-) {
-  if (!capabilities) return capabilities;
-  return {
-    ...capabilities,
-    capabilityTags: mergeArtifactCapabilityTags(capabilities.capabilityTags, release),
-  };
-}
-
-function digestMatchesFilters(
-  digest: PackageDigestLike,
-  args: {
-    executesCode?: boolean;
-    capabilityTag?: string;
-    category?: string;
-  },
-) {
-  if (
-    typeof args.executesCode === "boolean" &&
-    Boolean(digest.executesCode) !== args.executesCode
-  ) {
-    return false;
-  }
-  if (args.capabilityTag) {
-    if (digest.capabilityTag) {
-      if (digest.capabilityTag !== args.capabilityTag) return false;
-    } else if (!(digest.capabilityTags ?? []).includes(args.capabilityTag)) {
-      return false;
-    }
-  }
+function digestMatchesFilters(digest: PackageDigestLike, args: { category?: string }) {
   if (args.category) {
     if (digest.pluginCategory) {
       if (digest.pluginCategory !== args.category) return false;
@@ -1160,8 +1100,6 @@ function digestMatchesSearchFilters(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
   },
 ) {
@@ -1179,20 +1117,12 @@ function packageMatchesListFilters(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
   },
 ) {
   if (args.family && pkg.family !== args.family) return false;
   if (args.channel && pkg.channel !== args.channel) return false;
   if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
-  if (typeof args.executesCode === "boolean" && Boolean(pkg.executesCode) !== args.executesCode) {
-    return false;
-  }
-  if (args.capabilityTag && !(pkg.capabilityTags ?? []).includes(args.capabilityTag)) {
-    return false;
-  }
   if (args.category) {
     const categories = derivePluginCategoryTags({
       family: pkg.family,
@@ -1200,7 +1130,6 @@ function packageMatchesListFilters(
       displayName: pkg.displayName,
       runtimeId: pkg.runtimeId,
       summary: pkg.summary,
-      capabilityTags: pkg.capabilityTags,
     });
     if (!categories.includes(args.category as PluginCategorySlug)) return false;
   }
@@ -1270,8 +1199,6 @@ async function toPublicPackageListItem(
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
     latestVersion: digest.latestVersion ?? null,
-    capabilityTags: digest.capabilityTags ?? [],
-    executesCode: digest.executesCode ?? false,
     verificationTier: digest.verificationTier ?? null,
     stats: await resolvePackageListStats(ctx, digest),
   };
@@ -1299,8 +1226,6 @@ async function toPublicPackageListItemFromPackage(
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     latestVersion: pkg.latestVersionSummary?.version ?? null,
-    capabilityTags: pkg.capabilityTags ?? [],
-    executesCode: pkg.executesCode ?? false,
     verificationTier: pkg.verification?.tier ?? null,
     stats: pkg.stats,
   };
@@ -1550,15 +1475,6 @@ function packageSearchMatch(
   ) {
     setMatch(3, 20);
   }
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      digest.capabilityTags ?? [],
-      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    setMatch(2, 12);
-  }
   if (!Number.isFinite(rankTier)) return null;
   return { rankTier, score };
 }
@@ -1640,78 +1556,11 @@ function buildPackageDigestQuery(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
   },
 ) {
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
-  const executesCode = args.executesCode;
-
-  if (family && channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_family_channel_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_family_official_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_channel_official_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_family_executes_updated", (q) =>
-        q.eq("softDeletedAt", undefined).eq("family", family).eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_channel_executes_updated", (q) =>
-        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("executesCode", executesCode),
-      );
-  }
-  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_official_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_executes_updated", (q) =>
-        q.eq("softDeletedAt", undefined).eq("executesCode", executesCode),
-      );
-  }
 
   if (family && channel) {
     return ctx.db
@@ -1760,170 +1609,6 @@ function buildPackageDigestQuery(
     .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined));
 }
 
-function buildPackageCapabilityDigestQuery(
-  ctx: DbReaderCtx,
-  args: {
-    capabilityTag: string;
-    family?: PackageFamily;
-    channel?: PackageChannel;
-    isOfficial?: boolean;
-    executesCode?: boolean;
-  },
-) {
-  const family = args.family;
-  const channel = args.channel;
-  const isOfficial = args.isOfficial;
-  const executesCode = args.executesCode;
-
-  if (family && channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_channel_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_official_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_channel_official_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && channel) {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_channel_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (family && typeof isOfficial === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_official_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (channel && typeof isOfficial === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_channel_official_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (family && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_channel_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_official_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family) {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (channel) {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_channel_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (typeof isOfficial === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_official_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  return ctx.db
-    .query("packageCapabilitySearchDigest")
-    .withIndex("by_active_tag_updated", (q) =>
-      q.eq("softDeletedAt", undefined).eq("capabilityTag", args.capabilityTag),
-    );
-}
-
 function buildPackagePluginCategoryDigestQuery(
   ctx: DbReaderCtx,
   args: {
@@ -1931,50 +1616,11 @@ function buildPackagePluginCategoryDigestQuery(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
   },
 ) {
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
-  const executesCode = args.executesCode;
-
-  if (family && channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_family_channel_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_family_official_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_channel_official_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
   if (family && channel) {
     return ctx.db
       .query("packagePluginCategorySearchDigest")
@@ -2008,39 +1654,6 @@ function buildPackagePluginCategoryDigestQuery(
           .eq("pluginCategory", args.category),
       );
   }
-  if (family && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_family_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_channel_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_official_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
   if (family) {
     return ctx.db
       .query("packagePluginCategorySearchDigest")
@@ -2065,16 +1678,6 @@ function buildPackagePluginCategoryDigestQuery(
           .eq("pluginCategory", args.category),
       );
   }
-  if (typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
   return ctx.db
     .query("packagePluginCategorySearchDigest")
     .withIndex("by_active_category_updated", (q) =>
@@ -2088,8 +1691,6 @@ async function fetchHighlightedPackageDigests(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
     viewerUserId?: Id<"users">;
   },
@@ -2121,8 +1722,6 @@ async function fetchHighlightedPackagePage(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     viewerUserId?: Id<"users">;
     numItems: number;
   },
@@ -2714,8 +2313,6 @@ export const listPublicPage = query({
     ),
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
-    executesCode: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
     sort: v.optional(
       v.union(
@@ -3189,8 +2786,6 @@ export const listPageForViewerInternal = internalQuery({
     ),
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
-    executesCode: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
     sort: v.optional(
       v.union(
@@ -3247,8 +2842,6 @@ async function listPackagePageImpl(
     channel?: PackageChannel;
     isOfficial?: boolean;
     highlightedOnly?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
     sort?: "updated" | "downloads" | "recommended" | "installs";
     viewerUserId?: Id<"users">;
@@ -3397,22 +2990,12 @@ async function listPackagePageImpl(
         family,
         channel,
         isOfficial,
-        executesCode: args.executesCode,
       })
-    : args.capabilityTag
-      ? buildPackageCapabilityDigestQuery(ctx, {
-          capabilityTag: args.capabilityTag,
-          family,
-          channel,
-          isOfficial,
-          executesCode: args.executesCode,
-        })
-      : buildPackageDigestQuery(ctx, {
-          family,
-          channel,
-          isOfficial,
-          executesCode: args.executesCode,
-        });
+    : buildPackageDigestQuery(ctx, {
+        family,
+        channel,
+        isOfficial,
+      });
   const page: {
     page: PackageDigestLike[];
     isDone: boolean;
@@ -3478,8 +3061,6 @@ export const searchPublic = query({
     ),
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
-    executesCode: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -3499,8 +3080,6 @@ export const searchForViewerInternal = internalQuery({
     ),
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
-    executesCode: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
   },
@@ -3518,8 +3097,6 @@ async function searchPackagesImpl(
     channel?: PackageChannel;
     isOfficial?: boolean;
     highlightedOnly?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
     viewerUserId?: Id<"users">;
   },
@@ -3564,28 +3141,17 @@ async function searchPackagesImpl(
           family: args.family,
           channel: args.channel,
           isOfficial: args.isOfficial,
-          executesCode: args.executesCode,
         })
-      : args.capabilityTag
-        ? buildPackageCapabilityDigestQuery(ctx, {
-            capabilityTag: args.capabilityTag,
-            family: args.family,
-            channel: args.channel,
-            isOfficial: args.isOfficial,
-            executesCode: args.executesCode,
-          })
-        : buildPackageDigestQuery(ctx, {
-            family: args.family,
-            channel: args.channel,
-            isOfficial: args.isOfficial,
-            executesCode: args.executesCode,
-          });
+      : buildPackageDigestQuery(ctx, {
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+        });
   const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
-  const directDigests =
-    args.capabilityTag || args.category
-      ? []
-      : await resolveDirectPackageSearchDigests(ctx, queryText);
+  const directDigests = args.category
+    ? []
+    : await resolveDirectPackageSearchDigests(ctx, queryText);
   for (const digest of directDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
@@ -4170,7 +3736,6 @@ function packageLatestSummaryFromRelease(release: Doc<"packageReleases"> | null)
         createdAt: release.createdAt,
         changelog: release.changelog,
         compatibility: release.compatibility,
-        capabilities: release.capabilities,
         verification: release.verification,
         artifact: packageArtifactSummary(release),
       }
@@ -4178,7 +3743,7 @@ function packageLatestSummaryFromRelease(release: Doc<"packageReleases"> | null)
 }
 
 function packageRuntimeIdFromRelease(release: Doc<"packageReleases"> | null) {
-  return release?.runtimeId ?? release?.capabilities?.runtimeId;
+  return release?.runtimeId;
 }
 
 function packageSourceRepoFromRelease(release: Doc<"packageReleases"> | null) {
@@ -4271,19 +3836,12 @@ async function restorePackageDoc(
           createdAt: nextLatest.createdAt,
           changelog: nextLatest.changelog,
           compatibility: nextLatest.compatibility,
-          capabilities: nextLatest.capabilities,
           verification: nextLatest.verification,
           artifact: packageArtifactSummary(nextLatest),
         }
       : undefined,
     summary: nextLatest?.summary,
-    capabilityTags: nextLatest?.capabilities?.capabilityTags,
-    executesCode:
-      typeof nextLatest?.capabilities?.executesCode === "boolean"
-        ? nextLatest.capabilities.executesCode
-        : undefined,
     compatibility: nextLatest?.compatibility,
-    capabilities: nextLatest?.capabilities,
     verification: nextLatest?.verification,
     scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : pkg.scanStatus,
     updatedAt: now,
@@ -6702,7 +6260,6 @@ async function publishPackageImpl(
     runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
     channel: payload.channel,
     compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-    capabilities: codeArtifacts?.capabilities ?? bundleArtifacts?.capabilities,
     verification,
     staticScan,
     files,
@@ -6852,7 +6409,6 @@ async function publishPackageImpl(
         runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
         sourceRepo: effectiveSource?.repo || effectiveSource?.url,
         compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-        capabilities: codeArtifacts?.capabilities ?? bundleArtifacts?.capabilities,
         extractedPackageJson: storedPackageJson,
         extractedPluginManifest: family === "code-plugin" ? storedPluginManifest : undefined,
         normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
@@ -7039,8 +6595,6 @@ export const reservePackageNameInternal = internalMutation({
       channel: "private",
       isOfficial: false,
       tags: {},
-      capabilityTags: [],
-      executesCode: false,
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
       ...computePackageRecommendationPatch({
         downloads: 0,
@@ -7866,7 +7420,6 @@ export const insertReleaseInternal = internalMutation({
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
     ),
     compatibility: v.optional(v.any()),
-    capabilities: v.optional(v.any()),
     verification: v.optional(v.any()),
     staticScan: v.optional(v.any()),
     allowExistingRelease: v.optional(v.boolean()),
@@ -7948,8 +7501,6 @@ export const insertReleaseInternal = internalMutation({
     if (args.channel === "official" && !publisherOfficial) {
       throw new ConvexError("Only official publishers may publish to the official channel");
     }
-    const nextCapabilities = withArtifactCapabilityTags(args.capabilities, args);
-    const nextCapabilityTags = mergeArtifactCapabilityTags(args.capabilities?.capabilityTags, args);
     const existing = await getPackageByNormalizedName(ctx, normalizedName);
     const existingIsReservation = isReservedPackagePlaceholder(existing);
     const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
@@ -8026,10 +7577,7 @@ export const insertReleaseInternal = internalMutation({
         runtimeId: args.runtimeId,
         sourceRepo: args.sourceRepo,
         tags: {},
-        capabilityTags: nextCapabilityTags,
-        executesCode: nextCapabilities?.executesCode,
         compatibility: args.compatibility,
-        capabilities: nextCapabilities,
         verification: args.verification,
         scanStatus: args.verification?.scanStatus,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
@@ -8102,7 +7650,6 @@ export const insertReleaseInternal = internalMutation({
       extractedPluginManifest: args.extractedPluginManifest,
       normalizedBundleManifest: args.normalizedBundleManifest,
       compatibility: args.compatibility,
-      capabilities: nextCapabilities,
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,
       verification: args.verification,
@@ -8143,20 +7690,12 @@ export const insertReleaseInternal = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             compatibility: args.compatibility,
-            capabilities: nextCapabilities,
             verification: args.verification,
             artifact: packageArtifactSummary(args),
           }
         : pkg.latestVersionSummary,
       tags: nextTags,
-      capabilityTags: shouldPromoteLatest ? nextCapabilityTags : pkg.capabilityTags,
-      executesCode: shouldPromoteLatest
-        ? typeof nextCapabilities?.executesCode === "boolean"
-          ? nextCapabilities.executesCode
-          : pkg.executesCode
-        : pkg.executesCode,
       compatibility: shouldPromoteLatest ? args.compatibility : pkg.compatibility,
-      capabilities: shouldPromoteLatest ? nextCapabilities : pkg.capabilities,
       verification: shouldPromoteLatest ? args.verification : pkg.verification,
       scanStatus: shouldPromoteLatest ? args.verification?.scanStatus : pkg.scanStatus,
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
@@ -8291,13 +7830,7 @@ async function quarantineMaliciousLatestPackageRelease(
     summary: nextLatest?.summary,
     sourceRepo: restoredSourceRepo,
     runtimeId: restoredRuntimeId,
-    capabilityTags: nextLatest?.capabilities?.capabilityTags,
-    executesCode:
-      typeof nextLatest?.capabilities?.executesCode === "boolean"
-        ? nextLatest.capabilities.executesCode
-        : undefined,
     compatibility: nextLatest?.compatibility,
-    capabilities: nextLatest?.capabilities,
     verification: nextLatest?.verification,
     scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : "malicious",
     updatedAt: now,

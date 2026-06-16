@@ -2806,7 +2806,7 @@ describe("packages public queries", () => {
     expect(indexFilters).toEqual([]);
   });
 
-  it("continues scanning global download-sorted pages for non-indexed filters", async () => {
+  it("uses global download-sorted pages without retired capability filters", async () => {
     const { ctx, indexNames, paginate } = makeDigestCtx({
       packagePages: [
         {
@@ -2817,7 +2817,6 @@ describe("packages public queries", () => {
               normalizedName: "bundle-plugin",
               displayName: "Bundle Plugin",
               family: "bundle-plugin",
-              executesCode: false,
               stats: { downloads: 500, installs: 0, stars: 0, versions: 1 },
             }),
           ],
@@ -2832,7 +2831,6 @@ describe("packages public queries", () => {
               normalizedName: "code-plugin",
               displayName: "Code Plugin",
               family: "code-plugin",
-              executesCode: true,
               stats: { downloads: 200, installs: 0, stars: 0, versions: 1 },
             }),
           ],
@@ -2843,15 +2841,14 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      executesCode: true,
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 1 },
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin"]);
-    expect(result.isDone).toBe(true);
-    expect(indexNames).toEqual(["by_active_downloads", "by_active_downloads"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(result.page.map((entry) => entry.name)).toEqual(["bundle-plugin"]);
+    expect(result.isDone).toBe(false);
+    expect(indexNames).toEqual(["by_active_downloads"]);
+    expect(paginate).toHaveBeenCalledTimes(1);
   });
 
   it("excludes private packages from public list pages", async () => {
@@ -3151,22 +3148,15 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledTimes(1);
   });
 
-  it("filters private packages and capability flags in public search", async () => {
+  it("filters private packages in public search", async () => {
     const { ctx } = makeDigestCtx({
-      capabilityPages: [
+      pages: [
         {
           page: [
             makeDigest("secret-tools", {
               channel: "private",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
-            makeDigest("tools-demo", {
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
-            }),
+            makeDigest("tools-demo"),
           ],
           isDone: true,
           continueCursor: "",
@@ -3176,8 +3166,6 @@ describe("packages public queries", () => {
 
     const result = await searchPublicHandler(ctx, {
       query: "demo",
-      executesCode: true,
-      capabilityTag: "tools",
       limit: 10,
     });
 
@@ -3186,22 +3174,16 @@ describe("packages public queries", () => {
 
   it("allows owners to search their private packages", async () => {
     const { ctx } = makeDigestCtx({
-      capabilityPages: [
+      pages: [
         {
           page: [
             makeDigest("secret-tools", {
               channel: "private",
               ownerUserId: "users:owner",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
             makeDigest("other-secret-tools", {
               channel: "private",
               ownerUserId: "users:other",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
           ],
           isDone: true,
@@ -3212,8 +3194,6 @@ describe("packages public queries", () => {
 
     const result = await searchForViewerInternalHandler(ctx, {
       query: "secret",
-      executesCode: true,
-      capabilityTag: "tools",
       channel: "private",
       limit: 10,
       viewerUserId: "users:owner",
@@ -3382,24 +3362,18 @@ describe("packages public queries", () => {
 
   it("allows org collaborators to search their private packages", async () => {
     const { ctx } = makeDigestCtx({
-      capabilityPages: [
+      pages: [
         {
           page: [
             makeDigest("secret-tools", {
               channel: "private",
               ownerUserId: "users:owner",
               ownerPublisherId: "publishers:org",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
             makeDigest("other-secret-tools", {
               channel: "private",
               ownerUserId: "users:other",
               ownerPublisherId: "publishers:other",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
           ],
           isDone: true,
@@ -3413,8 +3387,6 @@ describe("packages public queries", () => {
 
     const result = await searchForViewerInternalHandler(ctx, {
       query: "secret",
-      executesCode: true,
-      capabilityTag: "tools",
       channel: "private",
       limit: 10,
       viewerUserId: "users:member",
@@ -3423,11 +3395,11 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
   });
 
-  it("uses the executesCode index for filtered public listings", async () => {
+  it("uses the active updated index for public listings", async () => {
     const { ctx, indexNames, tableNames } = makeDigestCtx({
       pages: [
         {
-          page: [makeDigest("exec-demo", { executesCode: true })],
+          page: [makeDigest("demo")],
           isDone: true,
           continueCursor: "",
         },
@@ -3435,26 +3407,19 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      executesCode: true,
       paginationOpts: { cursor: null, numItems: 10 },
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["exec-demo"]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["demo"]);
     expect(tableNames).toEqual(["packageSearchDigest"]);
-    expect(indexNames).toEqual(["by_active_executes_updated"]);
+    expect(indexNames).toEqual(["by_active_updated"]);
   });
 
-  it("uses capability digests for capability-tagged package search", async () => {
+  it("ignores retired capability filters for package search", async () => {
     const { ctx, indexNames, tableNames } = makeDigestCtx({
-      capabilityPages: [
+      pages: [
         {
-          page: [
-            makeDigest("tools-demo", {
-              capabilityTag: "tools",
-              capabilityTags: ["tools"],
-              executesCode: true,
-            }),
-          ],
+          page: [makeDigest("tools-demo")],
           isDone: true,
           continueCursor: "",
         },
@@ -3466,11 +3431,14 @@ describe("packages public queries", () => {
       capabilityTag: "tools",
       executesCode: true,
       limit: 10,
+    } as Parameters<typeof searchPublicHandler>[1] & {
+      capabilityTag?: string;
+      executesCode?: boolean;
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
-    expect(tableNames).toEqual(["packageCapabilitySearchDigest"]);
-    expect(indexNames).toEqual(["by_active_tag_executes_updated"]);
+    expect(new Set(tableNames)).toEqual(new Set(["packageSearchDigest"]));
+    expect(new Set(indexNames)).toEqual(new Set(["by_active_updated"]));
   });
 
   it("uses plugin category digests for category-filtered listings", async () => {
@@ -3492,13 +3460,12 @@ describe("packages public queries", () => {
 
     const result = await listPublicPageHandler(ctx, {
       category: "data",
-      executesCode: true,
       paginationOpts: { cursor: null, numItems: 10 },
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["api-demo"]);
     expect(tableNames).toEqual(["packagePluginCategorySearchDigest"]);
-    expect(indexNames).toEqual(["by_active_category_executes_updated"]);
+    expect(indexNames).toEqual(["by_active_category_updated"]);
   });
 
   it("uses plugin category digests for category-filtered search", async () => {
@@ -3746,18 +3713,17 @@ describe("packages public queries", () => {
   it("keeps public list pages to one paginated query per invocation", async () => {
     const { ctx, paginate } = makeDigestCtx({
       pages: Array.from({ length: 120 }, (_, index) => ({
-        page: [makeDigest(`noise-${index}`, { executesCode: false })],
+        page: [makeDigest(`noise-${index}`)],
         isDone: false,
         continueCursor: `cursor:${index + 1}`,
       })),
     });
 
     const result = await listPublicPageHandler(ctx, {
-      executesCode: true,
       paginationOpts: { cursor: null, numItems: 100 },
     });
 
-    expect(result.page).toEqual([]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["noise-0"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor).toBeTruthy();
     expect(paginate).toHaveBeenCalledTimes(1);
@@ -4001,6 +3967,7 @@ describe("packages public queries", () => {
     };
     const latestRelease = makeReleaseDoc({
       verification,
+      capabilities: { capabilityTags: ["legacy"], executesCode: true },
       source: {
         kind: "github",
         repo: "OpenViking/OpenViking",
@@ -4020,11 +3987,10 @@ describe("packages public queries", () => {
       latestRelease,
     });
 
-    await expect(
-      getByNameHandler(ctx, {
-        name: "@openviking/openclaw-plugin",
-      }),
-    ).resolves.toMatchObject({
+    const detail = await getByNameHandler(ctx, {
+      name: "@openviking/openclaw-plugin",
+    });
+    expect(detail).toMatchObject({
       package: {
         verification: { sourcePath: "openclaw-plugin" },
       },
@@ -4032,12 +3998,13 @@ describe("packages public queries", () => {
         verification: { sourcePath: "openclaw-plugin" },
       },
     });
-    await expect(
-      getVersionByNameHandler(ctx, {
-        name: "@openviking/openclaw-plugin",
-        version: "1.0.0",
-      }),
-    ).resolves.toMatchObject({
+    expect(detail?.latestRelease).not.toHaveProperty("capabilities");
+
+    const version = await getVersionByNameHandler(ctx, {
+      name: "@openviking/openclaw-plugin",
+      version: "1.0.0",
+    });
+    expect(version).toMatchObject({
       package: {
         verification: { sourcePath: "openclaw-plugin" },
       },
@@ -4045,6 +4012,7 @@ describe("packages public queries", () => {
         verification: { sourcePath: "openclaw-plugin" },
       },
     });
+    expect(version?.version).not.toHaveProperty("capabilities");
   });
 
   it("does not mark owner-readable blocked public packages as public download blocked", async () => {
@@ -4578,22 +4546,13 @@ describe("packages public queries", () => {
     });
   });
 
-  it("syncs package search digests when packages are soft-deleted", async () => {
+  it("syncs package search digest when packages are soft-deleted", async () => {
     const { ctx, patch } = makeSoftDeletePackageCtx({
-      pkg: makePackageDoc({ capabilityTags: ["tools"] }),
       packageSearchDigest: {
         _id: "packageSearchDigest:demo",
         packageId: "packages:demo",
         softDeletedAt: undefined,
       },
-      capabilityDigests: [
-        {
-          _id: "packageCapabilitySearchDigest:tools",
-          packageId: "packages:demo",
-          capabilityTag: "tools",
-          softDeletedAt: undefined,
-        },
-      ],
     });
 
     await expect(
@@ -4608,12 +4567,6 @@ describe("packages public queries", () => {
       expect.objectContaining({
         softDeletedAt: expect.any(Number),
         updatedAt: expect.any(Number),
-      }),
-    );
-    expect(patch).toHaveBeenCalledWith(
-      "packageCapabilitySearchDigest:tools",
-      expect.objectContaining({
-        softDeletedAt: expect.any(Number),
       }),
     );
   });
@@ -5791,13 +5744,19 @@ describe("packages public queries", () => {
     );
   });
 
-  it("does not overwrite capability search fields for non-latest releases", async () => {
+  it("does not overwrite latest package metadata for non-latest releases", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
-        capabilityTags: ["channel:chat"],
-        executesCode: true,
         tags: { latest: "packageReleases:demo-1" },
         latestReleaseId: "packageReleases:demo-1",
+        latestVersionSummary: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "latest",
+          compatibility: null,
+          verification: null,
+          artifact: null,
+        },
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       }),
     );
@@ -5814,23 +5773,23 @@ describe("packages public queries", () => {
       summary: "demo",
       files: [],
       integritySha256: "abc123",
-      capabilities: { capabilityTags: ["legacy"], executesCode: false },
     });
 
-    expect(ctx.patch).toHaveBeenCalledWith(
-      "packages:demo",
+    const packagePatch = ctx.patch.mock.calls.find(([id]) => id === "packages:demo")?.[1];
+    expect(packagePatch).toEqual(
       expect.objectContaining({
-        capabilityTags: ["channel:chat"],
-        executesCode: true,
+        latestReleaseId: "packageReleases:demo-1",
+        latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
       }),
     );
+    expect(packagePatch).not.toHaveProperty("capabilityTags");
+    expect(packagePatch).not.toHaveProperty("capabilities");
+    expect(packagePatch).not.toHaveProperty("executesCode");
   });
 
-  it("adds artifact capability tags for promoted ClawPack releases", async () => {
+  it("adds artifact summary for promoted ClawPack releases", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
-        capabilityTags: ["channel:chat"],
-        executesCode: true,
         tags: { latest: "packageReleases:demo-1" },
         latestReleaseId: "packageReleases:demo-1",
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
@@ -5858,24 +5817,20 @@ describe("packages public queries", () => {
       npmIntegrity: "sha512-demo",
       npmShasum: "b".repeat(40),
       npmTarballName: "demo-plugin-1.1.0.tgz",
-      capabilities: { capabilityTags: ["tools"], executesCode: true },
     });
 
-    const expectedTags = ["tools", "artifact:npm-pack", "npm-mirror:available"];
     expect(ctx.insert).toHaveBeenCalledWith(
       "packageReleases",
       expect.objectContaining({
         artifactKind: "npm-pack",
-        capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
+        clawpackStorageId: "storage:clawpack",
+        npmIntegrity: "sha512-demo",
       }),
     );
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
-        capabilityTags: expectedTags,
-        capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
         latestVersionSummary: expect.objectContaining({
-          capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
           artifact: expect.objectContaining({
             kind: "npm-pack",
             sha256: "a".repeat(64),
@@ -10838,7 +10793,6 @@ describe("package scan backfill", () => {
     };
     const pkg = makePackageDoc({
       ownerPublisherId: "publishers:owner",
-      capabilityTags: ["read-files"],
       scanStatus: "clean",
       verification,
       latestVersionSummary: {
@@ -10892,21 +10846,6 @@ describe("package scan backfill", () => {
                 })),
               };
             }
-            if (table === "packageCapabilitySearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([
-                    {
-                      _id: "packageCapabilitySearchDigest:demo-read-files",
-                      packageId: "packages:demo",
-                      capabilityTag: "read-files",
-                      scanStatus: "malicious",
-                      ownerHandle: undefined,
-                    },
-                  ]),
-                })),
-              };
-            }
             if (table === "packagePluginCategorySearchDigest") {
               return {
                 withIndex: vi.fn(() => ({
@@ -10931,10 +10870,6 @@ describe("package scan backfill", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
     expect(patch).toHaveBeenCalledWith(
       "packageSearchDigest:demo",
-      expect.objectContaining({ scanStatus: "clean" }),
-    );
-    expect(patch).toHaveBeenCalledWith(
-      "packageCapabilitySearchDigest:demo-read-files",
       expect.objectContaining({
         scanStatus: "clean",
         ownerHandle: "tongfei11",
@@ -11437,13 +11372,13 @@ describe("package scan backfill", () => {
 
 /**
  * Build a ctx that exercises the full softDeletePackageDoc / restorePackageDoc
- * path, including the upsertPackageSearchDigest → syncPackageCapabilitySearchDigests
- * branch that previously crashed when ownerHandle was missing.
+ * path, including the upsertPackageSearchDigest branch that previously crashed
+ * when ownerHandle was missing.
  */
 function makeSoftDeleteCtx(options?: {
   pkg?: Record<string, unknown>;
   actor?: Record<string, unknown>;
-  /** When true, no existing packageCapabilitySearchDigest rows exist (forces insert). */
+  /** When true, no retired digest rows exist. */
   noCapabilityDigest?: boolean;
   /** Personal publisher linked to the owner user. */
   personalPublisher?: Record<string, unknown> | null;
@@ -11455,7 +11390,6 @@ function makeSoftDeleteCtx(options?: {
     makePackageDoc({
       ownerUserId: "users:owner",
       ownerPublisherId: "publishers:owner-personal",
-      capabilityTags: ["read-files"],
     });
 
   const personalPublisher =
@@ -12542,7 +12476,7 @@ describe("softDeletePackageInternal", () => {
     );
   });
 
-  it("writes ownerHandle via insert when no packageCapabilitySearchDigest row exists yet", async () => {
+  it("does not recreate retired capability digest rows", async () => {
     const { ctx, insert } = makeSoftDeleteCtx({ noCapabilityDigest: true });
 
     await softDeletePackageInternalHandler(ctx as never, {
@@ -12550,14 +12484,7 @@ describe("softDeletePackageInternal", () => {
       name: "demo-plugin",
     });
 
-    // A new capability digest row must be inserted with ownerHandle populated.
-    expect(insert).toHaveBeenCalledWith(
-      "packageCapabilitySearchDigest",
-      expect.objectContaining({
-        capabilityTag: "read-files",
-        ownerHandle: "tongfei11",
-      }),
-    );
+    expect(insert).not.toHaveBeenCalledWith("packageCapabilitySearchDigest", expect.anything());
   });
 
   it("returns alreadyDeleted:true without touching releases when package is already soft-deleted", async () => {
@@ -12618,8 +12545,7 @@ describe("restorePackageInternal", () => {
       latestReleaseId: "packageReleases:demo-1",
       tags: { latest: "packageReleases:demo-1" },
     });
-    // The release was soft-deleted together with the package; it carries
-    // capabilityTags so that restorePackageDoc rebuilds them on the package.
+    // The release was soft-deleted together with the package.
     const restoredRelease = makeReleaseDoc({
       _id: "packageReleases:demo-1",
       softDeletedAt: 500,
@@ -12627,7 +12553,6 @@ describe("restorePackageInternal", () => {
       version: "1.0.0",
       changelog: "",
       integritySha256: "abc",
-      capabilities: { capabilityTags: ["read-files"] },
       compatibility: null,
       verification: null,
       scanStatus: "clean",
@@ -12658,14 +12583,7 @@ describe("restorePackageInternal", () => {
       expect.objectContaining({ ownerHandle: "tongfei11", softDeletedAt: undefined }),
     );
 
-    // A new capability digest row must be inserted with ownerHandle populated.
-    expect(insert).toHaveBeenCalledWith(
-      "packageCapabilitySearchDigest",
-      expect.objectContaining({
-        capabilityTag: "read-files",
-        ownerHandle: "tongfei11",
-      }),
-    );
+    expect(insert).not.toHaveBeenCalledWith("packageCapabilitySearchDigest", expect.anything());
 
     // An audit log must be inserted.
     expect(insert).toHaveBeenCalledWith(

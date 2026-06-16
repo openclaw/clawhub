@@ -69,7 +69,6 @@ type PackageBackupPageItem =
       runtimeId?: string;
       sourceRepo?: string;
       compatibility?: unknown;
-      capabilities?: unknown;
       extractedPackageJson?: unknown;
       extractedPluginManifest?: unknown;
       normalizedBundleManifest?: unknown;
@@ -197,7 +196,6 @@ export const backupPackageForPublishInternal = internalAction({
     runtimeId: v.optional(v.string()),
     sourceRepo: v.optional(v.string()),
     compatibility: v.optional(v.any()),
-    capabilities: v.optional(v.any()),
     extractedPackageJson: v.optional(v.any()),
     extractedPluginManifest: v.optional(v.any()),
     normalizedBundleManifest: v.optional(v.any()),
@@ -749,7 +747,6 @@ async function getPackageBackupItemForRelease(
     runtimeId: release.runtimeId,
     sourceRepo: release.sourceRepo,
     compatibility: release.compatibility,
-    capabilities: release.capabilities,
     extractedPackageJson: release.extractedPackageJson,
     extractedPluginManifest: release.extractedPluginManifest,
     normalizedBundleManifest: release.normalizedBundleManifest,

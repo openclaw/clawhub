@@ -40,7 +40,6 @@ describe("SkillHeader", () => {
     forkOf: undefined,
     latestVersionId: undefined,
     tags: {},
-    capabilityTags: [],
     badges: {},
     stats: {
       downloads: 2,

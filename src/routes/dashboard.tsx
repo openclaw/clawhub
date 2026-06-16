@@ -42,7 +42,6 @@ type DashboardSkill = Pick<
   | "forkOf"
   | "latestVersionId"
   | "tags"
-  | "capabilityTags"
   | "badges"
   | "stats"
   | "moderationStatus"

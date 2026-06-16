@@ -361,10 +361,6 @@ Notes:
 
 - If neither `version` nor `tag` is provided, uses the latest version.
 - Includes normalized verification status plus scanner-specific details.
-- `security.capabilityTags` includes deterministic capability/risk labels such as
-  `crypto`, `financial-authority`, `requires-wallet`, `can-make-purchases`,
-  `can-sign-transactions`, `requires-paid-service`, `requires-oauth-token`, and
-  `posts-externally` when detected.
 - `security.hasScanResult` is `true` only when a scanner produced a definitive verdict (`clean`, `suspicious`, or `malicious`).
 - `moderation` is a current skill-level moderation snapshot derived from the latest version.
 - When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.
@@ -543,28 +539,15 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages (`/api/v1/plugins`,
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
   `family=code-plugin`/`family=bundle-plugin`).
-- `target` / `hostTarget` (optional): shorthand for `host:<target>`
-- `os`, `arch`, `libc` (optional): shorthand for host capability filters
-- `requiresBrowser`, `requiresDesktop`, `requiresNativeDeps`,
-  `requiresExternalService`, `requiresBinary`, `requiresOsPermission`
-  (optional): `true`/`1` shorthand for environment requirement tags
-- `externalService`, `binary`, `osPermission` (optional): shorthand for named
-  environment requirement tags
-- `artifactKind` (optional): `legacy-zip` or `npm-pack`
-- `npmMirror` (optional): `true`/`1` to show ClawPack-backed package versions
-  available through the npm mirror
 
 Notes:
 
-- Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
-  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
-  return `400`. Unknown query parameters are ignored.
+- Invalid values for `family`, `channel`, `isOfficial`, `featured`, or
+  `highlightedOnly` return `400`. Unknown query parameters are ignored.
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
@@ -583,28 +566,16 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages.
-- `target` / `hostTarget`, `os`, `arch`, `libc`, `requiresBrowser`,
-  `requiresDesktop`, `requiresNativeDeps`, `requiresExternalService`,
-  `requiresBinary`, `requiresOsPermission`, `externalService`, `binary`, and
-  `osPermission` are accepted as shorthands for common capability tags
-- `artifactKind` (optional): `legacy-zip` or `npm-pack`
-- `npmMirror` (optional): `true`/`1` to search ClawPack-backed package versions
-  available through the npm mirror
 
 Notes:
 
-- Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
-  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
-  return `400`. Unknown query parameters are ignored.
+- Invalid values for `family`, `channel`, `isOfficial`, `featured`, or
+  `highlightedOnly` return `400`. Unknown query parameters are ignored.
 - Anonymous callers only see public package channels.
 - Authenticated callers can search private packages for publishers they belong to.
 - `channel=private` only returns packages the authenticated caller can read.
-- Artifact filters are backed by indexed capability tags:
-  `artifact:legacy-zip`, `artifact:npm-pack`, and `npm-mirror:available`.
 
 ### `GET /api/v1/plugins`
 
@@ -615,9 +586,7 @@ Query params:
 - `limit` (optional): integer (1-100)
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
 - `sort` (optional): `recommended` (default), `installs`, `updated`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `category` (optional): plugin category filter. Current values:
   `channels`, `mcp-tooling`, `data`, `security`, `observability`,
   `automation`, `deployment`, `dev-tools`.
@@ -667,8 +636,6 @@ Query params:
 - `q` (required): query string
 - `limit` (optional): integer (1-100)
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `category` (optional): plugin category filter. Current values:
   `channels`, `mcp-tooling`, `data`, `security`, `observability`,
   `automation`, `deployment`, `dev-tools`.
@@ -715,7 +682,7 @@ Notes:
 ### `GET /api/v1/packages/{name}/versions/{version}`
 
 Returns one package version, including file metadata, compatibility,
-capabilities, verification, artifact metadata, and scan data.
+verification, artifact metadata, and scan data.
 
 Notes:
 
