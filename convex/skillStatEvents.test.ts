@@ -188,11 +188,25 @@ describe("skill stat events - comment delta handling", () => {
       },
     };
     const patch = vi.fn();
+    const lease = {
+      _id: "skillStatDocSyncLeases:1",
+      key: "skill_doc_stat_sync",
+      leaseOwner: "test-lease",
+      leaseExpiresAt: Date.now() + 60_000,
+      updatedAt: Date.now(),
+    };
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => (id === "skills:1" ? skill : null)),
         patch,
         query: vi.fn((table: string) => {
+          if (table === "skillStatDocSyncLeases") {
+            return {
+              withIndex: () => ({
+                unique: async () => lease,
+              }),
+            };
+          }
           if (table === "skillStatEvents") {
             return {
               withIndex: () => ({
@@ -206,8 +220,15 @@ describe("skill stat events - comment delta handling", () => {
       scheduler: { runAfter: vi.fn() },
     };
 
-    await expect(processSkillStatEventsInternalHandler(ctx, { batchSize: 10 })).resolves.toEqual({
+    await expect(
+      processSkillStatEventBatchInternalHandler(ctx, {
+        batchSize: 10,
+        leaseOwner: "test-lease",
+      }),
+    ).resolves.toEqual({
+      hasMore: false,
       processed: 1,
+      skillsUpdated: 1,
     });
 
     expect(patch).toHaveBeenCalledWith("skills:1", {
