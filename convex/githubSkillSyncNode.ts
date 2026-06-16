@@ -34,6 +34,7 @@ export const verifyGitHubSkillInternal = internalAction({
   args: {
     skillId: v.id("skills"),
     contentHash: v.string(),
+    force: v.optional(v.boolean()),
   },
   handler: verifyGitHubSkillHandler,
 });

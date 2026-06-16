@@ -5,6 +5,7 @@ import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
+import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
 import {
@@ -1340,6 +1341,7 @@ async function deleteSkillAndVersions(ctx: MutationCtx, skillId: Id<"skills">) {
     .withIndex("by_skill", (q) => q.eq("skillId", skillId))
     .collect();
   for (const version of versions) await ctx.db.delete(version._id);
+  await deleteGitHubSkillScansForSkill(ctx, skillId);
   await deleteSkillEmbeddingsForSkill(ctx, skillId);
   await deleteSkillBadgesForSkill(ctx, skillId);
   await ctx.db.delete(skillId);

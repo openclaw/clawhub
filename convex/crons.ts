@@ -104,7 +104,7 @@ crons.interval(
   "skill-scan-request-prune",
   { hours: 6 },
   internal.securityScan.pruneExpiredSkillScanRequestsInternal,
-  { batchSize: 250 },
+  { batchSize: 10 },
 );
 
 crons.interval(

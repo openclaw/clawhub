@@ -28,10 +28,12 @@ import { Events, logErrorEvent, logEvent } from "./lib/observabilityEvents";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { requirePublisherRole } from "./lib/publishers";
 import { isMacJunkPath, isTextFile, parseFrontmatter } from "./lib/skills";
+import { chunkSkillScanRequestFiles } from "./lib/skillScanRequestFiles";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { assertValidSkillSlug } from "./lib/skillSlugValidator";
 
 const DEFAULT_BRANCH = "main";
+const GITHUB_SKILL_SCAN_ACTION_LEASE_MS = 15 * 60 * 1000;
 const PUBLIC_REPO_ONLY_ERROR = "Enter a public GitHub repo.";
 const MAX_UNZIPPED_BYTES = 80 * 1024 * 1024;
 const MAX_FILE_COUNT = 7_500;
@@ -127,6 +129,20 @@ type GitHubSkillVerificationTarget = {
     githubCurrentStatus: "present";
   };
   source: Pick<Doc<"githubSkillSources">, "_id" | "repo" | "defaultBranch">;
+};
+
+type GitHubSkillVerificationResult = {
+  ok: true;
+  prepared?: true;
+  queued?: true;
+  reused?: true;
+  alreadyQueued?: true;
+  skipped?: string;
+  scanStatus?: GitHubSkillScanStatus;
+  scanId?: Id<"githubSkillScans">;
+  requestId?: Id<"skillScanRequests">;
+  jobId?: Id<"securityScanJobs">;
+  currentContentHash?: string;
 };
 
 type GitHubSkillContentTarget = {
@@ -485,6 +501,7 @@ export async function applyGitHubSkillSourceSyncHandler(
         skillId: skillPatch.skillId as Id<"skills">,
         contentHash: discovered.contentHash,
         scanStatus: skillPatch.patch.githubScanStatus,
+        now,
       });
     }
   }
@@ -568,6 +585,7 @@ export async function applyGitHubSkillSourceSyncHandler(
             skillId: existingBySlug._id,
             contentHash: discovered.contentHash,
             scanStatus: doc.githubScanStatus,
+            now,
           });
         }
         await adjustGlobalPublicCountForSkillChange(
@@ -610,6 +628,7 @@ export async function applyGitHubSkillSourceSyncHandler(
         skillId,
         contentHash: discovered.contentHash,
         scanStatus: doc.githubScanStatus,
+        now,
       });
     }
     await adjustGlobalPublicCountForSkillChange(ctx, null, insertedSkill, now);
@@ -783,9 +802,70 @@ async function scheduleGitHubSkillVerification(
     skillId: Id<"skills">;
     contentHash: string;
     scanStatus: unknown;
+    now: number;
   },
 ) {
-  if (args.scanStatus !== "pending") return;
+  const scan = await ctx.db
+    .query("githubSkillScans")
+    .withIndex("by_skill_and_content_hash", (q) =>
+      q.eq("skillId", args.skillId).eq("contentHash", args.contentHash),
+    )
+    .unique();
+  if (args.scanStatus !== "pending") {
+    if (scan?.status !== "pending") {
+      if (scan) return;
+      await applyGitHubSkillVerificationResultHandler(ctx, {
+        skillId: args.skillId,
+        contentHash: args.contentHash,
+        scanStatus: "pending",
+      });
+    }
+  }
+  if (scan?.status === "pending" && scan.skillScanRequestId) {
+    const request = await ctx.db.get(scan.skillScanRequestId);
+    const job = request?.securityScanJobId ? await ctx.db.get(request.securityScanJobId) : null;
+    if (job?.status === "queued" || job?.status === "running") return;
+    if (request && request.updatedAt > args.now - GITHUB_SKILL_SCAN_ACTION_LEASE_MS) return;
+  }
+  if (
+    scan?.status === "pending" &&
+    !scan.skillScanRequestId &&
+    scan.updatedAt > args.now - GITHUB_SKILL_SCAN_ACTION_LEASE_MS
+  ) {
+    return;
+  }
+  const skill = await ctx.db.get(args.skillId);
+  if (
+    !skill ||
+    skill.installKind !== "github" ||
+    !skill.githubSourceId ||
+    !skill.githubPath ||
+    skill.githubCurrentStatus !== "present" ||
+    !skill.githubCurrentCommit ||
+    skill.githubCurrentContentHash !== args.contentHash
+  ) {
+    return;
+  }
+  const pendingScanInsert = {
+    githubSourceId: skill.githubSourceId,
+    commit: skill.githubCurrentCommit,
+    path: skill.githubPath,
+    status: "pending" as const,
+    updatedAt: args.now,
+  };
+  if (scan) {
+    await ctx.db.patch(scan._id, {
+      ...pendingScanInsert,
+      skillScanRequestId: undefined,
+    });
+  } else {
+    await ctx.db.insert("githubSkillScans", {
+      skillId: skill._id,
+      contentHash: args.contentHash,
+      ...pendingScanInsert,
+      createdAt: args.now,
+    });
+  }
   await ctx.scheduler?.runAfter(0, internal.githubSkillSyncNode.verifyGitHubSkillInternal, {
     skillId: args.skillId,
     contentHash: args.contentHash,
@@ -860,12 +940,12 @@ export const applyGitHubSkillVerificationResultInternal = internalMutation({
 
 export async function verifyGitHubSkillHandler(
   ctx: ActionCtx,
-  args: { skillId: Id<"skills">; contentHash: string },
+  args: { skillId: Id<"skills">; contentHash: string; force?: boolean },
   fetcher: typeof fetch = fetch,
-) {
+): Promise<GitHubSkillVerificationResult> {
   const target = (await ctx.runQuery(
     internal.githubSkillSync.getGitHubSkillVerificationTargetInternal,
-    args,
+    { skillId: args.skillId, contentHash: args.contentHash },
   )) as GitHubSkillVerificationTarget | null;
   if (!target) return { ok: true as const, skipped: "stale-or-missing" as const };
 
@@ -895,16 +975,42 @@ export async function verifyGitHubSkillHandler(
     fileContents: listGitHubSkillTextContents(entries, discovered.path),
   });
 
-  await ctx.runMutation(internal.githubSkillSync.applyGitHubSkillVerificationResultInternal, {
-    skillId: target.skill._id,
-    contentHash: args.contentHash,
-    scanStatus: staticScan.status,
-  });
+  const prepared = (await ctx.runMutation(
+    internal.securityScan.prepareGitHubSkillScanRequestInternal,
+    {
+      skillId: target.skill._id,
+      contentHash: args.contentHash,
+      commit: target.skill.githubCurrentCommit,
+      ...(args.force ? { force: true } : {}),
+      parsed: { frontmatter: parseFrontmatter(discovered.skillMarkdown) },
+      staticScan,
+    },
+  )) as GitHubSkillVerificationResult | undefined;
 
-  return {
-    ok: true as const,
-    scanStatus: staticScan.status,
-  };
+  if (!prepared?.prepared || !prepared.requestId) {
+    if (prepared?.reused && prepared.scanStatus) {
+      await ctx.runMutation(internal.githubSkillSync.applyGitHubSkillVerificationResultInternal, {
+        skillId: target.skill._id,
+        contentHash: args.contentHash,
+        scanStatus: prepared.scanStatus,
+      });
+    }
+    return prepared ?? { ok: true as const, skipped: "scan-request-not-created" as const };
+  }
+
+  let chunkIndex = 0;
+  await storeGitHubSkillScanFileChunks(ctx, entries, discovered.path, async (chunk) => {
+    await ctx.runMutation(internal.securityScan.appendGitHubSkillScanRequestFilesInternal, {
+      requestId: prepared.requestId as Id<"skillScanRequests">,
+      chunkIndex,
+      files: chunk,
+    });
+    chunkIndex += 1;
+  });
+  return (await ctx.runMutation(internal.securityScan.finalizeGitHubSkillScanRequestInternal, {
+    requestId: prepared.requestId,
+    ...(args.force ? { force: true } : {}),
+  })) as typeof prepared;
 }
 
 export async function configurePublicGitHubSkillSourceHandler(
@@ -1252,6 +1358,81 @@ function listGitHubSkillFolderEntries(entries: Record<string, Uint8Array>, folde
       return [[path, bytes]] as Array<[string, Uint8Array]>;
     })
     .sort(([a], [b]) => a.localeCompare(b));
+}
+
+async function storeGitHubSkillScanFileChunks(
+  ctx: Pick<ActionCtx, "storage">,
+  entries: Record<string, Uint8Array>,
+  folderPath: string,
+  appendChunk: (
+    files: Array<{
+      path: string;
+      size: number;
+      storageId: Id<"_storage">;
+      sha256: string;
+    }>,
+  ) => Promise<void>,
+) {
+  let pendingChunk: Array<{
+    path: string;
+    size: number;
+    storageId: Id<"_storage">;
+    sha256: string;
+  }> = [];
+  try {
+    for (const [path, bytes] of listGitHubSkillFolderEntries(entries, folderPath)) {
+      const safeBytes = new Uint8Array(bytes);
+      const sha256 = await sha256Hex(safeBytes);
+      const storageId = await ctx.storage.store(new Blob([safeBytes]));
+      const file = {
+        path,
+        size: safeBytes.byteLength,
+        storageId,
+        sha256,
+      };
+      const nextPendingChunk = [...pendingChunk, file];
+      let candidateChunks;
+      try {
+        candidateChunks = chunkSkillScanRequestFiles(nextPendingChunk);
+      } catch (error) {
+        pendingChunk = nextPendingChunk;
+        throw error;
+      }
+      if (candidateChunks.length > 1) {
+        try {
+          await appendChunk(pendingChunk);
+        } catch (error) {
+          pendingChunk = nextPendingChunk;
+          throw error;
+        }
+        pendingChunk = [file];
+      } else {
+        pendingChunk = candidateChunks[0] ?? [];
+      }
+    }
+    if (pendingChunk.length > 0) {
+      await appendChunk(pendingChunk);
+      pendingChunk = [];
+    }
+  } catch (error) {
+    // Prior chunks are owned by the durable request; only this bounded chunk can be orphaned.
+    await deleteStoredGitHubSkillScanFiles(ctx, pendingChunk);
+    throw error;
+  }
+}
+
+async function deleteStoredGitHubSkillScanFiles(
+  ctx: Pick<ActionCtx, "storage">,
+  files: Array<{ storageId: Id<"_storage"> }>,
+) {
+  await Promise.allSettled(files.map((file) => ctx.storage.delete(file.storageId)));
+}
+
+async function sha256Hex(bytes: Uint8Array) {
+  const digest = await crypto.subtle.digest("SHA-256", new Uint8Array(bytes));
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
 function buildGitHubSourceImport(repo: string, defaultBranch: string): GitHubImportUrl {

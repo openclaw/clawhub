@@ -15,7 +15,8 @@ vi.mock("./lib/publishers", async () => {
 
 const { requireUser } = await import("./lib/access");
 const { requirePublisherRole } = await import("./lib/publishers");
-const { deleteForPublisherHandler } = await import("./githubSkillSources");
+const { cleanupDeletedSourceScansHandler, deleteForPublisherHandler } =
+  await import("./githubSkillSources");
 const { buildSkillInstallResolution } = await import("./lib/installResolver");
 
 type Row = Record<string, unknown> & { _id: string };
@@ -74,6 +75,7 @@ function createDb(initial: Record<string, Row[]> = {}) {
         const matched = () => list(table).filter((row) => matches(row, constraints));
         return {
           collect: async () => matched(),
+          take: async (limit: number) => matched().slice(0, limit),
           unique: async () => matched()[0] ?? null,
         };
       },
@@ -105,6 +107,20 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           _id: "githubSkillContents:one",
           skillId: "skills:github",
           githubSourceId: "githubSkillSources:matt",
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:matt",
+          skillId: "skills:github",
+          githubSourceId: "githubSkillSources:matt",
+          contentHash: "hash-source-backed",
+        },
+        {
+          _id: "githubSkillScans:other",
+          skillId: "skills:other-source",
+          githubSourceId: "githubSkillSources:other",
+          contentHash: "hash-other-source",
         },
       ],
       skills: [
@@ -163,9 +179,10 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
         },
       ],
     });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
 
     await expect(
-      deleteForPublisherHandler({ db } as never, {
+      deleteForPublisherHandler({ db, scheduler } as never, {
         ownerPublisherId: "publishers:openclaw" as never,
         sourceId: "githubSkillSources:matt" as never,
         now: 123,
@@ -182,6 +199,10 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     );
     expect(tables.githubSkillSources).toHaveLength(0);
     expect(tables.githubSkillContents).toHaveLength(0);
+    expect(tables.githubSkillScans).toHaveLength(2);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      sourceId: "githubSkillSources:matt",
+    });
     const deletedSkill = tables.skills.find((skill) => skill._id === "skills:github");
     expect(deletedSkill).toMatchObject({
       softDeletedAt: 123,
@@ -215,6 +236,61 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
       githubCurrentStatus: "present",
       softDeletedAt: undefined,
     });
+  });
+
+  it("cleans deleted-source scan history in bounded batches", async () => {
+    const { db, tables } = createDb({
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:matt",
+          githubSourceId: "githubSkillSources:matt",
+          skillScanRequestId: "skillScanRequests:matt",
+        },
+        {
+          _id: "githubSkillScans:other",
+          githubSourceId: "githubSkillSources:other",
+        },
+      ],
+      securityScanJobs: [
+        {
+          _id: "securityScanJobs:matt",
+          targetKind: "skillScanRequest",
+          status: "queued",
+        },
+      ],
+      skillScanRequests: [
+        {
+          _id: "skillScanRequests:matt",
+          sourceKind: "github",
+          status: "queued",
+          securityScanJobId: "securityScanJobs:matt",
+          githubSkillScanId: "githubSkillScans:matt",
+          expiresAt: Number.MAX_SAFE_INTEGER,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await expect(
+      cleanupDeletedSourceScansHandler({ db, scheduler } as never, {
+        sourceId: "githubSkillSources:matt" as never,
+      }),
+    ).resolves.toEqual({ ok: true, deleted: 1, done: true });
+
+    expect(tables.githubSkillScans).toEqual([
+      expect.objectContaining({ _id: "githubSkillScans:other" }),
+    ]);
+    expect(tables.securityScanJobs).toEqual([]);
+    expect(tables.skillScanRequests).toEqual([
+      expect.objectContaining({
+        _id: "skillScanRequests:matt",
+        status: "failed",
+      }),
+    ]);
+    expect(tables.skillScanRequests?.[0]).not.toHaveProperty("githubSkillScanId");
+    expect(tables.skillScanRequests?.[0]).not.toHaveProperty("securityScanJobId");
+    expect(tables.skillScanRequests?.[0]?.expiresAt).toBeLessThan(Number.MAX_SAFE_INTEGER);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { batchSize: 10 });
   });
 
   it("rejects deleting a source from another publisher", async () => {

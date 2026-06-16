@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  appendGitHubSkillScanRequestFilesInternal,
   cancelQueuedVtUpdateJobsInternal,
   claimCodexScanJobs,
   clearQueuedBackfillJobsForLocalDev,
@@ -8,9 +9,12 @@ import {
   completeCodexScanJob,
   enqueueBulkSkillRescanBatchForAdminInternal,
   failCodexScanJob,
+  finalizeGitHubSkillScanRequestInternal,
+  getJobTargetInternal,
   getBulkSkillRescanBatchStatusForAdminInternal,
   getSkillScanRequestForUserInternal,
   getStoredScanReportForUserInternal,
+  prepareGitHubSkillScanRequestInternal,
   pruneExpiredSkillScanRequestsInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
@@ -55,6 +59,7 @@ const completeCodexScanJobHandler = (
       leaseToken: string;
       llmAnalysis: {
         status: string;
+        verdict?: string;
         checkedAt: number;
       };
       skillSpectorAnalysis?: {
@@ -73,6 +78,49 @@ const completeCodexScanJobHandler = (
     },
     { ok: true }
   >
+)._handler;
+
+const prepareGitHubSkillScanRequestInternalHandler = (
+  prepareGitHubSkillScanRequestInternal as unknown as WrappedHandler<
+    {
+      skillId: string;
+      contentHash: string;
+      commit: string;
+      force?: boolean;
+      parsed: { frontmatter: Record<string, unknown> };
+      staticScan: {
+        status: "clean" | "suspicious" | "malicious";
+        reasonCodes: string[];
+        findings: [];
+        summary: string;
+        engineVersion: string;
+        checkedAt: number;
+      };
+    },
+    { ok: true; prepared?: true; scanId?: string; requestId?: string }
+  >
+)._handler;
+
+const appendGitHubSkillScanRequestFilesInternalHandler = (
+  appendGitHubSkillScanRequestFilesInternal as unknown as WrappedHandler<
+    {
+      requestId: string;
+      chunkIndex: number;
+      files: Array<{ path: string; size: number; storageId: string; sha256: string }>;
+    },
+    { ok: true; appended: true }
+  >
+)._handler;
+
+const finalizeGitHubSkillScanRequestInternalHandler = (
+  finalizeGitHubSkillScanRequestInternal as unknown as WrappedHandler<
+    { requestId: string; force?: boolean },
+    { ok: true; queued?: true; scanId?: string; requestId?: string; jobId?: string }
+  >
+)._handler;
+
+const getJobTargetInternalHandler = (
+  getJobTargetInternal as unknown as WrappedHandler<{ jobId: string }>
 )._handler;
 
 type CancelArgs = {
@@ -130,14 +178,21 @@ const clearQueuedBackfillJobsForLocalDevHandler = (
 const pruneExpiredSkillScanRequestsInternalHandler = (
   pruneExpiredSkillScanRequestsInternal as unknown as WrappedHandler<
     { batchSize?: number },
-    { ok: true; deletedRequests: number; deletedJobs: number; deletedFiles: number; done: boolean }
+    {
+      ok: true;
+      deletedRequests: number;
+      deferredRequests: number;
+      deletedJobs: number;
+      deletedFiles: number;
+      done: boolean;
+    }
   >
 )._handler;
 
 const requestSkillRescanHandler = (
   requestSkillRescan as unknown as WrappedHandler<
     { skillId: string; version?: string },
-    { jobId: string; alreadyQueued: boolean }
+    { jobId?: string; scheduled?: boolean; alreadyQueued: boolean }
   >
 )._handler;
 
@@ -151,7 +206,7 @@ const requestPackageRescanHandler = (
 const requestSkillRescanForUserInternalHandler = (
   requestSkillRescanForUserInternal as unknown as WrappedHandler<
     { actorUserId: string; slug: string; version?: string },
-    { jobId: string; alreadyQueued: boolean; skillVersionId: string }
+    { jobId?: string; scheduled?: boolean; alreadyQueued: boolean; skillVersionId?: string }
   >
 )._handler;
 
@@ -369,11 +424,22 @@ function makeRescanCtx(options: {
               ) ?? null
             );
           }
+          if (table === "githubSkillScans") {
+            return (
+              Array.from(docs.values()).find(
+                (doc) =>
+                  doc._id?.toString().startsWith("githubSkillScans:") &&
+                  doc.skillId === equals.get("skillId") &&
+                  doc.contentHash === equals.get("contentHash"),
+              ) ?? null
+            );
+          }
           return null;
         }),
       };
     }),
   }));
+  const scheduler = { runAfter: vi.fn(async () => undefined) };
 
   return {
     ctx: {
@@ -387,6 +453,7 @@ function makeRescanCtx(options: {
         normalizeId: vi.fn(() => null),
         system: {},
       },
+      scheduler,
     },
     inserts,
     patches,
@@ -394,6 +461,7 @@ function makeRescanCtx(options: {
     insert,
     patch,
     query,
+    scheduler,
   };
 }
 
@@ -835,6 +903,226 @@ describe("securityScan", () => {
         }),
       ]),
     );
+  });
+
+  it("lets platform moderators force-rescan GitHub-backed skills", async () => {
+    const { ctx, inserts, scheduler } = makeRescanCtx({
+      actorId: "users:moderator",
+      actorRole: "moderator",
+      docs: {
+        "skills:github": {
+          _id: "skills:github",
+          slug: "github-demo",
+          ownerUserId: "users:owner",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:github",
+          githubPath: "skills/github-demo",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+          latestVersionSummary: { version: "1.2.3" },
+        },
+      },
+    });
+
+    const result = await requestSkillRescanHandler(ctx, {
+      skillId: "skills:github",
+    });
+
+    expect(result).toMatchObject({
+      scheduled: true,
+      alreadyQueued: false,
+      githubContentHash: "content-hash",
+    });
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      skillId: "skills:github",
+      contentHash: "content-hash",
+      force: true,
+    });
+    const durableScanInsert = inserts.find((entry) => entry.table === "githubSkillScans");
+    expect(durableScanInsert).toBeDefined();
+    expect(Object.values(durableScanInsert?.doc ?? {})).not.toContain(undefined);
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "auditLogs",
+        doc: expect.objectContaining({
+          action: "skill.clawscan.rescan",
+          targetType: "skill",
+          targetId: "skills:github",
+        }),
+      }),
+    );
+  });
+
+  it("does not schedule another GitHub verification action while the content scan is active", async () => {
+    const { ctx, inserts, scheduler } = makeRescanCtx({
+      actorId: "users:moderator",
+      actorRole: "moderator",
+      docs: {
+        "skills:github": {
+          _id: "skills:github",
+          slug: "github-demo",
+          ownerUserId: "users:owner",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:github",
+          githubPath: "skills/github-demo",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+        },
+        "githubSkillScans:github": {
+          _id: "githubSkillScans:github",
+          skillId: "skills:github",
+          contentHash: "content-hash",
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:github",
+        },
+        "skillScanRequests:github": {
+          _id: "skillScanRequests:github",
+          securityScanJobId: "securityScanJobs:github",
+        },
+        "securityScanJobs:github": {
+          _id: "securityScanJobs:github",
+          status: "running",
+        },
+      },
+    });
+
+    const result = await requestSkillRescanHandler(ctx, {
+      skillId: "skills:github",
+    });
+
+    expect(result).toMatchObject({
+      scheduled: false,
+      alreadyQueued: true,
+      jobId: "securityScanJobs:github",
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "auditLogs",
+        doc: expect.objectContaining({
+          metadata: expect.objectContaining({
+            alreadyQueued: true,
+            jobId: "securityScanJobs:github",
+          }),
+        }),
+      }),
+    );
+  });
+
+  it("promotes an already queued GitHub verification job to manual priority", async () => {
+    const { ctx, patches, scheduler } = makeRescanCtx({
+      actorId: "users:moderator",
+      actorRole: "moderator",
+      docs: {
+        "skills:github": {
+          _id: "skills:github",
+          slug: "github-demo",
+          ownerUserId: "users:owner",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:github",
+          githubPath: "skills/github-demo",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+        },
+        "githubSkillScans:github": {
+          _id: "githubSkillScans:github",
+          skillId: "skills:github",
+          contentHash: "content-hash",
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:github",
+        },
+        "skillScanRequests:github": {
+          _id: "skillScanRequests:github",
+          securityScanJobId: "securityScanJobs:github",
+        },
+        "securityScanJobs:github": {
+          _id: "securityScanJobs:github",
+          status: "queued",
+          source: "publish",
+          priority: 0,
+          nextRunAt: Date.now() + 60_000,
+          waitForVtUntil: Date.now() + 60_000,
+        },
+      },
+    });
+
+    const result = await requestSkillRescanHandler(ctx, {
+      skillId: "skills:github",
+    });
+
+    expect(result).toMatchObject({
+      scheduled: false,
+      alreadyQueued: true,
+      jobId: "securityScanJobs:github",
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(patches).toContainEqual({
+      id: "securityScanJobs:github",
+      patch: expect.objectContaining({
+        source: "manual",
+        priority: 100,
+        nextRunAt: expect.any(Number),
+        waitForVtUntil: expect.any(Number),
+      }),
+    });
+  });
+
+  it("does not schedule another GitHub verification action while a recent action is pending", async () => {
+    const { ctx, patches, scheduler } = makeRescanCtx({
+      actorId: "users:moderator",
+      actorRole: "moderator",
+      docs: {
+        "skills:github": {
+          _id: "skills:github",
+          slug: "github-demo",
+          ownerUserId: "users:owner",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:github",
+          githubPath: "skills/github-demo",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "a".repeat(40),
+          githubCurrentContentHash: "content-hash",
+        },
+        "githubSkillScans:github": {
+          _id: "githubSkillScans:github",
+          skillId: "skills:github",
+          githubSourceId: "githubSkillSources:github",
+          contentHash: "content-hash",
+          commit: "a".repeat(40),
+          path: "skills/github-demo",
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:github",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+        "skillScanRequests:github": {
+          _id: "skillScanRequests:github",
+          sourceKind: "github",
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        },
+      },
+    });
+
+    const result = await requestSkillRescanHandler(ctx, {
+      skillId: "skills:github",
+    });
+
+    expect(result).toMatchObject({
+      scheduled: false,
+      alreadyQueued: true,
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(patches).toContainEqual({
+      id: "skillScanRequests:github",
+      patch: expect.objectContaining({
+        requestedJobSource: "manual",
+        requestedJobPriority: 100,
+      }),
+    });
   });
 
   it("returns stored scan reports for hidden skill versions to the owner", async () => {
@@ -1619,6 +1907,176 @@ describe("securityScan", () => {
     expect(getUrl).toHaveBeenCalledWith("storage:card");
   });
 
+  it("claims GitHub scan request files stored in bounded child chunks", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const githubJob = {
+      ...claimedJob,
+      targetKind: "skillScanRequest",
+      skillVersionId: undefined,
+      skillScanRequestId: "skillScanRequests:github",
+    };
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("limit" in args) return [githubJob];
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async () => ({
+      job: githubJob,
+      scanRequest: {
+        _id: "skillScanRequests:github",
+        sourceKind: "github",
+        files: [],
+      },
+      scanRequestFiles: [
+        {
+          path: "SKILL.md",
+          size: 12,
+          sha256: "a".repeat(64),
+          storageId: "storage:skill",
+        },
+      ],
+    }));
+    const getUrl = vi.fn(async (storageId: string) => `https://storage.example/${storageId}`);
+
+    const result = (await claimCodexScanJobsHandler(
+      { runMutation, runQuery, storage: { getUrl } },
+      { token: "worker-secret", workerId: "worker-1", limit: 10 },
+    )) as Array<{ target: { files: Array<{ path: string }> } }>;
+
+    expect(result[0]?.target.files.map((file) => file.path)).toEqual(["SKILL.md"]);
+    expect(getUrl).toHaveBeenCalledWith("storage:skill");
+  });
+
+  it("claims one hydrated scan job at a time to bound signed URL response size", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const runMutation = vi.fn(async () => []);
+
+    await claimCodexScanJobsHandler(
+      { runMutation, runQuery: vi.fn(), storage: { getUrl: vi.fn() } },
+      { token: "worker-secret", workerId: "worker-1", limit: 10 },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ workerId: "worker-1", limit: 1 }),
+    );
+  });
+
+  it("hydrates only the declared bounded GitHub file chunks", async () => {
+    const take = vi.fn(async () => [
+      {
+        _id: "skillScanRequestFileChunks:1",
+        skillScanRequestId: "skillScanRequests:github",
+        chunkIndex: 0,
+        files: [
+          {
+            path: "SKILL.md",
+            size: 12,
+            sha256: "a".repeat(64),
+            storageId: "storage:skill",
+          },
+        ],
+      },
+    ]);
+    const query = vi.fn((table: string) => {
+      expect(table).toBe("skillScanRequestFileChunks");
+      return {
+        withIndex: vi.fn(() => ({ take })),
+      };
+    });
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        "securityScanJobs:github",
+        {
+          _id: "securityScanJobs:github",
+          targetKind: "skillScanRequest",
+          skillScanRequestId: "skillScanRequests:github",
+        },
+      ],
+      [
+        "skillScanRequests:github",
+        {
+          _id: "skillScanRequests:github",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:github",
+          fileChunkCount: 1,
+          files: [],
+        },
+      ],
+    ]);
+
+    const result = await getJobTargetInternalHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => docs.get(id) ?? null),
+          query,
+        },
+      },
+      { jobId: "securityScanJobs:github" },
+    );
+
+    expect(result).toMatchObject({
+      scanRequestFiles: [expect.objectContaining({ path: "SKILL.md" })],
+    });
+    expect(take).toHaveBeenCalledWith(expect.any(Number));
+  });
+
+  it("rejects GitHub file chunks that exceed the cumulative manifest hydration budget", async () => {
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        "skillScanRequests:github",
+        {
+          _id: "skillScanRequests:github",
+          sourceKind: "github",
+          githubSkillScanId: "githubSkillScans:github",
+          fileChunkCount: 1,
+          fileManifestBytes: 4 * 1024 * 1024,
+        },
+      ],
+      [
+        "githubSkillScans:github",
+        {
+          _id: "githubSkillScans:github",
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:github",
+        },
+      ],
+    ]);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => docs.get(id) ?? null),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => null),
+          })),
+        })),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+
+    await expect(
+      appendGitHubSkillScanRequestFilesInternalHandler(ctx as never, {
+        requestId: "skillScanRequests:github",
+        chunkIndex: 1,
+        files: [
+          {
+            path: "SKILL.md",
+            size: 10,
+            storageId: "storage:1",
+            sha256: "a".repeat(64),
+          },
+        ],
+      }),
+    ).rejects.toThrow(/manifest exceeds the hydration limit/i);
+
+    expect(ctx.db.insert).not.toHaveBeenCalled();
+  });
+
   it("clears only queued backfill jobs in local dev", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "local-dev-worker-token");
     const jobs = [
@@ -1669,7 +2127,7 @@ describe("securityScan", () => {
     expect(deleted).toEqual(["securityScanJobs:backfill-1", "securityScanJobs:backfill-2"]);
   });
 
-  it("prunes expired uploaded scan request blobs without deleting published version files", async () => {
+  it("prunes expired uploaded and GitHub scan request blobs without deleting published files", async () => {
     const requests = [
       {
         _id: "skillScanRequests:upload",
@@ -1683,7 +2141,18 @@ describe("securityScan", () => {
         securityScanJobId: "securityScanJobs:published",
         files: [{ storageId: "storage:published-version-file" }],
       },
+      {
+        _id: "skillScanRequests:github",
+        sourceKind: "github",
+        securityScanJobId: "securityScanJobs:github",
+        files: [{ storageId: "storage:github-1" }],
+      },
     ];
+    const githubFileChunk = {
+      _id: "skillScanRequestFileChunks:github",
+      skillScanRequestId: "skillScanRequests:github",
+      files: [{ storageId: "storage:github-2" }],
+    };
     const deletedDocs: string[] = [];
     const deletedStorage: string[] = [];
     const take = vi.fn(async () => requests);
@@ -1701,8 +2170,13 @@ describe("securityScan", () => {
     const ctx = {
       db: {
         query: vi.fn((tableName: string) => {
-          expect(tableName).toBe("skillScanRequests");
-          return { withIndex };
+          if (tableName === "skillScanRequests") return { withIndex };
+          expect(tableName).toBe("skillScanRequestFileChunks");
+          return {
+            withIndex: vi.fn(() => ({
+              take: vi.fn(async () => [githubFileChunk]),
+            })),
+          };
         }),
         insert: vi.fn(async () => "noop"),
         patch: vi.fn(async () => undefined),
@@ -1730,18 +2204,106 @@ describe("securityScan", () => {
 
     expect(result).toEqual({
       ok: true,
-      deletedRequests: 2,
-      deletedJobs: 2,
-      deletedFiles: 2,
+      deletedRequests: 3,
+      deferredRequests: 0,
+      deletedJobs: 3,
+      deletedFiles: 4,
       done: true,
     });
-    expect(deletedStorage).toEqual(["storage:upload-1", "storage:upload-2"]);
+    expect(deletedStorage).toEqual([
+      "storage:upload-1",
+      "storage:upload-2",
+      "storage:github-1",
+      "storage:github-2",
+    ]);
     expect(deletedDocs).toEqual([
       "securityScanJobs:upload",
       "skillScanRequests:upload",
       "securityScanJobs:published",
       "skillScanRequests:published",
+      "securityScanJobs:github",
+      "skillScanRequestFileChunks:github",
+      "skillScanRequests:github",
     ]);
+  });
+
+  it("prunes one bounded GitHub file chunk before deleting the parent request", async () => {
+    const request = {
+      _id: "skillScanRequests:github",
+      sourceKind: "github",
+      securityScanJobId: "securityScanJobs:github",
+      files: [],
+    };
+    const chunks = [
+      {
+        _id: "skillScanRequestFileChunks:first",
+        skillScanRequestId: request._id,
+        files: [{ storageId: "storage:github-1" }],
+      },
+      {
+        _id: "skillScanRequestFileChunks:second",
+        skillScanRequestId: request._id,
+        files: [{ storageId: "storage:github-2" }],
+      },
+    ];
+    const deletedDocs: string[] = [];
+    const deletedStorage: string[] = [];
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+    const requestTake = vi.fn(async () => [request]);
+    const ctx = {
+      db: {
+        query: vi.fn((tableName: string) => {
+          if (tableName === "skillScanRequests") {
+            return {
+              withIndex: vi.fn(() => ({
+                take: requestTake,
+              })),
+            };
+          }
+          expect(tableName).toBe("skillScanRequestFileChunks");
+          return {
+            withIndex: vi.fn(() => ({
+              take: vi.fn(async () => chunks),
+            })),
+          };
+        }),
+        insert: vi.fn(async () => "noop"),
+        patch: vi.fn(async () => undefined),
+        replace: vi.fn(async () => undefined),
+        get: vi.fn(async (id: string) => ({
+          _id: id,
+          targetKind: "skillScanRequest",
+        })),
+        delete: vi.fn(async (id: string) => {
+          deletedDocs.push(id);
+        }),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+      scheduler,
+      storage: {
+        delete: vi.fn(async (id: string) => {
+          deletedStorage.push(id);
+        }),
+      },
+    };
+
+    const result = await pruneExpiredSkillScanRequestsInternalHandler(ctx as never, {
+      batchSize: 250,
+    });
+
+    expect(result).toEqual({
+      ok: true,
+      deletedRequests: 0,
+      deferredRequests: 1,
+      deletedJobs: 1,
+      deletedFiles: 1,
+      done: false,
+    });
+    expect(deletedStorage).toEqual(["storage:github-1"]);
+    expect(deletedDocs).toEqual(["securityScanJobs:github", "skillScanRequestFileChunks:first"]);
+    expect(requestTake).toHaveBeenCalledWith(10);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { batchSize: 10 });
   });
 
   it("fails claimed package jobs when the ClawPack URL is unavailable", async () => {
@@ -2257,6 +2819,365 @@ describe("securityScan", () => {
       expect.objectContaining({
         jobId: "securityScanJobs:1",
         leaseToken: "lease-token",
+      }),
+    );
+  });
+
+  it.each([
+    { priorStatus: "failed", force: undefined, expectedSource: "publish", expectedPriority: 0 },
+    { priorStatus: "clean", force: true, expectedSource: "manual", expectedPriority: 100 },
+    {
+      priorStatus: "failed",
+      force: undefined,
+      requestedJobSource: "manual",
+      requestedJobPriority: 100,
+      expectedSource: "manual",
+      expectedPriority: 100,
+    },
+  ] as const)(
+    "requeues a $priorStatus GitHub-backed scan for the same content hash",
+    async ({
+      priorStatus,
+      force,
+      requestedJobSource,
+      requestedJobPriority,
+      expectedSource,
+      expectedPriority,
+    }) => {
+      const docs = new Map<string, Record<string, unknown>>([
+        [
+          "skills:1",
+          {
+            _id: "skills:1",
+            installKind: "github",
+            githubSourceId: "githubSkillSources:new",
+            githubPath: "skills/demo",
+            githubCurrentStatus: "present",
+            githubCurrentCommit: "a".repeat(40),
+            githubCurrentContentHash: "content-hash",
+            ownerUserId: "users:1",
+            slug: "demo",
+            displayName: "Demo",
+          },
+        ],
+        [
+          "githubSkillScans:1",
+          {
+            _id: "githubSkillScans:1",
+            skillId: "skills:1",
+            githubSourceId: "githubSkillSources:old",
+            contentHash: "content-hash",
+            commit: "a".repeat(40),
+            path: "skills/demo",
+            status: priorStatus,
+            llmAnalysis: { status: "error", checkedAt: 1 },
+            lastError: "worker failed",
+            completedAt: 1,
+            createdAt: 1,
+            updatedAt: 1,
+          },
+        ],
+      ]);
+      const inserts: Array<{ table: string; doc: Record<string, unknown> }> = [];
+      const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+        const id = `${table}:new-${inserts.length + 1}`;
+        docs.set(id, { _id: id, ...doc });
+        inserts.push({ table, doc });
+        return id;
+      });
+      const patch = vi.fn(async (id: string, next: Record<string, unknown>) => {
+        const doc = docs.get(id);
+        if (!doc) return;
+        for (const [key, value] of Object.entries(next)) {
+          if (value === undefined) delete doc[key];
+          else doc[key] = value;
+        }
+      });
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) => docs.get(id) ?? null),
+          query: vi.fn((table: string) => {
+            if (table === "skillScanRequestFileChunks") {
+              return {
+                withIndex: vi.fn(() => ({
+                  unique: vi.fn(async () => null),
+                  take: vi.fn(async () =>
+                    Array.from(docs.values())
+                      .filter((doc) =>
+                        doc._id?.toString().startsWith("skillScanRequestFileChunks:"),
+                      )
+                      .slice(0, 1),
+                  ),
+                })),
+              };
+            }
+            expect(table).toBe("githubSkillScans");
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn(async () => docs.get("githubSkillScans:1")),
+              })),
+            };
+          }),
+          insert,
+          patch,
+          replace: vi.fn(),
+          delete: vi.fn(),
+          normalizeId: vi.fn(() => null),
+          system: {},
+        },
+      };
+
+      const prepared = await prepareGitHubSkillScanRequestInternalHandler(ctx, {
+        skillId: "skills:1",
+        contentHash: "content-hash",
+        commit: "a".repeat(40),
+        force,
+        parsed: { frontmatter: {} },
+        staticScan: {
+          status: "clean",
+          reasonCodes: [],
+          findings: [],
+          summary: "No static findings.",
+          engineVersion: "test",
+          checkedAt: 2,
+        },
+      });
+      expect(prepared).toMatchObject({
+        ok: true,
+        prepared: true,
+        scanId: "githubSkillScans:1",
+      });
+      if (!prepared.requestId) throw new Error("missing prepared request");
+      await appendGitHubSkillScanRequestFilesInternalHandler(ctx, {
+        requestId: prepared.requestId,
+        chunkIndex: 0,
+        files: [
+          {
+            path: "SKILL.md",
+            size: 10,
+            storageId: "storage:1",
+            sha256: "sha256",
+          },
+        ],
+      });
+      Object.assign(docs.get(prepared.requestId) ?? {}, {
+        requestedJobSource,
+        requestedJobPriority,
+      });
+      const result = await finalizeGitHubSkillScanRequestInternalHandler(ctx, {
+        requestId: prepared.requestId,
+        force,
+      });
+
+      expect(result).toMatchObject({
+        ok: true,
+        queued: true,
+        scanId: "githubSkillScans:1",
+      });
+      expect(inserts.map((entry) => entry.table)).toEqual([
+        "skillScanRequests",
+        "skillScanRequestFileChunks",
+        "securityScanJobs",
+      ]);
+      expect(inserts[0]?.doc.files).toEqual([]);
+      expect(inserts[0]?.doc).toMatchObject({
+        fileChunkCount: 0,
+        fileManifestBytes: 0,
+      });
+      expect(inserts[1]?.doc).toMatchObject({
+        skillScanRequestId: expect.stringMatching(/^skillScanRequests:/),
+        chunkIndex: 0,
+        files: [{ path: "SKILL.md", storageId: "storage:1" }],
+      });
+      expect(inserts[2]?.doc).toMatchObject({
+        source: expectedSource,
+        priority: expectedPriority,
+      });
+      expect(docs.get("githubSkillScans:1")).toMatchObject({
+        githubSourceId: "githubSkillSources:new",
+        status: "pending",
+        skillScanRequestId: expect.stringMatching(/^skillScanRequests:/),
+      });
+      expect(docs.get("githubSkillScans:1")).not.toHaveProperty("llmAnalysis");
+      expect(docs.get("githubSkillScans:1")).not.toHaveProperty("lastError");
+      expect(docs.get("githubSkillScans:1")).not.toHaveProperty("completedAt");
+      expect(docs.get(prepared.requestId)).toMatchObject({
+        fileChunkCount: 1,
+        fileManifestBytes: expect.any(Number),
+      });
+    },
+  );
+
+  it("reassociates a reused GitHub scan with the skill's current source", async () => {
+    const docs = new Map<string, Record<string, unknown>>([
+      [
+        "skills:1",
+        {
+          _id: "skills:1",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:new",
+          githubPath: "skills/demo",
+          githubCurrentStatus: "present",
+          githubCurrentCommit: "b".repeat(40),
+          githubCurrentContentHash: "content-hash",
+          ownerUserId: "users:1",
+          slug: "demo",
+          displayName: "Demo",
+        },
+      ],
+      [
+        "githubSkillScans:1",
+        {
+          _id: "githubSkillScans:1",
+          skillId: "skills:1",
+          githubSourceId: "githubSkillSources:deleted",
+          contentHash: "content-hash",
+          commit: "a".repeat(40),
+          path: "skills/old-demo",
+          status: "clean",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    ]);
+    const patch = vi.fn(async (id: string, next: Record<string, unknown>) => {
+      Object.assign(docs.get(id) ?? {}, next);
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => docs.get(id) ?? null),
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({
+            unique: vi.fn(async () => docs.get("githubSkillScans:1")),
+          })),
+        })),
+        insert: vi.fn(),
+        patch,
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(() => null),
+        system: {},
+      },
+    };
+    const staticScan = {
+      status: "clean" as const,
+      reasonCodes: [],
+      findings: [] as [],
+      summary: "No static findings.",
+      engineVersion: "test",
+      checkedAt: 2,
+    };
+
+    const result = await prepareGitHubSkillScanRequestInternalHandler(ctx as never, {
+      skillId: "skills:1",
+      contentHash: "content-hash",
+      commit: "b".repeat(40),
+      parsed: { frontmatter: {} },
+      staticScan,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      reused: true,
+      scanId: "githubSkillScans:1",
+      scanStatus: "clean",
+    });
+    expect(docs.get("githubSkillScans:1")).toMatchObject({
+      githubSourceId: "githubSkillSources:new",
+      commit: "b".repeat(40),
+      path: "skills/demo",
+      staticScan,
+    });
+  });
+
+  it("writes completed GitHub-backed scan results to the durable content-hash record", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "skillScanRequest",
+        leaseToken: "lease-token",
+      },
+      scanRequest: {
+        _id: "skillScanRequests:1",
+        sourceKind: "github",
+        githubSkillScanId: "githubSkillScans:1",
+      },
+      githubScan: {
+        _id: "githubSkillScans:1",
+        skillId: "skills:1",
+        contentHash: "content-hash",
+      },
+    }));
+    const runMutation = vi.fn(async () => ({ ok: true }));
+
+    await completeCodexScanJobHandler(
+      { runQuery, runMutation },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 123 },
+        skillSpectorAnalysis: {
+          status: "clean",
+          issueCount: 0,
+          issues: [],
+          checkedAt: 123,
+        },
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        githubSkillScanId: "githubSkillScans:1",
+        scanStatus: "clean",
+        llmAnalysis: { status: "clean", verdict: "benign", checkedAt: 123 },
+        skillSpectorAnalysis: expect.objectContaining({ status: "clean", issueCount: 0 }),
+      }),
+    );
+  });
+
+  it("marks the durable GitHub-backed scan failed when worker retries are exhausted", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+      "error" in args ? { ok: true, retry: false } : { ok: true },
+    );
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "skillScanRequest",
+      },
+      scanRequest: {
+        _id: "skillScanRequests:1",
+        sourceKind: "github",
+        githubSkillScanId: "githubSkillScans:1",
+      },
+      githubScan: {
+        _id: "githubSkillScans:1",
+        skillId: "skills:1",
+        contentHash: "content-hash",
+      },
+    }));
+
+    await failCodexScanJobHandler(
+      { runQuery, runMutation },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        error: "worker failed",
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        githubSkillScanId: "githubSkillScans:1",
+        scanStatus: "failed",
+        error: "worker failed",
       }),
     );
   });

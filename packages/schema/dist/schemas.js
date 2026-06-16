@@ -411,6 +411,15 @@ export const ApiV1SkillRescanResponseSchema = type({
     skillVersionId: "string",
     jobId: "string",
     alreadyQueued: "boolean",
+}).or({
+    ok: "true",
+    slug: "string",
+    version: "string",
+    skillId: "string",
+    githubContentHash: "string",
+    jobId: "string?",
+    scheduled: "boolean",
+    alreadyQueued: "boolean",
 });
 export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');
 export const ApiV1SkillScanSourceSchema = type({

@@ -39,6 +39,7 @@ import {
   canHealSkillOwnershipByGitHubProviderAccountId,
   getGitHubProviderAccountId,
 } from "./lib/githubIdentity";
+import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
 import {
   adjustGlobalPublicSkillsCount,
   getPublicSkillVisibilityDelta,
@@ -1565,6 +1566,7 @@ function enforceNewSkillRateLimit(signals: OwnerTrustSignals) {
 const HARD_DELETE_PHASES = [
   "versions",
   "fingerprints",
+  "githubScans",
   "skillCardJobs",
   "embeddings",
   "comments",
@@ -1662,6 +1664,19 @@ async function hardDeleteSkillStep(
       }
       if (fingerprints.length === HARD_DELETE_BATCH_SIZE) {
         await scheduleHardDelete(ctx, skill._id, actorUserId, "fingerprints", scope);
+        return;
+      }
+      await scheduleHardDelete(ctx, skill._id, actorUserId, "githubScans", scope);
+      return;
+    }
+    case "githubScans": {
+      const deletedScans = await deleteGitHubSkillScansForSkill(
+        ctx,
+        skill._id,
+        HARD_DELETE_BATCH_SIZE,
+      );
+      if (deletedScans === HARD_DELETE_BATCH_SIZE) {
+        await scheduleHardDelete(ctx, skill._id, actorUserId, "githubScans", scope);
         return;
       }
       await scheduleHardDelete(ctx, skill._id, actorUserId, "skillCardJobs", scope);
@@ -2261,6 +2276,35 @@ function toPublicSkillVersion(
   };
 }
 
+function toPublicGitHubSkillScan(
+  scan: Doc<"githubSkillScans"> | null | undefined,
+  version: string | undefined,
+  currentCommit: string | undefined,
+  currentPath: string | undefined,
+) {
+  if (!scan) return null;
+  const commit = currentCommit ?? scan.commit;
+  return {
+    _id: scan._id,
+    contentHash: scan.contentHash,
+    commit,
+    path: currentPath ?? scan.path,
+    status: scan.status,
+    version: version ?? commit.slice(0, 12),
+    skillSpectorAnalysis: scan.skillSpectorAnalysis,
+    llmAnalysis: scan.llmAnalysis,
+    staticScan: scan.staticScan
+      ? {
+          ...scan.staticScan,
+          findings: scan.staticScan.findings.map((finding) => ({ ...finding, evidence: "" })),
+        }
+      : undefined,
+    completedAt: scan.completedAt,
+    createdAt: scan.createdAt,
+    updatedAt: scan.updatedAt,
+  };
+}
+
 function toPublicSkillCardFile(file: Doc<"skillVersions">["files"][number]) {
   return {
     path: file.path,
@@ -2484,6 +2528,67 @@ function isDirectSkillOwner(
 ) {
   return !skill.ownerPublisherId && skill.ownerUserId === userId;
 }
+
+export const getGitHubScanForAudit = query({
+  args: { slug: v.string() },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAlias(ctx, args.slug);
+    const skill = resolved.skill;
+    if (
+      !skill ||
+      skill.installKind !== "github" ||
+      !skill.githubCurrentContentHash ||
+      !skill.githubCurrentCommit ||
+      !skill.githubPath
+    ) {
+      return null;
+    }
+
+    const ownerPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    if (!toPublicPublisher(ownerPublisher)) return null;
+    const skillOwnerRef = {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    };
+
+    const isMalwareBlocked =
+      skill.moderationVerdict === "malicious" ||
+      (skill.moderationFlags?.includes("blocked.malware") ?? false);
+    if (isMalwareBlocked) return null;
+
+    if (!isPublicSkillDoc(skill)) {
+      const userId = await getOptionalActiveAuthUserId(ctx);
+      const skillOwnerPublisher = skillOwnerRef.ownerPublisherId
+        ? await ctx.db.get(skillOwnerRef.ownerPublisherId)
+        : null;
+      const publisherOwner =
+        userId && skillOwnerPublisher
+          ? await canAccessPublisherOwnerScope(ctx, {
+              publisher: skillOwnerPublisher,
+              userId,
+              legacyOwnerUserId: skillOwnerRef.ownerUserId,
+            })
+          : false;
+      if (!userId || (!isDirectSkillOwner(skillOwnerRef, userId) && !publisherOwner)) return null;
+    }
+
+    const scan = await ctx.db
+      .query("githubSkillScans")
+      .withIndex("by_skill_and_content_hash", (q) =>
+        q.eq("skillId", skill._id).eq("contentHash", skill.githubCurrentContentHash as string),
+      )
+      .unique();
+    return toPublicGitHubSkillScan(
+      scan,
+      skill.latestVersionSummary?.version,
+      skill.githubCurrentCommit,
+      skill.githubPath,
+    );
+  },
+});
 
 export const getBySlug = query({
   args: { slug: v.string() },

@@ -444,6 +444,15 @@ export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/va
     skillVersionId: string;
     jobId: string;
     alreadyQueued: boolean;
+} | {
+    ok: true;
+    slug: string;
+    version: string;
+    skillId: string;
+    githubContentHash: string;
+    scheduled: boolean;
+    alreadyQueued: boolean;
+    jobId?: string | undefined;
 }, {}>;
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
 export declare const ApiV1SkillScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"queued" | "running" | "succeeded" | "failed", {}>;

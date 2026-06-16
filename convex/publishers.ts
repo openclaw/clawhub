@@ -1558,6 +1558,9 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
       .collect();
     sourceContents += contents.length;
     for (const content of contents) await ctx.db.delete(content._id);
+    await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
+      sourceId: source._id,
+    });
     await ctx.db.delete(source._id);
   }
 

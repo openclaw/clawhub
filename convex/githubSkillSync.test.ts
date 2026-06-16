@@ -690,6 +690,7 @@ description: Install from a GitHub-backed source.
       ],
     });
     const scheduler = { runAfter: vi.fn(async () => undefined) };
+    let storedFile = 0;
     let now = 100;
     const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
     const actionCtx = {
@@ -740,7 +741,8 @@ description: Install from a GitHub-backed source.
         }
         throw new Error(`unexpected lifecycle query args: ${JSON.stringify(args)}`);
       }),
-      runMutation: vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      runMutation: vi.fn(async (mutation: unknown, args: Record<string, unknown>) => {
+        const mutationName = getFunctionName(mutation as Parameters<typeof getFunctionName>[0]);
         if ("snapshot" in args) {
           return await applyGitHubSkillSourceSyncHandler(
             { db, scheduler } as never,
@@ -749,6 +751,26 @@ description: Install from a GitHub-backed source.
               now,
             } as never,
           );
+        }
+        if (mutationName === "securityScan:prepareGitHubSkillScanRequestInternal") {
+          return {
+            ok: true,
+            prepared: true,
+            scanId: "githubSkillScans:1",
+            requestId: "skillScanRequests:1",
+          };
+        }
+        if (mutationName === "securityScan:appendGitHubSkillScanRequestFilesInternal") {
+          return { ok: true, appended: true };
+        }
+        if (mutationName === "securityScan:finalizeGitHubSkillScanRequestInternal") {
+          return {
+            ok: true,
+            queued: true,
+            scanId: "githubSkillScans:1",
+            requestId: "skillScanRequests:1",
+            jobId: "securityScanJobs:1",
+          };
         }
         if ("scanStatus" in args && "contentHash" in args) {
           return await applyGitHubSkillVerificationResultHandler(
@@ -779,6 +801,13 @@ description: Install from a GitHub-backed source.
         }
         throw new Error(`unexpected lifecycle mutation args: ${JSON.stringify(args)}`);
       }),
+      storage: {
+        store: vi.fn(async () => {
+          storedFile += 1;
+          return `storage:${storedFile}`;
+        }),
+        delete: vi.fn(),
+      },
       auth: { getUserIdentity: vi.fn() },
     };
 
@@ -849,14 +878,27 @@ description: Install from a GitHub-backed source.
       });
 
       now = 110;
-      await verifyGitHubSkillHandler(
-        actionCtx as never,
-        {
-          skillId: skill._id as never,
-          contentHash: skill.githubCurrentContentHash as string,
-        },
-        fakeGitHub.fetcher as never,
-      );
+      await expect(
+        verifyGitHubSkillHandler(
+          actionCtx as never,
+          {
+            skillId: skill._id as never,
+            contentHash: skill.githubCurrentContentHash as string,
+          },
+          fakeGitHub.fetcher as never,
+        ),
+      ).resolves.toMatchObject({ ok: true, queued: true });
+      expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
+        ok: false,
+        reason: "github_verification_pending",
+        status: 423,
+      });
+      await applyGitHubSkillVerificationResultHandler({ db } as never, {
+        skillId: skill._id as never,
+        contentHash: skill.githubCurrentContentHash as string,
+        scanStatus: "clean",
+        now,
+      });
       expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
         ok: true,
         installKind: "github",
@@ -911,14 +953,27 @@ description: Install from a GitHub-backed source.
       });
 
       now = 210;
-      await verifyGitHubSkillHandler(
-        actionCtx as never,
-        {
-          skillId: skill._id as never,
-          contentHash: skill.githubCurrentContentHash as string,
-        },
-        fakeGitHub.fetcher as never,
-      );
+      await expect(
+        verifyGitHubSkillHandler(
+          actionCtx as never,
+          {
+            skillId: skill._id as never,
+            contentHash: skill.githubCurrentContentHash as string,
+          },
+          fakeGitHub.fetcher as never,
+        ),
+      ).resolves.toMatchObject({ ok: true, queued: true });
+      expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
+        ok: false,
+        reason: "github_verification_pending",
+        status: 423,
+      });
+      await applyGitHubSkillVerificationResultHandler({ db } as never, {
+        skillId: skill._id as never,
+        contentHash: skill.githubCurrentContentHash as string,
+        scanStatus: "clean",
+        now,
+      });
       expect(resolveInstallFromTables(tables, "demo-source")).toMatchObject({
         ok: true,
         installKind: "github",
@@ -1012,6 +1067,72 @@ describe("resolveOwnerUserIdForPublisherHandler", () => {
 });
 
 describe("applyGitHubSkillSourceSyncHandler", () => {
+  it("queues a full scan and blocks legacy clean GitHub skills without a durable result", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "2".repeat(40),
+      entries: {
+        "skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
+      },
+    });
+    const contentHash = snapshot.skills[0]?.contentHash;
+    const { db, tables } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          ownerPublisherId: "publishers:nvidia",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:aiq-deploy",
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          ownerUserId: "users:nvidia",
+          ownerPublisherId: "publishers:nvidia",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/aiq-deploy",
+          githubCurrentCommit: "1".repeat(40),
+          githubCurrentContentHash: contentHash,
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+          moderationStatus: "active",
+          moderationVerdict: "clean",
+          tags: {},
+          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:nvidia" as never,
+      repo: "NVIDIA/skills",
+      ownerUserId: "users:nvidia" as never,
+      ownerPublisherId: "publishers:nvidia" as never,
+      snapshot,
+      now: 123,
+    });
+
+    expect(tables.skills[0]).toMatchObject({
+      githubScanStatus: "pending",
+      moderationStatus: "active",
+      moderationReason: "pending.scan",
+    });
+    expect(tables.skills[0]).not.toHaveProperty("moderationVerdict");
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      skillId: "skills:aiq-deploy",
+      contentHash,
+    });
+  });
+
   it("applies a trusted fetched snapshot without overwriting unrelated slug owners", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
@@ -1410,7 +1531,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
         "skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
       },
     });
-    const { db } = createDb({
+    const { db, tables } = createDb({
       githubSkillSources: [
         {
           _id: "githubSkillSources:nvidia",
@@ -1441,10 +1562,165 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
       skillId: "skills:new-1",
       contentHash: snapshot.skills[0]?.contentHash,
     });
+    expect(Object.values(tables.githubSkillScans?.[0] ?? {})).not.toContain(undefined);
     const scheduledFunction = scheduler.runAfter.mock.calls[0]?.[1];
     expect(getFunctionName(scheduledFunction as Parameters<typeof getFunctionName>[0])).toBe(
       "githubSkillSyncNode:verifyGitHubSkillInternal",
     );
+  });
+
+  it("does not requeue heavy verification while the current content scan job is active", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "2".repeat(40),
+      entries: {
+        "skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
+      },
+    });
+    const contentHash = snapshot.skills[0]?.contentHash;
+    const { db } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          ownerPublisherId: "publishers:nvidia",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:aiq-deploy",
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          ownerUserId: "users:nvidia",
+          ownerPublisherId: "publishers:nvidia",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/aiq-deploy",
+          githubCurrentCommit: "1".repeat(40),
+          githubCurrentContentHash: contentHash,
+          githubCurrentStatus: "present",
+          githubScanStatus: "pending",
+          tags: {},
+          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:aiq-deploy",
+          skillId: "skills:aiq-deploy",
+          githubSourceId: "githubSkillSources:nvidia",
+          contentHash,
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:aiq-deploy",
+        },
+      ],
+      skillScanRequests: [
+        {
+          _id: "skillScanRequests:aiq-deploy",
+          securityScanJobId: "securityScanJobs:aiq-deploy",
+        },
+      ],
+      securityScanJobs: [
+        {
+          _id: "securityScanJobs:aiq-deploy",
+          status: "queued",
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:nvidia" as never,
+      repo: "NVIDIA/skills",
+      ownerUserId: "users:nvidia" as never,
+      ownerPublisherId: "publishers:nvidia" as never,
+      snapshot,
+      now: 123,
+    });
+
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(0);
+  });
+
+  it("does not requeue heavy verification while a recent verification action is pending", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "2".repeat(40),
+      entries: {
+        "skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
+      },
+    });
+    const contentHash = snapshot.skills[0]?.contentHash;
+    const { db } = createDb({
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          ownerPublisherId: "publishers:nvidia",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      skills: [
+        {
+          _id: "skills:aiq-deploy",
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          ownerUserId: "users:nvidia",
+          ownerPublisherId: "publishers:nvidia",
+          installKind: "github",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/aiq-deploy",
+          githubCurrentCommit: "1".repeat(40),
+          githubCurrentContentHash: contentHash,
+          githubCurrentStatus: "present",
+          githubScanStatus: "pending",
+          tags: {},
+          stats: { downloads: 0, stars: 0, installsCurrent: 0, installsAllTime: 0, versions: 0 },
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:aiq-deploy",
+          skillId: "skills:aiq-deploy",
+          githubSourceId: "githubSkillSources:nvidia",
+          contentHash,
+          commit: "1".repeat(40),
+          path: "skills/aiq-deploy",
+          status: "pending",
+          skillScanRequestId: "skillScanRequests:aiq-deploy",
+          createdAt: 1,
+          updatedAt: 123,
+        },
+      ],
+      skillScanRequests: [
+        {
+          _id: "skillScanRequests:aiq-deploy",
+          sourceKind: "github",
+          createdAt: 123,
+          updatedAt: 123,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await applyGitHubSkillSourceSyncHandler({ db, scheduler } as never, {
+      sourceId: "githubSkillSources:nvidia" as never,
+      repo: "NVIDIA/skills",
+      ownerUserId: "users:nvidia" as never,
+      ownerPublisherId: "publishers:nvidia" as never,
+      snapshot,
+      now: 123,
+    });
+
+    expect(scheduler.runAfter).toHaveBeenCalledTimes(0);
   });
 
   it("refreshes cached GitHub content metadata when bytes are unchanged at a new commit", async () => {
@@ -1677,6 +1953,9 @@ describe("verifyGitHubSkillHandler", () => {
     const commit = "3".repeat(40);
     const zip = zipSync({
       "skills-main/skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
+      "skills-main/skills/aiq-deploy/scripts/deploy.sh": new TextEncoder().encode(
+        "#!/bin/sh\necho deploy\n",
+      ),
     });
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
@@ -1687,7 +1966,40 @@ describe("verifyGitHubSkillHandler", () => {
     const contentHash = snapshot.skills[0]?.contentHash;
     if (!contentHash) throw new Error("missing fixture hash");
 
-    const runMutation = vi.fn(async () => ({ ok: true, promoted: false }));
+    const events: string[] = [];
+    let storedFile = 0;
+    const store = vi.fn(async () => {
+      events.push("store");
+      storedFile += 1;
+      return `storage:${storedFile}`;
+    });
+    const runMutation = vi.fn(async (mutation: unknown, _args: Record<string, unknown>) => {
+      const name = getFunctionName(mutation as Parameters<typeof getFunctionName>[0]);
+      if (name === "securityScan:prepareGitHubSkillScanRequestInternal") {
+        events.push("prepare");
+        return {
+          ok: true,
+          prepared: true,
+          scanId: "githubSkillScans:1",
+          requestId: "skillScanRequests:1",
+        };
+      }
+      if (name === "securityScan:appendGitHubSkillScanRequestFilesInternal") {
+        events.push("append");
+        return { ok: true, appended: true };
+      }
+      if (name === "securityScan:finalizeGitHubSkillScanRequestInternal") {
+        events.push("finalize");
+        return {
+          ok: true,
+          queued: true,
+          scanId: "githubSkillScans:1",
+          requestId: "skillScanRequests:1",
+          jobId: "securityScanJobs:1",
+        };
+      }
+      throw new Error(`unexpected mutation: ${name}`);
+    });
     const ctx = {
       runQuery: vi.fn(async () => ({
         skill: {
@@ -1707,6 +2019,7 @@ describe("verifyGitHubSkillHandler", () => {
         },
       })),
       runMutation,
+      storage: { store, delete: vi.fn() },
     };
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url =
@@ -1728,15 +2041,206 @@ describe("verifyGitHubSkillHandler", () => {
       fetcher as unknown as typeof fetch,
     );
 
-    expect(result).toMatchObject({ ok: true, scanStatus: "clean" });
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
+    expect(result).toMatchObject({ ok: true, queued: true });
+    expect(store).toHaveBeenCalledTimes(2);
+    expect(runMutation).toHaveBeenCalledTimes(3);
+    expect(events).toEqual(["prepare", "store", "store", "append", "finalize"]);
+    const [prepareMutation, prepareArgs] = runMutation.mock.calls[0] ?? [];
+    expect(getFunctionName(prepareMutation as Parameters<typeof getFunctionName>[0])).toBe(
+      "securityScan:prepareGitHubSkillScanRequestInternal",
+    );
+    expect(prepareArgs).toEqual(
       expect.objectContaining({
         skillId: "skills:aiq-deploy",
         contentHash,
-        scanStatus: "clean",
+        commit,
+        staticScan: expect.objectContaining({ status: "clean" }),
       }),
     );
+    expect(prepareArgs).not.toHaveProperty("files");
+    expect(Object.values(prepareArgs ?? {})).not.toContain(undefined);
+    const [appendMutation, appendArgs] = runMutation.mock.calls[1] ?? [];
+    expect(getFunctionName(appendMutation as Parameters<typeof getFunctionName>[0])).toBe(
+      "securityScan:appendGitHubSkillScanRequestFilesInternal",
+    );
+    expect(appendArgs).toEqual(
+      expect.objectContaining({
+        requestId: "skillScanRequests:1",
+        chunkIndex: 0,
+        files: expect.arrayContaining([
+          expect.objectContaining({ path: "SKILL.md" }),
+          expect.objectContaining({ path: "scripts/deploy.sh" }),
+        ]),
+      }),
+    );
+    const [finalizeMutation, finalizeArgs] = runMutation.mock.calls[2] ?? [];
+    expect(getFunctionName(finalizeMutation as Parameters<typeof getFunctionName>[0])).toBe(
+      "securityScan:finalizeGitHubSkillScanRequestInternal",
+    );
+    expect(finalizeArgs).toEqual({ requestId: "skillScanRequests:1" });
+  });
+
+  it("does not store GitHub skill files when the durable content-hash scan can be reused", async () => {
+    const commit = "4".repeat(40);
+    const zip = zipSync({
+      "skills-main/skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
+    });
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit,
+      entries: stripGitHubZipRoot(__test.unzipToEntries(zip)),
+    });
+    const contentHash = snapshot.skills[0]?.contentHash;
+    if (!contentHash) throw new Error("missing fixture hash");
+
+    const store = vi.fn();
+    const runMutation = vi.fn(async (mutation: unknown) => {
+      const name = getFunctionName(mutation as Parameters<typeof getFunctionName>[0]);
+      if (name === "securityScan:prepareGitHubSkillScanRequestInternal") {
+        return {
+          ok: true,
+          reused: true,
+          scanId: "githubSkillScans:1",
+          scanStatus: "clean",
+        };
+      }
+      if (name === "githubSkillSync:applyGitHubSkillVerificationResultInternal") {
+        return { ok: true, promoted: true };
+      }
+      throw new Error(`unexpected mutation: ${name}`);
+    });
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        skill: {
+          _id: "skills:aiq-deploy",
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          githubPath: "skills/aiq-deploy",
+          githubCurrentCommit: commit,
+          githubCurrentContentHash: contentHash,
+          githubCurrentStatus: "present",
+        },
+        source: {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          defaultBranch: "main",
+        },
+      })),
+      runMutation,
+      storage: { store, delete: vi.fn() },
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("https://api.github.com/")) {
+        return new Response(JSON.stringify({ sha: commit }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.startsWith("https://codeload.github.com/")) {
+        return new Response(zip, { headers: { "content-length": String(zip.byteLength) } });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    await expect(
+      verifyGitHubSkillHandler(
+        ctx as never,
+        { skillId: "skills:aiq-deploy" as never, contentHash },
+        fetcher as unknown as typeof fetch,
+      ),
+    ).resolves.toMatchObject({ ok: true, reused: true, scanStatus: "clean" });
+
+    expect(store).not.toHaveBeenCalled();
+  });
+
+  it("deletes the newly stored boundary file when appending the previous chunk fails", async () => {
+    const commit = "5".repeat(40);
+    const zipEntries: Record<string, Uint8Array> = {
+      "skills-main/skills/aiq-deploy/SKILL.md": new TextEncoder().encode("# AIQ Deploy\n"),
+    };
+    for (let index = 0; index < 100; index += 1) {
+      zipEntries[
+        `skills-main/skills/aiq-deploy/scripts/file-${String(index).padStart(3, "0")}.txt`
+      ] = new TextEncoder().encode(`file ${index}\n`);
+    }
+    const zip = zipSync(zipEntries);
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit,
+      entries: stripGitHubZipRoot(__test.unzipToEntries(zip)),
+    });
+    const contentHash = snapshot.skills[0]?.contentHash;
+    if (!contentHash) throw new Error("missing fixture hash");
+
+    let storedFile = 0;
+    const store = vi.fn(async () => {
+      storedFile += 1;
+      return `storage:${storedFile}`;
+    });
+    const deleteFile = vi.fn(async () => undefined);
+    const runMutation = vi.fn(async (mutation: unknown) => {
+      const name = getFunctionName(mutation as Parameters<typeof getFunctionName>[0]);
+      if (name === "securityScan:prepareGitHubSkillScanRequestInternal") {
+        return {
+          ok: true,
+          prepared: true,
+          scanId: "githubSkillScans:1",
+          requestId: "skillScanRequests:1",
+        };
+      }
+      if (name === "securityScan:appendGitHubSkillScanRequestFilesInternal") {
+        throw new Error("append failed");
+      }
+      throw new Error(`unexpected mutation: ${name}`);
+    });
+    const ctx = {
+      runQuery: vi.fn(async () => ({
+        skill: {
+          _id: "skills:aiq-deploy",
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          githubPath: "skills/aiq-deploy",
+          githubCurrentCommit: commit,
+          githubCurrentContentHash: contentHash,
+          githubCurrentStatus: "present",
+        },
+        source: {
+          _id: "githubSkillSources:nvidia",
+          repo: "NVIDIA/skills",
+          defaultBranch: "main",
+        },
+      })),
+      runMutation,
+      storage: { store, delete: deleteFile },
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url =
+        typeof input === "string" ? input : input instanceof URL ? input.toString() : input.url;
+      if (url.startsWith("https://api.github.com/")) {
+        return new Response(JSON.stringify({ sha: commit }), {
+          headers: { "content-type": "application/json" },
+        });
+      }
+      if (url.startsWith("https://codeload.github.com/")) {
+        return new Response(zip, { headers: { "content-length": String(zip.byteLength) } });
+      }
+      return new Response("not found", { status: 404 });
+    });
+
+    await expect(
+      verifyGitHubSkillHandler(
+        ctx as never,
+        { skillId: "skills:aiq-deploy" as never, contentHash },
+        fetcher as unknown as typeof fetch,
+      ),
+    ).rejects.toThrow("append failed");
+
+    expect(store).toHaveBeenCalledTimes(101);
+    expect(deleteFile).toHaveBeenCalledTimes(101);
+    expect(deleteFile).toHaveBeenCalledWith("storage:101");
   });
 });
 

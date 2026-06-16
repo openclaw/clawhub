@@ -395,6 +395,26 @@ const githubSkillCurrentStatusValidator = v.union(
   v.literal("unknown"),
 );
 
+const githubSkillScans = defineTable({
+  skillId: v.id("skills"),
+  githubSourceId: v.id("githubSkillSources"),
+  contentHash: v.string(),
+  commit: v.string(),
+  path: v.string(),
+  status: githubSkillScanStatusValidator,
+  skillScanRequestId: v.optional(v.id("skillScanRequests")),
+  staticScan: v.optional(staticScanValidator),
+  skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
+  llmAnalysis: v.optional(llmAnalysisValidator),
+  lastError: v.optional(v.string()),
+  runId: v.optional(v.string()),
+  completedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill_and_content_hash", ["skillId", "contentHash"])
+  .index("by_github_source_and_updated_at", ["githubSourceId", "updatedAt"]);
+
 const packageFamilyValidator = v.union(
   v.literal("skill"),
   v.literal("code-plugin"),
@@ -601,7 +621,11 @@ const packageFilesValidator = v.array(
   }),
 );
 
-const skillScanRequestSourceKindValidator = v.union(v.literal("upload"), v.literal("published"));
+const skillScanRequestSourceKindValidator = v.union(
+  v.literal("upload"),
+  v.literal("published"),
+  v.literal("github"),
+);
 
 const skills = defineTable({
   slug: v.string(),
@@ -1386,12 +1410,17 @@ const skillScanRequests = defineTable({
   writtenBack: v.boolean(),
   status: securityScanJobStatusValidator,
   securityScanJobId: v.optional(v.id("securityScanJobs")),
+  requestedJobSource: v.optional(securityScanJobSourceValidator),
+  requestedJobPriority: v.optional(v.number()),
   slug: v.optional(v.string()),
   displayName: v.optional(v.string()),
   version: v.optional(v.string()),
   skillId: v.optional(v.id("skills")),
   skillVersionId: v.optional(v.id("skillVersions")),
+  githubSkillScanId: v.optional(v.id("githubSkillScans")),
   files: packageFilesValidator,
+  fileChunkCount: v.optional(v.number()),
+  fileManifestBytes: v.optional(v.number()),
   parsed: v.optional(
     v.object({
       frontmatter: v.record(v.string(), v.any()),
@@ -1418,6 +1447,13 @@ const skillScanRequests = defineTable({
   .index("by_security_scan_job_id", ["securityScanJobId"])
   .index("by_skill_version_id_and_created_at", ["skillVersionId", "createdAt"])
   .index("by_expires_at", ["expiresAt"]);
+
+const skillScanRequestFileChunks = defineTable({
+  skillScanRequestId: v.id("skillScanRequests"),
+  chunkIndex: v.number(),
+  files: packageFilesValidator,
+  createdAt: v.number(),
+}).index("by_skill_scan_request_id_and_chunk_index", ["skillScanRequestId", "chunkIndex"]);
 
 const skillCardGenerationJobs = defineTable({
   skillId: v.id("skills"),
@@ -2528,6 +2564,7 @@ export default defineSchema({
   officialPublishers,
   githubSkillSources,
   githubSkillContents,
+  githubSkillScans,
   skills,
   skillSlugAliases,
   packages,
@@ -2537,6 +2574,7 @@ export default defineSchema({
   packageInspectorScanCursors,
   securityScanJobs,
   skillScanRequests,
+  skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
   packageTrustedPublishers,
