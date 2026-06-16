@@ -1,118 +1,37 @@
-import { describe, expect, it, vi } from "vitest";
-import {
-  buildAdminEmailArgs,
-  runCorrespondence,
-} from "../.agents/skills/clawhub-content-rights-correspondence/scripts/send-correspondence.js";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const skill = readFileSync(
+  join(process.cwd(), ".agents/skills/clawhub-content-rights-correspondence/SKILL.md"),
+  "utf8",
+);
+
+const section = (heading: string) => {
+  const start = skill.indexOf(`## ${heading}`);
+  expect(start).toBeGreaterThanOrEqual(0);
+  const next = skill.indexOf("\n## ", start + 1);
+  return skill.slice(start, next === -1 ? undefined : next);
+};
 
 describe("ClawHub content rights correspondence skill", () => {
-  it("builds a dry-run admin email command by default", () => {
-    expect(
-      buildAdminEmailArgs({
-        to: "legal@example.com",
-        subject: "Re: CHR-000007",
-        bodyFile: "/tmp/body.txt",
-        send: false,
-        confirmUserSignoff: false,
-      }),
-    ).toEqual([
-      "run",
-      "admin",
-      "--",
-      "email",
-      "send",
-      "--to",
-      "legal@example.com",
-      "--subject",
-      "Re: CHR-000007",
-      "--body-file",
-      "/tmp/body.txt",
-      "--json",
-    ]);
+  it("uses direct admin CLI commands instead of the removed helper script", () => {
+    expect(skill).toMatch(/Do not use helper\s+scripts/);
+    expect(skill).not.toContain("send-correspondence");
+    expect(skill).not.toContain("scripts/");
+    expect(skill).toContain("bun run admin -- email send");
   });
 
-  it("refuses to send without explicit user signoff", async () => {
-    await expect(
-      runCorrespondence(
-        {
-          caseId: "CHR-000007",
-          subject: "Re: CHR-000007",
-          bodyFile: "/tmp/body.txt",
-          attachments: [],
-          send: true,
-          confirmUserSignoff: false,
-        },
-        {
-          exec: vi.fn(),
-        },
-      ),
-    ).rejects.toThrow("Sending requires --confirm-user-signoff.");
+  it("keeps the explicit send-signoff guard in the requester status update send command", () => {
+    const replies = section("Requester Status Updates");
+    expect(replies).toContain("--send");
+    expect(replies).toContain("--confirm-user-request");
+    expect(replies).toContain("--confirm-user-signoff");
   });
 
-  it("sends to the existing case email and records exact correspondence through Hermit", async () => {
-    const execMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        stdout: JSON.stringify({
-          case: { caseId: "CHR-000007", email: "legal@example.com" },
-          files: [],
-          events: [],
-        }),
-        stderr: "",
-        exitCode: 0,
-      })
-      .mockResolvedValueOnce({
-        stdout: JSON.stringify({ ok: true, providerId: "email-123" }),
-        stderr: "",
-        exitCode: 0,
-      })
-      .mockResolvedValueOnce({
-        stdout: JSON.stringify({ ok: true, caseId: "CHR-000007", storedFiles: 2 }),
-        stderr: "",
-        exitCode: 0,
-      });
-
-    await runCorrespondence(
-      {
-        caseId: "CHR-000007",
-        subject: "Re: CHR-000007",
-        bodyFile: "/tmp/body.txt",
-        attachments: ["/tmp/response.pdf"],
-        send: true,
-        confirmUserSignoff: true,
-      },
-      {
-        exec: execMock,
-      },
-    );
-
-    expect(execMock).toHaveBeenNthCalledWith(1, [
-      "run",
-      "admin",
-      "--",
-      "content-rights",
-      "get",
-      "CHR-000007",
-      "--json",
-    ]);
-    expect(execMock).toHaveBeenNthCalledWith(
-      2,
-      expect.arrayContaining(["--to", "legal@example.com", "--send", "--confirm-user-signoff"]),
-    );
-    expect(execMock).toHaveBeenNthCalledWith(
-      3,
-      expect.arrayContaining([
-        "content-rights",
-        "record-correspondence",
-        "CHR-000007",
-        "--to",
-        "legal@example.com",
-        "--body-file",
-        "/tmp/body.txt",
-        "--provider-message-id",
-        "email-123",
-        "--attachment",
-        "/tmp/response.pdf",
-      ]),
-    );
+  it("documents preserving outbound correspondence through the admin CLI", () => {
+    expect(skill).toContain("content-rights record-correspondence");
+    expect(skill).toContain("--provider-message-id");
+    expect(skill).toContain("--attachment");
   });
 });

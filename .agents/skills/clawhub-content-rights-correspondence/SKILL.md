@@ -94,8 +94,21 @@ bun run admin -- email send \
   --body-file /tmp/body.txt
 ```
 
-Then, after signoff and successful send, record the exact body with the
-provider id:
+After explicit signoff, send:
+
+```bash
+bun run admin -- email send \
+  --to requester@example.com \
+  --username Requester \
+  --subject "Update on ClawHub content rights request" \
+  --body-file /tmp/body.txt \
+  --send \
+  --confirm-user-request \
+  --confirm-user-signoff \
+  --json
+```
+
+Then record the successful send with the provider id:
 
 ```bash
 bun run admin -- content-rights record-correspondence CHR-000007 \
