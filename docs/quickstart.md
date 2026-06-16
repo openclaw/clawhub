@@ -92,13 +92,27 @@ files.
 clawhub skill publish ./my-skill \
   --slug my-skill \
   --name "My Skill" \
-  --version 1.0.0 \
   --changelog "Initial release"
 ```
+
+The command skips unchanged content. New skills start at `1.0.0`; later changes
+automatically publish the next patch version. Use `--dry-run` to preview or
+`--version` to choose an explicit version.
 
 Before publishing, check the metadata in `SKILL.md`. Declare required
 environment variables, tools, and permissions so users can understand what the
 skill needs before they install it. See [Skill format](./skill-format.md).
+
+For repositories containing multiple skills, the reusable GitHub workflow calls
+`skill publish` for each immediate skill folder under `skills/`:
+
+```yaml
+jobs:
+  preview:
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      dry_run: true
+```
 
 ## Publish a plugin
 

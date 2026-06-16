@@ -193,6 +193,13 @@ async function startLocalRegistry() {
     }
 
     if (request.method === "GET" && url.pathname === "/api/v1/resolve") {
+      if (url.searchParams.get("slug") === "changed-skill") {
+        writeJson(response, 200, {
+          match: null,
+          latestVersion: { version: "1.2.3" },
+        });
+        return;
+      }
       writeJson(response, 200, {
         match: { version: "1.0.0" },
         latestVersion: { version: "1.0.0" },
@@ -231,6 +238,48 @@ async function writeConfigWithToken(root: string, registry: string) {
 }
 
 describe("built CLI artifact", () => {
+  it("documents automatic skill publish versions without a bump flag", () => {
+    const result = runNode([binPath, "skill", "publish", "--help"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("--version <version>");
+    expect(result.stdout).toContain("--dry-run");
+    expect(result.stdout).toContain("--json");
+    expect(result.stdout).not.toContain("--bump");
+  });
+
+  it("resolves the next patch version in skill publish dry-run json mode", async () => {
+    const { registry, requests } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-skill-publish-");
+    const skillDir = join(workdir, "changed-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# Changed skill\n", "utf8");
+
+    const result = await runNodeAsync([
+      binPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      registry,
+      "skill",
+      "publish",
+      "changed-skill",
+      "--dry-run",
+      "--json",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: "would-publish",
+      slug: "changed-skill",
+      version: "1.2.4",
+      latestVersion: "1.2.3",
+    });
+    expect(requests.map((request) => request.method)).toEqual(["GET"]);
+    expect(requests[0]?.path).toMatch(/^\/api\/v1\/resolve\?slug=changed-skill&hash=/);
+  });
+
   it("runs help from the published bin entrypoint", async () => {
     const result = runNode([binPath, "--help"]);
 

@@ -26,12 +26,31 @@ clawhub login
 clawhub skill publish ./my-skill \
   --slug my-skill \
   --name "My Skill" \
-  --version 1.0.0 \
   --owner <owner>
 ```
 
 Use `--owner <handle>` when publishing to an org owner. Omit it to publish as
-the authenticated user.
+the authenticated user. Publishing skips unchanged content. A new skill starts
+at `1.0.0`, and later changes automatically publish the next patch version. Pass
+`--version` only when you need an explicit version.
+
+For catalog repos, use ClawHub's reusable
+[`skill-publish.yml` workflow](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml).
+It calls `skill publish` for each immediate skill folder under `root` (default:
+`skills`), or only the folder supplied as `skill_path`.
+
+```yaml
+jobs:
+  publish:
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      owner: <owner>
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+```
+
+Use `dry_run: true` to preview new and changed skills without publishing.
 
 ## Plugins
 

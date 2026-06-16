@@ -175,8 +175,14 @@ Stores your API token + cached registry URL.
 
 ### `skill publish <path>`
 
-- Publishes via `POST /api/v1/skills` (multipart).
-- Requires semver: `--version 1.2.3`.
+- Compares the local bundle fingerprint with ClawHub and exits successfully when
+  the content is already published.
+- New skills default to `1.0.0`; changed skills default to the next patch
+  version.
+- `--version <version>` explicitly selects a version and publishes even when the
+  content matches an existing version.
+- `--dry-run` resolves the publish without uploading; `--json` prints a
+  machine-readable result.
 - `--owner <handle>` publishes under an org/user publisher handle when the
   actor has publisher access.
 - `--migrate-owner` moves an existing skill to `--owner` while publishing a new
@@ -188,8 +194,21 @@ Stores your API token + cached registry URL.
 - Legacy alias: `publish <path>`.
 
 ```bash
-clawhub skill publish ./my-skill --version 1.0.0
+clawhub skill publish ./my-skill --dry-run
+clawhub skill publish ./my-skill
+clawhub skill publish ./my-skill --version 2.0.0
 ```
+
+#### GitHub Actions
+
+ClawHub's reusable
+[`skill-publish.yml`](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml)
+workflow calls `skill publish` for one `skill_path`, or for each immediate skill
+folder under `root` (default: `skills`). It skips unchanged skills and uses the
+same automatic patch-version behavior.
+
+Set `dry_run: true` to preview without a token. Real publishes require the
+`clawhub_token` secret.
 
 ### `scan --slug <slug>`
 
