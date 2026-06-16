@@ -153,6 +153,7 @@
     "vitest": "4.1.8"
   },
   "overrides": {
+    "ast-v8-to-istanbul": "1.0.4",
     "dompurify": "3.4.10",
     "next": "16.2.6",
     "postcss": "8.5.12",
