@@ -44,10 +44,9 @@ async function main() {
   }
 
   const owners = buildDummyOwnerPool();
-  const seedRows = rows.map((row) => ({
-    ...row,
-    dummyOwner: ownerForCorpusKey(corpusKey(row), owners),
-  }));
+  const seedRows = rows.map((row) =>
+    buildSeedCorpusRow(row, ownerForCorpusKey(corpusKey(row), owners)),
+  );
   const batches = chunkRowsByOwner(seedRows, options.batchBytes);
 
   for (let index = 0; index < batches.length; index += 1) {
@@ -140,6 +139,24 @@ function chunkRows(rows: SeedCorpusRow[], maxBytes: number) {
 
 function corpusKey(row: PublicCorpusRow) {
   return row.kind === "skill" ? `skill:${row.slug}` : `plugin:${row.name}`;
+}
+
+export function buildSeedCorpusRow(
+  row: PublicCorpusRow,
+  dummyOwner: DummyCorpusOwner,
+): SeedCorpusRow {
+  const {
+    capabilityTags: _capabilityTags,
+    executesCode: _executesCode,
+    ...currentRow
+  } = row as PublicCorpusRow & {
+    capabilityTags?: unknown;
+    executesCode?: unknown;
+  };
+  return {
+    ...currentRow,
+    dummyOwner,
+  } as SeedCorpusRow;
 }
 
 function sleep(ms: number) {
