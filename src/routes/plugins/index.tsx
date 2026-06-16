@@ -168,7 +168,7 @@ export async function loadPluginsPageData(
         args.sort === "updated" ||
         !args.sort ||
         args.sort === "recommended")
-        ? { sort: args.sort ?? "recommended" }
+        ? { sort: args.sort ?? getDefaultPluginBrowseSort(args) }
         : {}),
       limit: PLUGINS_PAGE_SIZE,
       signal: args.signal,
