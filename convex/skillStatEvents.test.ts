@@ -19,7 +19,8 @@ vi.mock("./_generated/api", () => ({
   },
 }));
 
-const { processSkillStatEventBatchInternal } = await import("./skillStatEvents");
+const { processSkillStatEventBatchInternal, processSkillStatEventsInternal } =
+  await import("./skillStatEvents");
 
 const processSkillStatEventBatchInternalHandler = (
   processSkillStatEventBatchInternal as unknown as {
@@ -27,6 +28,15 @@ const processSkillStatEventBatchInternalHandler = (
       ctx: unknown,
       args: { batchSize?: number; leaseOwner: string },
     ) => Promise<{ processed: number }>;
+  }
+)._handler;
+
+const processSkillStatEventsInternalHandler = (
+  processSkillStatEventsInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: { batchSize?: number; maxBatches?: number },
+    ) => Promise<{ processed: number; scheduledContinuation: boolean }>;
   }
 )._handler;
 
@@ -110,6 +120,40 @@ describe("skill stat events - comment delta handling", () => {
       "skillStatDocSyncLeases:1",
       expect.objectContaining({ lastProcessedCount: 1 }),
     );
+  });
+
+  it("floors action drain batch size so stale small continuations do not crawl", async () => {
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("leaseMs" in args) {
+        return {
+          acquired: true,
+          leaseOwner: "test-lease",
+          leaseExpiresAt: Date.now() + 60_000,
+          now: Date.now(),
+        };
+      }
+      if ("leaseOwner" in args && "batchSize" in args) {
+        return { processed: 100, skillsUpdated: 1, hasMore: true };
+      }
+      if ("processed" in args) {
+        return { released: true };
+      }
+      throw new Error(`unexpected mutation args ${JSON.stringify(args)}`);
+    });
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      processSkillStatEventsInternalHandler(
+        { runMutation, scheduler },
+        { batchSize: 10, maxBatches: 1 },
+      ),
+    ).resolves.toMatchObject({
+      processed: 100,
+      scheduledContinuation: true,
+    });
+
+    expect(runMutation.mock.calls[1]?.[1]).toMatchObject({ batchSize: 100 });
+    expect(scheduler.runAfter.mock.calls[0]?.[2]).toMatchObject({ batchSize: 100 });
   });
 
   it("aggregates comment and uncomment events into net deltas", () => {

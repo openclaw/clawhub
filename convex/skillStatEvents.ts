@@ -233,6 +233,14 @@ function normalizeDocSyncBatchSize(batchSize: number | undefined) {
   return clampInt(batchSize ?? DEFAULT_DOC_SYNC_BATCH_SIZE, 1, MAX_DOC_SYNC_BATCH_SIZE);
 }
 
+function normalizeDocSyncDrainBatchSize(batchSize: number | undefined) {
+  return clampInt(
+    batchSize ?? DEFAULT_DOC_SYNC_BATCH_SIZE,
+    DEFAULT_DOC_SYNC_BATCH_SIZE,
+    MAX_DOC_SYNC_BATCH_SIZE,
+  );
+}
+
 function normalizeDocSyncMaxBatches(maxBatches: number | undefined) {
   return clampInt(maxBatches ?? DEFAULT_DOC_SYNC_MAX_BATCHES, 1, MAX_DOC_SYNC_MAX_BATCHES);
 }
@@ -447,7 +455,9 @@ export const processSkillStatEventsInternal: ReturnType<typeof internalAction> =
     maxBatches: v.optional(v.number()),
   },
   handler: async (ctx, args): Promise<SkillStatDocSyncActionResult> => {
-    const batchSize = normalizeDocSyncBatchSize(args.batchSize);
+    // Older scheduled continuations may carry a tiny batch size. Floor action
+    // drains to the production batch size so stale jobs cannot crawl forever.
+    const batchSize = normalizeDocSyncDrainBatchSize(args.batchSize);
     const maxBatches = normalizeDocSyncMaxBatches(args.maxBatches);
     const claim: ClaimSkillStatDocSyncLeaseResult = await ctx.runMutation(
       internal.skillStatEvents.claimSkillStatDocSyncLeaseInternal,
@@ -530,7 +540,7 @@ export const kickSkillStatDocSyncInternal = internalMutation({
     maxBatches: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
-    const batchSize = normalizeDocSyncBatchSize(args.batchSize);
+    const batchSize = normalizeDocSyncDrainBatchSize(args.batchSize);
     const maxBatches = normalizeDocSyncMaxBatches(args.maxBatches);
     await ctx.scheduler.runAfter(0, internal.skillStatEvents.processSkillStatEventsInternal, {
       batchSize,
