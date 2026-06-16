@@ -228,6 +228,14 @@ describe("dev-worktree helpers", () => {
     });
 
     expect(
+      shouldSeedLocalData({ seed: true, seedOnly: false }, "http://127.0.0.1:3210", null),
+    ).toEqual({
+      seed: false,
+      fatal: false,
+      reason: "CONVEX_DEPLOYMENT is missing or not local",
+    });
+
+    expect(
       shouldSeedLocalData(
         { seed: true, seedOnly: false },
         "http://127.0.0.1:3210",

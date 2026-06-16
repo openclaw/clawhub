@@ -92,17 +92,15 @@ export function shouldSeedLocalData(
   if (!isLocalConvexUrl(convexUrl)) {
     return { seed: false, fatal: options.seedOnly, reason: "VITE_CONVEX_URL is not local" };
   }
-  if (!isLocalConvexDeployment(convexDeployment)) {
+  const trimmedDeployment = convexDeployment?.trim();
+  if (!trimmedDeployment || !isLocalConvexDeployment(trimmedDeployment)) {
     return {
       seed: false,
       fatal: options.seedOnly,
       reason: "CONVEX_DEPLOYMENT is missing or not local",
     };
   }
-  if (
-    !options.seedOnly &&
-    completedSeedTarget === buildSeedTarget(convexUrl, convexDeployment.trim())
-  ) {
+  if (!options.seedOnly && completedSeedTarget === buildSeedTarget(convexUrl, trimmedDeployment)) {
     return {
       seed: false,
       fatal: false,
