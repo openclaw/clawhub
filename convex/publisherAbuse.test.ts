@@ -599,7 +599,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("rejects direct ban actions for official org publisher nominations", async () => {
+  it("rejects direct ban actions for official publisher nominations", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -659,7 +659,7 @@ describe("publisher abuse dry-run persistence", () => {
         expectedUpdatedAt: 1,
         reason: "confirmed spam",
       }),
-    ).rejects.toThrow(/official org/i);
+    ).rejects.toThrow(/official publisher/i);
 
     expect(runMutation).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
@@ -992,7 +992,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(scoreTakeLimit).toBe(32);
   });
 
-  it("hides stale official org nominations from dashboard lists and nomination detail", async () => {
+  it("hides stale official publisher nominations from dashboard lists and nomination detail", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -1747,7 +1747,7 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
-  it("excludes official org publishers from abuse scoring even when they match abuse-pressure criteria", async () => {
+  it("excludes official publishers from abuse scoring even when they match abuse-pressure criteria", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);
     const officialOrgPublisher = {
@@ -2968,7 +2968,7 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
-  it("does not create nominations for official org score rows left by an older run", async () => {
+  it("does not create nominations for official publisher score rows left by an older run", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);
     const officialPublisher = {
@@ -3928,6 +3928,7 @@ describe("publisher abuse dry-run persistence", () => {
               },
             };
           }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -4022,6 +4023,7 @@ describe("publisher abuse dry-run persistence", () => {
               },
             };
           }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
           throw new Error(`unexpected table ${table}`);
         }),
       },
@@ -4051,17 +4053,17 @@ describe("publisher abuse dry-run persistence", () => {
     });
   });
 
-  it("skips official org publishers during temporal candidate collection", async () => {
+  it("skips official personal publishers during temporal candidate collection", async () => {
     const indexBuilder = {
       eq: vi.fn(() => indexBuilder),
       gte: vi.fn(() => indexBuilder),
       lte: vi.fn(() => indexBuilder),
     };
     const officialPublisher = {
-      _id: "publishers:openclaw",
-      kind: "org",
-      handle: "openclaw",
-      linkedUserId: "users:openclaw",
+      _id: "publishers:steipete",
+      kind: "user",
+      handle: "steipete",
+      linkedUserId: "users:steipete",
     };
     const ctx = {
       db: {
@@ -4128,7 +4130,7 @@ describe("publisher abuse dry-run persistence", () => {
                 callback(indexBuilder);
                 return {
                   unique: async () => ({
-                    _id: "officialPublishers:openclaw",
+                    _id: "officialPublishers:steipete",
                     publisherId: officialPublisher._id,
                   }),
                 };

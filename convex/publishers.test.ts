@@ -19,6 +19,7 @@ import {
   createOrg,
   deleteOrg,
   removeMember,
+  addOfficialPublisherInternal,
   createOrgPublisherForUserInternal,
   deleteSoleOwnerOrgsForAccountDeletionInternal,
   resolvePublishTargetForUserInternal,
@@ -99,6 +100,23 @@ const removeOrgPublisherMemberInternalHandler = (
       handle: string;
       removed: boolean;
       member: { userId: string; handle: string; role: "owner" | "admin" | "publisher" };
+    }
+  >
+)._handler;
+
+const addOfficialPublisherInternalHandler = (
+  addOfficialPublisherInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      reason: string;
+    },
+    {
+      ok: true;
+      added: boolean;
+      publisherId: string;
+      handle: string;
+      officialPublisherId: string;
     }
   >
 )._handler;
@@ -3169,6 +3187,92 @@ describe("publisher audit logs", () => {
           previousTrustedPublisher: false,
           trustedPublisher: true,
         },
+      }),
+    );
+  });
+});
+
+describe("official publisher administration", () => {
+  it("marks personal publishers official", async () => {
+    const actor = { _id: "users:admin", role: "admin" };
+    const publisher = {
+      _id: "publishers:steipete",
+      kind: "user",
+      handle: "steipete",
+      displayName: "Peter Steinberger",
+      linkedUserId: "users:steipete",
+    };
+    const inserted: Array<{ table: string; doc: Record<string, unknown> }> = [];
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          const fields: Record<string, string> = {};
+          const q = {
+            eq: (field: string, value: string) => {
+              fields[field] = value;
+              return q;
+            },
+          };
+          builder(q);
+          if (table === "publishers" && indexName === "by_handle") {
+            return {
+              unique: vi.fn(async () => (fields.handle === "steipete" ? publisher : null)),
+            };
+          }
+          if (table === "officialPublishers" && indexName === "by_publisher") {
+            return { unique: vi.fn(async () => null) };
+          }
+          throw new Error(`unexpected ${table} index ${indexName}`);
+        },
+      ),
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "users:admin" ? actor : null)),
+        query,
+        patch: vi.fn(),
+        delete: vi.fn(),
+        insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
+          inserted.push({ table, doc });
+          return table === "officialPublishers"
+            ? "officialPublishers:steipete"
+            : `auditLogs:${inserted.length}`;
+        }),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      addOfficialPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "@steipete",
+        reason: "Verified individual publisher",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      added: true,
+      publisherId: "publishers:steipete",
+      handle: "steipete",
+      officialPublisherId: "officialPublishers:steipete",
+    });
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "officialPublishers",
+      expect.objectContaining({
+        publisherId: "publishers:steipete",
+        reason: "Verified individual publisher",
+        createdByUserId: "users:admin",
+      }),
+    );
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.official.add",
+        targetId: "publishers:steipete",
+        metadata: { handle: "steipete", reason: "Verified individual publisher" },
       }),
     );
   });

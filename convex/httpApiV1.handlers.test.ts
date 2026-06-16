@@ -1530,7 +1530,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("users/publisher-official adds official org publishers for admin", async () => {
+  it("users/publisher-official adds official publishers for admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -1568,7 +1568,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("users/publisher-official removes official org publishers for admin", async () => {
+  it("users/publisher-official removes official publishers for admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },

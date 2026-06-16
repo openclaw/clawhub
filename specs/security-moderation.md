@@ -45,7 +45,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse scoring is a staff review signal for bulk-publishing abuse.
   It must not directly ban users; staff action goes through the publisher abuse
   nomination review path.
-- Official org publishers are excluded from publisher abuse scoring and
+- Official publishers are excluded from publisher abuse scoring and
   enforcement. An excluded publisher must not contribute to score-run cohort
   statistics, receive a score label/rank, open or update a nomination, appear in
   the dashboard/detail state, or be actionable through a stale nomination id.
