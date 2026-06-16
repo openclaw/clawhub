@@ -1968,7 +1968,7 @@ describe("verifyGitHubSkillHandler", () => {
 
     const events: string[] = [];
     let storedFile = 0;
-    const store = vi.fn(async () => {
+    const store = vi.fn(async (_blob: Blob) => {
       events.push("store");
       storedFile += 1;
       return `storage:${storedFile}`;
@@ -2043,6 +2043,7 @@ describe("verifyGitHubSkillHandler", () => {
 
     expect(result).toMatchObject({ ok: true, queued: true });
     expect(store).toHaveBeenCalledTimes(2);
+    expect((store.mock.calls[0]?.[0] as Blob | undefined)?.type).toBe("application/octet-stream");
     expect(runMutation).toHaveBeenCalledTimes(3);
     expect(events).toEqual(["prepare", "store", "store", "append", "finalize"]);
     const [prepareMutation, prepareArgs] = runMutation.mock.calls[0] ?? [];

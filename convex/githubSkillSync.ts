@@ -1383,7 +1383,9 @@ async function storeGitHubSkillScanFileChunks(
     for (const [path, bytes] of listGitHubSkillFolderEntries(entries, folderPath)) {
       const safeBytes = new Uint8Array(bytes);
       const sha256 = await sha256Hex(safeBytes);
-      const storageId = await ctx.storage.store(new Blob([safeBytes]));
+      const storageId = await ctx.storage.store(
+        new Blob([safeBytes], { type: "application/octet-stream" }),
+      );
       const file = {
         path,
         size: safeBytes.byteLength,
