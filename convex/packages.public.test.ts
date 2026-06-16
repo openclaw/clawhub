@@ -136,6 +136,7 @@ const listPublicPageHandler = (
       family?: "skill" | "code-plugin" | "bundle-plugin";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
+      highlightedOnly?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
@@ -153,6 +154,7 @@ const listPageForViewerInternalHandler = (
       family?: "skill" | "code-plugin" | "bundle-plugin";
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
+      highlightedOnly?: boolean;
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
@@ -1114,6 +1116,7 @@ function makeDigestCtx(options: {
   }>;
   exactPackages?: Array<Record<string, unknown>>;
   exactDigests?: Array<Record<string, unknown>>;
+  highlightedBadges?: Array<Record<string, unknown>>;
   publisherDocs?: Record<string, Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
 }) {
@@ -1299,6 +1302,15 @@ function makeDigestCtx(options: {
           return null;
         }),
         query: vi.fn((table: string) => {
+          if (table === "packageBadges") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue(options.highlightedBadges ?? []),
+                })),
+              })),
+            };
+          }
           if (table === "packages") {
             return {
               withIndex: vi.fn(
@@ -3787,6 +3799,44 @@ describe("packages public queries", () => {
 
     expect(result.page.map((entry) => entry.name)).toEqual(["community-security"]);
     expect(result.isDone).toBe(true);
+    expect(paginate).not.toHaveBeenCalled();
+  });
+
+  it("keeps highlighted category listings out of official-first pagination", async () => {
+    const official = makeDigest("official-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+      updatedAt: 2,
+    });
+    const community = makeDigest("community-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+      updatedAt: 1,
+    });
+    const { ctx, paginate, tableNames } = makeDigestCtx({
+      highlightedBadges: [
+        { _id: "packageBadges:official", packageId: official.packageId },
+        { _id: "packageBadges:community", packageId: community.packageId },
+      ],
+      exactDigests: [official, community],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      highlightedOnly: true,
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "official-security",
+      "community-security",
+    ]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
+    expect(tableNames).toEqual(["packageSearchDigest", "packageSearchDigest"]);
     expect(paginate).not.toHaveBeenCalled();
   });
 

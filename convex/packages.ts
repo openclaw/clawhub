@@ -3489,14 +3489,6 @@ async function listPackagePageImpl(
     return { page: [], isDone: true, continueCursor: "" };
   }
 
-  if (args.officialFirst && category && typeof args.isOfficial !== "boolean") {
-    return await listOfficialFirstPackageCategoryPage(ctx, {
-      ...args,
-      category,
-      topic,
-    });
-  }
-
   if (args.highlightedOnly) {
     const page = await fetchHighlightedPackagePage(ctx, {
       ...args,
@@ -3505,6 +3497,14 @@ async function listPackagePageImpl(
       numItems: targetCount,
     });
     return { page, isDone: true, continueCursor: "" };
+  }
+
+  if (args.officialFirst && category && typeof args.isOfficial !== "boolean") {
+    return await listOfficialFirstPackageCategoryPage(ctx, {
+      ...args,
+      category,
+      topic,
+    });
   }
 
   const collected: PublicPackageListItem[] = [];
