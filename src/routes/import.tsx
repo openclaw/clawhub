@@ -211,7 +211,7 @@ export function ImportGitHub() {
         version: version.trim(),
         tags: tagList,
         ...(primaryCategory ? { primaryCategory } : {}),
-        topics: parseCatalogTopicsInput(topics),
+        ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
       });
       const nextSlug = result.slug;
       setStatus("Imported.");

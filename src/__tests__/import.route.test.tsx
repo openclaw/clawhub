@@ -145,4 +145,24 @@ describe("Import route", () => {
       screen.getByRole("button", { name: /import \+ publish/i }).getAttribute("disabled"),
     ).not.toBeNull();
   });
+
+  it("omits blank topics so re-imports preserve stored metadata", async () => {
+    importSkill.mockResolvedValue({ slug: "taken-skill" });
+
+    render(<ImportGitHub />);
+    fireEvent.change(screen.getByPlaceholderText("https://github.com/owner/repo"), {
+      target: { value: "https://github.com/octo/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /detect/i }));
+
+    await waitFor(() => {
+      expect(previewCandidate).toHaveBeenCalled();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /import \+ publish/i }));
+
+    await waitFor(() => {
+      expect(importSkill).toHaveBeenCalled();
+    });
+    expect(importSkill.mock.calls[0]?.[0]).not.toHaveProperty("topics");
+  });
 });

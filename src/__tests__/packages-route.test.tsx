@@ -171,6 +171,15 @@ describe("plugins route", () => {
     );
   });
 
+  it("preserves invalid topic filters so they cannot become unfiltered requests", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ topic: "!!!" })).toEqual(expect.objectContaining({ topic: "!!!" }));
+  });
+
   it("redirects search-only sorts back to default when there is no query", async () => {
     const route = await loadRoute();
     const beforeLoad = (

@@ -18,6 +18,15 @@ vi.mock("@tanstack/react-router", () => ({
 
 import { Route } from "../routes/skills/index";
 
+function validateSearch(search: Record<string, unknown>) {
+  const route = Route as unknown as {
+    __config: {
+      validateSearch?: (search: Record<string, unknown>) => Record<string, unknown>;
+    };
+  };
+  return route.__config.validateSearch?.(search);
+}
+
 function runBeforeLoad(search: Record<string, unknown>) {
   const route = Route as unknown as {
     __config: {
@@ -50,5 +59,9 @@ describe("skills route default sort", () => {
   it("does not redirect when filters are present", () => {
     expect(runBeforeLoad({ featured: true })).toBeUndefined();
     expect(runBeforeLoad({ highlighted: true })).toBeUndefined();
+  });
+
+  it("preserves invalid topic filters so they cannot become unfiltered requests", () => {
+    expect(validateSearch({ topic: "!!!" })).toEqual(expect.objectContaining({ topic: "!!!" }));
   });
 });

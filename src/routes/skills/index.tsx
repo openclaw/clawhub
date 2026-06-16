@@ -1,11 +1,11 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { Search, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { formatBrowseCount } from "../../lib/browseCount";
+import { parseCatalogTopicFilter } from "../../lib/catalogTopics";
 import { SKILL_CATEGORIES } from "../../lib/categories";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
@@ -52,7 +52,7 @@ export const Route = createFileRoute("/skills/")({
           ? true
           : undefined,
       category: parseSkillCategorySlug(search.category),
-      topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
+      topic: parseCatalogTopicFilter(search.topic),
       view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
     };

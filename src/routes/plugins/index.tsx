@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { isPluginCategorySlug, normalizeCatalogTopic } from "clawhub-schema";
+import { isPluginCategorySlug } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { PackageSearch, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,6 +9,7 @@ import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { formatBrowseCount } from "../../lib/browseCount";
+import { parseCatalogTopicFilter } from "../../lib/catalogTopics";
 import { PLUGIN_CATEGORIES } from "../../lib/categories";
 import {
   fetchPluginCatalog,
@@ -200,7 +201,7 @@ export const Route = createFileRoute("/plugins/")({
       typeof search.category === "string" && isPluginCategorySlug(search.category)
         ? search.category
         : undefined,
-    topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
+    topic: parseCatalogTopicFilter(search.topic),
     cursor:
       search.sort !== "downloads" && typeof search.cursor === "string" && search.cursor
         ? search.cursor
