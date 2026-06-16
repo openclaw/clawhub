@@ -122,7 +122,7 @@ describe("skill stat events - comment delta handling", () => {
     );
   });
 
-  it("floors action drain batch size so stale small continuations do not crawl", async () => {
+  it("bounds action drain work so stale continuations do not crawl or time out", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
       if ("leaseMs" in args) {
         return {
@@ -145,15 +145,22 @@ describe("skill stat events - comment delta handling", () => {
     await expect(
       processSkillStatEventsInternalHandler(
         { runMutation, scheduler },
-        { batchSize: 10, maxBatches: 1 },
+        { batchSize: 10, maxBatches: 100 },
       ),
     ).resolves.toMatchObject({
-      processed: 100,
+      processed: 500,
       scheduledContinuation: true,
     });
 
-    expect(runMutation.mock.calls[1]?.[1]).toMatchObject({ batchSize: 100 });
-    expect(scheduler.runAfter.mock.calls[0]?.[2]).toMatchObject({ batchSize: 100 });
+    const batchCalls = runMutation.mock.calls.filter(([, args]) => {
+      return args && typeof args === "object" && "leaseOwner" in args && "batchSize" in args;
+    });
+    expect(batchCalls).toHaveLength(5);
+    expect(batchCalls[0]?.[1]).toMatchObject({ batchSize: 100 });
+    expect(scheduler.runAfter.mock.calls[0]?.[2]).toMatchObject({
+      batchSize: 100,
+      maxBatches: 5,
+    });
   });
 
   it("aggregates comment and uncomment events into net deltas", () => {

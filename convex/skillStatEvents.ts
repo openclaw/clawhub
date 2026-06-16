@@ -182,8 +182,8 @@ const DOC_SYNC_LEASE_KEY = "skill_doc_stat_sync";
 const DOC_SYNC_LEASE_MS = 2 * 60 * 1_000;
 const DEFAULT_DOC_SYNC_BATCH_SIZE = 100;
 const MAX_DOC_SYNC_BATCH_SIZE = 100;
-const DEFAULT_DOC_SYNC_MAX_BATCHES = 20;
-const MAX_DOC_SYNC_MAX_BATCHES = 100;
+const DEFAULT_DOC_SYNC_MAX_BATCHES = 5;
+const MAX_DOC_SYNC_MAX_BATCHES = 5;
 
 type ClaimSkillStatDocSyncLeaseResult =
   | {
