@@ -153,7 +153,7 @@
     "vitest": "4.1.8"
   },
   "overrides": {
-    "dompurify": "3.4.1",
+    "dompurify": "3.4.10",
     "next": "16.2.6",
     "postcss": "8.5.12",
     "ws": "8.21.0"
