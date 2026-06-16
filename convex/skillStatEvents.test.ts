@@ -1,6 +1,17 @@
 /* @vitest-environment node */
 import { describe, expect, it, vi } from "vitest";
 
+const apiRefs = vi.hoisted(() => ({
+  applyAggregatedStatsAndUpdateCursor: Symbol("applyAggregatedStatsAndUpdateCursor"),
+  claimSkillStatDocSyncLeaseInternal: Symbol("claimSkillStatDocSyncLeaseInternal"),
+  getStatEventCursor: Symbol("getStatEventCursor"),
+  getUnprocessedEventBatch: Symbol("getUnprocessedEventBatch"),
+  processSkillStatEventBatchInternal: Symbol("processSkillStatEventBatchInternal"),
+  processSkillStatEventsAction: Symbol("processSkillStatEventsAction"),
+  processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
+  releaseSkillStatDocSyncLeaseInternal: Symbol("releaseSkillStatDocSyncLeaseInternal"),
+}));
+
 vi.mock("./functions", () => ({
   internalAction: (def: { handler: unknown }) => ({ _handler: def.handler }),
   internalMutation: (def: { handler: unknown }) => ({ _handler: def.handler }),
@@ -10,16 +21,19 @@ vi.mock("./functions", () => ({
 vi.mock("./_generated/api", () => ({
   internal: {
     skillStatEvents: {
-      claimSkillStatDocSyncLeaseInternal: Symbol("claimSkillStatDocSyncLeaseInternal"),
-      processSkillStatEventBatchInternal: Symbol("processSkillStatEventBatchInternal"),
-      processSkillStatEventsAction: Symbol("processSkillStatEventsAction"),
-      processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
-      releaseSkillStatDocSyncLeaseInternal: Symbol("releaseSkillStatDocSyncLeaseInternal"),
+      applyAggregatedStatsAndUpdateCursor: apiRefs.applyAggregatedStatsAndUpdateCursor,
+      claimSkillStatDocSyncLeaseInternal: apiRefs.claimSkillStatDocSyncLeaseInternal,
+      getStatEventCursor: apiRefs.getStatEventCursor,
+      getUnprocessedEventBatch: apiRefs.getUnprocessedEventBatch,
+      processSkillStatEventBatchInternal: apiRefs.processSkillStatEventBatchInternal,
+      processSkillStatEventsAction: apiRefs.processSkillStatEventsAction,
+      processSkillStatEventsInternal: apiRefs.processSkillStatEventsInternal,
+      releaseSkillStatDocSyncLeaseInternal: apiRefs.releaseSkillStatDocSyncLeaseInternal,
     },
   },
 }));
 
-const { processSkillStatEventBatchInternal, processSkillStatEventsInternal } =
+const { processSkillStatEventBatchInternal, processSkillStatEventsAction, processSkillStatEventsInternal } =
   await import("./skillStatEvents");
 
 const processSkillStatEventBatchInternalHandler = (
@@ -28,6 +42,15 @@ const processSkillStatEventBatchInternalHandler = (
       ctx: unknown,
       args: { batchSize?: number; leaseOwner: string },
     ) => Promise<{ processed: number; skillsUpdated: number; hasMore: boolean }>;
+  }
+)._handler;
+
+const processSkillStatEventsActionHandler = (
+  processSkillStatEventsAction as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: Record<string, never>,
+    ) => Promise<{ skillsUpdated: number; exhausted: boolean }>;
   }
 )._handler;
 
@@ -41,6 +64,47 @@ const processSkillStatEventsInternalHandler = (
 )._handler;
 
 describe("skill stat events", () => {
+  it("advances the action cursor for retired comment events without writing stat deltas", async () => {
+    const event = {
+      _id: "skillStatEvents:comment",
+      _creationTime: 456,
+      skillId: "skills:1",
+      kind: "comment",
+      occurredAt: 1000,
+      processedAt: undefined,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce([event]);
+    const runMutation = vi.fn(async () => ({ skillsUpdated: 1 }));
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = { runQuery, runMutation, scheduler };
+
+    await expect(processSkillStatEventsActionHandler(ctx, {})).resolves.toEqual({
+      skillsUpdated: 1,
+      exhausted: true,
+    });
+
+    expect(runQuery).toHaveBeenNthCalledWith(1, apiRefs.getStatEventCursor);
+    expect(runQuery).toHaveBeenNthCalledWith(2, apiRefs.getUnprocessedEventBatch, {
+      cursorCreationTime: undefined,
+      limit: 500,
+    });
+    expect(runMutation).toHaveBeenCalledWith(apiRefs.applyAggregatedStatsAndUpdateCursor, {
+      skillDeltas: [
+        {
+          skillId: "skills:1",
+          downloads: 0,
+          stars: 0,
+          installsAllTime: 0,
+          installsCurrent: 0,
+          downloadEvents: [],
+          installNewEvents: [],
+        },
+      ],
+      newCursor: 456,
+    });
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
   it.each(["star", "unstar", "comment", "uncomment"] as const)(
     "marks historical %s events processed without patching skill stats",
     async (kind) => {
