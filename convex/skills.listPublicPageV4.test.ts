@@ -188,6 +188,39 @@ describe("skills.listPublicPageV4", () => {
       "stale-install-score",
     ]);
   });
+
+  it("keeps highlighted category listings on the highlighted path when official-first is enabled", async () => {
+    const ctx = makeHighlightedCtx([
+      makeDigest({
+        id: "productivity",
+        slug: "productivity-skill",
+        stars: 1,
+        installsAllTime: 1,
+        downloads: 1,
+        updatedAt: 200,
+        primaryCategory: "productivity-tasks",
+      }),
+      makeDigest({
+        id: "development",
+        slug: "development-skill",
+        stars: 1,
+        installsAllTime: 1,
+        downloads: 1,
+        updatedAt: 100,
+        primaryCategory: "dev-tools",
+      }),
+    ]);
+
+    const result = await listPublicPageV4Handler(ctx, {
+      highlightedOnly: true,
+      officialFirst: true,
+      categorySlug: "productivity-tasks",
+      numItems: 10,
+    });
+
+    expect(result.page.map((entry) => entry.skill.slug)).toEqual(["productivity-skill"]);
+    expect(ctx.db.query).toHaveBeenCalledWith("skillBadges");
+  });
 });
 
 function getSkillSearchDigestIndexFields(indexDescriptor: string) {
@@ -268,6 +301,7 @@ function makeDigest(params: {
   installsAllTime: number;
   downloads: number;
   updatedAt: number;
+  primaryCategory?: string;
   recommendedScore?: number;
   recommendedScoreVersion?: number;
 }) {
@@ -291,6 +325,7 @@ function makeDigest(params: {
     latestVersionSummary: undefined,
     tags: {},
     capabilityTags: [],
+    primaryCategory: params.primaryCategory,
     badges: undefined,
     stats: {
       downloads: params.downloads,
