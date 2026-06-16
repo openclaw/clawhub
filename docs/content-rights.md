@@ -4,25 +4,20 @@ read_when:
   - Reporting copyright or other rights concerns involving ClawHub content
   - Responding to a ClawHub content rights request
 title: "Content Rights Requests"
-sidebarTitle: "Content Rights Requests"
+sidebarTitle: "Content Rights"
 ---
 
 # Content Rights Requests
 
-Use the [ClawHub Content Rights Request form](https://forms.openclaw.ai/clawhub-content-rights)
-to report copyright or other content rights concerns involving material
-published on ClawHub.
+If you believe content published on ClawHub infringes your copyright or other
+rights, submit a [ClawHub Content Rights Request](https://forms.openclaw.ai/clawhub-content-rights).
 
 Include:
 
-- your name, organization, and contact email
 - one or more exact `https://clawhub.ai/<owner>/<skill>` URLs
-- a clear explanation of the rights concern
-- supporting evidence, such as a PDF notice, when available
-
-The form does not require sign-in. After submission, ClawHub sends a receipt
-with a case ID. The receipt confirms that the request was received; it does not
-confirm a decision or removal.
+- your name, organization, and contact email
+- a brief explanation of the rights concern
+- supporting evidence, if available
 
 ClawHub staff review requests manually and may contact the requester or
 publisher for more information. Depending on the circumstances, affected
