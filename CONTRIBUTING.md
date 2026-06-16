@@ -208,7 +208,7 @@ Manual smoke tests are documented in [`specs/manual-testing.md`](specs/manual-te
 ## Skill Publishing
 
 - Skill format reference: [`docs/skill-format.md`](docs/skill-format.md)
-- End-to-end walkthrough (search, install, publish, sync): [`docs/quickstart.md`](docs/quickstart.md)
+- End-to-end walkthrough (search, install, and publish): [`docs/quickstart.md`](docs/quickstart.md)
 
 Quick publish:
 

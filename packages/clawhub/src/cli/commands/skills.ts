@@ -33,8 +33,8 @@ import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts, ResolveResult } from "../types.js";
 import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { reportInstalledSkillsTelemetryIfEnabled } from "./installTelemetry.js";
 import { presentModerationPlan, reportModerationPlan } from "./moderationPlan.js";
-import { reportInstalledSkillsTelemetryIfEnabled } from "./syncHelpers.js";
 
 type SkillReportOptions = {
   version?: string;

@@ -170,16 +170,6 @@ bun run --cwd packages/clawhub verify
 
 `test` runs source tests only. `test:artifact` builds `dist/` and runs a small smoke suite against the built CLI entrypoint.
 
-## Sync (upload local skills)
-
-```bash
-# Start anywhere; scans workdir first, then legacy Clawdis/Clawd/OpenClaw/Moltbot locations.
-clawhub sync
-
-# Explicit roots + non-interactive dry-run
-clawhub sync --root ../clawdis/skills --all --dry-run
-```
-
 ## Defaults
 
 - Site: `https://clawhub.ai` (override via `--site` or `CLAWHUB_SITE`, legacy `CLAWDHUB_SITE`)

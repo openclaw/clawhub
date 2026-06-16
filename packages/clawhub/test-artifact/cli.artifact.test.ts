@@ -246,16 +246,13 @@ describe("built CLI artifact", () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Usage: clawhub");
-    expect(result.stdout).toContain("sync");
+    expect(result.stdout).not.toContain("sync");
   });
 
-  it("runs sync for bare logged-in invocations", async () => {
+  it("prints help for bare logged-in invocations", async () => {
     const { registry, requests } = await startLocalRegistry();
-    const workdir = await makeTmpDir("clawhub-artifact-bare-sync-");
+    const workdir = await makeTmpDir("clawhub-artifact-bare-help-");
     const configPath = await writeConfigWithToken(workdir, registry);
-    const skillDir = join(workdir, "skills", "demo");
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(join(skillDir, "SKILL.md"), "# Demo\n\nA local sync fixture.\n", "utf8");
 
     const result = await runNodeAsync(
       [binPath, "--workdir", workdir, "--registry", registry, "--no-input"],
@@ -263,20 +260,16 @@ describe("built CLI artifact", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stdout).not.toContain("Usage: clawhub");
-    expect(requests.map((request) => request.path)).toContain("/api/v1/whoami");
-    expect(requests.map((request) => request.path)).toContainEqual(
-      expect.stringMatching(/^\/api\/v1\/resolve\?slug=demo&hash=/),
-    );
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Usage: clawhub");
+    expect(requests).toHaveLength(0);
   });
 
-  it("exposes sync help for reusable publishing workflows", async () => {
-    const result = runNode([binPath, "sync", "--help"]);
+  it("does not expose the removed sync command", async () => {
+    const result = runNode([binPath, "sync"]);
 
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(result.stdout).toContain("Usage: clawhub sync");
-    expect(result.stdout).toContain("Scan local skills and publish new/updated ones");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("error: unknown command 'sync'");
   });
 
   it("reports unknown top-level commands clearly", async () => {
@@ -293,24 +286,6 @@ describe("built CLI artifact", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("error: unknown command 'nope'");
     expect(result.stderr).not.toContain("too many arguments");
-  });
-
-  it("rejects invalid sync bump values before scanning", async () => {
-    const workdir = await makeTmpDir("clawhub-artifact-invalid-bump-");
-    const result = runNode([
-      binPath,
-      "--workdir",
-      workdir,
-      "sync",
-      "--bump",
-      "banana",
-      "--dry-run",
-      "--no-clawdbot-roots",
-    ]);
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("--bump must be patch, minor, or major");
-    expect(result.stderr).not.toContain("No skills found");
   });
 
   it("does not mask unknown global options", async () => {
@@ -449,43 +424,6 @@ describe("built CLI artifact", () => {
       "/api/v1/skills/demo/versions/1.0.0",
       "/api/v1/download?slug=demo&version=1.0.0",
       "/api/cli/telemetry/install",
-    ]);
-  });
-
-  it("does not send install telemetry from the built sync command", async () => {
-    const { registry, requests } = await startLocalRegistry();
-    const workdir = await makeTmpDir("clawhub-artifact-sync-");
-    const configPath = await writeConfigWithToken(workdir, registry);
-    const skillDir = join(workdir, "skills", "demo");
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(join(skillDir, "SKILL.md"), "# Demo\n\nA local sync fixture.\n", "utf8");
-
-    const result = await runNodeAsync(
-      [
-        binPath,
-        "--workdir",
-        workdir,
-        "--registry",
-        registry,
-        "sync",
-        "--dry-run",
-        "--json",
-        "--no-clawdbot-roots",
-      ],
-      { CLAWHUB_CONFIG_PATH: configPath },
-    );
-
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    const output = JSON.parse(result.stdout.trim()) as { ok: boolean; dryRun: boolean };
-    expect(output).toMatchObject({ ok: true, dryRun: true });
-
-    expect(
-      requests.filter((request) => request.path.startsWith("/api/cli/telemetry/")),
-    ).toHaveLength(0);
-    expect(requests.map((request) => request.path)).toEqual([
-      "/api/v1/whoami",
-      expect.stringMatching(/^\/api\/v1\/resolve\?slug=demo&hash=/),
     ]);
   });
 

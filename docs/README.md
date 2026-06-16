@@ -30,7 +30,7 @@ Reading order:
 6. `docs/skill-format.md`: skill bundle metadata and package shape.
 7. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
 8. `docs/telemetry.md`: install telemetry and how to opt out.
-9. `docs/troubleshooting.md`: user-facing CLI, install, publish, sync, update, and API fixes.
+9. `docs/troubleshooting.md`: user-facing CLI, install, publish, update, and API fixes.
 
 Policy, API, and trust docs:
 

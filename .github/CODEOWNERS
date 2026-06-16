@@ -90,8 +90,6 @@
 /packages/clawhub/src/cli/commands/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/commands/publish.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/commands/transfer.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/clawhub/src/cli/commands/sync.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/clawhub/src/cli/scanSkills.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/schema/openclawContract.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/schema/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/schema/routes.ts @openclaw/openclaw-secops @Patrick-Erichsen

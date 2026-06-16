@@ -46,7 +46,6 @@ import {
   cmdUpdate,
 } from "./cli/commands/skills.js";
 import { cmdStarSkill } from "./cli/commands/star.js";
-import { cmdSync } from "./cli/commands/sync.js";
 import {
   cmdTransferAccept,
   cmdTransferCancel,
@@ -59,7 +58,6 @@ import { configureCommanderHelp, styleEnvBlock, styleTitle } from "./cli/helpSty
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
 import { fail } from "./cli/ui.js";
-import { readGlobalConfig } from "./config.js";
 
 const program = new Command()
   .name("clawhub")
@@ -827,62 +825,7 @@ registerCommand(program, ["unstar"])
     await cmdUnstarSkill(opts, slug, options, isInputAllowed());
   });
 
-registerCommand(program, ["sync"])
-  .description("Scan local skills and publish new/updated ones")
-  .option("--root <dir...>", "Extra scan roots (one or more)")
-  .option("--all", "Upload all new/updated skills without prompting")
-  .option("--dry-run", "Show what would be uploaded")
-  .option("--json", "Output JSON")
-  .option("--owner <handle>", "Publish under an org/user publisher handle")
-  .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
-  .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
-  .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--concurrency <n>", "Concurrent registry/file checks", (value) =>
-    Number.parseInt(value, 10),
-  )
-  .option("--source-repo <repo>", "GitHub repo URL or owner/name for source provenance")
-  .option("--source-commit <sha>", "Git commit SHA for source provenance")
-  .option("--source-ref <ref>", "Git ref for source provenance")
-  .addOption(
-    new Option("--clawdbot-roots", "Include Clawdbot-configured roots").default(true, "enabled"),
-  )
-  .addOption(new Option("--no-clawdbot-roots", "Disable Clawdbot-configured roots"))
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    const bump =
-      options.bump === "patch" || options.bump === "minor" || options.bump === "major"
-        ? options.bump
-        : fail("--bump must be patch, minor, or major");
-    const concurrency = options.concurrency ?? 6;
-    if (concurrency < 1 || concurrency > 32) fail("--concurrency must be between 1 and 32");
-    await cmdSync(
-      opts,
-      {
-        root: options.root,
-        all: options.all,
-        dryRun: options.dryRun,
-        json: options.json,
-        owner: options.owner,
-        bump,
-        changelog: options.changelog,
-        tags: options.tags,
-        concurrency,
-        clawdbotRoots: options.clawdbotRoots,
-        sourceRepo: options.sourceRepo,
-        sourceCommit: options.sourceCommit,
-        sourceRef: options.sourceRef,
-      },
-      isInputAllowed(),
-    );
-  });
-
-program.action(async () => {
-  const opts = await resolveGlobalOpts();
-  const cfg = await readGlobalConfig();
-  if (cfg?.token) {
-    await cmdSync(opts, {}, isInputAllowed());
-    return;
-  }
+program.action(() => {
   program.outputHelp();
   process.exitCode = 0;
 });

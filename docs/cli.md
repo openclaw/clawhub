@@ -1,8 +1,8 @@
 ---
-summary: "CLI reference: commands, flags, config, lockfile, and sync behavior."
+summary: "CLI reference: commands, flags, config, and lockfile behavior."
 read_when:
   - Using the ClawHub CLI
-  - Debugging install, update, publish, or sync
+  - Debugging install, update, or publish
 ---
 
 # CLI
@@ -221,46 +221,6 @@ clawhub scan --slug gifgrep --update --output report.zip
 clawhub scan download gifgrep --version 1.2.3
 clawhub scan download @scope/demo --version 2.0.0 --kind plugin --output report.zip
 ```
-
-#### GitHub Actions
-
-ClawHub ships an official reusable workflow at
-[`/.github/workflows/skill-publish.yml`](../.github/workflows/skill-publish.yml)
-for skill repos and catalog repos.
-
-Typical catalog setup:
-
-```yaml
-name: Skill Publish
-
-on:
-  pull_request:
-  workflow_dispatch:
-
-jobs:
-  dry-run:
-    if: github.event_name == 'pull_request'
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
-    with:
-      owner: nvidia
-      dry_run: true
-
-  publish:
-    if: github.event_name == 'workflow_dispatch'
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
-    with:
-      owner: nvidia
-      dry_run: false
-    secrets:
-      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
-```
-
-Notes:
-
-- `root` defaults to `skills` for catalog repos.
-- Pass `skill_path: skills/review-helper` to process one skill folder.
-- `owner` maps to the CLI `--owner` flag; omit it to publish as the authenticated user.
-- V1 skill publishing uses `clawhub_token`; GitHub OIDC trusted publishing is package-only for now.
 
 ### `delete <slug>`
 
@@ -775,30 +735,6 @@ Example:
 ```bash
 clawhub package trusted-publisher delete @openclaw/example-plugin
 ```
-
-### `sync`
-
-- Scans for local skill folders and publishes new/changed ones.
-- Roots can be any folder: a skills directory or a single skill folder with `SKILL.md`.
-- Auto-adds Clawdbot skill roots when `~/.clawdbot/clawdbot.json` is present:
-  - `agent.workspace/skills` (main agent)
-  - `routing.agents.*.workspace/skills` (per-agent)
-  - `~/.clawdbot/skills` (shared)
-  - `skills.load.extraDirs` (shared packs)
-- Respects `CLAWDBOT_CONFIG_PATH` / `CLAWDBOT_STATE_DIR` and `OPENCLAW_CONFIG_PATH` / `OPENCLAW_STATE_DIR`.
-- Flags:
-  - `--root <dir...>` extra scan roots
-  - `--all` upload without prompting
-  - `--dry-run` show plan only
-  - `--json` machine-readable summary for CI
-  - `--owner <handle>` publish under a user or org publisher
-  - `--bump patch|minor|major` (default: patch)
-  - `--changelog <text>` (non-interactive)
-  - `--tags a,b,c` (default: latest)
-  - `--concurrency <n>`
-  - `--source-repo <repo>`, `--source-commit <sha>`, `--source-ref <ref>` for GitHub provenance
-
-`sync` does not report install telemetry.
 
 ### Install telemetry
 

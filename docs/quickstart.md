@@ -116,28 +116,6 @@ fields, source attribution, and upload plan without publishing.
 Code plugins must include OpenClaw compatibility metadata in `package.json`,
 including `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
 
-## Sync skills you maintain
-
-`sync` scans skill folders and publishes new or changed skills that are not
-already synchronized.
-
-```bash
-clawhub sync --all --dry-run
-clawhub sync --all
-```
-
-For catalog repos, ClawHub also provides a reusable GitHub workflow. By
-default it scans `skills/`; pass `skill_path` to process one folder.
-
-```yaml
-jobs:
-  dry-run:
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
-    with:
-      owner: nvidia
-      dry_run: true
-```
-
 ## Inspect before installing
 
 Before installing, use the ClawHub web page or CLI detail commands to inspect
