@@ -81,26 +81,36 @@ bun run admin -- content-rights record-correspondence CHR-000007 \
   --json
 ```
 
-## Existing-Case Replies
+## Requester Status Updates
+
+For requester updates or closure notes, use direct email and avoid exposing the
+internal case id in the subject unless the user explicitly asks.
 
 ```bash
 bun run admin -- email send \
   --to requester@example.com \
-  --subject "Re: CHR-000007" \
+  --username Requester \
+  --subject "Update on ClawHub content rights request" \
   --body-file /tmp/body.txt
 ```
 
-Then, after send signoff and successful send, record it:
+Then, after signoff and successful send, record the exact body with the
+provider id:
 
 ```bash
 bun run admin -- content-rights record-correspondence CHR-000007 \
   --direction outbound \
-  --to "requester@example.com" \
+  --to "Requester Name <requester@example.com>" \
   --from "ClawHub <noreply@notifications.openclaw.ai>" \
-  --subject "Re: CHR-000007" \
+  --subject "Update on ClawHub content rights request" \
   --body-file /tmp/body.txt \
-  --provider-message-id "<providerId-from-send-response>" \
-  --attachment /tmp/evidence.pdf
+  --provider-message-id "<providerId-from-send-response>"
+```
+
+Verify the case now includes the correspondence:
+
+```bash
+bun run admin -- content-rights get CHR-000007 --json
 ```
 
 Run from the ClawHub repository root with the normal authenticated admin CLI.
