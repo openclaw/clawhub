@@ -202,6 +202,7 @@ export function PublishPluginRoute() {
   const [primaryCategory, setPrimaryCategory] = useState("");
   const primaryCategoryTouchedRef = useRef(false);
   const [topics, setTopics] = useState("");
+  const topicsTouchedRef = useRef(false);
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
   const [sourceRef, setSourceRef] = useState("");
@@ -225,6 +226,7 @@ export function PublishPluginRoute() {
     | {
         package: {
           primaryCategory?: string;
+          topics?: string[];
         };
       }
     | null
@@ -354,6 +356,8 @@ export function PublishPluginRoute() {
     setFiles(filtered.files);
     primaryCategoryTouchedRef.current = false;
     setPrimaryCategory("");
+    topicsTouchedRef.current = false;
+    setTopics("");
     setPackageSourceKind(sourceKind);
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
@@ -375,6 +379,8 @@ export function PublishPluginRoute() {
     setFiles([]);
     primaryCategoryTouchedRef.current = false;
     setPrimaryCategory("");
+    topicsTouchedRef.current = false;
+    setTopics("");
     setPackageSourceKind(null);
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
@@ -399,9 +405,13 @@ export function PublishPluginRoute() {
   }, [ownerHandle, publishers]);
 
   useEffect(() => {
-    if (primaryCategoryTouchedRef.current) return;
-    const existingCategory = existingPackage?.package.primaryCategory;
-    setPrimaryCategory(isPluginCategorySlug(existingCategory) ? existingCategory : "");
+    if (!primaryCategoryTouchedRef.current) {
+      const existingCategory = existingPackage?.package.primaryCategory;
+      setPrimaryCategory(isPluginCategorySlug(existingCategory) ? existingCategory : "");
+    }
+    if (!topicsTouchedRef.current) {
+      setTopics((existingPackage?.package.topics ?? []).join(", "));
+    }
   }, [existingPackage, name]);
 
   if (isAuthLoading) {
@@ -562,7 +572,10 @@ export function PublishPluginRoute() {
                     primaryCategoryTouchedRef.current = true;
                     setPrimaryCategory(value);
                   }}
-                  onTopicsChange={setTopics}
+                  onTopicsChange={(value) => {
+                    topicsTouchedRef.current = true;
+                    setTopics(value);
+                  }}
                 />
                 {family === "bundle-plugin" ? (
                   <>
@@ -806,7 +819,9 @@ export function PublishPluginRoute() {
                           ...(primaryCategory || primaryCategoryTouchedRef.current
                             ? { primaryCategory }
                             : {}),
-                          ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
+                          ...(topics.trim() || topicsTouchedRef.current
+                            ? { topics: parseCatalogTopicsInput(topics) }
+                            : {}),
                           ...(sourceRepo.trim() && sourceCommit.trim()
                             ? {
                                 source: {

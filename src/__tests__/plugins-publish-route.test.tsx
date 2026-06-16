@@ -310,6 +310,7 @@ describe("plugins publish route", () => {
             name: "demo-plugin",
             displayName: "Demo Plugin",
             primaryCategory: "model-providers",
+            topics: ["local-models"],
           },
           latestRelease: { _id: "packageReleases:demo", version: "1.2.2" },
         };
@@ -354,7 +355,9 @@ describe("plugins publish route", () => {
       expect(screen.getByRole("combobox", { name: "Primary category" }).textContent).toContain(
         "Model & Inference Providers",
       );
+      expect((screen.getByLabelText("Topics") as HTMLInputElement).value).toBe("local-models");
     });
+    fireEvent.change(screen.getByLabelText("Topics"), { target: { value: "" } });
     fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
       target: { value: "abc123" },
     });
@@ -364,7 +367,7 @@ describe("plugins publish route", () => {
       expect(publishRelease).toHaveBeenCalledTimes(1);
     });
     expect(publishRelease.mock.calls[0]?.[0]).toEqual({
-      payload: expect.objectContaining({ primaryCategory: "model-providers" }),
+      payload: expect.objectContaining({ primaryCategory: "model-providers", topics: [] }),
     });
   });
 

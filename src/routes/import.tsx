@@ -75,6 +75,7 @@ export function ImportGitHub() {
   const [primaryCategory, setPrimaryCategory] = useState("");
   const primaryCategoryTouchedRef = useRef(false);
   const [topics, setTopics] = useState("");
+  const topicsTouchedRef = useRef(false);
 
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -110,9 +111,13 @@ export function ImportGitHub() {
   );
 
   useEffect(() => {
-    if (primaryCategoryTouchedRef.current) return;
-    const existingCategory = existingSkill?.skill?.primaryCategory;
-    setPrimaryCategory(isSkillCategorySlug(existingCategory) ? existingCategory : "");
+    if (!primaryCategoryTouchedRef.current) {
+      const existingCategory = existingSkill?.skill?.primaryCategory;
+      setPrimaryCategory(isSkillCategorySlug(existingCategory) ? existingCategory : "");
+    }
+    if (!topicsTouchedRef.current) {
+      setTopics((existingSkill?.skill?.topics ?? []).join(", "));
+    }
   }, [existingSkill, trimmedSlug]);
 
   const selectedCount = useMemo(() => Object.values(selected).filter(Boolean).length, [selected]);
@@ -169,6 +174,8 @@ export function ImportGitHub() {
       setTags((result.defaults.tags ?? ["latest"]).join(","));
       primaryCategoryTouchedRef.current = false;
       setPrimaryCategory("");
+      topicsTouchedRef.current = false;
+      setTopics("");
       const nextSelected: Record<string, boolean> = {};
       for (const file of result.files) nextSelected[file.path] = file.defaultSelected;
       setSelected(nextSelected);
@@ -227,7 +234,9 @@ export function ImportGitHub() {
         version: version.trim(),
         tags: tagList,
         ...(primaryCategory || primaryCategoryTouchedRef.current ? { primaryCategory } : {}),
-        ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
+        ...(topics.trim() || topicsTouchedRef.current
+          ? { topics: parseCatalogTopicsInput(topics) }
+          : {}),
       });
       const nextSlug = result.slug;
       setStatus("Imported.");
@@ -445,7 +454,10 @@ export function ImportGitHub() {
                         primaryCategoryTouchedRef.current = true;
                         setPrimaryCategory(value);
                       }}
-                      onTopicsChange={setTopics}
+                      onTopicsChange={(value) => {
+                        topicsTouchedRef.current = true;
+                        setTopics(value);
+                      }}
                     />
                   </div>
                 </div>

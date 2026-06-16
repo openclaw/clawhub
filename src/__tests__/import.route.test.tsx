@@ -168,7 +168,7 @@ describe("Import route", () => {
     expect(importSkill.mock.calls[0]?.[0]).not.toHaveProperty("topics");
   });
 
-  it("prefills and preserves an existing skill category on re-import", async () => {
+  it("prefills an existing skill category and sends explicit topic clears on re-import", async () => {
     useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
@@ -178,6 +178,7 @@ describe("Import route", () => {
             slug: "taken-skill",
             displayName: "Taken Skill",
             primaryCategory: "security-review",
+            topics: ["security", "vetting"],
           },
           latestVersion: { version: "1.0.0" },
           owner: { handle: "me" },
@@ -205,12 +206,15 @@ describe("Import route", () => {
       expect(screen.getByRole("combobox", { name: "Primary category" }).textContent).toContain(
         "Security, Vetting & Trust",
       );
+      expect((screen.getByLabelText("Topics") as HTMLInputElement).value).toBe("security, vetting");
     });
+    fireEvent.change(screen.getByLabelText("Topics"), { target: { value: "" } });
     fireEvent.click(screen.getByRole("button", { name: /import \+ publish/i }));
 
     await waitFor(() => {
       expect(importSkill).toHaveBeenCalled();
     });
     expect(importSkill.mock.calls[0]?.[0]).toHaveProperty("primaryCategory", "security-review");
+    expect(importSkill.mock.calls[0]?.[0]).toHaveProperty("topics", []);
   });
 });

@@ -437,6 +437,7 @@ const getManageContextHandler = (
         name: string;
         displayName: string;
         primaryCategory?: string;
+        topics?: string[];
       };
       latestRelease: { _id: string; version: string };
     } | null
@@ -10135,6 +10136,7 @@ describe("packages public queries", () => {
       name: "large-plugin",
       displayName: "Large Plugin",
       primaryCategory: "model-providers",
+      topics: ["local-models"],
       sourceRepo: "owner/large-plugin",
       latestVersionSummary: {
         version: "1.2.3",
@@ -10192,6 +10194,7 @@ describe("packages public queries", () => {
         name: "large-plugin",
         displayName: "Large Plugin",
         primaryCategory: "model-providers",
+        topics: ["local-models"],
       },
       latestRelease: {
         _id: "packageReleases:demo-1",

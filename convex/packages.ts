@@ -2426,7 +2426,7 @@ async function requireTrustedPublisherEditor(
 }
 
 type PackageManageContext = {
-  package: Pick<Doc<"packages">, "_id" | "name" | "displayName" | "primaryCategory">;
+  package: Pick<Doc<"packages">, "_id" | "name" | "displayName" | "primaryCategory" | "topics">;
   latestRelease: Pick<Doc<"packageReleases">, "_id" | "version">;
 };
 
@@ -2440,6 +2440,7 @@ function toPackageManageContext(
       name: pkg.name,
       displayName: pkg.displayName,
       primaryCategory: pkg.primaryCategory,
+      topics: pkg.topics,
     },
     latestRelease: {
       _id: latestRelease._id,
