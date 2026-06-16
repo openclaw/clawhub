@@ -115,6 +115,16 @@ describe("formatError", () => {
     expect(formatted).toContain("http://[redacted]@proxy.example:8080");
   });
 
+  it("redacts generic Authorization schemes with separated credentials", () => {
+    const error = new Error("fetch failed: Authorization: Basic dXNlcjpwYXNz");
+
+    const formatted = formatError(error);
+
+    expect(formatted).toContain("Authorization: [redacted]");
+    expect(formatted).not.toContain("Basic");
+    expect(formatted).not.toContain("dXNlcjpwYXNz");
+  });
+
   it("classifies TLS and timeout failures", () => {
     const tls = new Error("self signed certificate in certificate chain");
     const timeout = new Error("Request timed out after 30s");

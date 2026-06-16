@@ -172,7 +172,7 @@ function classifyTransportError(value: string) {
 function redactSensitiveText(value: string) {
   return value
     .replace(/(authorization:\s*bearer\s+)[^\s,;]+/gi, "$1[redacted]")
-    .replace(/(authorization:\s*)(?!bearer\s+)[^\s,;]+/gi, "$1[redacted]")
+    .replace(/(authorization:\s*)(?!bearer\s+)(?:[^\s,;]+\s+)?[^\s,;]+/gi, "$1[redacted]")
     .replace(/(clh_[A-Za-z0-9._-]+)/g, "[redacted]")
     .replace(
       /([?&](?:access_token|api[_-]?key|auth|authorization|callback|callback_url|code|key|redirect_uri|return_to|secret|state|token)=)[^&#\s]+/gi,
