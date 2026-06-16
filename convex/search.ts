@@ -119,8 +119,6 @@ function getLexicalBoost(queryTokens: string[], displayName: string, slug: strin
 }
 
 type PopularityStats = {
-  /** Accepted for compatibility with existing callers, but ignored for ranking. */
-  downloads: number;
   installsAllTime?: number;
   stars: number;
 };
@@ -371,7 +369,6 @@ export const searchSkills: ReturnType<typeof action> = action({
             entry.skill.displayName,
             entry.skill.slug,
             {
-              downloads: entry.skill.stats.downloads,
               installsAllTime: entry.skill.stats.installsAllTime,
               stars: entry.skill.stats.stars,
             },
