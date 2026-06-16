@@ -289,8 +289,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
       current ban so the next matching unban can restore them
   - retimestamps already ban-hidden owned skills to the current ban marker so
     a later matching unban can restore them
-  - soft-deletes any authored legacy skill-comment rows until the retired
-    comments table is purged by a cleanup migration
   - revokes API tokens
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
@@ -325,22 +323,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Moderators cannot ban admins; nobody can ban themselves.
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.
-
-### Retired skill-comment data purge
-
-Before running the schema cleanup migration that removes the legacy `comments`
-and `commentReports` tables, purge their production rows with a single-table
-Convex import that replaces each table with an empty JSON array:
-
-```sh
-printf '[]\n' > /tmp/clawhub-empty-table.json
-bunx convex import --deployment wry-manatee-359 --table commentReports --replace --yes /tmp/clawhub-empty-table.json
-bunx convex import --deployment wry-manatee-359 --table comments --replace --yes /tmp/clawhub-empty-table.json
-```
-
-Run `commentReports` first so report rows are removed before their legacy
-comment targets. After the import, verify both tables are empty before deploying
-the schema cleanup that deletes the tables.
 
 ## User account deletion
 

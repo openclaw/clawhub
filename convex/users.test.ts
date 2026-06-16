@@ -9,13 +9,8 @@ vi.mock("./lib/access", async () => {
   return { ...actual, requireUser: vi.fn() };
 });
 
-vi.mock("./skillStatEvents", () => ({
-  insertStatEvent: vi.fn(),
-}));
-
 const { requireUser } = await import("./lib/access");
 const { getAuthUserId } = await import("@convex-dev/auth/server");
-const { insertStatEvent } = await import("./skillStatEvents");
 const {
   ensureHandler,
   getByHandle,
@@ -427,27 +422,12 @@ function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}
   const runMutation = vi.fn();
   const runAfter = vi.fn();
   const apiTokens = [{ _id: "apiTokens:1", revokedAt: undefined }];
-  const userComments = [
-    {
-      _id: "comments:active",
-      userId: "users:target",
-      skillId: "skills:1",
-      softDeletedAt: undefined,
-    },
-    {
-      _id: "comments:already-deleted",
-      userId: "users:target",
-      skillId: "skills:1",
-      softDeletedAt: 123,
-    },
-  ];
   const query = vi.fn((table: string) => ({
     withIndex: (_index: string, _cb: unknown) => {
       if (table === "auditLogs") {
         return { order: vi.fn(() => ({ take: vi.fn().mockResolvedValue(auditLogs) })) };
       }
       if (table === "apiTokens") return { collect: vi.fn().mockResolvedValue(apiTokens) };
-      if (table === "comments") return { collect: vi.fn().mockResolvedValue(userComments) };
       throw new Error(`Unexpected table ${table}`);
     },
   }));
@@ -457,7 +437,7 @@ function makeBanCtx(options: { auditLogs?: Array<Record<string, unknown>> } = {}
     runMutation,
     scheduler: { runAfter },
   } as never;
-  return { ctx, patch, insert, get, runMutation, runAfter };
+  return { ctx, patch, insert, get, query, runMutation, runAfter };
 }
 
 function makeBanAppealContextCtx(options: {
@@ -3004,13 +2984,12 @@ describe("users.searchInternal", () => {
 
 describe("users.banUserInternal", () => {
   afterEach(() => {
-    vi.mocked(insertStatEvent).mockReset();
     vi.restoreAllMocks();
   });
 
-  it("soft-deletes legacy skill comments during ban", async () => {
+  it("does not query retired skill comments during ban", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
-    const { ctx, get, patch, insert, runMutation } = makeBanCtx();
+    const { ctx, get, insert, runMutation } = makeBanCtx();
 
     get.mockImplementation(async (id: string) => {
       if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
@@ -3045,22 +3024,14 @@ describe("users.banUserInternal", () => {
     expect(result).toMatchObject({
       ok: true,
       alreadyBanned: false,
-      deletedSkillComments: 1,
-    });
-    expect(patch).toHaveBeenCalledWith("comments:active", {
-      softDeletedAt: 1_700_000_000_000,
-      deletedBy: "users:actor",
-    });
-    expect(insertStatEvent).toHaveBeenCalledWith(expect.anything(), {
-      skillId: "skills:1",
-      kind: "uncomment",
+      deletedSkillComments: 0,
     });
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
       expect.objectContaining({
         action: "user.ban",
         metadata: expect.objectContaining({
-          deletedSkillComments: 1,
+          deletedSkillComments: 0,
         }),
       }),
     );
@@ -3114,9 +3085,9 @@ describe("users.banUserInternal", () => {
     });
   });
 
-  it("cleans lingering legacy skill comments when re-banning a deleted user", async () => {
+  it("does not query retired skill comments when re-banning a deleted user", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
-    const { ctx, get, patch, runMutation } = makeBanCtx();
+    const { ctx, get, query, runMutation } = makeBanCtx();
 
     get.mockImplementation(async (id: string) => {
       if (id === "users:actor") return { _id: "users:actor", role: "moderator" };
@@ -3149,7 +3120,7 @@ describe("users.banUserInternal", () => {
       ok: true,
       alreadyBanned: true,
       deletedSkills: 0,
-      deletedSkillComments: 1,
+      deletedSkillComments: 0,
     });
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
@@ -3160,10 +3131,7 @@ describe("users.banUserInternal", () => {
         deletedByRole: "moderator",
       }),
     );
-    expect(patch).toHaveBeenCalledWith("comments:active", {
-      softDeletedAt: 1_600_000_000_000,
-      deletedBy: "users:actor",
-    });
+    expect(query).not.toHaveBeenCalledWith("comments");
   });
 });
 

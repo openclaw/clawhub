@@ -1597,8 +1597,6 @@ const HARD_DELETE_PHASES = [
   "githubScans",
   "skillCardJobs",
   "embeddings",
-  "comments",
-  "commentReports",
   "reports",
   "stars",
   "badges",
@@ -1740,36 +1738,6 @@ async function hardDeleteSkillStep(
       }
       if (embeddings.length === HARD_DELETE_BATCH_SIZE) {
         await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "comments", scope);
-      return;
-    }
-    case "comments": {
-      const comments = await ctx.db
-        .query("comments")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const comment of comments) {
-        await ctx.db.delete(comment._id);
-      }
-      if (comments.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "comments", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports", scope);
-      return;
-    }
-    case "commentReports": {
-      const commentReports = await ctx.db
-        .query("commentReports")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const report of commentReports) {
-        await ctx.db.delete(report._id);
-      }
-      if (commentReports.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports", scope);
         return;
       }
       await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
@@ -10705,13 +10673,16 @@ export const hardDeleteInternal = internalMutation({
         throw new Error("Skill is outside publisher deletion scope");
       }
     }
-    // Jobs scheduled before root telemetry removal should continue at the next durable phase.
+    // Jobs scheduled before earlier cleanup phases were removed should continue
+    // at the next durable phase instead of restarting from the beginning.
     const phase =
       args.phase === "rootInstalls"
         ? "installTelemetryDedupes"
-        : isHardDeletePhase(args.phase)
-          ? args.phase
-          : "versions";
+        : args.phase === "comments" || args.phase === "commentReports"
+          ? "reports"
+          : isHardDeletePhase(args.phase)
+            ? args.phase
+            : "versions";
     await hardDeleteSkillStep(ctx, skill, args.actorUserId, phase, {
       source,
       ownerPublisherId: args.ownerPublisherId,

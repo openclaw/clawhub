@@ -74,6 +74,14 @@ function makeCtx({
       return {
         withIndex: () => ({
           collect: async () => [],
+          take: async () => [],
+        }),
+      };
+    }
+    if (table === "skillReports") {
+      return {
+        withIndex: () => ({
+          take: async () => [],
         }),
       };
     }
@@ -93,6 +101,8 @@ function makeCtx({
         get: vi.fn(async (id: string) => {
           if (id === "users:owner") return user;
           if (id === "publishers:org") return { _id: id, kind: "org", deletedAt: 3_000 };
+          const skill = skills.find((row) => row._id === id);
+          if (skill) return skill;
           return null;
         }),
         insert: vi.fn(),
@@ -105,71 +115,6 @@ function makeCtx({
       scheduler,
     } as never,
     patch,
-    query,
-    scheduler,
-  };
-}
-
-function makeLegacyCommentHardDeleteCtx({
-  comments = [],
-  commentReports = [],
-}: {
-  comments?: Array<Record<string, unknown>>;
-  commentReports?: Array<Record<string, unknown>>;
-}) {
-  const deleteDoc = vi.fn();
-  const scheduler = { runAfter: vi.fn() };
-  const skill = {
-    _id: "skills:legacy",
-    slug: "legacy",
-    ownerUserId: "users:owner",
-    softDeletedAt: 1_000,
-    moderationStatus: "removed",
-    hiddenAt: 1_000,
-    hiddenBy: "users:admin",
-    stats: {
-      downloads: 0,
-      stars: 0,
-      comments: 0,
-      versions: 1,
-      installsCurrent: 0,
-      installsAllTime: 0,
-    },
-  };
-  const query = vi.fn((table: string) => {
-    if (table === "comments") {
-      return {
-        withIndex: () => ({
-          take: async () => comments,
-        }),
-      };
-    }
-    if (table === "commentReports") {
-      return {
-        withIndex: () => ({
-          take: async () => commentReports,
-        }),
-      };
-    }
-    throw new Error(`Unexpected table ${table}`);
-  });
-
-  return {
-    ctx: {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "users:admin") return { _id: id, role: "admin" };
-          if (id === "skills:legacy") return skill;
-          return null;
-        }),
-        normalizeId: vi.fn(),
-        patch: vi.fn(),
-        delete: deleteDoc,
-        query,
-      },
-      scheduler,
-    } as never,
-    deleteDoc,
     query,
     scheduler,
   };
@@ -785,52 +730,46 @@ describe("skills ban/unban batches", () => {
     expect(patch).not.toHaveBeenCalledWith("skills:removed", expect.anything());
   });
 
-  it("deletes legacy skill comments during hard-delete cleanup", async () => {
-    const { ctx, deleteDoc, query, scheduler } = makeLegacyCommentHardDeleteCtx({
-      comments: [{ _id: "comments:1" }, { _id: "comments:2" }],
+  it("continues stale retired comment cleanup phases at skill reports", async () => {
+    const { ctx, query, scheduler } = makeCtx({
+      user: { _id: "users:owner", role: "admin" },
+      skills: [
+        {
+          _id: "skills:legacy",
+          slug: "legacy",
+          ownerUserId: "users:owner",
+          softDeletedAt: 1_000,
+          moderationStatus: "removed",
+          hiddenAt: 1_000,
+          hiddenBy: "users:owner",
+          stats: {
+            downloads: 0,
+            stars: 0,
+            comments: 0,
+            versions: 1,
+            installsCurrent: 0,
+            installsAllTime: 0,
+          },
+        },
+      ],
     });
 
     await hardDeleteHandler(ctx, {
       skillId: "skills:legacy",
-      actorUserId: "users:admin",
+      actorUserId: "users:owner",
       phase: "comments",
     });
 
-    expect(query).toHaveBeenCalledWith("comments");
-    expect(deleteDoc).toHaveBeenCalledWith("comments:1");
-    expect(deleteDoc).toHaveBeenCalledWith("comments:2");
+    expect(query).not.toHaveBeenCalledWith("comments");
+    expect(query).not.toHaveBeenCalledWith("commentReports");
+    expect(query).toHaveBeenCalledWith("skillReports");
     expect(scheduler.runAfter).toHaveBeenCalledWith(
       0,
       expect.anything(),
       expect.objectContaining({
         skillId: "skills:legacy",
-        actorUserId: "users:admin",
-        phase: "commentReports",
-        source: "admin",
-      }),
-    );
-  });
-
-  it("deletes legacy comment reports during hard-delete cleanup", async () => {
-    const { ctx, deleteDoc, query, scheduler } = makeLegacyCommentHardDeleteCtx({
-      commentReports: [{ _id: "commentReports:1" }],
-    });
-
-    await hardDeleteHandler(ctx, {
-      skillId: "skills:legacy",
-      actorUserId: "users:admin",
-      phase: "commentReports",
-    });
-
-    expect(query).toHaveBeenCalledWith("commentReports");
-    expect(deleteDoc).toHaveBeenCalledWith("commentReports:1");
-    expect(scheduler.runAfter).toHaveBeenCalledWith(
-      0,
-      expect.anything(),
-      expect.objectContaining({
-        skillId: "skills:legacy",
-        actorUserId: "users:admin",
-        phase: "reports",
+        actorUserId: "users:owner",
+        phase: "stars",
         source: "admin",
       }),
     );
