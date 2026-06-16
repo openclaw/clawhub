@@ -19,6 +19,7 @@
 /convex/schema.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/auth.config.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/auth.ts @openclaw/openclaw-secops @Patrick-Erichsen
+/convex/commentModeration.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/http.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/httpApi.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/httpApiV1/ @openclaw/openclaw-secops @Patrick-Erichsen

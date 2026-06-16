@@ -33,8 +33,11 @@ vi.mock("./_generated/api", () => ({
   },
 }));
 
-const { processSkillStatEventBatchInternal, processSkillStatEventsAction, processSkillStatEventsInternal } =
-  await import("./skillStatEvents");
+const {
+  processSkillStatEventBatchInternal,
+  processSkillStatEventsAction,
+  processSkillStatEventsInternal,
+} = await import("./skillStatEvents");
 
 const processSkillStatEventBatchInternalHandler = (
   processSkillStatEventBatchInternal as unknown as {
