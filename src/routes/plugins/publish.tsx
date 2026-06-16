@@ -1,8 +1,8 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
+import { DocsLinks, getPackageScopeOwnerMismatch, isPluginCategorySlug } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
-import { type ReactNode, startTransition, useEffect, useMemo, useState } from "react";
+import { type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -200,6 +200,7 @@ export function PublishPluginRoute() {
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
   const [primaryCategory, setPrimaryCategory] = useState("");
+  const primaryCategoryTouchedRef = useRef(false);
   const [topics, setTopics] = useState("");
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
@@ -217,6 +218,17 @@ export function PublishPluginRoute() {
   const [status, setStatus] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const existingPackage = useQuery(
+    api.packages.getManageContext,
+    me && name.trim() ? { name: name.trim() } : "skip",
+  ) as
+    | {
+        package: {
+          primaryCategory?: string;
+        };
+      }
+    | null
+    | undefined;
   const showChangelogField = Boolean(search.name);
 
   const totalBytes = useMemo(() => files.reduce((sum, file) => sum + file.size, 0), [files]);
@@ -340,6 +352,8 @@ export function PublishPluginRoute() {
       ...new Set([...expanded.ignoredLocalMetadataPaths, ...filtered.ignoredPaths]),
     ];
     setFiles(filtered.files);
+    primaryCategoryTouchedRef.current = false;
+    setPrimaryCategory("");
     setPackageSourceKind(sourceKind);
     setIgnoredPaths(nextIgnoredPaths);
     setError(null);
@@ -359,6 +373,8 @@ export function PublishPluginRoute() {
 
   const clearSelectedFiles = () => {
     setFiles([]);
+    primaryCategoryTouchedRef.current = false;
+    setPrimaryCategory("");
     setPackageSourceKind(null);
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
@@ -381,6 +397,12 @@ export function PublishPluginRoute() {
       setOwnerHandle(personal.publisher.handle);
     }
   }, [ownerHandle, publishers]);
+
+  useEffect(() => {
+    if (primaryCategoryTouchedRef.current) return;
+    const existingCategory = existingPackage?.package.primaryCategory;
+    setPrimaryCategory(isPluginCategorySlug(existingCategory) ? existingCategory : "");
+  }, [existingPackage, name]);
 
   if (isAuthLoading) {
     return <PublishFormSkeleton />;
@@ -536,7 +558,10 @@ export function PublishPluginRoute() {
                   primaryCategory={primaryCategory}
                   topics={topics}
                   disabled={metadataDisabled}
-                  onPrimaryCategoryChange={setPrimaryCategory}
+                  onPrimaryCategoryChange={(value) => {
+                    primaryCategoryTouchedRef.current = true;
+                    setPrimaryCategory(value);
+                  }}
                   onTopicsChange={setTopics}
                 />
                 {family === "bundle-plugin" ? (
@@ -778,7 +803,9 @@ export function PublishPluginRoute() {
                           family,
                           version: version.trim(),
                           changelog: changelog.trim(),
-                          primaryCategory,
+                          ...(primaryCategory || primaryCategoryTouchedRef.current
+                            ? { primaryCategory }
+                            : {}),
                           ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
                           ...(sourceRepo.trim() && sourceCommit.trim()
                             ? {

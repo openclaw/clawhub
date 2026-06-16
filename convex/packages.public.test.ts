@@ -432,7 +432,12 @@ const getManageContextHandler = (
   getManageContext as unknown as WrappedHandler<
     { name: string; candidateNames?: string[] },
     {
-      package: { _id: string; name: string; displayName: string };
+      package: {
+        _id: string;
+        name: string;
+        displayName: string;
+        primaryCategory?: string;
+      };
       latestRelease: { _id: string; version: string };
     } | null
   >
@@ -3701,6 +3706,34 @@ describe("packages public queries", () => {
     expect(result.isDone).toBe(false);
     expect(result.continueCursor).toContain('"phase":"community"');
     expect(paginate).toHaveBeenCalledTimes(1);
+  });
+
+  it("fills an empty official-first page with community category plugins", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("community-security", {
+              isOfficial: false,
+              pluginCategory: "security",
+              pluginCategoryTags: ["security"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["community-security"]);
+    expect(result.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 
   it("uses plugin category digests for category-filtered search", async () => {
@@ -10101,6 +10134,7 @@ describe("packages public queries", () => {
     const pkg = makePackageDoc({
       name: "large-plugin",
       displayName: "Large Plugin",
+      primaryCategory: "model-providers",
       sourceRepo: "owner/large-plugin",
       latestVersionSummary: {
         version: "1.2.3",
@@ -10157,6 +10191,7 @@ describe("packages public queries", () => {
         _id: "packages:demo",
         name: "large-plugin",
         displayName: "Large Plugin",
+        primaryCategory: "model-providers",
       },
       latestRelease: {
         _id: "packageReleases:demo-1",

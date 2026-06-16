@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
 import { vi } from "vitest";
 import { ImportGitHub } from "../routes/import";
@@ -146,7 +147,7 @@ describe("Import route", () => {
     ).not.toBeNull();
   });
 
-  it("omits blank topics so re-imports preserve stored metadata", async () => {
+  it("omits untouched blank catalog metadata so re-imports preserve stored values", async () => {
     importSkill.mockResolvedValue({ slug: "taken-skill" });
 
     render(<ImportGitHub />);
@@ -163,7 +164,53 @@ describe("Import route", () => {
     await waitFor(() => {
       expect(importSkill).toHaveBeenCalled();
     });
-    expect(importSkill.mock.calls[0]?.[0]).toHaveProperty("primaryCategory", "");
+    expect(importSkill.mock.calls[0]?.[0]).not.toHaveProperty("primaryCategory");
     expect(importSkill.mock.calls[0]?.[0]).not.toHaveProperty("topics");
+  });
+
+  it("prefills and preserves an existing skill category on re-import", async () => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: {
+            slug: "taken-skill",
+            displayName: "Taken Skill",
+            primaryCategory: "security-review",
+          },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "me" },
+        };
+      }
+      if (name === "skills:checkSlugAvailability") {
+        return {
+          available: true,
+          reason: "available",
+          message: null,
+          url: null,
+        };
+      }
+      return null;
+    });
+    importSkill.mockResolvedValue({ slug: "taken-skill" });
+
+    render(<ImportGitHub />);
+    fireEvent.change(screen.getByPlaceholderText("https://github.com/owner/repo"), {
+      target: { value: "https://github.com/octo/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /detect/i }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Primary category" }).textContent).toContain(
+        "Security, Vetting & Trust",
+      );
+    });
+    fireEvent.click(screen.getByRole("button", { name: /import \+ publish/i }));
+
+    await waitFor(() => {
+      expect(importSkill).toHaveBeenCalled();
+    });
+    expect(importSkill.mock.calls[0]?.[0]).toHaveProperty("primaryCategory", "security-review");
   });
 });

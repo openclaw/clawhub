@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DocsLinks } from "clawhub-schema";
+import { getFunctionName } from "convex/server";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -45,7 +46,7 @@ vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useMutation: () => generateUploadUrl,
   useAction: () => publishRelease,
-  useQuery: () => useQueryMock(),
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
@@ -105,18 +106,23 @@ describe("plugins publish route", () => {
       isLoading: false,
       me: { _id: "users:1" },
     });
-    useQueryMock.mockReturnValue([
-      {
-        publisher: {
-          _id: "publishers:vintageayu",
-          handle: "vintageayu",
-          displayName: "VintageAyu",
-          kind: "user",
-          image: "/clawd-logo.png",
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "packages:getManageContext") return null;
+      return [
+        {
+          publisher: {
+            _id: "publishers:vintageayu",
+            handle: "vintageayu",
+            displayName: "VintageAyu",
+            kind: "user",
+            image: "/clawd-logo.png",
+          },
+          role: "owner",
         },
-        role: "owner",
-      },
-    ]);
+      ];
+    });
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishRelease.mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => ({
@@ -276,7 +282,6 @@ describe("plugins publish route", () => {
         family: "code-plugin",
         version: "1.2.3",
         changelog: "",
-        primaryCategory: "",
         source: expect.objectContaining({
           kind: "github",
           repo: "openclaw/demo-plugin",
@@ -291,6 +296,75 @@ describe("plugins publish route", () => {
           expect.objectContaining({ path: "dist/index.js" }),
         ]),
       }),
+    });
+  });
+
+  it("prefills and preserves an existing plugin category on republish", async () => {
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const functionName = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (functionName === "packages:getManageContext") {
+        return {
+          package: {
+            _id: "packages:demo",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            primaryCategory: "model-providers",
+          },
+          latestRelease: { _id: "packageReleases:demo", version: "1.2.2" },
+        };
+      }
+      return [
+        {
+          publisher: {
+            _id: "publishers:vintageayu",
+            handle: "vintageayu",
+            displayName: "VintageAyu",
+            kind: "user",
+          },
+          role: "owner",
+        },
+      ];
+    });
+
+    renderPublishRoute();
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.3",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Primary category" }).textContent).toContain(
+        "Model & Inference Providers",
+      );
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    await waitFor(() => {
+      expect(publishRelease).toHaveBeenCalledTimes(1);
+    });
+    expect(publishRelease.mock.calls[0]?.[0]).toEqual({
+      payload: expect.objectContaining({ primaryCategory: "model-providers" }),
     });
   });
 

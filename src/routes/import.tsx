@@ -1,6 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { isSkillCategorySlug } from "clawhub-schema";
 import { useAction, useQuery } from "convex/react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import {
@@ -72,6 +73,7 @@ export function ImportGitHub() {
   const [version, setVersion] = useState("0.1.0");
   const [tags, setTags] = useState("latest");
   const [primaryCategory, setPrimaryCategory] = useState("");
+  const primaryCategoryTouchedRef = useRef(false);
   const [topics, setTopics] = useState("");
 
   const [status, setStatus] = useState<string | null>(null);
@@ -92,6 +94,12 @@ export function ImportGitHub() {
       }
     | null
     | undefined;
+  const existingSkill = useQuery(
+    api.skills.getBySlug,
+    isAuthenticated && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
+      ? { slug: trimmedSlug.toLowerCase() }
+      : "skip",
+  );
   const slugCollision = useMemo(
     () =>
       getPublicSlugCollision({
@@ -100,6 +108,12 @@ export function ImportGitHub() {
       }),
     [slugAvailability, trimmedSlug],
   );
+
+  useEffect(() => {
+    if (primaryCategoryTouchedRef.current) return;
+    const existingCategory = existingSkill?.skill?.primaryCategory;
+    setPrimaryCategory(isSkillCategorySlug(existingCategory) ? existingCategory : "");
+  }, [existingSkill, trimmedSlug]);
 
   const selectedCount = useMemo(() => Object.values(selected).filter(Boolean).length, [selected]);
   const selectedBytes = useMemo(() => {
@@ -153,6 +167,8 @@ export function ImportGitHub() {
       setDisplayName(result.defaults.displayName);
       setVersion(result.defaults.version);
       setTags((result.defaults.tags ?? ["latest"]).join(","));
+      primaryCategoryTouchedRef.current = false;
+      setPrimaryCategory("");
       const nextSelected: Record<string, boolean> = {};
       for (const file of result.files) nextSelected[file.path] = file.defaultSelected;
       setSelected(nextSelected);
@@ -210,7 +226,7 @@ export function ImportGitHub() {
         displayName: displayName.trim(),
         version: version.trim(),
         tags: tagList,
-        primaryCategory,
+        ...(primaryCategory || primaryCategoryTouchedRef.current ? { primaryCategory } : {}),
         ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
       });
       const nextSlug = result.slug;
@@ -425,7 +441,10 @@ export function ImportGitHub() {
                       primaryCategory={primaryCategory}
                       topics={topics}
                       disabled={isBusy}
-                      onPrimaryCategoryChange={setPrimaryCategory}
+                      onPrimaryCategoryChange={(value) => {
+                        primaryCategoryTouchedRef.current = true;
+                        setPrimaryCategory(value);
+                      }}
                       onTopicsChange={setTopics}
                     />
                   </div>

@@ -2426,7 +2426,7 @@ async function requireTrustedPublisherEditor(
 }
 
 type PackageManageContext = {
-  package: Pick<Doc<"packages">, "_id" | "name" | "displayName">;
+  package: Pick<Doc<"packages">, "_id" | "name" | "displayName" | "primaryCategory">;
   latestRelease: Pick<Doc<"packageReleases">, "_id" | "version">;
 };
 
@@ -2439,6 +2439,7 @@ function toPackageManageContext(
       _id: pkg._id,
       name: pkg.name,
       displayName: pkg.displayName,
+      primaryCategory: pkg.primaryCategory,
     },
     latestRelease: {
       _id: latestRelease._id,
@@ -3763,14 +3764,16 @@ async function listOfficialFirstPackageCategoryPage(
         }),
       };
     }
-    return {
-      page: collected,
-      isDone: false,
-      continueCursor: encodeOfficialFirstPackageCategoryCursor({
-        phase: "community",
-        cursor: null,
-      }),
-    };
+    if (collected.length >= targetCount) {
+      return {
+        page: collected,
+        isDone: false,
+        continueCursor: encodeOfficialFirstPackageCategoryCursor({
+          phase: "community",
+          cursor: null,
+        }),
+      };
+    }
   }
 
   const communityPage = await listPackagePageImpl(ctx, {
