@@ -1605,8 +1605,6 @@ const HARD_DELETE_PHASES = [
   "githubScans",
   "skillCardJobs",
   "embeddings",
-  "comments",
-  "commentReports",
   "reports",
   "stars",
   "badges",
@@ -1748,36 +1746,6 @@ async function hardDeleteSkillStep(
       }
       if (embeddings.length === HARD_DELETE_BATCH_SIZE) {
         await scheduleHardDelete(ctx, skill._id, actorUserId, "embeddings", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "comments", scope);
-      return;
-    }
-    case "comments": {
-      const comments = await ctx.db
-        .query("comments")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const comment of comments) {
-        await ctx.db.delete(comment._id);
-      }
-      if (comments.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "comments", scope);
-        return;
-      }
-      await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports", scope);
-      return;
-    }
-    case "commentReports": {
-      const commentReports = await ctx.db
-        .query("commentReports")
-        .withIndex("by_skill", (q) => q.eq("skillId", skill._id))
-        .take(HARD_DELETE_BATCH_SIZE);
-      for (const report of commentReports) {
-        await ctx.db.delete(report._id);
-      }
-      if (commentReports.length === HARD_DELETE_BATCH_SIZE) {
-        await scheduleHardDelete(ctx, skill._id, actorUserId, "commentReports", scope);
         return;
       }
       await scheduleHardDelete(ctx, skill._id, actorUserId, "reports", scope);
@@ -7185,218 +7153,6 @@ export const getActiveSkillBatchForRescanInternal = internalQuery({
   },
 });
 
-/**
- * Get active skills whose latest version has no llmAnalysis.
- * Used for LLM evaluation backfill. Same cursor pattern as getActiveSkillBatchForRescanInternal.
- */
-export const getActiveSkillBatchForLlmBackfillInternal = internalQuery({
-  args: {
-    cursor: v.optional(v.number()),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 10, 1, 50);
-    const cursor = args.cursor ?? 0;
-
-    // Use built-in by_creation_time index for stable cursor-based pagination
-    const candidates = await ctx.db
-      .query("skills")
-      .withIndex("by_creation_time", (q) => q.gt("_creationTime", cursor))
-      .order("asc")
-      .take(batchSize * 3);
-
-    const results: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      slug: string;
-    }> = [];
-    let nextCursor = cursor;
-
-    for (const skill of candidates) {
-      nextCursor = skill._creationTime;
-      if (results.length >= batchSize) break;
-
-      if (skill.softDeletedAt) continue;
-      if ((skill.moderationStatus ?? "active") !== "active") continue;
-      if (!skill.latestVersionId) continue;
-
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version) continue;
-      // Re-evaluate all skills (full file content reading upgrade)
-      // if (version.llmAnalysis && version.llmAnalysis.status !== 'error') continue
-
-      results.push({
-        skillId: skill._id,
-        versionId: version._id,
-        slug: skill.slug,
-      });
-    }
-
-    const done = candidates.length < batchSize * 3;
-
-    return { skills: results, nextCursor, done };
-  },
-});
-
-const suspiciousSkillLlmRescanBucketValidator = v.union(
-  v.literal("all"),
-  v.literal("llm-only"),
-  v.literal("vt-only"),
-  v.literal("both"),
-);
-
-function skillHasReasonCode(
-  skill: Pick<Doc<"skills">, "moderationReason" | "moderationReasonCodes">,
-  code: string,
-) {
-  return (skill.moderationReasonCodes ?? []).includes(code);
-}
-
-function skillHasScannerSuspiciousReason(
-  skill: Pick<Doc<"skills">, "moderationReason" | "moderationReasonCodes">,
-  scanner: "llm" | "vt",
-) {
-  return (
-    skillHasReasonCode(skill, `suspicious.${scanner}_suspicious`) ||
-    skill.moderationReason === `scanner.${scanner}.suspicious`
-  );
-}
-
-/**
- * Targeted LLM rescan batches for suspicious latest skill versions.
- * Uses the suspicious index, then filters bucket membership in-page.
- */
-export const getSuspiciousSkillBatchForLlmRescanInternal = internalQuery({
-  args: {
-    bucket: suspiciousSkillLlmRescanBucketValidator,
-    cursor: v.optional(v.union(v.string(), v.null())),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 100, 1, 200);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skills")
-      .withIndex("by_nonsuspicious_updated", (q) =>
-        q.eq("softDeletedAt", undefined).eq("isSuspicious", true),
-      )
-      .order("asc")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    const skills: Array<{
-      skillId: Id<"skills">;
-      versionId: Id<"skillVersions">;
-      slug: string;
-      reasonCodes: string[];
-    }> = [];
-
-    for (const skill of page) {
-      if (!skill.latestVersionId) continue;
-      if (skill.moderationVerdict === "malicious") continue;
-      if ((skill.moderationReasonCodes ?? []).some((code) => code.startsWith("malicious."))) {
-        continue;
-      }
-      if ((skill.moderationFlags ?? []).includes("blocked.malware")) continue;
-
-      const hasLlmSuspicious = skillHasScannerSuspiciousReason(skill, "llm");
-      const hasVtSuspicious = skillHasScannerSuspiciousReason(skill, "vt");
-      const matches =
-        args.bucket === "all" ||
-        (args.bucket === "llm-only" && hasLlmSuspicious && !hasVtSuspicious) ||
-        (args.bucket === "vt-only" && hasVtSuspicious && !hasLlmSuspicious) ||
-        (args.bucket === "both" && hasLlmSuspicious && hasVtSuspicious);
-      if (!matches) continue;
-
-      const version = await ctx.db.get(skill.latestVersionId);
-      if (!version) continue;
-      skills.push({
-        skillId: skill._id,
-        versionId: version._id,
-        slug: skill.slug,
-        reasonCodes: skill.moderationReasonCodes ?? [],
-      });
-    }
-
-    return {
-      skills,
-      examined: page.length,
-      continueCursor,
-      isDone,
-    };
-  },
-});
-
-export const getSuspiciousSkillCountPageInternal = internalQuery({
-  args: {
-    cursor: v.optional(v.union(v.string(), v.null())),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampInt(args.batchSize ?? 200, 1, 200);
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("skills")
-      .withIndex("by_nonsuspicious_updated", (q) =>
-        q.eq("softDeletedAt", undefined).eq("isSuspicious", true),
-      )
-      .order("asc")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let malicious = 0;
-    let blocked = 0;
-    let noLatestVersion = 0;
-    let rescanable = 0;
-    let llmOnly = 0;
-    let vtOnly = 0;
-    let both = 0;
-    let noScannerReason = 0;
-
-    for (const skill of page) {
-      const hasMaliciousCode =
-        skill.moderationVerdict === "malicious" ||
-        (skill.moderationReasonCodes ?? []).some((code) => code.startsWith("malicious."));
-      if (hasMaliciousCode) {
-        malicious++;
-        continue;
-      }
-      if ((skill.moderationFlags ?? []).includes("blocked.malware")) {
-        blocked++;
-        continue;
-      }
-      if (!skill.latestVersionId) {
-        noLatestVersion++;
-        continue;
-      }
-
-      rescanable++;
-      const hasLlmSuspicious = skillHasScannerSuspiciousReason(skill, "llm");
-      const hasVtSuspicious = skillHasScannerSuspiciousReason(skill, "vt");
-      if (hasLlmSuspicious && hasVtSuspicious) {
-        both++;
-      } else if (hasLlmSuspicious) {
-        llmOnly++;
-      } else if (hasVtSuspicious) {
-        vtOnly++;
-      } else {
-        noScannerReason++;
-      }
-    }
-
-    return {
-      examined: page.length,
-      suspicious: page.length,
-      malicious,
-      blocked,
-      noLatestVersion,
-      rescanable,
-      llmOnly,
-      vtOnly,
-      both,
-      noScannerReason,
-      continueCursor,
-      isDone,
-    };
-  },
-});
-
 export const hideObviousJunkSuspiciousSkillsInternal = internalMutation({
   args: {
     cursor: v.optional(v.union(v.string(), v.null())),
@@ -11173,13 +10929,16 @@ export const hardDeleteInternal = internalMutation({
         throw new Error("Skill is outside publisher deletion scope");
       }
     }
-    // Jobs scheduled before root telemetry removal should continue at the next durable phase.
+    // Jobs scheduled before earlier cleanup phases were removed should continue
+    // at the next durable phase instead of restarting from the beginning.
     const phase =
       args.phase === "rootInstalls"
         ? "installTelemetryDedupes"
-        : isHardDeletePhase(args.phase)
-          ? args.phase
-          : "versions";
+        : args.phase === "comments" || args.phase === "commentReports"
+          ? "reports"
+          : isHardDeletePhase(args.phase)
+            ? args.phase
+            : "versions";
     await hardDeleteSkillStep(ctx, skill, args.actorUserId, phase, {
       source,
       ownerPublisherId: args.ownerPublisherId,

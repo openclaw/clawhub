@@ -36,7 +36,6 @@ import {
   upsertReservedHandleForRightfulOwner,
 } from "./lib/reservedHandles";
 import { buildUserSearchResults } from "./lib/userSearch";
-import { insertStatEvent } from "./skillStatEvents";
 
 const DEFAULT_ROLE = "user";
 const ADMIN_HANDLE = "steipete";
@@ -1596,16 +1595,11 @@ async function banUserWithActor(
       deletedByRole: actor.role === "admin" ? "admin" : "moderator",
       cursor: undefined,
     });
-    const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
-      userId: targetUserId,
-      deletedBy: actor._id,
-      deletedAt: target.deletedAt,
-    });
     return {
       ok: true as const,
       alreadyBanned: true,
       deletedSkills: 0,
-      deletedSkillComments,
+      deletedSkillComments: 0,
     };
   }
 
@@ -1630,12 +1624,6 @@ async function banUserWithActor(
       await ctx.db.patch(token._id, { revokedAt: now });
     }
   }
-
-  const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
-    userId: targetUserId,
-    deletedBy: actor._id,
-    deletedAt: now,
-  });
 
   await ctx.db.patch(targetUserId, {
     deletedAt: now,
@@ -1670,7 +1658,7 @@ async function banUserWithActor(
       deletedPackages: deletedPackageCount,
       revokedPackagePublishTokens,
       scheduledPackages,
-      deletedSkillComments,
+      deletedSkillComments: 0,
       reason: reason || undefined,
     },
     createdAt: now,
@@ -1689,7 +1677,7 @@ async function banUserWithActor(
     ok: true as const,
     alreadyBanned: false,
     deletedSkills: hiddenCount,
-    deletedSkillComments,
+    deletedSkillComments: 0,
     scheduledSkills,
   };
 }
@@ -2329,12 +2317,6 @@ export const autobanMalwareAuthorInternal = internalMutation({
       }
     }
 
-    const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
-      userId: args.ownerUserId,
-      deletedBy: args.ownerUserId,
-      deletedAt: now,
-    });
-
     // Ban the user
     await ctx.db.patch(args.ownerUserId, {
       deletedAt: now,
@@ -2368,7 +2350,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       deletedPackages: deletedPackageCount,
       revokedPackagePublishTokens,
       scheduledPackages,
-      deletedSkillComments,
+      deletedSkillComments: 0,
     };
     if (args.sha256hash?.trim()) {
       metadata.sha256hash = args.sha256hash.trim();
@@ -2406,7 +2388,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       ok: true,
       alreadyBanned: false,
       deletedSkills: hiddenCount,
-      deletedSkillComments,
+      deletedSkillComments: 0,
       scheduledSkills,
     };
   },
@@ -2542,26 +2524,3 @@ export const recordStaffEmailSentAuditInternal = internalMutation({
     return { ok: true as const };
   },
 });
-
-async function softDeleteUserCommentsForBan(
-  ctx: MutationCtx,
-  args: { userId: Id<"users">; deletedBy: Id<"users">; deletedAt: number },
-): Promise<number> {
-  let skillComments = 0;
-
-  const comments = await ctx.db
-    .query("comments")
-    .withIndex("by_user", (q) => q.eq("userId", args.userId))
-    .collect();
-  for (const comment of comments) {
-    if (comment.softDeletedAt) continue;
-    await ctx.db.patch(comment._id, {
-      softDeletedAt: args.deletedAt,
-      deletedBy: args.deletedBy,
-    });
-    await insertStatEvent(ctx, { skillId: comment.skillId, kind: "uncomment" });
-    skillComments += 1;
-  }
-
-  return skillComments;
-}

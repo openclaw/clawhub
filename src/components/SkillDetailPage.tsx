@@ -20,12 +20,10 @@ import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { resolveGitHubSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
-import { ClientOnly } from "./ClientOnly";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
 import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
-import { SkillCommentsPanel } from "./SkillCommentsPanel";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
 import {
   buildSkillHref,
@@ -60,8 +58,6 @@ type GitHubBackedSkillFields = {
   githubHasSkillCard?: boolean;
   githubScanStatus?: string | null;
 };
-
-const SHOW_SKILL_COMMENTS = false;
 
 function tabFromHash(hash: string): DetailTab {
   const normalized = hash.replace(/^#/, "").toLowerCase();
@@ -885,23 +881,6 @@ export function SkillDetailPage({
             osLabels={osLabels}
             readmeHrefResolver={readmeHrefResolver}
           />
-
-          {SHOW_SKILL_COMMENTS ? (
-            <ClientOnly
-              fallback={
-                <Card>
-                  <h2 className="section-title text-[1.2rem] m-0">Comments</h2>
-                  <p className="section-subtitle mt-3 mb-0">Loading comments...</p>
-                </Card>
-              }
-            >
-              <SkillCommentsPanel
-                skillId={skill._id}
-                isAuthenticated={isAuthenticated}
-                me={me ?? null}
-              />
-            </ClientOnly>
-          ) : null}
 
           <SkillRelatedSection
             category={relatedCategory}

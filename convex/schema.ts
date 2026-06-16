@@ -2065,42 +2065,6 @@ const skillStatDocSyncLeases = defineTable({
   lastProcessedCount: v.optional(v.number()),
 }).index("by_key", ["key"]);
 
-const comments = defineTable({
-  skillId: v.id("skills"),
-  userId: v.id("users"),
-  body: v.string(),
-  reportCount: v.optional(v.number()),
-  lastReportedAt: v.optional(v.number()),
-  scamScanVerdict: v.optional(
-    v.union(v.literal("not_scam"), v.literal("likely_scam"), v.literal("certain_scam")),
-  ),
-  scamScanConfidence: v.optional(v.union(v.literal("low"), v.literal("medium"), v.literal("high"))),
-  scamScanExplanation: v.optional(v.string()),
-  scamScanEvidence: v.optional(v.array(v.string())),
-  scamScanModel: v.optional(v.string()),
-  scamScanCheckedAt: v.optional(v.number()),
-  scamBanTriggeredAt: v.optional(v.number()),
-  createdAt: v.number(),
-  softDeletedAt: v.optional(v.number()),
-  deletedBy: v.optional(v.id("users")),
-})
-  .index("by_skill", ["skillId"])
-  .index("by_user", ["userId"])
-  .index("by_scam_scan_checked", ["scamScanCheckedAt"]);
-
-const commentReports = defineTable({
-  commentId: v.id("comments"),
-  skillId: v.id("skills"),
-  userId: v.id("users"),
-  reason: v.optional(v.string()),
-  createdAt: v.number(),
-})
-  .index("by_comment", ["commentId"])
-  .index("by_comment_createdAt", ["commentId", "createdAt"])
-  .index("by_skill", ["skillId"])
-  .index("by_user", ["userId"])
-  .index("by_comment_user", ["commentId", "userId"]);
-
 const skillReports = defineTable({
   skillId: v.id("skills"),
   skillVersionId: v.optional(v.id("skillVersions")),
@@ -2719,8 +2683,6 @@ export default defineSchema({
   skillStatEvents,
   skillStatUpdateCursors,
   skillStatDocSyncLeases,
-  comments,
-  commentReports,
   skillReports,
   skillAppeals,
   skillModerationEventLogs,

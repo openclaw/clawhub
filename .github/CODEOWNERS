@@ -19,7 +19,6 @@
 /convex/schema.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/auth.config.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/auth.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/convex/commentModeration.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/http.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/httpApi.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/httpApiV1/ @openclaw/openclaw-secops @Patrick-Erichsen
@@ -36,7 +35,6 @@
 /convex/webhooks.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/access.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/apiTokenAuth.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/convex/lib/commentScamPrompt.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/githubActionsOidc.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/httpHeaders.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/httpRateLimit.ts @openclaw/openclaw-secops @Patrick-Erichsen

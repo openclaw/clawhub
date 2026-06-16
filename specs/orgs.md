@@ -298,7 +298,7 @@ migration.
   must include `migrateOwner: true`
 - owner migration requires admin or owner access on both the current publisher
   and the destination publisher
-- migration preserves the skill id, versions, stats, comments, forks, aliases,
+- migration preserves the skill id, versions, stats, forks, aliases,
   search digest identity, and audit history
 - migration writes a `skill.ownership.migrate` audit event; the new version's
   `createdBy` remains the publishing actor

@@ -74,6 +74,14 @@ function makeCtx({
       return {
         withIndex: () => ({
           collect: async () => [],
+          take: async () => [],
+        }),
+      };
+    }
+    if (table === "skillReports") {
+      return {
+        withIndex: () => ({
+          take: async () => [],
         }),
       };
     }
@@ -93,6 +101,8 @@ function makeCtx({
         get: vi.fn(async (id: string) => {
           if (id === "users:owner") return user;
           if (id === "publishers:org") return { _id: id, kind: "org", deletedAt: 3_000 };
+          const skill = skills.find((row) => row._id === id);
+          if (skill) return skill;
           return null;
         }),
         insert: vi.fn(),
@@ -718,5 +728,50 @@ describe("skills ban/unban batches", () => {
     });
 
     expect(patch).not.toHaveBeenCalledWith("skills:removed", expect.anything());
+  });
+
+  it("continues stale retired comment cleanup phases at skill reports", async () => {
+    const { ctx, query, scheduler } = makeCtx({
+      user: { _id: "users:owner", role: "admin" },
+      skills: [
+        {
+          _id: "skills:legacy",
+          slug: "legacy",
+          ownerUserId: "users:owner",
+          softDeletedAt: 1_000,
+          moderationStatus: "removed",
+          hiddenAt: 1_000,
+          hiddenBy: "users:owner",
+          stats: {
+            downloads: 0,
+            stars: 0,
+            comments: 0,
+            versions: 1,
+            installsCurrent: 0,
+            installsAllTime: 0,
+          },
+        },
+      ],
+    });
+
+    await hardDeleteHandler(ctx, {
+      skillId: "skills:legacy",
+      actorUserId: "users:owner",
+      phase: "comments",
+    });
+
+    expect(query).not.toHaveBeenCalledWith("comments");
+    expect(query).not.toHaveBeenCalledWith("commentReports");
+    expect(query).toHaveBeenCalledWith("skillReports");
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:legacy",
+        actorUserId: "users:owner",
+        phase: "stars",
+        source: "admin",
+      }),
+    );
   });
 });
