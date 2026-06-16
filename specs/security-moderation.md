@@ -328,6 +328,22 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Report counters effectively reset because deleted/banned skills are no longer
   considered active in the per-user report cap.
 
+### Retired skill-comment data purge
+
+Before removing the legacy `comments` and `commentReports` tables from the
+schema, purge their production rows with a single-table Convex import that
+replaces each table with an empty JSON array:
+
+```sh
+printf '[]\n' > /tmp/clawhub-empty-table.json
+bunx convex import --deployment wry-manatee-359 --table commentReports --replace --yes /tmp/clawhub-empty-table.json
+bunx convex import --deployment wry-manatee-359 --table comments --replace --yes /tmp/clawhub-empty-table.json
+```
+
+Run `commentReports` first so report rows are removed before their legacy
+comment targets. After the import, verify both tables are empty before deploying
+the schema cleanup that deletes the tables.
+
 ## User account deletion
 
 - User-initiated deletion is irreversible.
