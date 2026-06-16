@@ -21,6 +21,7 @@ const REACHABILITY_POLL_MS = 500;
 const RUNTIME_DIR = ".codex/runtime";
 const DETACHED_PID_FILE = `${RUNTIME_DIR}/dev-worktree.pid`;
 const DETACHED_LOG_FILE = `${RUNTIME_DIR}/dev-worktree.log`;
+const SEED_SENTINEL_FILE = `${RUNTIME_DIR}/dev-worktree.seeded`;
 const LOCAL_DEV_WORKER_TOKEN = "local-dev-worker-token";
 const managedChildren = new Set<ChildProcess>();
 
@@ -79,6 +80,36 @@ export function shouldStartDevWorkers(options: Pick<Options, "workers">, convexU
     return { start: false, reason: "VITE_CONVEX_URL is not local" };
   }
   return { start: true, reason: null };
+}
+
+export function shouldSeedLocalData(
+  options: Pick<Options, "seed" | "seedOnly">,
+  convexUrl: string,
+  convexDeployment: string | null | undefined,
+  completedSeedTarget: string | null = null,
+) {
+  if (!options.seed) return { seed: false, fatal: false, reason: "--seed was not passed" };
+  if (!isLocalConvexUrl(convexUrl)) {
+    return { seed: false, fatal: options.seedOnly, reason: "VITE_CONVEX_URL is not local" };
+  }
+  if (!isLocalConvexDeployment(convexDeployment)) {
+    return {
+      seed: false,
+      fatal: options.seedOnly,
+      reason: "CONVEX_DEPLOYMENT is missing or not local",
+    };
+  }
+  if (
+    !options.seedOnly &&
+    completedSeedTarget === buildSeedTarget(convexUrl, convexDeployment.trim())
+  ) {
+    return {
+      seed: false,
+      fatal: false,
+      reason: "local seed already completed for this Convex deployment",
+    };
+  }
+  return { seed: true, fatal: false, reason: null };
 }
 
 export function applyLocalDevWorkerToken(env: NodeJS.ProcessEnv) {
@@ -145,12 +176,39 @@ export function isLocalConvexUrl(value: string) {
   }
 }
 
+export function isLocalConvexDeployment(value: string | null | undefined) {
+  const deployment = value?.trim();
+  return (
+    deployment === "anonymous-agent" ||
+    deployment?.startsWith("anonymous:") ||
+    deployment?.startsWith("local:") ||
+    false
+  );
+}
+
+function buildSeedTarget(convexUrl: string, convexDeployment: string) {
+  return `${convexDeployment}\n${convexUrl}`;
+}
+
 function readDetachedPid() {
   if (!existsSync(DETACHED_PID_FILE)) return null;
   const raw = readFileSync(DETACHED_PID_FILE, "utf8").trim();
   if (!/^\d+$/.test(raw)) return null;
   const pid = Number(raw);
   return Number.isSafeInteger(pid) && pid > 0 ? pid : null;
+}
+
+function readSeedSentinel() {
+  try {
+    return readFileSync(SEED_SENTINEL_FILE, "utf8").trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function writeSeedSentinel(convexUrl: string, convexDeployment: string) {
+  mkdirSync(RUNTIME_DIR, { recursive: true });
+  writeFileSync(SEED_SENTINEL_FILE, `${buildSeedTarget(convexUrl, convexDeployment)}\n`);
 }
 
 export function isRunningPid(pid: number | null) {
@@ -475,11 +533,23 @@ async function main() {
     process.exit(1);
   }
 
+  const convexDeployment = process.env.CONVEX_DEPLOYMENT;
+  const seed = shouldSeedLocalData(options, convexUrl, convexDeployment, readSeedSentinel());
+  if (options.seed && !seed.seed) {
+    const message = `Skipping local fixtures and public corpus seed: ${seed.reason}.`;
+    if (seed.fatal) {
+      console.error(message);
+      console.error("Manual dev seeding only runs when VITE_CONVEX_URL points at localhost.");
+      process.exit(1);
+    }
+    console.warn(`${message} Continuing without seeding.`);
+  }
+
   applyLocalConvexEnvForUrl(process.env, convexUrl);
   await ensureConvex(convexUrl);
   await configureLocalConvexEnv(convexUrl);
 
-  if (options.seed) {
+  if (seed.seed) {
     console.log("Seeding local fixtures and public corpus...");
     const seedStatus = await runConvexFunctionWhenReady([
       "convex",
@@ -499,6 +569,7 @@ async function main() {
       "statsMaintenance:updateGlobalStatsAction",
     ]);
     if (statsStatus !== 0) exitAfterStoppingManagedChildren(statsStatus);
+    writeSeedSentinel(convexUrl, convexDeployment?.trim() ?? "");
   }
 
   if (options.seedOnly) {
