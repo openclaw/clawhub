@@ -434,6 +434,12 @@ export default function Header() {
                       </SheetClose>
                     ))}
                   </div>
+                  {!isAuthResolving && !isAuthenticated ? (
+                    <div className="mobile-nav-section mobile-nav-appearance-section">
+                      <span className="mobile-nav-section-title">Theme</span>
+                      <NavbarThemeSwitcher mode={mode} onSetMode={setThemeMode} />
+                    </div>
+                  ) : null}
                 </SheetContent>
               </Sheet>
             </div>
@@ -675,7 +681,7 @@ export default function Header() {
                     Sign in with GitHub
                   </span>
                   <span className="sign-in-compact-copy" aria-hidden="true">
-                    GitHub
+                    Sign in
                   </span>
                 </Button>
               </>

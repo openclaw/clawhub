@@ -84,6 +84,7 @@ describe("restored UI design contract", () => {
     expect(headerSource).toContain('className="navbar-search-mobile-overlay"');
     expect(headerSource).toContain('className="navbar-search-mobile-wrap"');
     expect(headerSource).toContain('className="navbar-search-mobile-clear"');
+    expect(headerSource).toContain('className="mobile-nav-section mobile-nav-appearance-section"');
     expect(headerSource).toContain('className="user-dropdown-theme-row"');
     expect(headerSource).toContain('className="user-dropdown-theme-button"');
     expect(headerSource).toContain('className="navbar-theme-switcher"');
@@ -121,10 +122,12 @@ describe("restored UI design contract", () => {
     expect(moreTrigger).toContain("border: 0");
     const moreMenu = cssRule(css, ".navbar-calm-more-menu");
     expect(moreMenu).toContain("border-radius: var(--r-md)");
-    const loggedOutTheme = cssRule(css, ".navbar-theme-switcher");
-    expect(loggedOutTheme).toContain("--navbar-theme-pad: 3px");
-    expect(loggedOutTheme).toContain("--navbar-theme-seg: 26px");
-    expect(loggedOutTheme).toContain("height: var(--navbar-theme-collapsed-w)");
+    expect(css).toContain(".navbar-theme-switcher {\n  --navbar-theme-ease");
+    expect(css).toContain("--navbar-theme-pad: 3px");
+    expect(css).toContain("--navbar-theme-seg: 26px");
+    expect(css).toContain("height: var(--navbar-theme-collapsed-w)");
+    const mobileDrawerTheme = cssRule(css, ".mobile-nav-appearance-section .navbar-theme-switcher");
+    expect(mobileDrawerTheme).toContain("width: var(--navbar-theme-expanded-w)");
     const userDropdown = cssRule(css, ".user-dropdown-content");
     expect(userDropdown).toContain("border-radius: var(--r-md)");
     expect(userDropdown).toContain("overflow: hidden");
@@ -150,6 +153,7 @@ describe("restored UI design contract", () => {
       ".navbar-calm .navbar-search-mobile-wrap {\n    display: block;",
       ".navbar-calm .navbar-search-mobile-overlay {\n    all: unset;",
       ".navbar-search-mobile-wrap .navbar-search-typeahead {\n    right: 0;",
+      ".navbar-calm-actions > .navbar-theme-switcher,\n  .navbar-calm-actions > .navbar-theme-switcher-skeleton {\n    display: none;",
     ]);
     const compactMobileTrigger = cssRule(css, ".navbar-calm .nav-mobile");
     expect(compactMobileTrigger).toContain("display: inline-flex");

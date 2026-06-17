@@ -333,7 +333,7 @@ describe("Header", () => {
     expect(fullCopy?.textContent).toBe("Sign in with GitHub");
     expect(fullCopy?.childNodes).toHaveLength(1);
     expect(signInButton.querySelector(".sign-in-with")).toBeNull();
-    expect(signInButton.querySelector(".sign-in-compact-copy")?.textContent).toBe("GitHub");
+    expect(signInButton.querySelector(".sign-in-compact-copy")?.textContent).toBe("Sign in");
   });
 
   it("shows an auth error when the GitHub sign-in request does not start", async () => {
@@ -546,6 +546,9 @@ describe("Header", () => {
       .filter((label): label is string => Boolean(label));
 
     expect(labels.slice(0, 5)).toEqual(["Home", "Skills", "Plugins", "Publishers", "Docs"]);
+    expect(
+      document.querySelector(".mobile-nav-appearance-section .navbar-theme-switcher"),
+    ).toBeTruthy();
   });
 
   it("links profile and starred skills from the signed-in avatar menu", () => {
