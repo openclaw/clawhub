@@ -16,7 +16,7 @@ const ACTIVE_PUBLISHER_STORAGE_PREFIX = "clawhub-active-publisher";
 
 type PublisherRole = "owner" | "admin" | "publisher";
 
-export type ActivePublisherMembership = {
+type ActivePublisherMembership = {
   publisher: Pick<
     Doc<"publishers">,
     "_id" | "handle" | "displayName" | "kind" | "image" | "linkedUserId"
