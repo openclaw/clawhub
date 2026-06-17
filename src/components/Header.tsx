@@ -135,7 +135,6 @@ export default function Header() {
 
   const avatar = me?.image ?? (me?.email ? gravatarUrl(me.email) : undefined);
   const rawHandle = me?.handle ?? me?.displayName ?? "user";
-  const handle = rawHandle.length > 25 ? `${rawHandle.slice(0, 25)}…` : rawHandle;
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
   const triggerPublisher = activePublisher?.publisher;
   const triggerHandle = triggerPublisher?.handle ?? rawHandle;
@@ -643,9 +642,6 @@ export default function Header() {
                           );
                         })}
                       </div>
-                      {activePublisher?.publisher.kind === "org" ? (
-                        <div className="user-dropdown-signed-in">Signed in as @{handle}</div>
-                      ) : null}
                       <DropdownMenuSeparator />
                     </>
                   ) : null}

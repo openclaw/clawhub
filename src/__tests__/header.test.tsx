@@ -397,7 +397,7 @@ describe("Header", () => {
     expect(screen.getByText("Personal · owner")).toBeTruthy();
     expect(screen.getAllByText("@openclaw").length).toBeGreaterThan(1);
     expect(screen.getByText("Org · admin")).toBeTruthy();
-    expect(screen.getByText("Signed in as @patrick")).toBeTruthy();
+    expect(screen.queryByText("Signed in as @patrick")).toBeNull();
 
     fireEvent.click(screen.getByText("@patrick"));
 

@@ -1154,8 +1154,7 @@ code {
   font-weight: 700;
 }
 
-.user-dropdown-publisher-meta,
-.user-dropdown-signed-in {
+.user-dropdown-publisher-meta {
   color: var(--ink-soft);
   font-size: 0.76rem;
 }
@@ -1163,10 +1162,6 @@ code {
 .user-dropdown-publisher-check {
   flex-shrink: 0;
   color: var(--accent);
-}
-
-.user-dropdown-signed-in {
-  padding: 6px 8px 2px;
 }
 
 .user-dropdown-theme-row {
