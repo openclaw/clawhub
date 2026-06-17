@@ -3682,21 +3682,49 @@ async function searchPackagesImpl(
 
   if (matches.length < targetCount) {
     const scanLimit = Math.min(MAX_SEARCH_PAGE_SIZE, Math.max(targetCount * 5, 50));
-    const digests: PackageDigestLike[] = await buildSearchDigestQuery()
-      .order("desc")
-      .take(scanLimit);
+    const collectDigestMatches = async (digests: PackageDigestLike[]) => {
+      for (const digest of digests) {
+        if (!(await canViewPackage(digest))) continue;
+        if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
+        const match = packageSearchMatch(digest, queryText);
+        if (!match || seen.has(digest.packageId)) continue;
+        seen.add(digest.packageId);
+        matches.push({
+          ...match,
+          package: await toPublicPackageListItem(ctx, digest),
+        });
+        if (matches.length >= targetCount) break;
+      }
+    };
 
-    for (const digest of digests) {
-      if (!(await canViewPackage(digest))) continue;
-      if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;
-      const match = packageSearchMatch(digest, queryText);
-      if (!match || seen.has(digest.packageId)) continue;
-      seen.add(digest.packageId);
-      matches.push({
-        ...match,
-        package: await toPublicPackageListItem(ctx, digest),
-      });
-      if (matches.length >= targetCount) break;
+    if (topic && category) {
+      let cursor: string | null = null;
+      let isDone = false;
+      let scanPages = 0;
+      let remainingScanBudget = MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS;
+      while (
+        matches.length < targetCount &&
+        !isDone &&
+        scanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
+        remainingScanBudget > 0
+      ) {
+        const pageSize = Math.min(scanLimit, remainingScanBudget);
+        const page: {
+          page: PackageDigestLike[];
+          isDone: boolean;
+          continueCursor: string;
+        } = await buildSearchDigestQuery().order("desc").paginate({ cursor, numItems: pageSize });
+        scanPages += 1;
+        remainingScanBudget -= pageSize;
+        await collectDigestMatches(page.page);
+        cursor = page.continueCursor;
+        isDone = page.isDone;
+      }
+    } else {
+      const digests: PackageDigestLike[] = await buildSearchDigestQuery()
+        .order("desc")
+        .take(scanLimit);
+      await collectDigestMatches(digests);
     }
   }
 

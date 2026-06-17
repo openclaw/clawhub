@@ -4063,6 +4063,71 @@ describe("packages public queries", () => {
     expect(indexNames).toEqual(["by_active_topic_updated"]);
   });
 
+  it("scans topic digest pages until a combined category search match is found", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      topicPages: [
+        {
+          page: Array.from({ length: 50 }, (_, index) =>
+            makeDigest(`calendar-chat-${index}`, {
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["channels"],
+            }),
+          ),
+          isDone: false,
+          continueCursor: "later",
+        },
+        {
+          page: [
+            makeDigest("calendar-api", {
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "calendar",
+      topic: "calendar",
+      category: "tools",
+      limit: 1,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["calendar-api"]);
+    expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds sparse combined-filter search scans", async () => {
+    const topicPages = Array.from({ length: 7 }, (_page, pageIndex) => ({
+      page: Array.from({ length: 50 }, (_digest, digestIndex) =>
+        makeDigest(`calendar-noise-${pageIndex}-${digestIndex}`, {
+          topic: "calendar",
+          topics: ["calendar"],
+          pluginCategoryTags: ["channels"],
+        }),
+      ),
+      isDone: pageIndex === 6,
+      continueCursor: pageIndex === 6 ? "" : `topic:${pageIndex + 1}`,
+    }));
+    const { ctx, paginate, take } = makeDigestCtx({ topicPages });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "calendar",
+      topic: "calendar",
+      category: "tools",
+      limit: 1,
+    });
+
+    expect(result).toEqual([]);
+    expect(paginate).toHaveBeenCalledTimes(6);
+    expect(take).not.toHaveBeenCalled();
+  });
+
   it("recalls exact author topics without an explicit topic filter", async () => {
     const { ctx, indexNames, tableNames } = makeDigestCtx({
       topicPages: [
