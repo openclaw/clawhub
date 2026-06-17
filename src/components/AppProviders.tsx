@@ -2,6 +2,7 @@ import { ConvexAuthProvider, useAuthActions } from "@convex-dev/auth/react";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 import { convex } from "../convex/client";
+import { ActivePublisherProvider } from "../lib/activePublisher";
 import {
   AUTH_CODE_NO_SESSION_MESSAGE,
   getUserFacingAuthError,
@@ -185,7 +186,7 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
         <AuthErrorHandler />
         <AuthErrorToast />
         <UserBootstrap />
-        {children}
+        <ActivePublisherProvider>{children}</ActivePublisherProvider>
         <ClientOnly>
           <DevPersonaFab />
         </ClientOnly>
