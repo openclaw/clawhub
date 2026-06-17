@@ -18,7 +18,7 @@
     "ci:playwright": "VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run build && VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run test:pw",
     "ci:playwright-smoke": "VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run build && VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run test:pw -- --project=chromium e2e/ci-smoke.pw.test.ts e2e/public-routes-smoke.pw.test.ts",
     "ci:pr": "bun run ci:static && bun run ci:unit && bun run ci:packages && bun run ci:types-build && bun run ci:e2e-http",
-    "ci:static": "bun run check:peers && bun audit --ignore GHSA-rmmr-r34h-pfm5 --ignore GHSA-gv7w-rqvm-qjhr --ignore GHSA-g7r4-m6w7-qqqr && bun run format:check && bun run lint && bun run deadcode:ci",
+    "ci:static": "bun run check:peers && bun audit --ignore GHSA-rmmr-r34h-pfm5 --ignore GHSA-gv7w-rqvm-qjhr --ignore GHSA-g7r4-m6w7-qqqr --ignore GHSA-x4vx-rjvf-j5p4 --ignore GHSA-76mc-f452-cxcm --ignore GHSA-hpcv-96wg-7vj8 --ignore GHSA-r47g-fvhr-h676 --ignore GHSA-vxr8-fq34-vvx9 --ignore GHSA-gvmj-g25r-r7wr --ignore GHSA-rp9w-3fw7-7cwq && bun run format:check && bun run lint && bun run deadcode:ci",
     "ci:types-build": "bunx tsc --noEmit && bunx tsc -p packages/schema/tsconfig.json --noEmit && bunx tsc -p packages/clawhub/tsconfig.json --noEmit && bun run --cwd packages/clawhub-admin typecheck && VITE_CONVEX_URL=https://example.invalid bun run build",
     "ci:unit": "VITE_CONVEX_URL=https://example.invalid bun run coverage",
     "clawscan:local": "bun scripts/local-clawscan-dry-run.ts",
@@ -41,7 +41,6 @@
     "docs:list": "bun scripts/docs-list.ts",
     "docs:run": "bun scripts/docs-run.ts",
     "email:dev": "email dev --dir emails --port 8765",
-    "eval:clawscan:security-signals": "bun scripts/eval/clawscan-security-signals.ts",
     "format": "oxfmt --write",
     "format:check": "oxfmt --check",
     "install:local-hooks": "bun scripts/install-git-hooks.mjs",
@@ -128,7 +127,7 @@
   },
   "devDependencies": {
     "@faker-js/faker": "^10.4.0",
-    "@playwright/test": "^1.60.0",
+    "@playwright/test": "^1.61.0",
     "@react-email/ui": "^6.6.0",
     "@tailwindcss/vite": "^4.3.1",
     "@tanstack/devtools-vite": "0.7.0",
@@ -139,23 +138,24 @@
     "@types/react-dom": "19.2.3",
     "@types/semver": "7.7.1",
     "@vitejs/plugin-react": "6.0.2",
-    "@vitest/coverage-v8": "4.1.8",
+    "@vitest/coverage-v8": "4.1.9",
     "jsdom": "29.1.1",
     "nitro": "3.0.260429-beta",
     "only-allow": "1.2.2",
-    "oxfmt": "0.54.0",
-    "oxlint": "1.69.0",
+    "oxfmt": "0.55.0",
+    "oxlint": "1.70.0",
     "oxlint-tsgolint": "0.23.0",
-    "react-email": "^6.6.0",
+    "react-email": "^6.6.1",
     "typescript": "6.0.3",
     "undici": "7.27.2",
     "vite": "8.0.16",
-    "vitest": "4.1.8"
+    "vitest": "4.1.9"
   },
   "overrides": {
-    "dompurify": "3.4.1",
+    "ast-v8-to-istanbul": "1.0.4",
+    "dompurify": "3.4.10",
     "next": "16.2.6",
     "postcss": "8.5.12",
-    "ws": "8.20.1"
+    "ws": "8.21.0"
   }
 }

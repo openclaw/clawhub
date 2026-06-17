@@ -1,5 +1,5 @@
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useNavigate, useRouter } from "@tanstack/react-router";
+import { useNavigate, useRouter, useRouterState } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
@@ -20,12 +20,10 @@ import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
 import { resolveGitHubSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
-import { ClientOnly } from "./ClientOnly";
 import { DetailBody, DetailPageShell } from "./DetailPageShell";
 import { DetailSecuritySummary } from "./DetailSecuritySummary";
 import { GenericNotFoundPage } from "./GenericNotFoundPage";
 import { SkillDetailSkeleton } from "./skeletons/SkillDetailSkeleton";
-import { SkillCommentsPanel } from "./SkillCommentsPanel";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
 import {
   buildSkillHref,
@@ -37,6 +35,7 @@ import {
 import { SkillHeader } from "./SkillHeader";
 import { buildSkillInstallTabs } from "./SkillInstallCard";
 import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
+import { SkillPublishSuccessDialog } from "./SkillPublishSuccessDialog";
 import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
 import { Alert, AlertDescription } from "./ui/alert";
@@ -49,6 +48,8 @@ type SkillDetailPageProps = {
   redirectToCanonical?: boolean;
   initialData?: SkillPageInitialData | null;
   mode?: "detail" | "settings";
+  showPostPublishSuccess?: boolean;
+  onDismissPostPublish?: () => void;
 };
 
 type SkillFile = Doc<"skillVersions">["files"][number];
@@ -60,8 +61,6 @@ type GitHubBackedSkillFields = {
   githubHasSkillCard?: boolean;
   githubScanStatus?: string | null;
 };
-
-const SHOW_SKILL_COMMENTS = false;
 
 function tabFromHash(hash: string): DetailTab {
   const normalized = hash.replace(/^#/, "").toLowerCase();
@@ -78,6 +77,15 @@ function tabFromHash(hash: string): DetailTab {
     return normalized;
   }
   return "readme";
+}
+
+function isPostPublishSearchValue(value: unknown) {
+  const normalized = typeof value === "string" ? value.trim().replace(/^"|"$/g, "") : value;
+  return normalized === "1" || normalized === "true" || normalized === 1 || normalized === true;
+}
+
+function hasPostPublishSearch(searchStr: string) {
+  return isPostPublishSearchValue(new URLSearchParams(searchStr).get("published"));
 }
 
 function formatReportError(error: unknown) {
@@ -177,9 +185,12 @@ export function SkillDetailPage({
   redirectToCanonical,
   initialData,
   mode = "detail",
+  showPostPublishSuccess = false,
+  onDismissPostPublish,
 }: SkillDetailPageProps) {
   const navigate = useNavigate();
   const router = useRouter();
+  const searchStr = useRouterState({ select: (state) => state.location.searchStr });
   const { isAuthenticated, me } = useAuthStatus();
   const { signIn } = useAuthActions();
   const initialResult = initialData?.result ?? undefined;
@@ -216,6 +227,7 @@ export function SkillDetailPage({
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
   const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const [hasClientPostPublishSearch, setHasClientPostPublishSearch] = useState(false);
   const [optimisticStar, setOptimisticStar] = useState<{
     skillId: Id<"skills">;
     starred: boolean;
@@ -228,6 +240,7 @@ export function SkillDetailPage({
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
+  const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
   const shouldLoadRelatedSkills = Boolean(
     skill && relatedCategory && relatedCategory.keywords.length > 0,
@@ -263,6 +276,14 @@ export function SkillDetailPage({
   const activeOptimisticStar =
     optimisticStar && skill && optimisticStar.skillId === skill._id ? optimisticStar : null;
   const effectiveIsStarred = activeOptimisticStar?.starred ?? isStarred;
+
+  useEffect(() => {
+    const browserSearch = typeof window === "undefined" ? "" : window.location.search;
+    setHasClientPostPublishSearch(
+      hasPostPublishSearch(searchStr) || hasPostPublishSearch(browserSearch),
+    );
+  }, [searchStr]);
+
   const displayedSkill = useMemo(() => {
     if (!skill || !activeOptimisticStar) return skill;
     const currentStars = skill.stats.stars ?? 0;
@@ -310,6 +331,15 @@ export function SkillDetailPage({
   const canDeleteSkillFromSettings =
     canManagePersonalPublisherSkill ||
     Boolean(skill?.ownerPublisherId && myManagePublisherIds.has(skill.ownerPublisherId));
+  const skillSoftDeletedAt = skill && "softDeletedAt" in skill ? skill.softDeletedAt : undefined;
+  const skillModerationStatus =
+    skill && "moderationStatus" in skill ? skill.moderationStatus : undefined;
+  const isSkillUnavailableForVersionDeletion =
+    Boolean(skillSoftDeletedAt) ||
+    (skillModerationStatus ?? "active") !== "active" ||
+    Boolean(modInfo?.isPendingScan || modInfo?.isHiddenByMod || modInfo?.isRemoved);
+  const canDeleteSkillVersions =
+    canDeleteSkillFromSettings && !isSkillUnavailableForVersionDeletion;
   const ownedSkills = useQuery(
     api.skills.list,
     canAccessSettings && skill
@@ -343,7 +373,6 @@ export function SkillDetailPage({
 
   const forkOf = result?.forkOf ?? null;
   const canonical = result?.canonical ?? null;
-  const modInfo = result?.moderationInfo ?? null;
   const suppressVersionScanResults =
     !isStaff &&
     Boolean(modInfo?.overrideActive) &&
@@ -758,10 +787,13 @@ export function SkillDetailPage({
         canDeleteSkill={canDeleteSkillFromSettings}
       />
     ) : null;
+  const detailHref = buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug);
+  const showPublishSuccessDialog =
+    mode === "detail" &&
+    (showPostPublishSuccess || hasClientPostPublishSearch) &&
+    Boolean(onDismissPostPublish);
 
   if (mode === "settings") {
-    const detailHref = buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug);
-
     return (
       <main className="section detail-page-section">
         <DetailPageShell className="skill-settings-page">
@@ -864,6 +896,7 @@ export function SkillDetailPage({
             hasSkillCard={hasSkillCard}
             latestFiles={latestFiles}
             latestVersionId={latestVersion?._id ?? null}
+            canDeleteVersions={canDeleteSkillVersions}
             skill={skill as Doc<"skills">}
             diffVersions={diffVersions}
             versions={versions}
@@ -875,23 +908,6 @@ export function SkillDetailPage({
             osLabels={osLabels}
             readmeHrefResolver={readmeHrefResolver}
           />
-
-          {SHOW_SKILL_COMMENTS ? (
-            <ClientOnly
-              fallback={
-                <Card>
-                  <h2 className="section-title text-[1.2rem] m-0">Comments</h2>
-                  <p className="section-subtitle mt-3 mb-0">Loading comments...</p>
-                </Card>
-              }
-            >
-              <SkillCommentsPanel
-                skillId={skill._id}
-                isAuthenticated={isAuthenticated}
-                me={me ?? null}
-              />
-            </ClientOnly>
-          ) : null}
 
           <SkillRelatedSection
             category={relatedCategory}
@@ -909,6 +925,26 @@ export function SkillDetailPage({
         onReasonChange={setReportReason}
         onCancel={closeReportDialog}
         onSubmit={() => void submitReport()}
+      />
+      <SkillPublishSuccessDialog
+        isOpen={showPublishSuccessDialog}
+        displayName={skill.displayName}
+        skillPath={detailHref}
+        skillIcon={skill.icon ?? null}
+        publisher={
+          owner
+            ? {
+                displayName: owner.displayName,
+                handle: owner.handle ?? ownerHandle,
+                image: owner.image,
+                kind: owner.kind,
+              }
+            : ownerHandle
+              ? { handle: ownerHandle }
+              : null
+        }
+        categoryLabel={relatedCategory?.label ?? null}
+        onDismiss={onDismissPostPublish ?? (() => undefined)}
       />
     </main>
   );

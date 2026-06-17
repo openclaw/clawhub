@@ -216,7 +216,7 @@ describe("cmdExplore", () => {
     const [, args] = mockApiRequest.mock.calls[0] ?? [];
     const url = new URL(String(args?.url));
     expect(url.searchParams.get("limit")).toBe("10");
-    expect(url.searchParams.get("sort")).toBe("installsCurrent");
+    expect(url.searchParams.get("sort")).toBe("installsAllTime");
     expect(mockLog).toHaveBeenCalledWith(JSON.stringify(payload, null, 2));
   });
 
@@ -233,6 +233,31 @@ describe("cmdExplore", () => {
     expect(first.searchParams.get("sort")).toBe("createdAt");
     expect(second.searchParams.get("sort")).toBe("installsAllTime");
     expect(third.searchParams.get("sort")).toBe("trending");
+  });
+
+  it("keeps explicit current-install aliases on the current install sort", async () => {
+    mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
+
+    await cmdExplore(makeOpts(), { sort: "installsCurrent" });
+    await cmdExplore(makeOpts(), { sort: "installs-current" });
+    await cmdExplore(makeOpts(), { sort: "current" });
+
+    for (const call of mockApiRequest.mock.calls) {
+      const url = new URL(String(call[1]?.url));
+      expect(url.searchParams.get("sort")).toBe("installsCurrent");
+    }
+  });
+
+  it("keeps legacy download aliases on the all-time install sort", async () => {
+    mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
+
+    await cmdExplore(makeOpts(), { sort: "downloads" });
+    await cmdExplore(makeOpts(), { sort: "download" });
+
+    for (const call of mockApiRequest.mock.calls) {
+      const url = new URL(String(call[1]?.url));
+      expect(url.searchParams.get("sort")).toBe("installsAllTime");
+    }
   });
 });
 
@@ -1060,8 +1085,6 @@ describe("cmdInstall", () => {
           event: "install",
           slug: "demo",
           version: "1.0.0",
-          rootId: expect.any(String),
-          rootLabel: expect.any(String),
         },
       }),
       expect.anything(),

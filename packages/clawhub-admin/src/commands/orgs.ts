@@ -237,7 +237,7 @@ export async function cmdDeleteOrg(
 export async function cmdListOfficialOrgs(opts: GlobalOpts, options: OrgOfficialListOptions = {}) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createCrabLoader("Listing official org publishers");
+  const spinner = options.json ? null : createCrabLoader("Listing official publishers");
   try {
     const result = await apiRequest(
       registry,
@@ -255,9 +255,9 @@ export async function cmdListOfficialOrgs(opts: GlobalOpts, options: OrgOfficial
       return result;
     }
 
-    const items = result.items.filter((item) => item.kind === "org" && item.active);
+    const items = result.items.filter((item) => item.active);
     if (items.length === 0) {
-      console.log("No official org publishers.");
+      console.log("No official publishers.");
       return result;
     }
 
@@ -281,7 +281,7 @@ export async function cmdAddOfficialOrg(
   options: OrgOfficialWriteOptions = {},
   inputAllowed: boolean,
 ) {
-  const orgHandle = normalizeHandleOrFail(handle, "Org handle");
+  const orgHandle = normalizeHandleOrFail(handle, "Publisher handle");
   const reason = normalizeReasonOrFail(options.reason);
   await confirmOfficialOrgUpdate(
     `Mark @${orgHandle} official? (admin only; affects official badge and GitHub sync eligibility)`,
@@ -327,10 +327,10 @@ export async function cmdRemoveOfficialOrg(
   options: OrgOfficialWriteOptions = {},
   inputAllowed: boolean,
 ) {
-  const orgHandle = normalizeHandleOrFail(handle, "Org handle");
+  const orgHandle = normalizeHandleOrFail(handle, "Publisher handle");
   const reason = normalizeReasonOrFail(options.reason);
   await confirmOfficialOrgUpdate(
-    `Remove @${orgHandle} from official org publishers? (admin only)`,
+    `Remove @${orgHandle} from official publishers? (admin only)`,
     options,
     inputAllowed,
   );
@@ -339,7 +339,7 @@ export async function cmdRemoveOfficialOrg(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createCrabLoader(`Removing @${orgHandle} from official org publishers`);
+    : createCrabLoader(`Removing @${orgHandle} from official publishers`);
   try {
     const result = await apiRequest(
       registry,
@@ -358,7 +358,7 @@ export async function cmdRemoveOfficialOrg(
 
     spinner?.succeed(
       result.removed
-        ? `Removed @${result.handle} from official org publishers`
+        ? `Removed @${result.handle} from official publishers`
         : `@${result.handle} was not official`,
     );
     if (options.json) {

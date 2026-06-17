@@ -20,6 +20,7 @@ import {
   listPackageReportsInternal,
   getPackageModerationStatusForUserInternal,
   getManageContext,
+  canDeleteVersions,
   getPackageInspectorValidationSummaryPublic,
   listPackageInspectorWarningsForManager,
   listPackageInspectorFindingsPublic,
@@ -137,7 +138,7 @@ const listPublicPageHandler = (
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
-      sort?: "updated" | "downloads" | "recommended";
+      sort?: "updated" | "downloads" | "recommended" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
     { page: Array<{ name: string }>; isDone: boolean; continueCursor: string }
@@ -152,7 +153,7 @@ const listPageForViewerInternalHandler = (
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
-      sort?: "updated" | "downloads" | "recommended";
+      sort?: "updated" | "downloads" | "recommended" | "installs";
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -426,6 +427,12 @@ const getManageContextHandler = (
       package: { _id: string; name: string; displayName: string };
       latestRelease: { _id: string; version: string };
     } | null
+  >
+)._handler;
+const canDeleteVersionsHandler = (
+  canDeleteVersions as unknown as WrappedHandler<
+    { name: string; candidateNames?: string[] },
+    boolean
   >
 )._handler;
 const listPackageInspectorWarningsForManagerHandler = (
@@ -926,6 +933,118 @@ function makePackageDoc(overrides: Partial<Record<string, unknown>> = {}) {
   };
 }
 
+function makeCanDeleteVersionsCtx(options: {
+  viewerId: string;
+  viewerRole?: "user" | "admin" | "moderator";
+  ownerUserId: string;
+  ownerPublisherId?: string;
+  membershipRole?: "owner" | "admin" | "publisher";
+  packageLookupNames?: string[];
+  packageMatchName?: string | null;
+  packageOverrides?: Partial<Record<string, unknown>>;
+}) {
+  const pkg = makePackageDoc({
+    ownerUserId: options.ownerUserId,
+    ownerPublisherId: options.ownerPublisherId,
+    ...options.packageOverrides,
+  });
+  const publisher = options.ownerPublisherId
+    ? {
+        _id: options.ownerPublisherId,
+        kind: "org",
+        handle: "demo-org",
+        displayName: "Demo Org",
+      }
+    : null;
+
+  return {
+    db: {
+      get: vi.fn(async (id: string) => {
+        if (id === options.viewerId) {
+          return { _id: id, role: options.viewerRole ?? "user" };
+        }
+        if (id === options.ownerPublisherId) return publisher;
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "users") {
+          return {
+            withIndex: vi.fn(() => ({
+              unique: vi.fn().mockResolvedValue(null),
+            })),
+          };
+        }
+        if (table === "packages") {
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+              ) => {
+                let normalizedName = "";
+                const queryBuilder = {
+                  eq: (field: string, value: string) => {
+                    if (field === "normalizedName") normalizedName = value;
+                    return queryBuilder;
+                  },
+                };
+                builder?.(queryBuilder);
+                options.packageLookupNames?.push(normalizedName);
+                return {
+                  unique: vi
+                    .fn()
+                    .mockResolvedValue(
+                      options.packageMatchName === undefined ||
+                        normalizedName === options.packageMatchName
+                        ? pkg
+                        : null,
+                    ),
+                };
+              },
+            ),
+          };
+        }
+        if (table === "publisherMembers") {
+          return {
+            withIndex: vi.fn(
+              (
+                _indexName: string,
+                builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+              ) => {
+                let publisherId = "";
+                let userId = "";
+                const queryBuilder = {
+                  eq: (field: string, value: string) => {
+                    if (field === "publisherId") publisherId = value;
+                    if (field === "userId") userId = value;
+                    return queryBuilder;
+                  },
+                };
+                builder?.(queryBuilder);
+                return {
+                  unique: vi.fn().mockResolvedValue(
+                    options.membershipRole &&
+                      publisherId === options.ownerPublisherId &&
+                      userId === options.viewerId
+                      ? {
+                          _id: "publisherMembers:viewer",
+                          publisherId,
+                          userId,
+                          role: options.membershipRole,
+                        }
+                      : null,
+                  ),
+                };
+              },
+            ),
+          };
+        }
+        throw new Error(`Unexpected table ${table}`);
+      }),
+    },
+  };
+}
+
 function readTestField(row: Record<string, unknown>, field: string): unknown {
   return field.split(".").reduce<unknown>((current, key) => {
     if (typeof current !== "object" || current === null || Array.isArray(current)) return undefined;
@@ -1129,6 +1248,8 @@ function makeDigestCtx(options: {
                   if (
                     indexName === "by_active_downloads" ||
                     indexName === "by_active_family_downloads" ||
+                    indexName === "by_active_installs" ||
+                    indexName === "by_active_family_installs" ||
                     indexName === "by_active_recommended_rank" ||
                     indexName === "by_active_family_recommended_rank" ||
                     indexName === "by_active_recommended_score" ||
@@ -2305,6 +2426,57 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
   });
 
+  it("uses a family-scoped installs index for install-sorted family pages", async () => {
+    const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:code-plugin-a",
+              name: "code-plugin-a",
+              normalizedName: "code-plugin-a",
+              displayName: "Code Plugin A",
+              family: "code-plugin",
+              stats: { downloads: 100, installs: 200, stars: 0, versions: 1 },
+            }),
+            makePackageDoc({
+              _id: "packages:code-plugin-b",
+              name: "code-plugin-b",
+              normalizedName: "code-plugin-b",
+              displayName: "Code Plugin B",
+              family: "code-plugin",
+              stats: { downloads: 500, installs: 100, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-a"]);
+    expect(result.isDone).toBe(false);
+    expect(result.continueCursor.startsWith("pkgpage:")).toBe(true);
+    expect(indexNames).toEqual(["by_active_family_installs"]);
+    expect(indexFilters).toEqual([
+      {
+        indexName: "by_active_family_installs",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
+        ],
+      },
+    ]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
   it("uses a family-scoped weighted recommended score index after backfill", async () => {
     const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
       packagePages: [
@@ -2634,7 +2806,7 @@ describe("packages public queries", () => {
     expect(indexFilters).toEqual([]);
   });
 
-  it("continues scanning global download-sorted pages for non-indexed filters", async () => {
+  it("uses global download-sorted pages without retired capability filters", async () => {
     const { ctx, indexNames, paginate } = makeDigestCtx({
       packagePages: [
         {
@@ -2645,7 +2817,6 @@ describe("packages public queries", () => {
               normalizedName: "bundle-plugin",
               displayName: "Bundle Plugin",
               family: "bundle-plugin",
-              executesCode: false,
               stats: { downloads: 500, installs: 0, stars: 0, versions: 1 },
             }),
           ],
@@ -2660,7 +2831,6 @@ describe("packages public queries", () => {
               normalizedName: "code-plugin",
               displayName: "Code Plugin",
               family: "code-plugin",
-              executesCode: true,
               stats: { downloads: 200, installs: 0, stars: 0, versions: 1 },
             }),
           ],
@@ -2671,15 +2841,14 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      executesCode: true,
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 1 },
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin"]);
-    expect(result.isDone).toBe(true);
-    expect(indexNames).toEqual(["by_active_downloads", "by_active_downloads"]);
-    expect(paginate).toHaveBeenCalledTimes(2);
+    expect(result.page.map((entry) => entry.name)).toEqual(["bundle-plugin"]);
+    expect(result.isDone).toBe(false);
+    expect(indexNames).toEqual(["by_active_downloads"]);
+    expect(paginate).toHaveBeenCalledTimes(1);
   });
 
   it("excludes private packages from public list pages", async () => {
@@ -2979,22 +3148,15 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledTimes(1);
   });
 
-  it("filters private packages and capability flags in public search", async () => {
+  it("filters private packages in public search", async () => {
     const { ctx } = makeDigestCtx({
-      capabilityPages: [
+      pages: [
         {
           page: [
             makeDigest("secret-tools", {
               channel: "private",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
-            makeDigest("tools-demo", {
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
-            }),
+            makeDigest("tools-demo"),
           ],
           isDone: true,
           continueCursor: "",
@@ -3004,8 +3166,6 @@ describe("packages public queries", () => {
 
     const result = await searchPublicHandler(ctx, {
       query: "demo",
-      executesCode: true,
-      capabilityTag: "tools",
       limit: 10,
     });
 
@@ -3014,22 +3174,16 @@ describe("packages public queries", () => {
 
   it("allows owners to search their private packages", async () => {
     const { ctx } = makeDigestCtx({
-      capabilityPages: [
+      pages: [
         {
           page: [
             makeDigest("secret-tools", {
               channel: "private",
               ownerUserId: "users:owner",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
             makeDigest("other-secret-tools", {
               channel: "private",
               ownerUserId: "users:other",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
           ],
           isDone: true,
@@ -3040,8 +3194,6 @@ describe("packages public queries", () => {
 
     const result = await searchForViewerInternalHandler(ctx, {
       query: "secret",
-      executesCode: true,
-      capabilityTag: "tools",
       channel: "private",
       limit: 10,
       viewerUserId: "users:owner",
@@ -3210,24 +3362,18 @@ describe("packages public queries", () => {
 
   it("allows org collaborators to search their private packages", async () => {
     const { ctx } = makeDigestCtx({
-      capabilityPages: [
+      pages: [
         {
           page: [
             makeDigest("secret-tools", {
               channel: "private",
               ownerUserId: "users:owner",
               ownerPublisherId: "publishers:org",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
             makeDigest("other-secret-tools", {
               channel: "private",
               ownerUserId: "users:other",
               ownerPublisherId: "publishers:other",
-              executesCode: true,
-              capabilityTags: ["tools"],
-              capabilityTag: "tools",
             }),
           ],
           isDone: true,
@@ -3241,8 +3387,6 @@ describe("packages public queries", () => {
 
     const result = await searchForViewerInternalHandler(ctx, {
       query: "secret",
-      executesCode: true,
-      capabilityTag: "tools",
       channel: "private",
       limit: 10,
       viewerUserId: "users:member",
@@ -3251,11 +3395,11 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
   });
 
-  it("uses the executesCode index for filtered public listings", async () => {
+  it("uses the active updated index for public listings", async () => {
     const { ctx, indexNames, tableNames } = makeDigestCtx({
       pages: [
         {
-          page: [makeDigest("exec-demo", { executesCode: true })],
+          page: [makeDigest("demo")],
           isDone: true,
           continueCursor: "",
         },
@@ -3263,26 +3407,19 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      executesCode: true,
       paginationOpts: { cursor: null, numItems: 10 },
     });
 
-    expect(result.page.map((entry) => entry.name)).toEqual(["exec-demo"]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["demo"]);
     expect(tableNames).toEqual(["packageSearchDigest"]);
-    expect(indexNames).toEqual(["by_active_executes_updated"]);
+    expect(indexNames).toEqual(["by_active_updated"]);
   });
 
-  it("uses capability digests for capability-tagged package search", async () => {
+  it("ignores retired capability filters for package search", async () => {
     const { ctx, indexNames, tableNames } = makeDigestCtx({
-      capabilityPages: [
+      pages: [
         {
-          page: [
-            makeDigest("tools-demo", {
-              capabilityTag: "tools",
-              capabilityTags: ["tools"],
-              executesCode: true,
-            }),
-          ],
+          page: [makeDigest("tools-demo")],
           isDone: true,
           continueCursor: "",
         },
@@ -3294,11 +3431,14 @@ describe("packages public queries", () => {
       capabilityTag: "tools",
       executesCode: true,
       limit: 10,
+    } as Parameters<typeof searchPublicHandler>[1] & {
+      capabilityTag?: string;
+      executesCode?: boolean;
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
-    expect(tableNames).toEqual(["packageCapabilitySearchDigest"]);
-    expect(indexNames).toEqual(["by_active_tag_executes_updated"]);
+    expect(new Set(tableNames)).toEqual(new Set(["packageSearchDigest"]));
+    expect(new Set(indexNames)).toEqual(new Set(["by_active_updated"]));
   });
 
   it("uses plugin category digests for category-filtered listings", async () => {
@@ -3320,13 +3460,12 @@ describe("packages public queries", () => {
 
     const result = await listPublicPageHandler(ctx, {
       category: "data",
-      executesCode: true,
       paginationOpts: { cursor: null, numItems: 10 },
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["api-demo"]);
     expect(tableNames).toEqual(["packagePluginCategorySearchDigest"]);
-    expect(indexNames).toEqual(["by_active_category_executes_updated"]);
+    expect(indexNames).toEqual(["by_active_category_updated"]);
   });
 
   it("uses plugin category digests for category-filtered search", async () => {
@@ -3574,18 +3713,17 @@ describe("packages public queries", () => {
   it("keeps public list pages to one paginated query per invocation", async () => {
     const { ctx, paginate } = makeDigestCtx({
       pages: Array.from({ length: 120 }, (_, index) => ({
-        page: [makeDigest(`noise-${index}`, { executesCode: false })],
+        page: [makeDigest(`noise-${index}`)],
         isDone: false,
         continueCursor: `cursor:${index + 1}`,
       })),
     });
 
     const result = await listPublicPageHandler(ctx, {
-      executesCode: true,
       paginationOpts: { cursor: null, numItems: 100 },
     });
 
-    expect(result.page).toEqual([]);
+    expect(result.page.map((entry) => entry.name)).toEqual(["noise-0"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor).toBeTruthy();
     expect(paginate).toHaveBeenCalledTimes(1);
@@ -3829,6 +3967,7 @@ describe("packages public queries", () => {
     };
     const latestRelease = makeReleaseDoc({
       verification,
+      capabilities: { capabilityTags: ["legacy"], executesCode: true },
       source: {
         kind: "github",
         repo: "OpenViking/OpenViking",
@@ -3848,11 +3987,10 @@ describe("packages public queries", () => {
       latestRelease,
     });
 
-    await expect(
-      getByNameHandler(ctx, {
-        name: "@openviking/openclaw-plugin",
-      }),
-    ).resolves.toMatchObject({
+    const detail = await getByNameHandler(ctx, {
+      name: "@openviking/openclaw-plugin",
+    });
+    expect(detail).toMatchObject({
       package: {
         verification: { sourcePath: "openclaw-plugin" },
       },
@@ -3860,12 +3998,13 @@ describe("packages public queries", () => {
         verification: { sourcePath: "openclaw-plugin" },
       },
     });
-    await expect(
-      getVersionByNameHandler(ctx, {
-        name: "@openviking/openclaw-plugin",
-        version: "1.0.0",
-      }),
-    ).resolves.toMatchObject({
+    expect(detail?.latestRelease).not.toHaveProperty("capabilities");
+
+    const version = await getVersionByNameHandler(ctx, {
+      name: "@openviking/openclaw-plugin",
+      version: "1.0.0",
+    });
+    expect(version).toMatchObject({
       package: {
         verification: { sourcePath: "openclaw-plugin" },
       },
@@ -3873,6 +4012,7 @@ describe("packages public queries", () => {
         verification: { sourcePath: "openclaw-plugin" },
       },
     });
+    expect(version?.version).not.toHaveProperty("capabilities");
   });
 
   it("does not mark owner-readable blocked public packages as public download blocked", async () => {
@@ -3991,7 +4131,11 @@ describe("packages public queries", () => {
       versionsPage: {
         page: [
           makeReleaseDoc({ version: "1.1.0", softDeletedAt: 10 }),
-          makeReleaseDoc({ _id: "packageReleases:demo-2", version: "1.0.0" }),
+          makeReleaseDoc({
+            _id: "packageReleases:demo-2",
+            version: "1.0.0",
+            capabilities: { capabilityTags: ["legacy"], executesCode: true },
+          }),
         ],
         isDone: true,
         continueCursor: "",
@@ -4004,6 +4148,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.page.map((entry) => entry.version)).toEqual(["1.0.0"]);
+    expect(result.page[0]).not.toHaveProperty("capabilities");
     expect(releaseIndexNames).toContain("by_package_active_created");
   });
 
@@ -4227,6 +4372,57 @@ describe("packages public queries", () => {
     );
   });
 
+  it("does not restore owner-deleted releases with the whole package", async () => {
+    const { ctx, patch } = makeSoftDeletePackageCtx({
+      pkg: makePackageDoc({
+        softDeletedAt: 123,
+        softDeletedBy: "users:owner",
+        softDeletedByRole: "user",
+        latestReleaseId: undefined,
+        latestVersionSummary: undefined,
+        tags: {},
+      }),
+      releases: [
+        makeReleaseDoc({
+          _id: "packageReleases:ownerDeleted",
+          version: "2.0.0",
+          softDeletedAt: 100,
+          ownerDeletedAt: 100,
+          ownerDeletedBy: "users:owner",
+          distTags: ["latest"],
+          createdAt: 20,
+        }),
+        makeReleaseDoc({
+          _id: "packageReleases:restorable",
+          version: "1.0.0",
+          softDeletedAt: 123,
+          distTags: ["stable"],
+          createdAt: 10,
+        }),
+      ],
+    });
+
+    const result = await restorePackageInternalHandler(ctx, {
+      userId: "users:owner",
+      name: "demo-plugin",
+    });
+
+    expect(result).toMatchObject({ ok: true, releaseCount: 1, alreadyRestored: false });
+    expect(patch).not.toHaveBeenCalledWith("packageReleases:ownerDeleted", {
+      softDeletedAt: undefined,
+    });
+    expect(patch).toHaveBeenCalledWith("packageReleases:restorable", {
+      softDeletedAt: undefined,
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "packages:demo",
+      expect.objectContaining({
+        latestReleaseId: "packageReleases:restorable",
+        latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
+      }),
+    );
+  });
+
   it("rejects owner restore for moderator-deleted packages", async () => {
     const { ctx, patch } = makeSoftDeletePackageCtx({
       pkg: makePackageDoc({
@@ -4355,22 +4551,13 @@ describe("packages public queries", () => {
     });
   });
 
-  it("syncs package search digests when packages are soft-deleted", async () => {
+  it("syncs package search digest when packages are soft-deleted", async () => {
     const { ctx, patch } = makeSoftDeletePackageCtx({
-      pkg: makePackageDoc({ capabilityTags: ["tools"] }),
       packageSearchDigest: {
         _id: "packageSearchDigest:demo",
         packageId: "packages:demo",
         softDeletedAt: undefined,
       },
-      capabilityDigests: [
-        {
-          _id: "packageCapabilitySearchDigest:tools",
-          packageId: "packages:demo",
-          capabilityTag: "tools",
-          softDeletedAt: undefined,
-        },
-      ],
     });
 
     await expect(
@@ -4385,12 +4572,6 @@ describe("packages public queries", () => {
       expect.objectContaining({
         softDeletedAt: expect.any(Number),
         updatedAt: expect.any(Number),
-      }),
-    );
-    expect(patch).toHaveBeenCalledWith(
-      "packageCapabilitySearchDigest:tools",
-      expect.objectContaining({
-        softDeletedAt: expect.any(Number),
       }),
     );
   });
@@ -5568,13 +5749,19 @@ describe("packages public queries", () => {
     );
   });
 
-  it("does not overwrite capability search fields for non-latest releases", async () => {
+  it("does not overwrite latest package metadata for non-latest releases", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
-        capabilityTags: ["channel:chat"],
-        executesCode: true,
         tags: { latest: "packageReleases:demo-1" },
         latestReleaseId: "packageReleases:demo-1",
+        latestVersionSummary: {
+          version: "1.0.0",
+          createdAt: 1,
+          changelog: "latest",
+          compatibility: null,
+          verification: null,
+          artifact: null,
+        },
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       }),
     );
@@ -5591,23 +5778,23 @@ describe("packages public queries", () => {
       summary: "demo",
       files: [],
       integritySha256: "abc123",
-      capabilities: { capabilityTags: ["legacy"], executesCode: false },
     });
 
-    expect(ctx.patch).toHaveBeenCalledWith(
-      "packages:demo",
+    const packagePatch = ctx.patch.mock.calls.find(([id]) => id === "packages:demo")?.[1];
+    expect(packagePatch).toEqual(
       expect.objectContaining({
-        capabilityTags: ["channel:chat"],
-        executesCode: true,
+        latestReleaseId: "packageReleases:demo-1",
+        latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
       }),
     );
+    expect(packagePatch).not.toHaveProperty("capabilityTags");
+    expect(packagePatch).not.toHaveProperty("capabilities");
+    expect(packagePatch).not.toHaveProperty("executesCode");
   });
 
-  it("adds artifact capability tags for promoted ClawPack releases", async () => {
+  it("adds artifact summary for promoted ClawPack releases", async () => {
     const ctx = makeInsertReleaseCtx(
       makePackageDoc({
-        capabilityTags: ["channel:chat"],
-        executesCode: true,
         tags: { latest: "packageReleases:demo-1" },
         latestReleaseId: "packageReleases:demo-1",
         stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
@@ -5635,24 +5822,20 @@ describe("packages public queries", () => {
       npmIntegrity: "sha512-demo",
       npmShasum: "b".repeat(40),
       npmTarballName: "demo-plugin-1.1.0.tgz",
-      capabilities: { capabilityTags: ["tools"], executesCode: true },
     });
 
-    const expectedTags = ["tools", "artifact:npm-pack", "npm-mirror:available"];
     expect(ctx.insert).toHaveBeenCalledWith(
       "packageReleases",
       expect.objectContaining({
         artifactKind: "npm-pack",
-        capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
+        clawpackStorageId: "storage:clawpack",
+        npmIntegrity: "sha512-demo",
       }),
     );
     expect(ctx.patch).toHaveBeenCalledWith(
       "packages:demo",
       expect.objectContaining({
-        capabilityTags: expectedTags,
-        capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
         latestVersionSummary: expect.objectContaining({
-          capabilities: expect.objectContaining({ capabilityTags: expectedTags }),
           artifact: expect.objectContaining({
             kind: "npm-pack",
             sha256: "a".repeat(64),
@@ -5803,12 +5986,15 @@ describe("packages public queries", () => {
     });
   });
 
-  it("rejects duplicate package versions by default", async () => {
+  it("rejects an owner-deleted package version even when matching workflow retries are allowed", async () => {
     const ctx = makeInsertReleaseCtx(makePackageDoc(), [
       makeReleaseDoc({
         _id: "packageReleases:existing",
         version: "1.0.0",
         integritySha256: "abc123",
+        softDeletedAt: 123,
+        ownerDeletedAt: 123,
+        ownerDeletedBy: "users:owner",
       }),
     ]);
 
@@ -5825,6 +6011,7 @@ describe("packages public queries", () => {
         summary: "demo",
         files: [],
         integritySha256: "abc123",
+        allowExistingRelease: true,
       }),
     ).rejects.toThrow("Version 1.0.0 already exists. Increment the version number and try again.");
   });
@@ -9473,6 +9660,125 @@ describe("packages public queries", () => {
     expect(result).toBeNull();
   });
 
+  it("allows direct package owners to delete versions", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+
+    const result = await canDeleteVersionsHandler(
+      makeCanDeleteVersionsCtx({
+        viewerId: "users:owner",
+        ownerUserId: "users:owner",
+      }) as never,
+      { name: "demo-plugin" },
+    );
+
+    expect(result).toBe(true);
+  });
+
+  it("does not let package owners delete versions when the package is blocked from public use", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+
+    const result = await canDeleteVersionsHandler(
+      makeCanDeleteVersionsCtx({
+        viewerId: "users:owner",
+        ownerUserId: "users:owner",
+        packageOverrides: { scanStatus: "malicious" },
+      }) as never,
+      { name: "demo-plugin" },
+    );
+
+    expect(result).toBe(false);
+  });
+
+  it.each(["owner", "admin"] as const)(
+    "allows org %s members to delete versions",
+    async (membershipRole) => {
+      vi.mocked(getAuthUserId).mockResolvedValue("users:org-manager" as never);
+
+      const result = await canDeleteVersionsHandler(
+        makeCanDeleteVersionsCtx({
+          viewerId: "users:org-manager",
+          ownerUserId: "users:creator",
+          ownerPublisherId: "publishers:demo-org",
+          membershipRole,
+        }) as never,
+        { name: "demo-plugin" },
+      );
+
+      expect(result).toBe(true);
+    },
+  );
+
+  it.each([
+    { label: "ordinary org publisher", membershipRole: "publisher" as const },
+    { label: "non-member", membershipRole: undefined },
+  ])("does not let $label delete versions", async ({ membershipRole }) => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:org-viewer" as never);
+
+    const result = await canDeleteVersionsHandler(
+      makeCanDeleteVersionsCtx({
+        viewerId: "users:org-viewer",
+        ownerUserId: "users:creator",
+        ownerPublisherId: "publishers:demo-org",
+        membershipRole,
+      }) as never,
+      { name: "demo-plugin" },
+    );
+
+    expect(result).toBe(false);
+  });
+
+  it.each(["admin", "moderator"] as const)(
+    "does not let platform %s staff delete versions without ownership",
+    async (viewerRole) => {
+      vi.mocked(getAuthUserId).mockResolvedValue("users:staff" as never);
+
+      const result = await canDeleteVersionsHandler(
+        makeCanDeleteVersionsCtx({
+          viewerId: "users:staff",
+          viewerRole,
+          ownerUserId: "users:owner",
+        }) as never,
+        { name: "demo-plugin" },
+      );
+
+      expect(result).toBe(false);
+    },
+  );
+
+  it("bounds normalized unique candidate lookups when checking version delete capability", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const packageLookupNames: string[] = [];
+
+    const result = await canDeleteVersionsHandler(
+      makeCanDeleteVersionsCtx({
+        viewerId: "users:owner",
+        ownerUserId: "users:owner",
+        packageLookupNames,
+        packageMatchName: null,
+      }) as never,
+      {
+        name: " primary-plugin ",
+        candidateNames: [
+          "PRIMARY-PLUGIN",
+          "candidate-one",
+          "candidate-two",
+          "candidate-three",
+          "candidate-four",
+          "candidate-five",
+          "candidate-one",
+        ],
+      },
+    );
+
+    expect(result).toBe(false);
+    expect(packageLookupNames).toEqual([
+      "primary-plugin",
+      "candidate-one",
+      "candidate-two",
+      "candidate-three",
+    ]);
+  });
+
   it("returns only slim package identifiers for package manage context", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
 
@@ -10492,7 +10798,6 @@ describe("package scan backfill", () => {
     };
     const pkg = makePackageDoc({
       ownerPublisherId: "publishers:owner",
-      capabilityTags: ["read-files"],
       scanStatus: "clean",
       verification,
       latestVersionSummary: {
@@ -10546,21 +10851,6 @@ describe("package scan backfill", () => {
                 })),
               };
             }
-            if (table === "packageCapabilitySearchDigest") {
-              return {
-                withIndex: vi.fn(() => ({
-                  collect: vi.fn().mockResolvedValue([
-                    {
-                      _id: "packageCapabilitySearchDigest:demo-read-files",
-                      packageId: "packages:demo",
-                      capabilityTag: "read-files",
-                      scanStatus: "malicious",
-                      ownerHandle: undefined,
-                    },
-                  ]),
-                })),
-              };
-            }
             if (table === "packagePluginCategorySearchDigest") {
               return {
                 withIndex: vi.fn(() => ({
@@ -10585,10 +10875,6 @@ describe("package scan backfill", () => {
     expect(patch).not.toHaveBeenCalledWith("packages:demo", expect.anything());
     expect(patch).toHaveBeenCalledWith(
       "packageSearchDigest:demo",
-      expect.objectContaining({ scanStatus: "clean" }),
-    );
-    expect(patch).toHaveBeenCalledWith(
-      "packageCapabilitySearchDigest:demo-read-files",
       expect.objectContaining({
         scanStatus: "clean",
         ownerHandle: "tongfei11",
@@ -11091,13 +11377,13 @@ describe("package scan backfill", () => {
 
 /**
  * Build a ctx that exercises the full softDeletePackageDoc / restorePackageDoc
- * path, including the upsertPackageSearchDigest → syncPackageCapabilitySearchDigests
- * branch that previously crashed when ownerHandle was missing.
+ * path, including the upsertPackageSearchDigest branch that previously crashed
+ * when ownerHandle was missing.
  */
 function makeSoftDeleteCtx(options?: {
   pkg?: Record<string, unknown>;
   actor?: Record<string, unknown>;
-  /** When true, no existing packageCapabilitySearchDigest rows exist (forces insert). */
+  /** When true, no retired digest rows exist. */
   noCapabilityDigest?: boolean;
   /** Personal publisher linked to the owner user. */
   personalPublisher?: Record<string, unknown> | null;
@@ -11109,7 +11395,6 @@ function makeSoftDeleteCtx(options?: {
     makePackageDoc({
       ownerUserId: "users:owner",
       ownerPublisherId: "publishers:owner-personal",
-      capabilityTags: ["read-files"],
     });
 
   const personalPublisher =
@@ -12196,7 +12481,7 @@ describe("softDeletePackageInternal", () => {
     );
   });
 
-  it("writes ownerHandle via insert when no packageCapabilitySearchDigest row exists yet", async () => {
+  it("does not recreate retired capability digest rows", async () => {
     const { ctx, insert } = makeSoftDeleteCtx({ noCapabilityDigest: true });
 
     await softDeletePackageInternalHandler(ctx as never, {
@@ -12204,14 +12489,7 @@ describe("softDeletePackageInternal", () => {
       name: "demo-plugin",
     });
 
-    // A new capability digest row must be inserted with ownerHandle populated.
-    expect(insert).toHaveBeenCalledWith(
-      "packageCapabilitySearchDigest",
-      expect.objectContaining({
-        capabilityTag: "read-files",
-        ownerHandle: "tongfei11",
-      }),
-    );
+    expect(insert).not.toHaveBeenCalledWith("packageCapabilitySearchDigest", expect.anything());
   });
 
   it("returns alreadyDeleted:true without touching releases when package is already soft-deleted", async () => {
@@ -12272,8 +12550,7 @@ describe("restorePackageInternal", () => {
       latestReleaseId: "packageReleases:demo-1",
       tags: { latest: "packageReleases:demo-1" },
     });
-    // The release was soft-deleted together with the package; it carries
-    // capabilityTags so that restorePackageDoc rebuilds them on the package.
+    // The release was soft-deleted together with the package.
     const restoredRelease = makeReleaseDoc({
       _id: "packageReleases:demo-1",
       softDeletedAt: 500,
@@ -12281,7 +12558,6 @@ describe("restorePackageInternal", () => {
       version: "1.0.0",
       changelog: "",
       integritySha256: "abc",
-      capabilities: { capabilityTags: ["read-files"] },
       compatibility: null,
       verification: null,
       scanStatus: "clean",
@@ -12312,14 +12588,7 @@ describe("restorePackageInternal", () => {
       expect.objectContaining({ ownerHandle: "tongfei11", softDeletedAt: undefined }),
     );
 
-    // A new capability digest row must be inserted with ownerHandle populated.
-    expect(insert).toHaveBeenCalledWith(
-      "packageCapabilitySearchDigest",
-      expect.objectContaining({
-        capabilityTag: "read-files",
-        ownerHandle: "tongfei11",
-      }),
-    );
+    expect(insert).not.toHaveBeenCalledWith("packageCapabilitySearchDigest", expect.anything());
 
     // An audit log must be inserted.
     expect(insert).toHaveBeenCalledWith(

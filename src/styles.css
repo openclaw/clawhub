@@ -1933,6 +1933,15 @@ code {
   font-weight: 600;
 }
 
+.skill-publish-share-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0;
+  min-width: 0;
+  padding-inline: 4px;
+}
+
 .publish-field-group {
   display: grid;
   gap: 8px;
@@ -6292,103 +6301,6 @@ code {
   line-height: 1;
 }
 
-.comment-form {
-  display: grid;
-  gap: 12px;
-  margin-top: 12px;
-}
-
-.comment-input {
-  border-radius: 16px;
-  border: 1px solid var(--line);
-  padding: 14px 16px;
-  font-size: 1rem;
-  background: var(--surface-muted);
-  color: var(--ink);
-  font-family: var(--font-body);
-  min-height: 120px;
-  resize: vertical;
-}
-
-.comment-input:focus-visible {
-  outline: 3px solid rgba(255, 255, 255, 0.25);
-  outline-offset: 3px;
-}
-
-.comment-submit {
-  justify-self: start;
-  padding: 8px 14px;
-  font-size: 0.9rem;
-}
-
-.comment-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: start;
-  padding: 12px 14px;
-  border: 1px solid var(--line);
-  border-radius: 14px;
-  background: var(--surface-muted);
-}
-
-.comment-body {
-  min-width: 0;
-  display: grid;
-  gap: 4px;
-}
-
-.comment-body-text {
-  color: var(--ink-soft);
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.comment-actions {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-  justify-self: end;
-}
-
-.comment-report-form {
-  margin-top: 10px;
-  display: grid;
-  gap: 8px;
-}
-
-.comment-report-input {
-  min-height: 96px;
-}
-
-.comment-report-actions {
-  display: inline-flex;
-  gap: 8px;
-  align-items: center;
-}
-
-.comment-delete {
-  justify-self: end;
-  align-self: center;
-  padding: 6px 12px;
-  font-size: 0.82rem;
-  color: var(--ink-soft);
-  border-color: rgba(255, 255, 255, 0.25);
-  background: transparent;
-  box-shadow: none;
-}
-
-.comment-delete:hover {
-  color: var(--ink);
-  border-color: rgba(255, 255, 255, 0.4);
-  background: rgba(255, 255, 255, 0.08);
-}
-
-.comment-delete:focus-visible {
-  outline: 3px solid rgba(255, 255, 255, 0.25);
-  outline-offset: 2px;
-}
-
 .sidebar-card {
   gap: 20px;
 }
@@ -9081,32 +8993,6 @@ code {
   gap: 0;
 }
 
-.scan-capabilities-section {
-  display: grid;
-  gap: 10px;
-  padding: 0 0 12px;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent);
-  margin-bottom: 4px;
-}
-
-.scan-capability-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.scan-capability-tag {
-  background: color-mix(in srgb, var(--accent) 10%, transparent);
-  border-color: color-mix(in srgb, var(--accent) 24%, var(--line));
-  color: var(--ink);
-}
-
-.scan-capability-note {
-  font-size: 0.82rem;
-  line-height: 1.45;
-  color: var(--ink-soft);
-}
-
 .scan-result-row {
   display: grid;
   grid-template-columns: minmax(120px, auto) auto 1fr;
@@ -9928,10 +9814,6 @@ a.agentic-risk-finding-title:focus-visible {
     overflow: visible;
   }
 
-  .comment-entry {
-    padding: var(--space-2);
-  }
-
   .markdown pre {
     font-size: 0.78rem;
   }
@@ -10606,7 +10488,7 @@ a.agentic-risk-finding-title:focus-visible {
   white-space: nowrap;
 }
 
-.publisher-card-featured-downloads {
+.publisher-card-featured-installs {
   justify-self: end;
   display: inline-flex;
   align-items: center;
@@ -10618,12 +10500,12 @@ a.agentic-risk-finding-title:focus-visible {
   white-space: nowrap;
 }
 
-.publisher-card-featured-downloads svg {
+.publisher-card-featured-installs svg {
   flex: 0 0 auto;
   color: var(--ink-faint);
 }
 
-.publisher-card-featured-downloads span {
+.publisher-card-featured-installs span {
   display: block;
   font-family: var(--font-mono);
   text-align: right;
@@ -11272,8 +11154,8 @@ a.agentic-risk-finding-title:focus-visible {
   text-align: right;
 }
 
-.audits-downloads-header,
-.audits-downloads-cell {
+.audits-installs-header,
+.audits-installs-cell {
   justify-content: flex-end;
   text-align: right;
 }
@@ -11324,7 +11206,7 @@ a.agentic-risk-finding-title:focus-visible {
   min-width: 0;
 }
 
-.audits-downloads-cell {
+.audits-installs-cell {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -11415,7 +11297,7 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .audits-signal-cell::before,
-  .audits-downloads-cell::before {
+  .audits-installs-cell::before {
     min-width: 112px;
     color: var(--ink-soft);
     font-size: var(--fs-xs);
@@ -11432,13 +11314,13 @@ a.agentic-risk-finding-title:focus-visible {
     content: "VirusTotal";
   }
 
-  .audits-downloads-cell {
+  .audits-installs-cell {
     justify-content: flex-start;
     text-align: left;
   }
 
-  .audits-downloads-cell::before {
-    content: "Downloads";
+  .audits-installs-cell::before {
+    content: "Installs";
   }
 }
 
@@ -14276,37 +14158,6 @@ a.publisher-profile-detail:hover {
   transform: translateX(3px);
 }
 
-/* ═══ PROOF BAR ═══ */
-.home-v2-proof-bar {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 48px;
-  padding: 28px 48px;
-  border-top: 1px solid var(--hv2-border);
-  border-bottom: 1px solid var(--hv2-border);
-}
-.home-v2-proof-item {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
-}
-.home-v2-proof-num {
-  font-family: "JetBrains Mono", monospace;
-  font-weight: 700;
-  font-size: 20px;
-  color: var(--hv2-text);
-}
-.home-v2-proof-label {
-  font-size: 13px;
-  color: var(--hv2-text-secondary);
-}
-.home-v2-proof-sep {
-  width: 1px;
-  height: 16px;
-  background: var(--hv2-border);
-}
-
 /* ═══ TRENDING ═══ */
 .home-v2-trending-section {
   padding: 48px 48px 80px;
@@ -14469,10 +14320,6 @@ a.publisher-profile-detail:hover {
   .home-v2-trending-grid {
     grid-template-columns: repeat(2, 1fr);
   }
-  .home-v2-proof-bar {
-    gap: 24px;
-    flex-wrap: wrap;
-  }
 }
 @media (max-width: 768px) {
   .home-v2-hero {
@@ -14538,10 +14385,6 @@ a.publisher-profile-detail:hover {
   }
   .home-v2-trending-section {
     padding: 36px 20px 60px;
-  }
-  .home-v2-proof-bar {
-    padding: 20px;
-    gap: 16px;
   }
   .home-v2-search-go-label {
     display: none;
@@ -14762,15 +14605,6 @@ a.publisher-profile-detail:hover {
 }
 [data-theme-resolved="light"] .home-v2-cat-item:hover {
   background: rgba(210, 170, 130, 0.06);
-}
-
-/* Light — proof bar */
-[data-theme-resolved="light"] .home-v2-proof-bar {
-  border-top-color: rgba(170, 125, 80, 0.15);
-  border-bottom-color: rgba(170, 125, 80, 0.15);
-}
-[data-theme-resolved="light"] .home-v2-proof-num {
-  color: #1a1410;
 }
 
 /* Light — install buttons (green) */
@@ -14995,11 +14829,6 @@ a.publisher-profile-detail:hover {
 
 /* File viewer — was 16px */
 .file-viewer {
-  border-radius: var(--r-md) !important;
-}
-
-/* Comment input — was 18px */
-.comment-input {
   border-radius: var(--r-md) !important;
 }
 

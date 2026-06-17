@@ -1,15 +1,32 @@
 import { readFile, readdir, stat } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 import semver from "semver";
-import { apiRequestForm } from "../../http.js";
-import { ApiRoutes, ApiV1PublishResponseSchema } from "../../schema/index.js";
-import { listTextFiles } from "../../skills.js";
-import { requireAuthToken } from "../authToken.js";
+import { apiRequest, apiRequestForm, registryUrl } from "../../http.js";
+import {
+  ApiRoutes,
+  ApiV1PublishResponseSchema,
+  ApiV1SkillResolveResponseSchema,
+} from "../../schema/index.js";
+import { hashSkillFiles, listTextFiles } from "../../skills.js";
+import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
 import { createCrabLoader, fail, formatError } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
+
+type SkillPublishResult = {
+  ok: true;
+  status: "unchanged" | "would-publish" | "published";
+  slug: string;
+  displayName: string;
+  folder: string;
+  version: string;
+  latestVersion: string | null;
+  fileCount: number;
+  fingerprint: string;
+  versionId?: string;
+};
 
 export async function cmdPublish(
   opts: GlobalOpts,
@@ -27,8 +44,10 @@ export async function cmdPublish(
     sourceCommit?: string;
     sourceRef?: string;
     sourcePath?: string;
+    dryRun?: boolean;
+    json?: boolean;
   },
-) {
+): Promise<SkillPublishResult> {
   const folder = folderArg ? resolve(opts.workdir, folderArg) : null;
   if (!folder) fail("Path required");
   const folderStat = await stat(folder).catch(() => null);
@@ -37,13 +56,12 @@ export async function cmdPublish(
     fail('This looks like a plugin. Use "clawhub package publish <source>" instead.');
   }
 
-  const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
 
   const slug = options.slug ?? sanitizeSlug(basename(folder));
   const displayName = options.name ?? titleCase(basename(folder));
   const ownerHandle = options.owner?.trim().replace(/^@+/, "");
-  const version = options.version;
+  const explicitVersion = options.version;
   const changelog = options.changelog ?? "";
   const tagsValue = options.tags ?? "latest";
   const tags = tagsValue
@@ -57,9 +75,9 @@ export async function cmdPublish(
 
   if (!slug) fail("--slug required");
   if (!displayName) fail("--name required");
-  if (!version || !semver.valid(version)) fail("--version must be valid semver");
+  if (explicitVersion && !semver.valid(explicitVersion)) fail("--version must be valid semver");
 
-  const spinner = createCrabLoader(`Preparing ${slug}@${version}`);
+  const spinner = options.json ? null : createCrabLoader(`Preparing ${slug}`);
   try {
     const filesOnDisk = stripGeneratedSkillCards(
       await ensureRootManifestFile(folder, await listTextFiles(folder)),
@@ -74,6 +92,45 @@ export async function cmdPublish(
       fail("SKILL.md required");
     }
 
+    const hashed = hashSkillFiles(filesOnDisk);
+    const optionalToken = await getOptionalAuthToken();
+    const resolved = await resolveSkillVersion(registry, slug, hashed.fingerprint, optionalToken);
+    const latestVersion = resolved.latestVersion?.version ?? null;
+
+    if (!explicitVersion && resolved.match) {
+      const result = buildPublishResult({
+        status: "unchanged",
+        slug,
+        displayName,
+        folder,
+        version: resolved.match.version,
+        latestVersion,
+        fileCount: filesOnDisk.length,
+        fingerprint: hashed.fingerprint,
+      });
+      spinner?.succeed(`OK. ${slug}@${result.version} is already published`);
+      writePublishJsonIfRequested(options.json, result);
+      return result;
+    }
+
+    const version = explicitVersion ?? resolveAutomaticVersion(latestVersion);
+    if (options.dryRun) {
+      const result = buildPublishResult({
+        status: "would-publish",
+        slug,
+        displayName,
+        folder,
+        version,
+        latestVersion,
+        fileCount: filesOnDisk.length,
+        fingerprint: hashed.fingerprint,
+      });
+      spinner?.succeed(`Would publish ${slug}@${version}`);
+      writePublishJsonIfRequested(options.json, result);
+      return result;
+    }
+
+    const token = await requireAuthToken();
     const form = new FormData();
     form.set(
       "payload",
@@ -94,23 +151,74 @@ export async function cmdPublish(
     let index = 0;
     for (const file of filesOnDisk) {
       index += 1;
-      spinner.text = `Uploading ${file.relPath} (${index}/${filesOnDisk.length})`;
+      if (spinner) spinner.text = `Uploading ${file.relPath} (${index}/${filesOnDisk.length})`;
       const blob = new Blob([Buffer.from(file.bytes)], { type: file.contentType ?? "text/plain" });
       form.append("files", blob, file.relPath);
     }
 
-    spinner.text = `Publishing ${slug}@${version}`;
+    if (spinner) spinner.text = `Publishing ${slug}@${version}`;
     const result = await apiRequestForm(
       registry,
       { method: "POST", path: ApiRoutes.skills, token, form },
       ApiV1PublishResponseSchema,
     );
 
-    spinner.succeed(`OK. Published ${slug}@${version} (${result.versionId})`);
+    const publishResult = buildPublishResult({
+      status: "published",
+      slug,
+      displayName,
+      folder,
+      version,
+      latestVersion,
+      fileCount: filesOnDisk.length,
+      fingerprint: hashed.fingerprint,
+      versionId: result.versionId,
+    });
+    spinner?.succeed(`OK. Published ${slug}@${version} (${result.versionId})`);
+    writePublishJsonIfRequested(options.json, publishResult);
+    return publishResult;
   } catch (error) {
-    spinner.fail(formatError(error));
+    spinner?.fail(formatError(error));
     throw error;
   }
+}
+
+async function resolveSkillVersion(
+  registry: string,
+  slug: string,
+  fingerprint: string,
+  token?: string,
+) {
+  const url = registryUrl(ApiRoutes.resolve, registry);
+  url.searchParams.set("slug", slug);
+  url.searchParams.set("hash", fingerprint);
+  try {
+    return await apiRequest(
+      registry,
+      { method: "GET", url: url.toString(), token },
+      ApiV1SkillResolveResponseSchema,
+    );
+  } catch (error) {
+    if (/skill not found|HTTP 404/i.test(formatError(error))) {
+      return { match: null, latestVersion: null };
+    }
+    throw error;
+  }
+}
+
+function resolveAutomaticVersion(latestVersion: string | null) {
+  if (!latestVersion) return "1.0.0";
+  const nextVersion = semver.inc(latestVersion, "patch");
+  if (!nextVersion) fail(`Latest ClawHub version is not valid semver: ${latestVersion}`);
+  return nextVersion;
+}
+
+function buildPublishResult(result: Omit<SkillPublishResult, "ok">): SkillPublishResult {
+  return { ok: true, ...result };
+}
+
+function writePublishJsonIfRequested(json: boolean | undefined, result: SkillPublishResult) {
+  if (json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
 }
 
 function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listTextFiles>>) {

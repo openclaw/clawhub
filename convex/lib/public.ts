@@ -32,7 +32,6 @@ export type PublicSkill = Pick<
   | "githubScanStatus"
   | "githubHasSkillCard"
   | "tags"
-  | "capabilityTags"
   | "badges"
   | "stats"
   | "isSuspicious"
@@ -67,7 +66,6 @@ export type HydratableSkill = Pick<
   | "githubScanStatus"
   | "latestVersionSummary"
   | "tags"
-  | "capabilityTags"
   | "badges"
   | "stats"
   | "statsDownloads"
@@ -146,7 +144,6 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
     githubScanStatus: skill.githubScanStatus,
     githubHasSkillCard: skill.githubHasSkillCard,
     tags: skill.tags,
-    capabilityTags: skill.capabilityTags,
     badges: skill.badges,
     stats,
     isSuspicious: skill.isSuspicious,

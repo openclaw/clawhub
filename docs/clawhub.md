@@ -14,7 +14,7 @@ sidebarTitle: "ClawHub"
 ClawHub is the public registry for OpenClaw skills and plugins.
 
 - Use native `openclaw` commands to search, install, and update skills and to install plugins from ClawHub.
-- Use the separate `clawhub` CLI for registry auth, publishing, sync, and delete/undelete workflows.
+- Use the separate `clawhub` CLI for registry auth, publishing, and delete/undelete workflows.
 
 Site: [clawhub.ai](https://clawhub.ai)
 
@@ -37,7 +37,7 @@ openclaw plugins update --all
 ```
 
 Install the ClawHub CLI when you want registry-authenticated workflows such as
-publish, sync, or delete/undelete:
+publish or delete/undelete:
 
 ```bash
 npm i -g clawhub
@@ -54,7 +54,7 @@ pnpm add -g clawhub
 | Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`           |
 
 ClawHub tracks semver versions, tags such as `latest`, changelogs, files,
-downloads, stars, and security scan summaries. Public pages show current registry
+installs, stars, and security scan summaries. Public pages show current registry
 state so users can inspect a skill or plugin before installing it.
 
 ## Native OpenClaw flows
@@ -85,7 +85,6 @@ clawhub package explore --family code-plugin
 clawhub package inspect episodic-claw
 clawhub package publish your-org/your-plugin --dry-run
 clawhub package publish your-org/your-plugin
-clawhub sync --all
 ```
 
 The CLI also has skill install/update commands for direct registry workflows:

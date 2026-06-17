@@ -567,7 +567,7 @@ describe("recommendation score backfills", () => {
 describe("reconcileSkillStarCounts", () => {
   /**
    * Build a minimal db mock that returns a single-page result for skills and
-   * configurable star / comment record counts.
+   * configurable star record counts.
    */
   function makeCtx(options: {
     skill: {
@@ -577,19 +577,12 @@ describe("reconcileSkillStarCounts", () => {
       softDeletedAt?: number;
     };
     actualStarCount: number;
-    actualCommentCount: number;
   }) {
-    const { skill, actualStarCount, actualCommentCount } = options;
+    const { skill, actualStarCount } = options;
 
     const starRecords = Array.from({ length: actualStarCount }, (_, i) => ({
       _id: `stars:${i}`,
       skillId: skill._id,
-    }));
-
-    const commentRecords = Array.from({ length: actualCommentCount }, (_, i) => ({
-      _id: `comments:${i}`,
-      skillId: skill._id,
-      softDeletedAt: undefined,
     }));
 
     const paginate = vi.fn().mockResolvedValue({
@@ -598,10 +591,7 @@ describe("reconcileSkillStarCounts", () => {
       isDone: true,
     });
 
-    const collect = vi
-      .fn()
-      .mockResolvedValueOnce(starRecords)
-      .mockResolvedValueOnce(commentRecords);
+    const collect = vi.fn().mockResolvedValueOnce(starRecords);
 
     const withIndex = vi.fn().mockReturnValue({ collect });
 
@@ -630,7 +620,7 @@ describe("reconcileSkillStarCounts", () => {
       stats: { stars: 99, comments: 0 }, // legacy value — stale, but not reconcile's concern
     };
 
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5, actualCommentCount: 0 });
+    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5 });
 
     const result = await reconcileSkillStarCountsHandler(ctx, {});
 
@@ -648,7 +638,7 @@ describe("reconcileSkillStarCounts", () => {
       stats: { stars: 3, comments: 0 },
     };
 
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 3, actualCommentCount: 0 });
+    const { ctx, patch } = makeCtx({ skill, actualStarCount: 3 });
 
     const result = await reconcileSkillStarCountsHandler(ctx, {});
 
@@ -664,7 +654,7 @@ describe("reconcileSkillStarCounts", () => {
       stats: { stars: 10, comments: 0 },
     };
 
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 7, actualCommentCount: 0 });
+    const { ctx, patch } = makeCtx({ skill, actualStarCount: 7 });
 
     const result = await reconcileSkillStarCountsHandler(ctx, {});
 
@@ -679,27 +669,6 @@ describe("reconcileSkillStarCounts", () => {
     );
   });
 
-  it("patches when comment count drifts even if star count is correct", async () => {
-    const skill = {
-      _id: "skills:1",
-      statsStars: 5,
-      stats: { stars: 5, comments: 10 }, // comments out of sync
-    };
-
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5, actualCommentCount: 3 });
-
-    const result = await reconcileSkillStarCountsHandler(ctx, {});
-
-    expect(result.scanned).toBe(1);
-    expect(result.patched).toBe(1);
-    expect(patch).toHaveBeenCalledWith(
-      "skills:1",
-      expect.objectContaining({
-        stats: expect.objectContaining({ comments: 3 }),
-      }),
-    );
-  });
-
   it("skips soft-deleted skills", async () => {
     const skill = {
       _id: "skills:1",
@@ -708,7 +677,7 @@ describe("reconcileSkillStarCounts", () => {
       stats: { stars: 0, comments: 0 },
     };
 
-    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5, actualCommentCount: 0 });
+    const { ctx, patch } = makeCtx({ skill, actualStarCount: 5 });
 
     const result = await reconcileSkillStarCountsHandler(ctx, {});
 

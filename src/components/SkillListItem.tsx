@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowDownToLine, Star } from "lucide-react";
+import { PackageCheck, Star } from "lucide-react";
 import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
@@ -49,8 +49,8 @@ export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps)
             <Star size={14} aria-hidden="true" /> {formatCompactStat(skill.stats.stars)}
           </span>
           <span className="skill-list-item-meta-item">
-            <ArrowDownToLine size={14} aria-hidden="true" />{" "}
-            {formatCompactStat(skill.stats.downloads)}
+            <PackageCheck size={14} aria-hidden="true" />{" "}
+            {formatCompactStat(skill.stats.installsAllTime ?? 0)}
           </span>
         </div>
       </div>

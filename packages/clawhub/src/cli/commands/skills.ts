@@ -40,8 +40,8 @@ import {
   promptConfirm,
   styleText,
 } from "../ui.js";
+import { reportInstalledSkillsTelemetryIfEnabled } from "./installTelemetry.js";
 import { presentModerationPlan, reportModerationPlan } from "./moderationPlan.js";
-import { reportInstalledSkillsTelemetryIfEnabled } from "./syncHelpers.js";
 
 type SkillReportOptions = {
   version?: string;
@@ -290,7 +290,6 @@ export async function cmdInstall(
     await reportInstalledSkillsTelemetryIfEnabled({
       token,
       registry,
-      root: opts.dir,
       slug: skillMeta.skill?.slug ?? trimmed,
       version: resolvedVersion,
     });
@@ -709,11 +708,10 @@ export async function cmdUninstall(
   }
 }
 
-type ExploreSort = "newest" | "downloads" | "rating" | "installs" | "installsAllTime" | "trending";
+type ExploreSort = "newest" | "rating" | "installs" | "installsAllTime" | "trending";
 type ApiExploreSort =
   | "createdAt"
   | "updated"
-  | "downloads"
   | "stars"
   | "installsCurrent"
   | "installsAllTime"
@@ -941,15 +939,18 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   if (normalized === "updated") {
     return { sort: "newest", apiSort: "updated" };
   }
-  if (normalized === "downloads" || normalized === "download") {
-    return { sort: "downloads", apiSort: "downloads" };
-  }
   if (normalized === "rating" || normalized === "stars" || normalized === "star") {
     return { sort: "rating", apiSort: "stars" };
   }
   if (
     normalized === "installs" ||
     normalized === "install" ||
+    normalized === "downloads" ||
+    normalized === "download"
+  ) {
+    return { sort: "installs", apiSort: "installsAllTime" };
+  }
+  if (
     normalized === "installscurrent" ||
     normalized === "installs-current" ||
     normalized === "current"
@@ -963,7 +964,7 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
     return { sort: "trending", apiSort: "trending" };
   }
   return fail(
-    `Invalid sort "${raw}". Use newest, updated, downloads, rating, installs, installsAllTime, or trending.`,
+    `Invalid sort "${raw}". Use newest, updated, rating, installs, installsAllTime, or trending.`,
   );
 }
 

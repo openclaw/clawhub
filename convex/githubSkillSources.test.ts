@@ -15,10 +15,24 @@ vi.mock("./lib/publishers", async () => {
 
 const { requireUser } = await import("./lib/access");
 const { requirePublisherRole } = await import("./lib/publishers");
-const { deleteForPublisherHandler } = await import("./githubSkillSources");
+const {
+  cleanupDeletedSourceScansHandler,
+  deleteForPublisherHandler,
+  listForManageableOfficialPublishers,
+} = await import("./githubSkillSources");
 const { buildSkillInstallResolution } = await import("./lib/installResolver");
 
 type Row = Record<string, unknown> & { _id: string };
+type WrappedHandler<TArgs, TResult = unknown> = {
+  _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
+};
+
+const listForManageableOfficialPublishersHandler = (
+  listForManageableOfficialPublishers as unknown as WrappedHandler<
+    Record<string, never>,
+    Array<{ _id: string; repo: string; ownerPublisher: { handle: string } | null }>
+  >
+)._handler;
 
 function chainEq(constraints: Record<string, unknown>) {
   return {
@@ -74,6 +88,7 @@ function createDb(initial: Record<string, Row[]> = {}) {
         const matched = () => list(table).filter((row) => matches(row, constraints));
         return {
           collect: async () => matched(),
+          take: async (limit: number) => matched().slice(0, limit),
           unique: async () => matched()[0] ?? null,
         };
       },
@@ -105,6 +120,20 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
           _id: "githubSkillContents:one",
           skillId: "skills:github",
           githubSourceId: "githubSkillSources:matt",
+        },
+      ],
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:matt",
+          skillId: "skills:github",
+          githubSourceId: "githubSkillSources:matt",
+          contentHash: "hash-source-backed",
+        },
+        {
+          _id: "githubSkillScans:other",
+          skillId: "skills:other-source",
+          githubSourceId: "githubSkillSources:other",
+          contentHash: "hash-other-source",
         },
       ],
       skills: [
@@ -163,9 +192,10 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
         },
       ],
     });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
 
     await expect(
-      deleteForPublisherHandler({ db } as never, {
+      deleteForPublisherHandler({ db, scheduler } as never, {
         ownerPublisherId: "publishers:openclaw" as never,
         sourceId: "githubSkillSources:matt" as never,
         now: 123,
@@ -182,6 +212,10 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     );
     expect(tables.githubSkillSources).toHaveLength(0);
     expect(tables.githubSkillContents).toHaveLength(0);
+    expect(tables.githubSkillScans).toHaveLength(2);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      sourceId: "githubSkillSources:matt",
+    });
     const deletedSkill = tables.skills.find((skill) => skill._id === "skills:github");
     expect(deletedSkill).toMatchObject({
       softDeletedAt: 123,
@@ -217,6 +251,61 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
     });
   });
 
+  it("cleans deleted-source scan history in bounded batches", async () => {
+    const { db, tables } = createDb({
+      githubSkillScans: [
+        {
+          _id: "githubSkillScans:matt",
+          githubSourceId: "githubSkillSources:matt",
+          skillScanRequestId: "skillScanRequests:matt",
+        },
+        {
+          _id: "githubSkillScans:other",
+          githubSourceId: "githubSkillSources:other",
+        },
+      ],
+      securityScanJobs: [
+        {
+          _id: "securityScanJobs:matt",
+          targetKind: "skillScanRequest",
+          status: "queued",
+        },
+      ],
+      skillScanRequests: [
+        {
+          _id: "skillScanRequests:matt",
+          sourceKind: "github",
+          status: "queued",
+          securityScanJobId: "securityScanJobs:matt",
+          githubSkillScanId: "githubSkillScans:matt",
+          expiresAt: Number.MAX_SAFE_INTEGER,
+        },
+      ],
+    });
+    const scheduler = { runAfter: vi.fn(async () => undefined) };
+
+    await expect(
+      cleanupDeletedSourceScansHandler({ db, scheduler } as never, {
+        sourceId: "githubSkillSources:matt" as never,
+      }),
+    ).resolves.toEqual({ ok: true, deleted: 1, done: true });
+
+    expect(tables.githubSkillScans).toEqual([
+      expect.objectContaining({ _id: "githubSkillScans:other" }),
+    ]);
+    expect(tables.securityScanJobs).toEqual([]);
+    expect(tables.skillScanRequests).toEqual([
+      expect.objectContaining({
+        _id: "skillScanRequests:matt",
+        status: "failed",
+      }),
+    ]);
+    expect(tables.skillScanRequests?.[0]).not.toHaveProperty("githubSkillScanId");
+    expect(tables.skillScanRequests?.[0]).not.toHaveProperty("securityScanJobId");
+    expect(tables.skillScanRequests?.[0]?.expiresAt).toBeLessThan(Number.MAX_SAFE_INTEGER);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), { batchSize: 10 });
+  });
+
   it("rejects deleting a source from another publisher", async () => {
     const { db } = createDb({
       githubSkillSources: [
@@ -237,5 +326,128 @@ describe("githubSkillSources.deleteForPublisherHandler", () => {
         now: 123,
       }),
     ).rejects.toBeInstanceOf(ConvexError);
+  });
+});
+
+describe("githubSkillSources.listForManageableOfficialPublishers", () => {
+  beforeEach(() => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:steipete",
+      user: {
+        _id: "users:steipete",
+        handle: "steipete",
+        displayName: "Peter Steinberger",
+        personalPublisherId: "publishers:steipete",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    } as never);
+  });
+
+  it("includes official personal publishers the user can administer", async () => {
+    const { db } = createDb({
+      publisherMembers: [
+        {
+          _id: "publisherMembers:steipete-owner",
+          publisherId: "publishers:steipete",
+          userId: "users:steipete",
+          role: "owner",
+        },
+      ],
+      publishers: [
+        {
+          _id: "publishers:steipete",
+          kind: "user",
+          handle: "steipete",
+          displayName: "Peter Steinberger",
+          linkedUserId: "users:steipete",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      officialPublishers: [
+        {
+          _id: "officialPublishers:steipete",
+          publisherId: "publishers:steipete",
+          reason: "Verified individual publisher",
+          createdAt: 3,
+          updatedAt: 3,
+        },
+      ],
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:steipete",
+          ownerPublisherId: "publishers:steipete",
+          repo: "steipete/agent-rules",
+          defaultBranch: "main",
+          lastSyncStatus: "ok",
+          createdAt: 4,
+          updatedAt: 5,
+        },
+      ],
+      skills: [],
+    });
+
+    await expect(
+      listForManageableOfficialPublishersHandler({ db } as never, {}),
+    ).resolves.toMatchObject([
+      {
+        _id: "githubSkillSources:steipete",
+        repo: "steipete/agent-rules",
+        ownerPublisher: {
+          handle: "steipete",
+        },
+      },
+    ]);
+  });
+
+  it("includes linked official personal publishers without a membership row", async () => {
+    const { db } = createDb({
+      publisherMembers: [],
+      publishers: [
+        {
+          _id: "publishers:steipete",
+          kind: "user",
+          handle: "steipete",
+          displayName: "Peter Steinberger",
+          linkedUserId: "users:steipete",
+          createdAt: 1,
+          updatedAt: 2,
+        },
+      ],
+      officialPublishers: [
+        {
+          _id: "officialPublishers:steipete",
+          publisherId: "publishers:steipete",
+          reason: "Verified individual publisher",
+          createdAt: 3,
+          updatedAt: 3,
+        },
+      ],
+      githubSkillSources: [
+        {
+          _id: "githubSkillSources:steipete",
+          ownerPublisherId: "publishers:steipete",
+          repo: "steipete/agent-rules",
+          defaultBranch: "main",
+          lastSyncStatus: "ok",
+          createdAt: 4,
+          updatedAt: 5,
+        },
+      ],
+      skills: [],
+    });
+
+    await expect(
+      listForManageableOfficialPublishersHandler({ db } as never, {}),
+    ).resolves.toMatchObject([
+      {
+        _id: "githubSkillSources:steipete",
+        repo: "steipete/agent-rules",
+        ownerPublisher: {
+          handle: "steipete",
+        },
+      },
+    ]);
   });
 });

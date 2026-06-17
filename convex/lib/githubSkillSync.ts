@@ -325,7 +325,6 @@ export function buildGitHubSkillSyncPlan({
           latestVersionId: undefined,
           latestVersionSummary: latestVersionSummary(discovered.upstreamVersion, now),
           tags: {},
-          capabilityTags: [],
           softDeletedAt: undefined,
           badges: undefined,
           statsDownloads: 0,

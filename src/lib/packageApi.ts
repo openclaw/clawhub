@@ -1,7 +1,6 @@
 import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
-  PackageCapabilitySummary,
   PackageCompatibility,
   PackageVerificationSummary,
 } from "clawhub-schema";
@@ -21,8 +20,6 @@ export type PackageListItem = {
   createdAt: number;
   updatedAt: number;
   latestVersion?: string | null;
-  capabilityTags?: string[];
-  executesCode?: boolean;
   verificationTier?: string | null;
   stats?: {
     downloads: number;
@@ -52,7 +49,6 @@ export type PackageVersionDetail = {
       contentType?: string;
     }>;
     compatibility?: PackageCompatibility | null;
-    capabilities?: PackageCapabilitySummary | null;
     verification?: PackageVerificationSummary | null;
     artifact?: {
       kind: "legacy-zip" | "npm-pack";
@@ -169,7 +165,7 @@ export type PackageVersionDetail = {
 };
 
 type PluginFamily = "code-plugin" | "bundle-plugin";
-type PackageCatalogSort = "updated" | "downloads" | "recommended";
+type PackageCatalogSort = "updated" | "recommended" | "installs";
 
 type PluginCatalogResult = {
   items: PackageListItem[];
@@ -367,8 +363,6 @@ export async function fetchPackages(params: {
   family?: "skill" | "code-plugin" | "bundle-plugin";
   isOfficial?: boolean;
   featured?: boolean;
-  executesCode?: boolean;
-  capabilityTag?: string;
   category?: string;
   sort?: PackageCatalogSort;
   limit?: number;
@@ -383,10 +377,6 @@ export async function fetchPackages(params: {
       url.searchParams.set("isOfficial", String(params.isOfficial));
     }
     if (params.featured) url.searchParams.set("featured", "true");
-    if (typeof params.executesCode === "boolean") {
-      url.searchParams.set("executesCode", String(params.executesCode));
-    }
-    if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
     if (params.category) url.searchParams.set("category", params.category);
     return await fetchJson<{
       results: Array<{
@@ -410,10 +400,6 @@ export async function fetchPackages(params: {
     url.searchParams.set("isOfficial", String(params.isOfficial));
   }
   if (params.featured) url.searchParams.set("featured", "true");
-  if (typeof params.executesCode === "boolean") {
-    url.searchParams.set("executesCode", String(params.executesCode));
-  }
-  if (params.capabilityTag) url.searchParams.set("capabilityTag", params.capabilityTag);
   if (params.category) url.searchParams.set("category", params.category);
   if (params.sort) url.searchParams.set("sort", params.sort);
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
@@ -428,7 +414,6 @@ export async function fetchPluginCatalog(params: {
   family?: PluginFamily;
   isOfficial?: boolean;
   featured?: boolean;
-  executesCode?: boolean;
   category?: string;
   sort?: PackageCatalogSort;
   limit?: number;
@@ -441,7 +426,6 @@ export async function fetchPluginCatalog(params: {
       family: params.family,
       isOfficial: params.isOfficial,
       featured: params.featured,
-      executesCode: params.executesCode,
       category: params.category,
       sort: params.sort,
       limit: params.limit,
@@ -470,9 +454,6 @@ export async function fetchPluginCatalog(params: {
       url.searchParams.set("isOfficial", String(params.isOfficial));
     }
     if (params.featured) url.searchParams.set("featured", "true");
-    if (typeof params.executesCode === "boolean") {
-      url.searchParams.set("executesCode", String(params.executesCode));
-    }
     if (params.category) url.searchParams.set("category", params.category);
     const response = await fetchJson<{
       results?: Array<{
@@ -493,9 +474,6 @@ export async function fetchPluginCatalog(params: {
     url.searchParams.set("isOfficial", String(params.isOfficial));
   }
   if (params.featured) url.searchParams.set("featured", "true");
-  if (typeof params.executesCode === "boolean") {
-    url.searchParams.set("executesCode", String(params.executesCode));
-  }
   if (params.category) url.searchParams.set("category", params.category);
   if (params.sort) url.searchParams.set("sort", params.sort);
   const result = await fetchJson<PluginCatalogResult>(url, params.signal);

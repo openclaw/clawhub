@@ -1,9 +1,10 @@
 /* @vitest-environment jsdom */
 
 import { createRequire } from "node:module";
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { AnchorHTMLAttributes, ComponentType, ReactNode } from "react";
+import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchPackageDetail,
@@ -19,7 +20,9 @@ const isRateLimitedPackageApiErrorMock = vi.fn(
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
 );
 const useQueryMock = vi.fn();
+const useMutationMock = vi.fn();
 const useAuthStatusMock = vi.fn();
+const routerInvalidateMock = vi.fn();
 let pathnameMock = "/plugins/demo-plugin";
 
 type PluginDetailLoaderData = {
@@ -50,7 +53,6 @@ let loaderDataMock: PluginDetailLoaderData = {
       updatedAt: 1,
       tags: {},
       compatibility: null,
-      capabilities: { executesCode: true, capabilityTags: ["tools"] },
       verification: null,
     },
     owner: null,
@@ -72,6 +74,7 @@ vi.mock("@tanstack/react-router", () => ({
   }: {
     select?: (state: { location: { pathname: string } }) => string;
   }) => (select ? select({ location: { pathname: pathnameMock } }) : pathnameMock),
+  useRouter: () => ({ invalidate: routerInvalidateMock }),
   Outlet: () => <div data-testid="nested-plugin-route" />,
   Link: ({
     children,
@@ -89,11 +92,18 @@ vi.mock("@tanstack/react-router", () => ({
 
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => useQueryMock(...args),
-  useMutation: () => vi.fn(),
+  useMutation: (...args: unknown[]) => useMutationMock(...args),
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
+}));
+
+vi.mock("sonner", () => ({
+  toast: {
+    error: vi.fn(),
+    success: vi.fn(),
+  },
 }));
 
 vi.mock("../lib/packageApi", () => ({
@@ -156,7 +166,6 @@ describe("plugin detail route", () => {
           updatedAt: 1,
           tags: {},
           compatibility: null,
-          capabilities: { executesCode: true, capabilityTags: ["tools"] },
           verification: null,
         },
         owner: null,
@@ -169,7 +178,12 @@ describe("plugin detail route", () => {
     isRateLimitedPackageApiErrorMock.mockClear();
     useQueryMock.mockReset();
     useQueryMock.mockReturnValue(undefined);
+    useMutationMock.mockReset();
+    useMutationMock.mockReturnValue(vi.fn());
     useAuthStatusMock.mockReset();
+    routerInvalidateMock.mockReset();
+    vi.mocked(toast.error).mockReset();
+    vi.mocked(toast.success).mockReset();
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -656,7 +670,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
-  it("renders plugin download counts in the metadata sidebar", async () => {
+  it("renders plugin install counts in the metadata sidebar", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -673,12 +687,12 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const downloadsLabel = screen.getByText("Downloads");
+    const installsLabel = screen.getByText("Installs");
     const currentVersionLabel = screen.getByText("Current version");
-    expect(downloadsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
+    expect(installsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("1.2k")).toBeTruthy();
+    expect(screen.getByText("9")).toBeTruthy();
   });
 
   it("shows plugin settings when the viewer can manage the plugin", async () => {
@@ -712,7 +726,6 @@ describe("plugin detail route", () => {
           distTags: ["latest"],
           files: [],
           compatibility: null,
-          capabilities: null,
           verification: null,
           sha256hash: null,
           vtAnalysis: null,
@@ -758,6 +771,131 @@ describe("plugin detail route", () => {
 
     expect(screen.queryByRole("link", { name: "New version" })).toBeNull();
     expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
+  });
+
+  it("lets plugin owners delete a non-latest release and invalidates route metadata", async () => {
+    const deleteOwnedRelease = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "packages:deleteOwnedRelease" ? deleteOwnedRelease : vi.fn(),
+    );
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:owner", role: "user" },
+    });
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "packages:getManageContext") {
+        return {
+          package: { _id: "packages:1", name: "demo-plugin", displayName: "Demo Plugin" },
+          latestRelease: { _id: "packageReleases:latest", version: "2.0.0" },
+        };
+      }
+      if (name === "packages:canDeleteVersions") return true;
+      return null;
+    });
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "2.0.0",
+        },
+        owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
+      },
+      versions: {
+        items: [
+          {
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "Current plugin release",
+            distTags: ["latest"],
+          },
+          {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Older plugin release",
+            distTags: [],
+          },
+        ],
+        nextCursor: null,
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete version 1.0.0" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete version" }));
+
+    await waitFor(() => {
+      expect(deleteOwnedRelease).toHaveBeenCalledWith({
+        name: "demo-plugin",
+        version: "1.0.0",
+      });
+      expect(screen.queryByText("Older plugin release")).toBeNull();
+      expect(routerInvalidateMock).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  it("keeps plugin Delete hidden from staff-only managers", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:moderator", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "packages:getManageContext") {
+        return {
+          package: { _id: "packages:1", name: "demo-plugin", displayName: "Demo Plugin" },
+          latestRelease: { _id: "packageReleases:latest", version: "2.0.0" },
+        };
+      }
+      if (name === "packages:canDeleteVersions") return false;
+      return null;
+    });
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "2.0.0",
+        },
+        owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
+      },
+      versions: {
+        items: [
+          {
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "Current plugin release",
+            distTags: ["latest"],
+          },
+          {
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Older plugin release",
+            distTags: [],
+          },
+        ],
+        nextCursor: null,
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+    fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
+
+    expect(screen.getByRole("link", { name: "New version" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
+    expect(
+      useQueryMock.mock.calls.some(
+        ([query]) => getFunctionName(query as never) === "packages:canDeleteVersions",
+      ),
+    ).toBe(true);
   });
 
   it("checks plugin management when a dev viewer exists without a Convex auth session", async () => {
@@ -812,7 +950,6 @@ describe("plugin detail route", () => {
           distTags: ["latest"],
           files: [],
           compatibility: null,
-          capabilities: null,
           verification: { tier: "source-linked", scope: "artifact-only", scanStatus: "clean" },
           sha256hash: "a".repeat(64),
           vtAnalysis: {
@@ -867,7 +1004,7 @@ describe("plugin detail route", () => {
       label?.startsWith("Security audit"),
     );
     expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
-    expect(securityAuditLabelIndex).toBeGreaterThan(sidebarLabels.indexOf("Downloads"));
+    expect(securityAuditLabelIndex).toBeGreaterThan(sidebarLabels.indexOf("Installs"));
     expect(screen.queryByRole("tab", { name: "Capabilities" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Verification" })).toBeNull();
   });
@@ -894,7 +1031,6 @@ describe("plugin detail route", () => {
           distTags: ["latest"],
           files: [],
           compatibility: null,
-          capabilities: null,
           verification: null,
           sha256hash: "a".repeat(64),
           vtAnalysis: null,
@@ -948,7 +1084,6 @@ describe("plugin detail route", () => {
           distTags: ["latest"],
           files: [],
           compatibility: null,
-          capabilities: null,
           verification: null,
           artifact: {
             kind: "npm-pack",
@@ -1012,7 +1147,6 @@ describe("plugin detail route", () => {
           distTags: ["latest"],
           files: [],
           compatibility: null,
-          capabilities: null,
           verification: null,
           artifact: {
             kind: "legacy-zip",
@@ -1081,7 +1215,6 @@ describe("plugin detail route", () => {
           distTags: ["latest"],
           files: [],
           compatibility: null,
-          capabilities: null,
           verification: null,
           artifact: null,
           sha256hash: null,
@@ -1188,7 +1321,6 @@ describe("plugin detail route", () => {
           distTags: ["latest"],
           files: [],
           compatibility: null,
-          capabilities: null,
           verification: null,
           artifact: null,
           sha256hash: null,
@@ -1306,7 +1438,6 @@ describe("plugin detail route", () => {
         updatedAt: 1,
         tags: {},
         compatibility: null,
-        capabilities: null,
         verification: null,
       },
       owner: null,
@@ -1405,7 +1536,6 @@ describe("plugin detail route", () => {
         updatedAt: 1,
         tags: { latest: "2026.3.22" },
         compatibility: null,
-        capabilities: null,
         verification: null,
       },
       owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
@@ -1449,7 +1579,6 @@ describe("plugin detail route", () => {
         updatedAt: 1,
         tags: { latest: "2026.3.22" },
         compatibility: null,
-        capabilities: null,
         verification: null,
       },
       owner: { handle: "openclaw", displayName: "OpenClaw", image: null },

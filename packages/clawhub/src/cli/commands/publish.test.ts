@@ -3,7 +3,7 @@
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createAuthTokenModuleMocks,
   createHttpModuleMocks,
@@ -38,7 +38,152 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
+beforeEach(() => {
+  httpMocks.apiRequest.mockResolvedValue({
+    match: null,
+    latestVersion: null,
+  });
+});
+
 describe("cmdPublish", () => {
+  it("skips publishing when the local skill already matches ClawHub", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "unchanged-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        match: { version: "1.2.3" },
+        latestVersion: { version: "1.2.3" },
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "unchanged-skill", {});
+
+      expect(result).toMatchObject({
+        status: "unchanged",
+        slug: "unchanged-skill",
+        version: "1.2.3",
+      });
+      expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults a new skill to version 1.0.0", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "new-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequest.mockRejectedValueOnce(
+        new Error("Skill not found or unavailable to this account."),
+      );
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "new-skill", {});
+
+      expect(result).toMatchObject({
+        status: "published",
+        slug: "new-skill",
+        version: "1.0.0",
+      });
+      expect(publishPayload()).toMatchObject({ version: "1.0.0" });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("defaults a changed skill to the next patch version", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "changed-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Changed skill\n", "utf8");
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        match: null,
+        latestVersion: { version: "1.2.3" },
+      });
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_2",
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "changed-skill", {});
+
+      expect(result).toMatchObject({
+        status: "published",
+        slug: "changed-skill",
+        version: "1.2.4",
+      });
+      expect(publishPayload()).toMatchObject({ version: "1.2.4" });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("publishes an explicit version even when the content already matches", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "explicit-version");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        match: { version: "1.2.3" },
+        latestVersion: { version: "1.2.3" },
+      });
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_2",
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "explicit-version", {
+        version: "2.0.0",
+      });
+
+      expect(result).toMatchObject({
+        status: "published",
+        slug: "explicit-version",
+        version: "2.0.0",
+      });
+      expect(publishPayload()).toMatchObject({ version: "2.0.0" });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("previews the resolved publish without requiring auth", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "preview-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Changed skill\n", "utf8");
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        match: null,
+        latestVersion: { version: "2.0.0" },
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "preview-skill", { dryRun: true });
+
+      expect(result).toMatchObject({
+        status: "would-publish",
+        slug: "preview-skill",
+        version: "2.0.1",
+      });
+      expect(authTokenMocks.requireAuthToken).not.toHaveBeenCalled();
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("publishes SKILL.md from disk (mocked HTTP)", async () => {
     const workdir = await makeTmpWorkdir();
     try {
@@ -302,3 +447,15 @@ describe("cmdPublish", () => {
     }
   });
 });
+
+function publishPayload() {
+  const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+    const request = call[1] as { path?: string } | undefined;
+    return request?.path === "/api/v1/skills";
+  });
+  if (!publishCall) throw new Error("Missing publish call");
+  const form = (publishCall[1] as { form?: FormData }).form;
+  const payload = form?.get("payload");
+  if (typeof payload !== "string") throw new Error("Missing publish payload");
+  return JSON.parse(payload) as Record<string, unknown>;
+}

@@ -224,12 +224,17 @@ export function Settings() {
   const updateProfile = useMutation(api.users.updateProfile);
   const deleteAccount = useMutation(api.users.deleteAccount);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
-  const tokens = useQuery(api.tokens.listMine, me ? {} : "skip") as Array<ApiToken> | undefined;
+  const [isDeletingAccount, setIsDeletingAccount] = useState(false);
+  const shouldLoadAccountScopedQueries = Boolean(me) && !isDeletingAccount;
+  const tokens = useQuery(api.tokens.listMine, shouldLoadAccountScopedQueries ? {} : "skip") as
+    | Array<ApiToken>
+    | undefined;
   const createToken = useMutation(api.tokens.create);
   const revokeToken = useMutation(api.tokens.revoke);
-  const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | Array<PublisherMembership>
-    | undefined;
+  const publisherMemberships = useQuery(
+    api.publishers.listMine,
+    shouldLoadAccountScopedQueries ? {} : "skip",
+  ) as Array<PublisherMembership> | undefined;
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
   const updateOrgProfile = useMutation(api.publishers.updateProfile);
@@ -295,13 +300,20 @@ export function Settings() {
   const revokedTokens = (tokens ?? []).filter((token) => token.revokedAt);
   const orgMembers = useQuery(
     api.publishers.listMembers,
-    activeView === "organizations" && selectedOrg && selectedOrg.role !== "publisher"
+    shouldLoadAccountScopedQueries &&
+      activeView === "organizations" &&
+      selectedOrg &&
+      selectedOrg.role !== "publisher"
       ? { publisherHandle: selectedOrg.publisher.handle }
       : "skip",
   ) as OrgMembersResult | null | undefined;
   const githubSources = useQuery(
     api.githubSkillSources.listForManageableOfficialPublishers,
-    effectiveActiveView === "githubSources" && canConfigureGitHubSources ? {} : "skip",
+    shouldLoadAccountScopedQueries &&
+      effectiveActiveView === "githubSources" &&
+      canConfigureGitHubSources
+      ? {}
+      : "skip",
   ) as GitHubSkillSource[] | undefined;
   const deletionPublishers = (publisherMemberships ?? []).filter(
     (entry) => entry.publisher.kind === "user" || entry.role === "owner",
@@ -361,6 +373,10 @@ export function Settings() {
     );
   }
 
+  if (isDeletingAccount) {
+    return <SettingsSkeleton />;
+  }
+
   const activeSectionLoading =
     (activeView === "organizations" &&
       (publisherMemberships === undefined ||
@@ -384,7 +400,13 @@ export function Settings() {
 
   async function onDelete() {
     setDeleteDialogOpen(false);
-    await deleteAccount();
+    setIsDeletingAccount(true);
+    try {
+      await deleteAccount();
+    } catch (error) {
+      setIsDeletingAccount(false);
+      toast.error(getUserFacingConvexError(error, "Account could not be deleted."));
+    }
   }
 
   async function onCreateToken() {

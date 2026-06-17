@@ -19,6 +19,27 @@ describe("PublisherListItem", () => {
     expect(screen.queryByText("Official")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
+
+  it("renders installs instead of downloads as the adoption metric", () => {
+    render(<PublisherListItem publisher={makePublisher()} />);
+
+    expect(screen.getByText("34")).toBeTruthy();
+    expect(screen.getByText("installs")).toBeTruthy();
+    expect(screen.queryByText("downloads")).toBeNull();
+    expect(screen.queryByText("12")).toBeNull();
+  });
+
+  it("renders legacy preview metrics as installs during rollout", () => {
+    const publisher = makePublisher();
+    publisher.publishedItems = [
+      { kind: "skill", displayName: "Legacy Skill", downloads: 12 } as never,
+    ];
+
+    render(<PublisherListItem publisher={publisher} variant="highlight" />);
+
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.queryByText("downloads")).toBeNull();
+  });
 });
 
 function makePublisher(): PublicPublisherListItem {
@@ -35,7 +56,7 @@ function makePublisher(): PublicPublisherListItem {
     stats: {
       skills: 1,
       packages: 1,
-      installs: 0,
+      installs: 34,
       downloads: 12,
       stars: 3,
     },

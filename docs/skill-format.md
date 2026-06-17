@@ -2,7 +2,7 @@
 summary: "Skill folder format, required files, allowed file types, limits."
 read_when:
   - Publishing skills
-  - Debugging publish/sync failures
+  - Debugging publish failures
 ---
 
 # Skill format
@@ -18,7 +18,7 @@ Required:
 Optional:
 
 - any supporting _text-based_ files (see “Allowed files”)
-- `.clawhubignore` (ignore patterns for publish/sync, legacy `.clawdhubignore`)
+- `.clawhubignore` (ignore patterns for publishing, legacy `.clawdhubignore`)
 - `.gitignore` (also honored)
 
 Local install metadata (written by the CLI):

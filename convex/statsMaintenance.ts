@@ -429,7 +429,6 @@ function computePackageRecommendationScore(pkg: Doc<"packages">) {
  * This fixes stats that got out of sync due to missed events, cursor issues,
  * or bugs in the event processing pipeline. It counts:
  * - stars: actual records in the `stars` table for each skill
- * - comments: actual records in the `comments` table for each skill
  *
  * Downloads and installs are event-sourced only (no separate table to count from),
  * so they cannot be reconciled this way.
@@ -463,26 +462,15 @@ export async function reconcileSkillStarCountsHandler(
       .collect();
     const actualStars = starRecords.length;
 
-    // Count actual comment records for this skill
-    const commentRecords = await ctx.db
-      .query("comments")
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      .withIndex("by_skill", (q: any) => q.eq("skillId", skill._id))
-      .collect();
-    const actualComments = commentRecords.filter(
-      (c: { softDeletedAt?: unknown }) => !c.softDeletedAt,
-    ).length;
-
     // Check if stats are out of sync (compare against the canonical value
     // used by toPublicSkill: prefer top-level field, fall back to nested).
     const currentStars =
       typeof skill.statsStars === "number" ? skill.statsStars : skill.stats.stars;
 
-    if (currentStars !== actualStars || skill.stats.comments !== actualComments) {
+    if (currentStars !== actualStars) {
       const updatedStats = {
         ...skill.stats,
         stars: actualStars,
-        comments: actualComments,
       };
       // Keep both the top-level index field and the legacy nested field in sync.
       await ctx.db.patch(skill._id, {

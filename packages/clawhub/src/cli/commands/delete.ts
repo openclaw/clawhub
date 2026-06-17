@@ -12,10 +12,14 @@ type SkillActionLabels = {
   promptSuffix?: string;
 };
 
-type SkillDeleteOptions = {
+type SkillActionOptions = {
   yes?: boolean;
   reason?: string;
   note?: string;
+};
+
+type SkillDeleteOptions = SkillActionOptions & {
+  version?: string;
 };
 
 const deleteLabels: SkillActionLabels = {
@@ -56,30 +60,36 @@ export async function cmdDeleteSkill(
   const slug = slugArg.trim().toLowerCase();
   if (!slug) fail("Slug required");
   const reason = normalizeReason(options);
+  const version = normalizeVersion(options.version);
+  if (version && reason) fail("--reason/--note apply only to whole-skill deletion");
   const allowPrompt = isInteractive() && inputAllowed !== false;
 
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(formatPrompt(labels, slug));
+    const ok = await promptConfirm(formatPrompt(labels, slug, version));
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createCrabLoader(`${labels.progress} ${slug}`);
+  const target = version ? `${slug} version ${version}` : slug;
+  const spinner = createCrabLoader(`${labels.progress} ${target}`);
   try {
     const result = await apiRequest(
       registry,
       {
         method: "DELETE",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}`,
+        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}${
+          version ? `/versions/${encodeURIComponent(version)}` : ""
+        }`,
         token,
-        body: reason ? { reason } : undefined,
+        body: version ? { version } : reason ? { reason } : undefined,
+        ...(version ? { retryCount: 0 } : {}),
       },
       ApiV1DeleteResponseSchema,
     );
     const parsed = parseArk(ApiV1DeleteResponseSchema, result, "Delete response");
-    spinner.succeed(`OK. ${labels.past} ${slug}${formatSlugReservation(parsed)}`);
+    spinner.succeed(`OK. ${labels.past} ${target}${version ? "" : formatSlugReservation(parsed)}`);
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
@@ -90,7 +100,7 @@ export async function cmdDeleteSkill(
 export async function cmdUndeleteSkill(
   opts: GlobalOpts,
   slugArg: string,
-  options: SkillDeleteOptions,
+  options: SkillActionOptions,
   inputAllowed: boolean,
   labels: SkillActionLabels = undeleteLabels,
 ) {
@@ -130,7 +140,7 @@ export async function cmdUndeleteSkill(
 export async function cmdHideSkill(
   opts: GlobalOpts,
   slugArg: string,
-  options: SkillDeleteOptions,
+  options: SkillActionOptions,
   inputAllowed: boolean,
 ) {
   return cmdDeleteSkill(opts, slugArg, options, inputAllowed, hideLabels);
@@ -139,13 +149,13 @@ export async function cmdHideSkill(
 export async function cmdUnhideSkill(
   opts: GlobalOpts,
   slugArg: string,
-  options: SkillDeleteOptions,
+  options: SkillActionOptions,
   inputAllowed: boolean,
 ) {
   return cmdUndeleteSkill(opts, slugArg, options, inputAllowed, unhideLabels);
 }
 
-function normalizeReason(options: SkillDeleteOptions) {
+function normalizeReason(options: SkillActionOptions) {
   const reason = options.reason?.trim();
   const note = options.note?.trim();
   if (reason && note && reason !== note) fail("Pass only one of --reason or --note");
@@ -156,7 +166,17 @@ function normalizeReason(options: SkillDeleteOptions) {
   return value;
 }
 
-function formatPrompt(labels: SkillActionLabels, slug: string) {
+function normalizeVersion(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const version = value.trim();
+  if (!version) fail("--version cannot be empty");
+  return version;
+}
+
+function formatPrompt(labels: SkillActionLabels, slug: string, version?: string) {
+  if (version) {
+    return `${labels.verb} ${slug} version ${version}? (permanent; cannot be restored or republished; publish a replacement first if deleting the current latest version)`;
+  }
   const suffix = labels.promptSuffix ? ` (${labels.promptSuffix})` : "";
   return `${labels.verb} ${slug}?${suffix}`;
 }

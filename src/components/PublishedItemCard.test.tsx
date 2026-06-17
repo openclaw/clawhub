@@ -29,6 +29,7 @@ const baseSkill = {
   summary: "A test skill",
   href: "/alice/test-skill",
   downloads: 42,
+  installs: 8,
   stars: 7,
   isOfficial: false,
   updatedAt: Date.now(),
@@ -41,12 +42,35 @@ const basePlugin = {
   summary: "A test plugin",
   href: "/plugins/test-plugin",
   downloads: 10,
+  installs: 6,
   stars: 2,
   isOfficial: false,
   updatedAt: Date.now(),
 };
 
 describe("PublishedItemCard", () => {
+  it("renders installs instead of downloads", () => {
+    render(<PublishedItemCard item={{ ...baseSkill, icon: null }} view="list" />);
+
+    expect(screen.getByText("8")).toBeTruthy();
+    expect(screen.getByText("installs")).toBeTruthy();
+    expect(screen.queryByText("downloads")).toBeNull();
+    expect(screen.queryByText("42")).toBeNull();
+  });
+
+  it("renders the legacy backend metric as installs during rollout", () => {
+    render(
+      <PublishedItemCard
+        item={{ ...baseSkill, downloads: 42, installs: undefined, icon: null } as never}
+        view="list"
+      />,
+    );
+
+    expect(screen.getByText("42")).toBeTruthy();
+    expect(screen.getByText("installs")).toBeTruthy();
+    expect(screen.queryByText("downloads")).toBeNull();
+  });
+
   describe("grid view", () => {
     it("renders the custom lucide icon for a skill with icon set (F7)", () => {
       render(<PublishedItemCard item={{ ...baseSkill, icon: "lucide:Plug" }} view="grid" />);

@@ -83,13 +83,13 @@ Public read:
   - Optional filters: `highlightedOnly=true`, `nonSuspiciousOnly=true`
   - Legacy alias: `nonSuspicious=true`
 - `GET /api/v1/skills?limit=&cursor=&sort=`
-  - `sort`: `updated` (default), `recommended` (`default`), `createdAt` (`newest`), `downloads`, `stars` (`rating`), `installsCurrent` (`installs`), `installsAllTime`, `trending`
+  - `sort`: `updated` (default), `recommended` (`default`), `createdAt` (`newest`), `stars` (`rating`), `installsCurrent` (`installs`), `installsAllTime`, `trending`
   - Invalid `sort` values return `400`
   - `cursor` applies to non-`trending` sorts
   - Optional filter: `nonSuspiciousOnly=true`
   - Legacy alias: `nonSuspicious=true`
   - With `nonSuspiciousOnly=true`, cursor-based pages may contain fewer than `limit` items; use `nextCursor` to continue.
-  - `recommended` ranks by stars, then downloads, then `updatedAt`.
+  - `recommended` uses engagement and recency signals.
 - `GET /api/v1/skills/{slug}`
 - `GET /api/v1/skills/{slug}/moderation`
 - `GET /api/v1/skills/{slug}/versions?limit=&cursor=`
@@ -98,6 +98,12 @@ Public read:
 - `GET /api/v1/skills/{slug}/file?path=&version=&tag=`
 - `GET /api/v1/resolve?slug=&hash=`
 - `GET /api/v1/download?slug=&version=&tag=`
+- `GET /api/v1/packages?limit=&cursor=&sort=`
+  - `sort`: `updated` (default), `recommended`, `installs`
+  - Invalid `sort` values return `400`
+- `GET /api/v1/plugins?limit=&cursor=&sort=`
+  - `sort`: `recommended` (default), `installs`, `updated`
+- `GET /api/v1/plugins/search?q=...`
 - `GET /api/v1/packages/{name}/versions/{version}/artifact`
 - `GET /api/v1/packages/{name}/versions/{version}/security`
 - `GET /api/v1/packages/{name}/versions/{version}/artifact/download`

@@ -1,5 +1,5 @@
 import { Link } from "@tanstack/react-router";
-import { ArrowDownToLine } from "lucide-react";
+import { PackageCheck } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
 import { MarketplaceIcon } from "./MarketplaceIcon";
@@ -11,7 +11,7 @@ type PluginListItemProps = {
 };
 
 export function PluginListItem({ item, variant = "list" }: PluginListItemProps) {
-  const downloads = formatCompactStat(item.stats?.downloads ?? 0);
+  const installs = formatCompactStat(item.stats?.installs ?? 0);
 
   if (variant === "card") {
     return (
@@ -40,7 +40,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
               <span className="skill-list-item-meta-item">v{item.latestVersion}</span>
             ) : null}
             <span className="skill-list-item-meta-item">
-              <ArrowDownToLine size={14} aria-hidden="true" /> {downloads}
+              <PackageCheck size={14} aria-hidden="true" /> {installs}
             </span>
             <span className="skill-list-item-meta-item">
               {item.ownerHandle ? `@${item.ownerHandle}` : "community"}
@@ -79,7 +79,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
             <span className="skill-list-item-meta-item">v{item.latestVersion}</span>
           ) : null}
           <span className="skill-list-item-meta-item">
-            <ArrowDownToLine size={14} aria-hidden="true" /> {downloads}
+            <PackageCheck size={14} aria-hidden="true" /> {installs}
           </span>
           <span className="skill-list-item-meta-item">
             {item.ownerHandle ? `@${item.ownerHandle}` : "community"}

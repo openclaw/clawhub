@@ -29,7 +29,7 @@ type SkillAuditRow = {
     summary?: string;
     icon?: string;
     stats: {
-      downloads: number;
+      installsAllTime?: number;
       stars: number;
     };
     updatedAt: number;
@@ -186,8 +186,10 @@ function itemHref(row: AuditRow) {
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(row.skill.slug)}`;
 }
 
-function downloadsForRow(row: AuditRow) {
-  return row.kind === "plugin" ? row.package.stats.downloads : row.skill.stats.downloads;
+function installsForRow(row: AuditRow) {
+  return row.kind === "plugin"
+    ? row.package.stats.installs
+    : (row.skill.stats.installsAllTime ?? 0);
 }
 
 function AuditsPage() {
@@ -247,8 +249,8 @@ function AuditsPage() {
             <div role="columnheader">{itemColumnLabel}</div>
             <div role="columnheader">ClawScan</div>
             <div role="columnheader">VirusTotal</div>
-            <div role="columnheader" className="audits-downloads-header">
-              Downloads
+            <div role="columnheader" className="audits-installs-header">
+              Installs
             </div>
           </div>
           {isInitialLoading ? (
@@ -295,8 +297,8 @@ function AuditTableRow({ row }: { row: AuditRow }) {
       </div>
       <AuditSignalCell status={clawScanStatus} />
       <AuditSignalCell status={vtStatus} />
-      <div role="cell" className="audits-downloads-cell">
-        {formatCompactStat(downloadsForRow(row))}
+      <div role="cell" className="audits-installs-cell">
+        {formatCompactStat(installsForRow(row))}
       </div>
     </div>
   );

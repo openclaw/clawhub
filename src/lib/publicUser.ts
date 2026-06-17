@@ -21,7 +21,8 @@ type PublicPublisherStats = {
 export type PublicPublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
-  downloads: number;
+  installs?: number;
+  downloads?: number;
 };
 
 export type PublicPublisherListItem = PublicPublisher & {
@@ -45,7 +46,8 @@ export type PublicPublisherCatalogItem = {
    */
   icon: string | null;
   href: string;
-  downloads: number;
+  installs?: number;
+  downloads?: number;
   stars: number;
   isOfficial: boolean;
   updatedAt: number;
@@ -69,6 +71,10 @@ export type PublicPublisherCatalogDisplay = {
   sections: PublicPublisherCatalogSection[];
 };
 
+export function readPublicInstallCount(value: { installs?: number; downloads?: number }) {
+  return value.installs ?? value.downloads ?? 0;
+}
+
 export type PublicSkill = Pick<
   Doc<"skills">,
   | "_id"
@@ -89,7 +95,6 @@ export type PublicSkill = Pick<
   | "githubScanStatus"
   | "githubHasSkillCard"
   | "tags"
-  | "capabilityTags"
   | "badges"
   | "stats"
   | "isSuspicious"

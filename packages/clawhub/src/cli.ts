@@ -46,7 +46,6 @@ import {
   cmdUpdate,
 } from "./cli/commands/skills.js";
 import { cmdStarSkill } from "./cli/commands/star.js";
-import { cmdSync } from "./cli/commands/sync.js";
 import {
   cmdTransferAccept,
   cmdTransferCancel,
@@ -59,7 +58,6 @@ import { configureCommanderHelp, styleEnvBlock, styleError, styleTitle } from ".
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
 import { fail } from "./cli/ui.js";
-import { readGlobalConfig } from "./config.js";
 
 const CLI_HELP_HEADER = styleTitle(`🦞 ClawHub CLI ${getCliBuildLabel()}`);
 const HELP_DESCRIPTION = "Display help for command";
@@ -355,7 +353,7 @@ registerCommand(program, ["explore"])
   )
   .option(
     "--sort <order>",
-    "Sort by newest, downloads, rating, installs, installsAllTime, or trending",
+    "Sort by newest, rating, installs, installsAllTime, or trending",
     "newest",
   )
   .option("--json", "Output JSON")
@@ -388,10 +386,16 @@ registerCommand(program, ["publish"])
   .option("--name <name>", "Display name")
   .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
-  .option("--version <version>", "Version (semver)")
+  .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
   .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--dry-run", "Preview without publishing")
+  .option("--json", "Output JSON")
+  .option("--source-repo <repo>", "GitHub source repository")
+  .option("--source-commit <sha>", "GitHub source commit")
+  .option("--source-ref <ref>", "GitHub source ref")
+  .option("--source-path <path>", "Path to the skill within the source repository")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
@@ -427,9 +431,13 @@ registerCommand(scanCmd, ["scan", "download"])
   });
 
 registerCommand(program, ["delete"])
-  .description("Soft-delete one of your skills")
+  .description("Soft-delete a skill or permanently delete one version")
   .argument("<slug>", "Skill slug")
-  .option("--reason <text>", "Moderation note/reason")
+  .option(
+    "--version <version>",
+    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+  )
+  .option("--reason <text>", "Whole-skill moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
@@ -478,10 +486,16 @@ registerCommand(skill, ["skill", "publish"])
   .option("--name <name>", "Display name")
   .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
-  .option("--version <version>", "Version (semver)")
+  .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
   .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--dry-run", "Preview without publishing")
+  .option("--json", "Output JSON")
+  .option("--source-repo <repo>", "GitHub source repository")
+  .option("--source-commit <sha>", "GitHub source commit")
+  .option("--source-ref <ref>", "GitHub source ref")
+  .option("--source-path <path>", "Path to the skill within the source repository")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
@@ -611,8 +625,12 @@ registerCommand(packageCmd, ["package", "validate"])
   });
 
 registerCommand(packageCmd, ["package", "delete"])
-  .description("Soft-delete a package and all releases")
+  .description("Soft-delete a package or permanently delete one version")
   .argument("<name>", "Package name")
+  .option(
+    "--version <version>",
+    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+  )
   .option("--yes", "Skip confirmation")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
@@ -839,55 +857,6 @@ registerCommand(program, ["unstar"])
     await cmdUnstarSkill(opts, slug, options, isInputAllowed());
   });
 
-registerCommand(program, ["sync"])
-  .description("Scan local skills and publish new/updated ones")
-  .option("--root <dir...>", "Extra scan roots (one or more)")
-  .option("--all", "Upload all new/updated skills without prompting")
-  .option("--dry-run", "Show what would be uploaded")
-  .option("--json", "Output JSON")
-  .option("--owner <handle>", "Publish under an org/user publisher handle")
-  .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
-  .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
-  .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--concurrency <n>", "Concurrent registry/file checks", (value) =>
-    Number.parseInt(value, 10),
-  )
-  .option("--source-repo <repo>", "GitHub repo URL or owner/name for source provenance")
-  .option("--source-commit <sha>", "Git commit SHA for source provenance")
-  .option("--source-ref <ref>", "Git ref for source provenance")
-  .addOption(
-    new Option("--clawdbot-roots", "Include Clawdbot-configured roots").default(true, "enabled"),
-  )
-  .addOption(new Option("--no-clawdbot-roots", "Disable Clawdbot-configured roots"))
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    const bump =
-      options.bump === "patch" || options.bump === "minor" || options.bump === "major"
-        ? options.bump
-        : fail("--bump must be patch, minor, or major");
-    const concurrency = options.concurrency ?? 6;
-    if (concurrency < 1 || concurrency > 32) fail("--concurrency must be between 1 and 32");
-    await cmdSync(
-      opts,
-      {
-        root: options.root,
-        all: options.all,
-        dryRun: options.dryRun,
-        json: options.json,
-        owner: options.owner,
-        bump,
-        changelog: options.changelog,
-        tags: options.tags,
-        concurrency,
-        clawdbotRoots: options.clawdbotRoots,
-        sourceRepo: options.sourceRepo,
-        sourceCommit: options.sourceCommit,
-        sourceRef: options.sourceRef,
-      },
-      isInputAllowed(),
-    );
-  });
-
 applyCommandHelpGroups(program, {
   login: "Auth:",
   logout: "Auth:",
@@ -904,7 +873,6 @@ applyCommandHelpGroups(program, {
   inspect: "Skills:",
   star: "Skills:",
   unstar: "Skills:",
-  sync: "Skills:",
   publish: "Publishing:",
   skill: "Publishing:",
   publisher: "Publishing:",
@@ -934,13 +902,7 @@ applyCommandHelpGroups(packageCmd, {
   "migration-status": "Operations:",
 });
 
-program.action(async () => {
-  const opts = await resolveGlobalOpts();
-  const cfg = await readGlobalConfig();
-  if (cfg?.token) {
-    await cmdSync(opts, {}, isInputAllowed());
-    return;
-  }
+program.action(() => {
   program.outputHelp();
   process.exitCode = 0;
 });

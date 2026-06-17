@@ -123,10 +123,10 @@ Response:
 
 Notes:
 
-- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior from stars and downloads).
-- Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more downloads.
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior).
+- Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with much stronger engagement.
 - ASCII text is tokenized on word and punctuation boundaries. For example, `personal-map` contains a standalone `map` token, while `amap-jsapi-skill` contains `amap`, `jsapi`, and `skill`; searching for `map` therefore gives `personal-map` a stronger lexical match than `amap-jsapi-skill`.
-- Popularity is log-scaled and capped. Stars carry the strongest weight, and downloads are the fallback popularity signal. High-download skills can rank lower when the query text is a weaker match.
+- Popularity is log-scaled and capped. High-engagement skills can rank lower when the query text is a weaker match.
 - Suspicious or hidden moderation state can remove a skill from public search depending on caller filters and current moderation status.
 
 Publisher discoverability guidance:
@@ -142,7 +142,7 @@ Query params:
 
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
-- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
@@ -150,7 +150,7 @@ Invalid `sort` values return `400`.
 
 Notes:
 
-- `recommended` ranks by stars, then downloads, then `updatedAt`.
+- `recommended` uses engagement and recency signals.
 - `trending` ranks by installs in the last 7 days (telemetry-based).
 - `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
@@ -361,10 +361,6 @@ Notes:
 
 - If neither `version` nor `tag` is provided, uses the latest version.
 - Includes normalized verification status plus scanner-specific details.
-- `security.capabilityTags` includes deterministic capability/risk labels such as
-  `crypto`, `financial-authority`, `requires-wallet`, `can-make-purchases`,
-  `can-sign-transactions`, `requires-paid-service`, `requires-oauth-token`, and
-  `posts-externally` when detected.
 - `security.hasScanResult` is `true` only when a scanner produced a definitive verdict (`clean`, `suspicious`, or `malicious`).
 - `moderation` is a current skill-level moderation snapshot derived from the latest version.
 - When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.
@@ -543,28 +539,16 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
+- `sort` (optional): `updated` (default), `recommended`, `installs`
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages (`/api/v1/plugins`,
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
   `family=code-plugin`/`family=bundle-plugin`).
-- `target` / `hostTarget` (optional): shorthand for `host:<target>`
-- `os`, `arch`, `libc` (optional): shorthand for host capability filters
-- `requiresBrowser`, `requiresDesktop`, `requiresNativeDeps`,
-  `requiresExternalService`, `requiresBinary`, `requiresOsPermission`
-  (optional): `true`/`1` shorthand for environment requirement tags
-- `externalService`, `binary`, `osPermission` (optional): shorthand for named
-  environment requirement tags
-- `artifactKind` (optional): `legacy-zip` or `npm-pack`
-- `npmMirror` (optional): `true`/`1` to show ClawPack-backed package versions
-  available through the npm mirror
 
 Notes:
 
-- Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
-  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
-  return `400`. Unknown query parameters are ignored.
+- Invalid values for `family`, `channel`, `isOfficial`, `featured`,
+  `highlightedOnly`, or `sort` return `400`. Unknown query parameters are ignored.
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
@@ -583,28 +567,16 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages.
-- `target` / `hostTarget`, `os`, `arch`, `libc`, `requiresBrowser`,
-  `requiresDesktop`, `requiresNativeDeps`, `requiresExternalService`,
-  `requiresBinary`, `requiresOsPermission`, `externalService`, `binary`, and
-  `osPermission` are accepted as shorthands for common capability tags
-- `artifactKind` (optional): `legacy-zip` or `npm-pack`
-- `npmMirror` (optional): `true`/`1` to search ClawPack-backed package versions
-  available through the npm mirror
 
 Notes:
 
-- Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
-  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
-  return `400`. Unknown query parameters are ignored.
+- Invalid values for `family`, `channel`, `isOfficial`, `featured`, or
+  `highlightedOnly` return `400`. Unknown query parameters are ignored.
 - Anonymous callers only see public package channels.
 - Authenticated callers can search private packages for publishers they belong to.
 - `channel=private` only returns packages the authenticated caller can read.
-- Artifact filters are backed by indexed capability tags:
-  `artifact:legacy-zip`, `artifact:npm-pack`, and `npm-mirror:available`.
 
 ### `GET /api/v1/plugins`
 
@@ -615,8 +587,7 @@ Query params:
 - `limit` (optional): integer (1-100)
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
+- `sort` (optional): `recommended` (default), `installs`, `updated`
 - `category` (optional): plugin category filter. Current values:
   `channels`, `mcp-tooling`, `data`, `security`, `observability`,
   `automation`, `deployment`, `dev-tools`.
@@ -666,8 +637,6 @@ Query params:
 - `q` (required): query string
 - `limit` (optional): integer (1-100)
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `category` (optional): plugin category filter. Current values:
   `channels`, `mcp-tooling`, `data`, `security`, `observability`,
   `automation`, `deployment`, `dev-tools`.
@@ -714,7 +683,7 @@ Notes:
 ### `GET /api/v1/packages/{name}/versions/{version}`
 
 Returns one package version, including file metadata, compatibility,
-capabilities, verification, artifact metadata, and scan data.
+verification, artifact metadata, and scan data.
 
 Notes:
 

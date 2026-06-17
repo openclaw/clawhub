@@ -232,6 +232,30 @@ describe("download metric helpers", () => {
     expect(delete_).toHaveBeenCalledWith("downloadMetricDedupes:two");
   });
 
+  it("prunes stale package install metric dedupe rows after download rows", async () => {
+    vi.setSystemTime(30 * 86_400_000);
+    const { db, delete_, indexCalls } = makeDb(
+      {},
+      {
+        packageInstallMetricDedupes: [
+          { _id: "packageInstallMetricDedupes:one" },
+          { _id: "packageInstallMetricDedupes:two" },
+        ],
+      },
+    );
+
+    const result = await pruneDownloadMetricDedupesHandler({ db }, {});
+
+    expect(result).toEqual({ deleted: 2, hasMore: false });
+    expect(indexCalls.map((call) => call.table)).toEqual([
+      "downloadMetricDedupes",
+      "packageInstallMetricDedupes",
+    ]);
+    expect(indexCalls[1]?.indexName).toBe("by_day");
+    expect(delete_).toHaveBeenCalledWith("packageInstallMetricDedupes:one");
+    expect(delete_).toHaveBeenCalledWith("packageInstallMetricDedupes:two");
+  });
+
   it("reschedules stale dedupe pruning when one bounded batch fills", async () => {
     vi.setSystemTime(30 * 86_400_000);
     const rows = Array.from({ length: 200 }, (_, index) => ({

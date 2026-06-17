@@ -22,8 +22,13 @@ import {
   getPublisherByHandle,
   getPublisherMembership,
   getPersonalPublisherForUser,
+  getPersonalPublisherForUserOrFallback,
   getUserByHandleOrPersonalPublisher,
 } from "./lib/publishers";
+import {
+  getPackagePublisherContribution,
+  getSkillPublisherContribution,
+} from "./lib/publisherStats";
 import {
   getLatestActiveReservedHandle,
   isHandleReservedForAnotherUser,
@@ -31,7 +36,6 @@ import {
   upsertReservedHandleForRightfulOwner,
 } from "./lib/reservedHandles";
 import { buildUserSearchResults } from "./lib/userSearch";
-import { insertStatEvent } from "./skillStatEvents";
 
 const DEFAULT_ROLE = "user";
 const ADMIN_HANDLE = "steipete";
@@ -50,6 +54,7 @@ const DEV_PERSONA_BANNED_REAUTH_MESSAGE =
   "This account has been banned and cannot sign in. If you believe this is a mistake, appeal this decision: https://appeals.openclaw.ai/.";
 const ACCOUNT_RECOVERY_PURGE_LIMIT_DEFAULT = 25;
 const ACCOUNT_RECOVERY_PURGE_LIMIT_MAX = 100;
+const HOVER_STATS_COMPATIBILITY_ROW_LIMIT = 200;
 const accountRecoveryPurgeModeValidator = v.optional(
   v.union(v.literal("deactivated"), v.literal("legacyDeleted")),
 );
@@ -1251,16 +1256,81 @@ export const getByHandle = query({
   },
 });
 
-/** Lightweight stats for user hover tooltips. Uses the skills by_owner index. */
+async function getPublisherInstallFallback(
+  ctx: Pick<QueryCtx, "db">,
+  publisherId: Id<"publishers">,
+  ownerUserId: Id<"users">,
+) {
+  // Publisher aggregates are the normal path; keep legacy hover recovery bounded.
+  const [publisherSkills, publisherPackages, ownerSkills, ownerPackages] = await Promise.all([
+    ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(HOVER_STATS_COMPATIBILITY_ROW_LIMIT),
+    ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher_active_updated", (q) =>
+        q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(HOVER_STATS_COMPATIBILITY_ROW_LIMIT),
+    ctx.db
+      .query("skills")
+      .withIndex("by_owner_active_updated", (q) =>
+        q.eq("ownerUserId", ownerUserId).eq("softDeletedAt", undefined),
+      )
+      .order("desc")
+      .take(HOVER_STATS_COMPATIBILITY_ROW_LIMIT),
+    ctx.db
+      .query("packages")
+      .withIndex("by_owner", (q) => q.eq("ownerUserId", ownerUserId))
+      .order("desc")
+      .take(HOVER_STATS_COMPATIBILITY_ROW_LIMIT),
+  ]);
+
+  const legacyOwnerRowsForPublisher = <T extends { ownerPublisherId?: Id<"publishers"> }>(
+    rows: T[],
+  ) => rows.filter((row) => !row.ownerPublisherId || row.ownerPublisherId === publisherId);
+  const skills = new Map(
+    [...publisherSkills, ...legacyOwnerRowsForPublisher(ownerSkills)].map((skill) => [
+      skill._id,
+      skill,
+    ]),
+  );
+  const packages = new Map(
+    [...publisherPackages, ...legacyOwnerRowsForPublisher(ownerPackages)].map((pkg) => [
+      pkg._id,
+      pkg,
+    ]),
+  );
+
+  return [
+    ...Array.from(skills.values(), getSkillPublisherContribution),
+    ...Array.from(packages.values(), getPackagePublisherContribution),
+  ].reduce((total, contribution) => total + contribution.totalInstalls, 0);
+}
+
+/** Lightweight aggregate stats for user hover tooltips. */
 export const getHoverStats = query({
   args: { userId: v.id("users") },
   handler: async (ctx, args) => {
     const user = await ctx.db.get(args.userId);
+    const publisher = user ? await getPersonalPublisherForUserOrFallback(ctx, user) : null;
+    const totalInstalls =
+      user && publisher
+        ? (publisher.totalInstalls ??
+          (await getPublisherInstallFallback(ctx, publisher._id, user._id)))
+        : 0;
 
     return {
-      publishedSkills: user?.publishedSkills ?? 0,
-      totalStars: user?.totalStars ?? 0,
-      totalDownloads: user?.totalDownloads ?? 0,
+      publishedSkills: publisher?.publishedSkills ?? user?.publishedSkills ?? 0,
+      totalStars: publisher?.totalStars ?? user?.totalStars ?? 0,
+      // Older cached frontend bundles still read this field during rollout.
+      totalDownloads: publisher?.totalDownloads ?? user?.totalDownloads ?? 0,
+      totalInstalls,
     };
   },
 });
@@ -1525,16 +1595,11 @@ async function banUserWithActor(
       deletedByRole: actor.role === "admin" ? "admin" : "moderator",
       cursor: undefined,
     });
-    const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
-      userId: targetUserId,
-      deletedBy: actor._id,
-      deletedAt: target.deletedAt,
-    });
     return {
       ok: true as const,
       alreadyBanned: true,
       deletedSkills: 0,
-      deletedSkillComments,
+      deletedSkillComments: 0,
     };
   }
 
@@ -1559,12 +1624,6 @@ async function banUserWithActor(
       await ctx.db.patch(token._id, { revokedAt: now });
     }
   }
-
-  const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
-    userId: targetUserId,
-    deletedBy: actor._id,
-    deletedAt: now,
-  });
 
   await ctx.db.patch(targetUserId, {
     deletedAt: now,
@@ -1599,7 +1658,7 @@ async function banUserWithActor(
       deletedPackages: deletedPackageCount,
       revokedPackagePublishTokens,
       scheduledPackages,
-      deletedSkillComments,
+      deletedSkillComments: 0,
       reason: reason || undefined,
     },
     createdAt: now,
@@ -1618,7 +1677,7 @@ async function banUserWithActor(
     ok: true as const,
     alreadyBanned: false,
     deletedSkills: hiddenCount,
-    deletedSkillComments,
+    deletedSkillComments: 0,
     scheduledSkills,
   };
 }
@@ -2258,12 +2317,6 @@ export const autobanMalwareAuthorInternal = internalMutation({
       }
     }
 
-    const deletedSkillComments = await softDeleteUserCommentsForBan(ctx, {
-      userId: args.ownerUserId,
-      deletedBy: args.ownerUserId,
-      deletedAt: now,
-    });
-
     // Ban the user
     await ctx.db.patch(args.ownerUserId, {
       deletedAt: now,
@@ -2297,7 +2350,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       deletedPackages: deletedPackageCount,
       revokedPackagePublishTokens,
       scheduledPackages,
-      deletedSkillComments,
+      deletedSkillComments: 0,
     };
     if (args.sha256hash?.trim()) {
       metadata.sha256hash = args.sha256hash.trim();
@@ -2335,7 +2388,7 @@ export const autobanMalwareAuthorInternal = internalMutation({
       ok: true,
       alreadyBanned: false,
       deletedSkills: hiddenCount,
-      deletedSkillComments,
+      deletedSkillComments: 0,
       scheduledSkills,
     };
   },
@@ -2471,26 +2524,3 @@ export const recordStaffEmailSentAuditInternal = internalMutation({
     return { ok: true as const };
   },
 });
-
-async function softDeleteUserCommentsForBan(
-  ctx: MutationCtx,
-  args: { userId: Id<"users">; deletedBy: Id<"users">; deletedAt: number },
-): Promise<number> {
-  let skillComments = 0;
-
-  const comments = await ctx.db
-    .query("comments")
-    .withIndex("by_user", (q) => q.eq("userId", args.userId))
-    .collect();
-  for (const comment of comments) {
-    if (comment.softDeletedAt) continue;
-    await ctx.db.patch(comment._id, {
-      softDeletedAt: args.deletedAt,
-      deletedBy: args.deletedBy,
-    });
-    await insertStatEvent(ctx, { skillId: comment.skillId, kind: "uncomment" });
-    skillComments += 1;
-  }
-
-  return skillComments;
-}

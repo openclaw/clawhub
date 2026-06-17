@@ -1,7 +1,7 @@
 ---
 summary: "How ClawHub reports, moderation holds, hidden listings, bans, and account standing work."
 read_when:
-  - Reporting a skill, plugin, package, or comment
+  - Reporting a skill, plugin, or package
   - Recovering from a held, hidden, or blocked listing
   - Understanding ClawHub moderation, bans, or account standing
 title: "Moderation and Account Safety"
@@ -20,11 +20,12 @@ This page covers moderation and account standing. For audit labels such as
 [Security Audits](./security-audits.md).
 
 See also [Security](./security.md) and
-[Acceptable usage](./acceptable-usage.md).
+[Acceptable usage](./acceptable-usage.md). For copyright or other content
+rights concerns, use [Content Rights Requests](./content-rights.md).
 
 ## Reports
 
-Signed-in users can report skills, plugins, packages, and comments.
+Signed-in users can report skills, plugins, and packages.
 
 Use ClawHub reports only for unsafe marketplace content, such as:
 
@@ -32,7 +33,7 @@ Use ClawHub reports only for unsafe marketplace content, such as:
 - misleading metadata
 - undeclared credentials or permission requirements
 - suspicious install instructions
-- scam comments or impersonation
+- impersonation
 - bad-faith registrations or trademark misuse
 - content that violates [Acceptable usage](./acceptable-usage.md)
 

@@ -299,8 +299,10 @@ describe("Dashboard rows", () => {
     expect(screen.queryByText("Static")).toBeNull();
     expect(screen.queryByText(/rescans/i)).toBeNull();
     expect(screen.queryByText("Limit reached (3/3)")).toBeNull();
-    expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
-    expect(screen.queryByText("Installs")).toBeNull();
+    expect(screen.getAllByText("Installs").length).toBe(2);
+    expect(screen.queryByText("Downloads")).toBeNull();
+    expect(screen.getByText("56")).toBeTruthy();
+    expect(screen.getByText("9")).toBeTruthy();
     expect(screen.getAllByText("Current version").length).toBe(2);
     expect(screen.getAllByText("Last updated").length).toBe(2);
     expect(

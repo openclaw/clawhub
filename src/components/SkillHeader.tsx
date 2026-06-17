@@ -476,7 +476,7 @@ function SkillSidebarStats({
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
-        { label: "Downloads", value: formattedStats.downloads, large: true },
+        { label: "Installs", value: formattedStats.installsAllTime, large: true },
         { label: "Repository", value: githubRepositoryLink },
         {
           label: "Owner",

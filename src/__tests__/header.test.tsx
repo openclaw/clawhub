@@ -13,7 +13,8 @@ type HeaderAuthStatus = {
 };
 
 const navigateMock = vi.fn();
-const { signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+const { profileHandleMock, signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+  profileHandleMock: vi.fn(),
   signInMock: vi.fn(),
   useUnifiedSearchMock: vi.fn(),
 }));
@@ -64,11 +65,20 @@ const defaultUnifiedSearchResult = {
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { children: ReactNode; className?: string; hash?: string; to?: string }) => (
-    <a href={`${props.to ?? "/"}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
-      {props.children}
-    </a>
-  ),
+  Link: (props: {
+    children: ReactNode;
+    className?: string;
+    hash?: string;
+    params?: { handle?: string };
+    to?: string;
+  }) => {
+    const to = props.to?.replace("$handle", props.params?.handle ?? "$handle") ?? "/";
+    return (
+      <a href={`${to}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
+        {props.children}
+      </a>
+    );
+  },
   useLocation: () => ({ pathname: "/" }),
   useNavigate: () => navigateMock,
 }));
@@ -78,6 +88,10 @@ vi.mock("@convex-dev/auth/react", () => ({
     signIn: signInMock,
     signOut: vi.fn(),
   }),
+}));
+
+vi.mock("convex/react", () => ({
+  useQuery: () => profileHandleMock(),
 }));
 
 const authStatusMock = vi.fn<() => HeaderAuthStatus>(() => ({
@@ -219,6 +233,7 @@ describe("Header", () => {
       isLoading: false,
       me: null,
     });
+    profileHandleMock.mockReturnValue(null);
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
     signInMock.mockReset();
     signInMock.mockResolvedValue({ signingIn: true });
@@ -493,7 +508,8 @@ describe("Header", () => {
     expect(labels.slice(0, 4)).toEqual(["Home", "Skills", "Plugins", "Docs"]);
   });
 
-  it("links starred skills from the signed-in avatar menu", () => {
+  it("links profile and starred skills from the signed-in avatar menu", () => {
+    profileHandleMock.mockReturnValue("patrick-profile");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -508,6 +524,13 @@ describe("Header", () => {
 
     render(<Header />);
 
+    const profile = screen.getByText("Profile");
+    const dashboard = screen.getAllByText("Dashboard").at(-1)!;
+
+    expect(profile.closest("a")?.getAttribute("href")).toBe("/user/patrick-profile");
+    expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();

@@ -1,12 +1,21 @@
 import { ConvexError, v } from "convex/values";
+import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { MutationCtx, QueryCtx } from "./_generated/server";
-import { internalQuery, mutation, query } from "./functions";
+import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { requireUser } from "./lib/access";
+import { deleteGitHubSkillScansForSource } from "./lib/githubSkillScans";
 import { adjustGlobalPublicSkillsCount, getPublicSkillVisibilityDelta } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
-import { isPublisherActive, isPublisherRoleAllowed, requirePublisherRole } from "./lib/publishers";
+import {
+  getPersonalPublisherForUserOrFallback,
+  isPublisherActive,
+  isPublisherRoleAllowed,
+  requirePublisherRole,
+} from "./lib/publishers";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
+
+const GITHUB_SKILL_SCAN_CLEANUP_BATCH_SIZE = 25;
 
 type PublicGitHubSkillSource = Pick<
   Doc<"githubSkillSources">,
@@ -101,27 +110,34 @@ export const listForPublisher = query({
 export const listForManageableOfficialPublishers = query({
   args: {},
   handler: async (ctx): Promise<PublicGitHubSkillSource[]> => {
-    const { userId } = await requireUser(ctx);
+    const { userId, user } = await requireUser(ctx);
     const memberships = await ctx.db
       .query("publisherMembers")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .collect();
-    const ownerPublisherIds: Id<"publishers">[] = [];
+    const ownerPublisherIds = new Set<Id<"publishers">>();
     for (const membership of memberships) {
       if (!isPublisherRoleAllowed(membership.role, ["admin"])) continue;
       const publisher = await ctx.db.get(membership.publisherId);
       if (
         !publisher ||
-        publisher.kind !== "org" ||
         !isPublisherActive(publisher) ||
         !(await isOfficialPublisher(ctx, publisher))
       ) {
         continue;
       }
-      ownerPublisherIds.push(publisher._id);
+      ownerPublisherIds.add(publisher._id);
+    }
+    const personalPublisher = await getPersonalPublisherForUserOrFallback(ctx, user);
+    if (
+      personalPublisher &&
+      isPublisherActive(personalPublisher) &&
+      (await isOfficialPublisher(ctx, personalPublisher))
+    ) {
+      ownerPublisherIds.add(personalPublisher._id);
     }
     const sourceGroups = await Promise.all(
-      ownerPublisherIds.map((ownerPublisherId) =>
+      [...ownerPublisherIds].map((ownerPublisherId) =>
         ctx.db
           .query("githubSkillSources")
           .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", ownerPublisherId))
@@ -161,6 +177,9 @@ export async function deleteForPublisherHandler(
   for (const content of contents) {
     await ctx.db.delete(content._id);
   }
+  await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
+    sourceId: args.sourceId,
+  });
 
   const skills = await ctx.db
     .query("skills")
@@ -196,6 +215,36 @@ export async function deleteForPublisherHandler(
 
   return { ok: true as const, deletedSkills };
 }
+
+export async function cleanupDeletedSourceScansHandler(
+  ctx: MutationCtx,
+  args: { sourceId: Id<"githubSkillSources"> },
+) {
+  const deleted = await deleteGitHubSkillScansForSource(
+    ctx,
+    args.sourceId,
+    GITHUB_SKILL_SCAN_CLEANUP_BATCH_SIZE,
+  );
+  const done = deleted < GITHUB_SKILL_SCAN_CLEANUP_BATCH_SIZE;
+  if (deleted > 0) {
+    await ctx.scheduler.runAfter(0, internal.securityScan.pruneExpiredSkillScanRequestsInternal, {
+      batchSize: 10,
+    });
+  }
+  if (!done) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.githubSkillSources.cleanupDeletedSourceScansInternal,
+      args,
+    );
+  }
+  return { ok: true as const, deleted, done };
+}
+
+export const cleanupDeletedSourceScansInternal = internalMutation({
+  args: { sourceId: v.id("githubSkillSources") },
+  handler: cleanupDeletedSourceScansHandler,
+});
 
 export const deleteForPublisher: ReturnType<typeof mutation> = mutation({
   args: {

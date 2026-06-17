@@ -1,7 +1,6 @@
 "use node";
 
 import { createHash, createHmac } from "node:crypto";
-import semver from "semver";
 import type { Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { validateFilePath } from "./skillZip";
@@ -9,10 +8,6 @@ import { validateFilePath } from "./skillZip";
 const DEFAULT_SKILLS_ROOT = "skills";
 const DEFAULT_PACKAGES_ROOT = "packages";
 const META_FILENAME = "_meta.json";
-const INDEX_FILENAME = "_index.json";
-const MAX_INDEX_WRITE_ATTEMPTS = 5;
-const MIN_INDEX_WRITE_RETRY_DELAY_MS = 25;
-const MAX_INDEX_WRITE_RETRY_DELAY_MS = 250;
 
 type BackupFile = {
   path: string;
@@ -57,52 +52,10 @@ type PackageBackupParams = {
   runtimeId?: string;
   sourceRepo?: string;
   compatibility?: unknown;
-  capabilities?: unknown;
   extractedPackageJson?: unknown;
   extractedPluginManifest?: unknown;
   normalizedBundleManifest?: unknown;
   files: Array<{ path: string; size: number; sha256: string }>;
-};
-
-type IndexWriteOptions = {
-  withIndexWrite?: <T>(indexPath: string, write: () => Promise<T>) => Promise<T>;
-};
-
-type VersionIndexEntry = {
-  version: string;
-  isLatest?: boolean;
-  publishedAt: number;
-  path: string;
-};
-
-type SkillIndexEntry = VersionIndexEntry & {
-  skillId?: Id<"skills">;
-  versionId?: Id<"skillVersions">;
-};
-
-type PackageIndexEntry = VersionIndexEntry & {
-  packageId: Id<"packages">;
-  releaseId: Id<"packageReleases">;
-};
-
-type SkillIndexFile = {
-  kind: "skill";
-  owner: string;
-  slug: string;
-  displayName: string;
-  latest: SkillIndexEntry;
-  versions: SkillIndexEntry[];
-};
-
-type PackageIndexFile = {
-  kind: "package";
-  owner: string;
-  packageName: string;
-  normalizedName: string;
-  displayName: string;
-  family: PackageBackupParams["family"];
-  latest: PackageIndexEntry;
-  versions: PackageIndexEntry[];
 };
 
 export type RegistryArtifactBackupContext = RegistryArtifactBackupSettings;
@@ -155,7 +108,6 @@ export async function backupSkillVersionToObjectStorage(
   ctx: Pick<ActionCtx, "storage">,
   params: SkillBackupParams & { root?: string },
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
-  options: IndexWriteOptions = {},
 ) {
   const planned = buildSkillVersionBackupManifest({
     root: params.root ?? context.skillsRoot,
@@ -170,19 +122,12 @@ export async function backupSkillVersionToObjectStorage(
   }
 
   await putJsonObject(context, planned.metaPath, planned.meta);
-  await writeMergedJsonIndex(
-    context,
-    planned.indexPath,
-    (existingIndex: SkillIndexFile | null) => buildSkillIndexFile(planned, existingIndex),
-    options,
-  );
 }
 
 export async function backupPackageReleaseToObjectStorage(
   ctx: Pick<ActionCtx, "storage">,
   params: PackageBackupParams & { artifactStorageId: Id<"_storage">; root?: string },
   context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
-  options: IndexWriteOptions = {},
 ) {
   const planned = buildPackageReleaseBackupManifest({
     root: params.root ?? context.packagesRoot,
@@ -194,86 +139,6 @@ export async function backupPackageReleaseToObjectStorage(
   });
 
   await putJsonObject(context, planned.metaPath, planned.meta);
-  await writeMergedJsonIndex(
-    context,
-    planned.indexPath,
-    (existingIndex: PackageIndexFile | null) => buildPackageIndexFile(planned, existingIndex),
-    options,
-  );
-}
-
-export async function repairSkillVersionBackupIndex(
-  _ctx: Pick<ActionCtx, "storage">,
-  params: SkillBackupParams & { root?: string },
-  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
-  options: IndexWriteOptions = {},
-) {
-  await repairSkillVersionBackupIndexes(_ctx, [params], context, options);
-}
-
-export async function repairSkillVersionBackupIndexes(
-  _ctx: Pick<ActionCtx, "storage">,
-  params: Array<SkillBackupParams & { root?: string }>,
-  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
-  options: IndexWriteOptions = {},
-) {
-  if (params.length === 0) return;
-  const planned = params.map((item) =>
-    buildSkillVersionBackupManifest({
-      root: item.root ?? context.skillsRoot,
-      ...item,
-    }),
-  );
-  const [first, ...rest] = planned;
-  if (!first) return;
-  const indexPath = sharedIndexPath(planned.map((item) => item.indexPath));
-  await writeMergedJsonIndex(
-    context,
-    indexPath,
-    (existingIndex: SkillIndexFile | null) =>
-      rest.reduce(
-        (nextIndex, plannedItem) => buildSkillIndexFile(plannedItem, nextIndex),
-        buildSkillIndexFile(first, existingIndex),
-      ),
-    options,
-  );
-}
-
-export async function repairPackageReleaseBackupIndex(
-  _ctx: Pick<ActionCtx, "storage">,
-  params: PackageBackupParams & { root?: string },
-  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
-  options: IndexWriteOptions = {},
-) {
-  await repairPackageReleaseBackupIndexes(_ctx, [params], context, options);
-}
-
-export async function repairPackageReleaseBackupIndexes(
-  _ctx: Pick<ActionCtx, "storage">,
-  params: Array<PackageBackupParams & { root?: string }>,
-  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
-  options: IndexWriteOptions = {},
-) {
-  if (params.length === 0) return;
-  const planned = params.map((item) =>
-    buildPackageReleaseBackupManifest({
-      root: item.root ?? context.packagesRoot,
-      ...item,
-    }),
-  );
-  const [first, ...rest] = planned;
-  if (!first) return;
-  const indexPath = sharedIndexPath(planned.map((item) => item.indexPath));
-  await writeMergedJsonIndex(
-    context,
-    indexPath,
-    (existingIndex: PackageIndexFile | null) =>
-      rest.reduce(
-        (nextIndex, plannedItem) => buildPackageIndexFile(plannedItem, nextIndex),
-        buildPackageIndexFile(first, existingIndex),
-      ),
-    options,
-  );
 }
 
 export async function fetchSkillVersionBackupMeta(
@@ -287,41 +152,6 @@ export async function fetchSkillVersionBackupMeta(
     version,
   )}/${META_FILENAME}`;
   return getJsonObject<ReturnType<typeof buildSkillVersionBackupManifest>["meta"]>(context, path);
-}
-
-async function writeMergedJsonIndex<T>(
-  context: RegistryArtifactBackupContext,
-  indexPath: string,
-  buildNext: (existing: T | null) => T,
-  options: IndexWriteOptions,
-) {
-  const write = () => putMergedJsonIndex(context, indexPath, buildNext);
-  if (options.withIndexWrite) {
-    return options.withIndexWrite(indexPath, write);
-  }
-  return write();
-}
-
-export async function fetchSkillBackupIndex(
-  context: RegistryArtifactBackupContext,
-  ownerHandle: string,
-  slug: string,
-) {
-  const owner = normalizeOwner(ownerHandle);
-  const path = `${context.skillsRoot}/${owner}/${slug}/${INDEX_FILENAME}`;
-  return getJsonObject<SkillIndexFile>(context, path);
-}
-
-export async function fetchPackageBackupIndex(
-  context: RegistryArtifactBackupContext,
-  ownerHandle: string,
-  normalizedName: string,
-) {
-  const owner = normalizeOwner(ownerHandle);
-  const path = `${context.packagesRoot}/${owner}/${encodeBackupPathSegment(
-    normalizedName,
-  )}/${INDEX_FILENAME}`;
-  return getJsonObject<PackageIndexFile>(context, path);
 }
 
 export async function fetchPackageReleaseBackupMeta(
@@ -356,7 +186,6 @@ export function buildSkillVersionBackupManifest(params: SkillBackupParams & { ro
   const skillRoot = `${params.root}/${owner}/${params.slug}`;
   const versionRoot = `${skillRoot}/${versionSegment}`;
   const metaPath = `${versionRoot}/${META_FILENAME}`;
-  const indexPath = `${skillRoot}/${INDEX_FILENAME}`;
   const files = params.files.map((file) => {
     if (!validateFilePath(file.path)) {
       throw new Error(`Invalid skill backup file path: ${file.path}`);
@@ -393,7 +222,6 @@ export function buildSkillVersionBackupManifest(params: SkillBackupParams & { ro
     skillRoot,
     versionRoot,
     metaPath,
-    indexPath,
     fileObjects,
     meta,
   };
@@ -436,7 +264,6 @@ export function buildPackageReleaseBackupManifest(params: PackageBackupParams & 
     },
     metadata: {
       compatibility: params.compatibility,
-      capabilities: params.capabilities,
       extractedPackageJson: params.extractedPackageJson,
       extractedPluginManifest: params.extractedPluginManifest,
       normalizedBundleManifest: params.normalizedBundleManifest,
@@ -449,113 +276,11 @@ export function buildPackageReleaseBackupManifest(params: PackageBackupParams & 
     releaseRoot,
     artifactPath: `${releaseRoot}/${artifactFileName}`,
     metaPath: `${releaseRoot}/${META_FILENAME}`,
-    indexPath: `${packageRoot}/${INDEX_FILENAME}`,
     meta,
   };
 }
 
-function buildSkillIndexFile(
-  planned: ReturnType<typeof buildSkillVersionBackupManifest>,
-  existing: SkillIndexFile | null,
-): SkillIndexFile {
-  const nextVersion: SkillIndexEntry = {
-    version: planned.meta.version,
-    isLatest: planned.meta.isLatest,
-    publishedAt: planned.meta.publishedAt,
-    skillId: planned.meta.restore.skillId,
-    versionId: planned.meta.restore.versionId,
-    path: planned.metaPath,
-  };
-  const byVersion = new Map<string, SkillIndexEntry>();
-  for (const entry of [nextVersion, existing?.latest, ...(existing?.versions ?? [])]) {
-    if (entry && !byVersion.has(entry.version)) byVersion.set(entry.version, entry);
-  }
-  const mergedVersions = Array.from(byVersion.values());
-  const explicitLatest = nextVersion.isLatest
-    ? nextVersion
-    : mergedVersions.find((entry) => entry.isLatest);
-  const versions = mergedVersions
-    .map((entry) => ({
-      ...entry,
-      isLatest: explicitLatest ? entry.version === explicitLatest.version : entry.isLatest,
-    }))
-    .sort(compareSkillIndexEntriesForLatest);
-  const latest = explicitLatest
-    ? (versions.find((entry) => entry.version === explicitLatest.version) ?? explicitLatest)
-    : (versions[0] ?? nextVersion);
-
-  return {
-    kind: "skill",
-    owner: planned.meta.owner,
-    slug: planned.meta.slug,
-    displayName: planned.meta.displayName,
-    latest,
-    versions,
-  };
-}
-
-function sharedIndexPath(paths: string[]) {
-  const [first, ...rest] = paths;
-  if (!first || rest.some((path) => path !== first)) {
-    throw new Error("Registry artifact backup bulk index repair received mixed roots");
-  }
-  return first;
-}
-
-function compareSkillIndexEntriesForLatest(left: SkillIndexEntry, right: SkillIndexEntry) {
-  const leftValid = semver.valid(left.version);
-  const rightValid = semver.valid(right.version);
-  if (leftValid && rightValid) return semver.rcompare(leftValid, rightValid);
-  if (leftValid) return -1;
-  if (rightValid) return 1;
-  return right.publishedAt - left.publishedAt;
-}
-
-function buildPackageIndexFile(
-  planned: ReturnType<typeof buildPackageReleaseBackupManifest>,
-  existing: PackageIndexFile | null,
-): PackageIndexFile {
-  const nextVersion: PackageIndexEntry = {
-    version: planned.meta.version,
-    isLatest: planned.meta.isLatest,
-    publishedAt: planned.meta.publishedAt,
-    packageId: planned.meta.restore.packageId,
-    releaseId: planned.meta.restore.releaseId,
-    path: planned.metaPath,
-  };
-  const byRelease = new Map<string, PackageIndexEntry>();
-  for (const entry of [nextVersion, existing?.latest, ...(existing?.versions ?? [])]) {
-    if (entry && !byRelease.has(entry.releaseId)) byRelease.set(entry.releaseId, entry);
-  }
-  const mergedVersions = Array.from(byRelease.values());
-  const explicitLatest = nextVersion.isLatest
-    ? nextVersion
-    : mergedVersions.find((entry) => entry.isLatest);
-  const versions = mergedVersions
-    .map((entry) => ({
-      ...entry,
-      isLatest: explicitLatest ? entry.releaseId === explicitLatest.releaseId : entry.isLatest,
-    }))
-    .sort((a, b) => b.publishedAt - a.publishedAt);
-  const latest = explicitLatest
-    ? (versions.find((entry) => entry.releaseId === explicitLatest.releaseId) ?? explicitLatest)
-    : (versions[0] ?? nextVersion);
-
-  return {
-    kind: "package",
-    owner: planned.meta.owner,
-    packageName: planned.meta.packageName,
-    normalizedName: planned.meta.normalizedName,
-    displayName: planned.meta.displayName,
-    family: planned.meta.family,
-    latest,
-    versions,
-  };
-}
-
 export const __registryArtifactBackupTestInternals = {
-  buildPackageIndexFile,
-  buildSkillIndexFile,
   encodeBackupPathSegment,
 };
 
@@ -614,63 +339,13 @@ async function putJsonObject(context: RegistryArtifactBackupContext, key: string
 }
 
 async function getJsonObject<T>(context: RegistryArtifactBackupContext, key: string) {
-  const result = await getJsonObjectForUpdate(context, key);
-  return result.value as T | null;
-}
-
-async function getJsonObjectForUpdate(context: RegistryArtifactBackupContext, key: string) {
   const response = await signedFetch(context, "GET", key);
-  if (response.status === 404) return { value: null, etag: null };
+  if (response.status === 404) return null;
   if (!response.ok) {
     const body = await response.text();
     throw new Error(`Registry artifact backup GET ${key} failed: ${body}`);
   }
-  return {
-    value: (await response.json()) as unknown,
-    etag: response.headers.get("etag"),
-  };
-}
-
-async function putMergedJsonIndex<T>(
-  context: RegistryArtifactBackupContext,
-  key: string,
-  buildNext: (existing: T | null) => T,
-) {
-  for (let attempt = 1; attempt <= MAX_INDEX_WRITE_ATTEMPTS; attempt++) {
-    const existing = await getJsonObjectForUpdate(context, key);
-    const existingValue = existing.value as T | null;
-    if (existingValue && !existing.etag) {
-      throw new Error(`Registry artifact backup GET ${key} missing ETag`);
-    }
-
-    const result = await putObject(
-      context,
-      key,
-      `${JSON.stringify(buildNext(existingValue), null, 2)}\n`,
-      {
-        contentType: "application/json; charset=utf-8",
-        ifMatch: existing.etag ?? undefined,
-        ifNoneMatch: existingValue ? undefined : "*",
-        allowPreconditionFailed: true,
-      },
-    );
-    if (result === "ok") return;
-    await sleep(indexWriteRetryDelayMs(attempt));
-  }
-
-  throw new Error(`Registry artifact backup index ${key} changed too frequently`);
-}
-
-function indexWriteRetryDelayMs(attempt: number) {
-  const base = Math.min(
-    MAX_INDEX_WRITE_RETRY_DELAY_MS,
-    MIN_INDEX_WRITE_RETRY_DELAY_MS * 2 ** attempt,
-  );
-  return base + Math.floor(Math.random() * MIN_INDEX_WRITE_RETRY_DELAY_MS);
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+  return (await response.json()) as T;
 }
 
 async function putObject(
@@ -679,20 +354,13 @@ async function putObject(
   body: string | Uint8Array,
   options: {
     contentType?: string;
-    ifMatch?: string;
-    ifNoneMatch?: string;
-    allowPreconditionFailed?: boolean;
   } = {},
 ) {
   const response = await signedFetch(context, "PUT", key, body, options);
-  if (options.allowPreconditionFailed && response.status === 412) {
-    return "preconditionFailed" as const;
-  }
   if (!response.ok) {
     const responseBody = await response.text();
     throw new Error(`Registry artifact backup PUT ${key} failed: ${responseBody}`);
   }
-  return "ok" as const;
 }
 
 async function signedFetch(
@@ -700,7 +368,7 @@ async function signedFetch(
   method: "GET" | "PUT",
   key: string,
   body?: string | Uint8Array,
-  options: { contentType?: string; ifMatch?: string; ifNoneMatch?: string } = {},
+  options: { contentType?: string } = {},
 ) {
   const now = new Date();
   const bodyBytes = body === undefined ? new Uint8Array() : toBytes(body);
@@ -711,8 +379,6 @@ async function signedFetch(
   headers.set("x-amz-content-sha256", payloadHash);
   headers.set("x-amz-date", amzDate(now));
   if (options.contentType) headers.set("content-type", options.contentType);
-  if (options.ifMatch) headers.set("if-match", options.ifMatch);
-  if (options.ifNoneMatch) headers.set("if-none-match", options.ifNoneMatch);
   headers.set(
     "authorization",
     authorizationHeader(context, method, url, headers, payloadHash, now),

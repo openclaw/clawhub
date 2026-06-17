@@ -61,10 +61,6 @@ read_when:
 - Cleanup:
   - `bun clawhub delete manual-skill-<ts> --yes`
 
-## Sync
-
-- `bun clawhub sync --dry-run --all`
-
 ## Playwright (menu smoke)
 
 Run against prod:

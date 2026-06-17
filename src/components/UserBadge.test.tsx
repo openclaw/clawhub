@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PublicPublisher, PublicUser } from "../lib/publicUser";
 import { TooltipProvider } from "./ui/tooltip";
-import { UserBadge } from "./UserBadge";
+import { getHoverTotalInstalls, UserBadge } from "./UserBadge";
 
 describe("UserBadge", () => {
   const user: PublicUser = {
@@ -77,5 +77,15 @@ describe("UserBadge", () => {
     expect(screen.getByLabelText("Official")).toBeTruthy();
     expect(container.querySelector(".official-badge")).toBeTruthy();
     expect(container.querySelector(".official-tag")).toBeFalsy();
+  });
+
+  it("falls back to the legacy hover metric during rollout", () => {
+    expect(
+      getHoverTotalInstalls({
+        publishedSkills: 1,
+        totalStars: 2,
+        totalDownloads: 42,
+      }),
+    ).toBe(42);
   });
 });

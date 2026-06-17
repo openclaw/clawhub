@@ -155,6 +155,15 @@ export declare const CliTelemetryInstallRequestSchema: import("arktype/internal/
     version?: string | undefined;
     rootId?: string | undefined;
     rootLabel?: string | undefined;
+} | {
+    roots: {
+        rootId: string;
+        label: string;
+        skills: {
+            slug: string;
+            version?: string | null | undefined;
+        }[];
+    }[];
 }, {}>;
 export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
 export declare const ApiCliTelemetryInstallResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
@@ -436,6 +445,15 @@ export declare const ApiV1SkillRescanResponseSchema: import("arktype/internal/va
     skillVersionId: string;
     jobId: string;
     alreadyQueued: boolean;
+} | {
+    ok: true;
+    slug: string;
+    version: string;
+    skillId: string;
+    githubContentHash: string;
+    scheduled: boolean;
+    alreadyQueued: boolean;
+    jobId?: string | undefined;
 }, {}>;
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];
 export declare const ApiV1SkillScanStatusSchema: import("arktype/internal/variants/string.ts").StringType<"queued" | "running" | "succeeded" | "failed", {}>;

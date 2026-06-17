@@ -14,6 +14,11 @@ import {
 } from "./publisherAbuseScoring";
 
 describe("publisher abuse scoring", () => {
+  it("uses a stronger superlinear output elasticity for bulk publishers", () => {
+    expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.modelVersion).toBe("publisher-abuse-pressure.v2");
+    expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.outputElasticity).toBe(1.5);
+  });
+
   it("uses the dry-run z-score thresholds", () => {
     expect(labelForPublisherAbuseZScore(1.49, DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG)).toBe("pass");
     expect(labelForPublisherAbuseZScore(1.5, DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG)).toBe("review");
@@ -102,6 +107,51 @@ describe("publisher abuse scoring", () => {
     expect(byHandle.get("gora050")?.rank).toBeLessThan(byHandle.get("byungkyu")?.rank ?? 0);
     expect(byHandle.get("membranedev")?.rank).toBeLessThan(byHandle.get("byungkyu")?.rank ?? 0);
     expect(byHandle.get("peand-rover")?.rank).toBeLessThan(byHandle.get("byungkyu")?.rank ?? 0);
+  });
+
+  it("keeps catalog pressure linear below the bulk publisher pivot", () => {
+    const score50 = computePublisherAbuseRawScore(
+      publisher("ordinary-50", {
+        publishedSkills: 50,
+        totalInstalls: 50,
+        totalStars: 1.25,
+        totalDownloads: 12_500,
+      }),
+    );
+    const score100 = computePublisherAbuseRawScore(
+      publisher("ordinary-100", {
+        publishedSkills: 100,
+        totalInstalls: 100,
+        totalStars: 2.5,
+        totalDownloads: 25_000,
+      }),
+    );
+
+    expect(score50.pressure).toBeGreaterThan(0);
+    expect(score50.pressure / score100.pressure).toBeCloseTo(0.5);
+  });
+
+  it("increases catalog pressure faster than skill count above the pivot", () => {
+    const score200 = computePublisherAbuseRawScore(
+      publisher("bulk-200", {
+        publishedSkills: 200,
+        totalInstalls: 200,
+        totalStars: 5,
+        totalDownloads: 25_000,
+      }),
+    );
+    const score400 = computePublisherAbuseRawScore(
+      publisher("bulk-400", {
+        publishedSkills: 400,
+        totalInstalls: 400,
+        totalStars: 10,
+        totalDownloads: 50_000,
+      }),
+    );
+
+    expect(score200.pressure).toBeGreaterThan(0);
+    expect(score400.pressure / score200.pressure).toBeCloseTo(2 ** 1.5);
+    expect(score400.pressure / score200.pressure).toBeGreaterThan(2);
   });
 
   it("weights stars ahead of installs and downloads", () => {

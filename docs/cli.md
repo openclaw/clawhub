@@ -1,8 +1,8 @@
 ---
-summary: "CLI reference: commands, flags, config, lockfile, and sync behavior."
+summary: "CLI reference: commands, flags, config, and lockfile behavior."
 read_when:
   - Using the ClawHub CLI
-  - Debugging install, update, publish, or sync
+  - Debugging install, update, or publish
 ---
 
 # CLI
@@ -104,8 +104,8 @@ Stores your API token + cached registry URL.
 
 - Calls `/api/v1/search?q=...`.
 - Output includes the skill slug, owner handle, display name, and relevance score.
-- Search favors exact slug/name token matches before download popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
-- Downloads are a small popularity prior, not a guarantee of top placement.
+- Search favors exact slug/name token matches before general popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
+- Popularity is a small ranking prior, not a guarantee of top placement.
 - If a skill should appear but does not, run `clawhub inspect <slug>` while logged in to check owner-visible moderation diagnostics before renaming metadata.
 
 ### `explore`
@@ -113,7 +113,7 @@ Stores your API token + cached registry URL.
 - Lists newest skills via `/api/v1/skills?limit=...&sort=createdAt` (sorted by `createdAt` desc).
 - Flags:
   - `--limit <n>` (1-200, default: 25)
-  - `--sort newest|updated|downloads|rating|installs|installsAllTime|trending` (default: newest)
+  - `--sort newest|updated|rating|installs|installsAllTime|trending` (default: newest)
   - `--json` (machine-readable output)
 - Output: `<slug>  v<version>  <age>  <summary>` (summary truncated to 50 chars).
 
@@ -175,8 +175,14 @@ Stores your API token + cached registry URL.
 
 ### `skill publish <path>`
 
-- Publishes via `POST /api/v1/skills` (multipart).
-- Requires semver: `--version 1.2.3`.
+- Compares the local bundle fingerprint with ClawHub and exits successfully when
+  the content is already published.
+- New skills default to `1.0.0`; changed skills default to the next patch
+  version.
+- `--version <version>` explicitly selects a version and publishes even when the
+  content matches an existing version.
+- `--dry-run` resolves the publish without uploading; `--json` prints a
+  machine-readable result.
 - `--owner <handle>` publishes under an org/user publisher handle when the
   actor has publisher access.
 - `--migrate-owner` moves an existing skill to `--owner` while publishing a new
@@ -188,8 +194,21 @@ Stores your API token + cached registry URL.
 - Legacy alias: `publish <path>`.
 
 ```bash
-clawhub skill publish ./my-skill --version 1.0.0
+clawhub skill publish ./my-skill --dry-run
+clawhub skill publish ./my-skill
+clawhub skill publish ./my-skill --version 2.0.0
 ```
+
+#### GitHub Actions
+
+ClawHub's reusable
+[`skill-publish.yml`](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml)
+workflow calls `skill publish` for one `skill_path`, or for each immediate skill
+folder under `root` (default: `skills`). It skips unchanged skills and uses the
+same automatic patch-version behavior.
+
+Set `dry_run: true` to preview without a token. Real publishes require the
+`clawhub_token` secret.
 
 ### `scan --slug <slug>`
 
@@ -222,58 +241,23 @@ clawhub scan download gifgrep --version 1.2.3
 clawhub scan download @scope/demo --version 2.0.0 --kind plugin --output report.zip
 ```
 
-#### GitHub Actions
-
-ClawHub ships an official reusable workflow at
-[`/.github/workflows/skill-publish.yml`](../.github/workflows/skill-publish.yml)
-for skill repos and catalog repos.
-
-Typical catalog setup:
-
-```yaml
-name: Skill Publish
-
-on:
-  pull_request:
-  workflow_dispatch:
-
-jobs:
-  dry-run:
-    if: github.event_name == 'pull_request'
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
-    with:
-      owner: nvidia
-      dry_run: true
-
-  publish:
-    if: github.event_name == 'workflow_dispatch'
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
-    with:
-      owner: nvidia
-      dry_run: false
-    secrets:
-      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
-```
-
-Notes:
-
-- `root` defaults to `skills` for catalog repos.
-- Pass `skill_path: skills/review-helper` to process one skill folder.
-- `owner` maps to the CLI `--owner` flag; omit it to publish as the authenticated user.
-- V1 skill publishing uses `clawhub_token`; GitHub OIDC trusted publishing is package-only for now.
-
 ### `delete <slug>`
 
-- Soft-delete a skill (owner, moderator, or admin).
+- Without `--version`, soft-delete a skill (owner, moderator, or admin).
 - Calls `DELETE /api/v1/skills/{slug}`.
 - Owner-initiated soft deletes reserve the slug for 30 days; the command prints the expiry time.
-- `--reason <text>` records a moderation note on the skill and audit log.
+- `--version <version>` permanently deletes one owned non-latest version through a fail-closed,
+  version-specific route.
+  Deleted versions cannot be restored or republished. Publish a replacement before deleting the
+  current latest version. Platform staff do not bypass ownership for this version-only flow.
+- `--reason <text>` records a moderation note on a whole-skill soft-delete and audit log.
 - `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
 
 ### `undelete <slug>`
 
 - Restore a hidden skill (owner, moderator, or admin).
+- There is no version undelete; permanently deleted versions cannot be restored.
 - Calls `POST /api/v1/skills/{slug}/undelete`.
 - `--reason <text>` records a moderation note on the skill and audit log.
 - `--note <text>` is an alias for `--reason`.
@@ -433,10 +417,16 @@ If validation reports a package, manifest, SDK import, or artifact finding, see
 
 ### `package delete <name>`
 
-- Soft-deletes a package and all releases.
-- Requires the package owner, an org publisher owner/admin, platform moderator,
-  or platform admin.
+- Without `--version`, soft-deletes a package and all releases.
+- `--version <version>` permanently deletes one owned non-latest release through a fail-closed,
+  version-specific route.
+  Deleted versions cannot be restored or republished. Publish a replacement before deleting the
+  current latest version. This version-only flow requires the package owner or an org publisher
+  admin; platform staff do not bypass package ownership.
+- Whole-package soft-delete requires the package owner, an org publisher owner/admin, platform
+  moderator, or platform admin.
 - Flags:
+  - `--version <version>`: permanently delete one non-latest version.
   - `--yes`: skip confirmation.
   - `--json`: machine-readable output.
 
@@ -444,11 +434,13 @@ Example:
 
 ```bash
 clawhub package delete @openclaw/example-plugin --yes
+clawhub package delete @openclaw/example-plugin --version 1.2.3 --yes
 ```
 
 ### `package undelete <name>`
 
 - Restores a soft-deleted package and releases.
+- There is no version undelete; permanently deleted versions cannot be restored.
 - Requires the package owner, an org publisher owner/admin, platform moderator,
   or platform admin.
 - Calls `POST /api/v1/packages/{name}/undelete`.
@@ -762,30 +754,6 @@ Example:
 ```bash
 clawhub package trusted-publisher delete @openclaw/example-plugin
 ```
-
-### `sync`
-
-- Scans for local skill folders and publishes new/changed ones.
-- Roots can be any folder: a skills directory or a single skill folder with `SKILL.md`.
-- Auto-adds Clawdbot skill roots when `~/.clawdbot/clawdbot.json` is present:
-  - `agent.workspace/skills` (main agent)
-  - `routing.agents.*.workspace/skills` (per-agent)
-  - `~/.clawdbot/skills` (shared)
-  - `skills.load.extraDirs` (shared packs)
-- Respects `CLAWDBOT_CONFIG_PATH` / `CLAWDBOT_STATE_DIR` and `OPENCLAW_CONFIG_PATH` / `OPENCLAW_STATE_DIR`.
-- Flags:
-  - `--root <dir...>` extra scan roots
-  - `--all` upload without prompting
-  - `--dry-run` show plan only
-  - `--json` machine-readable summary for CI
-  - `--owner <handle>` publish under a user or org publisher
-  - `--bump patch|minor|major` (default: patch)
-  - `--changelog <text>` (non-interactive)
-  - `--tags a,b,c` (default: latest)
-  - `--concurrency <n>`
-  - `--source-repo <repo>`, `--source-commit <sha>`, `--source-ref <ref>` for GitHub provenance
-
-`sync` does not report install telemetry.
 
 ### Install telemetry
 

@@ -72,8 +72,8 @@ It is not inherited from org membership, GitHub identity, OIDC, or
 `trustedPublisher`.
 
 Default official publishers are not seeded from deploy. Maintainers should mark
-`openclaw` and `nvidia` official explicitly using the moderation/admin CLI
-before enabling their source sync.
+official publishers explicitly using the moderation/admin CLI before enabling
+their source sync.
 
 ## Sync
 
@@ -83,12 +83,17 @@ ClawHub.
 The production cron runs every 15 minutes:
 
 ```text
-github-skill-source-sync -> githubSkillSync.syncGitHubSkillSourcesInternal
+github-skill-source-sync -> githubSkillSyncNode.syncGitHubSkillSourcesInternal
 ```
 
-That cron fetches the current public GitHub repo, reads `skills.sh.json`, builds
-a source snapshot, and applies it to ClawHub. Pagination must use a stable source
-cursor, not `updatedAt`, because syncing a row updates the row.
+That cron runs in Convex's Node runtime because fetching and expanding a source
+archive can exceed the default action runtime's memory limit. It fetches the
+current public GitHub repo, reads `skills.sh.json`, builds a source snapshot, and
+applies it to ClawHub. Pagination must use a stable source cursor, not
+`updatedAt`, because syncing a row updates the row. Cursor continuations must
+remain on the Node runtime action. Per-skill verification also fetches and
+expands the source archive, so verification actions must run in the Node runtime
+as well.
 
 Sync must not pass the full repo Markdown payload through one large Convex
 mutation. The intended split is:
@@ -123,19 +128,54 @@ When a new source-backed skill appears or an existing skill's content hash
 changes:
 
 - set `githubScanStatus: "pending"`
-- hide the skill from public installability with `moderationStatus: "hidden"`
-  and `moderationReason: "pending.scan"`
-- enqueue verification for the current content hash
+- keep the catalog entry visible with `moderationReason: "pending.scan"`, while
+  blocking normal install/update until the full scan completes
+- fetch the exact skill-folder bytes for the current commit and content hash
+- store those bytes only in ephemeral Convex storage, referenced by the
+  `skillScanRequests` row through a prepare, bounded chunk append, and finalize
+  sequence so no action-to-mutation argument carries the full file manifest;
+  create the request before storing blobs and persist ownership after each
+  bounded chunk so a terminated action can orphan at most its current chunk
+- cap the persisted file manifest at 4 MiB of descriptor metadata and hydrate
+  one signed-URL-heavy worker job per claim response
+- enqueue the normal full ClawScan worker with deterministic static findings as
+  input context
+- do not schedule another heavy verification action while that content hash
+  already has an active queued/running scan job or a recently prepared request
+- enqueue explicit owner/moderator rescans in the high-priority manual queue
 
 When verification succeeds cleanly:
 
+- persist the completed ClawScan, SkillSpector, and static findings on a durable
+  `githubSkillScans` row keyed by skill and content hash
 - set `githubScanStatus: "clean"`
 - make the skill active/installable
 
 When verification fails, is suspicious, or is malicious:
 
+- persist the final result on the same durable content-hash scan row
 - keep/block the skill from normal install
 - return a structured install block such as `github_scan_failed`
+
+Completed clean, suspicious, and malicious verdicts may be reused for the same
+skill and content hash. Failed worker runs are not reusable verdicts and may be
+requeued for that same content hash after the underlying runtime problem is
+fixed. Reusing a result must reassociate it with the skill's current source,
+commit, and path before any old-source cleanup can run.
+
+Legacy GitHub-backed rows that have a scan status but no durable
+`githubSkillScans` result are not trusted as full ClawScan verdicts. The next
+source sync must move them back to pending and enqueue the full pipeline.
+
+GitHub-backed verification must not create a hosted `skillVersions` row or a
+ClawHub-owned install artifact. Expired request rows and their temporary stored
+files/chunks are pruned, while the small completed `githubSkillScans` result
+remains available for the public Security audit page. Source-wide scan-history
+cleanup runs in bounded asynchronous batches. Expired request cleanup deletes
+the linked worker job before deleting any files, then deletes at most one bounded
+GitHub file-metadata chunk per request and schedules an immediate continuation
+while work remains. Static findings alone must never promote or block the skill;
+the full ClawScan verdict controls `githubScanStatus`.
 
 If the upstream path disappears:
 

@@ -560,7 +560,7 @@ function SkillsHome() {
                         <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
                       </span>
                       <span>
-                        <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
+                        <Package size={12} /> {formatStat(entry.skill.stats?.installsAllTime)}
                       </span>
                     </div>
                     <span className="home-v2-c-install">
@@ -596,7 +596,7 @@ function SkillsHome() {
                         <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
                       </span>
                       <span>
-                        <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
+                        <Package size={12} /> {formatStat(entry.skill.stats?.installsAllTime)}
                       </span>
                     </div>
                     <span className="home-v2-c-install">
@@ -663,29 +663,6 @@ function SkillsHome() {
         </div>
       </section>
 
-      {/* ═══ PROOF BAR ═══ */}
-      <div className="home-v2-proof-bar">
-        <div className="home-v2-proof-item">
-          <span className="home-v2-proof-num">52.7k</span>
-          <span className="home-v2-proof-label">tools</span>
-        </div>
-        <span className="home-v2-proof-sep" />
-        <div className="home-v2-proof-item">
-          <span className="home-v2-proof-num">180k</span>
-          <span className="home-v2-proof-label">users</span>
-        </div>
-        <span className="home-v2-proof-sep" />
-        <div className="home-v2-proof-item">
-          <span className="home-v2-proof-num">12M</span>
-          <span className="home-v2-proof-label">downloads</span>
-        </div>
-        <span className="home-v2-proof-sep" />
-        <div className="home-v2-proof-item">
-          <span className="home-v2-proof-num">4.8</span>
-          <span className="home-v2-proof-label">avg rating</span>
-        </div>
-      </div>
-
       {/* ═══ TRENDING ═══ */}
       {trendingCards.length > 0 && (
         <section className="home-v2-trending-section">
@@ -727,7 +704,7 @@ function SkillsHome() {
                       <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
                     </span>
                     <span>
-                      <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
+                      <Package size={12} /> {formatStat(entry.skill.stats?.installsAllTime)}
                     </span>
                   </div>
                   <span className="home-v2-trend-install">
@@ -753,7 +730,6 @@ function SkillsHome() {
                 family: undefined,
                 featured: true,
                 official: undefined,
-                executesCode: undefined,
               }}
               className="home-v2-section-link"
             >

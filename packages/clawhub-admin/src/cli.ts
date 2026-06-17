@@ -22,6 +22,10 @@ import { DEFAULT_REGISTRY, DEFAULT_SITE } from "../../clawhub/src/cli/registry.j
 import type { GlobalOpts } from "../../clawhub/src/cli/types.js";
 import { fail } from "../../clawhub/src/cli/ui.js";
 import { getAdminCliBuildLabel, getAdminCliVersion } from "./buildInfo.js";
+import {
+  cmdGetContentRightsCase,
+  cmdRecordContentRightsCorrespondence,
+} from "./commands/contentRights.js";
 import { cmdSendStaffEmail } from "./commands/email.js";
 import {
   cmdBanUser,
@@ -299,9 +303,22 @@ const org = program
   .showHelpAfterError()
   .showSuggestionAfterError();
 
+const publisher = program
+  .command("publisher")
+  .alias("publishers")
+  .description("Publisher administration")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
 const email = program
   .command("email")
   .description("Guarded staff email operations")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
+const contentRights = program
+  .command("content-rights")
+  .description("ClawHub content rights case operations")
   .showHelpAfterError()
   .showSuggestionAfterError();
 
@@ -318,9 +335,44 @@ registerPluginGovernanceCommands(plugins);
 registerPluginOperations(packages);
 registerPluginModerationCommands(packages);
 registerPluginGovernanceCommands(packages);
+registerOfficialPublisherCommands(publisher);
 registerOrgCommands(org);
 registerEmailCommands(email);
+registerContentRightsCommands(contentRights);
 registerSkillModerationCommands(skills);
+
+function collectOption(value: string, previous: string[]) {
+  return [...previous, value];
+}
+
+function registerContentRightsCommands(command: Command) {
+  command
+    .command("get")
+    .description("Get an existing ClawHub content rights case from Hermit")
+    .argument("<caseId>", "Existing CHR-... case id")
+    .option("--json", "Output JSON")
+    .action(async (caseId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdGetContentRightsCase(opts, caseId, options);
+    });
+
+  command
+    .command("record-correspondence")
+    .description("Append exact correspondence and evidence to an existing Hermit case")
+    .argument("<caseId>", "Existing CHR-... case id")
+    .requiredOption("--direction <direction>", "inbound or outbound")
+    .requiredOption("--to <email>", "Correspondence recipient")
+    .requiredOption("--from <sender>", "Correspondence sender")
+    .requiredOption("--subject <subject>", "Exact correspondence subject")
+    .requiredOption("--body-file <path>", "Exact plain text correspondence body")
+    .option("--provider-message-id <id>", "Email provider message id")
+    .option("--attachment <path>", "Evidence attachment to preserve", collectOption, [])
+    .option("--json", "Output JSON")
+    .action(async (caseId, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRecordContentRightsCorrespondence(opts, caseId, options);
+    });
+}
 
 function registerEmailCommands(command: Command) {
   command
@@ -351,16 +403,16 @@ function registerEmailCommands(command: Command) {
     });
 }
 
-function registerOrgCommands(command: Command) {
+function registerOfficialPublisherCommands(command: Command) {
   const official = command
     .command("official")
-    .description("Manage official org publishers")
+    .description("Manage official publishers")
     .showHelpAfterError()
     .showSuggestionAfterError();
 
   official
     .command("list")
-    .description("List official org publishers")
+    .description("List official publishers")
     .option("--json", "Output JSON")
     .action(async (options) => {
       const opts = await resolveGlobalOpts();
@@ -369,8 +421,8 @@ function registerOrgCommands(command: Command) {
 
   official
     .command("add")
-    .description("Mark an org publisher as official")
-    .argument("<handle>", "Org publisher handle")
+    .description("Mark a publisher as official")
+    .argument("<handle>", "Publisher handle")
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
@@ -381,8 +433,8 @@ function registerOrgCommands(command: Command) {
 
   official
     .command("remove")
-    .description("Remove an org publisher from the official list")
-    .argument("<handle>", "Org publisher handle")
+    .description("Remove a publisher from the official list")
+    .argument("<handle>", "Publisher handle")
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
@@ -390,6 +442,10 @@ function registerOrgCommands(command: Command) {
       const opts = await resolveGlobalOpts();
       await cmdRemoveOfficialOrg(opts, handle, options, isInputAllowed());
     });
+}
+
+function registerOrgCommands(command: Command) {
+  registerOfficialPublisherCommands(command);
 
   command
     .command("create")

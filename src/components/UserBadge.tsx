@@ -1,4 +1,4 @@
-import { Package, Star, Download } from "lucide-react";
+import { Package, PackageCheck, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -103,7 +103,16 @@ export function UserBadge({
   );
 }
 
-type HoverStats = { publishedSkills: number; totalStars: number; totalDownloads: number };
+type HoverStats = {
+  publishedSkills: number;
+  totalStars: number;
+  totalInstalls?: number;
+  totalDownloads?: number;
+};
+
+export function getHoverTotalInstalls(stats: HoverStats) {
+  return stats.totalInstalls ?? stats.totalDownloads ?? 0;
+}
 
 function UserStatsTooltipContent({
   userId,
@@ -162,10 +171,10 @@ function UserStatsTooltipContent({
             </span>
             <span
               className="flex items-center gap-1 text-fs-xs text-ink-soft"
-              title="Total downloads"
+              title="Total installs"
             >
-              <Download size={12} />
-              {formatCompactStat(stats.totalDownloads)}
+              <PackageCheck size={12} />
+              {formatCompactStat(getHoverTotalInstalls(stats))}
             </span>
           </>
         )}

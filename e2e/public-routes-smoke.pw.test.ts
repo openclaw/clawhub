@@ -32,6 +32,12 @@ function seedApiUrl(path: string) {
   return convexSiteUrl ? new URL(path, convexSiteUrl).toString() : path;
 }
 
+async function stubVercelImageOptimizerInVitePreview(page: Page) {
+  if (process.env.PLAYWRIGHT_BASE_URL) return;
+  // Vite preview does not serve Vercel's production-only image optimizer.
+  await page.route("**/_vercel/image?**", (route) => route.fulfill({ status: 204 }));
+}
+
 async function fetchSeedFixtures(request: APIRequestContext): Promise<SeedFixtures> {
   const skillPath = "/api/v1/skills/gifgrep";
   const skillResponse = await request.get(seedApiUrl(skillPath));
@@ -188,6 +194,7 @@ async function expectPublicRouteHealthy(
   route: PublicRouteCase,
   fixtures: SeedFixtures,
 ) {
+  await stubVercelImageOptimizerInVitePreview(page);
   const errors = trackRuntimeErrors(page);
   const path = route.path(fixtures);
   const response = await page.goto(path, { waitUntil: "domcontentloaded" });

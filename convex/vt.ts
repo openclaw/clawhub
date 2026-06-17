@@ -493,9 +493,9 @@ export const scanWithVirusTotal = internalAction({
     }
 
     // Get the version details and files
-    const version = await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
       versionId: args.versionId,
-    });
+    })) as Doc<"skillVersions"> | null;
 
     if (!version) {
       console.error(`Version ${args.versionId} not found for scanning`);
@@ -503,17 +503,20 @@ export const scanWithVirusTotal = internalAction({
     }
 
     // Fetch skill info for _meta.json
-    const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, {
+    const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
       skillId: version.skillId,
-    });
+    })) as Doc<"skills"> | null;
     if (!skill) {
       console.error(`Skill ${version.skillId} not found for scanning`);
       return;
     }
 
-    const fingerprintEntries = await ctx.runQuery(internal.skills.listVersionFingerprintsInternal, {
-      skillVersionId: version._id,
-    });
+    const fingerprintEntries = (await ctx.runQuery(
+      internal.skills.listVersionFingerprintsInternal,
+      {
+        skillVersionId: version._id,
+      },
+    )) as Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>;
     const generatedBundleFingerprints = fingerprintEntries
       .filter((entry) => entry.kind === "generated-bundle")
       .map((entry) => entry.fingerprint);

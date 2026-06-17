@@ -1,5 +1,5 @@
 ---
-summary: "Troubleshooting ClawHub sign-in, install, publish, sync, update, and API issues."
+summary: "Troubleshooting ClawHub sign-in, install, publish, update, and API issues."
 read_when:
   - ClawHub CLI or OpenClaw registry commands fail
   - A package cannot be installed, published, or updated
@@ -86,22 +86,6 @@ publishers.
   the package.
 - Check that the source URL is public or accessible to ClawHub.
 - For GitHub sources, use `owner/repo`, `owner/repo@ref`, or a full GitHub URL.
-
-## `sync` says no skills were found
-
-`sync` looks for folders containing `SKILL.md` or `skill.md`.
-
-Point it at the roots you want to scan:
-
-```bash
-clawhub sync --root /path/to/skills
-```
-
-Preview first if you are unsure what will publish:
-
-```bash
-clawhub sync --all --dry-run --no-input
-```
 
 ## `update` refuses because of local changes
 

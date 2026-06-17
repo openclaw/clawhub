@@ -131,8 +131,19 @@ export const CliTelemetryInstallRequestSchema = type({
     event: '"install"',
     slug: "string",
     version: "string?",
+    // Deprecated compatibility fields accepted and ignored by the backend.
     rootId: "string?",
     rootLabel: "string?",
+}).or({
+    // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
+    roots: type({
+        rootId: "string",
+        label: "string",
+        skills: type({
+            slug: "string",
+            version: "string|null?",
+        }).array(),
+    }).array(),
 });
 export const ApiCliTelemetryInstallResponseSchema = type({
     ok: "true",
@@ -402,6 +413,15 @@ export const ApiV1SkillRescanResponseSchema = type({
     skillId: "string",
     skillVersionId: "string",
     jobId: "string",
+    alreadyQueued: "boolean",
+}).or({
+    ok: "true",
+    slug: "string",
+    version: "string",
+    skillId: "string",
+    githubContentHash: "string",
+    jobId: "string?",
+    scheduled: "boolean",
     alreadyQueued: "boolean",
 });
 export const ApiV1SkillScanStatusSchema = type('"queued"|"running"|"succeeded"|"failed"');

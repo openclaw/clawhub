@@ -20,6 +20,7 @@ const {
   getVersionBySkillAndVersion,
   listHighlightedPublic,
   listVersions,
+  listVersionsPage,
   listWithLatest,
 } = await import("./skills");
 
@@ -49,6 +50,14 @@ const getVersionBySkillAndVersionHandler = (
 const listVersionsHandler = (
   listVersions as unknown as WrappedHandler<{
     skillId: string;
+    limit?: number;
+  }>
+)._handler;
+
+const listVersionsPageHandler = (
+  listVersionsPage as unknown as WrappedHandler<{
+    skillId: string;
+    cursor?: string;
     limit?: number;
   }>
 )._handler;
@@ -264,6 +273,314 @@ describe("public skill version queries", () => {
       expect(result?.parsed?.description).toBe("Full uploaded description");
       expect(result?.staticScan?.findings?.[0]?.evidence).toBe("");
     }
+  });
+
+  it("hides soft-deleted or owner-deleted versions from direct public queries", async () => {
+    for (const version of [
+      { ...makeVersion(), softDeletedAt: 123 },
+      { ...makeVersion(), ownerDeletedAt: 123 },
+    ]) {
+      const ctx = {
+        db: {
+          get: vi.fn().mockResolvedValue(version),
+          query: vi.fn((table: string) => {
+            if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(version),
+              })),
+            };
+          }),
+        },
+      } as never;
+
+      await expect(
+        getVersionByIdHandler(ctx, { versionId: version._id } as never),
+      ).resolves.toBeNull();
+      await expect(
+        getVersionBySkillAndVersionHandler(ctx, {
+          skillId: version.skillId,
+          version: version.version,
+        } as never),
+      ).resolves.toBeNull();
+    }
+  });
+
+  it("applies public version limits after selecting active skill versions", async () => {
+    const version = makeVersion();
+    const deletedVersion = {
+      ...makeVersion(),
+      _id: "skillVersions:deleted",
+      version: "2.0.0",
+      softDeletedAt: 123,
+    };
+    const indexNames: string[] = [];
+    const filters = new Map<string, unknown>();
+    const take = vi.fn(async (limit: number) =>
+      [deletedVersion, version]
+        .filter((candidate) =>
+          [...filters].every(
+            ([field, value]) => candidate[field as keyof typeof candidate] === value,
+          ),
+        )
+        .slice(0, limit),
+    );
+    const ctx = {
+      db: {
+        get: vi.fn().mockResolvedValue(null),
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(
+              (
+                index: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                indexNames.push(index);
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return { order: vi.fn(() => ({ take })) };
+              },
+            ),
+          };
+        }),
+      },
+    } as never;
+
+    const result = (await listVersionsHandler(ctx, {
+      skillId: "skills:1",
+      limit: 1,
+    } as never)) as Array<{ version: string }>;
+
+    expect(result.map((item) => item.version)).toEqual(["1.0.0"]);
+    expect(indexNames).toEqual(["by_skill_active_created"]);
+    expect(filters).toEqual(
+      new Map<string, unknown>([
+        ["skillId", "skills:1"],
+        ["softDeletedAt", undefined],
+      ]),
+    );
+    expect(take).toHaveBeenCalledWith(1);
+  });
+
+  it.each(["admin", "moderator"] as const)(
+    "shows soft-deleted version history to %s staff through the bounded skill index",
+    async (role) => {
+      const version = makeVersion();
+      const deletedVersion = {
+        ...makeVersion(),
+        _id: "skillVersions:deleted",
+        version: "2.0.0",
+        softDeletedAt: 123,
+      };
+      const indexNames: string[] = [];
+      const filters = new Map<string, unknown>();
+      const take = vi.fn(async (limit: number) => [deletedVersion, version].slice(0, limit));
+      vi.mocked(getAuthUserId).mockResolvedValue("users:staff" as never);
+      const ctx = {
+        db: {
+          get: vi.fn(async (id: string) => (id === "users:staff" ? { _id: id, role } : null)),
+          query: vi.fn((table: string) => {
+            if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(
+                (
+                  index: string,
+                  buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+                ) => {
+                  indexNames.push(index);
+                  const query = {
+                    eq(field: string, value: unknown) {
+                      filters.set(field, value);
+                      return query;
+                    },
+                  };
+                  buildQuery?.(query);
+                  return { order: vi.fn(() => ({ take })) };
+                },
+              ),
+            };
+          }),
+        },
+      } as never;
+
+      const result = (await listVersionsHandler(ctx, {
+        skillId: "skills:1",
+        limit: 500,
+      } as never)) as Array<{ version: string; softDeletedAt?: number }>;
+
+      expect(result.map((item) => item.version)).toEqual(["2.0.0", "1.0.0"]);
+      expect(result[0]?.softDeletedAt).toBe(123);
+      expect(indexNames).toEqual(["by_skill"]);
+      expect(filters).toEqual(new Map<string, unknown>([["skillId", "skills:1"]]));
+      expect(take).toHaveBeenCalledWith(200);
+    },
+  );
+
+  it("keeps soft-deleted versions from consuming an ordinary viewer's limit", async () => {
+    const version = makeVersion();
+    const deletedVersion = {
+      ...makeVersion(),
+      _id: "skillVersions:deleted",
+      version: "2.0.0",
+      softDeletedAt: 123,
+    };
+    const indexNames: string[] = [];
+    const filters = new Map<string, unknown>();
+    const take = vi.fn(async (limit: number) =>
+      [deletedVersion, version]
+        .filter((candidate) =>
+          [...filters].every(
+            ([field, value]) => candidate[field as keyof typeof candidate] === value,
+          ),
+        )
+        .slice(0, limit),
+    );
+    vi.mocked(getAuthUserId).mockResolvedValue("users:viewer" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) =>
+          id === "users:viewer" ? { _id: id, role: "user" } : null,
+        ),
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(
+              (
+                index: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                indexNames.push(index);
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return { order: vi.fn(() => ({ take })) };
+              },
+            ),
+          };
+        }),
+      },
+    } as never;
+
+    const result = (await listVersionsHandler(ctx, {
+      skillId: "skills:1",
+      limit: 1,
+    } as never)) as Array<{ version: string }>;
+
+    expect(result.map((item) => item.version)).toEqual(["1.0.0"]);
+    expect(indexNames).toEqual(["by_skill_active_created"]);
+    expect(filters).toEqual(
+      new Map<string, unknown>([
+        ["skillId", "skills:1"],
+        ["softDeletedAt", undefined],
+      ]),
+    );
+    expect(take).toHaveBeenCalledWith(1);
+  });
+
+  it("paginates public version history over active skill versions", async () => {
+    const version = makeVersion();
+    const deletedVersion = {
+      ...makeVersion(),
+      _id: "skillVersions:deleted",
+      version: "2.0.0",
+      softDeletedAt: 123,
+    };
+    const indexNames: string[] = [];
+    const filters = new Map<string, unknown>();
+    const paginate = vi.fn(async ({ numItems }: { numItems: number }) => ({
+      page: [deletedVersion, version]
+        .filter((candidate) =>
+          [...filters].every(
+            ([field, value]) => candidate[field as keyof typeof candidate] === value,
+          ),
+        )
+        .slice(0, numItems),
+      isDone: false,
+      continueCursor: "next-active-page",
+    }));
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(
+              (
+                index: string,
+                buildQuery?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                indexNames.push(index);
+                const query = {
+                  eq(field: string, value: unknown) {
+                    filters.set(field, value);
+                    return query;
+                  },
+                };
+                buildQuery?.(query);
+                return { order: vi.fn(() => ({ paginate })) };
+              },
+            ),
+          };
+        }),
+      },
+    } as never;
+
+    const result = (await listVersionsPageHandler(ctx, {
+      skillId: "skills:1",
+      cursor: "active-page",
+      limit: 1,
+    } as never)) as { items: Array<{ version: string }>; nextCursor: string | null };
+
+    expect(result.items.map((item) => item.version)).toEqual(["1.0.0"]);
+    expect(result.nextCursor).toBe("next-active-page");
+    expect(indexNames).toEqual(["by_skill_active_created"]);
+    expect(filters).toEqual(
+      new Map<string, unknown>([
+        ["skillId", "skills:1"],
+        ["softDeletedAt", undefined],
+      ]),
+    );
+    expect(paginate).toHaveBeenCalledWith({ cursor: "active-page", numItems: 1 });
+  });
+
+  it("recovers public version pagination from stale pre-active-index cursors", async () => {
+    const paginate = vi.fn(async ({ cursor }: { cursor: string | null }) => {
+      if (cursor === "legacy-by-skill-cursor") {
+        throw new Error("cursor is from a different query");
+      }
+      throw new Error("stale cursor recovery should not retry old skill version pages");
+    });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skillVersions") throw new Error(`Unexpected table ${table}`);
+          return {
+            withIndex: vi.fn(() => ({
+              order: vi.fn(() => ({ paginate })),
+            })),
+          };
+        }),
+      },
+    } as never;
+
+    const result = (await listVersionsPageHandler(ctx, {
+      skillId: "skills:1",
+      cursor: "legacy-by-skill-cursor",
+      limit: 1,
+    } as never)) as { items: Array<{ version: string }>; nextCursor: string | null };
+
+    expect(result).toEqual({ items: [], nextCursor: null });
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: "legacy-by-skill-cursor", numItems: 1 });
   });
 
   it("sanitizes latestVersion in listWithLatest", async () => {

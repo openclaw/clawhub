@@ -16,7 +16,6 @@ import {
 
 const BROWSE_SORT_OPTIONS = [
   { value: "recommended", label: "Recommended" },
-  { value: "downloads", label: "Most downloaded" },
   { value: "stars", label: "Most starred" },
   { value: "installs", label: "Most installed" },
   { value: "updated", label: "Recently updated" },
@@ -76,8 +75,7 @@ export function SkillsIndex() {
     : model.sort === "relevance"
       ? "recommended"
       : model.sort;
-  const hasActiveFilters =
-    model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly || Boolean(search.tag);
+  const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly;
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
 

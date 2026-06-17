@@ -85,7 +85,7 @@ export async function requireGitHubAccountAge(ctx: GitHubAccountGateCtx, userId:
     const remainingMs = MIN_ACCOUNT_AGE_MS - ageMs;
     const remainingDays = Math.max(1, Math.ceil(remainingMs / (24 * 60 * 60 * 1000)));
     throw new ConvexError(
-      `GitHub account must be at least 14 days old to publish skills or post comments. Try again in ${remainingDays} day${
+      `GitHub account must be at least 14 days old to publish skills. Try again in ${remainingDays} day${
         remainingDays === 1 ? "" : "s"
       }.`,
     );

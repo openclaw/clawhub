@@ -2,13 +2,14 @@
 import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertCodexWorkerExecutionAllowed,
   isCodexWorkerExecutionAllowed,
   LOCAL_CODEX_WORKER_OPT_IN,
   resolveCodexWorkerHome,
 } from "../codex-worker-guard";
+import * as codexScanWorker from "./run-codex-scan-worker";
 import {
   buildPrompt,
   normalizeSkillSpectorAnalysis,
@@ -30,6 +31,57 @@ async function tempDir() {
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
+  it("keeps successful claims when a parallel claim request fails", async () => {
+    const claimCodexScanJobBatch = (
+      codexScanWorker as typeof codexScanWorker & {
+        claimCodexScanJobBatch?: (
+          claimLimit: number,
+          claimOne: () => Promise<
+            Array<{
+              job: {
+                _id: string;
+                leaseToken: string;
+                targetKind: "skillVersion";
+                source: string;
+                hasMaliciousSignal: boolean;
+                waitForVtUntil: number;
+              };
+              target: Record<string, unknown>;
+            }>
+          >,
+        ) => Promise<Array<{ job: { _id: string } }>>;
+      }
+    ).claimCodexScanJobBatch;
+    expect(claimCodexScanJobBatch).toBeTypeOf("function");
+    if (!claimCodexScanJobBatch) return;
+
+    const claimOne = vi
+      .fn()
+      .mockResolvedValueOnce([
+        {
+          job: {
+            _id: "securityScanJobs:1",
+            leaseToken: "lease",
+            targetKind: "skillVersion",
+            source: "publish",
+            hasMaliciousSignal: false,
+            waitForVtUntil: 0,
+          },
+          target: {},
+        },
+      ])
+      .mockRejectedValueOnce(new Error("temporary claim failure"))
+      .mockResolvedValueOnce([]);
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+    await expect(claimCodexScanJobBatch(3, claimOne)).resolves.toMatchObject([
+      { job: { _id: "securityScanJobs:1" } },
+    ]);
+    expect(claimOne).toHaveBeenCalledTimes(3);
+    expect(consoleError).toHaveBeenCalledWith(expect.stringContaining("temporary claim failure"));
+    consoleError.mockRestore();
+  });
+
   it("blocks direct local Codex security worker runs without opt-in", () => {
     expect(isCodexWorkerExecutionAllowed({})).toBe(false);
     expect(() => assertCodexWorkerExecutionAllowed({})).toThrow(

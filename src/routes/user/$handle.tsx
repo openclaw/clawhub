@@ -1,9 +1,9 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import {
-  ArrowDownToLine,
   Building2,
   Package,
+  PackageCheck,
   Star,
   Users,
   Wrench,
@@ -27,6 +27,7 @@ import type {
   PublicPublisherCatalogItem,
   PublicPublisherListItem,
 } from "../../lib/publicUser";
+import { readPublicInstallCount } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/user/$handle")({
   loader: async ({ params }) => {
@@ -104,6 +105,7 @@ function PublisherProfile() {
     | null
     | undefined;
   const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
+  // The backend normalizes this legacy validator-compatible alias to install ranking.
   const publishedQueryArgs: {
     handle: string;
     kind: "skill" | "plugin";
@@ -234,9 +236,9 @@ function PublisherProfile() {
             </div>
             <div className="publisher-profile-hero-stats" aria-label="Publisher stats">
               <PublisherStat
-                icon={ArrowDownToLine}
-                value={formatCompactStat(publisher.stats.downloads)}
-                label="downloads"
+                icon={PackageCheck}
+                value={formatCompactStat(publisher.stats.installs)}
+                label="installs"
               />
               <PublisherStat
                 icon={Star}
@@ -535,8 +537,8 @@ export function PublishedItemCard({
         <div className="skill-card-footer">
           <div className="skill-card-footer-inline publisher-published-card-stats">
             <span className="skill-list-item-meta-item">
-              <ArrowDownToLine size={14} aria-hidden="true" />
-              <strong>{formatCompactStat(item.downloads)}</strong> downloads
+              <PackageCheck size={14} aria-hidden="true" />
+              <strong>{formatCompactStat(readPublicInstallCount(item))}</strong> installs
             </span>
             <span className="skill-list-item-meta-item">
               <Star size={14} aria-hidden="true" />
@@ -564,8 +566,8 @@ export function PublishedItemCard({
       </div>
       <div className="skill-list-item-meta publisher-published-row-stats">
         <span className="skill-list-item-meta-item">
-          <ArrowDownToLine size={14} aria-hidden="true" />
-          <strong>{formatCompactStat(item.downloads)}</strong> downloads
+          <PackageCheck size={14} aria-hidden="true" />
+          <strong>{formatCompactStat(readPublicInstallCount(item))}</strong> installs
         </span>
         <span className="skill-list-item-meta-item">
           <Star size={14} aria-hidden="true" />

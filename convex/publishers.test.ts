@@ -6,6 +6,7 @@ import {
   listPublicPage,
   listPublic,
   listMine,
+  getMyProfileHandle,
   getProfileByHandle,
   listMembers,
   listPublishedPage,
@@ -18,6 +19,7 @@ import {
   createOrg,
   deleteOrg,
   removeMember,
+  addOfficialPublisherInternal,
   createOrgPublisherForUserInternal,
   deleteSoleOwnerOrgsForAccountDeletionInternal,
   resolvePublishTargetForUserInternal,
@@ -102,6 +104,23 @@ const removeOrgPublisherMemberInternalHandler = (
   >
 )._handler;
 
+const addOfficialPublisherInternalHandler = (
+  addOfficialPublisherInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      reason: string;
+    },
+    {
+      ok: true;
+      added: boolean;
+      publisherId: string;
+      handle: string;
+      officialPublisherId: string;
+    }
+  >
+)._handler;
+
 const recoverPersonalPublisherInternalHandler = (
   recoverPersonalPublisherInternal as unknown as WrappedHandler<
     {
@@ -147,6 +166,10 @@ const listMineHandler = (
   listMine as unknown as WrappedHandler<Record<string, never>, Array<unknown>>
 )._handler;
 
+const getMyProfileHandleHandler = (
+  getMyProfileHandle as unknown as WrappedHandler<Record<string, never>, string | null>
+)._handler;
+
 const listPublicHandler = (
   listPublic as unknown as WrappedHandler<
     { limit?: number; kind?: "user" | "org" },
@@ -154,7 +177,7 @@ const listPublicHandler = (
       items: Array<{
         handle: string;
         kind: "user" | "org";
-        stats: { downloads: number };
+        stats: { installs: number };
         publishedItems?: Array<{ displayName: string }>;
       }>;
       total: number;
@@ -175,8 +198,8 @@ const listPublicPageHandler = (
       page: Array<{
         handle: string;
         kind: "user" | "org";
-        stats: { downloads: number };
-        publishedItems: Array<{ displayName: string; downloads: number }>;
+        stats: { installs: number };
+        publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
       }>;
       counts: { all: number; individuals: number; organizations: number };
       globalCounts: { all: number; individuals: number; organizations: number };
@@ -190,6 +213,8 @@ const listPublishedPageHandler = (
   listPublishedPage as unknown as WrappedHandler<
     {
       handle: string;
+      kind?: "skill" | "plugin";
+      sort?: "installs" | "recent" | "downloads";
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
@@ -233,7 +258,7 @@ const getPublishedDisplayManifestHandler = (
     {
       handle: string;
       kind?: "skill" | "plugin";
-      sort?: "downloads" | "recent";
+      sort?: "installs" | "recent" | "downloads";
     },
     {
       mode: "grouped";
@@ -958,7 +983,7 @@ describe("publishers membership controls", () => {
     },
   );
 
-  it("lists individual and org publishers ranked by aggregate downloads", async () => {
+  it("lists individual and org publishers ranked by aggregate installs", async () => {
     const publisherRows = [
       {
         _id: "publishers:alice",
@@ -1028,7 +1053,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
@@ -1058,7 +1083,7 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 2, individuals: 1, organizations: 1 });
     expect(result.items.map((item) => item.handle)).toEqual(["openclaw", "alice"]);
     expect(result.items.map((item) => item.kind)).toEqual(["org", "user"]);
-    expect(result.items.map((item) => item.stats.downloads)).toEqual([20, 9]);
+    expect(result.items.map((item) => item.stats.installs)).toEqual([15, 5]);
   });
 
   it("filters public publisher listings by kind", async () => {
@@ -1112,7 +1137,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
@@ -1211,7 +1236,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
@@ -1313,7 +1338,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_kind_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_kind_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () =>
@@ -1322,7 +1347,7 @@ describe("publishers membership controls", () => {
                 })),
               };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1419,7 +1444,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1470,7 +1495,7 @@ describe("publishers membership controls", () => {
     expect(ownerPublisherQueries).toEqual(["publishers:alice", "publishers:alice"]);
   });
 
-  it("orders public publisher card previews by installs while rendering downloads", async () => {
+  it("orders and renders public publisher card previews by installs", async () => {
     const publisherRows = [
       {
         _id: "publishers:openclaw",
@@ -1569,7 +1594,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1608,8 +1633,8 @@ describe("publishers membership controls", () => {
       "Recent Tool",
       "Popular Skill",
     ]);
+    expect(result.page[0]?.publishedItems.map((item) => item.installs)).toEqual([50, 40, 35]);
     expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([12, 10, 98]);
-    expect(result.page[0]?.publishedItems[0]).not.toHaveProperty("installs");
   });
 
   it("does not hydrate every publisher catalog preview before filtering public publisher pages", async () => {
@@ -1646,7 +1671,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1711,7 +1736,7 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1743,7 +1768,7 @@ describe("publishers membership controls", () => {
     expect(ownerPublisherQueries).toEqual([]);
   });
 
-  it("builds scoped plugin profile links with route segments", async () => {
+  it("normalizes legacy downloads catalog sorts to install-backed profile items", async () => {
     const publisher = {
       _id: "publishers:openclaw",
       _creationTime: 1,
@@ -1800,11 +1825,17 @@ describe("publishers membership controls", () => {
 
     const result = await listPublishedPageHandler(ctx as never, {
       handle: "openclaw",
+      sort: "downloads",
       paginationOpts: { cursor: null, numItems: 12 },
     });
 
     expect(result.page).toMatchObject([
-      { displayName: "Example Plugin", href: "/plugins/@openclaw/example-plugin" },
+      {
+        displayName: "Example Plugin",
+        downloads: 7,
+        href: "/plugins/@openclaw/example-plugin",
+        installs: 3,
+      },
     ]);
   });
 
@@ -3161,6 +3192,92 @@ describe("publisher audit logs", () => {
   });
 });
 
+describe("official publisher administration", () => {
+  it("marks personal publishers official", async () => {
+    const actor = { _id: "users:admin", role: "admin" };
+    const publisher = {
+      _id: "publishers:steipete",
+      kind: "user",
+      handle: "steipete",
+      displayName: "Peter Steinberger",
+      linkedUserId: "users:steipete",
+    };
+    const inserted: Array<{ table: string; doc: Record<string, unknown> }> = [];
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          const fields: Record<string, string> = {};
+          const q = {
+            eq: (field: string, value: string) => {
+              fields[field] = value;
+              return q;
+            },
+          };
+          builder(q);
+          if (table === "publishers" && indexName === "by_handle") {
+            return {
+              unique: vi.fn(async () => (fields.handle === "steipete" ? publisher : null)),
+            };
+          }
+          if (table === "officialPublishers" && indexName === "by_publisher") {
+            return { unique: vi.fn(async () => null) };
+          }
+          throw new Error(`unexpected ${table} index ${indexName}`);
+        },
+      ),
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "users:admin" ? actor : null)),
+        query,
+        patch: vi.fn(),
+        delete: vi.fn(),
+        insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
+          inserted.push({ table, doc });
+          return table === "officialPublishers"
+            ? "officialPublishers:steipete"
+            : `auditLogs:${inserted.length}`;
+        }),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      addOfficialPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "@steipete",
+        reason: "Verified individual publisher",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      added: true,
+      publisherId: "publishers:steipete",
+      handle: "steipete",
+      officialPublisherId: "officialPublishers:steipete",
+    });
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "officialPublishers",
+      expect.objectContaining({
+        publisherId: "publishers:steipete",
+        reason: "Verified individual publisher",
+        createdByUserId: "users:admin",
+      }),
+    );
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.official.add",
+        targetId: "publishers:steipete",
+        metadata: { handle: "steipete", reason: "Verified individual publisher" },
+      }),
+    );
+  });
+});
+
 describe("publisher-owned resource authorization", () => {
   function makeOwnerResourceCtx(options: {
     publisher: Record<string, unknown> | null;
@@ -3371,6 +3488,143 @@ describe("publisher bootstrap", () => {
       },
     };
   }
+
+  it("returns the real personal publisher handle when it differs from the user handle", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "claimed",
+              personalPublisherId: "publishers:alice-profile",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:alice-profile") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "alice-profile",
+              linkedUserId: "users:alice",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn(() => {
+          throw new Error("unexpected query");
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(
+      "alice-profile",
+    );
+  });
+
+  it("falls back to the linked personal publisher when the direct pointer is stale", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "claimed",
+              personalPublisherId: "publishers:stale",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:stale") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "stale",
+              linkedUserId: "users:bob",
+              deactivatedAt: 2,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publishers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string) => {
+              if (indexName !== "by_linked_user") throw new Error(`unexpected index ${indexName}`);
+              return {
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publishers:alice-profile",
+                  kind: "user",
+                  handle: "alice-profile",
+                  linkedUserId: "users:alice",
+                }),
+              };
+            }),
+          };
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(
+      "alice-profile",
+    );
+  });
+
+  it.each([
+    {
+      name: "hides a legacy pointer without an owner membership",
+      memberships: [],
+      expected: null,
+    },
+    {
+      name: "returns a legacy pointer with the signed-in owner's membership",
+      memberships: [
+        {
+          _id: "publisherMembers:alice",
+          publisherId: "publishers:legacy-alice",
+          userId: "users:alice",
+          role: "owner",
+        },
+      ],
+      expected: "legacy-alice",
+    },
+  ])("$name", async ({ memberships, expected }) => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "alice",
+              personalPublisherId: "publishers:legacy-alice",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:legacy-alice") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "legacy-alice",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string) => {
+              if (indexName !== "by_publisher") throw new Error(`unexpected index ${indexName}`);
+              return { collect: vi.fn().mockResolvedValue(memberships) };
+            }),
+          };
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(expected);
+  });
 
   it("lists a synthesized personal publisher when membership rows are missing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
@@ -4342,9 +4596,7 @@ describe("legacy publisher migration", () => {
       channel: "community",
       isOfficial: false,
       tags: {},
-      capabilityTags: ["tools"],
       compatibility: {},
-      capabilities: {},
       verification: {},
       scanStatus: "pending",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
@@ -4731,12 +4983,7 @@ describe("legacy publisher migration", () => {
     });
     expect(
       packageCapabilitySearchDigest.get("packageCapabilitySearchDigest:legacy-tools"),
-    ).toMatchObject({
-      ownerUserId: "users:current",
-      ownerPublisherId: "publishers:gingiris",
-      ownerHandle: "gingiris",
-      ownerKind: "user",
-    });
+    ).toBeDefined();
     expect(packageInspectorWarnings.get("packageInspectorWarnings:legacy")).toMatchObject({
       ownerUserId: "users:current",
     });
@@ -4787,7 +5034,6 @@ describe("legacy publisher migration", () => {
         "skillSlugAliases:legacy",
         "packages:legacy-package",
         "packageSearchDigest:legacy",
-        "packageCapabilitySearchDigest:legacy-tools",
         "packageInspectorWarnings:legacy",
         "reservedHandles:gingiris",
       ]),
