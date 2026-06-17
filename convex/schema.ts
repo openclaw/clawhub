@@ -2126,6 +2126,19 @@ const rateLimitShards = defineTable({
   .index("by_key_window", ["key", "windowStart"])
   .index("by_key_window_shard", ["key", "windowStart", "shard"]);
 
+const rateLimitCounters = defineTable({
+  key: v.string(),
+  windowStart: v.number(),
+  shard: v.number(),
+  count: v.number(),
+  limit: v.number(),
+  updatedAt: v.number(),
+  expiresAt: v.number(),
+})
+  .index("by_key_window", ["key", "windowStart"])
+  .index("by_key_window_shard", ["key", "windowStart", "shard"])
+  .index("by_expires_at", ["expiresAt"]);
+
 const downloadDedupes = defineTable({
   skillId: v.id("skills"),
   identityHash: v.string(),
@@ -2342,6 +2355,7 @@ export default defineSchema({
   cliDeviceCodes,
   rateLimits,
   rateLimitShards,
+  rateLimitCounters,
   downloadDedupes,
   downloadMetricDedupes,
   packageInstallMetricDedupes,

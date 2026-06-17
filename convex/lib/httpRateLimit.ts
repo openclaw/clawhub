@@ -3,9 +3,8 @@ import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
+import { RATE_LIMIT_COUNTER_SHARDS, RATE_LIMIT_WINDOW_MS } from "./rateLimitConfig";
 
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_SHARDS = 64;
 export const RATE_LIMITS = {
   read: { ip: 3000, key: 12000, adminKey: 120000 },
   write: { ip: 300, key: 3000, adminKey: 30000 },
@@ -168,7 +167,7 @@ async function checkRateLimit(
       key,
       limit,
       windowMs: RATE_LIMIT_WINDOW_MS,
-      shard: Math.floor(Math.random() * RATE_LIMIT_SHARDS),
+      shard: Math.floor(Math.random() * RATE_LIMIT_COUNTER_SHARDS),
     })) as { allowed: boolean; remaining: number };
   } catch (error) {
     if (isRateLimitWriteConflict(error)) {
@@ -255,7 +254,9 @@ function shouldTrustForwardedIps() {
 function isRateLimitWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    (error.message.includes("rateLimits") || error.message.includes("rateLimitShards")) &&
+    (error.message.includes("rateLimitCounters") ||
+      error.message.includes("rateLimits") ||
+      error.message.includes("rateLimitShards")) &&
     error.message.includes("changed while this mutation was being run")
   );
 }

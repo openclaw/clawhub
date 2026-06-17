@@ -6,11 +6,13 @@ const mocks = vi.hoisted(() => {
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
   const registryArtifactBackupRetryRef = Symbol("registry-artifact-backup-retry");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
+  const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
   return {
     interval,
     githubSkillSyncRef,
     registryArtifactBackupRetryRef,
     installTelemetryDedupePruneRef,
+    rateLimitCountersPruneRef,
   };
 });
 
@@ -52,6 +54,9 @@ vi.mock("./_generated/api", () => ({
     },
     telemetry: {
       pruneInstallTelemetryDedupesInternal: mocks.installTelemetryDedupePruneRef,
+    },
+    rateLimits: {
+      pruneRateLimitCountersInternal: mocks.rateLimitCountersPruneRef,
     },
   },
 }));
@@ -116,6 +121,17 @@ describe("crons", () => {
       { hours: 24 },
       mocks.installTelemetryDedupePruneRef,
       {},
+    );
+  });
+
+  it("prunes expired rate limit counters frequently", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "rate-limit-counters-prune",
+      { minutes: 15 },
+      mocks.rateLimitCountersPruneRef,
+      { batchSize: 500 },
     );
   });
 });

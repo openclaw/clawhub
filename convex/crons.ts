@@ -128,6 +128,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     internal.telemetry.pruneInstallTelemetryDedupesInternal,
     {},
   );
+
+  crons.interval(
+    "rate-limit-counters-prune",
+    { minutes: 15 },
+    internal.rateLimits.pruneRateLimitCountersInternal,
+    { batchSize: 500 },
+  );
 }
 
 export default crons;
