@@ -337,84 +337,6 @@ function parseBooleanQueryParam(
   return { ok: false, message: invalidQueryParamMessage(name) };
 }
 
-function normalizeCapabilityTagSegment(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
-function getCapabilityTagFromQueryParams(params: URLSearchParams) {
-  const explicit = params.get("capabilityTag")?.trim();
-  if (explicit) return explicit;
-
-  const target = params.get("target")?.trim() || params.get("hostTarget")?.trim();
-  if (target) return `host:${normalizeCapabilityTagSegment(target)}`;
-
-  const os = params.get("os")?.trim();
-  if (os) return `host-os:${normalizeCapabilityTagSegment(os)}`;
-
-  const arch = params.get("arch")?.trim();
-  if (arch) return `host-arch:${normalizeCapabilityTagSegment(arch)}`;
-
-  const libc = params.get("libc")?.trim();
-  if (libc) return `host-libc:${normalizeCapabilityTagSegment(libc)}`;
-
-  const externalService = params.get("externalService")?.trim();
-  if (externalService) return `external-service:${normalizeCapabilityTagSegment(externalService)}`;
-
-  const binary = params.get("binary")?.trim();
-  if (binary) return `binary:${normalizeCapabilityTagSegment(binary)}`;
-
-  const osPermission = params.get("osPermission")?.trim();
-  if (osPermission) return `os-permission:${normalizeCapabilityTagSegment(osPermission)}`;
-
-  const artifactKind = params.get("artifactKind")?.trim();
-  if (artifactKind === "legacy-zip" || artifactKind === "npm-pack") {
-    return `artifact:${artifactKind}`;
-  }
-  if (params.has("artifactKind")) return { error: invalidQueryParamMessage("artifactKind") };
-
-  const npmMirror = parseBooleanQueryParam(params, "npmMirror");
-  if (!npmMirror.ok) return { error: npmMirror.message };
-  if (npmMirror.value) return "npm-mirror:available";
-
-  const requiresBrowser = parseBooleanQueryParam(params, "requiresBrowser");
-  if (!requiresBrowser.ok) return { error: requiresBrowser.message };
-  if (requiresBrowser.value) return "requires:browser";
-
-  const requiresDesktop = parseBooleanQueryParam(params, "requiresDesktop");
-  if (!requiresDesktop.ok) return { error: requiresDesktop.message };
-  if (requiresDesktop.value) return "requires:desktop";
-
-  const requiresNativeDeps = parseBooleanQueryParam(params, "requiresNativeDeps");
-  if (!requiresNativeDeps.ok) return { error: requiresNativeDeps.message };
-  if (requiresNativeDeps.value) return "requires:native-deps";
-
-  const nativeDeps = parseBooleanQueryParam(params, "nativeDeps");
-  if (!nativeDeps.ok) return { error: nativeDeps.message };
-  if (nativeDeps.value) return "requires:native-deps";
-
-  const requiresExternalService = parseBooleanQueryParam(params, "requiresExternalService");
-  if (!requiresExternalService.ok) return { error: requiresExternalService.message };
-  if (requiresExternalService.value) return "requires:external-service";
-
-  const requiresBinary = parseBooleanQueryParam(params, "requiresBinary");
-  if (!requiresBinary.ok) return { error: requiresBinary.message };
-  if (requiresBinary.value) return "requires:binary";
-
-  const requiresOsPermission = parseBooleanQueryParam(params, "requiresOsPermission");
-  if (!requiresOsPermission.ok) return { error: requiresOsPermission.message };
-  if (requiresOsPermission.value) return "requires:os-permission";
-
-  const environmentDeclared = parseBooleanQueryParam(params, "environmentDeclared");
-  if (!environmentDeclared.ok) return { error: environmentDeclared.message };
-  if (environmentDeclared.value) return "environment:declared";
-
-  return undefined;
-}
-
 function parsePackageModerationQueueStatus(
   value: string | null,
 ): PackageModerationQueueStatus | null {
@@ -484,8 +406,6 @@ type PackageListQueryArgs = {
   channel?: "official" | "community" | "private";
   isOfficial?: boolean;
   highlightedOnly?: boolean;
-  executesCode?: boolean;
-  capabilityTag?: string;
   category?: string;
   sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
@@ -1519,8 +1439,6 @@ async function listPackages(
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
   const rawCursor = url.searchParams.get("cursor");
-  const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
-  if (typeof capabilityTag === "object") return text(capabilityTag.error, 400, rate.headers);
   const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
@@ -1531,8 +1449,6 @@ async function listPackages(
   if (!featured.ok) return text(featured.message, 400, rate.headers);
   const highlightedOnlyParam = parseBooleanQueryParam(url.searchParams, "highlightedOnly");
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
-  const executesCode = parseBooleanQueryParam(url.searchParams, "executesCode");
-  if (!executesCode.ok) return text(executesCode.message, 400, rate.headers);
   const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
   if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
   const cursor = rawCursor;
@@ -1547,7 +1463,7 @@ async function listPackages(
     options?.defaultSort === "recommended" &&
     options.pluginFamilies?.length &&
     !includeSkills &&
-    (highlightedOnly || category || capabilityTag)
+    (highlightedOnly || category)
       ? "updated"
       : options?.defaultSort;
   const effectiveSort = sortParam.value ?? pluginDefaultSort;
@@ -1568,8 +1484,6 @@ async function listPackages(
       channel: channelParam.value,
       isOfficial: isOfficial.value,
       highlightedOnly: highlightedOnly || undefined,
-      executesCode: executesCode.value,
-      capabilityTag,
       sort: effectiveSort,
       paginationOpts: { cursor, numItems: limit },
     });
@@ -1622,8 +1536,6 @@ async function listPackages(
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
             category,
-            executesCode: executesCode.value,
-            capabilityTag,
             sort: unifiedListSort,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
@@ -1643,8 +1555,6 @@ async function listPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
-            executesCode: executesCode.value,
-            capabilityTag,
             sort: unifiedListSort,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1696,9 +1606,7 @@ async function listPackages(
       !category &&
       !channelParam.value &&
       typeof isOfficial.value !== "boolean" &&
-      !highlightedOnly &&
-      typeof executesCode.value !== "boolean" &&
-      !capabilityTag;
+      !highlightedOnly;
     const totalCount = includeTotalCount
       ? await runQueryRef<number | null>(ctx, internalRefs.packages.countPublicPluginsInternal, {})
       : null;
@@ -1737,8 +1645,6 @@ async function listPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
         category,
         sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
@@ -1810,8 +1716,6 @@ async function listPackages(
     channel: channelParam.value,
     isOfficial: isOfficial.value,
     highlightedOnly: highlightedOnly || undefined,
-    executesCode: executesCode.value,
-    capabilityTag,
     category,
     sort: effectiveSort,
     viewerUserId: viewerUserId ?? undefined,

@@ -23,8 +23,6 @@ const listPackageCatalogPageHandler = (
     {
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
-      executesCode?: boolean;
-      capabilityTag?: string;
       sort?: "updated" | "downloads" | "installs" | "recommended";
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -34,7 +32,6 @@ const listPackageCatalogPageHandler = (
         family: "skill";
         channel: "official" | "community";
         isOfficial: boolean;
-        capabilityTags: string[];
       }>;
       isDone: boolean;
       continueCursor: string;
@@ -49,8 +46,6 @@ const searchPackageCatalogPublicHandler = (
       limit?: number;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
-      executesCode?: boolean;
-      capabilityTag?: string;
     },
     Array<{ score: number; package: { name: string; family: "skill"; isOfficial: boolean } }>
   >
@@ -82,7 +77,6 @@ function makeDigest(
       changelog: "init",
     },
     tags: { latest: `skillVersions:${slug}-1` },
-    capabilityTags: [],
     badges: {},
     stats: {
       downloads: 1,
@@ -582,30 +576,5 @@ describe("skills package catalog queries", () => {
     );
 
     expect(result).toEqual([]);
-  });
-
-  it("ignores retired capability filter args in skill package listings", async () => {
-    const result = await listPackageCatalogPageHandler(
-      makeCtx([
-        {
-          page: [makeDigest("paytoll"), makeDigest("weather")],
-          isDone: true,
-          continueCursor: "",
-        },
-      ]),
-      {
-        capabilityTag: "crypto",
-        paginationOpts: { cursor: null, numItems: 10 },
-      } as Parameters<typeof listPackageCatalogPageHandler>[1] & { capabilityTag?: string },
-    );
-
-    expect(result.page).toEqual([
-      expect.objectContaining({
-        name: "paytoll",
-      }),
-      expect.objectContaining({
-        name: "weather",
-      }),
-    ]);
   });
 });

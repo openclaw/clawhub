@@ -539,8 +539,6 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `sort` (optional): `updated` (default), `recommended`, `installs`
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages (`/api/v1/plugins`,

@@ -128,21 +128,21 @@ function normalizeActivePluginSort(sort: LegacyPluginSort | undefined): PluginSo
 }
 
 function hasPluginBrowseFilter(
-  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official" | "executesCode">,
+  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
 ) {
-  return Boolean(args.category || args.featured || args.official || args.executesCode);
+  return Boolean(args.category || args.featured || args.official);
 }
 
 function getDefaultPluginBrowseSort(
-  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official" | "executesCode">,
+  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
 ): VisiblePluginSort {
   return hasPluginBrowseFilter(args) ? "updated" : "recommended";
 }
 
 function hasPersistentPluginBrowseFilter(
-  args: Pick<PluginsPageDataRequest, "category" | "official" | "executesCode">,
+  args: Pick<PluginsPageDataRequest, "category" | "official">,
 ) {
-  return Boolean(args.category || args.official || args.executesCode);
+  return Boolean(args.category || args.official);
 }
 function isNavigationAbortError(err: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return true;
@@ -159,7 +159,6 @@ export async function loadPluginsPageData(
       cursor: args.q ? undefined : args.cursor,
       featured: args.featured,
       isOfficial: args.official,
-      executesCode: args.executesCode,
       ...(!args.q &&
       (args.sort === "installs" ||
         args.sort === "updated" ||
