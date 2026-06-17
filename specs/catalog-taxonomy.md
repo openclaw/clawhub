@@ -6,6 +6,7 @@
 - Category slugs name one concept. Plugin categories mirror contribution slots; skill categories
   describe user intent.
 - Each item stores up to three category slugs. Unknown slugs are rejected.
+- `other` is a fallback and is removed whenever a specific category is present.
 - Declaration precedence:
   1. Current publish input from CLI or UI.
   2. Existing stored categories.

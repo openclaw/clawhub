@@ -7193,13 +7193,8 @@ describe("packages public queries", () => {
     );
 
     expect(runMutation).toHaveBeenCalled();
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        categories: ["tools"],
-        topics: undefined,
-      }),
-    );
+    expect(result.categories).toBeUndefined();
+    expect(result.topics).toBeUndefined();
     expect(result.sha256hash).toBe(expectedLegacyZipSha256);
     expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
     expect(result.staticScan).toEqual(

@@ -223,11 +223,13 @@ function normalizeCategories(values, kind, isCategorySlug) {
             continue;
         seen.add(value);
         normalized.push(value);
-        if (normalized.length > CATALOG_CATEGORY_LIMIT) {
-            throw new Error(`Categories are limited to ${CATALOG_CATEGORY_LIMIT}`);
-        }
     }
-    return normalized;
+    const specificCategories = normalized.filter((category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY);
+    const exclusiveCategories = specificCategories.length ? specificCategories : normalized;
+    if (exclusiveCategories.length > CATALOG_CATEGORY_LIMIT) {
+        throw new Error(`Categories are limited to ${CATALOG_CATEGORY_LIMIT}`);
+    }
+    return exclusiveCategories;
 }
 export function normalizePluginCategories(values) {
     return normalizeCategories(values, "plugin", isPluginCategorySlug);

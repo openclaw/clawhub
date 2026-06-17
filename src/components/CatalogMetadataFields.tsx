@@ -1,5 +1,6 @@
 import {
   CATALOG_CATEGORY_LIMIT,
+  INTERNAL_UNCATEGORIZED_CATEGORY,
   PLUGIN_CATEGORY_DEFINITIONS,
   SKILL_CATEGORY_DEFINITIONS,
 } from "clawhub-schema";
@@ -40,8 +41,15 @@ export function CatalogMetadataFields({
       onCategoriesChange(selectedCategories.filter((category) => category !== slug));
       return;
     }
-    if (limitReached) return;
-    onCategoriesChange([...selectedCategories, slug]);
+    if (slug === INTERNAL_UNCATEGORIZED_CATEGORY) {
+      onCategoriesChange([slug]);
+      return;
+    }
+    const specificCategories = selectedCategories.filter(
+      (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+    );
+    if (specificCategories.length >= CATALOG_CATEGORY_LIMIT) return;
+    onCategoriesChange([...specificCategories, slug]);
   };
 
   return (
@@ -63,7 +71,13 @@ export function CatalogMetadataFields({
                 <input
                   type="checkbox"
                   checked={checked}
-                  disabled={disabled || (!checked && limitReached)}
+                  disabled={
+                    disabled ||
+                    (!checked &&
+                      limitReached &&
+                      category.slug !== INTERNAL_UNCATEGORIZED_CATEGORY &&
+                      !selected.has(INTERNAL_UNCATEGORIZED_CATEGORY))
+                  }
                   onChange={() => toggleCategory(category.slug)}
                 />
                 <span>{category.label}</span>

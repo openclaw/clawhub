@@ -1,3 +1,9 @@
+import {
+  CATALOG_CATEGORY_LIMIT,
+  INTERNAL_UNCATEGORIZED_CATEGORY,
+  isPluginCategorySlug,
+  isSkillCategorySlug,
+} from "clawhub-schema";
 import { useEffect, useState } from "react";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { CatalogMetadataFields, parseCatalogTopicsInput } from "./CatalogMetadataFields";
@@ -10,17 +16,35 @@ type CatalogMetadataEditorProps = {
   onSave: (value: { categories?: string[]; topics: string[] }) => Promise<void>;
 };
 
+function sanitizeInitialCategories(
+  kind: CatalogMetadataEditorProps["kind"],
+  categories: string[] | null | undefined,
+): string[] {
+  const isCategorySlug = kind === "skill" ? isSkillCategorySlug : isPluginCategorySlug;
+  const validCategories = [
+    ...new Set((categories ?? []).filter((category) => isCategorySlug(category))),
+  ];
+  const specificCategories = validCategories.filter(
+    (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+  );
+  return (specificCategories.length ? specificCategories : validCategories).slice(
+    0,
+    CATALOG_CATEGORY_LIMIT,
+  );
+}
+
 export function CatalogMetadataEditor({
   kind,
   categories: initialCategories,
   topics: initialTopics,
   onSave,
 }: CatalogMetadataEditorProps) {
-  const [categories, setCategories] = useState(initialCategories ?? []);
+  const sanitizedInitialCategories = sanitizeInitialCategories(kind, initialCategories);
+  const [categories, setCategories] = useState(sanitizedInitialCategories);
   const [topics, setTopics] = useState((initialTopics ?? []).join(", "));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const serializedInitialCategories = JSON.stringify(initialCategories ?? []);
+  const serializedInitialCategories = JSON.stringify(sanitizedInitialCategories);
   const serializedInitialTopics = JSON.stringify(initialTopics ?? []);
 
   useEffect(() => {

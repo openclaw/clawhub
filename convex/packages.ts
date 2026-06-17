@@ -2,7 +2,6 @@ import {
   ServerPackagePublishRequestSchema,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
-  inferPluginCategoriesFromManifest,
   isPluginCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
@@ -6601,13 +6600,14 @@ async function publishPackageImpl(
     packageJson,
     readmeText: readmeEntry?.text ?? null,
   });
-  let categories: string[];
+  let categories: string[] | undefined;
   let normalizedTopics: string[];
   try {
-    categories = resolvePluginCategories({
-      declared: payload.categories ?? existingPackage?.categories,
-      inferred: inferPluginCategoriesFromManifest(pluginManifest),
-    });
+    const declaredCategories = payload.categories ?? existingPackage?.categories;
+    categories =
+      declaredCategories === undefined
+        ? undefined
+        : resolvePluginCategories({ declared: declaredCategories });
     normalizedTopics = normalizeCatalogTopics(payload.topics ?? existingPackage?.topics);
   } catch (error) {
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");

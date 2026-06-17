@@ -47,6 +47,60 @@ describe("CatalogMetadataEditor", () => {
     );
   });
 
+  it("drops retired initial categories when saving topic edits", async () => {
+    const onSave = vi.fn(async () => {});
+    render(
+      <CatalogMetadataEditor
+        kind="skill"
+        categories={["retired-category"]}
+        topics={["Calendar"]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Topics"), {
+      target: { value: "Calendar, Scheduling" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        categories: undefined,
+        topics: ["Calendar", "Scheduling"],
+      }),
+    );
+  });
+
+  it("replaces Other when a specific category is selected", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<CatalogMetadataEditor kind="skill" categories={["other"]} onSave={onSave} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        categories: ["research"],
+        topics: [],
+      }),
+    );
+  });
+
+  it("replaces specific categories when Other is selected", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<CatalogMetadataEditor kind="skill" categories={["development"]} onSave={onSave} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Other" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        categories: ["other"],
+        topics: [],
+      }),
+    );
+  });
+
   it("preserves unsaved edits when initial arrays are recreated with the same values", () => {
     const onSave = vi.fn(async () => {});
     const { rerender } = render(

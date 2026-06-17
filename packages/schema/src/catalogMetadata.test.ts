@@ -68,6 +68,11 @@ describe("catalog metadata", () => {
     ).toThrow("Categories are limited to 3");
   });
 
+  it("keeps the Other fallback mutually exclusive with specific categories", () => {
+    expect(normalizePluginCategories(["other", "models"])).toEqual(["models"]);
+    expect(normalizeSkillCategories(["development", "other"])).toEqual(["development"]);
+  });
+
   it("uses inferred registry slugs only when declarations are omitted", () => {
     expect(
       resolvePluginCategories({
