@@ -1100,6 +1100,11 @@ code {
   text-decoration: none;
 }
 
+.user-dropdown-content {
+  border-radius: var(--r-md);
+  overflow: hidden;
+}
+
 .user-dropdown-content [data-slot="dropdown-menu-item"]:focus-visible {
   outline: none;
 }
@@ -1113,6 +1118,7 @@ code {
 
 .user-dropdown-publisher-item {
   gap: 9px;
+  border-radius: var(--r-sm);
 }
 
 .user-dropdown-publisher-item[data-status="active"] {
@@ -1173,6 +1179,7 @@ code {
   min-width: 0;
   justify-content: center;
   padding-inline: 0;
+  border-radius: var(--r-sm);
 }
 
 .user-dropdown-theme-button[data-status="active"] {
