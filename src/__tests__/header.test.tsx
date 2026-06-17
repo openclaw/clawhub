@@ -255,13 +255,18 @@ describe("Header", () => {
     ).toBeTruthy();
     expect(within(topNav).getByText("Skills").closest("a")?.querySelector("svg")).toBeNull();
     expect(within(topNav).getByText("Plugins").closest("a")?.querySelector("svg")).toBeNull();
-    expect(within(topNav).getByText("Docs").closest("a")?.getAttribute("href")).toBe(
-      "https://docs.openclaw.ai/clawhub/",
-    );
+    expect(
+      topNav.querySelector(
+        '.navbar-calm-rail-link-secondary[href="https://docs.openclaw.ai/clawhub/"]',
+      ),
+    ).toBeTruthy();
+    expect(
+      topNav.querySelector('.navbar-calm-more-link[href="https://docs.openclaw.ai/clawhub/"]'),
+    ).toBeTruthy();
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
     expect(screen.getAllByText("Publishers")).toHaveLength(1);
-    expect(screen.getAllByText("Docs")).toHaveLength(1);
+    expect(screen.getAllByText("Docs")).toHaveLength(2);
     expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
@@ -273,7 +278,7 @@ describe("Header", () => {
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
     expect(screen.getAllByText("Publishers")).toHaveLength(2);
-    expect(screen.getAllByText("Docs")).toHaveLength(2);
+    expect(screen.getAllByText("Docs")).toHaveLength(3);
     expect(screen.queryByText("About")).toBeNull();
   });
 

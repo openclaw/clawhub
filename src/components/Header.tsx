@@ -9,6 +9,7 @@ import {
   Menu,
   Monitor,
   Moon,
+  MoreHorizontal,
   Search,
   Settings,
   Star,
@@ -460,6 +461,30 @@ export default function Header() {
                   pathname={location.pathname}
                 />
               ))}
+              {SECONDARY_NAV_ITEMS.length > 0 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      className="navbar-calm-more-trigger"
+                      type="button"
+                      aria-label="More navigation"
+                    >
+                      <MoreHorizontal size={16} aria-hidden="true" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="navbar-calm-more-menu">
+                    {SECONDARY_NAV_ITEMS.map((item) => (
+                      <DropdownMenuItem key={(item.href ?? item.to ?? "") + item.label} asChild>
+                        <HeaderNavTab
+                          className="navbar-calm-more-link"
+                          item={item}
+                          pathname={location.pathname}
+                        />
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
             </nav>
           </div>
 
