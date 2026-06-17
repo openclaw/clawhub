@@ -181,18 +181,10 @@ export function SkillOwnershipPanel({
     setIsSubmitting(true);
     setError(null);
     try {
-      const result = await setOwnedSkillSoftDeleted({
+      await setOwnedSkillSoftDeleted({
         skillId,
       });
-      const reservedUntil =
-        result && "slugReservedUntil" in result && typeof result.slugReservedUntil === "number"
-          ? new Date(result.slugReservedUntil).toLocaleDateString()
-          : null;
-      toast.success(
-        reservedUntil
-          ? `Deleted ${slug}. Slug reserved until ${reservedUntil}.`
-          : `Deleted ${slug}.`,
-      );
+      toast.success(`Deleted ${slug}.`);
       await navigate({ to: "/", replace: true });
     } catch (deleteError) {
       setError(formatMutationError(deleteError));
@@ -304,8 +296,7 @@ export function SkillOwnershipPanel({
                 <div className="min-w-0">
                   <h3 className="text-sm font-bold text-red-700 dark:text-red-300">Delete skill</h3>
                   <p className="text-sm text-[color:var(--ink-soft)]">
-                    Hide this skill from search, browse, and public install surfaces. The slug stays
-                    reserved for 30 days.
+                    Hide this skill from search, browse, and public install surfaces.
                   </p>
                 </div>
               </div>
@@ -390,8 +381,8 @@ export function SkillOwnershipPanel({
           <DialogHeader>
             <DialogTitle>Delete skill</DialogTitle>
             <DialogDescription>
-              Delete <strong>{slug}</strong> from public ClawHub surfaces. The slug stays reserved
-              for 30 days so accidental deletes can be restored.
+              Delete <strong>{slug}</strong> from public ClawHub surfaces. Accidental deletes can be
+              restored.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

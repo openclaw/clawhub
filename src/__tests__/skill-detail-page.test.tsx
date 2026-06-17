@@ -1637,9 +1637,7 @@ describe("SkillDetailPage", () => {
     await waitFor(() => {
       expect(deleteSkill).toHaveBeenCalledWith({ skillId });
     });
-    expect(toast.success).toHaveBeenCalledWith(
-      expect.stringMatching(/^Deleted weather\. Slug reserved until /),
-    );
+    expect(toast.success).toHaveBeenCalledWith("Deleted weather.");
     expect(navigateMock).toHaveBeenCalledWith({ to: "/", replace: true });
   });
 
