@@ -200,6 +200,7 @@ function expectedManageContextPayload() {
       _id: expect.any(String),
       version: "0.1.0",
     },
+    suggestedCategories: ["other"],
   };
 }
 
@@ -224,7 +225,7 @@ async function expectSlimManageContextPayload(page: Page) {
   expect(JSON.stringify(latestValue)).not.toContain("staticScan");
 }
 
-test("plugin manage context query returns only slim identifiers", async ({ page }) => {
+test("plugin manage context query returns only slim catalog metadata", async ({ page }) => {
   seedLocalModerationFixtures();
   await installConvexFrameCapture(page);
   const errors = trackRuntimeErrors(page);
