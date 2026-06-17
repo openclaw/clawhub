@@ -46,4 +46,37 @@ describe("CatalogMetadataEditor", () => {
       }),
     );
   });
+
+  it("preserves unsaved edits when initial arrays are recreated with the same values", () => {
+    const onSave = vi.fn(async () => {});
+    const { rerender } = render(
+      <CatalogMetadataEditor
+        kind="skill"
+        categories={["development"]}
+        topics={["GPU development"]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
+    fireEvent.change(screen.getByLabelText("Topics"), {
+      target: { value: "GPU development, CUDA" },
+    });
+
+    rerender(
+      <CatalogMetadataEditor
+        kind="skill"
+        categories={["development"]}
+        topics={["GPU development"]}
+        onSave={onSave}
+      />,
+    );
+
+    expect((screen.getByRole("checkbox", { name: "Research" }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    expect((screen.getByLabelText("Topics") as HTMLInputElement).value).toBe(
+      "GPU development, CUDA",
+    );
+  });
 });
