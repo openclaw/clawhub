@@ -91,6 +91,84 @@ description: Automation workflow for recurring reports.
     );
   });
 
+  it("infers categories when an existing skill has a retired stored category", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Research helper for literature reviews.
+---
+# Research Helper
+`,
+      ],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "skills:demo",
+          slug: "research-helper",
+          displayName: "Research Helper",
+          summary: "Research helper",
+          ownerUserId: "users:1",
+          latestVersionSummary: { version: "0.9.0" },
+          categories: ["retired-category"],
+        })
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "research-helper",
+        displayName: "Research Helper",
+        version: "1.0.0",
+        changelog: "Update",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 90,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipBackup: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        categories: ["research"],
+      }),
+    );
+  });
+
   it("merges github source into metadata", () => {
     const merged = __test.mergeSourceIntoMetadata(
       { clawdis: { emoji: "x" } },

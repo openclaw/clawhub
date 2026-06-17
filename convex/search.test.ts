@@ -256,6 +256,28 @@ describe("search helpers", () => {
     );
   });
 
+  it("recalls text matches from the selected topic digest", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:calendar-helper",
+      slug: "temporal-helper",
+      displayName: "Temporal Helper",
+      summary: "Coordinates calendar events.",
+      topics: ["Scheduling"],
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "calendar",
+      topic: "scheduling",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["temporal-helper"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
+    );
+  });
+
   it("does not return suspicious skills via full-text search when nonSuspiciousOnly is set", async () => {
     // Even though the full-text search would token-match the suspicious
     // skill, the filterField `isSuspicious=false` plus the post-hydration
@@ -1576,6 +1598,7 @@ function makePublicSkill(params: {
   id: string;
   slug: string;
   displayName: string;
+  summary?: string;
   downloads?: number;
   installsAllTime?: number;
   stars?: number;
@@ -1586,7 +1609,7 @@ function makePublicSkill(params: {
     _creationTime: 1,
     slug: params.slug,
     displayName: params.displayName,
-    summary: `${params.displayName} summary`,
+    summary: params.summary ?? `${params.displayName} summary`,
     ownerUserId: "users:owner",
     canonicalSkillId: undefined,
     forkOf: undefined,
@@ -1611,6 +1634,7 @@ function makeSkillDoc(params: {
   id: string;
   slug: string;
   displayName: string;
+  summary?: string;
   moderationFlags?: string[];
   moderationReason?: string;
   softDeletedAt?: number;

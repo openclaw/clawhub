@@ -33,6 +33,7 @@ let loaderDataMock:
         summary?: string | null;
         ownerHandle?: string | null;
         latestVersion?: string | null;
+        topics?: string[];
         stats?: { downloads: number; installs: number; stars: number; versions: number };
         createdAt: number;
         updatedAt: number;
@@ -605,6 +606,25 @@ describe("plugins route", () => {
 
     expect(screen.getByRole("heading", { name: "Plugins" })).toBeTruthy();
     expect(screen.queryByText("321")).toBeNull();
+  });
+
+  it("keeps an active topic facet visible when it has no results", async () => {
+    searchMock = { topic: "postgres" };
+    loaderDataMock = {
+      items: [],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("radio", { name: "postgres" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("radio", { name: "All topics" })).toBeTruthy();
   });
 
   it("renders a label-only title without positive count data and switches to grid view", async () => {

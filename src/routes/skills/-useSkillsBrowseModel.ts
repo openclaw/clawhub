@@ -282,11 +282,18 @@ export function useSkillsBrowseModel({
         topics.set(slug, { label: current?.label ?? label, count: (current?.count ?? 0) + 1 });
       }
     }
-    return [...topics.entries()]
+    const visibleTopics = [...topics.entries()]
       .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
       .slice(0, 8)
       .map(([slug, value]) => ({ slug, label: value.label }));
-  }, [baseItems]);
+    if (!activeTopic || visibleTopics.some((topic) => topic.slug === activeTopic)) {
+      return visibleTopics;
+    }
+    return [
+      { slug: activeTopic, label: topics.get(activeTopic)?.label ?? activeTopic },
+      ...visibleTopics,
+    ].slice(0, 8);
+  }, [activeTopic, baseItems]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery

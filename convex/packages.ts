@@ -6348,6 +6348,15 @@ async function verifyPublishFileStorageMetadata(
   };
 }
 
+function normalizeStoredPluginCategoryOverride(categories: readonly string[] | undefined) {
+  if (categories === undefined) return undefined;
+  try {
+    return normalizePluginCategories(categories);
+  } catch {
+    return undefined;
+  }
+}
+
 async function publishPackageImpl(
   ctx: Parameters<typeof requireGitHubAccountAge>[0] &
     Pick<ActionCtx, "storage" | "scheduler" | "runAction">,
@@ -6603,7 +6612,8 @@ async function publishPackageImpl(
   let categories: string[] | undefined;
   let normalizedTopics: string[];
   try {
-    const declaredCategories = payload.categories ?? existingPackage?.categories;
+    const declaredCategories =
+      payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);
     categories =
       declaredCategories === undefined
         ? undefined

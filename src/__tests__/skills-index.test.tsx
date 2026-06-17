@@ -617,6 +617,23 @@ describe("SkillsIndex", () => {
     expect(screen.getAllByText("google-calendar")).toHaveLength(2);
   });
 
+  it("keeps an active topic facet visible when it has no results", async () => {
+    searchMock = { topic: "google-calendar" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(
+      screen.getByRole("radio", { name: "google-calendar" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getByRole("radio", { name: "All topics" })).toBeTruthy();
+  });
+
   it("preserves backend official-first ordering on category pages", async () => {
     searchMock = { category: "development" };
     convexHttpMock.query.mockResolvedValue({

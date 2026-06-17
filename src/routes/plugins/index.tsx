@@ -393,11 +393,19 @@ function PluginsIndex() {
         topics.set(slug, { label: current?.label ?? label, count: (current?.count ?? 0) + 1 });
       }
     }
-    return [...topics.entries()]
+    const visibleTopics = [...topics.entries()]
       .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
       .slice(0, 8)
       .map(([slug, value]) => ({ slug, label: value.label }));
-  }, [items]);
+    const activeTopic = search.topic ? normalizeCatalogTopic(search.topic) : undefined;
+    if (!activeTopic || visibleTopics.some((topic) => topic.slug === activeTopic)) {
+      return visibleTopics;
+    }
+    return [
+      { slug: activeTopic, label: topics.get(activeTopic)?.label ?? activeTopic },
+      ...visibleTopics,
+    ].slice(0, 8);
+  }, [items, search.topic]);
 
   const handleFilterToggle = (key: string) => {
     if (key === "official") {

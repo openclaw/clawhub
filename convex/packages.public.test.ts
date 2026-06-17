@@ -7101,6 +7101,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
+        .mockResolvedValueOnce(makePackageDoc({ categories: ["retired-category"] }))
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           _id: "users:owner",

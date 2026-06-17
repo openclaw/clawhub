@@ -133,4 +133,32 @@ describe("CatalogMetadataEditor", () => {
       "GPU development, CUDA",
     );
   });
+
+  it("preserves edits when saving fails", async () => {
+    const onSave = vi.fn(async () => {
+      throw new Error("Save failed");
+    });
+    render(
+      <CatalogMetadataEditor
+        kind="skill"
+        categories={["development"]}
+        topics={["GPU development"]}
+        onSave={onSave}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
+    fireEvent.change(screen.getByLabelText("Topics"), {
+      target: { value: "GPU development, CUDA" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await screen.findByText("Save failed");
+    expect((screen.getByRole("checkbox", { name: "Research" }) as HTMLInputElement).checked).toBe(
+      true,
+    );
+    expect((screen.getByLabelText("Topics") as HTMLInputElement).value).toBe(
+      "GPU development, CUDA",
+    );
+  });
 });

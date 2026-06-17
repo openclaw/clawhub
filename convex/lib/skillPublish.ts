@@ -1,6 +1,7 @@
 import {
   inferSkillCategories,
   normalizeCatalogTopics,
+  normalizeSkillCategories,
   normalizeTextContentType,
   resolveSkillCategories,
 } from "clawhub-schema";
@@ -50,6 +51,15 @@ const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
 type FingerprintFile = { path: string; sha256: string };
+
+function normalizeStoredSkillCategoryOverride(categories: readonly string[] | undefined) {
+  if (categories === undefined) return undefined;
+  try {
+    return normalizeSkillCategories(categories);
+  } catch {
+    return undefined;
+  }
+}
 
 export type PublishResult = {
   skillId: Id<"skills">;
@@ -276,7 +286,7 @@ export async function publishVersionForUser(
   let topics: string[];
   try {
     categories = resolveSkillCategories({
-      declared: args.categories ?? existingSkill?.categories,
+      declared: args.categories ?? normalizeStoredSkillCategoryOverride(existingSkill?.categories),
       inferred: inferSkillCategories({ slug, displayName, summary }),
     });
     topics = normalizeCatalogTopics(args.topics ?? existingSkill?.topics);

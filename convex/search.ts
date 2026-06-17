@@ -427,6 +427,25 @@ export const directPrefixSkillMatches = internalQuery({
     const firstToken = getFirstSearchToken(args.query);
     const queryTokens = tokenize(args.query);
     const topicQuery = normalizeCatalogTopic(args.query);
+    const recallTopics = [
+      ...new Set([topicQuery, topic].filter((value): value is string => !!value)),
+    ];
+    const loadTopicRows = (recallTopic: string) =>
+      args.nonSuspiciousOnly
+        ? ctx.db
+            .query("skillTopicSearchDigest")
+            .withIndex("by_nonsuspicious_topic_updated", (q) =>
+              q.eq("softDeletedAt", undefined).eq("isSuspicious", false).eq("topic", recallTopic),
+            )
+            .order("desc")
+            .take(MAX_DIRECT_SKILL_TOPIC_CANDIDATES)
+        : ctx.db
+            .query("skillTopicSearchDigest")
+            .withIndex("by_active_topic_updated", (q) =>
+              q.eq("softDeletedAt", undefined).eq("topic", recallTopic),
+            )
+            .order("desc")
+            .take(MAX_DIRECT_SKILL_TOPIC_CANDIDATES);
 
     const upperBound = prefixUpperBound(normalizedQuery);
     const firstTokenUpperBound = firstToken ? prefixUpperBound(firstToken) : null;
@@ -437,7 +456,7 @@ export const directPrefixSkillMatches = internalQuery({
       displayNameFirstTokenDigests,
       ftDisplayNameDigests,
       ftSlugDigests,
-      topicRows,
+      topicRowPages,
     ] = await Promise.all([
       args.nonSuspiciousOnly
         ? ctx.db
@@ -557,24 +576,9 @@ export const directPrefixSkillMatches = internalQuery({
               q.search("slug", args.query).eq("softDeletedAt", undefined),
             )
             .take(MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES),
-      topicQuery
-        ? args.nonSuspiciousOnly
-          ? ctx.db
-              .query("skillTopicSearchDigest")
-              .withIndex("by_nonsuspicious_topic_updated", (q) =>
-                q.eq("softDeletedAt", undefined).eq("isSuspicious", false).eq("topic", topicQuery),
-              )
-              .order("desc")
-              .take(MAX_DIRECT_SKILL_TOPIC_CANDIDATES)
-          : ctx.db
-              .query("skillTopicSearchDigest")
-              .withIndex("by_active_topic_updated", (q) =>
-                q.eq("softDeletedAt", undefined).eq("topic", topicQuery),
-              )
-              .order("desc")
-              .take(MAX_DIRECT_SKILL_TOPIC_CANDIDATES)
-        : Promise.resolve([]),
+      Promise.all(recallTopics.map(loadTopicRows)),
     ]);
+    const topicRows = topicRowPages.flat();
     const topicDigests = (
       await Promise.all(
         topicRows.map((row) =>

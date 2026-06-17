@@ -48,11 +48,10 @@ export function CatalogMetadataEditor({
   const serializedInitialTopics = JSON.stringify(initialTopics ?? []);
 
   useEffect(() => {
-    if (isSaving) return;
     // Convex updates can recreate equivalent arrays; reset only when their values change.
     setCategories(JSON.parse(serializedInitialCategories) as string[]);
     setTopics((JSON.parse(serializedInitialTopics) as string[]).join(", "));
-  }, [isSaving, serializedInitialCategories, serializedInitialTopics]);
+  }, [serializedInitialCategories, serializedInitialTopics]);
 
   async function handleSave() {
     if (isSaving) return;
