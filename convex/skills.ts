@@ -5694,8 +5694,11 @@ export const listRelatedByCategory = query({
       if (digest.skillId === args.skillId) continue;
       const hydratable = digestToHydratableSkill(digest);
       if (isSkillSuspicious(hydratable)) continue;
+      const hasExplicitCategoryMatch = Boolean(
+        categorySlug && digest.categories?.includes(categorySlug),
+      );
       if (categorySlug && !resolveStoredSkillCategories(digest).includes(categorySlug)) continue;
-      if (!digestMatchesRelatedCategory(digest, keywords)) continue;
+      if (!hasExplicitCategoryMatch && !digestMatchesRelatedCategory(digest, keywords)) continue;
       const item = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!item) continue;
       items.push(item);

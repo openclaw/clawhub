@@ -1255,4 +1255,31 @@ describe("skills.listRelatedByCategory", () => {
       "build-runner",
     ]);
   });
+
+  it("uses explicit categories without requiring inference keywords for suggestions", async () => {
+    const explicitlyCategorized = makeDigest({
+      slug: "navigation-without-screens",
+      displayName: "Navigation Without Screens",
+      summary: "Physical navigation skills without digital devices.",
+      categories: ["development"],
+      statsDownloads: 22,
+    });
+    const take = vi.fn().mockResolvedValue([explicitlyCategorized]);
+    const order = vi.fn(() => ({ take }));
+    const eq = vi.fn(() => ({ eq }));
+    const withIndex = vi.fn((_index: string, builder: (q: { eq: typeof eq }) => void) => {
+      builder({ eq });
+      return { order };
+    });
+    const query = vi.fn(() => ({ withIndex }));
+
+    const result = await listRelatedByCategoryHandler({ db: { query } } as never, {
+      skillId: "skills:current",
+      categorySlug: "development",
+      keywords: ["dev", "debug", "lint", "test", "build"],
+      limit: 3,
+    });
+
+    expect(result.items.map((entry) => entry.skill.slug)).toEqual(["navigation-without-screens"]);
+  });
 });
