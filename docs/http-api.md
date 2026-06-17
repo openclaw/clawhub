@@ -564,8 +564,8 @@ Query params:
 Notes:
 
 - Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
-  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
-  return `400`. Unknown query parameters are ignored.
+  `featured`, `highlightedOnly`, `sort`, `artifactKind`, or boolean capability
+  shorthands return `400`. Unknown query parameters are ignored.
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.

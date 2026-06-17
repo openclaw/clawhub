@@ -8011,6 +8011,45 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledTimes(2);
   });
 
+  it("packages list falls recommended merges back to updated while scores backfill", async () => {
+    const pluginPackage = makeCatalogItem("plugin-older-high-score", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 50_000, installs: 500, stars: 10, versions: 1 },
+    });
+    const skillPackage = makeCatalogItem("skill-newer-low-score", {
+      family: "skill",
+      updatedAt: 200,
+      stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
+    });
+    let readinessCalls = 0;
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        readinessCalls += 1;
+        return readinessCalls === 1;
+      }
+      expect(args).toEqual(expect.objectContaining({ sort: "updated" }));
+      if (Object.hasOwn(args, "viewerUserId")) {
+        return { page: [pluginPackage], isDone: false, continueCursor: "plugin-next" };
+      }
+      return { page: [skillPackage], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?limit=2&sort=recommended"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "skill-newer-low-score",
+      "plugin-older-high-score",
+    ]);
+    expect(json.nextCursor).toContain('"recommendedFallback":"updated"');
+  });
+
   it("plugins list defaults to plugin package families", async () => {
     const codePlugin = {
       name: "code-plugin",
