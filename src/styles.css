@@ -15643,6 +15643,21 @@ a[class*="rounded-full"] {
   .navbar-calm .navbar-top {
     grid-template-columns: auto minmax(180px, 360px) auto;
   }
+
+  .navbar-calm .nav-mobile {
+    display: inline-flex;
+    flex: 0 0 auto;
+  }
+
+  .navbar-calm .nav-mobile-trigger {
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-md);
+  }
+
+  .navbar-calm .nav-mobile-trigger::after {
+    border-radius: var(--r-md);
+  }
 }
 
 @media (max-width: 760px) {
