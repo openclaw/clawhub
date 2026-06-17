@@ -15165,6 +15165,11 @@ a[class*="rounded-full"] {
   font-weight: 600;
 }
 
+.navbar-calm .brand:hover,
+.navbar-calm .brand:focus-visible {
+  text-decoration: none;
+}
+
 .navbar-calm .brand-mark {
   width: 28px;
   height: 28px;
