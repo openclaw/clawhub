@@ -323,6 +323,7 @@ const MAX_PLUGIN_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
 function resolvePluginCategoryFilter(value: string | undefined): PluginCategorySlug | undefined {
   if (!value) return undefined;
   if (isPluginCategorySlug(value)) return value;
+  if (!Object.hasOwn(LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES, value)) return undefined;
   return LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES[
     value as keyof typeof LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES
   ];

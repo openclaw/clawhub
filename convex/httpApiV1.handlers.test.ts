@@ -8761,17 +8761,19 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins list rejects invalid categories", async () => {
-    const runQuery = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    for (const category of ["not-a-category", "constructor", "toString"]) {
+      const runQuery = vi.fn();
+      const runMutation = vi.fn().mockResolvedValue(okRate());
 
-    const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?category=not-a-category"),
-    );
+      const response = await __handlers.listPluginsV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins?category=${category}`),
+      );
 
-    expect(response.status).toBe(400);
-    expect(await response.text()).toBe("Invalid plugin category");
-    expect(runQuery).not.toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Invalid plugin category");
+      expect(runQuery).not.toHaveBeenCalled();
+    }
   });
 
   it("plugins list paginates with separate plugin family cursors", async () => {
@@ -9123,17 +9125,19 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins search rejects invalid categories", async () => {
-    const runQuery = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    for (const category of ["not-a-category", "constructor", "toString"]) {
+      const runQuery = vi.fn();
+      const runMutation = vi.fn().mockResolvedValue(okRate());
 
-    const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=plugin&category=not-a-category"),
-    );
+      const response = await __handlers.pluginsGetRouterV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins/search?q=plugin&category=${category}`),
+      );
 
-    expect(response.status).toBe(400);
-    expect(await response.text()).toBe("Invalid plugin category");
-    expect(runQuery).not.toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Invalid plugin category");
+      expect(runQuery).not.toHaveBeenCalled();
+    }
   });
 
   it("plugins search sorts by rank tier before score without exposing rank metadata", async () => {

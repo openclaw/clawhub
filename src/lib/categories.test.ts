@@ -16,6 +16,8 @@ describe("skill category helpers", () => {
     expect(resolvePluginBrowseCategorySlug("data")).toBe("tools");
     expect(resolvePluginBrowseCategorySlug("dev-tools")).toBe("runtime");
     expect(resolvePluginBrowseCategorySlug("unknown")).toBeUndefined();
+    expect(resolvePluginBrowseCategorySlug("constructor")).toBeUndefined();
+    expect(resolveSkillBrowseCategorySlug("toString")).toBeUndefined();
   });
 
   it("uses Other when no category has been explicitly stored", () => {

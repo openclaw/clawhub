@@ -62,6 +62,7 @@ export function resolvePluginBrowseCategorySlug(
 ): PluginCategorySlug | undefined {
   if (!value) return undefined;
   if (isPluginCategorySlug(value)) return value;
+  if (!Object.hasOwn(LEGACY_PLUGIN_BROWSE_CATEGORY_ALIASES, value)) return undefined;
   return LEGACY_PLUGIN_BROWSE_CATEGORY_ALIASES[
     value as keyof typeof LEGACY_PLUGIN_BROWSE_CATEGORY_ALIASES
   ];
@@ -72,6 +73,7 @@ export function resolveSkillBrowseCategorySlug(
 ): SkillCategorySlug | undefined {
   if (!value) return undefined;
   if (isSkillCategorySlug(value)) return value;
+  if (!Object.hasOwn(LEGACY_SKILL_BROWSE_CATEGORY_ALIASES, value)) return undefined;
   return LEGACY_SKILL_BROWSE_CATEGORY_ALIASES[
     value as keyof typeof LEGACY_SKILL_BROWSE_CATEGORY_ALIASES
   ];
