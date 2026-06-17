@@ -3487,7 +3487,12 @@ describe("packages public queries", () => {
 
     expect(result.page.map((entry) => entry.name)).toEqual(["api-demo"]);
     expect(tableNames).toEqual(["packagePluginCategorySearchDigest"]);
-    expect(indexNames).toEqual(["by_active_category_recommended_score"]);
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_recommended_score_version",
+      "by_active_recommended_score_version",
+      "by_active_category_recommended_score",
+    ]);
   });
 
   it("uses plugin category digest sort indexes for filtered listings", async () => {
@@ -3578,7 +3583,12 @@ describe("packages public queries", () => {
 
     expect(result.page.map((entry) => entry.name)).toEqual(["calendar-demo"]);
     expect(tableNames).toEqual(["packageTopicSearchDigest"]);
-    expect(indexNames).toEqual(["by_active_topic_recommended_score"]);
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_recommended_score_version",
+      "by_active_recommended_score_version",
+      "by_active_topic_recommended_score",
+    ]);
   });
 
   it("uses topic digest sort indexes for filtered listings", async () => {
@@ -3599,6 +3609,49 @@ describe("packages public queries", () => {
     });
 
     expect(indexNames).toEqual(["by_active_topic_downloads"]);
+  });
+
+  it("keeps metadata recommendation fallback cursors on the updated digest index", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [makePackageDoc({ recommendedScore: undefined })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      topicPages: [
+        {
+          page: [makeDigest("calendar-first", { topic: "calendar", topics: ["calendar"] })],
+          isDone: false,
+          continueCursor: "topic:next",
+        },
+        {
+          page: [makeDigest("calendar-second", { topic: "calendar", topics: ["calendar"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const first = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      sort: "recommended",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    const second = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      sort: "recommended",
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+
+    expect(first.page.map((entry) => entry.name)).toEqual(["calendar-first"]);
+    expect(second.page.map((entry) => entry.name)).toEqual(["calendar-second"]);
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+    ]);
   });
 
   it("does not revive retired capability filters for topic-filtered listings", async () => {
@@ -3624,6 +3677,38 @@ describe("packages public queries", () => {
 
     expect(result.page.map((entry) => entry.name)).toEqual(["calendar-demo"]);
     expect(indexNames).toEqual(["by_active_topic_updated"]);
+  });
+
+  it("continues topic digest scans after filtering private packages", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("calendar-private", {
+              channel: "private",
+              topic: "calendar",
+              topics: ["calendar"],
+            }),
+          ],
+          isDone: false,
+          continueCursor: "topic:public",
+        },
+        {
+          page: [makeDigest("calendar-public", { topic: "calendar", topics: ["calendar"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-public"]);
+    expect(result.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
   });
 
   it("rejects invalid topic filters instead of returning an unfiltered listing", async () => {

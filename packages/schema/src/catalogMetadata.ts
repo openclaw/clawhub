@@ -10,6 +10,7 @@ export const RESERVED_CATALOG_TOPIC_SLUGS = [
   "trusted-publisher",
   "verified",
 ] as const;
+const CATALOG_TOPIC_FORMAT_CONTROL_RE = /\p{Cf}/u;
 
 export const PLUGIN_CATEGORY_DEFINITIONS = [
   {
@@ -339,6 +340,9 @@ export function normalizeCatalogTopics(values: readonly string[] | null | undefi
   const reservedSlugs = new Set<string>(RESERVED_CATALOG_TOPIC_SLUGS);
 
   for (const rawValue of values ?? []) {
+    if (CATALOG_TOPIC_FORMAT_CONTROL_RE.test(rawValue)) {
+      throw new Error("Topics cannot include invisible format controls");
+    }
     const label = rawValue.normalize("NFKC").trim().replace(/\s+/g, " ");
     if (!label) continue;
     if (label.length > CATALOG_TOPIC_MAX_LENGTH) {

@@ -138,6 +138,12 @@ describe("catalog metadata", () => {
     expect(() => normalizeCatalogTopics(["Official"])).toThrow(
       'Topic "Official" is reserved by ClawHub',
     );
+    expect(() => normalizeCatalogTopics(["offi\u200bcial"])).toThrow(
+      "Topics cannot include invisible format controls",
+    );
+    expect(() => normalizeCatalogTopics(["offi\u202ecial"])).toThrow(
+      "Topics cannot include invisible format controls",
+    );
     expect(normalizeCatalogTopics(["security-research", "malware-analysis"])).toEqual([
       "security-research",
       "malware-analysis",

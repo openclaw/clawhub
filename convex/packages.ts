@@ -811,6 +811,7 @@ type PublicPageCursorState = {
   pageSize: number | null;
   done: boolean;
   mode?: "packages" | "digest";
+  sort?: "updated" | "downloads" | "recommended" | "installs";
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 type OfficialFirstPackageCategoryCursorState = {
@@ -1430,6 +1431,13 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
       pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
       mode: parsed.mode === "packages" || parsed.mode === "digest" ? parsed.mode : undefined,
+      sort:
+        parsed.sort === "updated" ||
+        parsed.sort === "downloads" ||
+        parsed.sort === "recommended" ||
+        parsed.sort === "installs"
+          ? parsed.sort
+          : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -3163,11 +3171,24 @@ async function listPackagePageImpl(
     Boolean(args.paginationOpts.cursor) &&
     decodedCursor.mode !== "digest";
   const recommendedIndexName =
-    args.sort === "recommended" && !hasCatalogMetadataFilter && !keepDigestCursor
+    args.sort === "recommended" && !keepDigestCursor
       ? keepRecommendedPackageCursor
         ? getPackageRecommendedScoreIndexName(family)
         : await getPackageRecommendedIndexName(ctx, family)
       : null;
+  const legacyDigestSort = hasCatalogMetadataFilter
+    ? args.sort
+    : args.sort === "recommended"
+      ? "updated"
+      : args.sort;
+  const effectiveDigestSort =
+    decodedCursor.mode === "digest"
+      ? (decodedCursor.sort ?? legacyDigestSort)
+      : args.sort === "recommended"
+        ? recommendedIndexName
+          ? "recommended"
+          : "updated"
+        : args.sort;
 
   if (
     !hasCatalogMetadataFilter &&
@@ -3263,7 +3284,7 @@ async function listPackagePageImpl(
           family,
           channel,
           isOfficial,
-          sort: args.sort,
+          sort: effectiveDigestSort,
         })
       : category
         ? buildPackagePluginCategoryDigestQuery(ctx, {
@@ -3271,7 +3292,7 @@ async function listPackagePageImpl(
             family,
             channel,
             isOfficial,
-            sort: args.sort,
+            sort: effectiveDigestSort,
           })
         : buildPackageDigestQuery(ctx, {
             family,
@@ -3282,10 +3303,7 @@ async function listPackagePageImpl(
   let pageOffset = offset;
   let pageSize: number | null = decodedCursor.pageSize ?? null;
   let done = decodedCursor.done;
-  const usesMetadataSortIndex =
-    args.sort === "downloads" || args.sort === "installs" || args.sort === "recommended";
-  const requiresDigestPostFilterScan =
-    Boolean(topic && category) || (usesMetadataSortIndex && Boolean(family || channel));
+  const requiresDigestPostFilterScan = hasCatalogMetadataFilter;
   let digestScanPages = 0;
   let remainingDigestScanBudget = requiresDigestPostFilterScan
     ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS
@@ -3336,6 +3354,7 @@ async function listPackagePageImpl(
                 pageSize: scanPageSize,
                 done: page.isDone,
                 mode: "digest" as const,
+                sort: effectiveDigestSort,
               }
             : {
                 cursor: page.continueCursor,
@@ -3343,6 +3362,7 @@ async function listPackagePageImpl(
                 pageSize: scanPageSize,
                 done: page.isDone,
                 mode: "digest" as const,
+                sort: effectiveDigestSort,
               };
         return {
           page: collected,
@@ -3368,6 +3388,7 @@ async function listPackagePageImpl(
       pageSize,
       done,
       mode: "digest",
+      sort: effectiveDigestSort,
     }),
   };
 }
