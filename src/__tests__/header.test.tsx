@@ -139,7 +139,7 @@ vi.mock("../lib/gravatar", () => ({
 }));
 
 vi.mock("../lib/useUnifiedSearch", () => ({
-  useUnifiedSearch: () => useUnifiedSearchMock(),
+  useUnifiedSearch: (...args: unknown[]) => useUnifiedSearchMock(...args),
 }));
 
 vi.mock("../components/ui/dropdown-menu", () => ({
@@ -403,6 +403,25 @@ describe("Header", () => {
     });
   });
 
+  it("opens the empty typeahead state from the global search shortcut", () => {
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.keyDown(window, { key: "k", metaKey: true });
+
+    expect(document.activeElement).toBe(input);
+    expect(input.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByRole("tablist", { name: "Result type" })).toBeTruthy();
+    expect(screen.getByText("tabs")).toBeTruthy();
+    expect(screen.getByText("results")).toBeTruthy();
+    expect(screen.getByText("Start typing to search skills and plugins")).toBeTruthy();
+    expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
+      "",
+      "all",
+      expect.objectContaining({ enabled: false }),
+    );
+  });
+
   it("shows tabbed skills and plugins typeahead without users", () => {
     navigateMock.mockReset();
 
@@ -415,6 +434,8 @@ describe("Header", () => {
     const tablist = screen.getByRole("tablist", { name: "Result type" });
     expect(within(tablist).getByRole("tab", { name: "Skills" })).toBeTruthy();
     expect(within(tablist).getByRole("tab", { name: "Plugins" })).toBeTruthy();
+    expect(screen.getByText("tabs")).toBeTruthy();
+    expect(screen.getByText("results")).toBeTruthy();
 
     const typeahead = screen.getByRole("listbox");
     expect(screen.getByText("Weather Skill")).toBeTruthy();
@@ -499,7 +520,9 @@ describe("Header", () => {
     fireEvent.change(input, { target: { value: "zzzz" } });
 
     expect(screen.getByText('No skills or plugins found for "zzzz"')).toBeTruthy();
-    expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
+    expect(screen.getByRole("tablist", { name: "Result type" })).toBeTruthy();
+    expect(screen.getByText("tabs")).toBeTruthy();
+    expect(screen.getByText("results")).toBeTruthy();
     expect(screen.queryByText('See skill results for "zzzz"')).toBeNull();
     expect(screen.queryByText('See plugin results for "zzzz"')).toBeNull();
   });

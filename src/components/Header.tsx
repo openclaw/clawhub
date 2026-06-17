@@ -144,18 +144,19 @@ export default function Header() {
   const navSearchInputRef = useRef<HTMLInputElement | null>(null);
   const isAppleSearchShortcut = useAppleSearchShortcut();
   const trimmedNavSearchQuery = navSearchQuery.trim();
-  const showTypeahead = typeaheadOpen && trimmedNavSearchQuery.length > 0;
+  const hasNavSearchQuery = trimmedNavSearchQuery.length > 0;
+  const showTypeahead = typeaheadOpen;
   const {
     skillResults,
     pluginResults,
     isSearching: typeaheadSearching,
   } = useUnifiedSearch(navSearchQuery, "all", {
     debounceMs: 180,
-    enabled: showTypeahead,
+    enabled: typeaheadOpen && hasNavSearchQuery,
     limits: { skills: 4, plugins: 4 },
   });
   const typeaheadSkillItems = useMemo<TypeaheadItem[]>(() => {
-    if (!showTypeahead) return [];
+    if (!hasNavSearchQuery) return [];
     const items: TypeaheadItem[] = [];
     for (const result of skillResults) {
       items.push({ kind: "skill", key: `skill-${result.skill._id}`, result });
@@ -169,10 +170,10 @@ export default function Header() {
       });
     }
     return items;
-  }, [showTypeahead, skillResults, trimmedNavSearchQuery]);
+  }, [hasNavSearchQuery, skillResults, trimmedNavSearchQuery]);
 
   const typeaheadPluginItems = useMemo<TypeaheadItem[]>(() => {
-    if (!showTypeahead) return [];
+    if (!hasNavSearchQuery) return [];
     const items: TypeaheadItem[] = [];
     for (const result of pluginResults) {
       items.push({ kind: "plugin", key: `plugin-${result.plugin.name}`, result });
@@ -186,7 +187,7 @@ export default function Header() {
       });
     }
     return items;
-  }, [pluginResults, showTypeahead, trimmedNavSearchQuery]);
+  }, [hasNavSearchQuery, pluginResults, trimmedNavSearchQuery]);
 
   const typeaheadItems = typeaheadTab === "skills" ? typeaheadSkillItems : typeaheadPluginItems;
   const activeTypeaheadItem = showTypeahead ? typeaheadItems[typeaheadActiveIndex] : undefined;
@@ -711,6 +712,7 @@ function SearchTypeahead({
   query: string;
   skillItems: TypeaheadItem[];
 }) {
+  const hasQuery = query.length > 0;
   const hasSkillMatches = skillItems.some((item) => item.kind === "skill");
   const hasPluginMatches = pluginItems.some((item) => item.kind === "plugin");
   const hasMatches = hasSkillMatches || hasPluginMatches;
@@ -719,40 +721,46 @@ function SearchTypeahead({
 
   return (
     <div className="navbar-search-typeahead" id="navbar-search-typeahead">
-      {hasMatches || loading ? (
-        <div className="navbar-search-typeahead-top">
-          <div
-            className="navbar-search-typeahead-tabs clawhub-segmented"
-            role="tablist"
-            aria-label="Result type"
+      <div className="navbar-search-typeahead-top">
+        <div
+          className="navbar-search-typeahead-tabs clawhub-segmented"
+          role="tablist"
+          aria-label="Result type"
+        >
+          <button
+            type="button"
+            role="tab"
+            id="navbar-search-typeahead-tab-skills"
+            aria-selected={activeTab === "skills"}
+            aria-controls="navbar-search-typeahead-panel"
+            className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "skills" ? " is-active" : ""}`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onTabChange("skills")}
           >
-            <button
-              type="button"
-              role="tab"
-              id="navbar-search-typeahead-tab-skills"
-              aria-selected={activeTab === "skills"}
-              aria-controls="navbar-search-typeahead-panel"
-              className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "skills" ? " is-active" : ""}`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => onTabChange("skills")}
-            >
-              Skills
-            </button>
-            <button
-              type="button"
-              role="tab"
-              id="navbar-search-typeahead-tab-plugins"
-              aria-selected={activeTab === "plugins"}
-              aria-controls="navbar-search-typeahead-panel"
-              className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "plugins" ? " is-active" : ""}`}
-              onMouseDown={(event) => event.preventDefault()}
-              onClick={() => onTabChange("plugins")}
-            >
-              Plugins
-            </button>
-          </div>
+            Skills
+          </button>
+          <button
+            type="button"
+            role="tab"
+            id="navbar-search-typeahead-tab-plugins"
+            aria-selected={activeTab === "plugins"}
+            aria-controls="navbar-search-typeahead-panel"
+            className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "plugins" ? " is-active" : ""}`}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => onTabChange("plugins")}
+          >
+            Plugins
+          </button>
         </div>
-      ) : null}
+        <div className="navbar-search-typeahead-hint" aria-hidden="true">
+          <kbd>←</kbd>
+          <kbd>→</kbd>
+          <span>tabs</span>
+          <kbd>↑</kbd>
+          <kbd>↓</kbd>
+          <span>results</span>
+        </div>
+      </div>
       <div
         id="navbar-search-typeahead-panel"
         className="navbar-search-typeahead-panel"
@@ -763,10 +771,15 @@ function SearchTypeahead({
             : "navbar-search-typeahead-tab-plugins"
         }
       >
-        {loading && !hasMatches ? (
+        {!hasQuery ? (
+          <div className="navbar-search-typeahead-status">
+            Start typing to search skills and plugins
+          </div>
+        ) : null}
+        {hasQuery && loading && !hasMatches ? (
           <div className="navbar-search-typeahead-status">Searching...</div>
         ) : null}
-        {!loading && !hasMatches ? (
+        {hasQuery && !loading && !hasMatches ? (
           <div className="navbar-search-typeahead-status">
             No skills or plugins found for "{query}"
           </div>

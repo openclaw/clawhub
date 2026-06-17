@@ -15360,6 +15360,34 @@ a[class*="rounded-full"] {
   width: fit-content;
 }
 
+.navbar-search-typeahead-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding-right: 4px;
+  color: var(--ink-soft);
+  font-size: 11px;
+  opacity: 0.48;
+  white-space: nowrap;
+}
+
+.navbar-search-typeahead-hint kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+  color: color-mix(in srgb, var(--ink-soft) 86%, var(--ink));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1;
+}
+
 .navbar-search-typeahead-panel {
   padding: 8px 0 6px;
 }
