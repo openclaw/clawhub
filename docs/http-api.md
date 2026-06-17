@@ -539,6 +539,7 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
+- `sort` (optional): `updated` (default), `recommended`, `installs`
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages (`/api/v1/plugins`,
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
@@ -546,8 +547,8 @@ Query params:
 
 Notes:
 
-- Invalid values for `family`, `channel`, `isOfficial`, `featured`, or
-  `highlightedOnly` return `400`. Unknown query parameters are ignored.
+- Invalid values for `family`, `channel`, `isOfficial`, `featured`,
+  `highlightedOnly`, or `sort` return `400`. Unknown query parameters are ignored.
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.

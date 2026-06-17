@@ -6024,6 +6024,7 @@ type SkillCatalogCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
+  recommendedFallback?: "updated";
 };
 
 function encodeSkillCatalogCursor(state: SkillCatalogCursorState) {
@@ -6045,6 +6046,7 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
       pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
+      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -6123,7 +6125,7 @@ async function listSkillPackageCatalogTopicPage(
     isOfficial?: boolean;
     highlightedOnly?: boolean;
     topic: string;
-    sort?: "updated" | "downloads" | "installs";
+    sort?: "updated" | "downloads" | "recommended" | "installs";
     paginationOpts: { cursor: string | null; numItems: number };
   },
 ) {
@@ -6136,6 +6138,13 @@ async function listSkillPackageCatalogTopicPage(
   let done = decodedCursor.done;
   let loops = 0;
   let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
+  const isFreshRecommendedRequest =
+    args.sort === "recommended" && args.paginationOpts.cursor === null;
+  const useUpdatedRecommendationFallback =
+    args.sort === "recommended" &&
+    (decodedCursor.recommendedFallback === "updated" ||
+      (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))));
+  const catalogSort = useUpdatedRecommendationFallback ? "updated" : args.sort;
 
   while (
     (offset > 0 || !done) &&
@@ -6155,11 +6164,13 @@ async function listSkillPackageCatalogTopicPage(
     remainingScanBudget -= effectivePageSize;
     const pageCursor = cursor;
     const indexName =
-      args.sort === "downloads"
+      catalogSort === "downloads"
         ? "by_active_topic_downloads"
-        : args.sort === "installs"
+        : catalogSort === "installs"
           ? "by_active_topic_installs"
-          : "by_active_topic_updated";
+          : catalogSort === "recommended"
+            ? "by_active_topic_recommended_score"
+            : "by_active_topic_updated";
     const page = await paginator(ctx.db, schema)
       .query("skillTopicSearchDigest")
       .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined).eq("topic", args.topic))
@@ -6190,7 +6201,13 @@ async function listSkillPackageCatalogTopicPage(
         return {
           page: collected,
           isDone: done && offset === 0,
-          continueCursor: encodeSkillCatalogCursor({ cursor, offset, pageSize, done }),
+          continueCursor: encodeSkillCatalogCursor({
+            cursor,
+            offset,
+            pageSize,
+            done,
+            recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+          }),
         };
       }
     }
@@ -6204,7 +6221,13 @@ async function listSkillPackageCatalogTopicPage(
   return {
     page: collected,
     isDone: done,
-    continueCursor: encodeSkillCatalogCursor({ cursor, offset, pageSize, done }),
+    continueCursor: encodeSkillCatalogCursor({
+      cursor,
+      offset,
+      pageSize,
+      done,
+      recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+    }),
   };
 }
 
@@ -6287,7 +6310,14 @@ export const listPackageCatalogPage = query({
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
     topic: v.optional(v.string()),
-    sort: v.optional(v.union(v.literal("updated"), v.literal("downloads"), v.literal("installs"))),
+    sort: v.optional(
+      v.union(
+        v.literal("updated"),
+        v.literal("downloads"),
+        v.literal("recommended"),
+        v.literal("installs"),
+      ),
+    ),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -6314,6 +6344,13 @@ export const listPackageCatalogPage = query({
     let done = decodedCursor.done;
     let loops = 0;
     let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
+    const isFreshRecommendedRequest =
+      args.sort === "recommended" && args.paginationOpts.cursor === null;
+    const useUpdatedRecommendationFallback =
+      args.sort === "recommended" &&
+      (decodedCursor.recommendedFallback === "updated" ||
+        (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))));
+    const catalogSort = useUpdatedRecommendationFallback ? "updated" : args.sort;
 
     while (
       (offset > 0 || !done) &&
@@ -6333,11 +6370,13 @@ export const listPackageCatalogPage = query({
       remainingScanBudget -= effectivePageSize;
       const pageCursor = cursor;
       const indexName =
-        args.sort === "downloads"
+        catalogSort === "downloads"
           ? "by_active_stats_downloads"
-          : args.sort === "installs"
+          : catalogSort === "installs"
             ? "by_active_stats_installs_all_time"
-            : "by_active_updated";
+            : catalogSort === "recommended"
+              ? "by_active_recommended_score"
+              : "by_active_updated";
       const page = await paginator(ctx.db, schema)
         .query("skillSearchDigest")
         .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined))
@@ -6364,7 +6403,13 @@ export const listPackageCatalogPage = query({
           return {
             page: collected,
             isDone: done && offset === 0,
-            continueCursor: encodeSkillCatalogCursor({ cursor, offset, pageSize, done }),
+            continueCursor: encodeSkillCatalogCursor({
+              cursor,
+              offset,
+              pageSize,
+              done,
+              recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+            }),
           };
         }
       }
@@ -6378,8 +6423,21 @@ export const listPackageCatalogPage = query({
     return {
       page: collected,
       isDone: done,
-      continueCursor: encodeSkillCatalogCursor({ cursor, offset, pageSize, done }),
+      continueCursor: encodeSkillCatalogCursor({
+        cursor,
+        offset,
+        pageSize,
+        done,
+        recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+      }),
     };
+  },
+});
+
+export const hasMissingPackageCatalogRecommendationScoresInternal = internalQuery({
+  args: {},
+  handler: async (ctx) => {
+    return await hasMissingRecommendedScores(ctx, false, null);
   },
 });
 

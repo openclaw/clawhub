@@ -8029,6 +8029,79 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("packages list install sort merges package and skill rows by installs", async () => {
+    const pluginPackage = makeCatalogItem("plugin-installed", {
+      family: "code-plugin",
+      updatedAt: 200,
+      stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
+    });
+    const skillPackage = makeCatalogItem("skill-installed", {
+      family: "skill",
+      updatedAt: 100,
+      stats: { downloads: 1, installs: 40, stars: 0, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      if (Object.hasOwn(args, "viewerUserId")) {
+        return { page: [pluginPackage], isDone: true, continueCursor: "" };
+      }
+      return { page: [skillPackage], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?limit=2&sort=installs"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "skill-installed",
+      "plugin-installed",
+    ]);
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("packages list falls recommended merges back to updated while scores backfill", async () => {
+    const pluginPackage = makeCatalogItem("plugin-older-high-score", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 50_000, installs: 500, stars: 10, versions: 1 },
+    });
+    const skillPackage = makeCatalogItem("skill-newer-low-score", {
+      family: "skill",
+      updatedAt: 200,
+      stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
+    });
+    let readinessCalls = 0;
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        readinessCalls += 1;
+        return readinessCalls === 1;
+      }
+      expect(args).toEqual(expect.objectContaining({ sort: "updated" }));
+      if (Object.hasOwn(args, "viewerUserId")) {
+        return { page: [pluginPackage], isDone: false, continueCursor: "plugin-next" };
+      }
+      return { page: [skillPackage], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?limit=2&sort=recommended"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "skill-newer-low-score",
+      "plugin-older-high-score",
+    ]);
+    expect(json.nextCursor).toContain('"recommendedFallback":"updated"');
+  });
+
   it("plugins list defaults to plugin package families", async () => {
     const codePlugin = {
       name: "code-plugin",
@@ -8086,6 +8159,7 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual(
         expect.objectContaining({
           category: undefined,
+          sort: "recommended",
           paginationOpts: { cursor: null, numItems: 7 },
         }),
       );
@@ -8144,17 +8218,8 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("plugin and package lists normalize legacy downloads sorts and cursors to installs", async () => {
-    let emittedInstallCursor = false;
-    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (Object.keys(args).length === 0) return 0;
-      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
-      if (!emittedInstallCursor) {
-        emittedInstallCursor = true;
-        return { page: [], isDone: false, continueCursor: "install-cursor" };
-      }
-      return { page: [], isDone: true, continueCursor: "" };
-    });
+  it("plugin and package lists reject removed downloads sort links", async () => {
+    const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const packageResponse = await __handlers.listPackagesV1Handler(
@@ -8185,32 +8250,49 @@ describe("httpApiV1 handlers", () => {
       ),
     );
 
-    expect(packageResponse.status).toBe(200);
-    expect(pluginResponse.status).toBe(200);
-    const packageJson = await packageResponse.json();
-    expect(packageJson.nextCursor).toMatch(/^pkginstalls:/);
-    const paginationCursors = runQuery.mock.calls
-      .map(([, args]) => (args as { paginationOpts?: { cursor: string | null } }).paginationOpts)
-      .filter(Boolean)
-      .map((pagination) => pagination?.cursor ?? null);
-    expect(paginationCursors).toEqual(paginationCursors.map(() => null));
+    expect(packageResponse.status).toBe(400);
+    expect(await packageResponse.text()).toBe("Invalid sort query parameter");
+    expect(pluginResponse.status).toBe(400);
+    expect(await pluginResponse.text()).toBe("Invalid sort query parameter");
+    expect(runQuery).not.toHaveBeenCalled();
+  });
 
-    runQuery.mockClear();
-    await __handlers.listPackagesV1Handler(
+  it("plugins list install sort forwards to both plugin families and merges by installs", async () => {
+    const codePlugin = makeCatalogItem("code-installed", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 1, installs: 50, stars: 0, versions: 1 },
+    });
+    const bundlePlugin = makeCatalogItem("bundle-installed", {
+      family: "bundle-plugin",
+      updatedAt: 200,
+      stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 2;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin") {
+        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request(
-        `https://example.com/api/v1/packages?family=code-plugin&sort=downloads&cursor=${encodeURIComponent(
-          packageJson.nextCursor,
-        )}`,
-      ),
+      new Request("https://example.com/api/v1/plugins?limit=2&sort=installs"),
     );
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        sort: "installs",
-        paginationOpts: { cursor: "install-cursor", numItems: 25 },
-      }),
-    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "code-installed",
+      "bundle-installed",
+    ]);
   });
 
   it("plugins list recommended sort uses weighted scores across plugin families", async () => {
