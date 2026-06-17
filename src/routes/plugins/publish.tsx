@@ -18,10 +18,7 @@ import {
   PackageSourceChooser,
   type PackagePickSource,
 } from "../../components/PackageSourceChooser";
-import {
-  PublisherOwnerSelect,
-  type PublisherOwnerMembership,
-} from "../../components/PublisherOwnerSelect";
+import { PublisherOwnerDisplay } from "../../components/PublisherOwnerSelect";
 import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
 import { Badge } from "../../components/ui/badge";
@@ -31,6 +28,7 @@ import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { VersionInput } from "../../components/VersionInput";
+import { useActivePublisher } from "../../lib/activePublisher";
 import {
   detectRelativeReadmeAssets,
   type RelativeReadmeAssetReport,
@@ -187,9 +185,11 @@ function PluginPublishError({ message }: { message: string }) {
 export function PublishPluginRoute() {
   const search = useSearch({ from: "/plugins/publish" });
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
-  const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | Array<PublisherOwnerMembership>
-    | undefined;
+  const {
+    activeOwnerHandle,
+    memberships: publisherMemberships,
+    isLoading: isActivePublisherLoading,
+  } = useActivePublisher();
   const existing = useQuery(
     api.packages.getManageContext,
     me && search.name ? { name: search.name } : "skip",
@@ -384,13 +384,19 @@ export function PublishPluginRoute() {
   };
 
   useEffect(() => {
+    if (search.ownerHandle) return;
+    if (activeOwnerHandle) {
+      if (ownerHandle !== activeOwnerHandle) setOwnerHandle(activeOwnerHandle);
+      return;
+    }
     if (ownerHandle) return;
     const personal =
-      publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0];
+      publisherMemberships?.find((entry) => entry.publisher.kind === "user") ??
+      publisherMemberships?.[0];
     if (personal?.publisher.handle) {
       setOwnerHandle(personal.publisher.handle);
     }
-  }, [ownerHandle, publishers]);
+  }, [activeOwnerHandle, ownerHandle, publisherMemberships, search.ownerHandle]);
 
   useEffect(() => {
     if (!existing?.package) return;
@@ -409,7 +415,7 @@ export function PublishPluginRoute() {
     }
   }, [existing]);
 
-  if (isAuthLoading) {
+  if (isAuthLoading || isActivePublisherLoading) {
     return <PublishFormSkeleton />;
   }
 
@@ -508,7 +514,7 @@ export function PublishPluginRoute() {
                 </div>
                 {ownerScopeError ? (
                   <Badge variant="warning" className="md:col-span-2">
-                    <span>{ownerScopeError}</span>
+                    <span>{ownerScopeError} Switch active publisher in the account menu.</span>
                     <a
                       href={DocsLinks.clawhub.packageScopeFaq}
                       target="_blank"
@@ -539,14 +545,10 @@ export function PublishPluginRoute() {
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">
-                  <Label htmlFor="pluginOwner">Owner</Label>
-                  <PublisherOwnerSelect
-                    id="pluginOwner"
-                    value={ownerHandle}
-                    memberships={publishers}
-                    disabled={metadataDisabled}
-                    onValueChange={setOwnerHandle}
-                  />
+                  <Label>Publishing as</Label>
+                  <div className="flex min-h-[44px] w-full items-center rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)]">
+                    <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
+                  </div>
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label htmlFor="pluginVersion">Version</Label>

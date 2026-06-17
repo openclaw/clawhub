@@ -84,3 +84,18 @@ function PublisherOwnerOption({ membership }: { membership: PublisherOwnerMember
     </span>
   );
 }
+
+export function PublisherOwnerDisplay({
+  value,
+  memberships,
+}: {
+  value: string;
+  memberships: PublisherOwnerMembership[] | undefined;
+}) {
+  const selected = (memberships ?? []).find((entry) => entry.publisher.handle === value) ?? null;
+  return selected ? (
+    <PublisherOwnerOption membership={selected} />
+  ) : (
+    <span className="truncate">{value ? `@${value}` : "No publisher selected"}</span>
+  );
+}

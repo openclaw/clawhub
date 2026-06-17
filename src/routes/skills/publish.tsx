@@ -29,10 +29,7 @@ import {
 } from "../../components/CatalogMetadataFields";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
-import {
-  PublisherOwnerSelect,
-  type PublisherOwnerMembership,
-} from "../../components/PublisherOwnerSelect";
+import { PublisherOwnerDisplay, PublisherOwnerSelect } from "../../components/PublisherOwnerSelect";
 import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
 import { SkillIconPicker } from "../../components/SkillIconPicker";
@@ -44,6 +41,7 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
+import { useActivePublisher } from "../../lib/activePublisher";
 import { setPostPublishFlash } from "../../lib/postPublishFlash";
 import { extractSkillFrontmatterDescription } from "../../lib/skillFrontmatter";
 import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
@@ -91,6 +89,11 @@ export const Route = createFileRoute("/skills/publish")({
 export function Upload() {
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const { updateSlug, ownerHandle: searchOwnerHandle } = useSearch({ from: "/skills/publish" });
+  const {
+    activeOwnerHandle,
+    memberships: publisherMemberships,
+    isLoading: isActivePublisherLoading,
+  } = useActivePublisher();
   const showChangelogField = Boolean(updateSlug);
 
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
@@ -163,9 +166,6 @@ export function Upload() {
   const [status, setStatus] = useState<string | null>(null);
   const isSubmitting = status !== null;
   const [error, setError] = useState<string | null>(null);
-  const publisherMemberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | PublisherOwnerMembership[]
-    | undefined;
   const [ownerHandle, setOwnerHandle] = useState(searchOwnerHandle ?? "");
   const ownerTouchedRef = useRef(false);
   // Owner migration opt-in: when updating an existing skill under a different
@@ -362,6 +362,8 @@ export function Upload() {
     if (memberships.length === 0) {
       if (!ownerHandle && existingOwnerHandle) {
         setOwnerHandle(existingOwnerHandle);
+      } else if (!ownerHandle && !updateSlug && !searchOwnerHandle && activeOwnerHandle) {
+        setOwnerHandle(activeOwnerHandle);
       }
       return;
     }
@@ -372,17 +374,28 @@ export function Upload() {
     const existingOwner = existingOwnerHandle
       ? memberships.find((entry) => entry.publisher.handle === existingOwnerHandle)
       : undefined;
+    const activeOwner = activeOwnerHandle
+      ? memberships.find((entry) => entry.publisher.handle === activeOwnerHandle)
+      : undefined;
     const shouldPreferExistingOwner = Boolean(
       !ownerTouchedRef.current &&
       updateSlug &&
       existingOwner &&
       ownerHandle !== existingOwner.publisher.handle,
     );
-    if (currentOwnerExists && !shouldPreferExistingOwner) return;
+    const shouldPreferActiveOwner = Boolean(
+      !ownerTouchedRef.current &&
+      !updateSlug &&
+      !searchOwnerHandle &&
+      activeOwner &&
+      ownerHandle !== activeOwner.publisher.handle,
+    );
+    if (currentOwnerExists && !shouldPreferExistingOwner && !shouldPreferActiveOwner) return;
 
     const personalPublisher = memberships.find((entry) => entry.publisher.kind === "user");
     const nextOwnerHandle =
       existingOwner?.publisher.handle ??
+      activeOwner?.publisher.handle ??
       personalPublisher?.publisher.handle ??
       memberships[0]?.publisher.handle;
     if (!nextOwnerHandle || nextOwnerHandle === ownerHandle) return;
@@ -392,7 +405,14 @@ export function Upload() {
     // a stale handle while the DOM displays the replacement option.
     setOwnerHandle(nextOwnerHandle);
     setConfirmMigrateOwner(false);
-  }, [ownerHandle, publisherMemberships, existing?.owner?.handle, updateSlug]);
+  }, [
+    activeOwnerHandle,
+    ownerHandle,
+    publisherMemberships,
+    existing?.owner?.handle,
+    searchOwnerHandle,
+    updateSlug,
+  ]);
 
   useEffect(() => {
     if (!showChangelogField) return;
@@ -590,7 +610,7 @@ export function Upload() {
   // webkitdirectory/directory attributes are set via the ref callback (setFileInputRef)
   // to ensure they persist across hydration and re-renders (#58)
 
-  if (isAuthLoading) {
+  if (isAuthLoading || isActivePublisherLoading) {
     return <PublishFormSkeleton />;
   }
 
@@ -1163,21 +1183,35 @@ export function Upload() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="ownerHandle">Owner</Label>
-                <PublisherOwnerSelect
-                  id="ownerHandle"
-                  value={ownerHandle}
-                  memberships={publisherMemberships}
-                  onValueChange={(nextOwnerHandle) => {
-                    ownerTouchedRef.current = true;
-                    setOwnerHandle(nextOwnerHandle);
-                    // Reset the migration confirmation any time the Owner
-                    // selector changes; the user must re-acknowledge the move
-                    // after picking a different target to avoid a stale tick
-                    // turning into a silent transfer.
-                    setConfirmMigrateOwner(false);
-                  }}
-                />
+                {updateSlug ? (
+                  <>
+                    <Label htmlFor="ownerHandle">Owner</Label>
+                    <PublisherOwnerSelect
+                      id="ownerHandle"
+                      value={ownerHandle}
+                      memberships={publisherMemberships}
+                      onValueChange={(nextOwnerHandle) => {
+                        ownerTouchedRef.current = true;
+                        setOwnerHandle(nextOwnerHandle);
+                        // Reset the migration confirmation any time the Owner
+                        // selector changes; the user must re-acknowledge the move
+                        // after picking a different target to avoid a stale tick
+                        // turning into a silent transfer.
+                        setConfirmMigrateOwner(false);
+                      }}
+                    />
+                  </>
+                ) : (
+                  <>
+                    <Label>Publishing as</Label>
+                    <div className="flex min-h-[44px] w-full items-center rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)]">
+                      <PublisherOwnerDisplay
+                        value={ownerHandle}
+                        memberships={publisherMemberships}
+                      />
+                    </div>
+                  </>
+                )}
                 {isOwnerMigration ? (
                   <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
                     <input

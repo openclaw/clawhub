@@ -62,6 +62,7 @@ import {
 import { Separator } from "../components/ui/separator";
 import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
+import { useActivePublisher } from "../lib/activePublisher";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
 import { timeAgo } from "../lib/timeAgo";
@@ -224,6 +225,7 @@ export function Settings() {
   const navigate = useNavigate();
   const { signOut } = useAuthActions();
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
+  const { activePublisher } = useActivePublisher();
   const updateProfile = useMutation(api.users.updateProfile);
   const deleteAccount = useMutation(api.users.deleteAccount);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
@@ -330,10 +332,17 @@ export function Settings() {
 
   useEffect(() => {
     if (selectedOrgHandle) return;
+    if (activePublisher?.publisher.kind === "org") {
+      const activeOrg = orgs.find((entry) => entry.publisher._id === activePublisher.publisher._id);
+      if (activeOrg?.publisher.handle) {
+        setSelectedOrgHandle(activeOrg.publisher.handle);
+        return;
+      }
+    }
     if (orgs[0]?.publisher.handle) {
       setSelectedOrgHandle(orgs[0].publisher.handle);
     }
-  }, [orgs, selectedOrgHandle]);
+  }, [activePublisher, orgs, selectedOrgHandle]);
 
   useEffect(() => {
     if (!officialGitHubSourcePublishers.length) {
