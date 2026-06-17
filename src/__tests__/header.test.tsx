@@ -239,15 +239,20 @@ describe("Header", () => {
     signInMock.mockResolvedValue({ signingIn: true });
   });
 
-  it("renders text-only content links in the top navbar", () => {
+  it("renders calm text-only content links in the top navbar", () => {
     setModeMock.mockClear();
 
     render(<Header />);
 
     const topNav = screen.getByRole("navigation", { name: "Primary navigation" });
-    expect(document.querySelector(".navbar-top-links")).toBeTruthy();
+    expect(document.querySelector(".navbar-calm")).toBeTruthy();
+    expect(document.querySelector(".navbar-calm-rail")).toBeTruthy();
+    expect(document.querySelector(".navbar-top-links")).toBeNull();
     expect(document.querySelector(".navbar-tabs")).toBeNull();
     expect(document.querySelector(".theme-mode-toggle")).toBeNull();
+    expect(
+      document.querySelector('.brand-mark-image[src="/og-clawhub-watermark.png"]'),
+    ).toBeTruthy();
     expect(within(topNav).getByText("Skills").closest("a")?.querySelector("svg")).toBeNull();
     expect(within(topNav).getByText("Plugins").closest("a")?.querySelector("svg")).toBeNull();
     expect(within(topNav).getByText("Docs").closest("a")?.getAttribute("href")).toBe(
@@ -255,7 +260,7 @@ describe("Header", () => {
     );
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
-    expect(screen.queryByText("Publishers")).toBeNull();
+    expect(screen.getAllByText("Publishers")).toHaveLength(1);
     expect(screen.getAllByText("Docs")).toHaveLength(1);
     expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
@@ -267,7 +272,7 @@ describe("Header", () => {
     expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
-    expect(screen.queryByText("Publishers")).toBeNull();
+    expect(screen.getAllByText("Publishers")).toHaveLength(2);
     expect(screen.getAllByText("Docs")).toHaveLength(2);
     expect(screen.queryByText("About")).toBeNull();
   });
@@ -398,7 +403,7 @@ describe("Header", () => {
     });
   });
 
-  it("shows grouped skills and plugins typeahead without users", () => {
+  it("shows tabbed skills and plugins typeahead without users", () => {
     navigateMock.mockReset();
 
     render(<Header />);
@@ -407,12 +412,14 @@ describe("Header", () => {
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
 
+    const tablist = screen.getByRole("tablist", { name: "Result type" });
+    expect(within(tablist).getByRole("tab", { name: "Skills" })).toBeTruthy();
+    expect(within(tablist).getByRole("tab", { name: "Plugins" })).toBeTruthy();
+
     const typeahead = screen.getByRole("listbox");
-    expect(within(typeahead).getByText("Skills")).toBeTruthy();
     expect(screen.getByText("Weather Skill")).toBeTruthy();
     expect(screen.getByText("@local / weather")).toBeTruthy();
-    expect(within(typeahead).getByText("Plugins")).toBeTruthy();
-    expect(screen.getByText("Weather Plugin")).toBeTruthy();
+    expect(screen.queryByText("Weather Plugin")).toBeNull();
     expect(input.getAttribute("role")).toBe("combobox");
     expect(input.getAttribute("aria-autocomplete")).toBe("list");
     expect(input.getAttribute("aria-expanded")).toBe("true");
@@ -422,6 +429,11 @@ describe("Header", () => {
     expect(within(typeahead).queryByText("Publishers")).toBeNull();
     expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
 
+    fireEvent.click(within(tablist).getByRole("tab", { name: "Plugins" }));
+    expect(screen.getByText("Weather Plugin")).toBeTruthy();
+    expect(screen.queryByText("Weather Skill")).toBeNull();
+
+    fireEvent.click(within(tablist).getByRole("tab", { name: "Skills" }));
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -486,12 +498,10 @@ describe("Header", () => {
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "zzzz" } });
 
-    const typeahead = screen.getByRole("listbox");
-    expect(within(typeahead).getByText('No skills or plugins found for "zzzz"')).toBeTruthy();
-    expect(within(typeahead).queryByText("Skills")).toBeNull();
-    expect(within(typeahead).queryByText("Plugins")).toBeNull();
-    expect(within(typeahead).queryByText('See skill results for "zzzz"')).toBeNull();
-    expect(within(typeahead).queryByText('See plugin results for "zzzz"')).toBeNull();
+    expect(screen.getByText('No skills or plugins found for "zzzz"')).toBeTruthy();
+    expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
+    expect(screen.queryByText('See skill results for "zzzz"')).toBeNull();
+    expect(screen.queryByText('See plugin results for "zzzz"')).toBeNull();
   });
 
   it("shows Home above Skills in the mobile menu", () => {
@@ -499,13 +509,15 @@ describe("Header", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
-    expect(document.querySelector(".mobile-nav-brand-mark-image")).toBeTruthy();
+    expect(
+      document.querySelector('.mobile-nav-brand-mark-image[src="/og-clawhub-watermark.png"]'),
+    ).toBeTruthy();
 
     const labels = Array.from(document.querySelectorAll(".mobile-nav-section .mobile-nav-link"))
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 4)).toEqual(["Home", "Skills", "Plugins", "Docs"]);
+    expect(labels.slice(0, 5)).toEqual(["Home", "Skills", "Plugins", "Publishers", "Docs"]);
   });
 
   it("links profile and starred skills from the signed-in avatar menu", () => {

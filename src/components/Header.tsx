@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 import {
   ArrowRight,
   ChevronDown,
+  Command,
   LayoutDashboard,
   Menu,
   Monitor,
@@ -32,6 +33,7 @@ import {
   type UnifiedPluginResult,
   type UnifiedSkillResult,
 } from "../lib/useUnifiedSearch";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -54,6 +56,36 @@ const THEME_MODE_ITEMS = [
   { mode: "light", label: "Light theme", Icon: Sun },
   { mode: "dark", label: "Dark theme", Icon: Moon },
 ] as const;
+const CLAWHUB_BRAND_MARK_SRC = "/og-clawhub-watermark.png";
+
+function useAppleSearchShortcut() {
+  const [isApple, setIsApple] = useState(true);
+
+  useEffect(() => {
+    setIsApple(/Mac|iPhone|iPad|iPod/.test(navigator.userAgent));
+  }, []);
+
+  return isApple;
+}
+
+function NavSearchShortcutKbd({ isApple }: { isApple: boolean }) {
+  return (
+    <kbd className="navbar-search-kbd" aria-hidden="true">
+      {isApple ? (
+        <>
+          <Command className="navbar-search-kbd-icon" aria-hidden="true" />
+          <span className="navbar-search-kbd-key">K</span>
+        </>
+      ) : (
+        <>
+          <span className="navbar-search-kbd-key">Ctrl</span>
+          <span className="navbar-search-kbd-plus">+</span>
+          <span className="navbar-search-kbd-key">K</span>
+        </>
+      )}
+    </kbd>
+  );
+}
 
 function GitHubLogo({ className }: { className?: string }) {
   return (
@@ -62,6 +94,8 @@ function GitHubLogo({ className }: { className?: string }) {
     </svg>
   );
 }
+
+type TypeaheadTab = "skills" | "plugins";
 
 type TypeaheadItem =
   | {
@@ -77,7 +111,7 @@ type TypeaheadItem =
   | {
       kind: "footer";
       key: string;
-      section: "skills" | "plugins";
+      section: TypeaheadTab;
       label: string;
     };
 
@@ -101,10 +135,14 @@ export default function Header() {
 
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const [typeaheadOpen, setTypeaheadOpen] = useState(false);
+  const [typeaheadTab, setTypeaheadTab] = useState<TypeaheadTab>("skills");
   const [typeaheadActiveIndex, setTypeaheadActiveIndex] = useState(0);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [headerScrolled, setHeaderScrolled] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
+  const navSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const isAppleSearchShortcut = useAppleSearchShortcut();
   const trimmedNavSearchQuery = navSearchQuery.trim();
   const showTypeahead = typeaheadOpen && trimmedNavSearchQuery.length > 0;
   const {
@@ -116,7 +154,7 @@ export default function Header() {
     enabled: showTypeahead,
     limits: { skills: 4, plugins: 4 },
   });
-  const typeaheadItems = useMemo<TypeaheadItem[]>(() => {
+  const typeaheadSkillItems = useMemo<TypeaheadItem[]>(() => {
     if (!showTypeahead) return [];
     const items: TypeaheadItem[] = [];
     for (const result of skillResults) {
@@ -130,6 +168,12 @@ export default function Header() {
         label: `See skill results for "${trimmedNavSearchQuery}"`,
       });
     }
+    return items;
+  }, [showTypeahead, skillResults, trimmedNavSearchQuery]);
+
+  const typeaheadPluginItems = useMemo<TypeaheadItem[]>(() => {
+    if (!showTypeahead) return [];
+    const items: TypeaheadItem[] = [];
     for (const result of pluginResults) {
       items.push({ kind: "plugin", key: `plugin-${result.plugin.name}`, result });
     }
@@ -142,7 +186,9 @@ export default function Header() {
       });
     }
     return items;
-  }, [pluginResults, showTypeahead, skillResults, trimmedNavSearchQuery]);
+  }, [pluginResults, showTypeahead, trimmedNavSearchQuery]);
+
+  const typeaheadItems = typeaheadTab === "skills" ? typeaheadSkillItems : typeaheadPluginItems;
   const activeTypeaheadItem = showTypeahead ? typeaheadItems[typeaheadActiveIndex] : undefined;
   const activeTypeaheadId = activeTypeaheadItem
     ? getTypeaheadOptionId(activeTypeaheadItem)
@@ -150,11 +196,16 @@ export default function Header() {
 
   useEffect(() => {
     setTypeaheadActiveIndex(0);
+    setTypeaheadTab("skills");
   }, [trimmedNavSearchQuery]);
 
   useEffect(() => {
     setTypeaheadActiveIndex((index) => Math.min(index, Math.max(typeaheadItems.length - 1, 0)));
   }, [typeaheadItems.length]);
+
+  useEffect(() => {
+    setTypeaheadActiveIndex(0);
+  }, [typeaheadTab]);
 
   useEffect(() => {
     if (!typeaheadOpen) return () => {};
@@ -165,6 +216,51 @@ export default function Header() {
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
   }, [typeaheadOpen]);
+
+  useEffect(() => {
+    const threshold = 8;
+    let frame = 0;
+    const update = () => {
+      frame = 0;
+      setHeaderScrolled(window.scrollY > threshold);
+    };
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(update);
+    };
+
+    update();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [location.pathname]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!(event.metaKey || event.ctrlKey) || event.key.toLowerCase() !== "k") return;
+      if (event.defaultPrevented) return;
+
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT")
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      navSearchInputRef.current?.focus();
+      setTypeaheadOpen(true);
+    };
+
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const setThemeMode = (next: "system" | "light" | "dark") => {
     applyTheme(next, theme);
@@ -221,14 +317,28 @@ export default function Header() {
       setTypeaheadOpen(false);
       return;
     }
-    if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Enter") return;
-    if (!showTypeahead || typeaheadItems.length === 0) {
+    if (
+      event.key !== "ArrowDown" &&
+      event.key !== "ArrowUp" &&
+      event.key !== "ArrowLeft" &&
+      event.key !== "ArrowRight" &&
+      event.key !== "Enter"
+    ) {
+      return;
+    }
+    if (!showTypeahead) {
       if (event.key === "ArrowDown" && trimmedNavSearchQuery) {
         setTypeaheadOpen(true);
         event.preventDefault();
       }
       return;
     }
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      setTypeaheadTab((tab) => (tab === "skills" ? "plugins" : "skills"));
+      return;
+    }
+    if (typeaheadItems.length === 0) return;
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setTypeaheadActiveIndex((index) => (index + 1) % typeaheadItems.length);
@@ -246,61 +356,45 @@ export default function Header() {
   };
 
   return (
-    <header className="navbar">
+    <header className={`navbar navbar-calm${headerScrolled ? " navbar-calm-scrolled" : ""}`}>
       <div className="navbar-inner">
-        {/* Row 1: Brand + Search + Actions */}
         <div className="navbar-top">
-          <div className="nav-mobile">
-            <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
-              <button
-                className="nav-mobile-trigger"
-                type="button"
-                aria-label="Open menu"
-                onClick={() => setMobileMenuOpen(true)}
-              >
-                <Menu className="h-4 w-4" aria-hidden="true" />
-              </button>
-              <SheetContent side="left" className="mobile-nav-sheet">
-                <SheetHeader className="pr-10">
-                  <SheetTitle>
-                    <span className="mobile-nav-brand">
-                      <span className="mobile-nav-brand-mark" aria-hidden="true">
-                        <img
-                          src="/clawd-logo.png"
-                          alt=""
-                          aria-hidden="true"
-                          className="mobile-nav-brand-mark-image"
-                        />
+          <div className="navbar-calm-start">
+            <div className="nav-mobile">
+              <Sheet open={mobileMenuOpen} onOpenChange={setMobileMenuOpen}>
+                <button
+                  className="nav-mobile-trigger"
+                  type="button"
+                  aria-label="Open menu"
+                  onClick={() => setMobileMenuOpen(true)}
+                >
+                  <Menu className="h-4 w-4" aria-hidden="true" />
+                </button>
+                <SheetContent side="left" className="mobile-nav-sheet">
+                  <SheetHeader className="pr-10">
+                    <SheetTitle>
+                      <span className="mobile-nav-brand">
+                        <span className="mobile-nav-brand-mark" aria-hidden="true">
+                          <img
+                            src={CLAWHUB_BRAND_MARK_SRC}
+                            alt=""
+                            aria-hidden="true"
+                            className="mobile-nav-brand-mark-image"
+                          />
+                        </span>
+                        <span className="mobile-nav-brand-name">{SITE_NAME}</span>
                       </span>
-                      <span className="mobile-nav-brand-name">{SITE_NAME}</span>
-                    </span>
-                  </SheetTitle>
-                  <SheetDescription>Browse sections and access account actions.</SheetDescription>
-                </SheetHeader>
-                <div className="mobile-nav-section">
-                  <SheetClose asChild>
-                    <Link to="/" className="mobile-nav-link">
-                      Home
-                    </Link>
-                  </SheetClose>
-                  {PRIMARY_NAV_ITEMS.map((item) => (
-                    <SheetClose key={item.to + item.label} asChild>
-                      <Link
-                        to={item.to}
-                        search={(item.search ?? {}) as never}
-                        className="mobile-nav-link"
-                      >
-                        {item.label}
+                    </SheetTitle>
+                    <SheetDescription>Browse sections and access account actions.</SheetDescription>
+                  </SheetHeader>
+                  <div className="mobile-nav-section">
+                    <SheetClose asChild>
+                      <Link to="/" className="mobile-nav-link">
+                        Home
                       </Link>
                     </SheetClose>
-                  ))}
-                  {SECONDARY_NAV_ITEMS.map((item) => (
-                    <SheetClose key={(item.href ?? item.to ?? "") + item.label} asChild>
-                      {item.href ? (
-                        <a href={item.href} className="mobile-nav-link">
-                          {item.label}
-                        </a>
-                      ) : (
+                    {PRIMARY_NAV_ITEMS.map((item) => (
+                      <SheetClose key={item.to + item.label} asChild>
                         <Link
                           to={item.to}
                           search={(item.search ?? {}) as never}
@@ -308,94 +402,115 @@ export default function Header() {
                         >
                           {item.label}
                         </Link>
-                      )}
-                    </SheetClose>
-                  ))}
-                </div>
-              </SheetContent>
-            </Sheet>
-          </div>
+                      </SheetClose>
+                    ))}
+                    {SECONDARY_NAV_ITEMS.map((item) => (
+                      <SheetClose key={(item.href ?? item.to ?? "") + item.label} asChild>
+                        {item.href ? (
+                          <a href={item.href} className="mobile-nav-link">
+                            {item.label}
+                          </a>
+                        ) : (
+                          <Link
+                            to={item.to}
+                            search={(item.search ?? {}) as never}
+                            className="mobile-nav-link"
+                          >
+                            {item.label}
+                          </Link>
+                        )}
+                      </SheetClose>
+                    ))}
+                  </div>
+                </SheetContent>
+              </Sheet>
+            </div>
 
-          <Link
-            to="/"
-            search={{ q: undefined, highlighted: undefined, search: undefined }}
-            className="brand"
-          >
-            <span className="brand-mark">
-              <img src="/clawd-logo.png" alt="" aria-hidden="true" className="brand-mark-image" />
-            </span>
-            <span className="brand-name brand-name-responsive">{SITE_NAME}</span>
-          </Link>
-
-          <nav className="navbar-top-links" aria-label="Primary navigation">
-            {[...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS].map((item) => {
-              const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
-                location.pathname.startsWith(prefix),
-              );
-              return item.href ? (
-                <a
-                  key={item.href + item.label}
-                  href={item.href}
-                  className="navbar-tab"
-                  data-status={isActiveByPrefix ? "active" : undefined}
-                >
-                  {item.label}
-                </a>
-              ) : (
-                <Link
-                  key={item.to + item.label}
-                  to={item.to}
-                  className="navbar-tab"
-                  search={(item.search ?? {}) as never}
-                  data-status={isActiveByPrefix ? "active" : undefined}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="navbar-search-wrap" ref={searchWrapRef}>
-            <form
-              className="navbar-search"
-              onSubmit={handleNavSearch}
-              role="search"
-              aria-label="Site search"
+            <Link
+              to="/"
+              search={{ q: undefined, highlighted: undefined, search: undefined }}
+              className="brand"
             >
-              <Search size={16} className="navbar-search-icon" aria-hidden="true" />
-              <input
-                className="navbar-search-input"
-                type="search"
-                role="combobox"
-                placeholder="Search skills and plugins"
-                value={navSearchQuery}
-                onChange={(e) => {
-                  setNavSearchQuery(e.target.value);
-                  setTypeaheadOpen(true);
-                }}
-                onFocus={() => setTypeaheadOpen(true)}
-                onKeyDown={handleSearchKeyDown}
-                aria-label="Search"
-                aria-autocomplete="list"
-                aria-expanded={showTypeahead}
-                aria-controls="navbar-search-typeahead"
-                aria-activedescendant={activeTypeaheadId}
-                autoComplete="off"
-              />
-            </form>
-            {showTypeahead ? (
-              <SearchTypeahead
-                activeIndex={typeaheadActiveIndex}
-                items={typeaheadItems}
-                loading={typeaheadSearching}
-                onHoverItem={setTypeaheadActiveIndex}
-                onSelectItem={navigateToTypeaheadItem}
-                query={trimmedNavSearchQuery}
-              />
-            ) : null}
+              <span className="brand-mark">
+                <img
+                  src={CLAWHUB_BRAND_MARK_SRC}
+                  alt=""
+                  aria-hidden="true"
+                  className="brand-mark-image"
+                />
+              </span>
+              <span className="brand-name brand-name-responsive">{SITE_NAME}</span>
+            </Link>
+
+            <nav className="navbar-calm-rail" aria-label="Primary navigation">
+              {PRIMARY_NAV_ITEMS.map((item) => (
+                <HeaderNavTab
+                  key={item.to + item.label}
+                  className="navbar-calm-rail-link"
+                  item={item}
+                  pathname={location.pathname}
+                />
+              ))}
+              {SECONDARY_NAV_ITEMS.map((item) => (
+                <HeaderNavTab
+                  key={(item.href ?? item.to ?? "") + item.label}
+                  className="navbar-calm-rail-link navbar-calm-rail-link-secondary"
+                  item={item}
+                  pathname={location.pathname}
+                />
+              ))}
+            </nav>
           </div>
 
-          <div className="nav-actions">
+          <div className="navbar-calm-center">
+            <div className="navbar-search-wrap" ref={searchWrapRef}>
+              <form
+                className="navbar-search"
+                onSubmit={handleNavSearch}
+                role="search"
+                aria-label="Site search"
+              >
+                <Search size={16} className="navbar-search-icon" aria-hidden="true" />
+                <input
+                  ref={navSearchInputRef}
+                  className="navbar-search-input"
+                  type="search"
+                  role="combobox"
+                  placeholder="Search skills and plugins"
+                  value={navSearchQuery}
+                  onChange={(e) => {
+                    setNavSearchQuery(e.target.value);
+                    setTypeaheadOpen(true);
+                  }}
+                  onFocus={() => setTypeaheadOpen(true)}
+                  onKeyDown={handleSearchKeyDown}
+                  aria-label="Search"
+                  aria-autocomplete="list"
+                  aria-expanded={showTypeahead}
+                  aria-controls="navbar-search-typeahead"
+                  aria-activedescendant={activeTypeaheadId}
+                  autoComplete="off"
+                />
+                <NavSearchShortcutKbd isApple={isAppleSearchShortcut} />
+              </form>
+              {showTypeahead ? (
+                <SearchTypeahead
+                  activeIndex={typeaheadActiveIndex}
+                  activeTab={typeaheadTab}
+                  items={typeaheadItems}
+                  loading={typeaheadSearching}
+                  onHoverItem={setTypeaheadActiveIndex}
+                  onSelectItem={navigateToTypeaheadItem}
+                  onTabChange={setTypeaheadTab}
+                  pluginItems={typeaheadPluginItems}
+                  query={trimmedNavSearchQuery}
+                  skillItems={typeaheadSkillItems}
+                />
+              ) : null}
+            </div>
+          </div>
+
+          <div className="navbar-calm-actions nav-actions">
             <button
               className="navbar-search-mobile-trigger"
               type="button"
@@ -536,109 +651,151 @@ export default function Header() {
   );
 }
 
+type HeaderNavItem = (typeof PRIMARY_NAV_ITEMS)[number];
+
+function HeaderNavTab({
+  className,
+  item,
+  pathname,
+}: {
+  className: string;
+  item: HeaderNavItem;
+  pathname: string;
+}) {
+  const isActiveByPrefix = item.activePathPrefixes?.some((prefix) => pathname.startsWith(prefix));
+
+  if (item.href) {
+    return (
+      <a
+        href={item.href}
+        className={className}
+        data-status={isActiveByPrefix ? "active" : undefined}
+      >
+        {item.label}
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      to={item.to}
+      className={className}
+      search={(item.search ?? {}) as never}
+      data-status={isActiveByPrefix ? "active" : undefined}
+    >
+      {item.label}
+    </Link>
+  );
+}
+
 function SearchTypeahead({
   activeIndex,
+  activeTab,
   items,
   loading,
   onHoverItem,
   onSelectItem,
+  onTabChange,
+  pluginItems,
   query,
+  skillItems,
 }: {
   activeIndex: number;
+  activeTab: TypeaheadTab;
   items: TypeaheadItem[];
   loading: boolean;
   onHoverItem: (index: number) => void;
   onSelectItem: (item: TypeaheadItem) => void;
+  onTabChange: (tab: TypeaheadTab) => void;
+  pluginItems: TypeaheadItem[];
   query: string;
+  skillItems: TypeaheadItem[];
 }) {
-  const skillItems = items.filter((item) => item.kind === "skill");
-  const pluginItems = items.filter((item) => item.kind === "plugin");
-  const footerItems = items.filter((item) => item.kind === "footer");
-  const skillsFooter = footerItems.find(
-    (item) => item.kind === "footer" && item.section === "skills",
-  );
-  const pluginsFooter = footerItems.find(
-    (item) => item.kind === "footer" && item.section === "plugins",
-  );
-  const hasMatches = skillItems.length > 0 || pluginItems.length > 0;
+  const hasSkillMatches = skillItems.some((item) => item.kind === "skill");
+  const hasPluginMatches = pluginItems.some((item) => item.kind === "plugin");
+  const hasMatches = hasSkillMatches || hasPluginMatches;
+  const activeTabHasItems = items.length > 0;
+  const emptyTabLabel = activeTab === "skills" ? "skills" : "plugins";
 
   return (
-    <div
-      className="navbar-search-typeahead"
-      id="navbar-search-typeahead"
-      role="listbox"
-      aria-label="Search suggestions"
-    >
-      <TypeaheadSection
-        activeIndex={activeIndex}
-        items={items}
-        label="Skills"
-        sectionItems={skillItems}
-        footer={skillsFooter}
-        onHoverItem={onHoverItem}
-        onSelectItem={onSelectItem}
-      />
-      <TypeaheadSection
-        activeIndex={activeIndex}
-        items={items}
-        label="Plugins"
-        sectionItems={pluginItems}
-        footer={pluginsFooter}
-        onHoverItem={onHoverItem}
-        onSelectItem={onSelectItem}
-      />
-      {loading && !hasMatches ? (
-        <div className="navbar-search-typeahead-status">Searching...</div>
-      ) : null}
-      {!loading && !hasMatches ? (
-        <div className="navbar-search-typeahead-status">
-          No skills or plugins found for "{query}"
+    <div className="navbar-search-typeahead" id="navbar-search-typeahead">
+      {hasMatches || loading ? (
+        <div className="navbar-search-typeahead-top">
+          <div
+            className="navbar-search-typeahead-tabs clawhub-segmented"
+            role="tablist"
+            aria-label="Result type"
+          >
+            <button
+              type="button"
+              role="tab"
+              id="navbar-search-typeahead-tab-skills"
+              aria-selected={activeTab === "skills"}
+              aria-controls="navbar-search-typeahead-panel"
+              className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "skills" ? " is-active" : ""}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onTabChange("skills")}
+            >
+              Skills
+            </button>
+            <button
+              type="button"
+              role="tab"
+              id="navbar-search-typeahead-tab-plugins"
+              aria-selected={activeTab === "plugins"}
+              aria-controls="navbar-search-typeahead-panel"
+              className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "plugins" ? " is-active" : ""}`}
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => onTabChange("plugins")}
+            >
+              Plugins
+            </button>
+          </div>
         </div>
       ) : null}
-    </div>
-  );
-}
-
-function TypeaheadSection({
-  activeIndex,
-  footer,
-  items,
-  label,
-  onHoverItem,
-  onSelectItem,
-  sectionItems,
-}: {
-  activeIndex: number;
-  footer: TypeaheadItem | undefined;
-  items: TypeaheadItem[];
-  label: string;
-  onHoverItem: (index: number) => void;
-  onSelectItem: (item: TypeaheadItem) => void;
-  sectionItems: TypeaheadItem[];
-}) {
-  if (sectionItems.length === 0 && !footer) return null;
-  return (
-    <div className="navbar-search-typeahead-section">
-      <div className="navbar-search-typeahead-heading">{label}</div>
-      {sectionItems.map((item) => (
-        <TypeaheadRow
-          key={item.key}
-          active={items[activeIndex]?.key === item.key}
-          item={item}
-          index={items.findIndex((candidate) => candidate.key === item.key)}
-          onHoverItem={onHoverItem}
-          onSelectItem={onSelectItem}
-        />
-      ))}
-      {footer ? (
-        <TypeaheadRow
-          active={items[activeIndex]?.key === footer.key}
-          item={footer}
-          index={items.findIndex((candidate) => candidate.key === footer.key)}
-          onHoverItem={onHoverItem}
-          onSelectItem={onSelectItem}
-        />
-      ) : null}
+      <div
+        id="navbar-search-typeahead-panel"
+        className="navbar-search-typeahead-panel"
+        role="tabpanel"
+        aria-labelledby={
+          activeTab === "skills"
+            ? "navbar-search-typeahead-tab-skills"
+            : "navbar-search-typeahead-tab-plugins"
+        }
+      >
+        {loading && !hasMatches ? (
+          <div className="navbar-search-typeahead-status">Searching...</div>
+        ) : null}
+        {!loading && !hasMatches ? (
+          <div className="navbar-search-typeahead-status">
+            No skills or plugins found for "{query}"
+          </div>
+        ) : null}
+        {hasMatches ? (
+          <div
+            className="navbar-search-typeahead-results"
+            role="listbox"
+            aria-label="Search suggestions"
+          >
+            {activeTabHasItems ? (
+              items.map((item, index) => (
+                <TypeaheadRow
+                  key={item.key}
+                  active={activeIndex === index}
+                  item={item}
+                  index={index}
+                  onHoverItem={onHoverItem}
+                  onSelectItem={onSelectItem}
+                />
+              ))
+            ) : (
+              <div className="navbar-search-typeahead-status">
+                No {emptyTabLabel} found for "{query}"
+              </div>
+            )}
+          </div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -668,7 +825,7 @@ function TypeaheadRow({
       onMouseDown={(event) => event.preventDefault()}
       onClick={() => onSelectItem(item)}
     >
-      {body.icon ? <span className="navbar-search-typeahead-icon">{body.icon}</span> : null}
+      <TypeaheadRowIcon item={item} />
       <span className="navbar-search-typeahead-copy">
         <span className="navbar-search-typeahead-title">{body.title}</span>
         {body.meta ? <span className="navbar-search-typeahead-meta">{body.meta}</span> : null}
@@ -682,11 +839,32 @@ function getTypeaheadOptionId(item: TypeaheadItem) {
   return `navbar-search-typeahead-${item.key.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
+function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
+  if (item.kind === "skill") {
+    const label = item.result.skill.displayName || item.result.skill.slug;
+    return (
+      <span className="navbar-search-typeahead-icon" aria-hidden="true">
+        <MarketplaceIcon kind="skill" label={label} size="xs" />
+      </span>
+    );
+  }
+
+  if (item.kind === "plugin") {
+    const label = item.result.plugin.displayName || item.result.plugin.name;
+    return (
+      <span className="navbar-search-typeahead-icon" aria-hidden="true">
+        <MarketplaceIcon kind="plugin" label={label} size="xs" />
+      </span>
+    );
+  }
+
+  return null;
+}
+
 function getTypeaheadRowBody(item: TypeaheadItem) {
   if (item.kind === "skill") {
     const owner = item.result.ownerHandle ? `@${item.result.ownerHandle}` : "Skill";
     return {
-      icon: "S",
       title: item.result.skill.displayName,
       meta: `${owner} / ${item.result.skill.slug}`,
     };
@@ -696,13 +874,11 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
       ? `@${item.result.plugin.ownerHandle} / ${item.result.plugin.name}`
       : item.result.plugin.name;
     return {
-      icon: "P",
       title: item.result.plugin.displayName,
       meta: owner,
     };
   }
   return {
-    icon: null,
     title: item.label,
     meta: null,
   };
