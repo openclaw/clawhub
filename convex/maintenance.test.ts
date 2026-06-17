@@ -23,8 +23,10 @@ vi.mock("./_generated/api", () => ({
         "applySkillFingerprintBackfillPatchInternal",
       ),
       backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
-      applySkillCapabilityTagsInternal: Symbol("applySkillCapabilityTagsInternal"),
-      backfillSkillCapabilityTagsInternal: Symbol("backfillSkillCapabilityTagsInternal"),
+      cleanupRetiredCapabilityMetadataBatchInternal: Symbol(
+        "cleanupRetiredCapabilityMetadataBatchInternal",
+      ),
+      cleanupRetiredCapabilityMetadataInternal: Symbol("cleanupRetiredCapabilityMetadataInternal"),
       backfillSkillSearchDigestModerationVerdictsInternal: Symbol(
         "backfillSkillSearchDigestModerationVerdictsInternal",
       ),
@@ -50,13 +52,14 @@ vi.mock("./lib/skillSummary", () => ({
 }));
 
 const {
-  applySkillCapabilityTagsInternal,
   backfillLatestVersionSummaryInternal,
   backfillSkillSearchDigestModerationVerdictsInternal,
   backfillPublisherStatsInternalHandler,
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
+  cleanupRetiredCapabilityMetadataBatchInternal,
+  cleanupRetiredCapabilityMetadataInternal,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
@@ -946,185 +949,193 @@ describe("maintenance badge denormalization", () => {
   });
 });
 
-describe("maintenance capability tag backfill", () => {
-  it("keeps latest skill search digest capability tags in sync", async () => {
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1234);
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({
-        _id: "skillVersions:1",
-        capabilityTags: ["can-make-purchases"],
-      })
-      .mockResolvedValueOnce({
-        _id: "skills:1",
-        latestVersionId: "skillVersions:1",
-        capabilityTags: ["can-make-purchases"],
-      });
-    const unique = vi.fn().mockResolvedValue({
-      _id: "skillSearchDigest:1",
-      capabilityTags: ["can-make-purchases"],
+describe("maintenance retired capability metadata cleanup", () => {
+  it("counts package legacy fields during dry run without mutating", async () => {
+    const patch = vi.fn();
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        {
+          _id: "packages:1",
+          capabilityTags: ["tools"],
+          executesCode: true,
+          capabilities: { capabilityTags: ["tools"] },
+          latestVersionSummary: {
+            version: "1.0.0",
+            capabilities: { capabilityTags: ["tools"] },
+            artifact: null,
+          },
+        },
+      ],
+      continueCursor: null,
+      isDone: true,
     });
-    const withIndex = vi.fn((_indexName, callback) => {
-      callback({ eq: vi.fn() });
-      return { unique };
-    });
-    const query = vi.fn().mockReturnValue({ withIndex });
-    const patch = vi.fn().mockResolvedValue(undefined);
 
     const result = await (
-      applySkillCapabilityTagsInternal as unknown as { _handler: Function }
+      cleanupRetiredCapabilityMetadataBatchInternal as unknown as { _handler: Function }
     )._handler(
       {
         db: {
-          get,
+          query: vi.fn().mockReturnValue({ paginate }),
+          get: vi.fn(),
+          insert: vi.fn(),
           patch,
-          query,
+          replace: vi.fn(),
+          delete: vi.fn(),
           normalizeId: vi.fn(),
         },
       } as never,
-      {
-        skillId: "skills:1",
-        versionId: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
-      },
+      { table: "packages", dryRun: true, batchSize: 10 },
     );
 
     expect(result).toEqual({
-      ok: true,
-      versionPatched: true,
-      skillPatched: true,
-      digestPatched: true,
+      table: "packages",
+      cursor: null,
+      isDone: true,
+      scanned: 1,
+      matched: 1,
+      mutated: 0,
     });
-    expect(patch).toHaveBeenNthCalledWith(1, "skillVersions:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-    });
-    expect(patch).toHaveBeenNthCalledWith(2, "skills:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-      updatedAt: 1234,
-    });
-    expect(patch).toHaveBeenNthCalledWith(3, "skillSearchDigest:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-      updatedAt: 1234,
-    });
-    expect(query).toHaveBeenCalledWith("skillSearchDigest");
-    expect(withIndex).toHaveBeenCalledWith("by_skill", expect.any(Function));
-
-    nowSpy.mockRestore();
+    expect(patch).not.toHaveBeenCalled();
   });
 
-  it("counts trigger-synced digest tags when the latest skill tags change", async () => {
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(2222);
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({
-        _id: "skillVersions:1",
-        capabilityTags: ["can-make-purchases"],
-      })
-      .mockResolvedValueOnce({
-        _id: "skills:1",
-        latestVersionId: "skillVersions:1",
-        capabilityTags: ["can-make-purchases"],
-      });
-    const unique = vi.fn().mockResolvedValue({
-      _id: "skillSearchDigest:1",
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-    });
-    const withIndex = vi.fn((_indexName, callback) => {
-      callback({ eq: vi.fn() });
-      return { unique };
-    });
-    const query = vi.fn().mockReturnValue({ withIndex });
-    const patch = vi.fn().mockResolvedValue(undefined);
-
-    const result = await (
-      applySkillCapabilityTagsInternal as unknown as { _handler: Function }
-    )._handler(
-      {
-        db: {
-          get,
-          patch,
-          query,
-          normalizeId: vi.fn(),
-        },
-      } as never,
-      {
-        skillId: "skills:1",
-        versionId: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
+  it("requires confirmation before applying package legacy field cleanup", async () => {
+    const row = {
+      _id: "packages:1",
+      capabilityTags: ["tools"],
+      executesCode: true,
+      capabilities: { capabilityTags: ["tools"] },
+      latestVersionSummary: {
+        version: "1.0.0",
+        capabilities: { capabilityTags: ["tools"] },
+        artifact: null,
       },
-    );
+    };
+    const makeCtx = () => ({
+      db: {
+        query: vi.fn().mockReturnValue({
+          paginate: vi.fn().mockResolvedValue({
+            page: [row],
+            continueCursor: null,
+            isDone: true,
+          }),
+        }),
+        get: vi.fn(),
+        insert: vi.fn(),
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    });
 
-    expect(result).toEqual({
-      ok: true,
-      versionPatched: true,
-      skillPatched: true,
-      digestPatched: true,
-    });
-    expect(patch).toHaveBeenCalledTimes(2);
-    expect(patch).toHaveBeenNthCalledWith(1, "skillVersions:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-    });
-    expect(patch).toHaveBeenNthCalledWith(2, "skills:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-      updatedAt: 2222,
+    await expect(
+      (cleanupRetiredCapabilityMetadataBatchInternal as unknown as { _handler: Function })._handler(
+        makeCtx() as never,
+        { table: "packages", dryRun: false },
+      ),
+    ).rejects.toThrow('Pass confirm="remove-retired-capability-metadata" to apply.');
+
+    const ctx = makeCtx();
+    const result = await (
+      cleanupRetiredCapabilityMetadataBatchInternal as unknown as { _handler: Function }
+    )._handler(ctx as never, {
+      table: "packages",
+      dryRun: false,
+      confirm: "remove-retired-capability-metadata",
     });
 
-    nowSpy.mockRestore();
+    expect(result).toMatchObject({ scanned: 1, matched: 1, mutated: 1 });
+    expect(ctx.db.patch).toHaveBeenCalledWith("packages:1", {
+      capabilityTags: undefined,
+      executesCode: undefined,
+      capabilities: undefined,
+      latestVersionSummary: {
+        version: "1.0.0",
+        artifact: null,
+      },
+    });
   });
 
-  it("repairs a stale latest skill search digest even when skill tags already match", async () => {
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({
-        _id: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
-      })
-      .mockResolvedValueOnce({
-        _id: "skills:1",
-        latestVersionId: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
-        updatedAt: 987,
-      });
-    const unique = vi.fn().mockResolvedValue({
-      _id: "skillSearchDigest:1",
-      capabilityTags: ["can-make-purchases"],
-    });
-    const withIndex = vi.fn((_indexName, callback) => {
-      callback({ eq: vi.fn() });
-      return { unique };
-    });
-    const query = vi.fn().mockReturnValue({ withIndex });
-    const patch = vi.fn().mockResolvedValue(undefined);
+  it("deletes retired package capability digest rows when confirmed", async () => {
+    const deleteDoc = vi.fn();
 
     const result = await (
-      applySkillCapabilityTagsInternal as unknown as { _handler: Function }
+      cleanupRetiredCapabilityMetadataBatchInternal as unknown as { _handler: Function }
     )._handler(
       {
         db: {
-          get,
-          patch,
-          query,
+          query: vi.fn().mockReturnValue({
+            paginate: vi.fn().mockResolvedValue({
+              page: [{ _id: "packageCapabilitySearchDigest:1" }],
+              continueCursor: null,
+              isDone: true,
+            }),
+          }),
+          get: vi.fn(),
+          insert: vi.fn(),
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: deleteDoc,
           normalizeId: vi.fn(),
         },
       } as never,
       {
-        skillId: "skills:1",
-        versionId: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
+        table: "packageCapabilitySearchDigest",
+        dryRun: false,
+        confirm: "remove-retired-capability-metadata",
       },
     );
 
-    expect(result).toEqual({
+    expect(result).toMatchObject({ scanned: 1, matched: 1, mutated: 1 });
+    expect(deleteDoc).toHaveBeenCalledWith("packageCapabilitySearchDigest:1");
+  });
+
+  it("walks cleanup tables through the internal action", async () => {
+    const runMutation = vi.fn(async (_endpoint, args) => {
+      if (args.table === "skills") {
+        return {
+          table: "skills",
+          cursor: null,
+          isDone: true,
+          scanned: 1,
+          matched: 1,
+          mutated: 0,
+        };
+      }
+      return {
+        table: "skillVersions",
+        cursor: "next-page",
+        isDone: false,
+        scanned: 1,
+        matched: 0,
+        mutated: 0,
+      };
+    });
+
+    const result = await (
+      cleanupRetiredCapabilityMetadataInternal as unknown as { _handler: Function }
+    )._handler({ runMutation } as never, { dryRun: true, maxBatches: 2, batchSize: 10 });
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.cleanupRetiredCapabilityMetadataBatchInternal,
+      expect.objectContaining({ table: "skills", dryRun: true, batchSize: 10 }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.cleanupRetiredCapabilityMetadataBatchInternal,
+      expect.objectContaining({ table: "skillVersions", dryRun: true, batchSize: 10 }),
+    );
+    expect(result).toMatchObject({
       ok: true,
-      versionPatched: false,
-      skillPatched: false,
-      digestPatched: true,
+      dryRun: true,
+      confirmRequired: "remove-retired-capability-metadata",
+      table: "skillVersions",
+      cursor: "next-page",
+      isDone: false,
     });
-    expect(patch).toHaveBeenCalledTimes(1);
-    expect(patch).toHaveBeenCalledWith("skillSearchDigest:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-      updatedAt: 987,
-    });
+    expect(result.stats.skills).toEqual({ scanned: 1, matched: 1, mutated: 0 });
+    expect(result.stats.skillVersions).toEqual({ scanned: 1, matched: 0, mutated: 0 });
   });
 });
 

@@ -1363,7 +1363,8 @@ async function isPublisherExcludedFromPublisherAbuse(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   publisher: PublisherAbuseExclusionPublisher | null | undefined,
 ) {
-  if (!publisher || publisher.kind !== "org") return false;
+  if (!publisher) return false;
+  if (publisher.kind !== "user" && publisher.kind !== "org") return false;
   return await hasOfficialPublisherRow(ctx, publisher._id);
 }
 
@@ -1390,7 +1391,7 @@ async function requirePublisherAbuseNominationNotExcluded(
   if (!nomination.ownerPublisherId) return;
   const publisher = await ctx.db.get(nomination.ownerPublisherId);
   if (!(await isPublisherExcludedFromPublisherAbuse(ctx, publisher))) return;
-  throw new Error("Official org publisher abuse nominations cannot be acted on.");
+  throw new Error("Official publisher abuse nominations cannot be acted on.");
 }
 
 function summarizePublisherAbuseFinalizationCohort(run: ScoreRun) {

@@ -425,7 +425,6 @@ describe("skills.insertVersion latest-tag protection", () => {
         version: "2.1.0",
         displayName: "My Skill v2.1",
         summary: "Summary of v2.1.0",
-        capabilityTags: ["cap-v2.1"],
       }) as never,
     );
 
@@ -440,7 +439,6 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect(finalPatch).toMatchObject({
       latestVersionId: NEW_VERSION_ID,
       displayName: "My Skill v2.1",
-      capabilityTags: ["cap-v2.1"],
       tags: expect.objectContaining({ latest: NEW_VERSION_ID }),
     });
     expect((finalPatch as Record<string, unknown>).latestVersionSummary).toMatchObject({
@@ -469,7 +467,6 @@ describe("skills.insertVersion latest-tag protection", () => {
         version: "1.0.1",
         displayName: "My Skill v1 backport",
         summary: "Summary of v1.0.1 backport",
-        capabilityTags: ["cap-v1-backport"],
       }) as never,
     );
 
@@ -489,7 +486,6 @@ describe("skills.insertVersion latest-tag protection", () => {
     // Skill card fields must keep tracking the existing latest, not the backport.
     expect(finalPatch.displayName).toBe("My Skill v2");
     expect(finalPatch.summary).toBe("Summary of v2.0.0");
-    expect(finalPatch.capabilityTags).toEqual(["cap-v2"]);
 
     // `tags.latest` still points to the previous version.
     expect(finalPatch.tags).toEqual(expect.objectContaining({ latest: PREV_LATEST_VERSION_ID }));
@@ -607,7 +603,6 @@ describe("skills.insertVersion latest-tag protection", () => {
         version: "0.0.1",
         displayName: "My Skill v0",
         summary: "Summary of v0.0.1",
-        capabilityTags: ["cap-v0"],
       }) as never,
     );
 
@@ -616,7 +611,6 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect(finalPatch.latestVersionSummary).toMatchObject({ version: "0.0.1" });
     expect(finalPatch.tags).toEqual(expect.objectContaining({ latest: NEW_VERSION_ID }));
     expect(finalPatch.displayName).toBe("My Skill v0");
-    expect(finalPatch.capabilityTags).toEqual(["cap-v0"]);
     expect(captured.embeddingInserts[0]).toMatchObject({ isLatest: true });
   });
 

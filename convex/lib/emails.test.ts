@@ -96,6 +96,38 @@ describe("moderation notification email copy", () => {
     expect(email.html).not.toContain("fixed local copy");
   });
 
+  it("builds publisher-abuse account-suspended copy from a structured manual reason", async () => {
+    const email = await buildBanNotificationEmail({
+      handle: "bulkpub",
+      source: "manual",
+      reason: "publisher_abuse: high catalog volume, low installs per skill, abnormal downloads",
+      hiddenArtifacts: 42,
+    });
+
+    expect(email.subject).toBe("Your ClawHub account has been suspended");
+    expect(email.context).toMatchObject({
+      appealUrl: APPEALS_URL,
+      artifact: null,
+      scannerLabel: null,
+      findingSummary:
+        "Your account was identified by ClawHub's publisher abuse review workflow for activity that appears inconsistent with our Acceptable Usage policy.",
+    });
+    expect(email.text).toContain("Hi bulkpub,");
+    expect(email.text).toContain("Bulk or spam publishing");
+    expect(email.text).toContain("Artificially inflating installs, downloads, stars");
+    expect(email.text).toContain(
+      "Abnormal download activity with little or no corresponding install activity",
+    );
+    expect(email.text).toContain("Artifacts hidden");
+    expect(email.text).not.toContain("publisher_abuse:");
+    expect(email.text).not.toContain(`Appeal: ${APPEALS_URL}`);
+    expect(email.html).toContain("Submit an appeal");
+    expect(email.html).toContain("Bulk or spam publishing");
+    expect(email.html).toContain("Artificially inflating installs, downloads, stars");
+    expect(email.html).toContain("Artifacts hidden");
+    expect(email.html).not.toContain("publisher_abuse:");
+  });
+
   it("builds restored-account copy that explains tokens stay revoked", async () => {
     const email = await buildRestoredAccountEmail({
       handle: "restored",

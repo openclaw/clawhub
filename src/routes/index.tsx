@@ -730,7 +730,6 @@ function SkillsHome() {
                 family: undefined,
                 featured: true,
                 official: undefined,
-                executesCode: undefined,
               }}
               className="home-v2-section-link"
             >

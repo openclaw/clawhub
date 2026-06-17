@@ -2551,9 +2551,6 @@ export const addOfficialPublisherInternal = internalMutation({
     if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
       throw new ConvexError(`Publisher "@${handle}" not found`);
     }
-    if (publisher.kind !== "org") {
-      throw new ConvexError("Only org publishers can be marked official");
-    }
 
     const existing = await ctx.db
       .query("officialPublishers")

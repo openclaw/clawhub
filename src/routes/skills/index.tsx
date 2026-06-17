@@ -75,8 +75,7 @@ export function SkillsIndex() {
     : model.sort === "relevance"
       ? "recommended"
       : model.sort;
-  const hasActiveFilters =
-    model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly || Boolean(search.tag);
+  const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly;
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
 

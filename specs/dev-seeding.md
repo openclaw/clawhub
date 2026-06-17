@@ -10,9 +10,14 @@ read_when:
 
 Local fixture seeding is command-driven by default:
 
-- CLI seeding (`bun run seed:dev`) populates shared catalog fixtures under `@local`, including
-  skill, plugin, scanner, and moderation fixtures. It also imports the committed public corpus and
-  refreshes cached global stats. This is the documented local setup path.
+- Worktree dev startup (`bun run dev:worktree`) seeds shared catalog fixtures under `@local`,
+  including skill, plugin, scanner, and moderation fixtures, before starting the local app when
+  `VITE_CONVEX_URL` points at local Convex and `CONVEX_DEPLOYMENT` is an anonymous/local deployment
+  marker. It also imports the committed public corpus, refreshes cached global stats, and writes
+  `.codex/runtime/dev-worktree.seeded` so routine restarts skip the expensive corpus pass. This is
+  the documented first-run local setup path.
+- CLI seeding (`bun run seed:dev`) runs the same seed path manually without starting the preview and
+  bypasses the first-run sentinel.
 - `bun run seed:public-corpus` is the lower-level corpus-only import command. Use it for corpus
   fixture work, not as the default local setup command.
 - `bun run validate:public-corpus` validates the committed public corpus fixture without seeding.

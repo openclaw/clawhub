@@ -1,4 +1,4 @@
-export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v1";
+export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v2";
 export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v1";
 
 export type PublisherAbuseLabel = "pass" | "review" | "potential_ban_candidate";
@@ -105,7 +105,7 @@ export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
   installsPerSkillPivot: 2,
   starsPerSkillPivot: 0.05,
   downloadsPerSkillPivot: 250,
-  outputElasticity: 1,
+  outputElasticity: 1.5,
   installTrustElasticity: 0.8,
   starTrustElasticity: 1,
   downloadDemandElasticity: 0.2,
@@ -219,8 +219,12 @@ export function computePublisherAbusePressure(
     config.downloadsPerSkillPivot,
   );
 
+  const skillOutputRatio = skills / skillPivot;
+  const catalogPressure =
+    skillOutputRatio <= 1 ? skillOutputRatio : skillOutputRatio ** config.outputElasticity;
+
   return (
-    (skills / skillPivot) ** config.outputElasticity *
+    catalogPressure *
     (installsPerSkillPivot / installsPerSkill) ** config.installTrustElasticity *
     (starsPerSkillPivot / starsPerSkill) ** config.starTrustElasticity *
     (downloadsPerSkillPivot / downloadsPerSkill) ** config.downloadDemandElasticity

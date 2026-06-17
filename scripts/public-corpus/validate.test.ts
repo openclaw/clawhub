@@ -12,7 +12,6 @@ const skillRow: PublicCorpusRow = {
   displayName: "Demo Skill",
   version: "1.0.0",
   skillMd: "---\nname: demo-skill\ndescription: Demo skill\n---\n# Demo Skill",
-  capabilityTags: ["automation"],
   createdAt: 1770000000000,
 };
 
@@ -22,10 +21,8 @@ const pluginRow: PublicCorpusRow = {
   displayName: "Demo Plugin",
   version: "1.0.0",
   readme: "# Demo Plugin\n\nRuntime plugin for local fixture testing.",
-  capabilityTags: ["executes-code"],
   family: "code-plugin",
   channel: "community",
-  executesCode: true,
   createdAt: 1770000000000,
 };
 
@@ -45,7 +42,7 @@ describe("public corpus fixture validation", () => {
       ...skillRow,
       ownerHandle: "real-user",
       sourceDocId: "skillVersions:abc123",
-    } as PublicCorpusRow;
+    } as unknown as PublicCorpusRow;
 
     const result = validateCorpusRows([row]);
 

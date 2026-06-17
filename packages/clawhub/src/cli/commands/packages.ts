@@ -42,7 +42,6 @@ import {
   MAX_PACKAGE_MULTIPART_BYTES,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
-  type PackageCapabilitySummary,
   type PackageCompatibility,
   type PackageFamily,
   type PackageTrustedPublisher,
@@ -122,20 +121,6 @@ type PackageInspectOptions = {
 type PackageExploreOptions = {
   family?: PackageFamily;
   official?: boolean;
-  executesCode?: boolean;
-  target?: string;
-  os?: string;
-  arch?: string;
-  libc?: string;
-  requiresBrowser?: boolean;
-  requiresDesktop?: boolean;
-  requiresNativeDeps?: boolean;
-  requiresExternalService?: boolean;
-  externalService?: string;
-  binary?: string;
-  osPermission?: string;
-  artifactKind?: "legacy-zip" | "npm-pack";
-  npmMirror?: boolean;
   limit?: number;
   json?: boolean;
 };
@@ -296,22 +281,6 @@ type PackedClawPack = {
   identity: ArtifactIdentity;
 };
 
-function appendPackageExploreFilters(url: URL, options: PackageExploreOptions) {
-  if (options.target) url.searchParams.set("target", options.target);
-  if (options.os) url.searchParams.set("os", options.os);
-  if (options.arch) url.searchParams.set("arch", options.arch);
-  if (options.libc) url.searchParams.set("libc", options.libc);
-  if (options.requiresBrowser) url.searchParams.set("requiresBrowser", "true");
-  if (options.requiresDesktop) url.searchParams.set("requiresDesktop", "true");
-  if (options.requiresNativeDeps) url.searchParams.set("requiresNativeDeps", "true");
-  if (options.requiresExternalService) url.searchParams.set("requiresExternalService", "true");
-  if (options.externalService) url.searchParams.set("externalService", options.externalService);
-  if (options.binary) url.searchParams.set("binary", options.binary);
-  if (options.osPermission) url.searchParams.set("osPermission", options.osPermission);
-  if (options.artifactKind) url.searchParams.set("artifactKind", options.artifactKind);
-  if (options.npmMirror) url.searchParams.set("npmMirror", "true");
-}
-
 type PrintableFile = {
   path: string;
   size: number | null;
@@ -346,10 +315,6 @@ export async function cmdExplorePackages(
       url.searchParams.set("limit", String(limit));
       if (options.family) url.searchParams.set("family", options.family);
       if (options.official) url.searchParams.set("isOfficial", "true");
-      if (typeof options.executesCode === "boolean") {
-        url.searchParams.set("executesCode", String(options.executesCode));
-      }
-      appendPackageExploreFilters(url, options);
       const result = await apiRequest(
         registry,
         { method: "GET", url: url.toString(), token },
@@ -380,10 +345,6 @@ export async function cmdExplorePackages(
     url.searchParams.set("limit", String(limit));
     if (options.family === "skill") url.searchParams.set("family", "skill");
     if (options.official) url.searchParams.set("isOfficial", "true");
-    if (typeof options.executesCode === "boolean") {
-      url.searchParams.set("executesCode", String(options.executesCode));
-    }
-    appendPackageExploreFilters(url, options);
     const result = await apiRequest(
       registry,
       { method: "GET", url: url.toString(), token },
@@ -492,12 +453,10 @@ export async function cmdInspectPackage(
       printCompatibility(
         versionResult.version.compatibility ?? detail.package.compatibility ?? null,
       );
-      printCapabilities(versionResult.version.capabilities ?? detail.package.capabilities ?? null);
       printVerification(versionResult.version.verification ?? detail.package.verification ?? null);
       printArtifact(versionResult.version.artifact ?? detail.package.artifact ?? null);
     } else if (shouldPrintMeta) {
       printCompatibility(detail.package.compatibility ?? null);
-      printCapabilities(detail.package.capabilities ?? null);
       printVerification(detail.package.verification ?? null);
       printArtifact(detail.package.artifact ?? null);
     }
@@ -1938,27 +1897,6 @@ function formatCompatibilityEntries(compatibility: PackageCompatibility) {
     compatibility.pluginSdkVersion ? `sdk=${compatibility.pluginSdkVersion}` : null,
     compatibility.minGatewayVersion ? `minGateway=${compatibility.minGatewayVersion}` : null,
   ].filter(Boolean);
-}
-
-function printCapabilities(capabilities: PackageCapabilitySummary | null | undefined) {
-  if (!capabilities) return;
-  console.log(`Executes code: ${capabilities.executesCode ? "yes" : "no"}`);
-  if (capabilities.pluginKind) console.log(`Plugin kind: ${capabilities.pluginKind}`);
-  if (capabilities.bundleFormat) console.log(`Bundle format: ${capabilities.bundleFormat}`);
-  if (capabilities.hostTargets?.length) {
-    console.log(`Host targets: ${capabilities.hostTargets.join(", ")}`);
-  }
-  if (capabilities.channels?.length) console.log(`Channels: ${capabilities.channels.join(", ")}`);
-  if (capabilities.providers?.length) {
-    console.log(`Providers: ${capabilities.providers.join(", ")}`);
-  }
-  if (capabilities.toolNames?.length) console.log(`Tools: ${capabilities.toolNames.join(", ")}`);
-  if (capabilities.commandNames?.length) {
-    console.log(`Commands: ${capabilities.commandNames.join(", ")}`);
-  }
-  if (capabilities.serviceNames?.length) {
-    console.log(`Services: ${capabilities.serviceNames.join(", ")}`);
-  }
 }
 
 function printVerification(verification: PackageVerificationSummary | null | undefined) {

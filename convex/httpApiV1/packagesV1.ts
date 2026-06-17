@@ -302,14 +302,6 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   }
 }
 
-function normalizeCapabilityTagSegment(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
@@ -343,68 +335,6 @@ function parseBooleanQueryParam(
   if (value === "true" || value === "1") return { ok: true, value: true };
   if (value === "false" || value === "0") return { ok: true, value: false };
   return { ok: false, message: invalidQueryParamMessage(name) };
-}
-
-function getCapabilityTagFromQueryParams(params: URLSearchParams) {
-  const explicit = params.get("capabilityTag")?.trim();
-  if (explicit) return explicit;
-
-  const target = params.get("target")?.trim() || params.get("hostTarget")?.trim();
-  if (target) return `host:${normalizeCapabilityTagSegment(target)}`;
-
-  const os = params.get("os")?.trim();
-  if (os) return `host-os:${normalizeCapabilityTagSegment(os)}`;
-
-  const arch = params.get("arch")?.trim();
-  if (arch) return `host-arch:${normalizeCapabilityTagSegment(arch)}`;
-
-  const libc = params.get("libc")?.trim();
-  if (libc) return `host-libc:${normalizeCapabilityTagSegment(libc)}`;
-
-  const externalService = params.get("externalService")?.trim();
-  if (externalService) return `external-service:${normalizeCapabilityTagSegment(externalService)}`;
-
-  const binary = params.get("binary")?.trim();
-  if (binary) return `binary:${normalizeCapabilityTagSegment(binary)}`;
-
-  const osPermission = params.get("osPermission")?.trim();
-  if (osPermission) return `os-permission:${normalizeCapabilityTagSegment(osPermission)}`;
-
-  const artifactKind = params.get("artifactKind")?.trim();
-  if (artifactKind === "legacy-zip" || artifactKind === "npm-pack") {
-    return `artifact:${artifactKind}`;
-  }
-  if (params.has("artifactKind")) return { error: invalidQueryParamMessage("artifactKind") };
-  const npmMirror = parseBooleanQueryParam(params, "npmMirror");
-  if (!npmMirror.ok) return { error: npmMirror.message };
-  if (npmMirror.value) return "npm-mirror:available";
-  const requiresBrowser = parseBooleanQueryParam(params, "requiresBrowser");
-  if (!requiresBrowser.ok) return { error: requiresBrowser.message };
-  if (requiresBrowser.value) return "requires:browser";
-  const requiresDesktop = parseBooleanQueryParam(params, "requiresDesktop");
-  if (!requiresDesktop.ok) return { error: requiresDesktop.message };
-  if (requiresDesktop.value) return "requires:desktop";
-  const requiresNativeDeps = parseBooleanQueryParam(params, "requiresNativeDeps");
-  if (!requiresNativeDeps.ok) return { error: requiresNativeDeps.message };
-  if (requiresNativeDeps.value) return "requires:native-deps";
-  const nativeDeps = parseBooleanQueryParam(params, "nativeDeps");
-  if (!nativeDeps.ok) return { error: nativeDeps.message };
-  if (nativeDeps.value) return "requires:native-deps";
-  const requiresExternalService = parseBooleanQueryParam(params, "requiresExternalService");
-  if (!requiresExternalService.ok) return { error: requiresExternalService.message };
-  if (requiresExternalService.value) {
-    return "requires:external-service";
-  }
-  const requiresBinary = parseBooleanQueryParam(params, "requiresBinary");
-  if (!requiresBinary.ok) return { error: requiresBinary.message };
-  if (requiresBinary.value) return "requires:binary";
-  const requiresOsPermission = parseBooleanQueryParam(params, "requiresOsPermission");
-  if (!requiresOsPermission.ok) return { error: requiresOsPermission.message };
-  if (requiresOsPermission.value) return "requires:os-permission";
-  const environmentDeclared = parseBooleanQueryParam(params, "environmentDeclared");
-  if (!environmentDeclared.ok) return { error: environmentDeclared.message };
-  if (environmentDeclared.value) return "environment:declared";
-  return undefined;
 }
 
 function parsePackageModerationQueueStatus(
@@ -476,8 +406,6 @@ type PackageListQueryArgs = {
   channel?: "official" | "community" | "private";
   isOfficial?: boolean;
   highlightedOnly?: boolean;
-  executesCode?: boolean;
-  capabilityTag?: string;
   category?: string;
   sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
@@ -528,7 +456,6 @@ type ReleaseLike = {
     contentType?: string;
   }>;
   compatibility?: Doc<"packageReleases">["compatibility"];
-  capabilities?: Doc<"packageReleases">["capabilities"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
@@ -844,8 +771,6 @@ type CatalogListItem = {
   createdAt: number;
   updatedAt: number;
   latestVersion?: string | null;
-  capabilityTags?: string[];
-  executesCode?: boolean;
   verificationTier?: string | null;
   stats?: { downloads: number; installs: number; stars: number; versions: number };
 };
@@ -1109,8 +1034,6 @@ async function searchPackageCatalog(
     channel?: "official" | "community" | "private";
     isOfficial?: boolean;
     highlightedOnly?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
     viewerUserId?: Id<"users">;
   },
@@ -1125,8 +1048,6 @@ async function searchPackageCatalog(
       channel: args.channel,
       isOfficial: args.isOfficial,
       highlightedOnly: args.highlightedOnly,
-      executesCode: args.executesCode,
-      capabilityTag: args.capabilityTag,
       category: args.category,
       viewerUserId: args.viewerUserId,
     },
@@ -1168,7 +1089,6 @@ function toSkillPackageDetail(
       latestVersion: latestVersion?.version ?? null,
       tags: resolvedTags,
       compatibility: null,
-      capabilities: null,
       verification: null,
     },
     owner: owner
@@ -1179,6 +1099,20 @@ function toSkillPackageDetail(
         }
       : null,
   };
+}
+
+function toPackageDetailResponsePackage(pkg: PublicPackageDocLike) {
+  const {
+    capabilityTags: _capabilityTags,
+    capabilities: _capabilities,
+    executesCode: _executesCode,
+    ...publicPackage
+  } = pkg as PublicPackageDocLike & {
+    capabilityTags?: unknown;
+    capabilities?: unknown;
+    executesCode?: unknown;
+  };
+  return publicPackage;
 }
 
 function skillVersionTags(tags: Record<string, string>, version: string) {
@@ -1485,8 +1419,6 @@ async function listPackages(
   const viewerUserId = await getOptionalViewerUserIdForRequest(ctx, request);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 25, 100));
   const rawCursor = url.searchParams.get("cursor");
-  const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
-  if (typeof capabilityTag === "object") return text(capabilityTag.error, 400, rate.headers);
   const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
@@ -1497,8 +1429,6 @@ async function listPackages(
   if (!featured.ok) return text(featured.message, 400, rate.headers);
   const highlightedOnlyParam = parseBooleanQueryParam(url.searchParams, "highlightedOnly");
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
-  const executesCode = parseBooleanQueryParam(url.searchParams, "executesCode");
-  if (!executesCode.ok) return text(executesCode.message, 400, rate.headers);
   const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
   if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
   const effectiveSort = sortParam.value ?? options?.defaultSort;
@@ -1527,8 +1457,6 @@ async function listPackages(
       channel: channelParam.value,
       isOfficial: isOfficial.value,
       highlightedOnly: highlightedOnly || undefined,
-      executesCode: executesCode.value,
-      capabilityTag,
       sort: effectiveSort,
       paginationOpts: { cursor, numItems: limit },
     });
@@ -1577,8 +1505,6 @@ async function listPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
-            executesCode: executesCode.value,
-            capabilityTag,
             category,
             sort: unifiedListSort,
             viewerUserId: viewerUserId ?? undefined,
@@ -1599,8 +1525,6 @@ async function listPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
-            executesCode: executesCode.value,
-            capabilityTag,
             sort: unifiedListSort,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1652,9 +1576,7 @@ async function listPackages(
       !category &&
       !channelParam.value &&
       typeof isOfficial.value !== "boolean" &&
-      !highlightedOnly &&
-      typeof executesCode.value !== "boolean" &&
-      !capabilityTag;
+      !highlightedOnly;
     const totalCount = includeTotalCount
       ? await runQueryRef<number | null>(ctx, internalRefs.packages.countPublicPluginsInternal, {})
       : null;
@@ -1692,8 +1614,6 @@ async function listPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
         category,
         sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
@@ -1765,8 +1685,6 @@ async function listPackages(
     channel: channelParam.value,
     isOfficial: isOfficial.value,
     highlightedOnly: highlightedOnly || undefined,
-    executesCode: executesCode.value,
-    capabilityTag,
     category,
     sort: effectiveSort,
     viewerUserId: viewerUserId ?? undefined,
@@ -3100,8 +3018,6 @@ async function searchPackages(
   const queryText = url.searchParams.get("q")?.trim() ?? "";
   if (!queryText) return text("Missing q query parameter", 400, rate.headers);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
-  const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
-  if (typeof capabilityTag === "object") return text(capabilityTag.error, 400, rate.headers);
   const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
@@ -3112,8 +3028,6 @@ async function searchPackages(
   if (!featured.ok) return text(featured.message, 400, rate.headers);
   const highlightedOnlyParam = parseBooleanQueryParam(url.searchParams, "highlightedOnly");
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
-  const executesCode = parseBooleanQueryParam(url.searchParams, "executesCode");
-  if (!executesCode.ok) return text(executesCode.message, 400, rate.headers);
   const highlightedOnly = featured.value === true || highlightedOnlyParam.value === true;
   const category = url.searchParams.get("category")?.trim() || undefined;
   if (category && !isPluginCategorySlug(category)) {
@@ -3140,8 +3054,6 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
       },
     );
   } else if (family || !includeSkills) {
@@ -3155,8 +3067,6 @@ async function searchPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
-            executesCode: executesCode.value,
-            capabilityTag,
             category,
             viewerUserId: viewerUserId ?? undefined,
           }),
@@ -3181,8 +3091,6 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
         category,
         viewerUserId: viewerUserId ?? undefined,
       });
@@ -3195,8 +3103,6 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
         category,
         viewerUserId: viewerUserId ?? undefined,
       }),
@@ -3209,8 +3115,6 @@ async function searchPackages(
           channel: channelParam.value,
           isOfficial: isOfficial.value,
           highlightedOnly: highlightedOnly || undefined,
-          executesCode: executesCode.value,
-          capabilityTag,
         },
       ),
     ]);
@@ -3450,7 +3354,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return json(
       {
         package: {
-          ...publicPackage!,
+          ...toPackageDetailResponsePackage(publicPackage!),
           tags: await resolvePackageTags(ctx, publicPackage!.tags),
         },
         owner: packageOwner
@@ -3635,7 +3539,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
               contentType: file.contentType,
             })),
             compatibility: null,
-            capabilities: null,
             verification: null,
             artifact: null,
           },
@@ -3677,7 +3580,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
             contentType: file.contentType,
           })),
           compatibility: result.version.compatibility ?? null,
-          capabilities: result.version.capabilities ?? null,
           verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,
@@ -4008,7 +3910,6 @@ type PublicPackageDocLike = {
   summary?: string;
   latestVersion?: string | null;
   compatibility?: Doc<"packages">["compatibility"];
-  capabilities?: Doc<"packages">["capabilities"];
   verification?: Doc<"packages">["verification"];
   artifact?: {
     kind: "legacy-zip" | "npm-pack";
@@ -4036,9 +3937,6 @@ type PackageReadinessCheck = {
 function buildPackageReadiness(pkg: PublicPackageDocLike) {
   const checks: PackageReadinessCheck[] = [];
   const add = (check: PackageReadinessCheck) => checks.push(check);
-  const hostTargets = pkg.capabilities?.hostTargets ?? [];
-  const capabilityTags = pkg.capabilities?.capabilityTags ?? [];
-  const hasEnvironmentMetadata = capabilityTags.includes("environment:declared");
   const scanStatus = pkg.verification?.scanStatus ?? "not-run";
 
   add({
@@ -4088,23 +3986,6 @@ function buildPackageReadiness(pkg: PublicPackageDocLike) {
       pkg.compatibility?.pluginApiRange && pkg.compatibility?.builtWithOpenClawVersion
         ? `pluginApi=${pkg.compatibility.pluginApiRange}, builtWith=${pkg.compatibility.builtWithOpenClawVersion}.`
         : "pluginApi range and build OpenClaw version are required.",
-  });
-  add({
-    id: "host-targets",
-    label: "Host targets",
-    status: hostTargets.length > 0 ? "pass" : "warn",
-    message:
-      hostTargets.length > 0
-        ? `Targets: ${hostTargets.join(", ")}.`
-        : "Host targets are optional and not declared.",
-  });
-  add({
-    id: "environment",
-    label: "Environment metadata",
-    status: hasEnvironmentMetadata ? "pass" : "warn",
-    message: hasEnvironmentMetadata
-      ? "Runtime environment requirements are declared."
-      : "Runtime environment metadata is optional and not declared.",
   });
   add({
     id: "scan",

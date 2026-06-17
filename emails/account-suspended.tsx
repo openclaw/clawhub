@@ -15,6 +15,7 @@ export type AccountSuspendedEmailProps = {
   suspendedAt: string;
   hiddenArtifacts?: number;
   findingSummary: string;
+  policyReasonItems?: string[];
   preheader: string;
 };
 
@@ -23,6 +24,7 @@ export default function AccountSuspendedEmail({
   suspendedAt,
   hiddenArtifacts,
   findingSummary,
+  policyReasonItems = [],
   preheader,
 }: AccountSuspendedEmailProps) {
   const rows: Array<[string, ReactNode]> = [
@@ -45,7 +47,11 @@ export default function AccountSuspendedEmail({
         Your ClawHub account <MonoPill>{handle}</MonoPill> was suspended after moderation review.
       </Paragraph>
       <Paragraph>{findingSummary}</Paragraph>
-      <ImpactList
+      {policyReasonItems.length > 0 ? (
+        <DetailList title="Policy signals" items={policyReasonItems} />
+      ) : null}
+      <DetailList
+        title="What changed"
         items={[
           "Your ClawHub account cannot sign in.",
           "Existing API tokens for the account have been revoked.",
@@ -59,7 +65,7 @@ export default function AccountSuspendedEmail({
   );
 }
 
-function ImpactList({ items }: { items: string[] }) {
+function DetailList({ title, items }: { title: string; items: string[] }) {
   return (
     <>
       <h2
@@ -70,7 +76,7 @@ function ImpactList({ items }: { items: string[] }) {
           color: "#f5f5f5",
         }}
       >
-        What changed
+        {title}
       </h2>
       <ul
         style={{
@@ -93,10 +99,17 @@ function ImpactList({ items }: { items: string[] }) {
 }
 
 AccountSuspendedEmail.PreviewProps = {
-  handle: "@octocat",
-  suspendedAt: "2026-06-11 21:32 UTC",
-  hiddenArtifacts: 14,
-  findingSummary: "ClawScan classified the uploaded skill as malicious.",
+  handle: "@bulkpub",
+  suspendedAt: "2026-06-16 17:36 UTC",
+  hiddenArtifacts: 42,
+  findingSummary:
+    "Your account was identified by ClawHub's publisher abuse review workflow for activity that appears inconsistent with our Acceptable Usage policy.",
+  policyReasonItems: [
+    "Bulk or spam publishing of large numbers of low-effort, duplicative, placeholder, or machine-generated listings.",
+    "Publishing large catalogs with little or no usage, maintenance, source clarity, or meaningful differentiation.",
+    "Artificially inflating installs, downloads, stars, or other engagement metrics.",
+    "Abnormal download activity with little or no corresponding install activity.",
+  ],
   preheader:
-    "Your account has been suspended. Login is blocked, API tokens were revoked, and published artifacts may be hidden.",
+    "Your account has been suspended after publisher abuse review. Login is blocked, API tokens were revoked, and published artifacts may be hidden.",
 } satisfies AccountSuspendedEmailProps;

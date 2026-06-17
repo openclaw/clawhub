@@ -190,10 +190,8 @@ function skillVersionToExportRow(
       createdAt: numberValue(version.createdAt, "skillVersions.createdAt"),
       softDeletedAt: numberOrNull(version.softDeletedAt),
       files: filesFromExport(version.files),
-      capabilityTags: stringArray(version.capabilityTags ?? skill.capabilityTags),
       packageFamily: null,
       packageChannel: null,
-      packageExecutesCode: null,
       sourceRepoHost: null,
       vtAnalysis: vtAnalysisFromExport(version.vtAnalysis),
       skillSpectorAnalysis: skillSpectorAnalysisFromExport(version.skillSpectorAnalysis),
@@ -232,10 +230,8 @@ function packageReleaseToExportRow(
       createdAt: numberValue(release.createdAt, "packageReleases.createdAt"),
       softDeletedAt: numberOrNull(release.softDeletedAt),
       files: filesFromExport(release.files),
-      capabilityTags: stringArray(pkg.capabilityTags),
       packageFamily: stringOrNull(pkg.family),
       packageChannel: stringOrNull(pkg.channel),
-      packageExecutesCode: booleanOrNull(pkg.executesCode),
       sourceRepoHost: sourceRepoHost(stringOrNull(pkg.sourceRepo)),
       vtAnalysis: vtAnalysisFromExport(release.vtAnalysis),
       skillSpectorAnalysis: skillSpectorAnalysisFromExport(release.skillSpectorAnalysis),
@@ -573,10 +569,6 @@ function optionalNumber(value: unknown) {
 
 function numberOrNull(value: unknown) {
   return typeof value === "number" ? value : null;
-}
-
-function booleanOrNull(value: unknown) {
-  return typeof value === "boolean" ? value : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

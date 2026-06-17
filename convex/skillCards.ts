@@ -286,7 +286,6 @@ function buildEvidencePacket(
       slug: skill.slug,
       displayName: skill.displayName,
       summary: skill.summary ?? null,
-      capabilityTags: skill.capabilityTags ?? [],
       badges: skill.badges ?? null,
       pageUrl: publisherHandle
         ? `https://clawhub.ai/${publisherHandle}/${skill.slug}`
@@ -305,7 +304,6 @@ function buildEvidencePacket(
       clawdis: version.parsed.clawdis ?? null,
       metadata,
     },
-    capabilities: version.capabilityTags ?? skill.capabilityTags ?? [],
     fileHashes: sourceFileInputs.map((file) => ({
       path: file.path,
       size: file.size,

@@ -72,8 +72,8 @@ It is not inherited from org membership, GitHub identity, OIDC, or
 `trustedPublisher`.
 
 Default official publishers are not seeded from deploy. Maintainers should mark
-`openclaw` and `nvidia` official explicitly using the moderation/admin CLI
-before enabling their source sync.
+official publishers explicitly using the moderation/admin CLI before enabling
+their source sync.
 
 ## Sync
 

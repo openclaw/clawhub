@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { restoreSkillFromBackup } from "./registryArtifactRestore";
 
 const registryBackupMocks = vi.hoisted(() => ({
-  fetchSkillBackupIndex: vi.fn(),
   fetchSkillVersionBackupMeta: vi.fn(),
   getRegistryArtifactBackupContext: vi.fn(),
   isRegistryArtifactBackupConfigured: vi.fn(),
@@ -54,6 +53,7 @@ describe("restoreSkillFromBackup", () => {
         ownerHandle: "alice",
         ownerUserId: "users:owner",
         slug: "demo-skill",
+        version: "1.0.0",
       },
     );
 
@@ -62,13 +62,70 @@ describe("restoreSkillFromBackup", () => {
       status: "error",
       detail: "Existing skill is not public; restore blocked",
     });
-    expect(registryBackupMocks.fetchSkillBackupIndex).not.toHaveBeenCalled();
+    expect(registryBackupMocks.fetchSkillVersionBackupMeta).not.toHaveBeenCalled();
+  });
+
+  it("requires an explicit version before any forced slug eviction", async () => {
+    const runMutation = vi.fn();
+    const result = await restoreHandler(
+      {
+        runQuery: vi.fn().mockResolvedValueOnce({ _id: "users:admin", role: "admin" }),
+        runMutation,
+      } as never,
+      {
+        actorUserId: "users:admin",
+        ownerHandle: "alice",
+        ownerUserId: "users:owner",
+        slug: "demo-skill",
+        forceOverwriteSquatter: true,
+      },
+    );
+
+    expect(result).toEqual({
+      slug: "demo-skill",
+      status: "no_backup",
+      detail: "Restore requires an explicit backup version",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(registryBackupMocks.fetchSkillVersionBackupMeta).not.toHaveBeenCalled();
+  });
+
+  it("validates the requested version before forced slug eviction", async () => {
+    registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValueOnce(null);
+    const runMutation = vi.fn();
+    const result = await restoreHandler(
+      {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce({ _id: "users:admin", role: "admin" })
+          .mockResolvedValueOnce({
+            _id: "skills:squatter",
+            ownerUserId: "users:other",
+            slug: "demo-skill",
+            softDeletedAt: undefined,
+            moderationStatus: "active",
+          }),
+        runMutation,
+      } as never,
+      {
+        actorUserId: "users:admin",
+        ownerHandle: "alice",
+        ownerUserId: "users:owner",
+        slug: "demo-skill",
+        version: "typo-version",
+        forceOverwriteSquatter: true,
+      },
+    );
+
+    expect(result).toEqual({
+      slug: "demo-skill",
+      status: "no_backup",
+      detail: "No version backup found",
+    });
+    expect(runMutation).not.toHaveBeenCalled();
   });
 
   it("reactivates the same owner's soft-deleted skill row without republishing a duplicate version", async () => {
-    registryBackupMocks.fetchSkillBackupIndex.mockResolvedValueOnce({
-      latest: { version: "1.0.0" },
-    });
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValueOnce({
       version: "1.0.0",
       displayName: "Demo Skill",
@@ -114,6 +171,7 @@ describe("restoreSkillFromBackup", () => {
         ownerHandle: "alice",
         ownerUserId: "users:owner",
         slug: "demo-skill",
+        version: "1.0.0",
       },
     );
 
@@ -148,9 +206,6 @@ describe("restoreSkillFromBackup", () => {
   });
 
   it("fails restore when a manifest file is missing from backup storage", async () => {
-    registryBackupMocks.fetchSkillBackupIndex.mockResolvedValueOnce({
-      latest: { version: "1.0.0" },
-    });
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValueOnce({
       version: "1.0.0",
       displayName: "Demo Skill",
@@ -174,6 +229,7 @@ describe("restoreSkillFromBackup", () => {
         ownerHandle: "alice",
         ownerUserId: "users:owner",
         slug: "demo-skill",
+        version: "1.0.0",
       },
     );
 
@@ -187,9 +243,6 @@ describe("restoreSkillFromBackup", () => {
   });
 
   it("fails restore when a manifest file checksum does not match backup storage", async () => {
-    registryBackupMocks.fetchSkillBackupIndex.mockResolvedValueOnce({
-      latest: { version: "1.0.0" },
-    });
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValueOnce({
       version: "1.0.0",
       displayName: "Demo Skill",
@@ -215,6 +268,7 @@ describe("restoreSkillFromBackup", () => {
         ownerHandle: "alice",
         ownerUserId: "users:owner",
         slug: "demo-skill",
+        version: "1.0.0",
       },
     );
 
