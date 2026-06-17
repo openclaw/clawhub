@@ -23,6 +23,7 @@ const generateChangelogPreview = vi.fn();
 const fetchMock = vi.fn();
 const useQueryMock = vi.fn();
 const useAuthStatusMock = vi.fn();
+const useActivePublisherMock = vi.fn();
 // Allows individual test cases to drive the value `useSearch` returns.
 // The `updateSlug` search param triggers the form's "update existing"
 // branch and is required by the F1 regression cases below.
@@ -52,6 +53,76 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
+vi.mock("../lib/activePublisher", () => ({
+  useActivePublisher: () => useActivePublisherMock(),
+}));
+
+const personalMembership = {
+  publisher: {
+    _id: "publishers:local",
+    handle: "local",
+    displayName: "Local",
+    kind: "user",
+    image: null,
+  },
+  role: "owner",
+} as const;
+
+const orgMembership = {
+  publisher: {
+    _id: "publishers:clawkit",
+    handle: "clawkit",
+    displayName: "ClawKit",
+    kind: "org",
+    image: "https://example.com/clawkit.png",
+  },
+  role: "admin",
+} as const;
+
+const aliceMembership = {
+  publisher: {
+    _id: "publishers:alice",
+    handle: "alice",
+    displayName: "Alice",
+    kind: "user",
+    image: null,
+  },
+  role: "owner",
+} as const;
+
+type TestPublisherMembership = {
+  publisher: {
+    _id: string;
+    handle: string;
+    displayName: string;
+    kind: "user" | "org";
+    image: string | null;
+  };
+  role: "owner" | "admin" | "publisher";
+};
+
+function mockActivePublisher(
+  overrides: Partial<{
+    activeOwnerHandle: string | null;
+    memberships: TestPublisherMembership[];
+  }> = {},
+) {
+  const memberships = overrides.memberships ?? [personalMembership];
+  useActivePublisherMock.mockReturnValue({
+    activePublisher: memberships[0] ?? null,
+    activePublisherId: memberships[0]?.publisher._id ?? null,
+    activeOwnerHandle: overrides.activeOwnerHandle ?? memberships[0]?.publisher.handle ?? null,
+    canManageActivePublisher: true,
+    canPublishAsActivePublisher: true,
+    canViewActivePublisherScope: true,
+    hasMultiplePublishers: memberships.length > 1,
+    isLoading: false,
+    memberships,
+    personalPublisher: memberships.find((entry) => entry.publisher.kind === "user") ?? null,
+    setActivePublisherId: vi.fn(),
+  });
+}
+
 describe("Upload route", () => {
   beforeEach(() => {
     generateUploadUrl.mockReset();
@@ -63,27 +134,14 @@ describe("Upload route", () => {
     useSearchMock.mockReset();
     useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: undefined });
     useActionCallCount = 0;
+    mockActivePublisher();
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
       me: { _id: "users:1" },
     });
-    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
-      if (name === "publishers:listMine") {
-        return [
-          {
-            publisher: {
-              _id: "publishers:local",
-              handle: "local",
-              displayName: "Local",
-              kind: "user",
-            },
-            role: "owner",
-          },
-        ];
-      }
       return null;
     });
     fetchMock.mockResolvedValue({
@@ -571,22 +629,8 @@ describe("Upload route", () => {
   });
 
   it("blocks publish in preflight when slug availability reports a collision", async () => {
-    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
-      if (name === "publishers:listMine") {
-        return [
-          {
-            publisher: {
-              _id: "publishers:local",
-              handle: "local",
-              displayName: "Local",
-              kind: "user",
-            },
-            role: "owner",
-          },
-        ];
-      }
       if (
         args &&
         typeof args === "object" &&
@@ -635,8 +679,12 @@ describe("Upload route", () => {
     ).not.toBeNull();
   });
 
-  it("uses the ownerHandle search param for the owner selector and slug availability", async () => {
+  it("uses the ownerHandle search param as a local publishing override", async () => {
     useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: "clawkit" });
+    mockActivePublisher({
+      activeOwnerHandle: "local",
+      memberships: [personalMembership, orgMembership],
+    });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (
@@ -652,18 +700,7 @@ describe("Upload route", () => {
           url: null,
         };
       }
-      return [
-        {
-          publisher: {
-            _id: "publishers:clawkit",
-            handle: "clawkit",
-            displayName: "ClawKit",
-            kind: "org",
-            image: "https://example.com/clawkit.png",
-          },
-          role: "admin",
-        },
-      ];
+      return null;
     });
 
     render(<Upload />);
@@ -671,7 +708,9 @@ describe("Upload route", () => {
       target: { value: "org-skill" },
     });
 
-    expect(screen.getByLabelText("Owner").textContent).toContain("@clawkit · ClawKit · admin");
+    expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
+      "@clawkit · ClawKit · admin",
+    );
     expect(document.querySelector('img[src="https://example.com/clawkit.png"]')).toBeTruthy();
     expect(screen.queryByText("Available")).toBeNull();
     expect(await screen.findByLabelText("Slug available")).toBeTruthy();
@@ -728,21 +767,23 @@ describe("Upload route", () => {
   });
 
   it("reconciles the selected owner when publisher memberships change", async () => {
-    let memberships = [
-      {
-        publisher: {
-          _id: "publishers:local",
-          handle: "local",
-          displayName: "Local Owner",
-          kind: "user",
-        },
-        role: "owner",
-      },
-    ];
+    let memberships: TestPublisherMembership[] = [personalMembership];
+    useActivePublisherMock.mockImplementation(() => ({
+      activePublisher: memberships[0] ?? null,
+      activePublisherId: memberships[0]?.publisher._id ?? null,
+      activeOwnerHandle: null,
+      canManageActivePublisher: true,
+      canPublishAsActivePublisher: true,
+      canViewActivePublisherScope: true,
+      hasMultiplePublishers: memberships.length > 1,
+      isLoading: false,
+      memberships,
+      personalPublisher: memberships.find((entry) => entry.publisher.kind === "user") ?? null,
+      setActivePublisherId: vi.fn(),
+    }));
     useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
-      if (name === "publishers:listMine") return memberships;
       if (name === "skills:checkSlugAvailability") {
         return {
           available: true,
@@ -757,7 +798,7 @@ describe("Upload route", () => {
     const { rerender } = render(<Upload />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Owner").textContent).toContain("@local");
+      expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain("@local");
     });
 
     memberships = [
@@ -767,14 +808,18 @@ describe("Upload route", () => {
           handle: "local-owner",
           displayName: "Local Owner",
           kind: "user",
+          image: null,
         },
         role: "owner",
       },
     ];
+
     rerender(<Upload />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Owner").textContent).toContain("@local-owner");
+      expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
+        "@local-owner",
+      );
     });
 
     fireEvent.change(screen.getByPlaceholderText("skill-name"), {
@@ -786,6 +831,37 @@ describe("Upload route", () => {
         ownerHandle: "local-owner",
       });
     });
+  });
+
+  it("preserves the existing owner on update even when another publisher is active", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "owned-skill", ownerHandle: undefined });
+    mockActivePublisher({
+      activeOwnerHandle: "clawkit",
+      memberships: [personalMembership, orgMembership, aliceMembership],
+    });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: {
+            slug: "owned-skill",
+            displayName: "Owned Skill",
+            icon: null,
+          },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      return null;
+    });
+
+    render(<Upload />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Owner").textContent).toContain("@alice · Alice · owner");
+    });
+    expect(screen.getByLabelText("Owner").textContent).not.toContain("@clawkit");
   });
 
   it("renders the icon picker and forwards the selected lucide icon to publishVersion", async () => {
@@ -898,6 +974,10 @@ describe("Upload route", () => {
     // Simulate a `New Version` flow: `?updateSlug=with-icon` is in the URL
     // and the existing skill row carries `icon: \"lucide:Plug\"`.
     useSearchMock.mockReturnValue({ updateSlug: "with-icon" });
+    mockActivePublisher({
+      activeOwnerHandle: "local",
+      memberships: [personalMembership, aliceMembership],
+    });
     useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       // The convex `anyApi` proxy returns a fresh proxy on every property
@@ -979,6 +1059,10 @@ describe("Upload route", () => {
     // to \"No icon\", and pre-population leaves `iconName === null` without
     // any user interaction.
     useSearchMock.mockReturnValue({ updateSlug: "stale-icon" });
+    mockActivePublisher({
+      activeOwnerHandle: "local",
+      memberships: [personalMembership, aliceMembership],
+    });
     useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";

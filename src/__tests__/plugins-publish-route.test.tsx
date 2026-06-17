@@ -34,6 +34,7 @@ const fetchMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const useQueryMock = vi.fn();
 const useSearchMock = vi.fn();
+const useActivePublisherMock = vi.fn();
 const originalFetch = globalThis.fetch;
 
 vi.mock("convex/react", () => ({
@@ -47,7 +48,61 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
+vi.mock("../lib/activePublisher", () => ({
+  useActivePublisher: () => useActivePublisherMock(),
+}));
+
 import { PublishPluginRoute, Route } from "../routes/plugins/publish";
+
+const vintageAyuMembership = {
+  publisher: {
+    _id: "publishers:vintageayu",
+    handle: "vintageayu",
+    displayName: "VintageAyu",
+    kind: "user",
+    image: "/clawd-logo.png",
+  },
+  role: "owner",
+} as const;
+
+const openClawMembership = {
+  publisher: {
+    _id: "publishers:openclaw",
+    handle: "openclaw",
+    displayName: "OpenClaw",
+    kind: "org",
+    image: null,
+  },
+  role: "admin",
+} as const;
+
+type PublisherMembership = typeof vintageAyuMembership | typeof openClawMembership;
+
+function mockActivePublisher({
+  memberships = [vintageAyuMembership],
+  activeOwnerHandle = memberships[0]?.publisher.handle ?? null,
+}: {
+  memberships?: PublisherMembership[];
+  activeOwnerHandle?: string | null;
+} = {}) {
+  const activePublisher =
+    memberships.find((membership) => membership.publisher.handle === activeOwnerHandle) ??
+    memberships[0] ??
+    null;
+  useActivePublisherMock.mockReturnValue({
+    activePublisher,
+    activePublisherId: activePublisher?.publisher._id ?? null,
+    activeOwnerHandle: activePublisher?.publisher.handle ?? null,
+    canManageActivePublisher: true,
+    canPublishAsActivePublisher: true,
+    canViewActivePublisherScope: true,
+    hasMultiplePublishers: memberships.length > 1,
+    isLoading: false,
+    memberships,
+    personalPublisher: memberships.find((entry) => entry.publisher.kind === "user") ?? null,
+    setActivePublisherId: vi.fn(),
+  });
+}
 
 function renderPublishRoute() {
   render(createElement(PublishPluginRoute as never));
@@ -103,6 +158,7 @@ describe("plugins publish route", () => {
     useAuthStatusMock.mockReset();
     useQueryMock.mockReset();
     useSearchMock.mockReset();
+    useActivePublisherMock.mockReset();
     toastErrorMock.mockReset();
 
     useSearchMock.mockReturnValue({
@@ -118,23 +174,11 @@ describe("plugins publish route", () => {
       isLoading: false,
       me: { _id: "users:1" },
     });
-    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
-      if (name !== "publishers:listMine") return null;
-      return [
-        {
-          publisher: {
-            _id: "publishers:vintageayu",
-            handle: "vintageayu",
-            displayName: "VintageAyu",
-            kind: "user",
-            image: "/clawd-logo.png",
-          },
-          role: "owner",
-        },
-      ];
+      return null;
     });
+    mockActivePublisher();
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishRelease.mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => ({
@@ -197,7 +241,9 @@ describe("plugins publish route", () => {
     expect(screen.getByPlaceholderText("Display name").getAttribute("disabled")).not.toBeNull();
     expect(screen.getByPlaceholderText("Version").getAttribute("disabled")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Describe what changed in this release...")).toBeNull();
-    expect(screen.getByLabelText("Owner").textContent).toContain("@vintageayu · VintageAyu");
+    expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
+      "@vintageayu · VintageAyu",
+    );
     expect(document.querySelector('img[src="/clawd-logo.png"]')).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
@@ -603,6 +649,63 @@ describe("plugins publish route", () => {
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
     expect(publishRelease).not.toHaveBeenCalled();
+  });
+
+  it("publishes scoped plugin packages under the active org publisher", async () => {
+    mockActivePublisher({
+      memberships: [vintageAyuMembership, openClawMembership],
+      activeOwnerHandle: "openclaw",
+    });
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "@openclaw/dronzer",
+            displayName: "Dronzer Controller",
+            version: "1.0.0",
+            repository: "https://github.com/openclaw/dronzer.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "dronzer/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"dronzer"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "dronzer/openclaw.plugin.json",
+    );
+    const dist = withRelativePath(
+      new File(["export const demo = true;\n"], "index.js", { type: "text/javascript" }),
+      "dronzer/dist/index.js",
+    );
+
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest, dist] } });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue("@openclaw/dronzer")).toBeTruthy();
+      expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
+        "@openclaw · OpenClaw",
+      );
+    });
+    expect(screen.queryByText(/Package scope "@openclaw" must match selected owner/i)).toBeNull();
+
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    await waitFor(() => {
+      expect(publishRelease).toHaveBeenCalledTimes(1);
+    });
+    expect(publishRelease).toHaveBeenCalledWith({
+      payload: expect.objectContaining({
+        name: "@openclaw/dronzer",
+        ownerHandle: "openclaw",
+      }),
+    });
   });
 
   it("does not mark the upload summary ready while validation errors are present", async () => {

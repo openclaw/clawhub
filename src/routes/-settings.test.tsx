@@ -12,6 +12,7 @@ const useMutationMock = vi.fn();
 const useActionMock = vi.fn();
 const useAuthActionsMock = vi.fn();
 const useAuthStatusMock = vi.fn();
+const useActivePublisherMock = vi.fn();
 const { navigateMock, searchMock } = vi.hoisted(() => ({
   navigateMock: vi.fn(),
   searchMock: vi.fn(() => ({})),
@@ -29,6 +30,10 @@ vi.mock("@convex-dev/auth/react", () => ({
 
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
+}));
+
+vi.mock("../lib/activePublisher", () => ({
+  useActivePublisher: () => useActivePublisherMock(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -68,6 +73,19 @@ const orgMembership = {
   role: "owner",
 };
 
+const clawkitMembership = {
+  publisher: {
+    _id: "publisher_clawkit",
+    handle: "clawkit",
+    displayName: "ClawKit",
+    kind: "org",
+    image: null,
+    bio: "ClawKit publisher",
+    official: false,
+  },
+  role: "admin",
+};
+
 const personalMembership = {
   publisher: {
     _id: "publisher_patrick",
@@ -96,15 +114,36 @@ const orgMembers = {
   ],
 };
 
+const clawkitMembers = {
+  publisher: { _id: "publisher_clawkit", handle: "clawkit" },
+  members: [
+    {
+      role: "admin",
+      user: {
+        _id: "user_123",
+        handle: "patrick",
+        displayName: "Patrick",
+        image: null,
+      },
+    },
+  ],
+};
+
 function mockSignedInSettings({
   search = {},
   memberships = [orgMembership],
   members = orgMembers,
   githubSources = [],
+  activePublisher = null,
 }: {
   search?: Record<string, unknown>;
-  memberships?: Array<typeof orgMembership | typeof personalMembership>;
-  members?: typeof orgMembers;
+  memberships?: Array<typeof orgMembership | typeof personalMembership | typeof clawkitMembership>;
+  members?: typeof orgMembers | typeof clawkitMembers;
+  activePublisher?:
+    | typeof orgMembership
+    | typeof personalMembership
+    | typeof clawkitMembership
+    | null;
   githubSources?: Array<{
     _id: string;
     repo: string;
@@ -151,6 +190,19 @@ function mockSignedInSettings({
     me: signedInUser,
   });
   searchMock.mockReturnValue(search);
+  useActivePublisherMock.mockReturnValue({
+    activePublisher,
+    activePublisherId: activePublisher?.publisher._id ?? null,
+    activeOwnerHandle: activePublisher?.publisher.handle ?? null,
+    canManageActivePublisher: true,
+    canPublishAsActivePublisher: true,
+    canViewActivePublisherScope: true,
+    hasMultiplePublishers: memberships.length > 1,
+    isLoading: false,
+    memberships,
+    personalPublisher: memberships.find((entry) => entry.publisher.kind === "user") ?? null,
+    setActivePublisherId: vi.fn(),
+  });
   useQueryMock.mockImplementation((query, args) => {
     const queryName = query ? getFunctionName(query) : "";
     if (queryName === "users:me") return signedInUser;
@@ -182,6 +234,7 @@ describe("Settings", () => {
     useActionMock.mockReset();
     useAuthActionsMock.mockReset();
     useAuthStatusMock.mockReset();
+    useActivePublisherMock.mockReset();
     navigateMock.mockReset();
     searchMock.mockReset();
     searchMock.mockReturnValue({});
@@ -197,6 +250,19 @@ describe("Settings", () => {
       isAuthenticated: true,
       isLoading: false,
       me: signedInUser,
+    });
+    useActivePublisherMock.mockReturnValue({
+      activePublisher: null,
+      activePublisherId: null,
+      activeOwnerHandle: null,
+      canManageActivePublisher: false,
+      canPublishAsActivePublisher: false,
+      canViewActivePublisherScope: false,
+      hasMultiplePublishers: false,
+      isLoading: false,
+      memberships: [],
+      personalPublisher: null,
+      setActivePublisherId: vi.fn(),
     });
   });
 
@@ -266,6 +332,23 @@ describe("Settings", () => {
     expect(screen.getByText("Patrick")).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
       publisherHandle: "openclaw",
+    });
+  });
+
+  it("preselects the active org when opening organization settings", async () => {
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [orgMembership, clawkitMembership],
+      members: clawkitMembers,
+      activePublisher: clawkitMembership,
+    });
+
+    render(<Settings />);
+
+    expect(await screen.findByText("@clawkit · admin")).toBeTruthy();
+    expect(await screen.findByText("ClawKit")).toBeTruthy();
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
+      publisherHandle: "clawkit",
     });
   });
 

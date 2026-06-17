@@ -13,11 +13,52 @@ type HeaderAuthStatus = {
 };
 
 const navigateMock = vi.fn();
-const { profileHandleMock, signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
-  profileHandleMock: vi.fn(),
-  signInMock: vi.fn(),
-  useUnifiedSearchMock: vi.fn(),
-}));
+const { activePublisherMock, profileHandleMock, signInMock, useUnifiedSearchMock } = vi.hoisted(
+  () => ({
+    activePublisherMock: vi.fn(),
+    profileHandleMock: vi.fn(),
+    signInMock: vi.fn(),
+    useUnifiedSearchMock: vi.fn(),
+  }),
+);
+
+const personalPublisher = {
+  publisher: {
+    _id: "publishers:patrick",
+    handle: "patrick",
+    displayName: "Patrick",
+    kind: "user",
+    image: null,
+  },
+  role: "owner",
+} as const;
+
+const orgPublisher = {
+  publisher: {
+    _id: "publishers:openclaw",
+    handle: "openclaw",
+    displayName: "OpenClaw",
+    kind: "org",
+    image: null,
+  },
+  role: "admin",
+} as const;
+
+const setActivePublisherIdMock = vi.fn();
+
+const defaultActivePublisherState = {
+  activePublisher: personalPublisher,
+  activePublisherId: personalPublisher.publisher._id,
+  activeOwnerHandle: personalPublisher.publisher.handle,
+  canManageActivePublisher: true,
+  canPublishAsActivePublisher: true,
+  canViewActivePublisherScope: true,
+  hasMultiplePublishers: false,
+  isLoading: false,
+  memberships: [personalPublisher],
+  personalPublisher,
+  setActivePublisherId: setActivePublisherIdMock,
+};
 
 const defaultUnifiedSearchResult = {
   results: [],
@@ -102,6 +143,10 @@ const authStatusMock = vi.fn<() => HeaderAuthStatus>(() => ({
 
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => authStatusMock(),
+}));
+
+vi.mock("../lib/activePublisher", () => ({
+  useActivePublisher: () => activePublisherMock(),
 }));
 
 const setModeMock = vi.fn();
@@ -234,6 +279,8 @@ describe("Header", () => {
       me: null,
     });
     profileHandleMock.mockReturnValue(null);
+    setActivePublisherIdMock.mockReset();
+    activePublisherMock.mockReturnValue(defaultActivePublisherState);
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
     signInMock.mockReset();
     signInMock.mockResolvedValue({ signingIn: true });
@@ -320,6 +367,43 @@ describe("Header", () => {
     expect(setModeMock).toHaveBeenCalledWith("light");
     fireEvent.click(screen.getByLabelText("Dark theme"));
     expect(setModeMock).toHaveBeenCalledWith("dark");
+  });
+
+  it("renders a global publisher switcher in the account menu", () => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+    activePublisherMock.mockReturnValue({
+      ...defaultActivePublisherState,
+      activePublisher: orgPublisher,
+      activePublisherId: orgPublisher.publisher._id,
+      activeOwnerHandle: orgPublisher.publisher.handle,
+      hasMultiplePublishers: true,
+      memberships: [personalPublisher, orgPublisher],
+    });
+
+    render(<Header />);
+
+    expect(screen.getByRole("button", { name: "Open account menu for @openclaw" })).toBeTruthy();
+    expect(screen.getByText("@patrick")).toBeTruthy();
+    expect(screen.getByText("Personal · owner")).toBeTruthy();
+    expect(screen.getAllByText("@openclaw").length).toBeGreaterThan(1);
+    expect(screen.getByText("Org · admin")).toBeTruthy();
+    expect(screen.getByText("Signed in as @patrick")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("@patrick"));
+
+    expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
+    expect(screen.getByText("Stars")).toBeTruthy();
+    expect(screen.getByText("Settings")).toBeTruthy();
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {

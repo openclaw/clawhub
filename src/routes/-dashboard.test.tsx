@@ -1,5 +1,5 @@
 /* @vitest-environment jsdom */
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -8,6 +8,7 @@ import { TooltipProvider } from "../components/ui/tooltip";
 import { Dashboard } from "./dashboard";
 
 const mocks = vi.hoisted(() => ({
+  useActivePublisher: vi.fn(),
   useQuery: vi.fn(),
   usePaginatedQuery: vi.fn(),
   useAuthStatus: vi.fn(),
@@ -20,6 +21,10 @@ vi.mock("convex/react", () => ({
 
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => mocks.useAuthStatus(),
+}));
+
+vi.mock("../lib/activePublisher", () => ({
+  useActivePublisher: () => mocks.useActivePublisher(),
 }));
 
 vi.mock("@tanstack/react-router", () => ({
@@ -158,7 +163,17 @@ const me = {
   displayName: "Local Dev",
 };
 
-const publishers = [
+type TestPublisherMembership = {
+  publisher: {
+    _id: Id<"publishers">;
+    handle: string;
+    displayName: string;
+    kind: "user" | "org";
+  };
+  role: "owner" | "admin" | "publisher";
+};
+
+const publishers: TestPublisherMembership[] = [
   {
     publisher: {
       _id: "publishers:local" as Id<"publishers">,
@@ -250,6 +265,47 @@ function arrangeDashboard({
   });
 }
 
+function mockActivePublisher(
+  publisher: TestPublisherMembership = publishers[0]!,
+  overrides?: Partial<ActivePublisherState>,
+) {
+  mocks.useActivePublisher.mockReturnValue(createActivePublisherState(publisher, overrides));
+}
+
+type ActivePublisherState = {
+  activePublisher: TestPublisherMembership;
+  activePublisherId: Id<"publishers">;
+  activeOwnerHandle: string;
+  canManageActivePublisher: boolean;
+  canPublishAsActivePublisher: boolean;
+  canViewActivePublisherScope: boolean;
+  hasMultiplePublishers: boolean;
+  isLoading: boolean;
+  memberships: TestPublisherMembership[];
+  personalPublisher: TestPublisherMembership | null;
+  setActivePublisherId: () => void;
+};
+
+function createActivePublisherState(
+  publisher: TestPublisherMembership = publishers[0]!,
+  overrides?: Partial<ActivePublisherState>,
+): ActivePublisherState {
+  return {
+    activePublisher: publisher,
+    activePublisherId: publisher.publisher._id,
+    activeOwnerHandle: publisher.publisher.handle,
+    canManageActivePublisher: publisher.role !== "publisher",
+    canPublishAsActivePublisher: true,
+    canViewActivePublisherScope: true,
+    hasMultiplePublishers: false,
+    isLoading: false,
+    memberships: [publisher],
+    personalPublisher: publishers.find((entry) => entry.publisher.kind === "user") ?? null,
+    setActivePublisherId: vi.fn(),
+    ...overrides,
+  };
+}
+
 function renderDashboard() {
   return render(
     <TooltipProvider>
@@ -273,6 +329,7 @@ describe("Dashboard rows", () => {
       isLoading: false,
       me,
     });
+    mockActivePublisher();
   });
 
   it("renders compact clickable artifact cards with status and inventory context", () => {
@@ -340,19 +397,20 @@ describe("Dashboard rows", () => {
     );
   });
 
-  it("shows a publisher selector and loads org packages when switching publishers", async () => {
-    const orgPublishers = [
-      publishers[0],
-      {
-        publisher: {
-          _id: "publishers:clawkit" as Id<"publishers">,
-          handle: "clawkit",
-          displayName: "ClawKit",
-          kind: "org" as const,
-        },
-        role: "admin" as const,
+  it("loads packages for the active publisher from the app shell", async () => {
+    const orgPublisher = {
+      publisher: {
+        _id: "publishers:clawkit" as Id<"publishers">,
+        handle: "clawkit",
+        displayName: "ClawKit",
+        kind: "org" as const,
       },
-    ];
+      role: "admin" as const,
+    };
+    mockActivePublisher(orgPublisher, {
+      hasMultiplePublishers: true,
+      memberships: [publishers[0], orgPublisher],
+    });
     const orgPackage = createPackage({
       _id: "packages:clawkit" as Id<"packages">,
       name: "@clawkit/clawkit-for-lovable",
@@ -365,10 +423,8 @@ describe("Dashboard rows", () => {
       status: "Exhausted",
       loadMore: vi.fn(),
     });
-    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
+    mocks.useQuery.mockImplementation((_query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      const name = getFunctionName(query as never);
-      if (name === "publishers:listMine") return orgPublishers;
       if (
         typeof args === "object" &&
         args !== null &&
@@ -382,17 +438,6 @@ describe("Dashboard rows", () => {
 
     renderDashboard();
 
-    const selector = await screen.findByLabelText("Dashboard publisher");
-    await waitFor(() =>
-      expect(mocks.useQuery).toHaveBeenCalledWith(expect.anything(), {
-        ownerPublisherId: "publishers:local",
-        limit: 100,
-      }),
-    );
-    expect(screen.getByText("@clawkit · Org")).toBeTruthy();
-
-    fireEvent.change(selector, { target: { value: "publishers:clawkit" } });
-
     await waitFor(() =>
       expect(mocks.useQuery).toHaveBeenCalledWith(expect.anything(), {
         ownerPublisherId: "publishers:clawkit",
@@ -402,40 +447,70 @@ describe("Dashboard rows", () => {
     expect(screen.getByText("ClawKit for Lovable")).toBeTruthy();
   });
 
-  it("passes the selected publisher into skill publishing links", async () => {
-    const orgPublishers = [
-      publishers[0],
-      {
-        publisher: {
-          _id: "publishers:clawkit" as Id<"publishers">,
-          handle: "clawkit",
-          displayName: "ClawKit",
-          kind: "org" as const,
-        },
-        role: "admin" as const,
+  it("passes the active publisher into skill publishing links", async () => {
+    const orgPublisher = {
+      publisher: {
+        _id: "publishers:clawkit" as Id<"publishers">,
+        handle: "clawkit",
+        displayName: "ClawKit",
+        kind: "org" as const,
       },
-    ];
+      role: "admin" as const,
+    };
+    mockActivePublisher(orgPublisher, {
+      hasMultiplePublishers: true,
+      memberships: [publishers[0], orgPublisher],
+    });
     mocks.usePaginatedQuery.mockReturnValue({
       results: [],
       status: "Exhausted",
       loadMore: vi.fn(),
     });
-    mocks.useQuery.mockImplementation((query: unknown, args: unknown) => {
+    mocks.useQuery.mockImplementation((_query: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      const name = getFunctionName(query as never);
-      if (name === "publishers:listMine") return orgPublishers;
       return [];
     });
 
     renderDashboard();
 
-    fireEvent.change(await screen.findByLabelText("Dashboard publisher"), {
-      target: { value: "publishers:clawkit" },
-    });
-
     expect(
       (await screen.findByRole("link", { name: "Publish manually" })).getAttribute("href"),
     ).toBe("/skills/publish?ownerHandle=clawkit");
+  });
+
+  it("hides skill management actions for publisher-only org roles", () => {
+    const publisherOnlyOrg = {
+      publisher: {
+        _id: "publishers:clawkit" as Id<"publishers">,
+        handle: "clawkit",
+        displayName: "ClawKit",
+        kind: "org" as const,
+      },
+      role: "publisher" as const,
+    };
+    mockActivePublisher(publisherOnlyOrg, {
+      memberships: [publishers[0], publisherOnlyOrg],
+      hasMultiplePublishers: true,
+      canManageActivePublisher: false,
+    });
+    arrangeDashboard({
+      skills: [
+        createSkill({
+          ownerPublisherId: "publishers:clawkit" as Id<"publishers">,
+          detailHref: "/clawkit/local-flagged-skill",
+          settingsHref: "/clawkit/local-flagged-skill/settings",
+        }),
+      ],
+    });
+
+    renderDashboard();
+
+    expect(
+      screen.queryByRole("link", { name: "Open settings for Local Flagged Skill" }),
+    ).toBeNull();
+    expect(screen.getByRole("link", { name: "New Skill" }).getAttribute("href")).toBe(
+      "/skills/publish?ownerHandle=clawkit",
+    );
   });
 
   it("renders a skeleton while auth state is loading", () => {
