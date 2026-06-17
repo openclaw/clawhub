@@ -251,7 +251,7 @@ describe("Header", () => {
     expect(document.querySelector(".navbar-tabs")).toBeNull();
     expect(document.querySelector(".theme-mode-toggle")).toBeNull();
     expect(
-      document.querySelector('.brand-mark-image[src="/og-clawhub-watermark.png"]'),
+      document.querySelector('.brand-mark-image[src="/logo-transparent.png"]'),
     ).toBeTruthy();
     expect(within(topNav).getByText("Skills").closest("a")?.querySelector("svg")).toBeNull();
     expect(within(topNav).getByText("Plugins").closest("a")?.querySelector("svg")).toBeNull();
@@ -538,7 +538,7 @@ describe("Header", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
     expect(
-      document.querySelector('.mobile-nav-brand-mark-image[src="/og-clawhub-watermark.png"]'),
+      document.querySelector('.mobile-nav-brand-mark-image[src="/logo-transparent.png"]'),
     ).toBeTruthy();
 
     const labels = Array.from(document.querySelectorAll(".mobile-nav-section .mobile-nav-link"))
