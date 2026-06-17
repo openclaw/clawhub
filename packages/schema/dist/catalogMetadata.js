@@ -320,8 +320,16 @@ export function getCatalogTopicSlugs(values) {
     });
 }
 export function resolveStoredSkillCategories(skill) {
+    let declared;
+    try {
+        declared =
+            skill.categories === undefined ? undefined : normalizeSkillCategories(skill.categories);
+    }
+    catch {
+        declared = undefined;
+    }
     return resolveSkillCategories({
-        declared: skill.categories,
+        declared,
         inferred: inferSkillCategories(skill),
     });
 }

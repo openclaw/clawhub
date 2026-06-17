@@ -105,6 +105,17 @@ describe("catalog metadata", () => {
     ).toEqual(["automation", "productivity"]);
   });
 
+  it("maps retired stored skill categories through controlled fallback inference", () => {
+    expect(
+      resolveStoredSkillCategories({
+        slug: "todoist-workflows",
+        displayName: "Todoist Workflows",
+        summary: "Automate task and project workflows",
+        categories: ["retired-category"],
+      }),
+    ).toEqual(["automation", "productivity"]);
+  });
+
   it("preserves topic display values while deriving normalized lookup slugs", () => {
     const topics = normalizeCatalogTopics([
       " GPU Development ",

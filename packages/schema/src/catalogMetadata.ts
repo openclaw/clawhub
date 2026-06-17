@@ -385,8 +385,15 @@ type SkillCategoryCandidate = {
 };
 
 export function resolveStoredSkillCategories(skill: SkillCategoryCandidate): SkillCategorySlug[] {
+  let declared: SkillCategorySlug[] | undefined;
+  try {
+    declared =
+      skill.categories === undefined ? undefined : normalizeSkillCategories(skill.categories);
+  } catch {
+    declared = undefined;
+  }
   return resolveSkillCategories({
-    declared: skill.categories,
+    declared,
     inferred: inferSkillCategories(skill),
   });
 }
