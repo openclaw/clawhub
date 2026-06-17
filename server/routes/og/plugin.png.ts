@@ -19,7 +19,7 @@ type OgQuery = {
   owner?: string;
   title?: string;
   description?: string;
-  downloads?: string;
+  installs?: string;
   audit?: string;
   avatar?: string;
   v?: string;
@@ -63,7 +63,7 @@ export default defineEventHandler(async (event) => {
   const ownerFromQuery = cleanString(query.owner);
   const titleFromQuery = cleanString(query.title);
   const descriptionFromQuery = cleanString(query.description);
-  const downloadsFromQuery = cleanString(query.downloads);
+  const installsFromQuery = cleanString(query.installs);
   const auditFromQuery = cleanString(query.audit);
   const avatarFromQuery = cleanString(query.avatar);
   const needFetch = !ownerFromQuery || !titleFromQuery || !descriptionFromQuery;
@@ -100,8 +100,8 @@ export default defineEventHandler(async (event) => {
     },
     stats: [
       {
-        value: downloadsFromQuery || formatOgStat(meta?.stats.downloads),
-        label: "Downloads",
+        value: installsFromQuery || formatOgStat(meta?.stats.installs),
+        label: "Installs",
       },
       {
         value: (auditFromQuery || getAuditLabel(meta?.verification?.scanStatus)).replace(

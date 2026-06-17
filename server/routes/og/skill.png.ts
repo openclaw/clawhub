@@ -20,7 +20,7 @@ type OgQuery = {
   version?: string;
   title?: string;
   description?: string;
-  downloads?: string;
+  installs?: string;
   audit?: string;
   avatar?: string;
   v?: string;
@@ -54,13 +54,15 @@ export default defineEventHandler(async (event) => {
   const versionFromQuery = cleanString(query.version);
   const titleFromQuery = cleanString(query.title);
   const descriptionFromQuery = cleanString(query.description);
-  const downloadsFromQuery = cleanString(query.downloads);
+  const installsFromQuery = cleanString(query.installs);
   const auditFromQuery = cleanString(query.audit);
   const avatarFromQuery = cleanString(query.avatar);
 
   const needFetch =
     !titleFromQuery || !descriptionFromQuery || !ownerFromQuery || !versionFromQuery;
-  const meta = needFetch ? await fetchSkillOgMeta(slug, getApiBase(getRequestHost(event))) : null;
+  const meta = needFetch
+    ? await fetchSkillOgMeta(slug, getApiBase(getRequestHost(event)), ownerFromQuery || undefined)
+    : null;
 
   const owner = ownerFromQuery || meta?.owner || "";
   const version = versionFromQuery || meta?.version || "";
@@ -100,8 +102,8 @@ export default defineEventHandler(async (event) => {
     },
     stats: [
       {
-        value: downloadsFromQuery || formatOgStat(meta?.stats.downloads),
-        label: "Downloads",
+        value: installsFromQuery || formatOgStat(meta?.stats.installsAllTime),
+        label: "Installs",
       },
       { value: auditLabel.replace(/^Audit\s+/i, ""), label: "Audit" },
     ],

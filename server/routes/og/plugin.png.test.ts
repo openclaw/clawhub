@@ -111,7 +111,7 @@ describe("plugin og route", () => {
       latestVersion: null,
       displayName: "Codex",
       summary: "OpenClaw Codex harness.",
-      stats: { downloads: 1200 },
+      stats: { installs: 1200 },
       verification: { scanStatus: "pending" },
     });
 
@@ -126,7 +126,7 @@ describe("plugin og route", () => {
     expect(buildPluginOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "1.2k", label: "Downloads" },
+          { value: "1.2k", label: "Installs" },
           { value: "PENDING", label: "Audit" },
         ],
       }),
@@ -142,7 +142,7 @@ describe("plugin og route", () => {
       latestVersion: "1.0.0",
       displayName: "Codex",
       summary: "OpenClaw Codex harness.",
-      stats: { downloads: 1200 },
+      stats: { installs: 1200 },
       verification: { scanStatus: "clean" },
     });
 
@@ -153,7 +153,7 @@ describe("plugin og route", () => {
     expect(buildPluginOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "1.2k", label: "Downloads" },
+          { value: "1.2k", label: "Installs" },
           { value: "PASS", label: "Audit" },
         ],
       }),
@@ -166,6 +166,7 @@ describe("plugin og route", () => {
       owner: "openclaw",
       title: "Codex",
       description: "OpenClaw Codex harness.",
+      installs: "0",
     });
 
     const handler = (await import("./plugin.png")).default;
@@ -175,7 +176,31 @@ describe("plugin og route", () => {
     expect(buildPluginOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "0", label: "Downloads" },
+          { value: "0", label: "Installs" },
+          { value: "UNKNOWN", label: "Audit" },
+        ],
+      }),
+    );
+  });
+
+  it("uses explicit installs over legacy downloads query params", async () => {
+    getQueryMock.mockReturnValue({
+      name: "@openclaw/codex",
+      owner: "openclaw",
+      title: "Codex",
+      description: "OpenClaw Codex harness.",
+      installs: "0",
+      downloads: "9.9k",
+    });
+
+    const handler = (await import("./plugin.png")).default;
+    await handler({} as never);
+
+    expect(fetchPluginOgMetaMock).not.toHaveBeenCalled();
+    expect(buildPluginOgSvgMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stats: [
+          { value: "0", label: "Installs" },
           { value: "UNKNOWN", label: "Audit" },
         ],
       }),
