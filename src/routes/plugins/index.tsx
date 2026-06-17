@@ -9,7 +9,7 @@ import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { formatBrowseCount } from "../../lib/browseCount";
-import { PLUGIN_CATEGORIES } from "../../lib/categories";
+import { PLUGIN_CATEGORIES, resolvePluginBrowseCategorySlug } from "../../lib/categories";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
@@ -197,8 +197,8 @@ export const Route = createFileRoute("/plugins/")({
   validateSearch: (search): PluginSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
     category:
-      typeof search.category === "string" && isPluginCategorySlug(search.category)
-        ? search.category
+      typeof search.category === "string"
+        ? resolvePluginBrowseCategorySlug(search.category)
         : undefined,
     topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
     cursor:
@@ -230,13 +230,15 @@ export const Route = createFileRoute("/plugins/")({
       search.sort !== "installs" &&
       !(hasQuery && search.sort === "relevance");
     const staleFeatured = Boolean(search.featured);
-    const invalidCategory = Boolean(search.category && !isPluginCategorySlug(search.category));
-    if (incompatibleSort || staleFeatured || invalidCategory) {
+    const resolvedCategory = resolvePluginBrowseCategorySlug(search.category);
+    const invalidCategory = Boolean(search.category && !resolvedCategory);
+    const legacyCategory = Boolean(search.category && resolvedCategory !== search.category);
+    if (incompatibleSort || staleFeatured || invalidCategory || legacyCategory) {
       throw redirect({
         to: "/plugins",
         search: {
           ...search,
-          category: invalidCategory ? undefined : search.category,
+          category: invalidCategory ? undefined : resolvedCategory,
           featured: staleFeatured ? undefined : search.featured,
           sort: incompatibleSort ? undefined : search.sort,
         },

@@ -1,7 +1,11 @@
 import {
+  isPluginCategorySlug,
+  isSkillCategorySlug,
   PLUGIN_CATEGORY_DEFINITIONS,
   resolveStoredSkillCategories,
   SKILL_CATEGORY_DEFINITIONS,
+  type PluginCategorySlug,
+  type SkillCategorySlug,
 } from "clawhub-schema";
 
 export type SkillCategory = {
@@ -35,6 +39,43 @@ export const PLUGIN_CATEGORIES: BrowseCategory[] = PLUGIN_CATEGORY_DEFINITIONS.m
 );
 
 export const ALL_CATEGORY_KEYWORDS = SKILL_CATEGORIES.flatMap((c) => c.keywords);
+
+const LEGACY_PLUGIN_BROWSE_CATEGORY_ALIASES = {
+  "mcp-tooling": "tools",
+  data: "tools",
+  observability: "gateway",
+  automation: "tools",
+  deployment: "gateway",
+  "dev-tools": "runtime",
+} as const satisfies Record<string, PluginCategorySlug>;
+
+const LEGACY_SKILL_BROWSE_CATEGORY_ALIASES = {
+  "mcp-tools": "integrations",
+  prompts: "agents",
+  workflows: "automation",
+  "dev-tools": "development",
+  data: "integrations",
+} as const satisfies Record<string, SkillCategorySlug>;
+
+export function resolvePluginBrowseCategorySlug(
+  value: string | null | undefined,
+): PluginCategorySlug | undefined {
+  if (!value) return undefined;
+  if (isPluginCategorySlug(value)) return value;
+  return LEGACY_PLUGIN_BROWSE_CATEGORY_ALIASES[
+    value as keyof typeof LEGACY_PLUGIN_BROWSE_CATEGORY_ALIASES
+  ];
+}
+
+export function resolveSkillBrowseCategorySlug(
+  value: string | null | undefined,
+): SkillCategorySlug | undefined {
+  if (!value) return undefined;
+  if (isSkillCategorySlug(value)) return value;
+  return LEGACY_SKILL_BROWSE_CATEGORY_ALIASES[
+    value as keyof typeof LEGACY_SKILL_BROWSE_CATEGORY_ALIASES
+  ];
+}
 
 type SkillCategoryCandidate = {
   categories?: readonly string[] | null;

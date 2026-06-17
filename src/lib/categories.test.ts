@@ -2,10 +2,22 @@ import { describe, expect, it } from "vitest";
 import {
   buildSkillCategoryBrowseHref,
   getSkillCategoryForSkill,
+  resolvePluginBrowseCategorySlug,
+  resolveSkillBrowseCategorySlug,
   SKILL_CATEGORIES,
 } from "./categories";
 
 describe("skill category helpers", () => {
+  it("maps legacy browser category slugs without accepting unknown values", () => {
+    expect(resolveSkillBrowseCategorySlug("workflows")).toBe("automation");
+    expect(resolveSkillBrowseCategorySlug("mcp-tools")).toBe("integrations");
+    expect(resolveSkillBrowseCategorySlug("unknown")).toBeUndefined();
+
+    expect(resolvePluginBrowseCategorySlug("data")).toBe("tools");
+    expect(resolvePluginBrowseCategorySlug("dev-tools")).toBe("runtime");
+    expect(resolvePluginBrowseCategorySlug("unknown")).toBeUndefined();
+  });
+
   it("picks the strongest matching skill category from searchable skill fields", () => {
     const category = getSkillCategoryForSkill({
       slug: "workflow-runner",

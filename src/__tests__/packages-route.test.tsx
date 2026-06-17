@@ -154,6 +154,41 @@ describe("plugins route", () => {
     });
   });
 
+  it("maps legacy category URLs before browsing", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ category: "data" })).toEqual(
+      expect.objectContaining({ category: "tools" }),
+    );
+    expect(validateSearch({ category: "dev-tools" })).toEqual(
+      expect.objectContaining({ category: "runtime" }),
+    );
+    expect(validateSearch({ category: "unknown" })).toEqual(
+      expect.objectContaining({ category: undefined }),
+    );
+  });
+
+  it("redirects raw legacy category URLs to the canonical plugin category", async () => {
+    const route = await loadRoute();
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() => beforeLoad?.({ search: { category: "data" } })).toThrow();
+    expect(redirectMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        search: expect.objectContaining({
+          category: "tools",
+        }),
+      }),
+    );
+  });
+
   it("drops removed downloads sort links to the plugin browse default", async () => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (

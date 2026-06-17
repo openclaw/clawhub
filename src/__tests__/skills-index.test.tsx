@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SkillsIndex } from "../routes/skills/index";
+import { Route as SkillsRoute, SkillsIndex } from "../routes/skills/index";
 import {
   convexHttpMock,
   convexReactMocks,
@@ -14,7 +14,8 @@ const navigateMock = vi.fn();
 let searchMock: Record<string, unknown> = {};
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (_config: { component: unknown; validateSearch: unknown }) => ({
+  createFileRoute: () => (config: { component: unknown; validateSearch: unknown }) => ({
+    __config: config,
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
@@ -45,6 +46,26 @@ describe("SkillsIndex", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("maps legacy category URLs before browsing", () => {
+    const validateSearch = (
+      SkillsRoute as unknown as {
+        __config: {
+          validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
+        };
+      }
+    ).__config.validateSearch;
+
+    expect(validateSearch({ category: "workflows" })).toEqual(
+      expect.objectContaining({ category: "automation" }),
+    );
+    expect(validateSearch({ category: "mcp-tools" })).toEqual(
+      expect.objectContaining({ category: "integrations" }),
+    );
+    expect(validateSearch({ category: "unknown" })).toEqual(
+      expect.objectContaining({ category: undefined }),
+    );
   });
 
   it("requests the first skills page", async () => {

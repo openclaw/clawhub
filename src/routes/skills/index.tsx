@@ -6,7 +6,7 @@ import { useCallback, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { formatBrowseCount } from "../../lib/browseCount";
-import { SKILL_CATEGORIES } from "../../lib/categories";
+import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import {
@@ -31,10 +31,8 @@ const SKILLS_SORT_OPTIONS = [
   ...BROWSE_SORT_OPTIONS.slice(1),
 ];
 
-const SKILL_CATEGORY_SLUGS = new Set(SKILL_CATEGORIES.map((category) => category.slug));
-
 function parseSkillCategorySlug(value: unknown) {
-  return typeof value === "string" && SKILL_CATEGORY_SLUGS.has(value) ? value : undefined;
+  return typeof value === "string" ? resolveSkillBrowseCategorySlug(value) : undefined;
 }
 
 export const Route = createFileRoute("/skills/")({
