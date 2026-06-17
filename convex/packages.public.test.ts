@@ -12204,6 +12204,87 @@ describe("package scan backfill", () => {
     );
   });
 
+  it("sanitizes historical ClawPack metadata before storing repaired release rows", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({
+        $schema: "https://json.schemastore.org/package",
+        name: "@scope/demo",
+        version: "1.0.0",
+      }),
+      "package/openclaw.plugin.json": JSON.stringify({
+        $schema: "https://example.com/openclaw-plugin.schema.json",
+        id: "scope.demo",
+        configSchema: {
+          $defs: {
+            token: { type: "string" },
+          },
+        },
+      }),
+      "package/README.md": "# Demo\n",
+    });
+    const storageGet = vi.fn(async (storageId: string) =>
+      storageId === "storage:clawpack"
+        ? new Blob([bytesToArrayBuffer(pack)], { type: "application/octet-stream" })
+        : null,
+    );
+    const storageStore = vi.fn(async () => `storage:repaired-${storageStore.mock.calls.length}`);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (Array.isArray(args.files)) return { repaired: true };
+      return { jobId: "securityScanJobs:1" };
+    });
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    await repairClawPackReleaseFilesInternalHandler(
+      {
+        runQuery: vi.fn(async (_ref: unknown, args: { packageId?: string; releaseId?: string }) => {
+          if (args.releaseId) {
+            return makeReleaseDoc({
+              _id: args.releaseId,
+              packageId: "packages:demo",
+              version: "1.0.0",
+              artifactKind: "npm-pack",
+              clawpackStorageId: "storage:clawpack",
+              npmFileCount: 3,
+              files: [
+                { path: "package.json", size: 10, storageId: "storage:package" },
+                {
+                  path: "openclaw.plugin.json",
+                  size: 10,
+                  storageId: "storage:plugin",
+                },
+              ],
+            });
+          }
+          if (args.packageId === "packages:demo") {
+            return makePackageDoc({ _id: "packages:demo", name: "@scope/demo" });
+          }
+          return null;
+        }),
+        runMutation,
+        scheduler: { runAfter },
+        storage: { get: storageGet, store: storageStore },
+      } as never,
+      { releaseId: "packageReleases:truncated-clawpack" },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        extractedPackageJson: expect.objectContaining({
+          dollar_schema: "https://json.schemastore.org/package",
+        }),
+        extractedPluginManifest: expect.objectContaining({
+          dollar_schema: "https://example.com/openclaw-plugin.schema.json",
+          configSchema: {
+            dollar_defs: {
+              token: { type: "string" },
+            },
+          },
+        }),
+      }),
+    );
+  });
+
   it("backfills legacy static-only package scan status into the package search digest", async () => {
     const verification = {
       tier: "source-linked",

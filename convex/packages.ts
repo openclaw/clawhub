@@ -9161,8 +9161,12 @@ async function repairClawPackReleaseFiles(
       npmUnpackedSize: parsed.unpackedSize,
       npmFileCount: parsed.fileCount,
       integritySha256,
-      extractedPackageJson: parsed.packageJson,
-      extractedPluginManifest: parsed.pluginManifest,
+      extractedPackageJson: toConvexSafeJsonValue(parsed.packageJson, {
+        maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
+      }),
+      extractedPluginManifest: toConvexSafeJsonValue(parsed.pluginManifest, {
+        maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
+      }),
       checkedAt: Date.now(),
     },
   );
