@@ -61,6 +61,7 @@ describe("SkillsIndex", () => {
       }),
     );
     expect(args).not.toHaveProperty("sort");
+    expect(args).not.toHaveProperty("officialFirst");
     expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
       "true",
     );

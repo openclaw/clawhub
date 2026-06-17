@@ -109,7 +109,7 @@ export function useSkillsBrowseModel({
           highlightedOnly: featuredOnly,
           categorySlug: activeCategory?.slug,
           topic: activeTopic,
-          officialFirst: Boolean(activeCategory),
+          ...(activeCategory ? { officialFirst: true } : {}),
           categoryKeywords,
           excludeCategoryKeywords,
         });
