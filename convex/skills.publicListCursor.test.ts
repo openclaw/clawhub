@@ -362,6 +362,7 @@ describe("public skill list deterministic cursors", () => {
       undefined,
       "calendar",
       firstDigest.updatedAt,
+      100,
       "skillTopicSearchDigest:calendar-one",
     ];
     getPageMock
@@ -386,7 +387,13 @@ describe("public skill list deterministic cursors", () => {
         ],
         hasMore: false,
         indexKeys: [
-          [undefined, "calendar", secondDigest.updatedAt, "skillTopicSearchDigest:calendar-two"],
+          [
+            undefined,
+            "calendar",
+            secondDigest.updatedAt,
+            200,
+            "skillTopicSearchDigest:calendar-two",
+          ],
         ],
       });
     const ctx = makeTopicFilteredCtx([firstDigest, secondDigest], {
@@ -439,6 +446,7 @@ describe("public skill list deterministic cursors", () => {
       "calendar",
       firstDigest.statsDownloads,
       firstDigest.updatedAt,
+      100,
       "skillTopicSearchDigest:calendar-one",
     ];
     getPageMock
@@ -470,6 +478,7 @@ describe("public skill list deterministic cursors", () => {
             "calendar",
             secondDigest.statsDownloads,
             secondDigest.updatedAt,
+            200,
             "skillTopicSearchDigest:calendar-two",
           ],
         ],
