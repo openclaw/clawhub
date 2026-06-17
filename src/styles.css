@@ -15619,6 +15619,10 @@ a[class*="rounded-full"] {
     max-width: none;
   }
 
+  .navbar-calm .navbar-search {
+    height: 40px;
+  }
+
   .navbar-calm-actions {
     grid-column: 3;
     gap: 0;
