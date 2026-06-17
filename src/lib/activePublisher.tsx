@@ -116,7 +116,7 @@ export function ActivePublisherProvider({ children }: { children: ReactNode }) {
   }, [memberships, selectedPublisherId, userId]);
 
   useEffect(() => {
-    if (!userId || typeof window === "undefined") return;
+    if (!userId || typeof window === "undefined") return undefined;
     const key = storageKeyForUser(userId);
     const onStorage = (event: StorageEvent) => {
       if (event.key !== key) return;
