@@ -97,6 +97,14 @@ function makeCtx() {
       };
     }
 
+    if (table === "skillSlugAliases") {
+      return {
+        withIndex: vi.fn(() => ({
+          take: vi.fn().mockResolvedValue([]),
+        })),
+      };
+    }
+
     throw new Error(`Unexpected query table: ${table}`);
   });
 

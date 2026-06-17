@@ -2493,6 +2493,7 @@ const installTelemetryDedupes = defineTable({
 const reservedSlugs = defineTable({
   slug: v.string(),
   originalOwnerUserId: v.id("users"),
+  originalOwnerPublisherId: v.optional(v.id("publishers")),
   deletedAt: v.number(),
   expiresAt: v.number(),
   reason: v.optional(v.string()),

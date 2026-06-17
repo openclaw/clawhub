@@ -82,6 +82,8 @@ import {
   requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
+  ambiguousSkillSlugResponse,
+  type AmbiguousSkillSlugChoice,
   formatAuthzMessage,
   formatUserFacingErrorMessage,
   text,
@@ -2978,11 +2980,22 @@ function resolvePackageFilePath(release: ReleaseLike, requestedPath: string) {
   );
 }
 
-async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
-  return (await runQueryRef(ctx, apiRefs.skills.getBySlug, { slug })) as {
+function getOwnerHandleParam(request: Request) {
+  const url = new URL(request.url);
+  const value = url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner");
+  return value?.trim().replace(/^@+/, "") || undefined;
+}
+
+async function getSkillDetailForRequest(ctx: ActionCtx, slug: string, ownerHandle?: string) {
+  return (await runQueryRef(ctx, apiRefs.skills.getBySlug, {
+    slug,
+    ...(ownerHandle ? { ownerHandle } : {}),
+  })) as {
     skill: SkillPackageDocLike | null;
     latestVersion: SkillVersionLike | null;
     owner: { handle?: string; displayName?: string; image?: string } | null;
+    ambiguous?: boolean;
+    ambiguousMatches?: Array<{ slug: string; ownerHandle?: string | null }>;
     moderationInfo?: {
       isPendingScan?: boolean | null;
       isMalwareBlocked?: boolean | null;
@@ -2991,6 +3004,29 @@ async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
       sourceVersionId?: Id<"skillVersions"> | null;
     } | null;
   } | null;
+}
+
+function ambiguousSkillChoicesForPackageRequest(
+  request: Request,
+  matches: Array<{ slug: string; ownerHandle?: string | null }> | undefined,
+): AmbiguousSkillSlugChoice[] {
+  return (matches ?? []).flatMap((match) => {
+    const ownerHandle = match.ownerHandle?.trim().replace(/^@+/, "");
+    if (!ownerHandle) return [];
+    const slug = match.slug.trim().toLowerCase();
+    if (!slug) return [];
+    return [
+      {
+        ownerHandle,
+        slug,
+        ref: `@${ownerHandle}/${slug}`,
+        url: new URL(
+          `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(slug)}`,
+          request.url,
+        ).toString(),
+      },
+    ];
+  });
 }
 
 type PackageExactVersionModeratedSkill = Pick<
@@ -3009,12 +3045,13 @@ type PackageExactVersionModeratedSkill = Pick<
 async function getUnavailableSkillPackageVersionBlock(
   ctx: ActionCtx,
   slug: string,
+  ownerHandle: string | undefined,
   versionName: string,
 ) {
   const skill = await runQueryRef<PackageExactVersionModeratedSkill | null>(
     ctx,
     internalRefs.skills.getSkillBySlugInternal,
-    { slug },
+    { slug, ...(ownerHandle ? { ownerHandle } : {}) },
   );
   if (!skill || skill.softDeletedAt) return null;
 
@@ -3373,6 +3410,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return json(parsed, 200, rate.headers);
   }
 
+  const ownerHandle = getOwnerHandleParam(request);
+  const isExactVersionRequest =
+    packageSegments[0] === "versions" && packageSegments[1] && packageSegments.length === 2;
   const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
     name: normalizedPackageName,
     viewerUserId: viewerUserId ?? undefined,
@@ -3383,19 +3423,26 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   } | null;
   const skillDetail = detail?.package
     ? null
-    : await getSkillDetailForRequest(ctx, normalizedPackageName);
-  const isExactVersionRequest =
-    packageSegments[0] === "versions" && packageSegments[1] && packageSegments.length === 2;
+    : await getSkillDetailForRequest(ctx, normalizedPackageName, ownerHandle);
   if (!detail?.package && !skillDetail?.skill) {
     if (isExactVersionRequest) {
       const moderationBlock = await getUnavailableSkillPackageVersionBlock(
         ctx,
         normalizedPackageName,
+        ownerHandle,
         packageSegments[1],
       );
       if (moderationBlock) {
         return text(moderationBlock.message, moderationBlock.status, rate.headers);
       }
+    }
+    if (skillDetail?.ambiguous) {
+      return ambiguousSkillSlugResponse(
+        normalizedPackageName,
+        `/api/v1/packages/${encodeURIComponent(normalizedPackageName)}?ownerHandle=<owner>`,
+        rate.headers,
+        ambiguousSkillChoicesForPackageRequest(request, skillDetail.ambiguousMatches),
+      );
     }
     return text("Package not found", 404, rate.headers);
   }
@@ -3725,6 +3772,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (skillDetail?.skill) {
       const url = new URL("/api/v1/download", request.url);
       url.searchParams.set("slug", skillDetail.skill.slug);
+      if (skillDetail.owner?.handle) {
+        url.searchParams.set("ownerHandle", skillDetail.owner.handle);
+      }
       const requestUrl = new URL(request.url);
       const version = requestUrl.searchParams.get("version")?.trim();
       const tag = requestUrl.searchParams.get("tag")?.trim();

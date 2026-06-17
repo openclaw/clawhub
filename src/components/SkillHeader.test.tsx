@@ -263,6 +263,28 @@ describe("SkillHeader", () => {
     expect(screen.queryByText("Demo summary")).toBeNull();
   });
 
+  it("keeps the download link in the owner namespace", () => {
+    renderHeader({
+      latestVersion: {
+        _id: "skillVersions:demo" as Id<"skillVersions">,
+        _creationTime: 1,
+        skillId: skill._id,
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [],
+        createdBy: "users:owner" as Id<"users">,
+        createdAt: 1,
+      },
+    });
+
+    const href = screen.getByRole("link", { name: "Download" }).getAttribute("href");
+    expect(href).not.toBeNull();
+    const url = new URL(href ?? "");
+    expect(url.pathname).toBe("/api/v1/download");
+    expect(url.searchParams.get("slug")).toBe("demo");
+    expect(url.searchParams.get("ownerHandle")).toBe("local");
+  });
+
   it("falls back to legacy parsed frontmatter description when present", () => {
     renderHeader({
       latestVersion: {

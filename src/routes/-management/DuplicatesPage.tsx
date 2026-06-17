@@ -9,7 +9,7 @@ export function DuplicatesPage({
   onSetDuplicate,
 }: {
   duplicateCandidates: DuplicateCandidateEntry[] | undefined;
-  onSetDuplicate: (skillId: DuplicateSkillId, canonicalSlug: string) => void;
+  onSetDuplicate: (skillId: DuplicateSkillId, canonicalSkillId: DuplicateSkillId) => void;
 }) {
   return (
     <div className="management-view">
@@ -94,7 +94,7 @@ export function DuplicatesPage({
                       </Button>
                       <Button
                         type="button"
-                        onClick={() => onSetDuplicate(entry.skill._id, match.skill.slug)}
+                        onClick={() => onSetDuplicate(entry.skill._id, match.skill._id)}
                       >
                         Mark duplicate
                       </Button>

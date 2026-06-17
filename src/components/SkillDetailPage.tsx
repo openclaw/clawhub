@@ -200,10 +200,17 @@ export function SkillDetailPage({
   const initialResult = initialData?.result ?? undefined;
 
   const isStaff = isModerator(me);
-  const staffResult = useQuery(api.skills.getBySlugForStaff, isStaff ? { slug } : "skip") as
+  const liveLookupOwnerHandle =
+    initialData && "lookupOwnerHandle" in initialData
+      ? initialData.lookupOwnerHandle
+      : canonicalOwner;
+  const skillLookupArgs = liveLookupOwnerHandle
+    ? { slug, ownerHandle: liveLookupOwnerHandle }
+    : { slug };
+  const staffResult = useQuery(api.skills.getBySlugForStaff, isStaff ? skillLookupArgs : "skip") as
     | SkillBySlugResult
     | undefined;
-  const publicResult = useQuery(api.skills.getBySlug, !isStaff ? { slug } : "skip") as
+  const publicResult = useQuery(api.skills.getBySlug, !isStaff ? skillLookupArgs : "skip") as
     | SkillBySlugResult
     | undefined;
   const result = isStaff ? staffResult : publicResult === undefined ? initialResult : publicResult;
@@ -921,6 +928,7 @@ export function SkillDetailPage({
             latestVersionId={latestVersion?._id ?? null}
             canDeleteVersions={canDeleteSkillVersions}
             skill={skill as Doc<"skills">}
+            ownerHandle={ownerHandle}
             diffVersions={diffVersions}
             versions={versions}
             nixPlugin={Boolean(nixPlugin)}

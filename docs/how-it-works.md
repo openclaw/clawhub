@@ -72,7 +72,7 @@ surface the published metadata, files, source attribution, and scan status.
 OpenClaw install commands use ClawHub as a package source:
 
 ```bash
-openclaw skills install <skill-slug>
+openclaw skills install @openclaw/demo
 openclaw plugins install clawhub:<package>
 ```
 

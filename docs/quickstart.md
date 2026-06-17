@@ -25,7 +25,7 @@ openclaw skills search "calendar"
 Install a skill:
 
 ```bash
-openclaw skills install <skill-slug>
+openclaw skills install @openclaw/demo
 ```
 
 Update installed skills:
@@ -136,7 +136,7 @@ Before installing, use the ClawHub web page or CLI detail commands to inspect
 metadata, source links, versions, changelogs, and scan status:
 
 ```bash
-clawhub inspect <skill-slug>
+clawhub inspect @openclaw/demo
 clawhub package inspect <package>
 ```
 

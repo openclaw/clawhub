@@ -179,7 +179,8 @@ export function SkillCommandLineCard({
   clawdis,
 }: SkillInstallSurfaceProps) {
   const [activeInstallTab, setActiveInstallTab] = useState<"cli" | "prompt">("cli");
-  const openClawCommand = formatOpenClawInstallCommand(slug);
+  const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
+  const openClawCommand = formatOpenClawInstallCommand(installTarget);
   const promptPreview = formatOpenClawPrompt({
     mode: "install-and-setup",
     skillName: displayName,

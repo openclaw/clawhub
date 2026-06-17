@@ -6,6 +6,7 @@ import {
   ApiRoutes,
   ApiV1PublishResponseSchema,
   ApiV1SkillResolveResponseSchema,
+  ApiV1WhoamiResponseSchema,
 } from "../../schema/index.js";
 import { hashSkillFiles, listTextFiles } from "../../skills.js";
 import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
@@ -35,6 +36,7 @@ export async function cmdPublish(
     slug?: string;
     name?: string;
     owner?: string;
+    sourceOwner?: string;
     version?: string;
     changelog?: string;
     tags?: string;
@@ -62,7 +64,8 @@ export async function cmdPublish(
 
   const slug = options.slug ?? sanitizeSlug(basename(folder));
   const displayName = options.name ?? titleCase(basename(folder));
-  const ownerHandle = options.owner?.trim().replace(/^@+/, "");
+  const explicitOwnerHandle = options.owner?.trim().replace(/^@+/, "");
+  const explicitSourceOwnerHandle = options.sourceOwner?.trim().replace(/^@+/, "");
   const explicitVersion = options.version;
   const changelog = options.changelog ?? "";
   const tagsValue = options.tags ?? "latest";
@@ -98,7 +101,26 @@ export async function cmdPublish(
 
     const hashed = hashSkillFiles(filesOnDisk);
     const optionalToken = await getOptionalAuthToken();
-    const resolved = await resolveSkillVersion(registry, slug, hashed.fingerprint, optionalToken);
+    let defaultOwnerHandle: string | undefined;
+    const getDefaultOwnerHandle = async (token: string) => {
+      defaultOwnerHandle ??= await resolveDefaultOwnerHandle(registry, token);
+      return defaultOwnerHandle;
+    };
+    const ownerHandle =
+      explicitOwnerHandle ||
+      (optionalToken ? await getDefaultOwnerHandle(optionalToken) : undefined);
+    const sourceOwnerHandle =
+      options.migrateOwner && ownerHandle
+        ? explicitSourceOwnerHandle ||
+          (optionalToken ? await getDefaultOwnerHandle(optionalToken) : undefined)
+        : undefined;
+    const resolved = await resolveSkillVersion(
+      registry,
+      slug,
+      hashed.fingerprint,
+      ownerHandle,
+      optionalToken,
+    );
     const latestVersion = resolved.latestVersion?.version ?? null;
 
     if (!explicitVersion && resolved.match) {
@@ -134,14 +156,20 @@ export async function cmdPublish(
       return result;
     }
 
-    const token = await requireAuthToken();
+    const token = optionalToken ?? (await requireAuthToken());
+    const publishOwnerHandle = ownerHandle || (await getDefaultOwnerHandle(token));
+    const publishSourceOwnerHandle =
+      options.migrateOwner && publishOwnerHandle
+        ? sourceOwnerHandle || explicitSourceOwnerHandle || (await getDefaultOwnerHandle(token))
+        : undefined;
     const form = new FormData();
     form.set(
       "payload",
       JSON.stringify({
         slug,
         displayName,
-        ...(ownerHandle ? { ownerHandle } : {}),
+        ownerHandle: publishOwnerHandle,
+        ...(publishSourceOwnerHandle ? { sourceOwnerHandle: publishSourceOwnerHandle } : {}),
         ...(options.migrateOwner ? { migrateOwner: true } : {}),
         version,
         changelog,
@@ -196,14 +224,27 @@ function parseCsv(value: string | undefined) {
     .filter(Boolean);
 }
 
+async function resolveDefaultOwnerHandle(registry: string, token: string) {
+  const whoami = await apiRequest(
+    registry,
+    { method: "GET", path: ApiRoutes.whoami, token },
+    ApiV1WhoamiResponseSchema,
+  );
+  const handle = whoami.user.handle?.trim().replace(/^@+/, "");
+  if (!handle) fail("Unable to resolve your publisher handle. Pass --owner explicitly.");
+  return handle;
+}
+
 async function resolveSkillVersion(
   registry: string,
   slug: string,
   fingerprint: string,
+  ownerHandle?: string,
   token?: string,
 ) {
   const url = registryUrl(ApiRoutes.resolve, registry);
   url.searchParams.set("slug", slug);
+  if (ownerHandle) url.searchParams.set("ownerHandle", ownerHandle);
   url.searchParams.set("hash", fingerprint);
   try {
     return await apiRequest(
@@ -295,12 +336,35 @@ async function looksLikePluginFolder(folder: string) {
 
 function parseForkOf(value: string) {
   const trimmed = value.trim();
-  const [slugRaw, versionRaw] = trimmed.split("@");
+  const ref = parseOwnerQualifiedSkillRef(trimmed);
+  const [slugRaw, versionRaw] = splitForkSlugAndVersion(ref.slugAndVersion);
   const slug = (slugRaw ?? "").trim().toLowerCase();
   if (!slug) fail("--fork-of must be <slug> or <slug@version>");
   const version = (versionRaw ?? "").trim();
   if (version && !semver.valid(version)) fail("--fork-of version must be valid semver");
-  return { slug, version: version || undefined };
+  return {
+    slug,
+    ...(ref.ownerHandle ? { ownerHandle: ref.ownerHandle } : {}),
+    version: version || undefined,
+  };
+}
+
+function parseOwnerQualifiedSkillRef(value: string) {
+  if (!value.startsWith("@")) return { slugAndVersion: value };
+  const slashIndex = value.indexOf("/");
+  if (slashIndex < 0) fail("--fork-of must be <slug>, <slug@version>, or @<owner>/<slug@version>");
+  const ownerHandle = value.slice(1, slashIndex).trim().replace(/^@+/, "");
+  const slugAndVersion = value.slice(slashIndex + 1).trim();
+  if (!ownerHandle || !slugAndVersion) {
+    fail("--fork-of must be <slug>, <slug@version>, or @<owner>/<slug@version>");
+  }
+  return { ownerHandle, slugAndVersion };
+}
+
+function splitForkSlugAndVersion(value: string) {
+  const atIndex = value.lastIndexOf("@");
+  if (atIndex <= 0) return [value, ""] as const;
+  return [value.slice(0, atIndex), value.slice(atIndex + 1)] as const;
 }
 
 function buildPublishSource(options: {

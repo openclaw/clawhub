@@ -134,7 +134,7 @@ Publisher discoverability guidance:
 - Put the terms users will literally search for in the display name, summary, and tags. Use a standalone slug token only when it is also a stable identity you want to keep.
 - Do not rename a slug just to chase one query unless the new slug is a better long-term canonical name. Old slugs become redirect aliases, but the canonical URL, displayed slug, and future search digests use the new slug.
 - Rename aliases preserve resolution for old URLs and installs that resolve through the registry, but search ranking is based on the canonical skill metadata after the rename has indexed. Existing stats stay with the skill.
-- If a skill is unexpectedly invisible, check moderation state first with `clawhub inspect <slug>` while logged in before changing ranking-related metadata.
+- If a skill is unexpectedly invisible, check moderation state first with `clawhub inspect @owner/slug` while logged in before changing ranking-related metadata.
 
 ### `GET /api/v1/skills`
 

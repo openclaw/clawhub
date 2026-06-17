@@ -60,8 +60,9 @@ type ModerationDiagnostics = {
 } | null;
 
 export async function cmdInspect(opts: GlobalOpts, slug: string, options: InspectOptions = {}) {
-  const trimmed = slug.trim();
-  if (!trimmed) fail("Slug required");
+  const requested = parseSkillRef(slug);
+  const trimmed = requested.slug;
+  if (!trimmed) fail("Skill required");
   if (options.version && options.tag) fail("Use either --version or --tag");
 
   const token = await getOptionalAuthToken();
@@ -71,9 +72,14 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     let skillResult: Awaited<ReturnType<typeof fetchSkillDetail>> | null = null;
     let moderationDiagnostics: ModerationDiagnostics = null;
     try {
-      skillResult = await fetchSkillDetail(registry, trimmed, token);
+      skillResult = await fetchSkillDetail(registry, trimmed, requested.ownerHandle, token);
     } catch (error) {
-      moderationDiagnostics = await fetchModerationDiagnostics(registry, trimmed, token);
+      moderationDiagnostics = await fetchModerationDiagnostics(
+        registry,
+        trimmed,
+        requested.ownerHandle,
+        token,
+      );
       if (moderationDiagnostics?.moderation) {
         spinner.stop();
         const output = {
@@ -100,7 +106,12 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       return;
     }
 
-    moderationDiagnostics = await fetchModerationDiagnostics(registry, trimmed, token);
+    moderationDiagnostics = await fetchModerationDiagnostics(
+      registry,
+      trimmed,
+      requested.ownerHandle,
+      token,
+    );
 
     const skill = skillResult.skill;
     const tags = normalizeTags(skill.tags);
@@ -121,9 +132,13 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         registry,
         {
           method: "GET",
-          path: `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(
-            targetVersion,
-          )}`,
+          url: ownerScopedUrl(
+            registry,
+            `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions/${encodeURIComponent(
+              targetVersion,
+            )}`,
+            requested.ownerHandle,
+          ),
           token,
         },
         ApiV1SkillVersionResponseSchema,
@@ -137,6 +152,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
         `${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/versions`,
         registry,
       );
+      if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
       url.searchParams.set("limit", String(limit));
       spinner.text = `Fetching versions (${limit})`;
       versionsList = await apiRequest(
@@ -149,6 +165,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
     let fileContent: string | null = null;
     if (options.file) {
       const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/file`, registry);
+      if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
       url.searchParams.set("path", options.file);
       if (options.version) {
         url.searchParams.set("version", options.version);
@@ -237,8 +254,9 @@ export async function cmdVerifySkill(
   slug: string,
   options: VerifySkillOptions = {},
 ) {
-  const trimmed = slug.trim();
-  if (!trimmed) fail("Slug required");
+  const requested = parseSkillRef(slug);
+  const trimmed = requested.slug;
+  if (!trimmed) fail("Skill required");
   if (options.version && options.tag) fail("Use either --version or --tag");
 
   const token = await getOptionalAuthToken();
@@ -246,6 +264,7 @@ export async function cmdVerifySkill(
   const spinner = createCrabLoader("Fetching skill verification");
   try {
     const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);
+    if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
     if (options.version) {
       url.searchParams.set("version", options.version);
     } else if (options.tag) {
@@ -280,10 +299,37 @@ export async function cmdVerifySkill(
   }
 }
 
-function fetchSkillDetail(registry: string, slug: string, token: string | undefined) {
+function parseSkillRef(raw: string) {
+  const value = raw.trim();
+  if (!value) fail("Skill required");
+  const slashIndex = value.indexOf("/");
+  if (slashIndex < 0) return { slug: value };
+  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill: ${value}`);
+  const ownerHandle = value.slice(0, slashIndex).trim().replace(/^@+/, "");
+  const slug = value.slice(slashIndex + 1).trim();
+  if (!ownerHandle || !slug) fail(`Invalid skill: ${value}`);
+  return { slug, ownerHandle };
+}
+
+function ownerScopedUrl(registry: string, path: string, ownerHandle: string | undefined) {
+  const url = registryUrl(path, registry);
+  if (ownerHandle) url.searchParams.set("ownerHandle", ownerHandle);
+  return url.toString();
+}
+
+function fetchSkillDetail(
+  registry: string,
+  slug: string,
+  ownerHandle: string | undefined,
+  token: string | undefined,
+) {
   return apiRequest(
     registry,
-    { method: "GET", path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}`, token },
+    {
+      method: "GET",
+      url: ownerScopedUrl(registry, `${ApiRoutes.skills}/${encodeURIComponent(slug)}`, ownerHandle),
+      token,
+    },
     ApiV1SkillResponseSchema,
   );
 }
@@ -291,6 +337,7 @@ function fetchSkillDetail(registry: string, slug: string, token: string | undefi
 async function fetchModerationDiagnostics(
   registry: string,
   slug: string,
+  ownerHandle: string | undefined,
   token: string | undefined,
 ): Promise<ModerationDiagnostics> {
   if (!token) return null;
@@ -299,7 +346,11 @@ async function fetchModerationDiagnostics(
       registry,
       {
         method: "GET",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/moderation`,
+        url: ownerScopedUrl(
+          registry,
+          `${ApiRoutes.skills}/${encodeURIComponent(slug)}/moderation`,
+          ownerHandle,
+        ),
         token,
       },
       ApiV1SkillModerationResponseSchema,

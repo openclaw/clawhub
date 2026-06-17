@@ -38,6 +38,7 @@ type SkillDetailTabsProps = {
   latestVersionId: Id<"skillVersions"> | null;
   canDeleteVersions?: boolean;
   skill: Doc<"skills">;
+  ownerHandle?: string | null;
   diffVersions: Doc<"skillVersions">[] | undefined;
   versions: Doc<"skillVersions">[] | undefined;
   nixPlugin: boolean;
@@ -62,6 +63,7 @@ export function SkillDetailTabs({
   latestVersionId,
   canDeleteVersions = false,
   skill,
+  ownerHandle,
   diffVersions,
   versions,
   nixPlugin,
@@ -73,7 +75,7 @@ export function SkillDetailTabs({
   readmeHrefResolver,
 }: SkillDetailTabsProps) {
   const resolveReadmeHref =
-    readmeHrefResolver ?? ((href: string) => resolveSkillReadmeHref(href, skill.slug));
+    readmeHrefResolver ?? ((href: string) => resolveSkillReadmeHref(href, skill.slug, ownerHandle));
   const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
   const activeInstallTab = installTabs.find((tab) => tab.id === activeTab);
   const compareEnabled = showArchiveTabs && (versions?.length ?? 0) > 1;
@@ -240,6 +242,7 @@ export function SkillDetailTabs({
           canDeleteVersions={canDeleteVersions}
           nixPlugin={nixPlugin}
           skillSlug={skill.slug}
+          ownerHandle={ownerHandle}
           suppressScanResults={suppressVersionScanResults}
           suppressedMessage={scanResultsSuppressedMessage}
         />

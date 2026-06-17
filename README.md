@@ -51,19 +51,19 @@ Common CLI flows:
 - Remote/headless auth: `clawhub login --device`
 - Discover: `clawhub search ...`, `clawhub explore`
 - Browse unified catalog (skills + plugins): `clawhub package explore`, `clawhub package inspect <name>`
-- Manage local installs: `clawhub install <slug>`, `clawhub pin <slug>`, `clawhub unpin <slug>`, `clawhub uninstall <slug>`, `clawhub list`, `clawhub update --all`
-- Inspect without installing: `clawhub inspect <slug>`
+- Manage local installs: `clawhub install @openclaw/demo`, `clawhub pin <skill>`, `clawhub unpin <skill>`, `clawhub uninstall <skill>`, `clawhub list`, `clawhub update --all`
+- Inspect without installing: `clawhub inspect @openclaw/demo`
 - Publish skills: `clawhub skill publish <path>`
 - Publish plugins: `clawhub package publish <source>`
 - Code-plugin manifests must include `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`; see [`docs/cli.md`](docs/cli.md) for a minimal example.
-- Canonicalize owned skills: `clawhub skill rename <slug> <new-slug>`, `clawhub skill merge <source> <target>`
+- Canonicalize owned skills: `clawhub skill rename <skill> <new-name>`, `clawhub skill merge <source> <target>`
 
 Docs: [`docs/quickstart.md`](docs/quickstart.md), [`docs/cli.md`](docs/cli.md).
 
 ### Removal permissions
 
-- `clawhub uninstall <slug>` only removes a local install on your machine.
-- Uploaded registry skills use soft-delete/restore (`clawhub delete <slug>` / `clawhub undelete <slug>` or API equivalents).
+- `clawhub uninstall <skill>` only removes a local install on your machine.
+- Uploaded registry skills use soft-delete/restore (`clawhub delete <skill>` / `clawhub undelete <skill>` or API equivalents).
 - Soft-delete/restore is allowed for the skill or package owner, publisher owner/admin, moderators, and admins.
 - Packages use `clawhub package delete <name>` / `clawhub package undelete <name>`.
 - Hard delete is admin-only (management tools / ban flows).

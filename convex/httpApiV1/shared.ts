@@ -80,6 +80,44 @@ export function text(value: string, status: number, headers?: HeadersInit) {
   });
 }
 
+export type AmbiguousSkillSlugChoice = {
+  ownerHandle: string;
+  slug: string;
+  ref: string;
+  url: string;
+};
+
+export function ambiguousSkillSlugMessage(slug: string, examplePath?: string) {
+  if (!examplePath) {
+    return `Found multiple skills with the slug "${slug}"; specify which one you want to install:`;
+  }
+  return (
+    `Ambiguous skill slug "${slug}". Multiple publishers use this slug. ` +
+    `Retry with ownerHandle, for example: ${examplePath}.`
+  );
+}
+
+export function ambiguousSkillSlugResponse(
+  slug: string,
+  examplePath: string,
+  headers?: HeadersInit,
+  choices?: AmbiguousSkillSlugChoice[],
+) {
+  if (choices && choices.length > 0) {
+    return json(
+      {
+        code: "AMBIGUOUS_SKILL_SLUG",
+        message: ambiguousSkillSlugMessage(slug),
+        slug,
+        matches: choices,
+      },
+      409,
+      headers,
+    );
+  }
+  return text(ambiguousSkillSlugMessage(slug, examplePath), 409, headers);
+}
+
 export async function parseJsonPayload(request: Request, headers: HeadersInit) {
   try {
     const payload = (await request.json()) as Record<string, unknown>;
@@ -350,6 +388,9 @@ export async function parseMultipartPublish(
     slug: payload.slug,
     displayName: payload.displayName,
     ...(typeof payload.ownerHandle === "string" ? { ownerHandle: payload.ownerHandle } : {}),
+    ...(typeof payload.sourceOwnerHandle === "string"
+      ? { sourceOwnerHandle: payload.sourceOwnerHandle }
+      : {}),
     ...(typeof payload.migrateOwner === "boolean" ? { migrateOwner: payload.migrateOwner } : {}),
     version: payload.version,
     changelog: typeof payload.changelog === "string" ? payload.changelog : "",
@@ -438,6 +479,7 @@ export function parsePublishBody(body: unknown) {
     slug: parsed.slug,
     displayName: parsed.displayName,
     ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
+    sourceOwnerHandle: parsed.sourceOwnerHandle?.trim().replace(/^@+/, "") || undefined,
     migrateOwner: parsed.migrateOwner === true ? true : undefined,
     version: parsed.version,
     changelog: parsed.changelog,
@@ -449,6 +491,7 @@ export function parsePublishBody(body: unknown) {
     forkOf: parsed.forkOf
       ? {
           slug: parsed.forkOf.slug,
+          ownerHandle: parsed.forkOf.ownerHandle?.trim().replace(/^@+/, "") || undefined,
           version: parsed.forkOf.version ?? undefined,
         }
       : undefined,
@@ -487,6 +530,9 @@ export function softDeleteErrorToResponse(
   if (lower.includes("forbidden"))
     return text(formatAuthzMessage(error, "Forbidden"), 403, headers);
   if (lower.includes("not found")) return text(cleaned, 404, headers);
+  if (lower.includes("multiple publishers") || lower.includes("owner-qualified")) {
+    return text(cleaned, 409, headers);
+  }
   if (SOFT_DELETE_BAD_REQUEST_HINTS.some((hint) => lower.includes(hint))) {
     return text(cleaned, 400, headers);
   }

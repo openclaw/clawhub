@@ -24,6 +24,7 @@ export const LockfileSchema = type({
     "[string]": {
       version: "string|null",
       installedAt: "number",
+      ownerHandle: "string?",
       pinned: "boolean?",
       pinReason: "string?",
     },
@@ -40,6 +41,7 @@ export const ApiCliWhoamiResponseSchema = type({
 export const ApiSearchResponseSchema = type({
   results: type({
     slug: "string?",
+    ownerHandle: "string|null?",
     displayName: "string?",
     version: "string|null?",
     score: "number",
@@ -85,6 +87,7 @@ export const CliPublishRequestSchema = type({
   slug: "string",
   displayName: "string",
   ownerHandle: "string?",
+  sourceOwnerHandle: "string?",
   migrateOwner: "boolean?",
   version: "string",
   changelog: "string",
@@ -95,6 +98,7 @@ export const CliPublishRequestSchema = type({
   source: PublishSourceSchema.optional(),
   forkOf: type({
     slug: "string",
+    ownerHandle: "string?",
     version: "string?",
   }).optional(),
   files: CliPublishFileSchema.array(),
@@ -237,13 +241,13 @@ export type ApiV1StaffEmailSendResponse = (typeof ApiV1StaffEmailSendResponseSch
 export const ApiV1SearchResponseSchema = type({
   results: type({
     slug: "string?",
+    ownerHandle: "string|null?",
     displayName: "string?",
     summary: "string|null?",
     version: "string|null?",
     score: "number",
     downloads: "number?",
     updatedAt: "number?",
-    ownerHandle: "string|null?",
     owner: type({
       handle: "string|null?",
       displayName: "string|null?",

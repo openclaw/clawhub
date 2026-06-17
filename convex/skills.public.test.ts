@@ -224,6 +224,13 @@ function makeCtx(args: {
         })),
       };
     }
+    if (table === "skillSlugAliases") {
+      return {
+        withIndex: vi.fn(() => ({
+          take: vi.fn().mockResolvedValue([]),
+        })),
+      };
+    }
     if (table === "githubSkillScans") {
       return {
         withIndex: vi.fn(() => ({
@@ -308,6 +315,13 @@ function makeResolveCtx(args: {
       return {
         withIndex: vi.fn(() => ({
           order: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })),
+        })),
+      };
+    }
+    if (table === "skillSlugAliases") {
+      return {
+        withIndex: vi.fn(() => ({
+          take: vi.fn().mockResolvedValue([]),
         })),
       };
     }
@@ -1009,6 +1023,9 @@ describe("skill artifact moderation", () => {
                 })),
               };
             }
+            if (table === "skillSlugAliases") {
+              return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
+            }
             throw new Error(`Unexpected query table: ${table}`);
           }),
           insert,
@@ -1095,6 +1112,9 @@ describe("skill artifact moderation", () => {
                   })),
                 };
               }
+              if (table === "skillSlugAliases") {
+                return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
+              }
               throw new Error(`Unexpected query table: ${table}`);
             }),
             insert: vi.fn(),
@@ -1152,6 +1172,9 @@ describe("skill artifact moderation", () => {
                     unique: vi.fn().mockResolvedValue(null),
                   })),
                 };
+              }
+              if (table === "skillSlugAliases") {
+                return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
               }
               throw new Error(`Unexpected query table: ${table}`);
             }),
@@ -1229,6 +1252,9 @@ describe("skill artifact moderation", () => {
                   })),
                 })),
               };
+            }
+            if (table === "skillSlugAliases") {
+              return { withIndex: vi.fn(() => ({ take: vi.fn().mockResolvedValue([]) })) };
             }
             throw new Error(`Unexpected query table: ${table}`);
           }),

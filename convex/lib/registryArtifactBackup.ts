@@ -7,6 +7,8 @@ import { validateFilePath } from "./skillZip";
 
 const DEFAULT_SKILLS_ROOT = "skills";
 const DEFAULT_PACKAGES_ROOT = "packages";
+const DEFAULT_SKILL_FILE_UPLOAD_CONCURRENCY = 16;
+const MAX_SKILL_FILE_UPLOAD_CONCURRENCY = 64;
 const META_FILENAME = "_meta.json";
 
 type BackupFile = {
@@ -114,12 +116,12 @@ export async function backupSkillVersionToObjectStorage(
     ...params,
   });
 
-  for (const file of planned.fileObjects) {
+  await runWithConcurrency(planned.fileObjects, getSkillFileUploadConcurrency(), async (file) => {
     const blob = await readStorageBlob(ctx, file.storageId);
     await putObject(context, file.key, new Uint8Array(await blob.arrayBuffer()), {
       contentType: file.contentType,
     });
-  }
+  });
 
   await putJsonObject(context, planned.metaPath, planned.meta);
 }
@@ -282,7 +284,43 @@ export function buildPackageReleaseBackupManifest(params: PackageBackupParams & 
 
 export const __registryArtifactBackupTestInternals = {
   encodeBackupPathSegment,
+  getSkillFileUploadConcurrency,
 };
+
+async function runWithConcurrency<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T, index: number) => Promise<void>,
+) {
+  if (items.length === 0) return;
+  let nextIndex = 0;
+  let firstError: unknown;
+  const workerCount = Math.min(concurrency, items.length);
+
+  async function runWorker() {
+    while (firstError === undefined) {
+      const index = nextIndex;
+      nextIndex += 1;
+      if (index >= items.length) return;
+      try {
+        await worker(items[index]!, index);
+      } catch (error) {
+        firstError ??= error;
+        return;
+      }
+    }
+  }
+
+  await Promise.allSettled(Array.from({ length: workerCount }, () => runWorker()));
+  if (firstError !== undefined) throw firstError;
+}
+
+function getSkillFileUploadConcurrency() {
+  const raw = process.env.REGISTRY_BACKUP_SKILL_FILE_UPLOAD_CONCURRENCY;
+  const parsed = raw ? Number.parseInt(raw, 10) : DEFAULT_SKILL_FILE_UPLOAD_CONCURRENCY;
+  if (!Number.isFinite(parsed) || parsed < 1) return DEFAULT_SKILL_FILE_UPLOAD_CONCURRENCY;
+  return Math.min(parsed, MAX_SKILL_FILE_UPLOAD_CONCURRENCY);
+}
 
 export function normalizeOwner(value: string) {
   const normalized = value

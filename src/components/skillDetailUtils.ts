@@ -172,12 +172,11 @@ export function formatInstallCommand(spec: SkillInstallSpec) {
 
 export function buildSkillInstallTarget(
   ownerHandle: string | null,
-  ownerId: SkillOwnerId | null,
+  _ownerId: SkillOwnerId | null,
   slug: string,
 ) {
   const handle = ownerHandle?.trim();
-  if (handle) return `${handle}/${slug}`;
-  if (ownerId) return `${String(ownerId)}/${slug}`;
+  if (handle) return `@${handle.replace(/^@+/, "")}/${slug}`;
   return slug;
 }
 

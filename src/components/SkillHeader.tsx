@@ -61,6 +61,13 @@ function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
   return description?.trim() || null;
 }
 
+function buildSkillDownloadHref(convexSiteUrl: string, slug: string, ownerHandle: string | null) {
+  const params = new URLSearchParams({ slug });
+  const normalizedOwner = ownerHandle?.trim().replace(/^@+/, "");
+  if (normalizedOwner) params.set("ownerHandle", normalizedOwner);
+  return `${convexSiteUrl}/api/v1/download?${params.toString()}`;
+}
+
 function getGitHubRepositoryLink(skill: Doc<"skills"> | PublicSkill) {
   const repo = "githubSourceRepo" in skill ? skill.githubSourceRepo : undefined;
   if (skill.installKind !== "github" || !repo) return null;
@@ -154,7 +161,7 @@ export function SkillHeader({
   const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
   const downloadHref =
     latestVersion && !nixPlugin
-      ? `${convexSiteUrl}/api/v1/download?slug=${encodeURIComponent(skill.slug)}`
+      ? buildSkillDownloadHref(convexSiteUrl, skill.slug, ownerHandle)
       : null;
   const hasTitleActions = isStaff;
   const showReportAction = !canManage || isStaff;

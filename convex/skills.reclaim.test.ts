@@ -57,7 +57,7 @@ describe("skills reclaim ownership transfer", () => {
           return {
             withIndex: (name: string) => {
               if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
-              return { unique: async () => existingSkill };
+              return { unique: async () => existingSkill, take: async () => [existingSkill] };
             },
           };
         }
@@ -76,6 +76,7 @@ describe("skills reclaim ownership transfer", () => {
         if (table === "skillSlugAliases") {
           return {
             withIndex: (name: string) => {
+              if (name === "by_slug") return { take: async () => [] };
               if (name !== "by_skill") throw new Error(`unexpected aliases index ${name}`);
               return {
                 collect: async () => [
@@ -140,12 +141,7 @@ describe("skills reclaim ownership transfer", () => {
         ownerId: "users:new",
       }),
     );
-    expect(patch).toHaveBeenCalledWith(
-      "skillSlugAliases:1",
-      expect.objectContaining({
-        ownerUserId: "users:new",
-      }),
-    );
+    expect(patch).not.toHaveBeenCalledWith("skillSlugAliases:1", expect.anything());
     expect(patch).toHaveBeenCalledWith(
       "reservedSlugs:1",
       expect.objectContaining({
@@ -171,7 +167,15 @@ describe("skills reclaim ownership transfer", () => {
           return {
             withIndex: (name: string) => {
               if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
-              return { unique: async () => null };
+              return { unique: async () => null, take: async () => [] };
+            },
+          };
+        }
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected aliases index ${name}`);
+              return { take: async () => [] };
             },
           };
         }
@@ -194,6 +198,71 @@ describe("skills reclaim ownership transfer", () => {
     expect(result).toEqual({ ok: true, action: "missing" });
     expect(runAfter).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("throws a controlled ambiguity error when transferRootSlugOnly sees duplicate publishers", async () => {
+    const insert = vi.fn(async () => {});
+    const patch = vi.fn(async () => {});
+    const runAfter = vi.fn(async () => {});
+
+    const duplicateSkills = [
+      {
+        _id: "skills:1",
+        slug: "shared-slug",
+        ownerUserId: "users:one",
+      },
+      {
+        _id: "skills:2",
+        slug: "shared-slug",
+        ownerUserId: "users:two",
+      },
+    ];
+
+    const db = {
+      normalizeId: vi.fn(),
+      get: vi.fn(async (id: string) => {
+        if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+        if (id === "users:new") return { _id: "users:new", role: "user" };
+        return null;
+      }),
+      query: vi.fn((table: string) => {
+        if (table === "skills") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
+              return { unique: async () => null, take: async () => duplicateSkills };
+            },
+          };
+        }
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected aliases index ${name}`);
+              return { take: async () => [] };
+            },
+          };
+        }
+        throw new Error(`unexpected table ${table}`);
+      }),
+      patch,
+      insert,
+    };
+
+    await expect(
+      reclaimSlugInternalHandler(
+        { db, scheduler: { runAfter } } as never,
+        {
+          actorUserId: "users:admin",
+          slug: "shared-slug",
+          rightfulOwnerUserId: "users:new",
+          transferRootSlugOnly: true,
+        } as never,
+      ),
+    ).rejects.toThrow(/Slug is used by multiple publishers/);
+
+    expect(runAfter).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
   });
 
   it("rejects transferRootSlugOnly ownership moves for moderated skills", async () => {
@@ -221,7 +290,15 @@ describe("skills reclaim ownership transfer", () => {
           return {
             withIndex: (name: string) => {
               if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
-              return { unique: async () => existingSkill };
+              return { unique: async () => existingSkill, take: async () => [existingSkill] };
+            },
+          };
+        }
+        if (table === "skillSlugAliases") {
+          return {
+            withIndex: (name: string) => {
+              if (name !== "by_slug") throw new Error(`unexpected aliases index ${name}`);
+              return { take: async () => [] };
             },
           };
         }

@@ -18,6 +18,11 @@ type SkillActionOptions = {
   note?: string;
 };
 
+type SkillRef = {
+  slug: string;
+  ownerHandle?: string;
+};
+
 type SkillDeleteOptions = SkillActionOptions & {
   version?: string;
 };
@@ -57,8 +62,8 @@ export async function cmdDeleteSkill(
   inputAllowed: boolean,
   labels: SkillActionLabels = deleteLabels,
 ) {
-  const slug = slugArg.trim().toLowerCase();
-  if (!slug) fail("Slug required");
+  const ref = parseSkillRef(slugArg);
+  const slug = ref.slug;
   const reason = normalizeReason(options);
   const version = normalizeVersion(options.version);
   if (version && reason) fail("--reason/--note apply only to whole-skill deletion");
@@ -66,15 +71,16 @@ export async function cmdDeleteSkill(
 
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(formatPrompt(labels, slug, version));
+    const ok = await promptConfirm(formatPrompt(labels, formatSkillRef(ref), version));
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const target = version ? `${slug} version ${version}` : slug;
+  const target = version ? `${formatSkillRef(ref)} version ${version}` : formatSkillRef(ref);
   const spinner = createCrabLoader(`${labels.progress} ${target}`);
   try {
+    const body = buildBody(reason, ref.ownerHandle, version);
     const result = await apiRequest(
       registry,
       {
@@ -83,7 +89,7 @@ export async function cmdDeleteSkill(
           version ? `/versions/${encodeURIComponent(version)}` : ""
         }`,
         token,
-        body: version ? { version } : reason ? { reason } : undefined,
+        body,
         ...(version ? { retryCount: 0 } : {}),
       },
       ApiV1DeleteResponseSchema,
@@ -104,32 +110,33 @@ export async function cmdUndeleteSkill(
   inputAllowed: boolean,
   labels: SkillActionLabels = undeleteLabels,
 ) {
-  const slug = slugArg.trim().toLowerCase();
-  if (!slug) fail("Slug required");
+  const ref = parseSkillRef(slugArg);
+  const slug = ref.slug;
   const reason = normalizeReason(options);
   const allowPrompt = isInteractive() && inputAllowed !== false;
 
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(formatPrompt(labels, slug));
+    const ok = await promptConfirm(formatPrompt(labels, formatSkillRef(ref)));
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createCrabLoader(`${labels.progress} ${slug}`);
+  const spinner = createCrabLoader(`${labels.progress} ${formatSkillRef(ref)}`);
   try {
+    const body = buildBody(reason, ref.ownerHandle);
     const result = await apiRequest(
       registry,
       {
         method: "POST",
         path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/undelete`,
         token,
-        body: reason ? { reason } : undefined,
+        body,
       },
       ApiV1DeleteResponseSchema,
     );
-    spinner.succeed(`OK. ${labels.past} ${slug}`);
+    spinner.succeed(`OK. ${labels.past} ${formatSkillRef(ref)}`);
     return parseArk(ApiV1DeleteResponseSchema, result, "Undelete response");
   } catch (error) {
     spinner.fail(formatError(error));
@@ -155,7 +162,50 @@ export async function cmdUnhideSkill(
   return cmdUndeleteSkill(opts, slugArg, options, inputAllowed, unhideLabels);
 }
 
-function normalizeReason(options: SkillActionOptions) {
+function normalizeOwnerHandle(raw: string | null | undefined) {
+  const handle = raw?.trim().replace(/^@+/, "").toLowerCase();
+  if (!handle) return undefined;
+  if (handle.includes("/") || handle.includes("\\") || handle.includes("..")) {
+    fail(`Invalid owner handle: ${raw}`);
+  }
+  return handle;
+}
+
+function normalizeSlug(slugArg: string) {
+  const slug = slugArg.trim().toLowerCase();
+  if (!slug) fail("Slug required");
+  if (slug.includes("/") || slug.includes("\\") || slug.includes("..")) {
+    fail(`Invalid slug: ${slugArg}`);
+  }
+  return slug;
+}
+
+function parseSkillRef(raw: string): SkillRef {
+  const ref = raw.trim();
+  if (!ref) fail("Slug required");
+  const slashIndex = ref.indexOf("/");
+  if (slashIndex < 0) return { slug: normalizeSlug(ref) };
+  if (ref.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill ref: ${ref}`);
+  const ownerHandle = normalizeOwnerHandle(ref.slice(0, slashIndex));
+  const slug = normalizeSlug(ref.slice(slashIndex + 1));
+  if (!ownerHandle) fail(`Invalid skill ref: ${ref}`);
+  return { slug, ownerHandle };
+}
+
+function formatSkillRef(ref: SkillRef) {
+  return ref.ownerHandle ? `@${ref.ownerHandle}/${ref.slug}` : ref.slug;
+}
+
+function buildBody(reason: string | undefined, ownerHandle: string | undefined, version?: string) {
+  const body = {
+    ...(version ? { version } : {}),
+    ...(reason ? { reason } : {}),
+    ...(ownerHandle ? { ownerHandle } : {}),
+  };
+  return Object.keys(body).length > 0 ? body : undefined;
+}
+
+function normalizeReason(options: SkillDeleteOptions) {
   const reason = options.reason?.trim();
   const note = options.note?.trim();
   if (reason && note && reason !== note) fail("Pass only one of --reason or --note");

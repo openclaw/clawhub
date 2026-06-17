@@ -143,7 +143,7 @@ export function SkillOwnershipPanel({
     setIsSubmitting(true);
     setError(null);
     try {
-      await renameOwnedSkill({ slug, newSlug: nextSlug });
+      await renameOwnedSkill({ slug, newSlug: nextSlug, ownerHandle: ownerHandle ?? undefined });
       toast.success(`Renamed to ${nextSlug}. Old slug will redirect.`);
       await navigate({
         to: "/$owner/$slug",
@@ -169,6 +169,8 @@ export function SkillOwnershipPanel({
       await mergeOwnedSkillIntoCanonical({
         sourceSlug: slug,
         targetSlug,
+        sourceOwnerHandle: ownerHandle ?? undefined,
+        targetOwnerHandle: ownerHandle ?? undefined,
       });
       toast.success(`Merged into ${targetSlug}. This slug will redirect.`);
       await navigate({
@@ -213,6 +215,21 @@ export function SkillOwnershipPanel({
   return (
     <>
       <div className="skill-admin-panel" data-skill-id={skillId}>
+        <SettingsActionRow
+          title="Publish a new version"
+          description="Upload a replacement release for this skill. New releases get a fresh scan."
+        >
+          <Button asChild variant="outline">
+            <a
+              href={`/publish-skill?updateSlug=${encodeURIComponent(slug)}${
+                ownerHandle ? `&ownerHandle=${encodeURIComponent(ownerHandle)}` : ""
+              }`}
+            >
+              New Version
+            </a>
+          </Button>
+        </SettingsActionRow>
+
         <SettingsActionRow
           title="Short summary"
           description="Update the short summary used in cards, search, and previews."

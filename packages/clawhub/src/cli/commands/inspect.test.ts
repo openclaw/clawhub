@@ -60,10 +60,35 @@ describe("cmdInspect", () => {
 
     const firstArgs = httpMocks.apiRequest.mock.calls[0]?.[1];
     const secondArgs = httpMocks.apiRequest.mock.calls[1]?.[1];
-    expect(firstArgs?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent("demo")}`);
-    expect(secondArgs?.path).toBe(
+    expect(new URL(String(firstArgs?.url)).pathname).toBe(
+      `${ApiRoutes.skills}/${encodeURIComponent("demo")}`,
+    );
+    expect(new URL(String(secondArgs?.url)).pathname).toBe(
       `${ApiRoutes.skills}/${encodeURIComponent("demo")}/versions/${encodeURIComponent("1.2.3")}`,
     );
+  });
+
+  it("passes owner when inspecting an owner-named skill", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: null,
+      owner: { handle: "openclaw" },
+    });
+
+    await cmdInspect(makeGlobalOpts(), "@openclaw/demo");
+
+    const args = httpMocks.apiRequest.mock.calls[0]?.[1];
+    const url = new URL(String(args?.url));
+    expect(url.pathname).toBe("/api/v1/skills/demo");
+    expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
   });
 
   it("uses tag param when fetching a file", async () => {
@@ -211,9 +236,11 @@ describe("cmdInspect", () => {
     expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
     expect(httpMocks.apiRequest.mock.calls[1]?.[1]).toMatchObject({
       method: "GET",
-      path: `${ApiRoutes.skills}/${encodeURIComponent("demo")}/moderation`,
       token: "tkn",
     });
+    expect(new URL(String(httpMocks.apiRequest.mock.calls[1]?.[1].url)).pathname).toBe(
+      `${ApiRoutes.skills}/${encodeURIComponent("demo")}/moderation`,
+    );
     const output = loggedOutput();
     expect(output).toMatch(/Moderate\s+SUSPICIOUS/);
     expect(output).toMatch(/Reasons\s+suspicious.dynamic_code_execution/);

@@ -217,6 +217,7 @@ export function ImportGitHub() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
+  const ownerHandle = me?.handle?.trim() || "";
   const repoLoadSeq = useRef(0);
   const reposRef = useRef<OwnedGitHubRepo[]>([]);
 
@@ -254,19 +255,22 @@ export function ImportGitHub() {
   const slugQueries = useMemo(() => {
     const queries: Record<
       string,
-      { query: typeof api.skills.checkSlugAvailability; args: { slug: string } }
+      {
+        query: typeof api.skills.checkSlugAvailability;
+        args: { slug: string; ownerHandle: string };
+      }
     > = {};
     for (const draft of orderedDrafts) {
       const slug = draft.slug.trim().toLowerCase();
-      if (slug && SLUG_PATTERN.test(slug)) {
+      if (ownerHandle && slug && SLUG_PATTERN.test(slug)) {
         queries[toSlugQueryKey(getRepoKey(draft.repo))] = {
           query: api.skills.checkSlugAvailability,
-          args: { slug },
+          args: { slug, ownerHandle },
         };
       }
     }
     return queries;
-  }, [orderedDrafts]);
+  }, [orderedDrafts, ownerHandle]);
   const slugResults = useQueries(slugQueries) as Record<string, SlugAvailabilityResult>;
 
   const duplicateSlugKeys = useMemo(() => {
@@ -296,9 +300,12 @@ export function ImportGitHub() {
         slugResult: slugResults[toSlugQueryKey(key)],
         isDuplicateSlug: duplicateSlugKeys.has(key),
       });
+      if (!ownerHandle) {
+        issues[key]?.push("Unable to resolve your publisher handle. Sign out and sign back in.");
+      }
     }
     return issues;
-  }, [duplicateSlugKeys, orderedDrafts, slugResults]);
+  }, [duplicateSlugKeys, orderedDrafts, ownerHandle, slugResults]);
 
   const hasReviewIssues = useMemo(
     () => Object.values(reviewIssuesByKey).some((issues) => issues.length > 0),
@@ -581,6 +588,7 @@ export function ImportGitHub() {
       candidatePath: draft.preview.candidate.path,
       selectedPaths,
       slug: draft.slug.trim(),
+      ownerHandle,
       displayName: draft.displayName.trim(),
       version: draft.version.trim(),
       tags: tagList,

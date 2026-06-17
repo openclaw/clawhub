@@ -551,4 +551,51 @@ describe("Import route", () => {
     expect(await screen.findByText(/GitHub tree is too large/i)).toBeTruthy();
     expect(screen.queryByText(/Setting up your skills/i)).toBeNull();
   });
+
+  it("checks and publishes imported skills in the authenticated user's owner namespace", async () => {
+    importSkill.mockResolvedValueOnce({ slug: "taken-skill" });
+    useQueriesMock.mockImplementation(
+      (queries: Record<string, { args: { slug: string; ownerHandle: string } }>) => {
+        return Object.fromEntries(
+          Object.entries(queries).map(([key, query]) => [
+            key,
+            query.args.slug === "taken-skill" && query.args.ownerHandle === "me"
+              ? {
+                  available: true,
+                  reason: "available",
+                  message: null,
+                  url: null,
+                }
+              : null,
+          ]),
+        );
+      },
+    );
+
+    render(<ImportGitHub />);
+    await screen.findByRole("checkbox");
+    fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
+
+    await screen.findByDisplayValue("taken-skill");
+    await waitFor(() => {
+      const scopedCall = useQueriesMock.mock.calls.find(([queries]) =>
+        Object.values(
+          queries as Record<string, { args: { slug: string; ownerHandle: string } }>,
+        ).some((query) => query.args.slug === "taken-skill" && query.args.ownerHandle === "me"),
+      );
+      expect(scopedCall).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByLabelText(/I have the rights/i));
+    fireEvent.click(screen.getByRole("button", { name: /publish selected/i }));
+
+    await waitFor(() => {
+      expect(importSkill).toHaveBeenCalledWith(
+        expect.objectContaining({
+          slug: "taken-skill",
+          ownerHandle: "me",
+        }),
+      );
+    });
+  });
 });
