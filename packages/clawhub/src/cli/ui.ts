@@ -83,7 +83,7 @@ export function formatError(error: unknown) {
     if (diagnostic) return diagnostic;
     return redactSensitiveText(error.message);
   }
-  return String(error);
+  return redactSensitiveText(String(error));
 }
 
 export function fail(message: string): never {
@@ -130,13 +130,40 @@ function formatUnknownCause(value: unknown) {
     return String(value);
   }
   if (typeof value === "object" && value !== null) {
-    try {
-      return JSON.stringify(value);
-    } catch {
-      return Object.prototype.toString.call(value);
-    }
+    const fields = safeObjectCauseFields(value);
+    if (fields.length > 0) return fields.join(", ");
+    return "[object cause omitted]";
   }
   return String(value);
+}
+
+const objectCauseFields = [
+  "name",
+  "message",
+  "code",
+  "errno",
+  "syscall",
+  "hostname",
+  "host",
+  "address",
+  "port",
+] as const;
+
+function safeObjectCauseFields(value: object) {
+  return objectCauseFields.flatMap((field) => {
+    const property = (value as Record<string, unknown>)[field];
+    if (typeof property === "string" && property.trim().length > 0) {
+      return [`${field}: ${redactSensitiveText(property)}`];
+    }
+    if (
+      typeof property === "number" ||
+      typeof property === "boolean" ||
+      typeof property === "bigint"
+    ) {
+      return [`${field}: ${String(property)}`];
+    }
+    return [];
+  });
 }
 
 function errorCode(error: Error) {
@@ -171,8 +198,14 @@ function classifyTransportError(value: string) {
 
 function redactSensitiveText(value: string) {
   return value
+    .replace(
+      /(["']?(?:authorization|set-cookie|cookie|api[_-]?key|secret|token)["']?\s*:\s*["'])[^"'\n\r]+/gi,
+      "$1[redacted]",
+    )
     .replace(/(authorization:\s*bearer\s+)[^\s,;]+/gi, "$1[redacted]")
     .replace(/(authorization:\s*)(?!bearer\s+)(?:[^\s,;]+\s+)?[^\s,;]+/gi, "$1[redacted]")
+    .replace(/(cookie:\s*)[^\n\r]+/gi, "$1[redacted]")
+    .replace(/((?:api[_-]?key|secret|token):\s*)[^\s,;]+/gi, "$1[redacted]")
     .replace(/(clh_[A-Za-z0-9._-]+)/g, "[redacted]")
     .replace(
       /([?&](?:access_token|api[_-]?key|auth|authorization|callback|callback_url|code|key|redirect_uri|return_to|secret|state|token)=)[^&#\s]+/gi,

@@ -81,6 +81,12 @@ describe("formatError", () => {
     expect(formatError(new Error("HTTP 404: skill not found"))).toBe("HTTP 404: skill not found");
   });
 
+  it("redacts sensitive non-Error values", () => {
+    const formatted = formatError("Authorization: Token abc123");
+
+    expect(formatted).toBe("Authorization: [redacted]");
+  });
+
   it("adds DNS guidance for nested fetch failures", () => {
     const cause = Object.assign(new Error("getaddrinfo ENOTFOUND clawhub.ai"), {
       code: "ENOTFOUND",
@@ -123,6 +129,51 @@ describe("formatError", () => {
     expect(formatted).toContain("Authorization: [redacted]");
     expect(formatted).not.toContain("Basic");
     expect(formatted).not.toContain("dXNlcjpwYXNz");
+  });
+
+  it("omits unsafe fields from structured transport causes", () => {
+    const error = new TypeError("fetch failed", {
+      cause: {
+        code: "ENOTFOUND",
+        message: "getaddrinfo ENOTFOUND clawhub.ai",
+        headers: {
+          Authorization: "Basic dXNlcjpwYXNz",
+          Cookie: "session=secret-session",
+        },
+        url: "https://user:password@clawhub.ai/search?token=clh_secret",
+      },
+    });
+
+    const formatted = formatError(error);
+
+    expect(formatted).toContain("Network request failed: DNS lookup failed.");
+    expect(formatted).toContain("message: getaddrinfo ENOTFOUND clawhub.ai");
+    expect(formatted).toContain("code: ENOTFOUND");
+    expect(formatted).not.toContain("headers");
+    expect(formatted).not.toContain("Authorization");
+    expect(formatted).not.toContain("Basic");
+    expect(formatted).not.toContain("dXNlcjpwYXNz");
+    expect(formatted).not.toContain("Cookie");
+    expect(formatted).not.toContain("secret-session");
+    expect(formatted).not.toContain("user:password");
+    expect(formatted).not.toContain("clh_secret");
+  });
+
+  it("redacts cookie and JSON-shaped credentials in transport details", () => {
+    const error = new Error(
+      'fetch failed: {"headers":{"Authorization":"Basic dXNlcjpwYXNz","Cookie":"session=secret-session"},"token":"clh_secret"}',
+    );
+
+    const formatted = formatError(error);
+
+    expect(formatted).toContain("Network request failed");
+    expect(formatted).toContain('"Authorization":"[redacted]"');
+    expect(formatted).toContain('"Cookie":"[redacted]"');
+    expect(formatted).toContain('"token":"[redacted]"');
+    expect(formatted).not.toContain("Basic");
+    expect(formatted).not.toContain("dXNlcjpwYXNz");
+    expect(formatted).not.toContain("secret-session");
+    expect(formatted).not.toContain("clh_secret");
   });
 
   it("classifies TLS and timeout failures", () => {

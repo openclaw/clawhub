@@ -57,7 +57,7 @@ import { cmdUnstarSkill } from "./cli/commands/unstar.js";
 import { configureCommanderHelp, styleEnvBlock, styleTitle } from "./cli/helpStyle.js";
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
-import { fail } from "./cli/ui.js";
+import { fail, formatError } from "./cli/ui.js";
 
 const program = new Command()
   .name("clawhub")
@@ -845,6 +845,5 @@ program.action(() => {
 validateTopLevelCommand(process.argv.slice(2));
 
 void program.parseAsync(process.argv).catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  fail(message);
+  fail(formatError(error));
 });
