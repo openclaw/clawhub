@@ -409,11 +409,9 @@ describe("Settings", () => {
     expect(screen.queryByRole("button", { name: "Delete organization" })).toBeNull();
     expect(screen.queryByRole("button", { name: "GitHub Skill Sync" })).toBeNull();
     expect((screen.getByLabelText("Display name") as HTMLInputElement).disabled).toBe(true);
-    expect((screen.getByLabelText("Avatar URL") as HTMLInputElement).disabled).toBe(true);
+    expect(screen.queryByLabelText("Avatar URL")).toBeNull();
     expect((screen.getByLabelText("Bio") as HTMLTextAreaElement).disabled).toBe(true);
-    expect(screen.getByRole("button", { name: "Save profile" }).hasAttribute("disabled")).toBe(
-      true,
-    );
+    expect(screen.queryByRole("button", { name: "Save profile" })).toBeNull();
     expect(screen.getByText(/You can publish under this org/i)).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, "skip");
     expect(useQueryMock).toHaveBeenCalledWith(api.githubSkillSources.listForPublisher, "skip");

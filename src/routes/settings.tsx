@@ -674,7 +674,7 @@ export function Settings() {
                         disabled={isOrgSettings && !canManageSettingsPublisher}
                       />
                     </Field>
-                    {isOrgSettings ? (
+                    {isOrgSettings && canManageSettingsPublisher ? (
                       <div className="flex min-w-0 items-center gap-2">
                         <div className="min-w-0 flex-1">
                           <Field label="Avatar URL" htmlFor="settings-publisher-image">
@@ -687,7 +687,7 @@ export function Settings() {
                             />
                           </Field>
                         </div>
-                        {publisherImage && canManageSettingsPublisher ? (
+                        {publisherImage ? (
                           <Button
                             type="button"
                             variant="ghost"
@@ -717,21 +717,19 @@ export function Settings() {
                         members.
                       </div>
                     ) : null}
-                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
-                      {hasProfileChanges ? (
-                        <span className="text-sm font-semibold text-red-700 dark:text-red-300">
-                          You have unsaved changes.
-                        </span>
-                      ) : null}
-                      <Button
-                        variant="primary"
-                        type="submit"
-                        disabled={isOrgSettings && !canManageSettingsPublisher}
-                      >
-                        <Save size={16} />
-                        Save profile
-                      </Button>
-                    </div>
+                    {!isOrgSettings || canManageSettingsPublisher ? (
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
+                        {hasProfileChanges ? (
+                          <span className="text-sm font-semibold text-red-700 dark:text-red-300">
+                            You have unsaved changes.
+                          </span>
+                        ) : null}
+                        <Button variant="primary" type="submit">
+                          <Save size={16} />
+                          Save profile
+                        </Button>
+                      </div>
+                    ) : null}
                   </form>
                 </SettingsBlock>
               </div>
