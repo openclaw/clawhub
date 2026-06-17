@@ -66,11 +66,13 @@ export function derivePluginCategoryTags(input) {
     });
 }
 export function resolveStoredPluginCategories(input) {
+    if (input.family === "skill")
+        return [];
     try {
-        return derivePluginCategoryTags(input);
+        return resolvePluginCategories({ declared: input.categories });
     }
     catch {
-        return derivePluginCategoryTags({ ...input, categories: undefined });
+        return resolvePluginCategories({});
     }
 }
 //# sourceMappingURL=pluginCategories.js.map

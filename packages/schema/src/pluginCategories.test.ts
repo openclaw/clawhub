@@ -111,14 +111,14 @@ describe("plugin categories", () => {
     expect(derivePluginCategoryTags({ family: "skill", categories: ["other"] })).toEqual([]);
   });
 
-  it("maps retired stored categories through controlled fallback inference", () => {
+  it("maps retired stored categories to Other instead of inferring replacements", () => {
     expect(
       resolveStoredPluginCategories({
         family: "code-plugin",
         categories: ["retired-category"],
         pluginManifest: { contracts: { tools: ["demo"] } },
       }),
-    ).toEqual(["tools"]);
+    ).toEqual(["other"]);
   });
 
   it("validates public category slugs", () => {

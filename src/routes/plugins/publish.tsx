@@ -200,6 +200,7 @@ export function PublishPluginRoute() {
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
+  const [suggestedCategories, setSuggestedCategories] = useState<string[]>();
   const [topics, setTopics] = useState("");
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
@@ -348,6 +349,7 @@ export function PublishPluginRoute() {
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
     setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
+    setSuggestedCategories(prefill.suggestedCategories);
     if (prefill.family === "code-plugin") setFamily(prefill.family);
     if (prefill.name) setName(prefill.name);
     if (prefill.displayName) setDisplayName(prefill.displayName);
@@ -363,6 +365,7 @@ export function PublishPluginRoute() {
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
+    setSuggestedCategories(undefined);
     // Without this reset the README warning Badge keeps showing the previous
     // package's relative-asset findings until the next pick's async scan
     // finishes — which is misleading both while no package is selected and
@@ -534,6 +537,7 @@ export function PublishPluginRoute() {
                 <CatalogMetadataFields
                   kind="plugin"
                   categories={categories}
+                  suggestedCategories={suggestedCategories}
                   topics={topics}
                   disabled={metadataDisabled}
                   onCategoriesChange={setCategories}

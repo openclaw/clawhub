@@ -396,8 +396,5 @@ export function resolveStoredSkillCategories(skill: SkillCategoryCandidate): Ski
   } catch {
     declared = undefined;
   }
-  return resolveSkillCategories({
-    declared,
-    inferred: inferSkillCategories(skill),
-  });
+  return resolveSkillCategories({ declared });
 }

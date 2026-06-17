@@ -332,9 +332,6 @@ export function resolveStoredSkillCategories(skill) {
     catch {
         declared = undefined;
     }
-    return resolveSkillCategories({
-        declared,
-        inferred: inferSkillCategories(skill),
-    });
+    return resolveSkillCategories({ declared });
 }
 //# sourceMappingURL=catalogMetadata.js.map

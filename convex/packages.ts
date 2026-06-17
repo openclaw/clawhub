@@ -1,5 +1,6 @@
 import {
   ServerPackagePublishRequestSchema,
+  derivePluginCategoryTags,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
@@ -2068,6 +2069,7 @@ async function requireTrustedPublisherEditor(
 type PackageManageContext = {
   package: Pick<Doc<"packages">, "_id" | "name" | "displayName" | "categories" | "topics">;
   latestRelease: Pick<Doc<"packageReleases">, "_id" | "version">;
+  suggestedCategories: PluginCategorySlug[];
 };
 
 function toPackageManageContext(
@@ -2086,6 +2088,10 @@ function toPackageManageContext(
       _id: latestRelease._id,
       version: latestRelease.version,
     },
+    suggestedCategories: derivePluginCategoryTags({
+      family: pkg.family,
+      pluginManifest: latestRelease.extractedPluginManifest,
+    }),
   };
 }
 
@@ -6641,15 +6647,12 @@ async function publishPackageImpl(
     packageJson,
     readmeText: readmeEntry?.text ?? null,
   });
-  let categories: string[] | undefined;
+  let categories: string[];
   let normalizedTopics: string[];
   try {
     const declaredCategories =
       payload.categories ?? normalizeStoredPluginCategoryOverride(existingPackage?.categories);
-    categories =
-      declaredCategories === undefined
-        ? undefined
-        : resolvePluginCategories({ declared: declaredCategories });
+    categories = resolvePluginCategories({ declared: declaredCategories });
     normalizedTopics = normalizeCatalogTopics(payload.topics ?? existingPackage?.topics);
   } catch (error) {
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
@@ -7422,37 +7425,19 @@ export const setPackageCatalogMetadata = mutation({
       allowPlatformModerator: true,
     });
 
-    let normalizedCategories: string[] | undefined;
+    let normalizedCategories: string[];
     let normalizedTopics: string[];
     try {
-      normalizedCategories =
-        args.categories === undefined
-          ? undefined
-          : resolvePluginCategories({ declared: args.categories });
+      normalizedCategories = resolvePluginCategories({ declared: args.categories });
       normalizedTopics = normalizeCatalogTopics(args.topics);
     } catch (error) {
       throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
     }
 
     const now = Date.now();
-    let canUseAutomaticCategories = false;
-    if (!normalizedCategories?.length) {
-      const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-      // Legacy bundle releases did not persist the plugin manifest. Keep their current
-      // category until republish instead of silently replacing it with `other`.
-      canUseAutomaticCategories = Boolean(
-        latestRelease &&
-        !latestRelease.softDeletedAt &&
-        latestRelease.extractedPluginManifest !== undefined,
-      );
-    }
     const nextPackage = {
       ...pkg,
-      categories: normalizedCategories?.length
-        ? normalizedCategories
-        : canUseAutomaticCategories
-          ? undefined
-          : pkg.categories,
+      categories: normalizedCategories,
       topics: normalizedTopics.length ? normalizedTopics : undefined,
       updatedAt: now,
     };

@@ -7372,7 +7372,7 @@ describe("packages public queries", () => {
     );
 
     expect(runMutation).toHaveBeenCalled();
-    expect(result.categories).toBeUndefined();
+    expect(result.categories).toEqual(["other"]);
     expect(result.topics).toBeUndefined();
     expect(result.sha256hash).toBe(expectedLegacyZipSha256);
     expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
@@ -10321,7 +10321,7 @@ describe("packages public queries", () => {
     ]);
   });
 
-  it("returns only slim package identifiers for package manage context", async () => {
+  it("returns slim package metadata and generated category suggestions for manage context", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
 
     const pkg = makePackageDoc({
@@ -10383,11 +10383,14 @@ describe("packages public queries", () => {
         _id: "packages:demo",
         name: "large-plugin",
         displayName: "Large Plugin",
+        categories: undefined,
+        topics: undefined,
       },
       latestRelease: {
         _id: "packageReleases:demo-1",
         version: "1.2.3",
       },
+      suggestedCategories: ["other"],
     });
   });
 

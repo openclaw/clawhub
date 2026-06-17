@@ -27,6 +27,12 @@ vi.mock("./_generated/api", () => ({
         "cleanupRetiredCapabilityMetadataBatchInternal",
       ),
       cleanupRetiredCapabilityMetadataInternal: Symbol("cleanupRetiredCapabilityMetadataInternal"),
+      resyncPluginCatalogMetadataDigestsBatchInternal: Symbol(
+        "resyncPluginCatalogMetadataDigestsBatchInternal",
+      ),
+      resyncPluginCatalogMetadataDigestsInternal: Symbol(
+        "resyncPluginCatalogMetadataDigestsInternal",
+      ),
       backfillSkillSearchDigestModerationVerdictsInternal: Symbol(
         "backfillSkillSearchDigestModerationVerdictsInternal",
       ),
@@ -60,6 +66,8 @@ const {
   backfillUserStatsInternalHandler,
   cleanupRetiredCapabilityMetadataBatchInternal,
   cleanupRetiredCapabilityMetadataInternal,
+  resyncPluginCatalogMetadataDigestsBatchInternal,
+  resyncPluginCatalogMetadataDigestsInternal,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
@@ -1138,6 +1146,171 @@ describe("maintenance retired capability metadata cleanup", () => {
     });
     expect(result.stats.skills).toEqual({ scanned: 1, matched: 1, mutated: 0 });
     expect(result.stats.skillVersions).toEqual({ scanned: 1, matched: 0, mutated: 0 });
+  });
+});
+
+describe("maintenance plugin catalog metadata digest resync", () => {
+  it("detects stale plugin category digests during dry run without mutating", async () => {
+    const packageRow = {
+      _id: "packages:1",
+      family: "bundle-plugin",
+      categories: undefined,
+    };
+    const paginate = vi.fn().mockResolvedValue({
+      page: [packageRow],
+      continueCursor: null,
+      isDone: true,
+    });
+    const query = vi.fn((table: string) => {
+      if (table === "packages") {
+        return { withIndex: () => ({ paginate }) };
+      }
+      if (table === "packageSearchDigest") {
+        return {
+          withIndex: () => ({
+            unique: vi.fn().mockResolvedValue({ pluginCategoryTags: ["tools"] }),
+          }),
+        };
+      }
+      if (table === "packagePluginCategorySearchDigest") {
+        return {
+          withIndex: () => ({
+            collect: vi.fn().mockResolvedValue([
+              {
+                pluginCategory: "tools",
+                pluginCategoryTags: ["tools"],
+              },
+            ]),
+          }),
+        };
+      }
+      throw new Error(`Unexpected table: ${table}`);
+    });
+    const db = {
+      query,
+      get: vi.fn(),
+      insert: vi.fn(),
+      patch: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+
+    const result = await (
+      resyncPluginCatalogMetadataDigestsBatchInternal as unknown as { _handler: Function }
+    )._handler({ db } as never, {
+      family: "bundle-plugin",
+      dryRun: true,
+      batchSize: 10,
+    });
+
+    expect(result).toEqual({
+      family: "bundle-plugin",
+      cursor: null,
+      isDone: true,
+      scanned: 1,
+      matched: 1,
+      mutated: 0,
+    });
+  });
+
+  it("requires confirmation before applying plugin digest resync", async () => {
+    const db = {
+      query: vi.fn(),
+      get: vi.fn(),
+      insert: vi.fn(),
+      patch: vi.fn(),
+      replace: vi.fn(),
+      delete: vi.fn(),
+      normalizeId: vi.fn(),
+    };
+    await expect(
+      (
+        resyncPluginCatalogMetadataDigestsBatchInternal as unknown as { _handler: Function }
+      )._handler({ db } as never, {
+        family: "code-plugin",
+        dryRun: false,
+      }),
+    ).rejects.toThrow('Pass confirm="resync-plugin-catalog-metadata-digests" to apply.');
+  });
+
+  it("resyncs stale plugin category digests when confirmed", async () => {
+    const { db, tableMap } = makeLegacyPublisherOwnershipDb();
+
+    const result = await (
+      resyncPluginCatalogMetadataDigestsBatchInternal as unknown as { _handler: Function }
+    )._handler({ db } as never, {
+      family: "bundle-plugin",
+      dryRun: false,
+      confirm: "resync-plugin-catalog-metadata-digests",
+      batchSize: 10,
+    });
+
+    expect(result).toMatchObject({ scanned: 1, matched: 1, mutated: 1, isDone: true });
+    expect(tableMap.packageSearchDigest.get("packageSearchDigest:legacy")).toMatchObject({
+      pluginCategoryTags: ["other"],
+    });
+    expect(Array.from(tableMap.packagePluginCategorySearchDigest.values())).toEqual([
+      expect.objectContaining({
+        packageId: "packages:legacy",
+        pluginCategory: "other",
+        pluginCategoryTags: ["other"],
+      }),
+    ]);
+  });
+
+  it("walks plugin families and returns a resumable cursor", async () => {
+    const runMutation = vi.fn(async (_endpoint, args) => {
+      if (args.family === "code-plugin") {
+        return {
+          family: "code-plugin",
+          cursor: null,
+          isDone: true,
+          scanned: 1,
+          matched: 1,
+          mutated: 0,
+        };
+      }
+      return {
+        family: "bundle-plugin",
+        cursor: "next-page",
+        isDone: false,
+        scanned: 2,
+        matched: 1,
+        mutated: 0,
+      };
+    });
+
+    const result = await (
+      resyncPluginCatalogMetadataDigestsInternal as unknown as { _handler: Function }
+    )._handler({ runMutation } as never, {
+      dryRun: true,
+      maxBatches: 2,
+      batchSize: 10,
+    });
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      internal.maintenance.resyncPluginCatalogMetadataDigestsBatchInternal,
+      expect.objectContaining({ family: "code-plugin", dryRun: true, batchSize: 10 }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.maintenance.resyncPluginCatalogMetadataDigestsBatchInternal,
+      expect.objectContaining({ family: "bundle-plugin", dryRun: true, batchSize: 10 }),
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "resync-plugin-catalog-metadata-digests",
+      family: "bundle-plugin",
+      cursor: "next-page",
+      isDone: false,
+      stats: {
+        "code-plugin": { scanned: 1, matched: 1, mutated: 0 },
+        "bundle-plugin": { scanned: 2, matched: 1, mutated: 0 },
+      },
+    });
   });
 });
 

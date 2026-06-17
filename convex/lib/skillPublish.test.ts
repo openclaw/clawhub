@@ -85,13 +85,13 @@ description: Automation workflow for recurring reports.
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        categories: ["automation"],
+        categories: ["other"],
         topics: undefined,
       }),
     );
   });
 
-  it("infers categories when an existing skill has a retired stored category", async () => {
+  it("uses Other when an existing skill has a retired stored category", async () => {
     const storedFiles = new Map([
       [
         "_storage:skill",
@@ -164,12 +164,12 @@ description: Research helper for literature reviews.
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        categories: ["research"],
+        categories: ["other"],
       }),
     );
   });
 
-  it("clears an existing category override when publish requests automatic categories", async () => {
+  it("uses Other when publish explicitly clears an existing category", async () => {
     const storedFiles = new Map([
       [
         "_storage:skill",
@@ -220,8 +220,8 @@ description: Research helper for literature reviews.
         slug: "research-helper",
         displayName: "Research Helper",
         version: "1.0.0",
-        changelog: "Use automatic categories",
-        clearCategories: true,
+        changelog: "Clear categories",
+        categories: [],
         files: [
           {
             path: "SKILL.md",
@@ -243,7 +243,7 @@ description: Research helper for literature reviews.
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        categories: undefined,
+        categories: ["other"],
       }),
     );
   });

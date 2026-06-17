@@ -578,15 +578,17 @@ describe("SkillsIndex", () => {
     expect(titles[1]).toBe("Newer Low Score");
   });
 
-  it("includes results that map to the selected fallback category", async () => {
+  it("includes results explicitly assigned to the selected category", async () => {
     searchMock = { category: "development" };
     convexHttpMock.query.mockResolvedValue({
       page: [
         makeListResult("web3-dev", "Blockscout for Web3 Dev", {
+          categories: ["development"],
           summary:
             "Build web3 applications that need blockchain data via the Blockscout PRO API over HTTP.",
         }),
         makeListResult("developer-utils", "Developer Utils", {
+          categories: ["development"],
           summary: "Utilities for build and debug workflows.",
         }),
       ],

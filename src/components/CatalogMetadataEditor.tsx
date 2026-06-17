@@ -16,6 +16,7 @@ import { Button } from "./ui/button";
 type CatalogMetadataEditorProps = {
   kind: "skill" | "plugin";
   categories?: string[] | null;
+  suggestedCategories?: string[];
   topics?: string[] | null;
   onSave: (value: { categories?: string[]; topics: string[] }) => Promise<void>;
 };
@@ -37,9 +38,14 @@ function sanitizeInitialCategories(
   );
 }
 
+function formatCount(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 export function CatalogMetadataEditor({
   kind,
   categories: initialCategories,
+  suggestedCategories,
   topics: initialTopics,
   onSave,
 }: CatalogMetadataEditorProps) {
@@ -50,6 +56,7 @@ export function CatalogMetadataEditor({
   const [error, setError] = useState<string | null>(null);
   const serializedInitialCategories = JSON.stringify(sanitizedInitialCategories);
   const serializedInitialTopics = JSON.stringify(initialTopics ?? []);
+  const topicCount = parseCatalogTopicsInput(topics).length;
 
   useEffect(() => {
     // Convex updates can recreate equivalent arrays; reset only when their values change.
@@ -63,7 +70,7 @@ export function CatalogMetadataEditor({
     setError(null);
     try {
       await onSave({
-        categories: categories.length ? categories : undefined,
+        categories: categories.length ? categories : [INTERNAL_UNCATEGORIZED_CATEGORY],
         topics: parseCatalogTopicsInput(topics),
       });
     } catch (saveError) {
@@ -78,15 +85,18 @@ export function CatalogMetadataEditor({
       <CatalogMetadataFields
         kind={kind}
         categories={categories}
+        suggestedCategories={suggestedCategories}
         topics={topics}
         disabled={isSaving}
         onCategoriesChange={setCategories}
         onTopicsChange={setTopics}
       />
       <div className="summary-settings-footer">
-        <span className="summary-settings-meta">
-          {categories.length ? `${categories.length} categories` : "Automatic categories"}
-        </span>
+        <div className="summary-settings-meta flex items-center gap-2 whitespace-nowrap">
+          <span>{formatCount(categories.length, "category", "categories")}</span>
+          <span aria-hidden="true">{"\u00b7"}</span>
+          <span>{formatCount(topicCount, "topic")}</span>
+        </div>
         <Button
           type="button"
           variant="outline"

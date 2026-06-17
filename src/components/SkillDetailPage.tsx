@@ -1,6 +1,10 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
-import type { ClawdisSkillMetadata } from "clawhub-schema";
+import {
+  inferSkillCategories,
+  resolveSkillCategories,
+  type ClawdisSkillMetadata,
+} from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ArrowLeft, TriangleAlert, Upload } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -227,6 +231,10 @@ export function SkillDetailPage({
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
+  const suggestedCatalogCategories = useMemo(
+    () => (skill ? resolveSkillCategories({ inferred: inferSkillCategories(skill) }) : undefined),
+    [skill],
+  );
   const shouldLoadRelatedSkills = Boolean(
     skill && relatedCategory && relatedCategory.keywords.length > 0,
   );
@@ -772,6 +780,7 @@ export function SkillDetailPage({
         summary={skill.summary ?? ""}
         onSaveSummary={canAccessSettings ? submitSummary : null}
         categories={skill.categories}
+        suggestedCategories={suggestedCatalogCategories}
         topics={skill.topics}
         onSaveCatalogMetadata={canAccessSettings ? submitCatalogMetadata : null}
         canDeleteSkill={canDeleteSkillFromSettings}

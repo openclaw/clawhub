@@ -328,6 +328,10 @@ a.home-v2-trend-card:hover {
   border-radius: 2px;
 }
 
+.catalog-topic-input:focus-visible {
+  outline: none;
+}
+
 .sr-only {
   position: absolute;
   width: 1px;
@@ -10302,71 +10306,6 @@ a.agentic-risk-finding-title:focus-visible {
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.catalog-category-fieldset {
-  min-width: 0;
-  margin: 0;
-  padding: 0;
-  border: 0;
-}
-
-.catalog-category-legend {
-  display: flex;
-  width: 100%;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 8px;
-  color: var(--ink);
-  font-size: var(--fs-sm);
-  font-weight: 600;
-}
-
-.catalog-category-mode {
-  color: var(--ink-soft);
-  font-size: var(--fs-xs);
-  font-weight: 500;
-}
-
-.catalog-category-options {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  border: 1px solid var(--line);
-  border-radius: var(--r-sm);
-  overflow: hidden;
-}
-
-.catalog-category-option {
-  display: flex;
-  min-width: 0;
-  min-height: 38px;
-  align-items: center;
-  gap: 9px;
-  padding: 8px 10px;
-  color: var(--ink-soft);
-  font-size: var(--fs-sm);
-  line-height: 1.3;
-  cursor: pointer;
-}
-
-.catalog-category-option + .catalog-category-option {
-  border-top: 1px solid var(--line);
-}
-
-.catalog-category-option:has(input:checked) {
-  color: var(--ink);
-  background: color-mix(in srgb, var(--accent) 8%, transparent);
-}
-
-.catalog-category-option:has(input:disabled) {
-  cursor: not-allowed;
-  opacity: 0.52;
-}
-
-.catalog-category-option input {
-  flex: 0 0 auto;
-  accent-color: var(--accent);
 }
 
 .catalog-metadata-settings-editor {

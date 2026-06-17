@@ -36,6 +36,7 @@ type SkillOwnershipPanelProps = {
   summary?: string | null;
   onSaveSummary?: ((summary: string) => Promise<void>) | null;
   categories?: string[] | null;
+  suggestedCategories?: string[];
   topics?: string[] | null;
   onSaveCatalogMetadata?:
     | ((value: { categories?: string[]; topics: string[] }) => Promise<void>)
@@ -110,6 +111,7 @@ export function SkillOwnershipPanel({
   summary,
   onSaveSummary,
   categories,
+  suggestedCategories,
   topics,
   onSaveCatalogMetadata,
   canDeleteSkill,
@@ -228,6 +230,7 @@ export function SkillOwnershipPanel({
             <CatalogMetadataEditor
               kind="skill"
               categories={categories}
+              suggestedCategories={suggestedCategories}
               topics={topics}
               onSave={onSaveCatalogMetadata}
             />

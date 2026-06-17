@@ -8255,6 +8255,53 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("plugins list fills official-first pages from the community phase", async () => {
+    const officialPlugin = {
+      ...makeCatalogItem("official-memory", { family: "code-plugin", updatedAt: 2 }),
+      isOfficial: true,
+    };
+    const communityPlugin = {
+      ...makeCatalogItem("community-memory", { family: "code-plugin", updatedAt: 1 }),
+      isOfficial: false,
+    };
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      if (args.family === "bundle-plugin") {
+        return { page: [], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "code-plugin") {
+        const cursor = (args.paginationOpts as { cursor: string | null }).cursor;
+        if (cursor === null) {
+          return {
+            page: [officialPlugin],
+            isDone: false,
+            continueCursor: "community-phase",
+          };
+        }
+        expect(cursor).toBe("community-phase");
+        return { page: [communityPlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?category=memory&officialFirst=true&limit=2"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "official-memory",
+      "community-memory",
+    ]);
+    for (const [, args] of runQuery.mock.calls) {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
+      expect(args).toEqual(expect.objectContaining({ officialFirst: true }));
+    }
+  });
+
   it("plugin and package lists reject removed downloads sort links", async () => {
     const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());

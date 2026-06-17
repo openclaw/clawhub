@@ -98,17 +98,17 @@ describe("catalog metadata", () => {
     ).toEqual(["automation", "productivity"]);
   });
 
-  it("maps legacy skills without stored categories through controlled fallback inference", () => {
+  it("maps skills without stored categories to Other until generation is requested", () => {
     expect(
       resolveStoredSkillCategories({
         slug: "todoist-workflows",
         displayName: "Todoist Workflows",
         summary: "Automate task and project workflows",
       }),
-    ).toEqual(["automation", "productivity"]);
+    ).toEqual(["other"]);
   });
 
-  it("maps retired stored skill categories through controlled fallback inference", () => {
+  it("maps retired stored skill categories to Other instead of inferring replacements", () => {
     expect(
       resolveStoredSkillCategories({
         slug: "todoist-workflows",
@@ -116,7 +116,7 @@ describe("catalog metadata", () => {
         summary: "Automate task and project workflows",
         categories: ["retired-category"],
       }),
-    ).toEqual(["automation", "productivity"]);
+    ).toEqual(["other"]);
   });
 
   it("preserves topic display values while deriving normalized lookup slugs", () => {

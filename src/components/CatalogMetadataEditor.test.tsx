@@ -5,11 +5,47 @@ import { describe, expect, it, vi } from "vitest";
 import { CatalogMetadataEditor } from "./CatalogMetadataEditor";
 import { formatCatalogTopicsInput, parseCatalogTopicsInput } from "./CatalogMetadataFields";
 
+function selectCategory(name: string) {
+  const trigger = screen.getByRole("button", { name: "Categories" });
+  if (trigger.getAttribute("aria-expanded") !== "true") {
+    fireEvent.pointerDown(trigger, { button: 0 });
+  }
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name }));
+}
+
+function closeCategoryMenu() {
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+}
+
 describe("CatalogMetadataEditor", () => {
   it("round-trips topic labels containing commas and quotes", () => {
     const topics = ["CI, CD", 'He said "ship"', "Calendar"];
 
     expect(parseCatalogTopicsInput(formatCatalogTopicsInput(topics))).toEqual(topics);
+  });
+
+  it("shows live category and topic counts in the save summary", () => {
+    const onSave = vi.fn(async () => {});
+    render(
+      <CatalogMetadataEditor
+        kind="skill"
+        categories={["development"]}
+        topics={["email", "expedia"]}
+        onSave={onSave}
+      />,
+    );
+
+    expect(screen.getByText("1 category")).toBeTruthy();
+    expect(screen.getByText("2 topics")).toBeTruthy();
+
+    selectCategory("Research");
+    closeCategoryMenu();
+    const topicsInput = screen.getByLabelText("Topics");
+    fireEvent.change(topicsInput, { target: { value: "travel" } });
+    fireEvent.keyDown(topicsInput, { key: " " });
+
+    expect(screen.getByText("2 categories")).toBeTruthy();
+    expect(screen.getByText("3 topics")).toBeTruthy();
   });
 
   it("saves exact category slugs and parsed author topics", async () => {
@@ -23,10 +59,11 @@ describe("CatalogMetadataEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
-    fireEvent.change(screen.getByLabelText("Topics"), {
-      target: { value: "GPU development, CUDA" },
-    });
+    selectCategory("Research");
+    closeCategoryMenu();
+    const topicsInput = screen.getByLabelText("Topics");
+    fireEvent.change(topicsInput, { target: { value: "CUDA" } });
+    fireEvent.keyDown(topicsInput, { key: " " });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -37,18 +74,59 @@ describe("CatalogMetadataEditor", () => {
     );
   });
 
-  it("preserves automatic categories when saving topics", async () => {
+  it("applies generated categories only after an explicit button click", async () => {
     const onSave = vi.fn(async () => {});
-    render(<CatalogMetadataEditor kind="skill" topics={["Calendar"]} onSave={onSave} />);
+    render(
+      <CatalogMetadataEditor kind="skill" suggestedCategories={["lifestyle"]} onSave={onSave} />,
+    );
 
-    fireEvent.change(screen.getByLabelText("Topics"), {
-      target: { value: "Calendar, Scheduling" },
-    });
+    expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain(
+      "Choose categories",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Generate categories" }));
+    expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Lifestyle");
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
-        categories: undefined,
+        categories: ["lifestyle"],
+        topics: [],
+      }),
+    );
+  });
+
+  it("uses Other when saving topics without selected categories", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<CatalogMetadataEditor kind="skill" topics={["Calendar"]} onSave={onSave} />);
+
+    const topicsInput = screen.getByLabelText("Topics");
+    fireEvent.change(topicsInput, { target: { value: "Scheduling" } });
+    fireEvent.keyDown(topicsInput, { key: " " });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        categories: ["other"],
+        topics: ["Calendar", "Scheduling"],
+      }),
+    );
+  });
+
+  it("commits a topic draft before saving", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<CatalogMetadataEditor kind="skill" topics={["Calendar"]} onSave={onSave} />);
+
+    const topicsInput = screen.getByLabelText("Topics");
+    const saveButton = screen.getByRole("button", { name: "Save" });
+    fireEvent.change(topicsInput, {
+      target: { value: "Scheduling" },
+    });
+    fireEvent.blur(topicsInput, { relatedTarget: saveButton });
+    fireEvent.click(saveButton);
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        categories: ["other"],
         topics: ["Calendar", "Scheduling"],
       }),
     );
@@ -58,7 +136,8 @@ describe("CatalogMetadataEditor", () => {
     const onSave = vi.fn(async () => {});
     render(<CatalogMetadataEditor kind="skill" topics={["CI, CD"]} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
+    selectCategory("Research");
+    closeCategoryMenu();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -80,14 +159,14 @@ describe("CatalogMetadataEditor", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Topics"), {
-      target: { value: "Calendar, Scheduling" },
-    });
+    const topicsInput = screen.getByLabelText("Topics");
+    fireEvent.change(topicsInput, { target: { value: "Scheduling" } });
+    fireEvent.keyDown(topicsInput, { key: " " });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
-        categories: undefined,
+        categories: ["other"],
         topics: ["Calendar", "Scheduling"],
       }),
     );
@@ -97,7 +176,8 @@ describe("CatalogMetadataEditor", () => {
     const onSave = vi.fn(async () => {});
     render(<CatalogMetadataEditor kind="skill" categories={["other"]} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
+    selectCategory("Research");
+    closeCategoryMenu();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -112,7 +192,8 @@ describe("CatalogMetadataEditor", () => {
     const onSave = vi.fn(async () => {});
     render(<CatalogMetadataEditor kind="skill" categories={["development"]} onSave={onSave} />);
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Other" }));
+    selectCategory("Other");
+    closeCategoryMenu();
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -134,10 +215,11 @@ describe("CatalogMetadataEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
-    fireEvent.change(screen.getByLabelText("Topics"), {
-      target: { value: "GPU development, CUDA" },
-    });
+    selectCategory("Research");
+    closeCategoryMenu();
+    const topicsInput = screen.getByLabelText("Topics");
+    fireEvent.change(topicsInput, { target: { value: "CUDA" } });
+    fireEvent.keyDown(topicsInput, { key: " " });
 
     rerender(
       <CatalogMetadataEditor
@@ -148,12 +230,11 @@ describe("CatalogMetadataEditor", () => {
       />,
     );
 
-    expect((screen.getByRole("checkbox", { name: "Research" }) as HTMLInputElement).checked).toBe(
-      true,
+    expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain(
+      "Research, Development",
     );
-    expect((screen.getByLabelText("Topics") as HTMLInputElement).value).toBe(
-      "GPU development, CUDA",
-    );
+    expect(screen.getByText("#gpu development")).toBeTruthy();
+    expect(screen.getByText("#cuda")).toBeTruthy();
   });
 
   it("preserves edits when saving fails", async () => {
@@ -169,18 +250,18 @@ describe("CatalogMetadataEditor", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
-    fireEvent.change(screen.getByLabelText("Topics"), {
-      target: { value: "GPU development, CUDA" },
-    });
+    selectCategory("Research");
+    closeCategoryMenu();
+    const topicsInput = screen.getByLabelText("Topics");
+    fireEvent.change(topicsInput, { target: { value: "CUDA" } });
+    fireEvent.keyDown(topicsInput, { key: " " });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Save failed");
-    expect((screen.getByRole("checkbox", { name: "Research" }) as HTMLInputElement).checked).toBe(
-      true,
+    expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain(
+      "Research, Development",
     );
-    expect((screen.getByLabelText("Topics") as HTMLInputElement).value).toBe(
-      "GPU development, CUDA",
-    );
+    expect(screen.getByText("#gpu development")).toBeTruthy();
+    expect(screen.getByText("#cuda")).toBeTruthy();
   });
 });

@@ -1,4 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
+import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema";
 import { useAction, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -102,6 +103,17 @@ export function ImportGitHub() {
   );
 
   const selectedCount = useMemo(() => Object.values(selected).filter(Boolean).length, [selected]);
+  const suggestedCategories = useMemo(
+    () =>
+      resolveSkillCategories({
+        inferred: inferSkillCategories({
+          slug,
+          displayName,
+          summary: preview?.candidate.description,
+        }),
+      }),
+    [displayName, preview?.candidate.description, slug],
+  );
   const selectedBytes = useMemo(() => {
     if (!preview) return 0;
     let total = 0;
@@ -423,6 +435,7 @@ export function ImportGitHub() {
                     <CatalogMetadataFields
                       kind="skill"
                       categories={categories}
+                      suggestedCategories={suggestedCategories}
                       topics={topics}
                       disabled={isBusy}
                       onCategoriesChange={setCategories}

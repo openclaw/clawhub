@@ -9399,7 +9399,6 @@ export const publishVersion: ReturnType<typeof action> = action({
     acceptLicenseTerms: v.optional(v.boolean()),
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
-    clearCategories: v.optional(v.boolean()),
     topics: v.optional(v.array(v.string())),
     forkOf: v.optional(
       v.object({
@@ -9968,13 +9967,10 @@ export const setCatalogMetadata = mutation({
       });
     }
 
-    let categories: string[] | undefined;
+    let categories: string[];
     let topics: string[];
     try {
-      categories =
-        args.categories === undefined
-          ? undefined
-          : resolveSkillCategories({ declared: args.categories });
+      categories = resolveSkillCategories({ declared: args.categories });
       topics = normalizeCatalogTopics(args.topics);
     } catch (error) {
       throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");

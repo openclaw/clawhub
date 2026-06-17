@@ -7,24 +7,24 @@
   describe user intent.
 - Each item stores up to three category slugs. Unknown slugs are rejected.
 - `other` is a fallback and is removed whenever a specific category is present.
-- Declaration precedence:
+- Category selection precedence:
   1. Current publish input from CLI or UI.
   2. Existing stored categories.
-  3. Controlled-slug inference.
-  4. `other`.
-- An explicit empty category array means `other`; only an omitted declaration enables inference.
-- Skill inference uses title, summary, and slug. Plugin inference uses manifest contribution fields.
+  3. `other`.
+- Omitted or empty categories mean `other`; categories are never inferred implicitly.
+- Generate is an explicit author action that fills editable category selections. Generated skill
+  suggestions use title, summary, and slug. Generated plugin suggestions use manifest contribution
+  fields.
+- Generated suggestions only emit controlled slugs and are not persisted until Save or Publish.
 - Metadata files are not author-facing taxonomy declaration sources. Plugin manifests are only used
-  for automatic contribution-slot inference.
-- Inference only emits controlled slugs and only runs when categories were omitted.
+  when an author explicitly generates plugin category suggestions.
 - Backports and non-latest plugin releases do not replace current categories.
 - Capability tags are not taxonomy inputs.
-- Existing skills without stored categories use deterministic inference into controlled slugs.
-- Existing plugins without stored categories remain in `other` until the follow-up corpus backfill.
+- Existing items without valid stored categories remain in `other` until an author or operator
+  explicitly accepts generated or manually selected categories.
 - Backend deploys run the tracked package and skill catalog digest migrations before contract
-  verification so retired category rows are deterministically replaced with controlled inference
-  or `other`, and the indexed curated-skill projection is complete before browse traffic relies on
-  it.
+  verification so retired category rows are replaced with `other`, and the indexed curated-skill
+  projection is complete before browse traffic relies on it.
 
 ## Topics
 
@@ -33,9 +33,7 @@
 - Reserved platform trust labels such as `official`, `featured`, and `verified` are rejected.
 - Topics are separate from release tags and are available to browse and exact-topic global search.
 - Authors can edit categories and topics from skill and plugin settings.
-- Settings show no category override as Automatic; clearing categories removes the stored override.
-- Plugin automatic categories are re-derived from the latest stored manifest on every digest sync.
-  Legacy bundle releases keep their current category until republish stores that manifest.
+- Settings expose Generate as an explicit category action. Clearing categories saves `other`.
 - Backports and non-latest plugin releases do not replace current topics.
 
 ## Browse
@@ -49,10 +47,14 @@
   not cap the curated corpus or hydrate curated entries outside the requested page.
 - Category and topic filters use per-value digest rows that preserve the selected browse sort.
 - Publisher profiles group authored items by their first topic when multiple groups exist.
+- Existing plugin category digest rows are repaired through a dry-run-first, cursor-batched admin
+  action. This intentionally uses the existing maintenance runner pattern instead of
+  `@convex-dev/migrations` because it only rebuilds derived search rows from unchanged package
+  sources; apply mode still requires explicit confirmation and reports resumable progress.
 
 ## Follow-Up
 
-The corpus classification and resumable LLM backfill are a separate migration PR. It will populate
-missing categories and topics without changing the author input surfaces above. The deploy-time
-digest rebuild in this PR only reprojects current stored package data into the controlled taxonomy;
-it does not classify the corpus.
+Corpus classification and resumable LLM suggestion tooling are separate follow-up work. Suggestions
+must require an explicit author or operator acceptance step before they are persisted. The
+deploy-time digest rebuild in this PR only reprojects current stored package data into the controlled
+taxonomy; it does not classify the corpus.

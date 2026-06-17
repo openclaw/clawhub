@@ -620,7 +620,7 @@ describe("SkillDetailPage", () => {
     expect(await screen.findByText("Generated from worker.")).toBeTruthy();
   });
 
-  it("renders related skills from the inferred category with a browse link", async () => {
+  it("renders related skills from the stored category with a browse link", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (
@@ -674,6 +674,7 @@ describe("SkillDetailPage", () => {
               slug: "workflow-runner",
               displayName: "Workflow Runner",
               summary: "Build repeatable agent workflow pipelines.",
+              categories: ["automation"],
               ownerUserId: ownerId,
               ownerPublisherId,
               tags: {},

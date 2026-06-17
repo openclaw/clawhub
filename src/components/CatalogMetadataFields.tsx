@@ -4,57 +4,33 @@ import {
   PLUGIN_CATEGORY_DEFINITIONS,
   SKILL_CATEGORY_DEFINITIONS,
 } from "clawhub-schema";
-import { Input } from "./ui/input";
+import { ChevronDown, Sparkles } from "lucide-react";
+import { CatalogTopicInput } from "./CatalogTopicInput";
+import { Button } from "./ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuTrigger,
+} from "./ui/dropdown-menu";
 import { Label } from "./ui/label";
+
+export { formatCatalogTopicsInput, parseCatalogTopicsInput } from "./CatalogTopicInput";
 
 type CatalogMetadataFieldsProps = {
   kind: "skill" | "plugin";
   categories: string[];
+  suggestedCategories?: string[];
   topics: string;
   disabled?: boolean;
   onCategoriesChange: (value: string[]) => void;
   onTopicsChange: (value: string) => void;
 };
 
-export function parseCatalogTopicsInput(value: string) {
-  const topics: string[] = [];
-  let current = "";
-  let quoted = false;
-
-  // Parse one CSV-style record so quoted topic labels can contain commas.
-  for (let index = 0; index < value.length; index += 1) {
-    const character = value[index];
-    if (character === '"') {
-      if (quoted && value[index + 1] === '"') {
-        current += '"';
-        index += 1;
-      } else if (quoted) {
-        quoted = false;
-      } else if (!current.trim()) {
-        quoted = true;
-      } else {
-        current += character;
-      }
-    } else if (character === "," && !quoted) {
-      topics.push(current.trim());
-      current = "";
-    } else {
-      current += character;
-    }
-  }
-  topics.push(current.trim());
-  return topics.filter(Boolean);
-}
-
-export function formatCatalogTopicsInput(values: readonly string[]) {
-  return values
-    .map((topic) => (/[,"]/.test(topic) ? `"${topic.replaceAll('"', '""')}"` : topic))
-    .join(", ");
-}
-
 export function CatalogMetadataFields({
   kind,
   categories: selectedCategories,
+  suggestedCategories,
   topics,
   disabled,
   onCategoriesChange,
@@ -64,6 +40,16 @@ export function CatalogMetadataFields({
   const prefix = kind === "skill" ? "skill" : "plugin";
   const selected = new Set(selectedCategories);
   const limitReached = selectedCategories.length >= CATALOG_CATEGORY_LIMIT;
+  const selectedLabels = categories
+    .filter((category) => selected.has(category.slug))
+    .map((category) => category.label);
+  const categorySlugs = new Set<string>(categories.map((category) => category.slug));
+  const generatedCategories =
+    suggestedCategories === undefined
+      ? undefined
+      : [...new Set(suggestedCategories.filter((category) => categorySlugs.has(category)))]
+          .slice(0, CATALOG_CATEGORY_LIMIT)
+          .filter((category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY);
 
   const toggleCategory = (slug: string) => {
     if (selected.has(slug)) {
@@ -83,22 +69,60 @@ export function CatalogMetadataFields({
 
   return (
     <>
-      <fieldset className="catalog-category-fieldset">
-        <legend className="catalog-category-legend">
-          <span>Categories</span>
-          <span className="catalog-category-mode">
-            {selectedCategories.length
-              ? `${selectedCategories.length}/${CATALOG_CATEGORY_LIMIT}`
-              : "Automatic"}
-          </span>
-        </legend>
-        <div className="catalog-category-options">
-          {categories.map((category) => {
-            const checked = selected.has(category.slug);
-            return (
-              <label key={category.slug} className="catalog-category-option">
-                <input
-                  type="checkbox"
+      <div className="flex min-w-0 flex-col gap-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <Label htmlFor={`${prefix}Categories`}>Categories</Label>
+          <div className="flex items-center gap-2">
+            {generatedCategories ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="xs"
+                disabled={disabled}
+                aria-label="Generate categories"
+                onClick={() =>
+                  onCategoriesChange(
+                    generatedCategories.length
+                      ? generatedCategories
+                      : [INTERNAL_UNCATEGORIZED_CATEGORY],
+                  )
+                }
+              >
+                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                Generate
+              </Button>
+            ) : null}
+            <span className="text-xs font-medium text-[color:var(--ink-soft)]">
+              {selectedCategories.length}/{CATALOG_CATEGORY_LIMIT}
+            </span>
+          </div>
+        </div>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <button
+              id={`${prefix}Categories`}
+              type="button"
+              disabled={disabled}
+              aria-label="Categories"
+              className="flex min-h-[44px] w-full min-w-0 cursor-pointer items-center justify-between gap-3 rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)] transition-all duration-[180ms] ease-out focus:outline-none focus:border-input-focus-border focus:shadow-[0_0_0_3px_var(--input-focus-ring)] disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              <span
+                className={selectedLabels.length ? "truncate" : "truncate text-input-placeholder"}
+              >
+                {selectedLabels.length ? selectedLabels.join(", ") : "Choose categories"}
+              </span>
+              <ChevronDown className="h-4 w-4 shrink-0 opacity-50" aria-hidden="true" />
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent
+            align="start"
+            className="w-[var(--radix-dropdown-menu-trigger-width)]"
+          >
+            {categories.map((category) => {
+              const checked = selected.has(category.slug);
+              return (
+                <DropdownMenuCheckboxItem
+                  key={category.slug}
                   checked={checked}
                   disabled={
                     disabled ||
@@ -107,22 +131,23 @@ export function CatalogMetadataFields({
                       category.slug !== INTERNAL_UNCATEGORIZED_CATEGORY &&
                       !selected.has(INTERNAL_UNCATEGORIZED_CATEGORY))
                   }
-                  onChange={() => toggleCategory(category.slug)}
-                />
-                <span>{category.label}</span>
-              </label>
-            );
-          })}
-        </div>
-      </fieldset>
+                  onCheckedChange={() => toggleCategory(category.slug)}
+                  onSelect={(event) => event.preventDefault()}
+                >
+                  {category.label}
+                </DropdownMenuCheckboxItem>
+              );
+            })}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
       <div className="flex flex-col gap-2">
         <Label htmlFor={`${prefix}Topics`}>Topics</Label>
-        <Input
+        <CatalogTopicInput
           id={`${prefix}Topics`}
           value={topics}
           disabled={disabled}
-          onChange={(event) => onTopicsChange(event.target.value)}
-          placeholder="email, calendar, productivity"
+          onChange={onTopicsChange}
         />
       </div>
     </>

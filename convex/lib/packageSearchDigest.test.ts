@@ -253,7 +253,7 @@ describe("packageSearchDigest", () => {
     ]);
   });
 
-  it("keeps automatic plugin categories stable across shared digest resyncs", async () => {
+  it("does not infer plugin categories during shared digest resyncs", async () => {
     const insert = vi.fn();
     const pkg = {
       _id: "packages:demo",
@@ -315,11 +315,11 @@ describe("packageSearchDigest", () => {
 
     expect(insert).toHaveBeenCalledWith(
       "packageSearchDigest",
-      expect.objectContaining({ pluginCategoryTags: ["tools"] }),
+      expect.objectContaining({ pluginCategoryTags: ["other"] }),
     );
     expect(insert).toHaveBeenCalledWith(
       "packagePluginCategorySearchDigest",
-      expect.objectContaining({ pluginCategory: "tools", pluginCategoryTags: ["tools"] }),
+      expect.objectContaining({ pluginCategory: "other", pluginCategoryTags: ["other"] }),
     );
   });
 });

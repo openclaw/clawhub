@@ -669,7 +669,7 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
-  it("applies token-based category filters while scanning public list pages", async () => {
+  it("does not apply inferred category filters while scanning public list pages", async () => {
     getPageMock.mockResolvedValueOnce({
       page: [
         makeDigest({
@@ -710,9 +710,7 @@ describe("public skill list deterministic cursors", () => {
         index: "by_active_stats_downloads",
       }),
     );
-    expect(
-      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
-    ).toEqual(["developer-utils"]);
+    expect(result.page).toEqual([]);
   });
 
   it("uses a stored category without requiring matching inference keywords", async () => {
@@ -1417,7 +1415,7 @@ describe("skills.listRelatedByCategory", () => {
     expect(result.items[0]?.ownerHandle).toBe("owner");
   });
 
-  it("does not match generated dev slug prefixes as Development suggestions", async () => {
+  it("does not use inferred categories for related skill suggestions", async () => {
     const digests = [
       makeDigest({
         skillId: "skills:current",
@@ -1476,11 +1474,7 @@ describe("skills.listRelatedByCategory", () => {
       limit: 3,
     });
 
-    expect(result.items.map((entry) => entry.skill.slug)).toEqual([
-      "developer-utils",
-      "web3-dev",
-      "build-runner",
-    ]);
+    expect(result.items).toEqual([]);
   });
 
   it("uses explicit categories without requiring inference keywords for suggestions", async () => {

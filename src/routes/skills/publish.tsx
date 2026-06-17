@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { isSkillCategorySlug } from "clawhub-schema";
+import { inferSkillCategories, isSkillCategorySlug, resolveSkillCategories } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -44,6 +44,7 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
+import { extractSkillFrontmatterDescription } from "../../lib/skillFrontmatter";
 import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
@@ -108,8 +109,11 @@ export function Upload() {
   const [tags, setTags] = useState("latest");
   const [categories, setCategories] = useState<string[]>([]);
   const [topics, setTopics] = useState("");
+  const [uploadedSkillSummary, setUploadedSkillSummary] = useState<string | undefined>();
   const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
   const [changelog, setChangelog] = useState("");
+  const categoriesTouchedRef = useRef(false);
+  const topicsTouchedRef = useRef(false);
   const [changelogStatus, setChangelogStatus] = useState<"idle" | "loading" | "ready" | "error">(
     "idle",
   );
@@ -230,6 +234,17 @@ export function Upload() {
   }, [ignoredLocalMetadataPaths]);
   const trimmedSlug = slug.trim();
   const trimmedName = displayName.trim();
+  const suggestedCategories = useMemo(
+    () =>
+      resolveSkillCategories({
+        inferred: inferSkillCategories({
+          slug: trimmedSlug,
+          displayName: trimmedName,
+          summary: uploadedSkillSummary ?? existing?.skill.summary,
+        }),
+      }),
+    [existing?.skill.summary, trimmedName, trimmedSlug, uploadedSkillSummary],
+  );
   const trimmedChangelog = changelog.trim();
   const trimmedVersion = version.trim();
   const slugAvailability = useQuery(
@@ -256,20 +271,49 @@ export function Upload() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    const requiredIndex = normalizedPaths.findIndex((path) => isRequiredSkillFile(path));
+    const requiredFile = requiredIndex >= 0 ? files[requiredIndex] : undefined;
+    if (!requiredFile) {
+      setUploadedSkillSummary(undefined);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setUploadedSkillSummary(undefined);
+    void readText(requiredFile)
+      .then((text) => {
+        if (!cancelled) setUploadedSkillSummary(extractSkillFrontmatterDescription(text));
+      })
+      .catch(() => {
+        if (!cancelled) setUploadedSkillSummary(undefined);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [files, normalizedPaths]);
+
+  useEffect(() => {
     if (!existing?.latestVersion || !existing?.skill) return;
     const name = existing.skill.displayName;
     const nextSlug = existing.skill.slug;
     if (nextSlug) setSlug(nextSlug);
     if (name) setDisplayName(name);
-    const nextCategories = (existing.skill.categories ?? []).filter(isSkillCategorySlug);
-    setCategories((current) =>
-      current.length === nextCategories.length &&
-      current.every((category, index) => category === nextCategories[index])
-        ? current
-        : nextCategories,
-    );
-    const nextTopics = formatCatalogTopicsInput(existing.skill.topics ?? []);
-    setTopics((current) => (current === nextTopics ? current : nextTopics));
+    if (!categoriesTouchedRef.current) {
+      const nextCategories = (existing.skill.categories ?? []).filter(isSkillCategorySlug);
+      setCategories((current) =>
+        current.length === nextCategories.length &&
+        current.every((category, index) => category === nextCategories[index])
+          ? current
+          : nextCategories,
+      );
+    }
+    if (!topicsTouchedRef.current) {
+      const nextTopics = formatCatalogTopicsInput(existing.skill.topics ?? []);
+      setTopics((current) => (current === nextTopics ? current : nextTopics));
+    }
     // Pre-populate the icon picker from the existing skill so a New Version
     // publish keeps the previously selected icon unless the user changes it.
     if (existing.skill.icon !== undefined) {
@@ -698,8 +742,10 @@ export function Upload() {
         changelog: trimmedChangelog,
         acceptLicenseTerms: acceptedLicenseTerms,
         tags: parsedTags,
-        ...(categories.length ? { categories } : { clearCategories: true }),
-        topics: parseCatalogTopicsInput(topics),
+        ...(categories.length || categoriesTouchedRef.current ? { categories } : {}),
+        ...(topics.trim() || topicsTouchedRef.current
+          ? { topics: parseCatalogTopicsInput(topics) }
+          : {}),
         files: uploaded,
       });
       setStatus(null);
@@ -1030,10 +1076,17 @@ export function Upload() {
                 <CatalogMetadataFields
                   kind="skill"
                   categories={categories}
+                  suggestedCategories={suggestedCategories}
                   topics={topics}
                   disabled={isSubmitting}
-                  onCategoriesChange={setCategories}
-                  onTopicsChange={setTopics}
+                  onCategoriesChange={(nextCategories) => {
+                    categoriesTouchedRef.current = true;
+                    setCategories(nextCategories);
+                  }}
+                  onTopicsChange={(nextTopics) => {
+                    topicsTouchedRef.current = true;
+                    setTopics(nextTopics);
+                  }}
                 />
               </div>
               {metadataPrefillNote ? (

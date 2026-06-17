@@ -94,9 +94,10 @@ export function derivePluginCategoryTags(input: {
 export function resolveStoredPluginCategories(
   input: Parameters<typeof derivePluginCategoryTags>[0],
 ): PluginCategorySlug[] {
+  if (input.family === "skill") return [];
   try {
-    return derivePluginCategoryTags(input);
+    return resolvePluginCategories({ declared: input.categories });
   } catch {
-    return derivePluginCategoryTags({ ...input, categories: undefined });
+    return resolvePluginCategories({});
   }
 }

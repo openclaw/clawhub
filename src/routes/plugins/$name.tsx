@@ -641,6 +641,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         <CatalogMetadataEditor
           kind="plugin"
           categories={manageContext.package.categories}
+          suggestedCategories={manageContext.suggestedCategories}
           topics={manageContext.package.topics}
           onSave={async (value) => {
             await setCatalogMetadata({

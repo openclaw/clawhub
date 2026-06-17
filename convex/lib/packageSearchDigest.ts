@@ -116,8 +116,6 @@ export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchD
     packageId: pkg._id,
     latestVersion: pkg.latestVersionSummary?.version,
     verificationTier: pkg.verification?.tier,
-    // The shared writer replaces this fallback from the latest stored plugin manifest
-    // when the package is using automatic categorization.
     pluginCategoryTags: resolveStoredPluginCategories({
       family: pkg.family,
       categories: pkg.categories,
@@ -129,24 +127,7 @@ export async function upsertPackageSearchDigest(
   ctx: Pick<MutationCtx, "db">,
   fields: PackageSearchDigestFields,
 ) {
-  let nextFields = fields;
-  if (fields.family !== "skill" && fields.categories === undefined) {
-    const pkg = await ctx.db.get(fields.packageId);
-    const latestRelease = pkg?.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-    if (
-      latestRelease &&
-      !latestRelease.softDeletedAt &&
-      latestRelease.extractedPluginManifest !== undefined
-    ) {
-      nextFields = {
-        ...fields,
-        pluginCategoryTags: resolveStoredPluginCategories({
-          family: fields.family,
-          pluginManifest: latestRelease.extractedPluginManifest,
-        }),
-      };
-    }
-  }
+  const nextFields = fields;
   const existing = await ctx.db
     .query("packageSearchDigest")
     .withIndex("by_package", (q) => q.eq("packageId", nextFields.packageId))

@@ -195,7 +195,7 @@ describe("catalog metadata settings", () => {
     );
   });
 
-  it("clears stored skill categories when automatic categorization is selected", async () => {
+  it("uses Other when stored skill categories are cleared", async () => {
     const skill = {
       _id: "skills:demo",
       slug: "demo",
@@ -224,7 +224,7 @@ describe("catalog metadata settings", () => {
     expect(patch).toHaveBeenCalledWith(
       skill._id,
       expect.objectContaining({
-        categories: undefined,
+        categories: ["other"],
         topics: ["GPU development"],
       }),
     );
@@ -271,7 +271,7 @@ describe("catalog metadata settings", () => {
     );
   });
 
-  it("clears stored plugin categories when automatic categorization is selected", async () => {
+  it("uses Other when stored plugin categories are cleared", async () => {
     const release = {
       _id: "packageReleases:demo",
       extractedPluginManifest: { contracts: { tools: ["demo"] } },
@@ -302,14 +302,14 @@ describe("catalog metadata settings", () => {
     expect(patch).toHaveBeenCalledWith(
       pkg._id,
       expect.objectContaining({
-        categories: undefined,
+        categories: ["other"],
         topics: ["Local models"],
       }),
     );
     expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        categories: undefined,
+        categories: ["other"],
         pluginCategoryTags: ["other"],
       }),
     );
@@ -354,7 +354,7 @@ describe("catalog metadata settings", () => {
     );
   });
 
-  it("retains plugin categories when automatic inference metadata is unavailable", async () => {
+  it("uses Other when legacy plugin categories are cleared", async () => {
     const pkg = {
       _id: "packages:legacy-bundle",
       name: "legacy-bundle",
@@ -380,7 +380,7 @@ describe("catalog metadata settings", () => {
     expect(patch).toHaveBeenCalledWith(
       pkg._id,
       expect.objectContaining({
-        categories: ["tools"],
+        categories: ["other"],
       }),
     );
   });
