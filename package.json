@@ -71,7 +71,7 @@
     "verify:convex-contract": "bun scripts/verify-convex-contract.ts"
   },
   "dependencies": {
-    "@auth/core": "0.37.4",
+    "@auth/core": "0.41.1",
     "@convex-dev/auth": "0.0.94",
     "@fontsource/bricolage-grotesque": "5.2.10",
     "@fontsource/ibm-plex-mono": "5.2.7",
