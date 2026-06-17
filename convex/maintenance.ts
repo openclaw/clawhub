@@ -34,6 +34,11 @@ const DEFAULT_DEPRECATED_RATE_LIMIT_SHARD_CLEANUP_BATCH_SIZE = 500;
 const MAX_DEPRECATED_RATE_LIMIT_SHARD_CLEANUP_BATCH_SIZE = 1_000;
 const DEFAULT_DEPRECATED_RATE_LIMIT_SHARD_CLEANUP_MAX_BATCHES = 1;
 const MAX_DEPRECATED_RATE_LIMIT_SHARD_CLEANUP_MAX_BATCHES = 100;
+const DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE = "downloadDedupes";
+const DEFAULT_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_BATCH_SIZE = 1_000;
+const MAX_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_BATCH_SIZE = 2_000;
+const DEFAULT_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_MAX_BATCHES = 1;
+const MAX_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_MAX_BATCHES = 100;
 const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
@@ -89,6 +94,35 @@ type PublisherStatsBackfillPageResult = {
   items: Array<Pick<Doc<"publishers">, "_id">>;
   cursor: string | null;
   isDone: boolean;
+};
+
+type DeprecatedDownloadDedupeCleanupBatchResult = {
+  ok: true;
+  dryRun: boolean;
+  scanned: number;
+  deleted: number;
+  isDone: boolean;
+  oldestHourStart: number | null;
+  newestHourStart: number | null;
+};
+
+type DeprecatedDownloadDedupeCleanupBatchTiming = DeprecatedDownloadDedupeCleanupBatchResult & {
+  batch: number;
+  elapsedMs: number;
+};
+
+type DeprecatedDownloadDedupeCleanupResult = {
+  ok: true;
+  dryRun: boolean;
+  batchSize: number;
+  maxBatches: number;
+  batches: number;
+  scanned: number;
+  deleted: number;
+  isDone: boolean;
+  scheduledNext: boolean;
+  elapsedMs: number;
+  batchTimings: DeprecatedDownloadDedupeCleanupBatchTiming[];
 };
 
 type UserOwnedSkillsBackfillPageResult = {
@@ -517,6 +551,197 @@ export type PublisherStatsBackfillActionResult = {
   isDone: boolean;
   cursor: string | null;
 };
+
+export type DeprecatedDownloadDedupesCleanupActionArgs = {
+  dryRun?: boolean;
+  batchSize?: number;
+  maxBatches?: number;
+  continueOnIncomplete?: boolean;
+  confirmTable?: string;
+};
+
+export async function deleteDeprecatedDownloadDedupesBatchInternalHandler(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    dryRun?: boolean;
+    batchSize?: number;
+    confirmTable?: string;
+  },
+): Promise<DeprecatedDownloadDedupeCleanupBatchResult> {
+  const dryRun = Boolean(args.dryRun);
+  if (!dryRun && args.confirmTable !== DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE) {
+    throw new ConvexError(
+      `Refusing to delete deprecated download dedupe rows without confirmTable="${DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE}"`,
+    );
+  }
+
+  const batchSize = clampInt(
+    args.batchSize ?? DEFAULT_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_BATCH_SIZE,
+    1,
+    MAX_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_BATCH_SIZE,
+  );
+  const rows = await ctx.db
+    .query("downloadDedupes")
+    .withIndex("by_hour", (q) => q)
+    .order("asc")
+    .take(batchSize);
+
+  if (!dryRun) {
+    for (const row of rows) {
+      await ctx.db.delete(row._id);
+    }
+  }
+
+  return {
+    ok: true as const,
+    dryRun,
+    scanned: rows.length,
+    deleted: dryRun ? 0 : rows.length,
+    isDone: rows.length < batchSize,
+    oldestHourStart: rows[0]?.hourStart ?? null,
+    newestHourStart: rows.at(-1)?.hourStart ?? null,
+  };
+}
+
+export const deleteDeprecatedDownloadDedupesBatchInternal = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+    confirmTable: v.optional(v.string()),
+  },
+  handler: deleteDeprecatedDownloadDedupesBatchInternalHandler,
+});
+
+export async function cleanupDeprecatedDownloadDedupesInternalHandler(
+  ctx: ActionCtx,
+  args: DeprecatedDownloadDedupesCleanupActionArgs,
+): Promise<DeprecatedDownloadDedupeCleanupResult> {
+  const dryRun = Boolean(args.dryRun);
+  if (!dryRun && args.confirmTable !== DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE) {
+    throw new ConvexError(
+      `Refusing to delete deprecated download dedupe rows without confirmTable="${DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE}"`,
+    );
+  }
+
+  const batchSize = clampInt(
+    args.batchSize ?? DEFAULT_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_BATCH_SIZE,
+    1,
+    MAX_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_BATCH_SIZE,
+  );
+  const maxBatches = dryRun
+    ? 1
+    : clampInt(
+        args.maxBatches ?? DEFAULT_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_MAX_BATCHES,
+        1,
+        MAX_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_MAX_BATCHES,
+      );
+  const startedAt = Date.now();
+  const batchTimings: DeprecatedDownloadDedupeCleanupBatchTiming[] = [];
+  let scanned = 0;
+  let deleted = 0;
+  let isDone = false;
+
+  for (let batch = 1; batch <= maxBatches; batch += 1) {
+    const batchStartedAt = Date.now();
+    const result = (await ctx.runMutation(
+      internal.maintenance.deleteDeprecatedDownloadDedupesBatchInternal,
+      {
+        dryRun,
+        batchSize,
+        confirmTable: args.confirmTable,
+      },
+    )) as DeprecatedDownloadDedupeCleanupBatchResult;
+    const timing = {
+      ...result,
+      batch,
+      elapsedMs: Date.now() - batchStartedAt,
+    };
+    batchTimings.push(timing);
+    scanned += result.scanned;
+    deleted += result.deleted;
+    isDone = result.isDone;
+    if (result.isDone || result.scanned === 0) break;
+  }
+
+  const shouldContinue = !dryRun && !isDone && Boolean(args.continueOnIncomplete);
+  if (shouldContinue) {
+    await ctx.scheduler.runAfter(0, internal.maintenance.cleanupDeprecatedDownloadDedupesInternal, {
+      dryRun: false,
+      batchSize,
+      maxBatches,
+      continueOnIncomplete: true,
+      confirmTable: DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE,
+    });
+  }
+
+  return {
+    ok: true as const,
+    dryRun,
+    batchSize,
+    maxBatches,
+    batches: batchTimings.length,
+    scanned,
+    deleted,
+    isDone,
+    scheduledNext: shouldContinue,
+    elapsedMs: Date.now() - startedAt,
+    batchTimings,
+  };
+}
+
+export const cleanupDeprecatedDownloadDedupesInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    continueOnIncomplete: v.optional(v.boolean()),
+    confirmTable: v.optional(v.string()),
+  },
+  handler: cleanupDeprecatedDownloadDedupesInternalHandler,
+});
+
+export const cleanupDeprecatedDownloadDedupes: ReturnType<typeof action> = action({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    continueOnIncomplete: v.optional(v.boolean()),
+    confirmTable: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<DeprecatedDownloadDedupeCleanupResult> => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return ctx.runAction(
+      internal.maintenance.cleanupDeprecatedDownloadDedupesInternal,
+      args,
+    ) as Promise<DeprecatedDownloadDedupeCleanupResult>;
+  },
+});
+
+export const scheduleDeprecatedDownloadDedupesCleanup: ReturnType<typeof action> = action({
+  args: {
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    confirmTable: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    if (args.confirmTable !== DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE) {
+      throw new ConvexError(
+        `Refusing to schedule deprecated download dedupe cleanup without confirmTable="${DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE}"`,
+      );
+    }
+    await ctx.scheduler.runAfter(0, internal.maintenance.cleanupDeprecatedDownloadDedupesInternal, {
+      dryRun: false,
+      batchSize: args.batchSize ?? DEFAULT_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_BATCH_SIZE,
+      maxBatches: args.maxBatches ?? DEFAULT_DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_MAX_BATCHES,
+      continueOnIncomplete: true,
+      confirmTable: DEPRECATED_DOWNLOAD_DEDUPE_CLEANUP_CONFIRM_TABLE,
+    });
+    return { ok: true as const };
+  },
+});
 
 export async function backfillSkillSummariesInternalHandler(
   ctx: ActionCtx,

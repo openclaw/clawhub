@@ -35,6 +35,10 @@ vi.mock("./_generated/api", () => ({
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
       cleanupEmptySkillsInternal: Symbol("cleanupEmptySkillsInternal"),
       nominateEmptySkillSpammersInternal: Symbol("nominateEmptySkillSpammersInternal"),
+      deleteDeprecatedDownloadDedupesBatchInternal: Symbol(
+        "deleteDeprecatedDownloadDedupesBatchInternal",
+      ),
+      cleanupDeprecatedDownloadDedupesInternal: Symbol("cleanupDeprecatedDownloadDedupesInternal"),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
@@ -61,6 +65,8 @@ const {
   cleanupDeprecatedRateLimitShardsInternalHandler,
   cleanupEmptySkillsInternalHandler,
   deleteDeprecatedRateLimitShardsBatchInternalHandler,
+  cleanupDeprecatedDownloadDedupesInternalHandler,
+  deleteDeprecatedDownloadDedupesBatchInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
   upsertSkillBadgeRecordInternal,
@@ -1258,6 +1264,181 @@ describe("maintenance fingerprint backfill", () => {
     expect(result.stats.fingerprintsInserted).toBe(0);
     expect(result.stats.fingerprintMismatches).toBe(0);
     expect(runMutation).not.toHaveBeenCalled();
+  });
+});
+
+describe("maintenance deprecated download dedupe cleanup", () => {
+  it("dry-runs one indexed batch without deleting rows", async () => {
+    const rows = [
+      { _id: "downloadDedupes:1", hourStart: 100 },
+      { _id: "downloadDedupes:2", hourStart: 200 },
+    ];
+    const take = vi.fn(async (limit: number) => rows.slice(0, limit));
+    const order = vi.fn(() => ({ take }));
+    const withIndex = vi.fn(() => ({ order }));
+    const query = vi.fn(() => ({ withIndex }));
+    const deleteRow = vi.fn();
+
+    const result = await deleteDeprecatedDownloadDedupesBatchInternalHandler(
+      {
+        db: {
+          query,
+          delete: deleteRow,
+        },
+      } as never,
+      {
+        dryRun: true,
+        batchSize: 10,
+      },
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      dryRun: true,
+      scanned: 2,
+      deleted: 0,
+      isDone: true,
+      oldestHourStart: 100,
+      newestHourStart: 200,
+    });
+    expect(query).toHaveBeenCalledWith("downloadDedupes");
+    expect(withIndex).toHaveBeenCalledWith("by_hour", expect.any(Function));
+    expect(order).toHaveBeenCalledWith("asc");
+    expect(take).toHaveBeenCalledWith(10);
+    expect(deleteRow).not.toHaveBeenCalled();
+  });
+
+  it("requires explicit table confirmation before deleting rows", async () => {
+    await expect(
+      deleteDeprecatedDownloadDedupesBatchInternalHandler(
+        {
+          db: {
+            query: vi.fn(),
+            delete: vi.fn(),
+          },
+        } as never,
+        {
+          dryRun: false,
+          batchSize: 10,
+        },
+      ),
+    ).rejects.toThrow('confirmTable="downloadDedupes"');
+  });
+
+  it("deletes a confirmed indexed batch", async () => {
+    const rows = [
+      { _id: "downloadDedupes:1", hourStart: 100 },
+      { _id: "downloadDedupes:2", hourStart: 100 },
+    ];
+    const take = vi.fn(async (limit: number) => rows.slice(0, limit));
+    const order = vi.fn(() => ({ take }));
+    const withIndex = vi.fn(() => ({ order }));
+    const query = vi.fn(() => ({ withIndex }));
+    const deleteRow = vi.fn();
+
+    const result = await deleteDeprecatedDownloadDedupesBatchInternalHandler(
+      {
+        db: {
+          query,
+          delete: deleteRow,
+        },
+      } as never,
+      {
+        dryRun: false,
+        batchSize: 2,
+        confirmTable: "downloadDedupes",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      scanned: 2,
+      deleted: 2,
+      isDone: false,
+      oldestHourStart: 100,
+      newestHourStart: 100,
+    });
+    expect(deleteRow).toHaveBeenCalledTimes(2);
+    expect(deleteRow).toHaveBeenNthCalledWith(1, "downloadDedupes:1");
+    expect(deleteRow).toHaveBeenNthCalledWith(2, "downloadDedupes:2");
+  });
+
+  it("runs exactly one dry-run batch even when maxBatches is larger", async () => {
+    const runMutation = vi.fn(async () => ({
+      ok: true,
+      dryRun: true,
+      scanned: 1_000,
+      deleted: 0,
+      isDone: false,
+      oldestHourStart: 100,
+      newestHourStart: 200,
+    }));
+
+    const result = await cleanupDeprecatedDownloadDedupesInternalHandler(
+      { runMutation, scheduler: { runAfter: vi.fn() } } as never,
+      { dryRun: true, batchSize: 1_000, maxBatches: 50 },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      batchSize: 1_000,
+      maxBatches: 1,
+      batches: 1,
+      scanned: 1_000,
+      deleted: 0,
+      isDone: false,
+      scheduledNext: false,
+    });
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
+  it("schedules a continuation when requested and the cleanup is incomplete", async () => {
+    const runMutation = vi.fn(async () => ({
+      ok: true,
+      dryRun: false,
+      scanned: 1_000,
+      deleted: 1_000,
+      isDone: false,
+      oldestHourStart: 100,
+      newestHourStart: 200,
+    }));
+    const runAfter = vi.fn();
+
+    const result = await cleanupDeprecatedDownloadDedupesInternalHandler(
+      { runMutation, scheduler: { runAfter } } as never,
+      {
+        dryRun: false,
+        batchSize: 1_000,
+        maxBatches: 1,
+        continueOnIncomplete: true,
+        confirmTable: "downloadDedupes",
+      },
+    );
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      batchSize: 1_000,
+      maxBatches: 1,
+      batches: 1,
+      scanned: 1_000,
+      deleted: 1_000,
+      isDone: false,
+      scheduledNext: true,
+    });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      internal.maintenance.cleanupDeprecatedDownloadDedupesInternal,
+      {
+        dryRun: false,
+        batchSize: 1_000,
+        maxBatches: 1,
+        continueOnIncomplete: true,
+        confirmTable: "downloadDedupes",
+      },
+    );
   });
 });
 
