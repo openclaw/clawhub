@@ -5578,19 +5578,34 @@ async function listSkillTopicFilteredPage(
     excludeSkillIds?: Set<string>;
   },
 ): Promise<PublicSkillListPage> {
-  const indexName = opts.nonSuspiciousOnly
-    ? NONSUSPICIOUS_TOPIC_SORT_INDEXES[opts.sort]
-    : TOPIC_SORT_INDEXES[opts.sort];
   const eqPrefix: IndexKey = opts.nonSuspiciousOnly
     ? [undefined, false, opts.topic]
     : [undefined, opts.topic];
-  const decodedCursor = decodePublicListCursor({
-    cursor: opts.cursor,
-    indexName,
-    maxIndexKeyLength: eqPrefix.length + 2,
-    eqPrefix,
-    allowLegacyArray: false,
-  });
+  const getTopicIndexName = (sort: PublicListSort) =>
+    opts.nonSuspiciousOnly ? NONSUSPICIOUS_TOPIC_SORT_INDEXES[sort] : TOPIC_SORT_INDEXES[sort];
+  const decodeTopicCursor = (sort: PublicListSort) =>
+    decodePublicListCursor({
+      cursor: opts.cursor,
+      indexName: getTopicIndexName(sort),
+      maxIndexKeyLength: eqPrefix.length + (sort === "updated" ? 1 : 2),
+      eqPrefix,
+      allowLegacyArray: false,
+    });
+  const recommendedCursor = opts.sort === "recommended" ? decodeTopicCursor("recommended") : null;
+  const updatedCursor = opts.sort === "recommended" ? decodeTopicCursor("updated") : null;
+  const useUpdatedRecommendationFallback =
+    opts.sort === "recommended" &&
+    (Boolean(updatedCursor) ||
+      (!recommendedCursor &&
+        (await hasMissingRecommendedScores(ctx, opts.nonSuspiciousOnly, null))));
+  const sort = useUpdatedRecommendationFallback ? "updated" : opts.sort;
+  const indexName = getTopicIndexName(sort);
+  const decodedCursor =
+    opts.sort === "recommended"
+      ? sort === "updated"
+        ? updatedCursor
+        : recommendedCursor
+      : decodeTopicCursor(sort);
   const items: PublicSkillEntry[] = [];
   let scanCursor = decodedCursor ?? eqPrefix;
   let scanInclusive = !decodedCursor;

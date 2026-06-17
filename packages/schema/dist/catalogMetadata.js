@@ -10,6 +10,7 @@ export const RESERVED_CATALOG_TOPIC_SLUGS = [
     "trusted-publisher",
     "verified",
 ];
+const CATALOG_TOPIC_FORMAT_CONTROL_RE = /\p{Cf}/u;
 export const PLUGIN_CATEGORY_DEFINITIONS = [
     {
         slug: "channels",
@@ -283,6 +284,9 @@ export function normalizeCatalogTopics(values) {
     const seenSlugs = new Set();
     const reservedSlugs = new Set(RESERVED_CATALOG_TOPIC_SLUGS);
     for (const rawValue of values ?? []) {
+        if (CATALOG_TOPIC_FORMAT_CONTROL_RE.test(rawValue)) {
+            throw new Error("Topics cannot include invisible format controls");
+        }
         const label = rawValue.normalize("NFKC").trim().replace(/\s+/g, " ");
         if (!label)
             continue;

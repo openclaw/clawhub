@@ -198,31 +198,47 @@ function makeOfficialFirstCategoryCtx(curatedDigests: Array<ReturnType<typeof ma
   };
 }
 
-function makeTopicFilteredCtx(digests: Array<ReturnType<typeof makeSearchDigest>>) {
+function makeTopicFilteredCtx(
+  digests: Array<ReturnType<typeof makeSearchDigest>>,
+  options: { missingRecommendedScores?: boolean } = {},
+) {
   const digestsBySkillId = new Map(digests.map((digest) => [digest.skillId, digest]));
+  const withIndex = vi.fn(
+    (
+      indexName: string,
+      builder: (q: {
+        eq: (field: string, value: unknown) => unknown;
+        lt: (field: string, value: unknown) => unknown;
+      }) => unknown,
+    ) => {
+      let skillId = "";
+      const queryBuilder = {
+        eq: (field: string, value: unknown) => {
+          if (field === "skillId") skillId = String(value);
+          return queryBuilder;
+        },
+        lt: () => queryBuilder,
+      };
+      builder(queryBuilder);
+      return {
+        first: vi
+          .fn()
+          .mockResolvedValue(
+            options.missingRecommendedScores && indexName.includes("recommended_score")
+              ? makeSearchDigest({ recommendedScore: undefined })
+              : null,
+          ),
+        unique: vi.fn().mockResolvedValue(digestsBySkillId.get(skillId) ?? null),
+      };
+    },
+  );
   return {
+    withIndex,
     db: {
       query: vi.fn((table: string) => {
         if (table !== "skillSearchDigest") throw new Error(`Unexpected table: ${table}`);
         return {
-          withIndex: vi.fn(
-            (
-              _indexName: string,
-              builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-            ) => {
-              let skillId = "";
-              const queryBuilder = {
-                eq: (_field: string, value: string) => {
-                  skillId = value;
-                  return queryBuilder;
-                },
-              };
-              builder(queryBuilder);
-              return {
-                unique: vi.fn().mockResolvedValue(digestsBySkillId.get(skillId) ?? null),
-              };
-            },
-          ),
+          withIndex,
         };
       }),
     },
@@ -355,6 +371,80 @@ describe("public skill list deterministic cursors", () => {
       index: "by_active_topic_downloads",
       startIndexKey: [undefined, "calendar"],
       endIndexKey: [undefined, "calendar"],
+    });
+  });
+
+  it("keeps topic recommendation fallback cursors on the updated index", async () => {
+    const firstDigest = makeSearchDigest({
+      skillId: "skills:calendar-one",
+      slug: "calendar-one",
+      topics: ["Calendar"],
+      updatedAt: 10,
+    });
+    const secondDigest = makeSearchDigest({
+      skillId: "skills:calendar-two",
+      slug: "calendar-two",
+      topics: ["Calendar"],
+      updatedAt: 9,
+    });
+    const firstIndexKey = [
+      undefined,
+      "calendar",
+      firstDigest.updatedAt,
+      "skillTopicSearchDigest:calendar-one",
+    ];
+    getPageMock
+      .mockResolvedValueOnce({
+        page: [
+          {
+            skillId: firstDigest.skillId,
+            topic: "calendar",
+            updatedAt: firstDigest.updatedAt,
+          },
+        ],
+        hasMore: true,
+        indexKeys: [firstIndexKey],
+      })
+      .mockResolvedValueOnce({
+        page: [
+          {
+            skillId: secondDigest.skillId,
+            topic: "calendar",
+            updatedAt: secondDigest.updatedAt,
+          },
+        ],
+        hasMore: false,
+        indexKeys: [
+          [undefined, "calendar", secondDigest.updatedAt, "skillTopicSearchDigest:calendar-two"],
+        ],
+      });
+    const ctx = makeTopicFilteredCtx([firstDigest, secondDigest], {
+      missingRecommendedScores: true,
+    }) as never;
+
+    const first = await listPublicPageV4Handler(ctx, {
+      topic: "calendar",
+      sort: "recommended",
+      numItems: 1,
+    });
+    const second = await listPublicPageV4Handler(ctx, {
+      cursor: first.nextCursor!,
+      topic: "calendar",
+      sort: "recommended",
+      numItems: 1,
+    });
+
+    expect(first.nextCursor).not.toBeNull();
+    expect(second.nextCursor).toBeNull();
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      index: "by_active_topic_updated",
+      startIndexKey: [undefined, "calendar"],
+      startInclusive: true,
+    });
+    expect(getPageMock.mock.calls[1]?.[1]).toMatchObject({
+      index: "by_active_topic_updated",
+      startIndexKey: firstIndexKey,
+      startInclusive: false,
     });
   });
 
