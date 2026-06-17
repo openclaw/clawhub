@@ -1,4 +1,10 @@
-import { normalizeTextContentType } from "clawhub-schema";
+import {
+  inferSkillCategories,
+  normalizeCatalogTopics,
+  normalizeSkillCategories,
+  normalizeTextContentType,
+  resolveSkillCategories,
+} from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
@@ -60,6 +66,8 @@ export type PublishVersionArgs = {
   version: string;
   changelog: string;
   tags?: string[];
+  categories?: string[];
+  topics?: string[];
   forkOf?: { slug: string; version?: string };
   source?: {
     kind: "github";
@@ -265,6 +273,18 @@ export async function publishVersionForUser(
   const otherFiles = fileContents
     .filter((file) => !file.path.toLowerCase().endsWith(".md"))
     .slice(0, MAX_FILES_FOR_EMBEDDING);
+  const catalogMetadata = parseCatalogMetadataFile(fileContents);
+  let categories: string[];
+  let topics: string[];
+  try {
+    categories = resolveSkillCategories({
+      declared: args.categories ?? catalogMetadata.categories ?? existingSkill?.categories,
+      inferred: inferSkillCategories({ slug, displayName, summary }),
+    });
+    topics = normalizeCatalogTopics(args.topics ?? catalogMetadata.topics ?? existingSkill?.topics);
+  } catch (error) {
+    throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
+  }
 
   const staticScan = await runStaticPublishScan(ctx, {
     slug,
@@ -316,6 +336,8 @@ export async function publishVersionForUser(
     changelogSource,
     sourceProvenance: options.sourceProvenance,
     tags: args.tags?.map((tag) => tag.trim()).filter(Boolean),
+    categories,
+    topics: topics.length ? topics : undefined,
     fingerprint,
     forkOf: args.forkOf
       ? {
@@ -411,6 +433,40 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
 }
 
+function parseCatalogMetadataFile(fileContents: Array<{ path: string; content: string }>): {
+  categories?: string[];
+  topics?: string[];
+} {
+  const entry = fileContents.find((file) => file.path.toLowerCase() === "metadata.openclaw.json");
+  if (!entry) return {};
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(entry.content);
+  } catch {
+    throw new ConvexError("metadata.openclaw.json must contain valid JSON");
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    throw new ConvexError("metadata.openclaw.json must contain an object");
+  }
+  const metadata = parsed as Record<string, unknown>;
+  const categories = Object.hasOwn(metadata, "categories")
+    ? normalizeSkillCategories(readCatalogStringArray(metadata, "categories"))
+    : undefined;
+  const topics = Object.hasOwn(metadata, "topics")
+    ? normalizeCatalogTopics(readCatalogStringArray(metadata, "topics"))
+    : undefined;
+  return { categories, topics };
+}
+
+function readCatalogStringArray(metadata: Record<string, unknown>, field: "categories" | "topics") {
+  const value = metadata[field];
+  if (!Array.isArray(value) || value.some((entry) => typeof entry !== "string")) {
+    throw new ConvexError(`metadata.openclaw.json "${field}" must be an array of strings`);
+  }
+  return value as string[];
+}
+
 function shouldPublishVersionBecomeLatest(version: string, previousLatestVersion?: string) {
   return (
     !previousLatestVersion ||
@@ -462,6 +518,7 @@ async function buildPublishSourceFingerprint(files: FingerprintFile[]) {
 
 export const __test = {
   buildPublishSourceFingerprint,
+  parseCatalogMetadataFile,
   mergeSourceIntoMetadata,
   computeQualitySignals,
   evaluateQuality,

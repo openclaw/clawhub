@@ -24,7 +24,11 @@ import {
   adjustPublisherStatsForPackageChange,
   adjustPublisherStatsForSkillChange,
 } from "./lib/publisherStats";
-import { extractValidatedDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
+import {
+  deleteSkillSearchDigests,
+  extractValidatedDigestFields,
+  upsertSkillSearchDigest,
+} from "./lib/skillSearchDigest";
 
 const triggers = new Triggers<DataModel>();
 
@@ -411,11 +415,7 @@ triggers.register("skills", async (ctx, change) => {
     change.operation === "delete" ? null : change.newDoc,
   );
   if (change.operation === "delete") {
-    const existing = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_skill", (q) => q.eq("skillId", change.id))
-      .unique();
-    if (existing) await ctx.db.delete(existing._id);
+    await deleteSkillSearchDigests(ctx, change.id);
   } else {
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }

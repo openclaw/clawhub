@@ -406,6 +406,8 @@ type PackageListQueryArgs = {
   isOfficial?: boolean;
   highlightedOnly?: boolean;
   category?: string;
+  topic?: string;
+  officialFirst?: boolean;
   sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
@@ -1037,6 +1039,7 @@ async function searchPackageCatalog(
     isOfficial?: boolean;
     highlightedOnly?: boolean;
     category?: string;
+    topic?: string;
     viewerUserId?: Id<"users">;
   },
 ): Promise<CatalogSearchEntry[]> {
@@ -1051,6 +1054,7 @@ async function searchPackageCatalog(
       isOfficial: args.isOfficial,
       highlightedOnly: args.highlightedOnly,
       category: args.category,
+      topic: args.topic,
       viewerUserId: args.viewerUserId,
     },
   );
@@ -1439,6 +1443,9 @@ async function listPackages(
   const nextCursor = (value: string | null) =>
     isLegacyDownloadsSort && value ? `${LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX}${value}` : value;
   const category = url.searchParams.get("category")?.trim() || undefined;
+  const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
+  const officialFirst = parseBooleanQueryParam(url.searchParams, "officialFirst");
+  if (!officialFirst.ok) return text(officialFirst.message, 400, rate.headers);
   if (category && !isPluginCategorySlug(category)) {
     return text("Invalid plugin category", 400, rate.headers);
   }
@@ -1462,6 +1469,7 @@ async function listPackages(
       channel: channelParam.value,
       isOfficial: isOfficial.value,
       highlightedOnly: highlightedOnly || undefined,
+      topic,
       sort,
       paginationOpts: { cursor, numItems: limit },
     });
@@ -1494,6 +1502,8 @@ async function listPackages(
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
             category,
+            topic,
+            officialFirst: officialFirst.value,
             sort,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
@@ -1513,6 +1523,7 @@ async function listPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
+            topic,
             sort,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1561,6 +1572,7 @@ async function listPackages(
     const includeTotalCount =
       !includeSkills &&
       !category &&
+      !topic &&
       !channelParam.value &&
       typeof isOfficial.value !== "boolean" &&
       !highlightedOnly;
@@ -1602,6 +1614,8 @@ async function listPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
+        officialFirst: officialFirst.value,
         sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
@@ -1631,8 +1645,14 @@ async function listPackages(
       if (
         !bundlePluginCandidate ||
         (codePluginCandidate &&
-          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, pluginListSort) <=
-            0)
+          ((officialFirst.value
+            ? Number(bundlePluginCandidate.isOfficial) - Number(codePluginCandidate.isOfficial)
+            : 0) ||
+            compareCatalogItemsForSort(
+              codePluginCandidate,
+              bundlePluginCandidate,
+              pluginListSort,
+            )) <= 0)
       ) {
         items.push(codePluginCandidate!);
         codePluginSource.index += 1;
@@ -1673,6 +1693,8 @@ async function listPackages(
     isOfficial: isOfficial.value,
     highlightedOnly: highlightedOnly || undefined,
     category,
+    topic,
+    officialFirst: officialFirst.value,
     sort,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
@@ -3016,6 +3038,7 @@ async function searchPackages(
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
   const highlightedOnly = featured.value === true || highlightedOnlyParam.value === true;
   const category = url.searchParams.get("category")?.trim() || undefined;
+  const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
   if (category && !isPluginCategorySlug(category)) {
     return text("Invalid plugin category", 400, rate.headers);
   }
@@ -3040,6 +3063,7 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
+        topic,
       },
     );
   } else if (family || !includeSkills) {
@@ -3054,6 +3078,7 @@ async function searchPackages(
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
             category,
+            topic,
             viewerUserId: viewerUserId ?? undefined,
           }),
         ),
@@ -3078,6 +3103,7 @@ async function searchPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
         viewerUserId: viewerUserId ?? undefined,
       });
     }
@@ -3090,6 +3116,7 @@ async function searchPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
         viewerUserId: viewerUserId ?? undefined,
       }),
       runQueryRef<CatalogSearchEntry[]>(
@@ -3101,6 +3128,7 @@ async function searchPackages(
           channel: channelParam.value,
           isOfficial: isOfficial.value,
           highlightedOnly: highlightedOnly || undefined,
+          topic,
         },
       ),
     ]);

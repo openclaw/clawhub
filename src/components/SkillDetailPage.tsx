@@ -192,6 +192,7 @@ export function SkillDetailPage({
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
   const updateSummary = useMutation(api.skills.updateSummary);
+  const setCatalogMetadata = useMutation(api.skills.setCatalogMetadata);
   const getReadme = useAction(api.skills.getReadme);
   const getSkillCard = useAction(api.skills.getSkillCard);
   const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
@@ -642,6 +643,16 @@ export function SkillDetailPage({
     }
   };
 
+  const submitCatalogMetadata = async (value: { categories?: string[]; topics: string[] }) => {
+    if (!skill) return;
+    await setCatalogMetadata({
+      skillId: skill._id,
+      categories: value.categories,
+      topics: value.topics,
+    });
+    toast.success("Catalog metadata updated.");
+  };
+
   const submitReport = async () => {
     if (!skill) return;
 
@@ -760,6 +771,9 @@ export function SkillDetailPage({
         ownedSkills={(ownedSkills ?? []).filter((entry) => entry._id !== skill._id)}
         summary={skill.summary ?? ""}
         onSaveSummary={canAccessSettings ? submitSummary : null}
+        categories={skill.categories}
+        topics={skill.topics}
+        onSaveCatalogMetadata={canAccessSettings ? submitCatalogMetadata : null}
         canDeleteSkill={canDeleteSkillFromSettings}
       />
     ) : null;

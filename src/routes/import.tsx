@@ -3,6 +3,10 @@ import { useAction, useQuery } from "convex/react";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
+import {
+  CatalogMetadataFields,
+  parseCatalogTopicsInput,
+} from "../components/CatalogMetadataFields";
 import { Container } from "../components/layout/Container";
 import { SignInPrompt } from "../components/SignInPrompt";
 import { ImportGitHubSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
@@ -67,6 +71,8 @@ export function ImportGitHub() {
   const [displayName, setDisplayName] = useState("");
   const [version, setVersion] = useState("0.1.0");
   const [tags, setTags] = useState("latest");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [topics, setTopics] = useState("");
 
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -204,6 +210,8 @@ export function ImportGitHub() {
         displayName: displayName.trim(),
         version: version.trim(),
         tags: tagList,
+        ...(categories.length ? { categories } : {}),
+        ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
       });
       const nextSlug = result.slug;
       setStatus("Imported.");
@@ -410,6 +418,16 @@ export function ImportGitHub() {
                         spellCheck={false}
                       />
                     </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <CatalogMetadataFields
+                      kind="skill"
+                      categories={categories}
+                      topics={topics}
+                      disabled={isBusy}
+                      onCategoriesChange={setCategories}
+                      onTopicsChange={setTopics}
+                    />
                   </div>
                 </div>
                 <aside className="flex flex-col gap-1 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-4 py-3">

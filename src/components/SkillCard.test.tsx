@@ -26,9 +26,22 @@ describe("SkillCard", () => {
     expect(screen.queryByText("Official")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
+
+  it("renders author topics", () => {
+    render(
+      <SkillCard
+        skill={makeSkill({ topics: ["google-calendar", "productivity"] })}
+        summaryFallback="Fallback summary"
+        meta={<span>meta</span>}
+      />,
+    );
+
+    expect(screen.getByText("google-calendar")).toBeTruthy();
+    expect(screen.getByText("productivity")).toBeTruthy();
+  });
 });
 
-function makeSkill(): PublicSkill {
+function makeSkill(overrides: Partial<PublicSkill> = {}): PublicSkill {
   return {
     _id: "skills:demo" as Id<"skills">,
     _creationTime: 1,
@@ -54,5 +67,6 @@ function makeSkill(): PublicSkill {
     isSuspicious: false,
     createdAt: 1,
     updatedAt: 1,
+    ...overrides,
   };
 }

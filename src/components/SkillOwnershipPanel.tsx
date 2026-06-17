@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { CatalogMetadataEditor } from "./CatalogMetadataEditor";
 import { SettingsActionRow } from "./settings/SettingsActionRow";
 import { Button } from "./ui/button";
 import {
@@ -34,6 +35,11 @@ type SkillOwnershipPanelProps = {
   ownedSkills: OwnedSkillOption[];
   summary?: string | null;
   onSaveSummary?: ((summary: string) => Promise<void>) | null;
+  categories?: string[] | null;
+  topics?: string[] | null;
+  onSaveCatalogMetadata?:
+    | ((value: { categories?: string[]; topics: string[] }) => Promise<void>)
+    | null;
   canDeleteSkill: boolean;
 };
 
@@ -103,6 +109,9 @@ export function SkillOwnershipPanel({
   ownedSkills,
   summary,
   onSaveSummary,
+  categories,
+  topics,
+  onSaveCatalogMetadata,
   canDeleteSkill,
 }: SkillOwnershipPanelProps) {
   const navigate = useNavigate();
@@ -208,6 +217,20 @@ export function SkillOwnershipPanel({
         >
           {onSaveSummary ? (
             <SummarySettingsEditor summary={summary} onSaveSummary={onSaveSummary} />
+          ) : null}
+        </SettingsActionRow>
+
+        <SettingsActionRow
+          title="Catalog metadata"
+          description="Choose browse categories and author topics for this skill."
+        >
+          {onSaveCatalogMetadata ? (
+            <CatalogMetadataEditor
+              kind="skill"
+              categories={categories}
+              topics={topics}
+              onSave={onSaveCatalogMetadata}
+            />
           ) : null}
         </SettingsActionRow>
 

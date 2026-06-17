@@ -90,6 +90,8 @@ export const CliPublishRequestSchema = type({
   changelog: "string",
   acceptLicenseTerms: "boolean?",
   tags: "string[]?",
+  categories: "string[]?",
+  topics: "string[]?",
   source: PublishSourceSchema.optional(),
   forkOf: type({
     slug: "string",

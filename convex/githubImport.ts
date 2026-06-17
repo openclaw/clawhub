@@ -128,6 +128,8 @@ export const importGitHubSkill = action({
     displayName: v.optional(v.string()),
     version: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
+    categories: v.optional(v.array(v.string())),
+    topics: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUserFromAction(ctx);
@@ -240,6 +242,8 @@ export const importGitHubSkill = action({
           version,
           changelog: "",
           tags,
+          categories: args.categories,
+          topics: args.topics,
           files: storedFiles,
           source: sourceProvenance,
         },

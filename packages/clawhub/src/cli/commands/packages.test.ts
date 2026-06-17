@@ -1213,6 +1213,8 @@ describe("package commands", () => {
         sourceRepo: "openclaw/demo-plugin",
         sourceCommit: "abc123",
         sourceRef: "refs/tags/v1.0.0",
+        categories: "tools, runtime",
+        topics: "GitHub Actions, CI",
       } as Parameters<typeof cmdPublishPackage>[2];
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", options);
@@ -1225,6 +1227,8 @@ describe("package commands", () => {
         version: "1.0.0",
         changelog: "",
         tags: ["latest"],
+        categories: ["tools", "runtime"],
+        topics: ["GitHub Actions", "CI"],
         source: {
           kind: "github",
           url: "https://github.com/openclaw/demo-plugin",

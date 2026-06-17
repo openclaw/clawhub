@@ -26,9 +26,16 @@ describe("PluginListItem", () => {
     expect(screen.queryByText("Official")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
+
+  it("renders author topics", () => {
+    render(<PluginListItem item={makePlugin({ topics: ["local-models", "inference"] })} />);
+
+    expect(screen.getByText("local-models")).toBeTruthy();
+    expect(screen.getByText("inference")).toBeTruthy();
+  });
 });
 
-function makePlugin(): PackageListItem {
+function makePlugin(overrides: Partial<PackageListItem> = {}): PackageListItem {
   return {
     name: "demo-plugin",
     displayName: "Demo Plugin",
@@ -40,5 +47,6 @@ function makePlugin(): PackageListItem {
     createdAt: 1,
     updatedAt: 1,
     latestVersion: "1.0.0",
+    ...overrides,
   };
 }

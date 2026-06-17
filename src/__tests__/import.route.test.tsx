@@ -107,6 +107,27 @@ describe("Import route", () => {
     expect(screen.queryByText(/sign in to import/i)).toBeNull();
   });
 
+  it("omits blank topics so metadata.openclaw.json can supply them", async () => {
+    importSkill.mockResolvedValue({ slug: "taken-skill" });
+    render(<ImportGitHub />);
+    fireEvent.change(screen.getByPlaceholderText("https://github.com/owner/repo"), {
+      target: { value: "https://github.com/octo/repo" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /detect/i }));
+
+    const importButton = await screen.findByRole("button", { name: /import \+ publish/i });
+    await waitFor(() => {
+      expect(importButton.getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.click(importButton);
+
+    await waitFor(() => {
+      expect(importSkill).toHaveBeenCalled();
+    });
+    const args = importSkill.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(Object.hasOwn(args, "topics")).toBe(false);
+  });
+
   it("blocks import preflight when slug availability reports a collision", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;

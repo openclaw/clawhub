@@ -7948,13 +7948,13 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it("packages list supports family=skill on the generic route", async () => {
+  it("packages list supports family=skill and topics on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages?family=skill&limit=7"),
+      new Request("https://example.com/api/v1/packages?family=skill&limit=7&topic=calendar"),
     );
 
     expect(response.status).toBe(200);
@@ -7962,7 +7962,26 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         paginationOpts: { cursor: null, numItems: 7 },
+        topic: "calendar",
       }),
+    );
+  });
+
+  it("packages list forwards topics to both unified catalog sources", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?limit=7&topic=calendar"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery.mock.calls.map(([, args]) => args)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ topic: "calendar" }),
+        expect.objectContaining({ topic: "calendar" }),
+      ]),
     );
   });
 
@@ -7996,7 +8015,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPackagesV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages?family=code-plugin&category=data&limit=7"),
+      new Request("https://example.com/api/v1/packages?family=code-plugin&category=tools&limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -8004,7 +8023,7 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         family: "code-plugin",
-        category: "data",
+        category: "tools",
         paginationOpts: { cursor: null, numItems: 7 },
       }),
     );
@@ -8073,6 +8092,32 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("plugins list omits the global total count for topic-filtered results", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        throw new Error("global count must not be queried for topic filters");
+      }
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        return false;
+      }
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?topic=calendar&limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json).not.toHaveProperty("totalCount");
+    for (const [, args] of runQuery.mock.calls) {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
+      expect(args).toEqual(expect.objectContaining({ topic: "calendar" }));
+    }
+  });
+
   it("plugins list forwards category to both plugin families", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) {
@@ -8084,7 +8129,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPluginsV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?category=data&limit=7"),
+      new Request("https://example.com/api/v1/plugins?category=tools&limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -8092,7 +8137,7 @@ describe("httpApiV1 handlers", () => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
       expect(args).toEqual(
         expect.objectContaining({
-          category: "data",
+          category: "tools",
           paginationOpts: { cursor: null, numItems: 7 },
         }),
       );
@@ -8369,7 +8414,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPluginsV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?category=other"),
+      new Request("https://example.com/api/v1/plugins?category=not-a-category"),
     );
 
     expect(response.status).toBe(400);
@@ -8506,13 +8551,13 @@ describe("httpApiV1 handlers", () => {
     expect(cursors).toEqual(cursors.map(() => null));
   });
 
-  it("packages search supports family=skill on the generic route", async () => {
+  it("packages search supports family=skill and topics on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages/search?q=demo&family=skill"),
+      new Request("https://example.com/api/v1/packages/search?q=demo&family=skill&topic=calendar"),
     );
 
     expect(response.status).toBe(200);
@@ -8520,7 +8565,26 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         query: "demo",
+        topic: "calendar",
       }),
+    );
+  });
+
+  it("packages search forwards topics to both unified catalog sources", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/search?q=demo&topic=calendar"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery.mock.calls.map(([, args]) => args)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ query: "demo", topic: "calendar" }),
+        expect.objectContaining({ query: "demo", topic: "calendar" }),
+      ]),
     );
   });
 
@@ -8531,7 +8595,7 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/packages/search?q=api&family=code-plugin&category=data",
+        "https://example.com/api/v1/packages/search?q=api&family=code-plugin&category=tools",
       ),
     );
 
@@ -8541,7 +8605,7 @@ describe("httpApiV1 handlers", () => {
       expect.objectContaining({
         query: "api",
         family: "code-plugin",
-        category: "data",
+        category: "tools",
       }),
     );
   });
@@ -8586,7 +8650,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.pluginsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=weather&category=data&limit=7"),
+      new Request("https://example.com/api/v1/plugins/search?q=weather&category=tools&limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -8601,7 +8665,7 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual(
         expect.objectContaining({
           query: "weather",
-          category: "data",
+          category: "tools",
           limit: 7,
         }),
       );
@@ -8689,7 +8753,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.pluginsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=plugin&category=other"),
+      new Request("https://example.com/api/v1/plugins/search?q=plugin&category=not-a-category"),
     );
 
     expect(response.status).toBe(400);

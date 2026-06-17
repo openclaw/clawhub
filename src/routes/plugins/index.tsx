@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { isPluginCategorySlug } from "clawhub-schema";
+import { isPluginCategorySlug, normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { PackageSearch, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -25,6 +25,7 @@ const PLUGINS_PAGE_SIZE = 25;
 type PluginSearchState = {
   q?: string;
   category?: string;
+  topic?: string;
   cursor?: string;
   family?: undefined;
   featured?: boolean;
@@ -61,6 +62,7 @@ type PluginsLoaderData = {
 type PluginsPageDataRequest = {
   q?: string;
   category?: string;
+  topic?: string;
   cursor?: string;
   featured?: boolean;
   official?: boolean;
@@ -140,6 +142,8 @@ export async function loadPluginsPageData(
     const data = await fetchPluginCatalog({
       q: args.q,
       category: args.category,
+      topic: args.topic,
+      officialFirst: Boolean(args.category && !args.q),
       cursor: args.q ? undefined : args.cursor,
       featured: args.featured,
       isOfficial: args.official,
@@ -193,6 +197,7 @@ export const Route = createFileRoute("/plugins/")({
       typeof search.category === "string" && isPluginCategorySlug(search.category)
         ? search.category
         : undefined,
+    topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
     cursor:
       search.sort !== "downloads" && typeof search.cursor === "string" && search.cursor
         ? search.cursor
@@ -321,7 +326,11 @@ function PluginsIndex() {
 
   const hasQuery = Boolean(search.q?.trim());
   const hasActiveFilters =
-    hasQuery || Boolean(search.category) || Boolean(search.official) || Boolean(search.featured);
+    hasQuery ||
+    Boolean(search.category) ||
+    Boolean(search.topic) ||
+    Boolean(search.official) ||
+    Boolean(search.featured);
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalCount) : null;
 
   useEffect(() => {
@@ -334,6 +343,7 @@ function PluginsIndex() {
     void loadPluginsPageData({
       q: search.q,
       category: search.category,
+      topic: search.topic,
       cursor: search.cursor,
       featured: search.featured,
       official: search.official,
@@ -354,7 +364,15 @@ function PluginsIndex() {
         });
       });
     return () => controller.abort();
-  }, [search.category, search.cursor, search.featured, search.official, search.q, search.sort]);
+  }, [
+    search.category,
+    search.cursor,
+    search.featured,
+    search.official,
+    search.q,
+    search.sort,
+    search.topic,
+  ]);
 
   const activeCategory = search.category;
 
@@ -362,10 +380,24 @@ function PluginsIndex() {
     search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
       ? "recommended"
       : (search.sort ?? "recommended");
-  const visibleItems = useMemo(
-    () => (hasQuery ? sortPluginSearchItems(items, activeSort) : items),
-    [activeSort, hasQuery, items],
-  );
+  const visibleItems = useMemo(() => {
+    return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
+  }, [activeSort, hasQuery, items]);
+  const availableTopics = useMemo(() => {
+    const topics = new Map<string, { label: string; count: number }>();
+    for (const item of items) {
+      for (const label of item.topics ?? []) {
+        const slug = normalizeCatalogTopic(label);
+        if (!slug) continue;
+        const current = topics.get(slug);
+        topics.set(slug, { label: current?.label ?? label, count: (current?.count ?? 0) + 1 });
+      }
+    }
+    return [...topics.entries()]
+      .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
+      .slice(0, 8)
+      .map(([slug, value]) => ({ slug, label: value.label }));
+  }, [items]);
 
   const handleFilterToggle = (key: string) => {
     if (key === "official") {
@@ -409,8 +441,20 @@ function PluginsIndex() {
         cursor: undefined,
         family: undefined,
         category,
+        topic: undefined,
         featured: undefined,
         sort: undefined,
+      }),
+      replace: true,
+    });
+  };
+
+  const handleTopicChange = (topic: string | undefined) => {
+    void navigate({
+      search: (prev: PluginSearchState) => ({
+        ...prev,
+        cursor: undefined,
+        topic,
       }),
       replace: true,
     });
@@ -549,6 +593,25 @@ function PluginsIndex() {
           onSortChange={handleSortChange}
           filters={[{ key: "official", label: "Official only", active: search.official ?? false }]}
           onFilterToggle={handleFilterToggle}
+          radioGroups={
+            availableTopics.length
+              ? [
+                  {
+                    title: "Topics",
+                    ariaLabel: "Topic filter",
+                    activeValue: search.topic,
+                    onChange: handleTopicChange,
+                    options: [
+                      { value: undefined, label: "All topics" },
+                      ...availableTopics.map((topic) => ({
+                        value: topic.slug,
+                        label: topic.label,
+                      })),
+                    ],
+                  },
+                ]
+              : []
+          }
         />
         <div className="browse-results">
           {isLoading ? (

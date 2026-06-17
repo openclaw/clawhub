@@ -1,157 +1,82 @@
-export const PLUGIN_CATEGORY_DEFINITIONS = [
-    {
-        slug: "channels",
-        label: "Channels & Communication",
-        icon: "message-circle",
-        signals: [
-            "channel",
-            "chat",
-            "message",
-            "messaging",
-            "communication",
-            "voice",
-            "call",
-            "discord",
-            "slack",
-            "teams",
-            "telegram",
-            "whatsapp",
-            "wechat",
-            "wecom",
-            "qq",
-            "sms",
-            "email",
-        ],
-    },
-    {
-        slug: "mcp-tooling",
-        label: "MCP & Tooling",
-        icon: "plug",
-        signals: ["mcp", "server", "protocol", "provider", "harness", "adapter"],
-    },
-    {
-        slug: "data",
-        label: "Data & APIs",
-        icon: "database",
-        signals: [
-            "api",
-            "data",
-            "database",
-            "db",
-            "fetch",
-            "http",
-            "rest",
-            "graphql",
-            "source",
-            "memory",
-            "storage",
-            "cache",
-            "vector",
-        ],
-    },
-    {
-        slug: "security",
-        label: "Security",
-        icon: "shield",
-        signals: [
-            "security",
-            "scan",
-            "auth",
-            "oauth",
-            "encrypt",
-            "guardrail",
-            "policy",
-            "secret",
-            "permission",
-            "credential",
-        ],
-    },
-    {
-        slug: "observability",
-        label: "Observability",
-        icon: "activity",
-        signals: [
-            "observability",
-            "log",
-            "trace",
-            "monitor",
-            "metric",
-            "telemetry",
-            "diagnostic",
-            "exporter",
-            "prometheus",
-            "otel",
-        ],
-    },
-    {
-        slug: "automation",
-        label: "Automation",
-        icon: "zap",
-        signals: ["auto", "automation", "cron", "schedule", "bot", "workflow", "pipeline", "approval"],
-    },
-    {
-        slug: "deployment",
-        label: "Deployment",
-        icon: "rocket",
-        signals: [
-            "deploy",
-            "deployment",
-            "release",
-            "publish",
-            "ci",
-            "cd",
-            "infrastructure",
-            "gateway",
-            "load-balanced",
-            "hosting",
-        ],
-    },
-    {
-        slug: "dev-tools",
-        label: "Developer Tools",
-        icon: "wrench",
-        signals: [
-            "dev",
-            "debug",
-            "lint",
-            "test",
-            "build",
-            "tool",
-            "tools",
-            "browser",
-            "terminal",
-            "git",
-            "repo",
-            "code",
-            "sdk",
-        ],
-    },
-];
-export const PLUGIN_CATEGORY_SLUGS = PLUGIN_CATEGORY_DEFINITIONS.map((category) => category.slug);
-export const PLUGIN_CATEGORY_SLUG_SET = new Set(PLUGIN_CATEGORY_SLUGS);
-export function isPluginCategorySlug(value) {
-    return Boolean(value && PLUGIN_CATEGORY_SLUG_SET.has(value));
+import { normalizePluginCategories, resolvePluginCategories, } from "./catalogMetadata.js";
+export { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS, PLUGIN_CATEGORY_SLUGS, } from "./catalogMetadata.js";
+function isRecord(value) {
+    return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
-function normalizeCategoryText(value) {
-    return value?.trim().toLowerCase() ?? "";
+function hasValues(value) {
+    return Array.isArray(value) && value.length > 0;
 }
-function signalMatches(text, signal) {
-    const normalizedText = ` ${text.replace(/[^a-z0-9]+/g, " ")} `;
-    const normalizedSignal = ` ${signal
-        .trim()
-        .toLowerCase()
-        .replace(/[^a-z0-9]+/g, " ")} `;
-    return normalizedText.includes(normalizedSignal);
+function readValidManifestCategories(manifest) {
+    if (!isRecord(manifest) || !Object.hasOwn(manifest, "categories"))
+        return undefined;
+    if (!Array.isArray(manifest.categories) ||
+        manifest.categories.some((category) => typeof category !== "string")) {
+        return undefined;
+    }
+    try {
+        return normalizePluginCategories(manifest.categories);
+    }
+    catch {
+        // Legacy manifests may contain unrelated category values. Fall back to slot inference.
+        return undefined;
+    }
+}
+export function inferPluginCategoriesFromManifest(manifest) {
+    if (!isRecord(manifest))
+        return [];
+    const categories = [];
+    const add = (category) => {
+        if (!categories.includes(category))
+            categories.push(category);
+    };
+    const kinds = Array.isArray(manifest.kind) ? manifest.kind : [manifest.kind];
+    const contracts = isRecord(manifest.contracts) ? manifest.contracts : {};
+    if (hasValues(manifest.channels))
+        add("channels");
+    if (hasValues(manifest.providers) || hasValues(manifest.cliBackends))
+        add("models");
+    if (kinds.includes("memory") || hasValues(contracts.embeddingProviders))
+        add("memory");
+    if (kinds.includes("context-engine") || hasValues(contracts.memoryEmbeddingProviders)) {
+        add("context");
+    }
+    if (hasValues(contracts.speechProviders) ||
+        hasValues(contracts.realtimeTranscriptionProviders) ||
+        hasValues(contracts.realtimeVoiceProviders) ||
+        hasValues(contracts.transcriptSourceProviders)) {
+        add("voice");
+    }
+    if (hasValues(contracts.mediaUnderstandingProviders) ||
+        hasValues(contracts.imageGenerationProviders) ||
+        hasValues(contracts.musicGenerationProviders) ||
+        hasValues(contracts.videoGenerationProviders)) {
+        add("media");
+    }
+    if (hasValues(contracts.webFetchProviders) || hasValues(contracts.webSearchProviders)) {
+        add("web");
+    }
+    if (hasValues(contracts.tools) || hasValues(manifest.commandAliases))
+        add("tools");
+    if (hasValues(contracts.embeddedExtensionFactories) ||
+        hasValues(contracts.agentToolResultMiddleware)) {
+        add("runtime");
+    }
+    if (hasValues(contracts.gatewayMethodDispatch))
+        add("gateway");
+    if (hasValues(contracts.externalAuthProviders) || isRecord(manifest.secretProviderIntegrations)) {
+        add("security");
+    }
+    return categories.slice(0, 3);
 }
 export function derivePluginCategoryTags(input) {
     if (input.family === "skill")
         return [];
-    const text = [input.name, input.displayName, input.runtimeId, input.summary]
-        .map(normalizeCategoryText)
-        .filter(Boolean)
-        .join(" ");
-    if (!text)
-        return [];
-    return PLUGIN_CATEGORY_DEFINITIONS.filter((category) => category.signals.some((signal) => signalMatches(text, signal))).map((category) => category.slug);
+    return resolvePluginCategories({
+        declared: input.categories ?? readValidManifestCategories(input.pluginManifest),
+        inferred: input.inferredCategories ?? inferPluginCategoriesFromManifest(input.pluginManifest),
+    });
+}
+export function resolveStoredPluginCategories(input) {
+    return derivePluginCategoryTags(input);
 }
 //# sourceMappingURL=pluginCategories.js.map

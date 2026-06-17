@@ -93,6 +93,33 @@ describe("Upload route", () => {
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
 
+  it("keeps invalid legacy category metadata in automatic mode on republish", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "uncategorized-skill" });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: {
+            slug: "uncategorized-skill",
+            displayName: "Uncategorized Skill",
+            categories: ["uncategorized"],
+          },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      if (name === "publishers:listMine") return [];
+      return null;
+    });
+
+    render(<Upload />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Automatic")).toBeTruthy();
+    });
+  });
+
   it("keeps required validation quiet before submit", async () => {
     render(<Upload />);
     const publishButton = screen.getByRole("button", { name: /publish/i });
@@ -246,9 +273,10 @@ describe("Upload route", () => {
       ).toBe(true);
     });
     const args = publishVersion.mock.calls
-      .map((call) => call[0] as { files?: Array<{ path: string }> })
+      .map((call) => call[0] as Record<string, unknown> & { files?: Array<{ path: string }> })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
+    expect(Object.hasOwn(args ?? {}, "topics")).toBe(false);
   });
 
   it("blocks non-text folder uploads (png)", async () => {

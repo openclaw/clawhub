@@ -94,4 +94,48 @@ describe("user profile route", () => {
     const args = paginatedQueryMock.mock.calls.map((call) => call[1]);
     expect(args).toContainEqual(expect.objectContaining({ handle: "nvidia", sort: "downloads" }));
   });
+
+  it("groups published items by the author's first topic", async () => {
+    paginatedQueryMock.mockReturnValue({
+      loadMore: vi.fn(),
+      results: [
+        {
+          _id: "skills:gpu",
+          kind: "skill",
+          displayName: "GPU Helper",
+          summary: "GPU tasks",
+          topics: ["GPU development", "CUDA"],
+          icon: null,
+          href: "/nvidia/gpu-helper",
+          installs: 1,
+          stars: 0,
+          isOfficial: true,
+          updatedAt: 1,
+        },
+        {
+          _id: "skills:travel",
+          kind: "skill",
+          displayName: "Travel Helper",
+          summary: "Travel tasks",
+          topics: ["Travel"],
+          icon: null,
+          href: "/nvidia/travel-helper",
+          installs: 1,
+          stars: 0,
+          isOfficial: true,
+          updatedAt: 1,
+        },
+      ],
+      status: "Exhausted",
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByRole("heading", { name: "GPU development" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Travel" })).toBeTruthy();
+    expect(screen.getByText("GPU Helper")).toBeTruthy();
+    expect(screen.getByText("Travel Helper")).toBeTruthy();
+  });
 });

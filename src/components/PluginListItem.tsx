@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { PackageCheck } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
+import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 
@@ -33,6 +34,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
         <p className="skill-card-summary">
           {item.summary ?? "Plugin package for agent workflows."}
         </p>
+        <CatalogTopicList topics={item.topics} limit={3} />
         <div className="skill-card-footer">
           <div className="skill-list-item-meta plugin-card-meta">
             <span className="skill-list-item-meta-item">Plugin</span>
@@ -73,6 +75,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
         <p className="skill-list-item-summary">
           {item.summary ?? "Plugin package for agent workflows."}
         </p>
+        <CatalogTopicList topics={item.topics} />
         <div className="skill-list-item-meta">
           <span className="skill-list-item-meta-item">Plugin</span>
           {item.latestVersion ? (

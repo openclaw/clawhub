@@ -1,3 +1,4 @@
+import { getCatalogTopicSlugs } from "clawhub-schema";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
@@ -33,6 +34,8 @@ const SHARED_KEYS = [
   "githubScanStatus",
   "latestVersionSummary",
   "tags",
+  "categories",
+  "topics",
   "badges",
   "stats",
   "statsDownloads",
@@ -141,10 +144,73 @@ export async function upsertSkillSearchDigest(
     .withIndex("by_skill", (q) => q.eq("skillId", fields.skillId))
     .unique();
   if (existing) {
-    if (!hasDigestChanged(existing, fields)) return;
-    await ctx.db.patch(existing._id, fields);
+    if (hasDigestChanged(existing, fields)) {
+      await ctx.db.patch(existing._id, fields);
+    }
   } else {
     await ctx.db.insert("skillSearchDigest", fields);
+  }
+  if ((existing?.topics?.length ?? 0) > 0 || (fields.topics?.length ?? 0) > 0) {
+    await syncSkillTopicSearchDigests(ctx, fields);
+  }
+}
+
+async function syncSkillTopicSearchDigests(
+  ctx: Pick<MutationCtx, "db">,
+  fields: SkillSearchDigestFields,
+) {
+  const existing = await ctx.db
+    .query("skillTopicSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", fields.skillId))
+    .collect();
+  const nextByTopic = new Map(
+    getCatalogTopicSlugs(fields.topics).map((topic) => [
+      topic,
+      {
+        skillId: fields.skillId,
+        topic,
+        softDeletedAt: fields.softDeletedAt,
+        isSuspicious: fields.isSuspicious,
+        normalizedDisplayName: fields.normalizedDisplayName,
+        statsDownloads: fields.statsDownloads,
+        statsStars: fields.statsStars,
+        statsInstallsAllTime: fields.statsInstallsAllTime,
+        recommendedScore: fields.recommendedScore,
+        createdAt: fields.createdAt,
+        updatedAt: fields.updatedAt,
+      },
+    ]),
+  );
+  for (const row of existing) {
+    const next = nextByTopic.get(row.topic);
+    if (!next) {
+      await ctx.db.delete(row._id);
+      continue;
+    }
+    if (hasDigestChanged(row, next)) {
+      await ctx.db.patch(row._id, next);
+    }
+    nextByTopic.delete(row.topic);
+  }
+  for (const next of nextByTopic.values()) {
+    await ctx.db.insert("skillTopicSearchDigest", next);
+  }
+}
+
+export async function deleteSkillSearchDigests(
+  ctx: Pick<MutationCtx, "db">,
+  skillId: Id<"skills">,
+) {
+  const digest = await ctx.db
+    .query("skillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .unique();
+  if (digest) await ctx.db.delete(digest._id);
+  for (const topicDigest of await ctx.db
+    .query("skillTopicSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .collect()) {
+    await ctx.db.delete(topicDigest._id);
   }
 }
 
@@ -170,8 +236,8 @@ export async function syncSkillSearchDigestForSkill(
 
 /** Compare new fields against existing row. Returns true if any field differs. */
 function hasDigestChanged(
-  existing: Doc<"skillSearchDigest">,
-  fields: SkillSearchDigestFields,
+  existing: Record<string, unknown>,
+  fields: Record<string, unknown>,
 ): boolean {
   for (const key of Object.keys(fields)) {
     const oldVal = (existing as Record<string, unknown>)[key];

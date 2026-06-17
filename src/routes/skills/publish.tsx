@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { isSkillCategorySlug } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -21,6 +22,10 @@ import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
+import {
+  CatalogMetadataFields,
+  parseCatalogTopicsInput,
+} from "../../components/CatalogMetadataFields";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import {
@@ -100,6 +105,8 @@ export function Upload() {
   const [iconName, setIconName] = useState<string | null>(null);
   const [version, setVersion] = useState("1.0.0");
   const [tags, setTags] = useState("latest");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [topics, setTopics] = useState("");
   const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
   const [changelog, setChangelog] = useState("");
   const [changelogStatus, setChangelogStatus] = useState<"idle" | "loading" | "ready" | "error">(
@@ -253,6 +260,15 @@ export function Upload() {
     const nextSlug = existing.skill.slug;
     if (nextSlug) setSlug(nextSlug);
     if (name) setDisplayName(name);
+    const nextCategories = (existing.skill.categories ?? []).filter(isSkillCategorySlug);
+    setCategories((current) =>
+      current.length === nextCategories.length &&
+      current.every((category, index) => category === nextCategories[index])
+        ? current
+        : nextCategories,
+    );
+    const nextTopics = (existing.skill.topics ?? []).join(", ");
+    setTopics((current) => (current === nextTopics ? current : nextTopics));
     // Pre-populate the icon picker from the existing skill so a New Version
     // publish keeps the previously selected icon unless the user changes it.
     if (existing.skill.icon !== undefined) {
@@ -681,6 +697,8 @@ export function Upload() {
         changelog: trimmedChangelog,
         acceptLicenseTerms: acceptedLicenseTerms,
         tags: parsedTags,
+        ...(categories.length ? { categories } : {}),
+        ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
         files: uploaded,
       });
       setStatus(null);
@@ -1008,6 +1026,14 @@ export function Upload() {
                     </a>
                   ) : null}
                 </div>
+                <CatalogMetadataFields
+                  kind="skill"
+                  categories={categories}
+                  topics={topics}
+                  disabled={isSubmitting}
+                  onCategoriesChange={setCategories}
+                  onTopicsChange={setTopics}
+                />
               </div>
               {metadataPrefillNote ? (
                 <p

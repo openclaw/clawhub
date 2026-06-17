@@ -2,6 +2,42 @@ import { describe, expect, it, vi } from "vitest";
 import { publishVersionForUser, __test } from "./skillPublish";
 
 describe("skillPublish", () => {
+  it("parses exact controlled categories and author topics from metadata.openclaw.json", () => {
+    expect(
+      __test.parseCatalogMetadataFile([
+        {
+          path: "metadata.openclaw.json",
+          content: JSON.stringify({
+            categories: ["automation", "development"],
+            topics: ["React", " GPU development "],
+          }),
+        },
+      ]),
+    ).toEqual({
+      categories: ["automation", "development"],
+      topics: ["React", "GPU development"],
+    });
+  });
+
+  it("rejects invalid metadata.openclaw.json category declarations", () => {
+    expect(() =>
+      __test.parseCatalogMetadataFile([
+        {
+          path: "metadata.openclaw.json",
+          content: JSON.stringify({ categories: ["Automation Workflows"] }),
+        },
+      ]),
+    ).toThrow(/Unknown skill category slug/);
+    expect(() =>
+      __test.parseCatalogMetadataFile([
+        {
+          path: "metadata.openclaw.json",
+          content: JSON.stringify({ topics: "react" }),
+        },
+      ]),
+    ).toThrow(/"topics" must be an array of strings/);
+  });
+
   it("merges github source into metadata", () => {
     const merged = __test.mergeSourceIntoMetadata(
       { clawdis: { emoji: "x" } },

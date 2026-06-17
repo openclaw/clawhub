@@ -75,6 +75,7 @@ type PublisherCatalogItem = {
   slug?: string;
   displayName: string;
   summary: string | null;
+  topics?: string[];
   // Mirrors `skills.icon` for `kind: "skill"` items so the publisher
   // profile catalog (`/p/<handle>`) can render the same custom glyph that
   // `SkillCard` and `SkillListItem` show on `/skills` and `/search`.
@@ -377,6 +378,7 @@ function getPublisherCatalogItems(
       slug: skill.slug,
       displayName: skill.displayName,
       summary: skill.summary ?? null,
+      topics: skill.topics,
       icon: skill.icon ?? null,
       href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
       installs: readCanonicalStat(skill, "installsAllTime"),
@@ -394,6 +396,7 @@ function getPublisherCatalogItems(
       kind: "plugin" as const,
       displayName: pkg.displayName,
       summary: pkg.summary ?? null,
+      topics: pkg.topics,
       icon: null,
       href: buildPluginDetailHref(pkg.name),
       installs: pkg.stats.installs,

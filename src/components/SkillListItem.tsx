@@ -4,6 +4,7 @@ import { getSkillBadges } from "../lib/badges";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
+import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 import { Badge } from "./ui/badge";
@@ -43,6 +44,7 @@ export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps)
           )}
         </div>
         {skill.summary ? <p className="skill-list-item-summary">{skill.summary}</p> : null}
+        <CatalogTopicList topics={skill.topics} />
         <div className="skill-list-item-meta">
           <span className="skill-list-item-meta-item">Updated {timeAgo(skill.updatedAt)}</span>
           <span className="skill-list-item-meta-item">

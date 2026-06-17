@@ -23,6 +23,7 @@ const listPackageCatalogPageHandler = (
     {
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
+      topic?: string;
       sort?: "updated" | "downloads" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -46,6 +47,7 @@ const searchPackageCatalogPublicHandler = (
       limit?: number;
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
+      topic?: string;
     },
     Array<{ score: number; package: { name: string; family: "skill"; isOfficial: boolean } }>
   >
@@ -150,12 +152,90 @@ function makeCtx(
               order: () => ({
                 paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
                   pageByCursor.get(pageCursor) ?? { page: [], isDone: true, continueCursor: "" },
+                take: async () => [],
               }),
               unique: async () => null,
             };
           },
         };
       },
+    },
+  };
+}
+
+function makeTopicCtx(
+  pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>,
+  digests: Array<Record<string, unknown>>,
+  indexNames: string[] = [],
+) {
+  const pageByCursor = new Map<
+    string | null,
+    { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
+  >();
+  let cursor: string | null = null;
+  for (const page of pages) {
+    pageByCursor.set(cursor, page);
+    cursor = page.continueCursor;
+  }
+  return {
+    db: {
+      query: (table: string) => ({
+        withIndex: (
+          indexName: string,
+          builder?: (q: {
+            eq: (
+              field: string,
+              value: string,
+            ) => {
+              eq: (nextField: string, nextValue: string) => unknown;
+              field: string;
+              value: string;
+            };
+          }) => unknown,
+        ) => {
+          indexNames.push(indexName);
+          if (table === "skills" || table === "skillSlugAliases") {
+            builder?.({
+              eq: (field, value) => ({
+                field,
+                value,
+                eq: () => ({}),
+              }),
+            });
+            return { unique: async () => null };
+          }
+          if (table === "skillSearchDigest" && indexName === "by_skill") {
+            let skillId: string | undefined;
+            builder?.({
+              eq: (field, value) => {
+                if (field === "skillId") skillId = value;
+                return {
+                  field,
+                  value,
+                  eq: () => ({}),
+                };
+              },
+            });
+            return {
+              unique: async () => digests.find((digest) => digest.skillId === skillId) ?? null,
+            };
+          }
+          builder?.({
+            eq: (field, value) => ({
+              field,
+              value,
+              eq: () => ({}),
+            }),
+          });
+          return {
+            order: () => ({
+              paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
+                pageByCursor.get(pageCursor) ?? { page: [], isDone: true, continueCursor: "" },
+              take: async (limit: number) => pages.flatMap((page) => page.page).slice(0, limit),
+            }),
+          };
+        },
+      }),
     },
   };
 }
@@ -214,6 +294,89 @@ describe("skills package catalog queries", () => {
     ]);
   });
 
+  it("normalizes and filters skill package catalog topics", async () => {
+    const indexNames: string[] = [];
+    const calendarSkill = makeDigest("calendar-skill", { topics: ["calendar"] });
+    const result = await listPackageCatalogPageHandler(
+      makeTopicCtx(
+        [
+          {
+            page: [
+              {
+                skillId: calendarSkill.skillId,
+                topic: "calendar",
+                updatedAt: calendarSkill.updatedAt,
+              },
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        [calendarSkill],
+        indexNames,
+      ),
+      {
+        topic: " Calendar ",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-skill"]);
+    expect(indexNames).toContain("by_active_topic_updated");
+    expect(indexNames).not.toContain("by_active_updated");
+  });
+
+  it("uses the selected topic digest sort index for skill package listings", async () => {
+    const indexNames: string[] = [];
+    const calendarSkill = makeDigest("calendar-skill", { topics: ["calendar"] });
+
+    await listPackageCatalogPageHandler(
+      makeTopicCtx(
+        [
+          {
+            page: [
+              {
+                skillId: calendarSkill.skillId,
+                topic: "calendar",
+                updatedAt: calendarSkill.updatedAt,
+              },
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        [calendarSkill],
+        indexNames,
+      ),
+      {
+        topic: "calendar",
+        sort: "installs",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(indexNames).toContain("by_active_topic_installs");
+    expect(indexNames).not.toContain("by_active_stats_installs_all_time");
+  });
+
+  it("rejects invalid skill package catalog topics instead of returning an unfiltered page", async () => {
+    const result = await listPackageCatalogPageHandler(
+      makeCtx([
+        {
+          page: [makeDigest("unfiltered-skill")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        topic: "!!!",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(result).toEqual({ page: [], isDone: true, continueCursor: "" });
+  });
+
   it("searches skills with package-style lexical scoring", async () => {
     const result = await searchPackageCatalogPublicHandler(
       makeCtx([
@@ -239,6 +402,126 @@ describe("skills package catalog queries", () => {
       },
     });
     expect(result[0]?.score).toBeGreaterThan(0);
+  });
+
+  it("matches author topics in unfiltered skill package search", async () => {
+    const topicSkill = makeDigest("render-helper", {
+      displayName: "Render Helper",
+      summary: "Configure a rendering pipeline.",
+      topics: ["GPU development"],
+    });
+    const indexNames: string[] = [];
+    const result = await searchPackageCatalogPublicHandler(
+      makeTopicCtx(
+        [
+          {
+            page: [
+              {
+                skillId: topicSkill.skillId,
+                topic: "gpu-development",
+                updatedAt: topicSkill.updatedAt,
+              },
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        [topicSkill],
+        indexNames,
+      ),
+      {
+        query: "GPU development",
+        limit: 1,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["render-helper"]);
+    expect(indexNames).toContain("by_active_topic_updated");
+  });
+
+  it("normalizes and filters skill package catalog search topics", async () => {
+    const indexNames: string[] = [];
+    const calendarSkill = makeDigest("calendar-demo", { topics: ["calendar"] });
+    const result = await searchPackageCatalogPublicHandler(
+      makeTopicCtx(
+        [
+          {
+            page: [
+              {
+                skillId: calendarSkill.skillId,
+                topic: "calendar",
+                updatedAt: calendarSkill.updatedAt,
+              },
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        [calendarSkill],
+        indexNames,
+      ),
+      {
+        query: "demo",
+        topic: " Calendar ",
+        limit: 5,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["calendar-demo"]);
+    expect(indexNames).toContain("by_active_topic_updated");
+    expect(indexNames).not.toContain("by_active_updated");
+  });
+
+  it("uses author topics as skill package search evidence", async () => {
+    const topicSkill = makeDigest("render-helper", {
+      displayName: "Render Helper",
+      summary: "Configure a rendering pipeline.",
+      topics: ["GPU development"],
+    });
+    const result = await searchPackageCatalogPublicHandler(
+      makeTopicCtx(
+        [
+          {
+            page: [
+              {
+                skillId: topicSkill.skillId,
+                topic: "gpu-development",
+                updatedAt: topicSkill.updatedAt,
+              },
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        [topicSkill],
+      ),
+      {
+        query: "GPU development",
+        topic: "gpu-development",
+        limit: 5,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["render-helper"]);
+  });
+
+  it("rejects invalid skill package catalog search topics instead of returning unfiltered results", async () => {
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [makeDigest("unfiltered-skill")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "skill",
+        topic: "!!!",
+        limit: 5,
+      },
+    );
+
+    expect(result).toEqual([]);
   });
 
   it("does not let official status make unrelated skills eligible for package search", async () => {

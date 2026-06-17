@@ -1,3 +1,4 @@
+import { getCatalogTopicSlugs, normalizeCatalogTopic } from "clawhub-schema";
 import { useAction } from "convex/react";
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -5,7 +6,7 @@ import { convexHttp } from "../../convex/client";
 import {
   ALL_CATEGORY_KEYWORDS,
   getSkillCategoryBySlug,
-  getSkillCategoryForSkill,
+  getSkillCategoriesForSkill,
 } from "../../lib/categories";
 import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-params";
 import type { SkillListEntry, SkillSearchEntry } from "./-types";
@@ -35,6 +36,7 @@ export type SkillsSearchState = {
   highlighted?: boolean;
   featured?: boolean;
   category?: string;
+  topic?: string;
   view?: LegacySkillsView;
   focus?: "search";
 };
@@ -71,6 +73,7 @@ export function useSkillsBrowseModel({
   const trimmedQuery = useMemo(() => query.trim(), [query]);
   const urlCategory = useMemo(() => getSkillCategoryBySlug(search.category), [search.category]);
   const activeCategory = urlCategory;
+  const activeTopic = search.topic ? normalizeCatalogTopic(search.topic) : undefined;
   const categoryKeywords =
     activeCategory && activeCategory.slug !== "other" ? activeCategory.keywords : undefined;
   const excludeCategoryKeywords =
@@ -85,7 +88,9 @@ export function useSkillsBrowseModel({
         : (requestedSort ?? (hasQuery ? "relevance" : "recommended"));
   const listSort = toListSort(sort);
   const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
-  const searchKey = hasQuery ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}` : "";
+  const searchKey = hasQuery
+    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${activeTopic ?? ""}`
+    : "";
 
   // One-shot paginated fetches (no reactive subscription)
   const [listResults, setListResults] = useState<SkillListEntry[]>([]);
@@ -103,6 +108,8 @@ export function useSkillsBrowseModel({
           dir,
           highlightedOnly: featuredOnly,
           categorySlug: activeCategory?.slug,
+          topic: activeTopic,
+          officialFirst: Boolean(activeCategory),
           categoryKeywords,
           excludeCategoryKeywords,
         });
@@ -120,7 +127,15 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
-    [activeCategory?.slug, categoryKeywords, dir, excludeCategoryKeywords, featuredOnly, listSort],
+    [
+      activeCategory?.slug,
+      activeTopic,
+      categoryKeywords,
+      dir,
+      excludeCategoryKeywords,
+      featuredOnly,
+      listSort,
+    ],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -176,6 +191,7 @@ export function useSkillsBrowseModel({
           const data = (await searchSkills({
             query: trimmedQuery,
             highlightedOnly: featuredOnly,
+            topic: activeTopic,
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
           if (requestId === searchRequest.current) {
@@ -189,7 +205,7 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
+  }, [activeTopic, hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
@@ -205,11 +221,16 @@ export function useSkillsBrowseModel({
   }, [hasQuery, listResults, searchResults]);
 
   const sorted = useMemo(() => {
-    const categoryItems = activeCategory
-      ? baseItems.filter(
-          (entry) => getSkillCategoryForSkill(entry.skill)?.slug === activeCategory.slug,
-        )
+    const topicItems = activeTopic
+      ? baseItems.filter((entry) => getCatalogTopicSlugs(entry.skill.topics).includes(activeTopic))
       : baseItems;
+    const categoryItems = activeCategory
+      ? topicItems.filter((entry) =>
+          getSkillCategoriesForSkill(entry.skill).some(
+            (category) => category.slug === activeCategory.slug,
+          ),
+        )
+      : topicItems;
     if (!hasQuery) {
       return categoryItems;
     }
@@ -249,7 +270,23 @@ export function useSkillsBrowseModel({
       }
     });
     return results;
-  }, [activeCategory, baseItems, dir, hasQuery, sort]);
+  }, [activeCategory, activeTopic, baseItems, dir, hasQuery, sort]);
+
+  const availableTopics = useMemo(() => {
+    const topics = new Map<string, { label: string; count: number }>();
+    for (const entry of baseItems) {
+      for (const label of entry.skill.topics ?? []) {
+        const slug = normalizeCatalogTopic(label);
+        if (!slug) continue;
+        const current = topics.get(slug);
+        topics.set(slug, { label: current?.label ?? label, count: (current?.count ?? 0) + 1 });
+      }
+    }
+    return [...topics.entries()]
+      .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
+      .slice(0, 8)
+      .map(([slug, value]) => ({ slug, label: value.label }));
+  }, [baseItems]);
 
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
@@ -340,6 +377,7 @@ export function useSkillsBrowseModel({
         ...prev,
         q: undefined,
         category: undefined,
+        topic: undefined,
         featured: undefined,
         highlighted: undefined,
       }),
@@ -414,9 +452,24 @@ export function useSkillsBrowseModel({
   const activeFilters: string[] = [];
   if (featuredOnly) activeFilters.push("featured");
 
+  const onTopicChange = useCallback(
+    (value: string | undefined) => {
+      void navigate({
+        search: (prev) => ({
+          ...prev,
+          topic: value,
+        }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
   return {
     activeFilters,
     activeCategory: activeCategory?.slug,
+    activeTopic,
+    availableTopics,
     canAutoLoad,
     canLoadMore,
     dir,
@@ -433,6 +486,7 @@ export function useSkillsBrowseModel({
     onToggleDir,
     onToggleFeatured,
     onToggleView,
+    onTopicChange,
     query,
     sort,
     sorted,

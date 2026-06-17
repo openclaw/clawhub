@@ -206,6 +206,8 @@ describe("cmdPublish", () => {
         version: "1.0.0",
         changelog: "",
         tags: "latest",
+        categories: "automation, development",
+        topics: "React, GPU development",
       } as Parameters<typeof cmdPublish>[2];
 
       await cmdPublish(makeOpts(workdir), "my-skill", options);
@@ -225,6 +227,8 @@ describe("cmdPublish", () => {
       expect(payload.changelog).toBe("");
       expect(payload.acceptLicenseTerms).toBe(true);
       expect(payload.tags).toEqual(["latest"]);
+      expect(payload.categories).toEqual(["automation", "development"]);
+      expect(payload.topics).toEqual(["React", "GPU development"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
       expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
     } finally {
