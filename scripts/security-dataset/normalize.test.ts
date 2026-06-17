@@ -34,10 +34,8 @@ const baseArtifact: ArtifactExportInput = {
       contentType: "text/x-shellscript",
     },
   ],
-  capabilityTags: ["shell", "automation"],
   packageFamily: null,
   packageChannel: null,
-  packageExecutesCode: null,
   sourceRepoHost: null,
   vtAnalysis: {
     status: "completed",
@@ -161,7 +159,6 @@ describe("security dataset normalizer", () => {
       file_count: 2,
       total_bytes: 300,
       file_ext_counts: { ".md": 1, ".sh": 1 },
-      capability_tags: ["automation", "shell"],
       has_vt_scan: true,
       has_skillspector_scan: true,
       has_static_scan: true,

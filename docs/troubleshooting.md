@@ -1,5 +1,5 @@
 ---
-summary: "Troubleshooting ClawHub sign-in, install, publish, sync, update, and API issues."
+summary: "Troubleshooting ClawHub sign-in, install, publish, update, and API issues."
 read_when:
   - ClawHub CLI or OpenClaw registry commands fail
   - A package cannot be installed, published, or updated
@@ -86,6 +86,20 @@ publishers.
   the package.
 - Check that the source URL is public or accessible to ClawHub.
 - For GitHub sources, use `owner/repo`, `owner/repo@ref`, or a full GitHub URL.
+
+## Publish fails because a namespace is claimed or reserved
+
+If a publish fails because the owner handle, org namespace, package scope, skill
+slug, or package name is already claimed or reserved, first confirm that you are
+publishing with the owner that matches the namespace. For plugin packages,
+scoped names such as `@example-org/example-plugin` must be published as the
+matching `example-org` owner.
+
+If you believe your org, project, or brand is the rightful namespace owner but
+you cannot manage the current ClawHub owner, open an
+[Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
+with public, non-sensitive proof. Do not include secrets, private documents,
+DNS challenge tokens, or private legal files in the public issue.
 
 ## `sync` says no skills were found
 

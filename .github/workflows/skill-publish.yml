@@ -9,7 +9,7 @@ on:
         type: string
         default: ""
       root:
-        description: Directory containing skill folders for bulk catalog publishing.
+        description: Directory containing skill folders for catalog publishing.
         required: false
         type: string
         default: skills
@@ -28,11 +28,6 @@ on:
         required: false
         type: string
         default: latest
-      bump:
-        description: Version bump for updated skills. One of patch, minor, or major.
-        required: false
-        type: string
-        default: patch
       registry:
         description: ClawHub registry URL.
         required: false
@@ -53,7 +48,7 @@ on:
         required: false
     outputs:
       publish_json:
-        description: Structured JSON output from clawhub sync.
+        description: Structured JSON output from skill publishing.
         value: ${{ jobs.publish.outputs.publish_json }}
 
 env:
@@ -96,8 +91,10 @@ jobs:
 
           audience = "clawhub-workflow-source"
           joiner = "&" if "?" in request_url else "?"
-          token_url = f"{request_url}{joiner}audience={audience}"
-          request = Request(token_url, headers={"Authorization": f"Bearer {request_token}"})
+          request = Request(
+              f"{request_url}{joiner}audience={audience}",
+              headers={"Authorization": f"Bearer {request_token}"},
+          )
           with urlopen(request) as response:
               payload = json.load(response)
 
@@ -121,8 +118,7 @@ jobs:
                   f"job_workflow_ref={workflow_ref!r} job_workflow_sha={workflow_sha!r}"
               )
 
-          output_path = Path(os.environ["GITHUB_OUTPUT"])
-          with output_path.open("a", encoding="utf-8") as fh:
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as fh:
               fh.write(f"repository={repo}\n")
               fh.write(f"ref={workflow_sha}\n")
           PY
@@ -142,10 +138,7 @@ jobs:
           DRY_RUN: ${{ inputs.dry_run }}
           CLAWHUB_TOKEN: ${{ secrets.clawhub_token }}
         run: |
-          if [[ "$DRY_RUN" == "true" ]]; then
-            exit 0
-          fi
-          if [[ -n "$CLAWHUB_TOKEN" ]]; then
+          if [[ "$DRY_RUN" == "true" || -n "$CLAWHUB_TOKEN" ]]; then
             exit 0
           fi
           echo "::error::Real skill publishes need secrets.clawhub_token. GitHub OIDC trusted publishing for skills is not supported yet."
@@ -168,102 +161,132 @@ jobs:
 
           path = Path(os.environ["RUNNER_TEMP"]) / "clawhub-config.json"
           path.write_text(
-              json.dumps(
-                  {
-                      "registry": os.environ["CLAWHUB_REGISTRY"],
-                      "token": os.environ["CLAWHUB_TOKEN"],
-                  },
-                  indent=2,
-              )
-              + "\n",
+              json.dumps({"registry": os.environ["CLAWHUB_REGISTRY"], "token": os.environ["CLAWHUB_TOKEN"]}, indent=2) + "\n",
               encoding="utf-8",
           )
           print(path)
           PY
           echo "CLAWHUB_CONFIG_PATH=$RUNNER_TEMP/clawhub-config.json" >> "$GITHUB_ENV"
 
-      - name: Resolve sync command
+      - name: Run skill publishes
         env:
           INPUT_SKILL_PATH: ${{ inputs.skill_path }}
           INPUT_ROOT: ${{ inputs.root }}
           INPUT_DRY_RUN: ${{ inputs.dry_run }}
           INPUT_OWNER: ${{ inputs.owner }}
           INPUT_TAGS: ${{ inputs.tags }}
-          INPUT_BUMP: ${{ inputs.bump }}
           INPUT_SITE: ${{ inputs.site }}
           INPUT_REGISTRY: ${{ inputs.registry }}
           INPUT_REF: ${{ inputs.ref }}
-          GITHUB_REPOSITORY: ${{ github.repository }}
-          GITHUB_REF: ${{ github.ref }}
+          SOURCE_REPOSITORY: ${{ github.repository }}
+          SOURCE_REF: ${{ github.ref }}
         run: |
           python3 - <<'PY'
+          import json
           import os
-          import shlex
           import subprocess
+          import sys
           from pathlib import Path
 
-          skill_path = os.environ["INPUT_SKILL_PATH"].strip()
-          root = os.environ["INPUT_ROOT"].strip() or "skills"
-          scan_root = skill_path or root
-          source_commit = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
-          source_ref = os.environ["INPUT_REF"].strip() or os.environ["GITHUB_REF"].strip()
-
-          cli_entry = (
-              Path(os.environ["GITHUB_WORKSPACE"])
-              / "clawhub-source"
-              / "packages"
-              / "clawhub"
-              / "src"
-              / "cli.ts"
-          )
-          if not cli_entry.exists():
+          workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          cli_entry = workspace / "clawhub-source" / "packages" / "clawhub" / "src" / "cli.ts"
+          if not cli_entry.is_file():
               raise SystemExit(f"Missing ClawHub CLI entrypoint at {cli_entry}")
 
-          cmd = [
-              "bun",
-              str(cli_entry),
-              "--workdir",
-              scan_root,
-              "--dir",
-              ".",
-              "sync",
-              "--all",
-              "--json",
-              "--no-clawdbot-roots",
-              "--site",
-              os.environ["INPUT_SITE"],
-              "--registry",
-              os.environ["INPUT_REGISTRY"],
-              "--bump",
-              os.environ["INPUT_BUMP"].strip() or "patch",
-              "--source-repo",
-              os.environ["GITHUB_REPOSITORY"],
-              "--source-commit",
-              source_commit,
-          ]
+          def resolve_inside_workspace(raw_path):
+              path = (workspace / raw_path).resolve()
+              try:
+                  path.relative_to(workspace)
+              except ValueError as exc:
+                  raise SystemExit(f"Publish path must be inside the caller repository: {raw_path}") from exc
+              return path
 
-          if os.environ["INPUT_DRY_RUN"] == "true":
-              cmd.append("--dry-run")
+          def is_skill_folder(path):
+              return path.is_dir() and any((path / name).is_file() for name in ("SKILL.md", "skill.md"))
+
+          skill_path = os.environ["INPUT_SKILL_PATH"].strip()
+          root_input = os.environ["INPUT_ROOT"].strip() or "skills"
+          if skill_path:
+              targets = [resolve_inside_workspace(skill_path)]
+              if not is_skill_folder(targets[0]):
+                  raise SystemExit(f"skill_path is not a skill folder: {skill_path}")
+          else:
+              root = resolve_inside_workspace(root_input)
+              if is_skill_folder(root):
+                  targets = [root]
+              elif root.is_dir():
+                  targets = sorted(
+                      (child for child in root.iterdir() if is_skill_folder(child)),
+                      key=lambda child: child.name.lower(),
+                  )
+              else:
+                  targets = []
+              if not targets:
+                  raise SystemExit(f"No skill folders found under: {root_input}")
+
+          source_commit = subprocess.check_output(
+              ["git", "rev-parse", "HEAD"], cwd=workspace, text=True
+          ).strip()
+          source_ref = os.environ["INPUT_REF"].strip() or os.environ["SOURCE_REF"].strip()
+          dry_run = os.environ["INPUT_DRY_RUN"] == "true"
           owner = os.environ["INPUT_OWNER"].strip()
           tags = os.environ["INPUT_TAGS"].strip()
-          if owner:
-              cmd += ["--owner", owner]
-          if tags:
-              cmd += ["--tags", tags]
-          if source_ref:
-              cmd += ["--source-ref", source_ref]
 
-          path = Path(os.environ["RUNNER_TEMP"]) / "clawhub-skill-publish-command.sh"
-          shell_line = " ".join(shlex.quote(part) for part in cmd)
-          path.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + shell_line + "\n", encoding="utf-8")
-          path.chmod(0o755)
-          print(shell_line)
+          results = {"wouldPublish": [], "published": [], "alreadySynced": [], "skipped": [], "failed": []}
+          status_keys = {
+              "would-publish": "wouldPublish",
+              "published": "published",
+              "unchanged": "alreadySynced",
+          }
+
+          for target in targets:
+              relative_path = target.relative_to(workspace).as_posix()
+              command = [
+                  "bun", str(cli_entry),
+                  "--workdir", str(workspace),
+                  "--site", os.environ["INPUT_SITE"],
+                  "--registry", os.environ["INPUT_REGISTRY"],
+                  "skill", "publish", relative_path,
+                  "--json",
+                  "--source-repo", os.environ["SOURCE_REPOSITORY"],
+                  "--source-commit", source_commit,
+                  "--source-path", relative_path,
+              ]
+              if dry_run:
+                  command.append("--dry-run")
+              if owner:
+                  command += ["--owner", owner]
+              if tags:
+                  command += ["--tags", tags]
+              if source_ref:
+                  command += ["--source-ref", source_ref]
+
+              completed = subprocess.run(command, cwd=workspace, capture_output=True, text=True)
+              if completed.returncode != 0:
+                  message = completed.stderr.strip() or completed.stdout.strip() or f"exit {completed.returncode}"
+                  results["failed"].append({"slug": target.name, "folder": relative_path, "message": message})
+                  continue
+              try:
+                  result = json.loads(completed.stdout)
+                  results[status_keys[result["status"]]].append(result)
+              except (KeyError, ValueError, json.JSONDecodeError) as exc:
+                  results["failed"].append({"slug": target.name, "folder": relative_path, "message": f"Invalid publish output: {exc}"})
+
+          output = {
+              "ok": not results["failed"],
+              "dryRun": dry_run,
+              "registry": os.environ["INPUT_REGISTRY"],
+              "roots": [skill_path or root_input],
+              **({"owner": owner.lstrip("@") } if owner else {}),
+              "summary": {key: len(value) for key, value in results.items()},
+              **results,
+          }
+          output_path = Path(os.environ["RUNNER_TEMP"]) / "skill-publish.json"
+          output_path.write_text(json.dumps(output, indent=2) + "\n", encoding="utf-8")
+          print(json.dumps(output, indent=2))
+          if results["failed"]:
+              sys.exit(1)
           PY
-
-      - name: Run skill sync
-        run: |
-          set -euo pipefail
-          "$RUNNER_TEMP/clawhub-skill-publish-command.sh" | tee "$RUNNER_TEMP/skill-publish.json"
 
       - name: Capture workflow outputs
         id: capture
@@ -274,11 +297,8 @@ jobs:
           from pathlib import Path
 
           output_path = Path(os.environ["RUNNER_TEMP"]) / "skill-publish.json"
-          raw = output_path.read_text(encoding="utf-8").strip()
-          parsed = json.loads(raw)
-
-          github_output = Path(os.environ["GITHUB_OUTPUT"])
-          with github_output.open("a", encoding="utf-8") as fh:
+          parsed = json.loads(output_path.read_text(encoding="utf-8"))
+          with Path(os.environ["GITHUB_OUTPUT"]).open("a", encoding="utf-8") as fh:
               fh.write("publish_json<<__CLAWHUB_JSON__\n")
               fh.write(json.dumps(parsed, indent=2))
               fh.write("\n__CLAWHUB_JSON__\n")

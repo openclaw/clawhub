@@ -4,6 +4,7 @@ import { internal } from "./_generated/api";
 import type { Doc } from "./_generated/dataModel";
 import type { ActionCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalQuery } from "./functions";
+import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { getOwnerPublisher } from "./lib/publishers";
 
 const MAX_EXPORT_PAGE_SIZE = 50;
@@ -229,10 +230,8 @@ async function skillVersionPageToExportRows(ctx: QueryCtx, versions: Array<Doc<"
       createdAt: version.createdAt,
       softDeletedAt: version.softDeletedAt ?? null,
       files: sanitizeFiles(version.files),
-      capabilityTags: version.capabilityTags ?? skill.capabilityTags ?? [],
       packageFamily: null,
       packageChannel: null,
-      packageExecutesCode: null,
       sourceRepoHost: null,
       vtAnalysis: normalizeVtAnalysis(version.vtAnalysis),
       skillSpectorAnalysis: normalizeSkillSpectorAnalysis(version.skillSpectorAnalysis),
@@ -270,14 +269,12 @@ async function packageReleasePageToExportRows(
       publicOwnerHandle,
       publicSlug: pkg.name,
       version: release.version,
-      artifactSha256: release.sha256hash ?? release.integritySha256,
+      artifactSha256: getPackageReleaseArtifactSha256(release),
       createdAt: release.createdAt,
       softDeletedAt: release.softDeletedAt ?? null,
       files: sanitizeFiles(release.files),
-      capabilityTags: pkg.capabilityTags ?? [],
       packageFamily: pkg.family,
       packageChannel: pkg.channel,
-      packageExecutesCode: pkg.executesCode ?? null,
       sourceRepoHost: sourceRepoHost(pkg.sourceRepo),
       vtAnalysis: normalizeVtAnalysis(release.vtAnalysis),
       skillSpectorAnalysis: normalizeSkillSpectorAnalysis(release.skillSpectorAnalysis),

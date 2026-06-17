@@ -143,7 +143,10 @@ describe("Convex export dataset ingestion", () => {
           packageId: "packages:public",
           version: "2.0.0",
           createdAt: 1,
-          integritySha256: "pkg-sha",
+          artifactKind: "npm-pack",
+          clawpackSha256: "pkg-tgz-sha",
+          sha256hash: "pkg-zip-sha",
+          integritySha256: "pkg-file-set-sha",
           files: [{ path: "package/index.js", size: 24, sha256: "pkg-file-sha" }],
           staticScan: {
             status: "clean",
@@ -172,7 +175,7 @@ describe("Convex export dataset ingestion", () => {
     expect(rows[0]).toMatchObject({
       sourceKind: "package",
       sourceDocId: "packageReleases:1",
-      artifactSha256: "pkg-sha",
+      artifactSha256: "pkg-tgz-sha",
       publicOwnerHandle: "alice",
       packageChannel: "community",
       sourceRepoHost: "github.com",

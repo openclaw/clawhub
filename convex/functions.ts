@@ -14,7 +14,6 @@ import {
   httpAction,
 } from "./_generated/server";
 import type { MutationCtx } from "./_generated/server";
-import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   deletePackageSearchDigests,
   extractPackageDigestFields,
@@ -38,7 +37,6 @@ function isMissingTableError(error: unknown, table: string) {
 
 type PackageDigestSyncCtx = Pick<MutationCtx, "db">;
 type OwnerPublisherDigestScheduleCtx = Pick<Partial<MutationCtx>, "scheduler">;
-type GitHubBackupDeletionCtx = Pick<MutationCtx, "db" | "scheduler">;
 const OWNER_PUBLISHER_DIGEST_PAGE_SIZE = 100;
 type LatestPackageRelease = Pick<
   Doc<"packageReleases">,
@@ -48,7 +46,6 @@ type LatestPackageRelease = Pick<
   | "changelog"
   | "summary"
   | "compatibility"
-  | "capabilities"
   | "verification"
   | "distTags"
 > & {
@@ -64,7 +61,6 @@ function toPackageLatestVersionSummary(
     createdAt: release.createdAt,
     changelog: release.changelog,
     compatibility: release.compatibility,
-    capabilities: release.capabilities,
     verification: release.verification,
   };
 }
@@ -110,7 +106,6 @@ async function getPreferredFallbackPackageRelease(
         changelog: release.changelog,
         summary: release.summary,
         compatibility: release.compatibility,
-        capabilities: release.capabilities,
         verification: release.verification,
         scanStatus: release.verification?.scanStatus,
         distTags: release.distTags,
@@ -226,42 +221,6 @@ async function syncSkillSearchDigestForSkill(
     ownerName: owner?.linkedUserId ? owner.handle : undefined,
     ownerDisplayName: owner?.displayName,
     ownerImage: owner?.image,
-  });
-}
-
-export function isGitHubMirrorEligibleSkillDoc(
-  skill:
-    | Pick<
-        Doc<"skills">,
-        "softDeletedAt" | "moderationStatus" | "moderationFlags" | "moderationVerdict"
-      >
-    | null
-    | undefined,
-) {
-  return isPublicSkillDoc(skill);
-}
-
-export async function scheduleGitHubBackupDeletionForSkill(
-  ctx: GitHubBackupDeletionCtx,
-  skill: Pick<
-    Doc<"skills">,
-    | "slug"
-    | "ownerPublisherId"
-    | "ownerUserId"
-    | "softDeletedAt"
-    | "moderationStatus"
-    | "moderationFlags"
-    | "moderationVerdict"
-  >,
-) {
-  const owner = await getOwnerPublisher(ctx, {
-    ownerPublisherId: skill.ownerPublisherId,
-    ownerUserId: skill.ownerUserId,
-  });
-  const ownerHandle = owner?.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId);
-  await ctx.scheduler.runAfter(0, internal.githubBackupsNode.deleteGitHubBackupForSlugInternal, {
-    ownerHandle,
-    slug: skill.slug,
   });
 }
 
@@ -437,13 +396,7 @@ export async function repointPackageLatestRelease(
     patch.latestReleaseId = nextLatest?._id;
     patch.latestVersionSummary = toPackageLatestVersionSummary(nextLatest);
     patch.summary = nextLatest?.summary;
-    patch.capabilityTags = nextLatest?.capabilities?.capabilityTags;
-    patch.executesCode =
-      typeof nextLatest?.capabilities?.executesCode === "boolean"
-        ? nextLatest.capabilities.executesCode
-        : undefined;
     patch.compatibility = nextLatest?.compatibility;
-    patch.capabilities = nextLatest?.capabilities;
     patch.verification = nextLatest?.verification;
     patch.scanStatus = nextLatest?.scanStatus;
   }
@@ -458,20 +411,12 @@ triggers.register("skills", async (ctx, change) => {
     change.operation === "delete" ? null : change.newDoc,
   );
   if (change.operation === "delete") {
-    await scheduleGitHubBackupDeletionForSkill(ctx, change.oldDoc);
     const existing = await ctx.db
       .query("skillSearchDigest")
       .withIndex("by_skill", (q) => q.eq("skillId", change.id))
       .unique();
     if (existing) await ctx.db.delete(existing._id);
   } else {
-    if (
-      change.operation === "update" &&
-      isGitHubMirrorEligibleSkillDoc(change.oldDoc) &&
-      !isGitHubMirrorEligibleSkillDoc(change.newDoc)
-    ) {
-      await scheduleGitHubBackupDeletionForSkill(ctx, change.oldDoc);
-    }
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }
 });

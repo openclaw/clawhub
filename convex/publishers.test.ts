@@ -6,6 +6,7 @@ import {
   listPublicPage,
   listPublic,
   listMine,
+  getMyProfileHandle,
   getProfileByHandle,
   listMembers,
   listPublishedPage,
@@ -14,9 +15,11 @@ import {
   migrateLegacyPublisherHandleToOrgInternal,
   ensureOrgPublisherHandleInternal,
   removeOrgPublisherMemberInternal,
+  recoverPersonalPublisherInternal,
   createOrg,
   deleteOrg,
   removeMember,
+  addOfficialPublisherInternal,
   createOrgPublisherForUserInternal,
   deleteSoleOwnerOrgsForAccountDeletionInternal,
   resolvePublishTargetForUserInternal,
@@ -101,8 +104,70 @@ const removeOrgPublisherMemberInternalHandler = (
   >
 )._handler;
 
+const addOfficialPublisherInternalHandler = (
+  addOfficialPublisherInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      reason: string;
+    },
+    {
+      ok: true;
+      added: boolean;
+      publisherId: string;
+      handle: string;
+      officialPublisherId: string;
+    }
+  >
+)._handler;
+
+const recoverPersonalPublisherInternalHandler = (
+  recoverPersonalPublisherInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      publisherHandle: string;
+      previousGitHubProviderAccountId: string;
+      nextGitHubProviderAccountId: string;
+      nextUserHandle?: string;
+      retiredUserHandle?: string;
+      reason: string;
+      confirmIdentityVerified: boolean;
+      dryRun?: boolean;
+    },
+    {
+      ok: true;
+      dryRun: boolean;
+      recovered: boolean;
+      publisherId: string;
+      handle: string;
+      previousUser: { userId: string; handle: string | null; nextHandle: string | null };
+      nextUser: { userId: string; handle: string | null; nextHandle: string };
+      retiredPersonalPublisher: {
+        publisherId: string;
+        handle: string;
+        skills: number;
+        packages: number;
+        githubSources: number;
+      } | null;
+      resourceOwnerMigration: {
+        limitPerTable: number;
+        skills: number;
+        skillSlugAliases: number;
+        packages: number;
+        packageInspectorWarnings: number;
+        githubSourcesChecked: number;
+        handleReservations: number;
+      };
+    }
+  >
+)._handler;
+
 const listMineHandler = (
   listMine as unknown as WrappedHandler<Record<string, never>, Array<unknown>>
+)._handler;
+
+const getMyProfileHandleHandler = (
+  getMyProfileHandle as unknown as WrappedHandler<Record<string, never>, string | null>
 )._handler;
 
 const listPublicHandler = (
@@ -112,7 +177,7 @@ const listPublicHandler = (
       items: Array<{
         handle: string;
         kind: "user" | "org";
-        stats: { downloads: number };
+        stats: { installs: number };
         publishedItems?: Array<{ displayName: string }>;
       }>;
       total: number;
@@ -133,8 +198,8 @@ const listPublicPageHandler = (
       page: Array<{
         handle: string;
         kind: "user" | "org";
-        stats: { downloads: number };
-        publishedItems: Array<{ displayName: string; downloads: number }>;
+        stats: { installs: number };
+        publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
       }>;
       counts: { all: number; individuals: number; organizations: number };
       globalCounts: { all: number; individuals: number; organizations: number };
@@ -148,6 +213,8 @@ const listPublishedPageHandler = (
   listPublishedPage as unknown as WrappedHandler<
     {
       handle: string;
+      kind?: "skill" | "plugin";
+      sort?: "installs" | "recent" | "downloads";
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
@@ -191,7 +258,7 @@ const getPublishedDisplayManifestHandler = (
     {
       handle: string;
       kind?: "skill" | "plugin";
-      sort?: "downloads" | "recent";
+      sort?: "installs" | "recent" | "downloads";
     },
     {
       mode: "grouped";
@@ -301,7 +368,7 @@ const resolvePublishTargetForUserInternalHandler = (
   >
 )._handler;
 
-function indexedRows<T>(rows: T[]) {
+function indexedRows(rows: unknown[]) {
   return {
     collect: vi.fn(async () => rows),
     order: vi.fn(() => ({
@@ -916,7 +983,7 @@ describe("publishers membership controls", () => {
     },
   );
 
-  it("lists individual and org publishers ranked by aggregate downloads", async () => {
+  it("lists individual and org publishers ranked by aggregate installs", async () => {
     const publisherRows = [
       {
         _id: "publishers:alice",
@@ -986,7 +1053,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
@@ -1016,7 +1083,7 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 2, individuals: 1, organizations: 1 });
     expect(result.items.map((item) => item.handle)).toEqual(["openclaw", "alice"]);
     expect(result.items.map((item) => item.kind)).toEqual(["org", "user"]);
-    expect(result.items.map((item) => item.stats.downloads)).toEqual([20, 9]);
+    expect(result.items.map((item) => item.stats.installs)).toEqual([15, 5]);
   });
 
   it("filters public publisher listings by kind", async () => {
@@ -1070,7 +1137,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
@@ -1169,7 +1236,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
@@ -1271,7 +1338,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_kind_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_kind_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () =>
@@ -1280,7 +1347,7 @@ describe("publishers membership controls", () => {
                 })),
               };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1377,7 +1444,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1428,7 +1495,7 @@ describe("publishers membership controls", () => {
     expect(ownerPublisherQueries).toEqual(["publishers:alice", "publishers:alice"]);
   });
 
-  it("orders public publisher card previews by installs while rendering downloads", async () => {
+  it("orders and renders public publisher card previews by installs", async () => {
     const publisherRows = [
       {
         _id: "publishers:openclaw",
@@ -1527,7 +1594,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1566,8 +1633,8 @@ describe("publishers membership controls", () => {
       "Recent Tool",
       "Popular Skill",
     ]);
+    expect(result.page[0]?.publishedItems.map((item) => item.installs)).toEqual([50, 40, 35]);
     expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([12, 10, 98]);
-    expect(result.page[0]?.publishedItems[0]).not.toHaveProperty("installs");
   });
 
   it("does not hydrate every publisher catalog preview before filtering public publisher pages", async () => {
@@ -1604,7 +1671,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1669,7 +1736,7 @@ describe("publishers membership controls", () => {
               },
             };
             buildQuery(q);
-            if (table === "publishers" && indexName === "by_active_total_downloads") {
+            if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
@@ -1701,7 +1768,7 @@ describe("publishers membership controls", () => {
     expect(ownerPublisherQueries).toEqual([]);
   });
 
-  it("builds scoped plugin profile links with route segments", async () => {
+  it("normalizes legacy downloads catalog sorts to install-backed profile items", async () => {
     const publisher = {
       _id: "publishers:openclaw",
       _creationTime: 1,
@@ -1758,11 +1825,17 @@ describe("publishers membership controls", () => {
 
     const result = await listPublishedPageHandler(ctx as never, {
       handle: "openclaw",
+      sort: "downloads",
       paginationOpts: { cursor: null, numItems: 12 },
     });
 
     expect(result.page).toMatchObject([
-      { displayName: "Example Plugin", href: "/plugins/@openclaw/example-plugin" },
+      {
+        displayName: "Example Plugin",
+        downloads: 7,
+        href: "/plugins/@openclaw/example-plugin",
+        installs: 3,
+      },
     ]);
   });
 
@@ -3119,6 +3192,92 @@ describe("publisher audit logs", () => {
   });
 });
 
+describe("official publisher administration", () => {
+  it("marks personal publishers official", async () => {
+    const actor = { _id: "users:admin", role: "admin" };
+    const publisher = {
+      _id: "publishers:steipete",
+      kind: "user",
+      handle: "steipete",
+      displayName: "Peter Steinberger",
+      linkedUserId: "users:steipete",
+    };
+    const inserted: Array<{ table: string; doc: Record<string, unknown> }> = [];
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(
+        (
+          indexName: string,
+          builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+        ) => {
+          const fields: Record<string, string> = {};
+          const q = {
+            eq: (field: string, value: string) => {
+              fields[field] = value;
+              return q;
+            },
+          };
+          builder(q);
+          if (table === "publishers" && indexName === "by_handle") {
+            return {
+              unique: vi.fn(async () => (fields.handle === "steipete" ? publisher : null)),
+            };
+          }
+          if (table === "officialPublishers" && indexName === "by_publisher") {
+            return { unique: vi.fn(async () => null) };
+          }
+          throw new Error(`unexpected ${table} index ${indexName}`);
+        },
+      ),
+    }));
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => (id === "users:admin" ? actor : null)),
+        query,
+        patch: vi.fn(),
+        delete: vi.fn(),
+        insert: vi.fn(async (table: string, doc: Record<string, unknown>) => {
+          inserted.push({ table, doc });
+          return table === "officialPublishers"
+            ? "officialPublishers:steipete"
+            : `auditLogs:${inserted.length}`;
+        }),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      addOfficialPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "@steipete",
+        reason: "Verified individual publisher",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      added: true,
+      publisherId: "publishers:steipete",
+      handle: "steipete",
+      officialPublisherId: "officialPublishers:steipete",
+    });
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "officialPublishers",
+      expect.objectContaining({
+        publisherId: "publishers:steipete",
+        reason: "Verified individual publisher",
+        createdByUserId: "users:admin",
+      }),
+    );
+    expect(ctx.db.insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.official.add",
+        targetId: "publishers:steipete",
+        metadata: { handle: "steipete", reason: "Verified individual publisher" },
+      }),
+    );
+  });
+});
+
 describe("publisher-owned resource authorization", () => {
   function makeOwnerResourceCtx(options: {
     publisher: Record<string, unknown> | null;
@@ -3329,6 +3488,143 @@ describe("publisher bootstrap", () => {
       },
     };
   }
+
+  it("returns the real personal publisher handle when it differs from the user handle", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "claimed",
+              personalPublisherId: "publishers:alice-profile",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:alice-profile") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "alice-profile",
+              linkedUserId: "users:alice",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn(() => {
+          throw new Error("unexpected query");
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(
+      "alice-profile",
+    );
+  });
+
+  it("falls back to the linked personal publisher when the direct pointer is stale", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "claimed",
+              personalPublisherId: "publishers:stale",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:stale") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "stale",
+              linkedUserId: "users:bob",
+              deactivatedAt: 2,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publishers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string) => {
+              if (indexName !== "by_linked_user") throw new Error(`unexpected index ${indexName}`);
+              return {
+                unique: vi.fn().mockResolvedValue({
+                  _id: "publishers:alice-profile",
+                  kind: "user",
+                  handle: "alice-profile",
+                  linkedUserId: "users:alice",
+                }),
+              };
+            }),
+          };
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(
+      "alice-profile",
+    );
+  });
+
+  it.each([
+    {
+      name: "hides a legacy pointer without an owner membership",
+      memberships: [],
+      expected: null,
+    },
+    {
+      name: "returns a legacy pointer with the signed-in owner's membership",
+      memberships: [
+        {
+          _id: "publisherMembers:alice",
+          publisherId: "publishers:legacy-alice",
+          userId: "users:alice",
+          role: "owner",
+        },
+      ],
+      expected: "legacy-alice",
+    },
+  ])("$name", async ({ memberships, expected }) => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:alice") {
+            return {
+              _id: id,
+              handle: "alice",
+              personalPublisherId: "publishers:legacy-alice",
+              createdAt: 1,
+            };
+          }
+          if (id === "publishers:legacy-alice") {
+            return {
+              _id: id,
+              kind: "user",
+              handle: "legacy-alice",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string) => {
+              if (indexName !== "by_publisher") throw new Error(`unexpected index ${indexName}`);
+              return { collect: vi.fn().mockResolvedValue(memberships) };
+            }),
+          };
+        }),
+      },
+    };
+
+    await expect(getMyProfileHandleHandler(ctx as never, {} as never)).resolves.toBe(expected);
+  });
 
   it("lists a synthesized personal publisher when membership rows are missing", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:alice" as never);
@@ -4120,6 +4416,746 @@ describe("self-serve org publisher creation", () => {
 });
 
 describe("legacy publisher migration", () => {
+  function makePersonalPublisherRecoveryCtx(
+    options: {
+      destinationHasResources?: boolean;
+      legacyResources?: boolean;
+      mixedCaseUserHandles?: boolean;
+      tooManyLegacySkills?: boolean;
+      unexpectedResourceOwner?: boolean;
+      unexpectedReservationOwner?: boolean;
+    } = {},
+  ) {
+    const users = new Map<string, Record<string, unknown>>([
+      ["users:admin", { _id: "users:admin", role: "admin", handle: "admin" }],
+      [
+        "users:legacy",
+        {
+          _id: "users:legacy",
+          role: "user",
+          handle: options.mixedCaseUserHandles ? "Gingiris" : "gingiris",
+          personalPublisherId: "publishers:gingiris",
+          publishedSkills: 5,
+          totalDownloads: 100,
+          totalStars: 20,
+          updatedAt: 1,
+        },
+      ],
+      [
+        "users:current",
+        {
+          _id: "users:current",
+          role: "user",
+          handle: options.mixedCaseUserHandles ? "Gingiris-1031" : "gingiris-1031",
+          personalPublisherId: "publishers:gingiris-1031",
+          publishedSkills: 2,
+          totalDownloads: 40,
+          totalStars: 4,
+          updatedAt: 1,
+        },
+      ],
+    ]);
+    const publishers = new Map<string, Record<string, unknown>>([
+      [
+        "publishers:gingiris",
+        {
+          _id: "publishers:gingiris",
+          kind: "user",
+          handle: "gingiris",
+          displayName: "gingiris",
+          linkedUserId: "users:legacy",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+      [
+        "publishers:gingiris-1031",
+        {
+          _id: "publishers:gingiris-1031",
+          kind: "user",
+          handle: "gingiris-1031",
+          displayName: "gingiris-1031",
+          linkedUserId: "users:current",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    ]);
+    const authAccounts = [
+      {
+        _id: "authAccounts:legacy",
+        provider: "github",
+        providerAccountId: "111",
+        userId: "users:legacy",
+      },
+      {
+        _id: "authAccounts:current",
+        provider: "github",
+        providerAccountId: "222",
+        userId: "users:current",
+      },
+    ];
+    const publisherMembers = new Map<string, Record<string, unknown>>([
+      [
+        "publisherMembers:legacy",
+        {
+          _id: "publisherMembers:legacy",
+          publisherId: "publishers:gingiris",
+          userId: "users:legacy",
+          role: "owner",
+        },
+      ],
+      [
+        "publisherMembers:current",
+        {
+          _id: "publisherMembers:current",
+          publisherId: "publishers:gingiris-1031",
+          userId: "users:current",
+          role: "owner",
+        },
+      ],
+    ]);
+    const baseSkill = {
+      _id: "skills:legacy-skill",
+      slug: "demo-skill",
+      displayName: "Demo Skill",
+      summary: "Recovered skill",
+      ownerUserId: options.unexpectedResourceOwner ? "users:someone-else" : "users:legacy",
+      ownerPublisherId: "publishers:gingiris",
+      forkOf: undefined,
+      tags: {},
+      badges: {},
+      stats: {
+        downloads: 99,
+        stars: 19,
+        comments: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+      },
+      statsDownloads: 12,
+      statsStars: 3,
+      moderationStatus: "approved",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const skills = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [["skills:legacy-skill", baseSkill]]
+        : options.tooManyLegacySkills
+          ? Array.from({ length: 101 }, (_, index) => [
+              `skills:legacy-${index}`,
+              {
+                ...baseSkill,
+                _id: `skills:legacy-${index}`,
+                slug: `demo-skill-${index}`,
+              },
+            ])
+          : [],
+    );
+    const skillSlugAliases = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "skillSlugAliases:legacy",
+              {
+                _id: "skillSlugAliases:legacy",
+                slug: "old-demo-skill",
+                skillId: "skills:legacy-skill",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          ]
+        : [],
+    );
+    const skillSearchDigest = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "skillSearchDigest:legacy",
+              {
+                _id: "skillSearchDigest:legacy",
+                skillId: "skills:legacy-skill",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+              },
+            ],
+          ]
+        : [],
+    );
+    const basePackage = {
+      _id: "packages:legacy-package",
+      name: "@gingiris/demo-plugin",
+      normalizedName: "@gingiris/demo-plugin",
+      displayName: "Demo Plugin",
+      ownerUserId: "users:legacy",
+      ownerPublisherId: "publishers:gingiris",
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      tags: {},
+      compatibility: {},
+      verification: {},
+      scanStatus: "pending",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const packages = new Map<string, Record<string, unknown>>(
+      options.legacyResources ? [["packages:legacy-package", basePackage]] : [],
+    );
+    const packageSearchDigest = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "packageSearchDigest:legacy",
+              {
+                _id: "packageSearchDigest:legacy",
+                packageId: "packages:legacy-package",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+              },
+            ],
+          ]
+        : [],
+    );
+    const packageCapabilitySearchDigest = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "packageCapabilitySearchDigest:legacy-tools",
+              {
+                _id: "packageCapabilitySearchDigest:legacy-tools",
+                packageId: "packages:legacy-package",
+                capabilityTag: "tools",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+              },
+            ],
+          ]
+        : [],
+    );
+    const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
+    const packageInspectorWarnings = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "packageInspectorWarnings:legacy",
+              {
+                _id: "packageInspectorWarnings:legacy",
+                packageId: "packages:legacy-package",
+                releaseId: "packageReleases:legacy",
+                ownerUserId: "users:legacy",
+                ownerPublisherId: "publishers:gingiris",
+                createdAt: 1,
+              },
+            ],
+          ]
+        : [],
+    );
+    const githubSkillSources = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "githubSkillSources:legacy",
+              {
+                _id: "githubSkillSources:legacy",
+                repo: "gingiris/skills",
+                ownerPublisherId: "publishers:gingiris",
+              },
+            ],
+          ]
+        : [],
+    );
+    const reservedHandles = new Map<string, Record<string, unknown>>(
+      options.legacyResources
+        ? [
+            [
+              "reservedHandles:gingiris",
+              {
+                _id: "reservedHandles:gingiris",
+                handle: "gingiris",
+                rightfulOwnerUserId: options.unexpectedReservationOwner
+                  ? "users:someone-else"
+                  : "users:legacy",
+                createdAt: 1,
+                updatedAt: 1,
+              },
+            ],
+          ]
+        : [],
+    );
+    const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+    const deletes: string[] = [];
+
+    const allRows = [
+      users,
+      publishers,
+      publisherMembers,
+      skills,
+      skillSlugAliases,
+      skillSearchDigest,
+      packages,
+      packageSearchDigest,
+      packageCapabilitySearchDigest,
+      packagePluginCategorySearchDigest,
+      packageInspectorWarnings,
+      githubSkillSources,
+      reservedHandles,
+    ];
+    const get = vi.fn(async (id: string) => {
+      return allRows.map((rows) => rows.get(id)).find(Boolean) ?? null;
+    });
+    const patch = vi.fn(async (id: string, patchValue: Record<string, unknown>) => {
+      patches.push({ id, patch: patchValue });
+      const row = allRows.map((rows) => rows.get(id)).find(Boolean);
+      if (row) Object.assign(row, patchValue);
+    });
+    const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
+      const id = `${table}:inserted-${inserts.length + 1}`;
+      const row = { _id: id, ...value };
+      inserts.push({ table, value: row });
+      if (table === "publisherMembers") publisherMembers.set(id, row);
+      if (table === "skillSearchDigest") skillSearchDigest.set(id, row);
+      if (table === "packageSearchDigest") packageSearchDigest.set(id, row);
+      if (table === "packageCapabilitySearchDigest") packageCapabilitySearchDigest.set(id, row);
+      if (table === "packagePluginCategorySearchDigest") {
+        packagePluginCategorySearchDigest.set(id, row);
+      }
+      return id;
+    });
+    const deleteFn = vi.fn(async (id: string) => {
+      deletes.push(id);
+      publisherMembers.delete(id);
+      packageCapabilitySearchDigest.delete(id);
+      packagePluginCategorySearchDigest.delete(id);
+    });
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(
+        (
+          _indexName: string,
+          builder?: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+        ) => {
+          const fields: Record<string, unknown> = {};
+          const q = {
+            eq: (field: string, value: unknown) => {
+              fields[field] = value;
+              return q;
+            },
+          };
+          builder?.(q);
+          const indexedQuery = {
+            unique: vi.fn(async () => {
+              if (table === "users") {
+                return [...users.values()].find((user) => user.handle === fields.handle) ?? null;
+              }
+              if (table === "publishers" && fields.handle) {
+                return (
+                  [...publishers.values()].find(
+                    (publisher) => publisher.handle === fields.handle,
+                  ) ?? null
+                );
+              }
+              if (table === "publishers" && fields.linkedUserId) {
+                return (
+                  [...publishers.values()].find(
+                    (publisher) => publisher.linkedUserId === fields.linkedUserId,
+                  ) ?? null
+                );
+              }
+              if (table === "skillSearchDigest" && fields.skillId) {
+                return (
+                  [...skillSearchDigest.values()].find(
+                    (digest) => digest.skillId === fields.skillId,
+                  ) ?? null
+                );
+              }
+              if (table === "packageSearchDigest" && fields.packageId) {
+                return (
+                  [...packageSearchDigest.values()].find(
+                    (digest) => digest.packageId === fields.packageId,
+                  ) ?? null
+                );
+              }
+              return null;
+            }),
+            take: vi.fn(async () => {
+              if (table === "authAccounts") {
+                return authAccounts.filter(
+                  (account) =>
+                    account.provider === fields.provider &&
+                    account.providerAccountId === fields.providerAccountId,
+                );
+              }
+              if (table === "publisherMembers") {
+                return [...publisherMembers.values()].filter(
+                  (member) => member.publisherId === fields.publisherId,
+                );
+              }
+              if (table === "reservedHandles") {
+                return [...reservedHandles.values()].filter(
+                  (reservation) =>
+                    reservation.handle === fields.handle &&
+                    reservation.releasedAt === fields.releasedAt,
+                );
+              }
+              if (table === "skills" && fields.ownerPublisherId === "publishers:gingiris") {
+                return [...skills.values()];
+              }
+              if (
+                table === "skillSlugAliases" &&
+                fields.ownerPublisherId === "publishers:gingiris"
+              ) {
+                return [...skillSlugAliases.values()];
+              }
+              if (table === "packages" && fields.ownerPublisherId === "publishers:gingiris") {
+                return [...packages.values()];
+              }
+              if (
+                table === "packageInspectorWarnings" &&
+                fields.ownerPublisherId === "publishers:gingiris"
+              ) {
+                return [...packageInspectorWarnings.values()];
+              }
+              if (
+                table === "githubSkillSources" &&
+                fields.ownerPublisherId === "publishers:gingiris"
+              ) {
+                return [...githubSkillSources.values()];
+              }
+              if (
+                options.destinationHasResources &&
+                (table === "skills" || table === "packages" || table === "githubSkillSources") &&
+                fields.ownerPublisherId === "publishers:gingiris-1031"
+              ) {
+                return [{ _id: `${table}:resource` }];
+              }
+              return [];
+            }),
+            collect: vi.fn(async () => {
+              if (table === "packageCapabilitySearchDigest" && fields.packageId) {
+                return [...packageCapabilitySearchDigest.values()].filter(
+                  (digest) => digest.packageId === fields.packageId,
+                );
+              }
+              if (table === "packagePluginCategorySearchDigest" && fields.packageId) {
+                return [...packagePluginCategorySearchDigest.values()].filter(
+                  (digest) => digest.packageId === fields.packageId,
+                );
+              }
+              return [];
+            }),
+          };
+          return {
+            ...indexedQuery,
+            order: vi.fn(() => indexedQuery),
+          };
+        },
+      ),
+    }));
+
+    return {
+      ctx: {
+        db: {
+          get,
+          patch,
+          insert,
+          delete: deleteFn,
+          query,
+          normalizeId: vi.fn(),
+        },
+      },
+      users,
+      publishers,
+      inserts,
+      patches,
+      deletes,
+      skills,
+      skillSlugAliases,
+      skillSearchDigest,
+      packages,
+      packageSearchDigest,
+      packageCapabilitySearchDigest,
+      packageInspectorWarnings,
+      githubSkillSources,
+      reservedHandles,
+    };
+  }
+
+  it("recovers a personal publisher for a verified replacement GitHub principal", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const {
+      ctx,
+      users,
+      publishers,
+      inserts,
+      patches,
+      deletes,
+      skills,
+      skillSlugAliases,
+      skillSearchDigest,
+      packages,
+      packageSearchDigest,
+      packageCapabilitySearchDigest,
+      packageInspectorWarnings,
+      reservedHandles,
+    } = makePersonalPublisherRecoveryCtx({ legacyResources: true });
+
+    const result = await recoverPersonalPublisherInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      publisherHandle: "gingiris",
+      previousGitHubProviderAccountId: "111",
+      nextGitHubProviderAccountId: "222",
+      nextUserHandle: "gingiris-1031",
+      reason: "Verified account continuity for issue #2555",
+      confirmIdentityVerified: true,
+      dryRun: false,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      recovered: true,
+      publisherId: "publishers:gingiris",
+      handle: "gingiris",
+      previousUser: { userId: "users:legacy", nextHandle: "gingiris-recovered" },
+      nextUser: { userId: "users:current", nextHandle: "gingiris" },
+      retiredPersonalPublisher: {
+        publisherId: "publishers:gingiris-1031",
+        handle: "gingiris-1031",
+      },
+      resourceOwnerMigration: {
+        skills: 1,
+        skillSlugAliases: 1,
+        packages: 1,
+        packageInspectorWarnings: 1,
+        githubSourcesChecked: 1,
+        handleReservations: 1,
+      },
+    });
+    expect(users.get("users:legacy")).toMatchObject({
+      handle: "gingiris-recovered",
+      personalPublisherId: undefined,
+      publishedSkills: 4,
+      totalDownloads: 88,
+      totalStars: 17,
+    });
+    expect(users.get("users:current")).toMatchObject({
+      handle: "gingiris",
+      personalPublisherId: "publishers:gingiris",
+      publishedSkills: 3,
+      totalDownloads: 52,
+      totalStars: 7,
+    });
+    expect(publishers.get("publishers:gingiris")).toMatchObject({
+      linkedUserId: "users:current",
+    });
+    expect(publishers.get("publishers:gingiris-1031")).toMatchObject({
+      linkedUserId: undefined,
+      deactivatedAt: 1_700_000_000_000,
+    });
+    expect(skills.get("skills:legacy-skill")).toMatchObject({
+      ownerUserId: "users:current",
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(skillSlugAliases.get("skillSlugAliases:legacy")).toMatchObject({
+      ownerUserId: "users:current",
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(skillSearchDigest.get("skillSearchDigest:legacy")).toMatchObject({
+      ownerUserId: "users:current",
+      ownerPublisherId: "publishers:gingiris",
+      ownerHandle: "gingiris",
+      ownerKind: "user",
+    });
+    expect(packages.get("packages:legacy-package")).toMatchObject({
+      ownerUserId: "users:current",
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(packageSearchDigest.get("packageSearchDigest:legacy")).toMatchObject({
+      ownerUserId: "users:current",
+      ownerPublisherId: "publishers:gingiris",
+      ownerHandle: "gingiris",
+      ownerKind: "user",
+    });
+    expect(
+      packageCapabilitySearchDigest.get("packageCapabilitySearchDigest:legacy-tools"),
+    ).toBeDefined();
+    expect(packageInspectorWarnings.get("packageInspectorWarnings:legacy")).toMatchObject({
+      ownerUserId: "users:current",
+    });
+    expect(reservedHandles.get("reservedHandles:gingiris")).toMatchObject({
+      rightfulOwnerUserId: "users:current",
+      updatedAt: 1_700_000_000_000,
+    });
+    expect(deletes).toContain("publisherMembers:legacy");
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "publisherMembers",
+        value: expect.objectContaining({
+          publisherId: "publishers:gingiris",
+          userId: "users:current",
+          role: "owner",
+        }),
+      }),
+    );
+    expect(inserts).toContainEqual(
+      expect.objectContaining({
+        table: "auditLogs",
+        value: expect.objectContaining({
+          actorUserId: "users:admin",
+          action: "publisher.personal.recover",
+          targetType: "publisher",
+          targetId: "publishers:gingiris",
+          metadata: expect.objectContaining({
+            previousGitHubProviderAccountId: "111",
+            nextGitHubProviderAccountId: "222",
+            identityVerified: true,
+            resourceOwnerMigration: expect.objectContaining({
+              skills: 1,
+              packages: 1,
+              packageInspectorWarnings: 1,
+            }),
+          }),
+        }),
+      }),
+    );
+    expect(patches.map((entry) => entry.id)).toEqual(
+      expect.arrayContaining([
+        "publishers:gingiris-1031",
+        "users:legacy",
+        "users:current",
+        "publishers:gingiris",
+        "skills:legacy-skill",
+        "skillSearchDigest:legacy",
+        "skillSlugAliases:legacy",
+        "packages:legacy-package",
+        "packageSearchDigest:legacy",
+        "packageInspectorWarnings:legacy",
+        "reservedHandles:gingiris",
+      ]),
+    );
+  });
+
+  it("recovers users whose stored handles retain mixed-case GitHub casing", async () => {
+    const { ctx, users } = makePersonalPublisherRecoveryCtx({
+      mixedCaseUserHandles: true,
+    });
+
+    const result = await recoverPersonalPublisherInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      publisherHandle: "gingiris",
+      previousGitHubProviderAccountId: "111",
+      nextGitHubProviderAccountId: "222",
+      nextUserHandle: "gingiris-1031",
+      reason: "Verified account continuity for issue #2555",
+      confirmIdentityVerified: true,
+      dryRun: false,
+    });
+
+    expect(result).toMatchObject({
+      previousUser: { nextHandle: "gingiris-recovered" },
+      nextUser: { nextHandle: "gingiris" },
+    });
+    expect(users.get("users:legacy")).toMatchObject({
+      handle: "gingiris-recovered",
+      personalPublisherId: undefined,
+    });
+    expect(users.get("users:current")).toMatchObject({
+      handle: "gingiris",
+      personalPublisherId: "publishers:gingiris",
+    });
+  });
+
+  it("fails closed when the destination personal publisher has resources", async () => {
+    const { ctx, inserts, patches } = makePersonalPublisherRecoveryCtx({
+      destinationHasResources: true,
+    });
+
+    await expect(
+      recoverPersonalPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        nextUserHandle: "gingiris-1031",
+        reason: "Verified account continuity for issue #2555",
+        confirmIdentityVerified: true,
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/has resources/i);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("fails closed when recovered publisher resources belong to another user", async () => {
+    const { ctx, inserts, patches } = makePersonalPublisherRecoveryCtx({
+      legacyResources: true,
+      unexpectedResourceOwner: true,
+    });
+
+    await expect(
+      recoverPersonalPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        nextUserHandle: "gingiris-1031",
+        reason: "Verified account continuity for issue #2555",
+        confirmIdentityVerified: true,
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/another user/i);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("fails closed when the recovered handle reservation belongs to another user", async () => {
+    const { ctx, inserts, patches } = makePersonalPublisherRecoveryCtx({
+      legacyResources: true,
+      unexpectedReservationOwner: true,
+    });
+
+    await expect(
+      recoverPersonalPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        nextUserHandle: "gingiris-1031",
+        reason: "Verified account continuity for issue #2555",
+        confirmIdentityVerified: true,
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/reservation .* belongs to another user/i);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
+  it("fails closed when recovered publisher resource migration exceeds the bounded batch", async () => {
+    const { ctx, inserts, patches } = makePersonalPublisherRecoveryCtx({
+      tooManyLegacySkills: true,
+    });
+
+    await expect(
+      recoverPersonalPublisherInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        publisherHandle: "gingiris",
+        previousGitHubProviderAccountId: "111",
+        nextGitHubProviderAccountId: "222",
+        nextUserHandle: "gingiris-1031",
+        reason: "Verified account continuity for issue #2555",
+        confirmIdentityVerified: true,
+        dryRun: false,
+      }),
+    ).rejects.toThrow(/resumable owner migration/i);
+    expect(patches).toHaveLength(0);
+    expect(inserts).toHaveLength(0);
+  });
+
   it("lets admins create a missing org publisher with only the legacy package owner as owner", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 

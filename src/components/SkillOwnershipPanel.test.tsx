@@ -32,6 +32,7 @@ describe("SkillOwnershipPanel", () => {
         ownerHandle="clawkit"
         ownerId={"publishers:clawkit" as never}
         ownedSkills={[]}
+        canDeleteSkill={false}
       />,
     );
 

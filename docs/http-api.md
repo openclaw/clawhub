@@ -123,10 +123,10 @@ Response:
 
 Notes:
 
-- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior from stars and downloads).
-- Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with many more downloads.
+- Results are returned in relevance order (embedding similarity + exact slug/name token boosts + a small popularity prior).
+- Relevance is stronger than popularity. A precise slug or display-name token match can outrank a looser match with much stronger engagement.
 - ASCII text is tokenized on word and punctuation boundaries. For example, `personal-map` contains a standalone `map` token, while `amap-jsapi-skill` contains `amap`, `jsapi`, and `skill`; searching for `map` therefore gives `personal-map` a stronger lexical match than `amap-jsapi-skill`.
-- Popularity is log-scaled and capped. Stars carry the strongest weight, and downloads are the fallback popularity signal. High-download skills can rank lower when the query text is a weaker match.
+- Popularity is log-scaled and capped. High-engagement skills can rank lower when the query text is a weaker match.
 - Suspicious or hidden moderation state can remove a skill from public search depending on caller filters and current moderation status.
 
 Publisher discoverability guidance:
@@ -142,7 +142,7 @@ Query params:
 
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
-- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
@@ -150,7 +150,7 @@ Invalid `sort` values return `400`.
 
 Notes:
 
-- `recommended` ranks by stars, then downloads, then `updatedAt`.
+- `recommended` uses engagement and recency signals.
 - `trending` ranks by installs in the last 7 days (telemetry-based).
 - `createdAt` is stable for new-skill crawls; `updated` changes when existing skills are republished.
 - When `nonSuspiciousOnly=true`, cursor-based sorts may return fewer than `limit` items on a page because suspicious skills are filtered after page retrieval.
@@ -361,10 +361,6 @@ Notes:
 
 - If neither `version` nor `tag` is provided, uses the latest version.
 - Includes normalized verification status plus scanner-specific details.
-- `security.capabilityTags` includes deterministic capability/risk labels such as
-  `crypto`, `financial-authority`, `requires-wallet`, `can-make-purchases`,
-  `can-sign-transactions`, `requires-paid-service`, `requires-oauth-token`, and
-  `posts-externally` when detected.
 - `security.hasScanResult` is `true` only when a scanner produced a definitive verdict (`clean`, `suspicious`, or `malicious`).
 - `moderation` is a current skill-level moderation snapshot derived from the latest version.
 - When querying a historical version, check `moderation.matchesRequestedVersion` and `moderation.sourceVersion` before treating `moderation` and `security` as the same version context.
@@ -543,28 +539,16 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
+- `sort` (optional): `updated` (default), `recommended`, `installs`
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages (`/api/v1/plugins`,
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
   `family=code-plugin`/`family=bundle-plugin`).
-- `target` / `hostTarget` (optional): shorthand for `host:<target>`
-- `os`, `arch`, `libc` (optional): shorthand for host capability filters
-- `requiresBrowser`, `requiresDesktop`, `requiresNativeDeps`,
-  `requiresExternalService`, `requiresBinary`, `requiresOsPermission`
-  (optional): `true`/`1` shorthand for environment requirement tags
-- `externalService`, `binary`, `osPermission` (optional): shorthand for named
-  environment requirement tags
-- `artifactKind` (optional): `legacy-zip` or `npm-pack`
-- `npmMirror` (optional): `true`/`1` to show ClawPack-backed package versions
-  available through the npm mirror
 
 Notes:
 
-- Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
-  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
-  return `400`. Unknown query parameters are ignored.
+- Invalid values for `family`, `channel`, `isOfficial`, `featured`,
+  `highlightedOnly`, or `sort` return `400`. Unknown query parameters are ignored.
 - `GET /api/v1/code-plugins` and `GET /api/v1/bundle-plugins` remain fixed-family aliases.
 - Skill entries stay backed by the skill registry and can still be published only through `POST /api/v1/skills`.
 - `POST /api/v1/packages` is still only for code-plugin and bundle-plugin releases.
@@ -583,28 +567,16 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages.
-- `target` / `hostTarget`, `os`, `arch`, `libc`, `requiresBrowser`,
-  `requiresDesktop`, `requiresNativeDeps`, `requiresExternalService`,
-  `requiresBinary`, `requiresOsPermission`, `externalService`, `binary`, and
-  `osPermission` are accepted as shorthands for common capability tags
-- `artifactKind` (optional): `legacy-zip` or `npm-pack`
-- `npmMirror` (optional): `true`/`1` to search ClawPack-backed package versions
-  available through the npm mirror
 
 Notes:
 
-- Invalid values for `family`, `channel`, `isOfficial`, `executesCode`,
-  `featured`, `highlightedOnly`, `artifactKind`, or boolean capability shorthands
-  return `400`. Unknown query parameters are ignored.
+- Invalid values for `family`, `channel`, `isOfficial`, `featured`, or
+  `highlightedOnly` return `400`. Unknown query parameters are ignored.
 - Anonymous callers only see public package channels.
 - Authenticated callers can search private packages for publishers they belong to.
 - `channel=private` only returns packages the authenticated caller can read.
-- Artifact filters are backed by indexed capability tags:
-  `artifact:legacy-zip`, `artifact:npm-pack`, and `npm-mirror:available`.
 
 ### `GET /api/v1/plugins`
 
@@ -615,8 +587,7 @@ Query params:
 - `limit` (optional): integer (1-100)
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
+- `sort` (optional): `recommended` (default), `installs`, `updated`
 - `category` (optional): plugin category filter. Current values:
   `channels`, `mcp-tooling`, `data`, `security`, `observability`,
   `automation`, `deployment`, `dev-tools`.
@@ -666,8 +637,6 @@ Query params:
 - `q` (required): query string
 - `limit` (optional): integer (1-100)
 - `isOfficial` (optional): `true` or `false`
-- `executesCode` (optional): `true` or `false`
-- `capabilityTag` (optional): capability filter for plugin packages
 - `category` (optional): plugin category filter. Current values:
   `channels`, `mcp-tooling`, `data`, `security`, `observability`,
   `automation`, `deployment`, `dev-tools`.
@@ -714,7 +683,7 @@ Notes:
 ### `GET /api/v1/packages/{name}/versions/{version}`
 
 Returns one package version, including file metadata, compatibility,
-capabilities, verification, artifact metadata, and scan data.
+verification, artifact metadata, and scan data.
 
 Notes:
 
@@ -722,7 +691,12 @@ Notes:
   `npm-pack` for ClawPack-backed releases.
 - ClawPack releases include npm-compatible `npmIntegrity`, `npmShasum`, and
   `npmTarballName` fields.
-- `version.sha256hash`, `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are included when scan data exists.
+- `version.sha256hash` is deprecated compatibility metadata for old clients. It
+  hashes the exact ZIP bytes returned by `/api/v1/packages/{name}/download`.
+  Modern clients should use `version.artifact.sha256`, which identifies the
+  canonical release artifact.
+- `version.vtAnalysis`, `version.llmAnalysis`, and `version.staticScan` are
+  included when scan data exists.
 - Private packages return `404` unless the caller can read the owning publisher.
 
 ### `GET /api/v1/packages/{name}/versions/{version}/security`
@@ -1366,6 +1340,27 @@ owner can later publish the real code-plugin or bundle-plugin release into that 
 
 - Body: `{ "handle": "openclaw", "slugs": ["diffs"], "packageNames": ["@openclaw/diffs"], "reason": "reserved for official OpenClaw plugin" }`
 - Response: `{ "ok": true, "succeeded": 2, "failed": 0, "results": [{ "kind": "slug", "name": "diffs", "ok": true, "action": "reserved" }] }`
+
+### `POST /api/v1/users/publisher-recovery`
+
+Admin-only. Recovers a personal publisher for a verified replacement GitHub OAuth principal
+without editing Convex Auth account rows. The request must name both immutable GitHub
+provider account ids; mutable handles are only used as an operator-facing guard.
+
+The endpoint defaults to dry-run. Applying recovery requires `dryRun: false` and
+`confirmIdentityVerified: true` after staff independently verify continuity between both
+GitHub principals. Recovery fails closed when the destination user's current personal
+publisher has skills, packages, or GitHub skill sources.
+Recovery also migrates legacy `ownerUserId` fields for the recovered publisher's skills,
+skill slug aliases, packages, package inspector warnings, and derived search digest rows so
+direct-owner paths agree with the new publisher authority. An active protected-handle
+reservation for the recovered handle is also reassigned to the replacement user so later
+profile synchronization cannot restore the former user's competing authority. Each primary table is bounded to
+100 rows per apply transaction; larger recoveries must first use a resumable owner migration.
+GitHub skill sources are publisher-scoped and reported as checked rather than rewritten.
+
+- Body: `{ "handle": "gingiris", "nextUserHandle": "gingiris-1031", "previousGitHubProviderAccountId": "123", "nextGitHubProviderAccountId": "456", "reason": "Verified account continuity for issue #2555", "confirmIdentityVerified": true, "dryRun": false }`
+- Response: `{ "ok": true, "dryRun": false, "recovered": true, "publisherId": "...", "handle": "gingiris", "previousUser": { "userId": "...", "handle": "gingiris", "nextHandle": "gingiris-recovered", "githubProviderAccountId": "123", "authAccountCount": 1 }, "nextUser": { "userId": "...", "handle": "gingiris-1031", "nextHandle": "gingiris", "githubProviderAccountId": "456", "authAccountCount": 1 }, "retiredPersonalPublisher": null, "resourceOwnerMigration": { "limitPerTable": 100, "skills": 1, "skillSlugAliases": 1, "packages": 0, "packageInspectorWarnings": 0, "githubSourcesChecked": 1, "handleReservations": 1 }, "identityVerified": true, "reason": "Verified account continuity for issue #2555" }`
 
 ### Owner slug management endpoints
 

@@ -12,11 +12,12 @@ read_when:
 
 - Minimal, fast SPA for browsing and publishing agent skills.
 - Skills stored in Convex (files + metadata + versions + stats).
-- GitHub OAuth login; GitHub App backs up skills to `clawdbot/skills`.
+- GitHub OAuth login; R2/object storage backs up hosted registry artifacts for
+  disaster recovery.
 - Vector-based search over skill text + metadata.
 - Versioning, tags (`latest` + user tags), changelog, rollback (tag movement).
 - Public read access; upload requires auth.
-- Moderation: badges + comment delete; audit everything.
+- Moderation: badges + report handling; audit everything.
 
 ## Non-goals (v1)
 
@@ -51,7 +52,7 @@ read_when:
 - `moderationFlags`: `string[]` (automatic detection)
 - `moderationNotes`, `moderationReason`
 - `hiddenAt`, `hiddenBy`, `lastReviewedAt`, `reportCount`
-- `stats`: `{ downloads, stars, versions, comments }`
+- `stats`: `{ downloads, stars, versions, comments }` (`comments` is retained as a historical stat field; skill comments are retired)
 - `createdAt`, `updatedAt`
 
 ### SkillVersion
@@ -79,12 +80,6 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
   - Nix plugins are different from regular skills; they bundle the skill pack, the CLI binary, and config flags/requirements together.
   - `metadata` in frontmatter is YAML (object) preferred; legacy JSON-string accepted.
 
-### Comment
-
-- `skillId`, `userId`, `body`
-- `softDeletedAt`, `deletedBy`
-- `createdAt`
-
 ### Star
 
 - `skillId`, `userId`, `createdAt`
@@ -92,7 +87,7 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 ### AuditLog
 
 - `actorUserId`
-- `action` (enum: `badge.set`, `badge.unset`, `comment.delete`, `role.change`)
+- `action` (enum: `badge.set`, `badge.unset`, `role.change`)
 - `targetType` / `targetId`
 - `metadata` (json)
 - `createdAt`
@@ -103,8 +98,7 @@ From SKILL.md frontmatter + AgentSkills + Clawdis extensions:
 - Default role `user`; bootstrap `steipete` to `admin` on first login.
 - Management console: moderators can hide/restore skills + mark duplicates + ban users; admins can change owners, approve badges, hard-delete skills, and ban users (deletes owned skills).
 - Role changes are admin-only and audited.
-- Reporting: any user can report skills/comments; per-user cap 20 active reports; targets auto-hide after >3 unique reports (mods can review/unhide/delete/ban).
-- Commenting (skills) requires GitHub account age ≥ 14 days.
+- Reporting: any user can report skills; per-user cap 20 active reports; skill targets auto-hide after >3 unique reports (mods can review/unhide/delete/ban).
 
 ## Upload flow (50MB per version)
 
@@ -155,7 +149,7 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 
 ## Vercel
 
-- Env vars: Convex deployment URLs + GitHub OAuth client + OpenAI key (if used) + GitHub App backup credentials.
+- Env vars: Convex deployment URLs + GitHub OAuth client + OpenAI key (if used) + registry artifact backup R2 credentials.
 - SPA feel: client-side transitions, prefetching, optimistic UI.
 
 ## Open questions (carry forward)

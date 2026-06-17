@@ -18,7 +18,7 @@ Each public listing is a registry record with:
 - one or more published versions
 - metadata, summary, files, and source attribution
 - changelog and tag information such as `latest`
-- download, install, star, and comment signals
+- download, install, and star signals
 - security scan and moderation status
 
 The listing page is the canonical place for users to inspect what a skill or

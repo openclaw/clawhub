@@ -70,20 +70,12 @@ describe("SkillsIndex", () => {
     expect(sortOptions.slice(0, 2)).toEqual(["Recommended", "Featured"]);
   });
 
-  it("keeps downloads as an explicit browse sort", async () => {
-    searchMock = { sort: "downloads", dir: "desc" };
+  it("offers installs without exposing downloads as a browse sort", async () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(getLastListPageArgs()).toEqual(
-      expect.objectContaining({
-        sort: "downloads",
-        dir: "desc",
-        highlightedOnly: false,
-        cursor: undefined,
-        numItems: 25,
-      }),
-    );
+    expect(screen.getByRole("radio", { name: "Most installed" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
   });
 
   it("renders an empty state when no skills are returned", async () => {
@@ -370,7 +362,7 @@ describe("SkillsIndex", () => {
   });
 
   it("switches implicit recommended sorting back to relevance when entering search", async () => {
-    searchMock = { sort: "downloads" };
+    searchMock = { sort: "recommended" };
     vi.useFakeTimers();
 
     render(<SkillsIndex />);
@@ -387,15 +379,15 @@ describe("SkillsIndex", () => {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
     };
     expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ sort: "downloads" })).toEqual({
+    expect(lastCall.search({ sort: "recommended" })).toEqual({
       q: "cli-design-framework",
       sort: undefined,
       dir: undefined,
     });
   });
 
-  it("preserves explicitly user-set downloads sort when entering search", async () => {
-    searchMock = { sort: "downloads", dir: "desc" };
+  it("preserves explicitly user-set installs sort when entering search", async () => {
+    searchMock = { sort: "installs", dir: "desc" };
     vi.useFakeTimers();
 
     render(<SkillsIndex />);
@@ -412,9 +404,9 @@ describe("SkillsIndex", () => {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
     };
     expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ sort: "downloads", dir: "desc" })).toEqual({
+    expect(lastCall.search({ sort: "installs", dir: "desc" })).toEqual({
       q: "cli-design-framework",
-      sort: "downloads",
+      sort: "installs",
       dir: "desc",
     });
   });
@@ -444,12 +436,12 @@ describe("SkillsIndex", () => {
     searchMock = { sort: "recommended", dir: "asc" };
     render(<SkillsIndex />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Most downloaded" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Most installed" }));
 
     const lastCall = getLastNavigateCall();
     expect(lastCall.replace).toBe(true);
     expect(lastCall.search({ sort: "recommended", dir: "asc" })).toEqual({
-      sort: "downloads",
+      sort: "installs",
       dir: "desc",
     });
   });
@@ -458,26 +450,26 @@ describe("SkillsIndex", () => {
     searchMock = { q: "notion", sort: "relevance", dir: "asc" };
     render(<SkillsIndex />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Most downloaded" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Most installed" }));
 
     const lastCall = getLastNavigateCall();
     expect(lastCall.replace).toBe(true);
     expect(lastCall.search({ q: "notion", sort: "relevance", dir: "asc" })).toEqual({
       q: "notion",
-      sort: "downloads",
+      sort: "installs",
       dir: "desc",
     });
   });
 
   it("clears direction when returning to recommended browse sort", async () => {
-    searchMock = { sort: "downloads", dir: "asc" };
+    searchMock = { sort: "installs", dir: "asc" };
     render(<SkillsIndex />);
 
     fireEvent.click(screen.getByRole("radio", { name: "Recommended" }));
 
     const lastCall = getLastNavigateCall();
     expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ sort: "downloads", dir: "asc" })).toEqual({
+    expect(lastCall.search({ sort: "installs", dir: "asc" })).toEqual({
       sort: "recommended",
       dir: undefined,
     });

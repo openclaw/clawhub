@@ -55,7 +55,6 @@ const baseCtx: SkillEvalContext = {
     engineVersion: "test",
     checkedAt: Date.UTC(2026, 0, 2),
   },
-  capabilityTags: ["requires-sensitive-credentials", "posts-externally"],
 };
 
 function newResponse(overrides: Record<string, unknown> = {}) {
@@ -375,7 +374,7 @@ describe("securityPrompt", () => {
     );
   });
 
-  it("includes static scan and capability signals in skill eval input", () => {
+  it("includes static scan signals in skill eval input", () => {
     const message = assembleSkillEvalUserMessage(baseCtx);
 
     expect(message).toContain("### SKILL.md content (quoted artifact data)");
@@ -384,9 +383,7 @@ describe("securityPrompt", () => {
     expect(message).toContain("### Static scan signals");
     expect(message).toContain("suspicious.env_credential_access");
     expect(message).toContain("WALLET_API_KEY");
-    expect(message).toContain("### Capability signals");
-    expect(message).toContain("requires-sensitive-credentials");
-    expect(message).toContain("posts-externally");
+    expect(message).not.toContain("### Capability signals");
   });
 
   it("neutralizes hidden comments before placing artifact text in the eval input", () => {

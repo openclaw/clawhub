@@ -99,7 +99,7 @@ bun run setup:worktree -- --from /path/to/source/worktree
 CLAWHUB_WORKTREE_SOURCE=/path/to/source/worktree bun run setup:worktree
 ```
 
-`dev:worktree` is the Worktrunk entrypoint. It runs the hooks in `.config/wt.toml`, copies ignored dependencies listed in `.worktreeinclude` when possible, falls back to `bun install` if Vite is missing, and starts detached services on a branch-hashed loopback port. Use `wt --yes url` from the same worktree to print the URL.
+`dev:worktree` is the Worktrunk entrypoint. It runs the hooks in `.config/wt.toml`, copies ignored dependencies listed in `.worktreeinclude` when possible, falls back to `bun install` if Vite is missing, seeds local fixtures plus the public corpus once when `VITE_CONVEX_URL` and `CONVEX_DEPLOYMENT` are local, refreshes cached global stats, and starts detached services on a branch-hashed loopback port. Use `wt --yes url` from the same worktree to print the URL.
 
 The detached server writes runtime state under `.codex/runtime/`. Stop it with `wt --yes stop` before removing the worktree.
 
@@ -121,9 +121,9 @@ one.
 Without those workers, local ClawScan and Skill Card jobs stay pending until you
 opt in, seed/mock results, or use the production workflows.
 
-### Seed the database
+### Reseed the database
 
-Populate local QA fixtures and the committed public corpus so the UI isn't empty:
+`dev:worktree` seeds local QA fixtures and the committed public corpus before starting the app when `VITE_CONVEX_URL` points at local Convex and `CONVEX_DEPLOYMENT` is an anonymous/local deployment marker, then records `.codex/runtime/dev-worktree.seeded` so ordinary restarts skip the expensive corpus pass. Remote-backed previews or mismatched deployment markers skip seeding and keep starting. To force the seed path without restarting the preview:
 
 ```bash
 bun run seed:dev
@@ -175,12 +175,12 @@ Without `OPENAI_API_KEY`, public corpus import still works, but semantic search 
 
 These features degrade gracefully without their keys:
 
-| Variable                                                                  | Purpose                                                   |
-| ------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `OPENAI_API_KEY`                                                          | Embeddings and vector search (falls back to zero vectors) |
-| `VT_API_KEY`                                                              | VirusTotal malware scanning                               |
-| `DISCORD_WEBHOOK_URL`                                                     | Discord notifications                                     |
-| `GITHUB_APP_ID` / `GITHUB_APP_PRIVATE_KEY` / `GITHUB_APP_INSTALLATION_ID` | GitHub backup sync                                        |
+| Variable                                                                                                                           | Purpose                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| `OPENAI_API_KEY`                                                                                                                   | Embeddings and vector search (falls back to zero vectors) |
+| `VT_API_KEY`                                                                                                                       | VirusTotal malware scanning                               |
+| `DISCORD_WEBHOOK_URL`                                                                                                              | Discord notifications                                     |
+| `REGISTRY_BACKUP_R2_ACCOUNT_ID` / `REGISTRY_BACKUP_BUCKET` / `REGISTRY_BACKUP_ACCESS_KEY_ID` / `REGISTRY_BACKUP_SECRET_ACCESS_KEY` | Registry artifact publish backup and seed/backfill        |
 
 ## CLI Development
 
@@ -208,7 +208,7 @@ Manual smoke tests are documented in [`specs/manual-testing.md`](specs/manual-te
 ## Skill Publishing
 
 - Skill format reference: [`docs/skill-format.md`](docs/skill-format.md)
-- End-to-end walkthrough (search, install, publish, sync): [`docs/quickstart.md`](docs/quickstart.md)
+- End-to-end walkthrough (search, install, and publish): [`docs/quickstart.md`](docs/quickstart.md)
 
 Quick publish:
 
@@ -281,10 +281,10 @@ See [`docs/security.md`](docs/security.md) for moderation and upload gating deta
 1. This file (local setup)
 2. [`docs/clawhub.md`](docs/clawhub.md) — public registry overview
 3. [`docs/quickstart.md`](docs/quickstart.md) — end-to-end workflows
-4. [`docs/architecture.md`](docs/architecture.md) — system design
+4. [`docs/how-it-works.md`](docs/how-it-works.md) — registry behavior and system overview
 5. [`docs/skill-format.md`](docs/skill-format.md) — skill structure
 6. [`docs/cli.md`](docs/cli.md) — CLI reference
 7. [`docs/http-api.md`](docs/http-api.md) — HTTP endpoints
 8. [`docs/auth.md`](docs/auth.md) — authentication
-9. [`docs/deploy.md`](docs/deploy.md) — deployment
+9. [`specs/deploy.md`](specs/deploy.md) — deployment
 10. [`docs/troubleshooting.md`](docs/troubleshooting.md) — common issues

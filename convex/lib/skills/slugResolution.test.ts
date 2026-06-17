@@ -360,7 +360,7 @@ describe("skill slug owner fallbacks", () => {
     });
   });
 
-  it("does not let a hidden preferred publisher mask the single public match", async () => {
+  it("does not let a hidden duplicate publisher mask the single public match", async () => {
     const publicSkill = {
       _id: doc<"skills">("skills:public"),
       slug: "shared",
@@ -370,7 +370,7 @@ describe("skill slug owner fallbacks", () => {
       moderationStatus: "active",
       moderationFlags: undefined,
     } as Doc<"skills">;
-    const hiddenPreferredSkill = {
+    const hiddenDuplicateSkill = {
       _id: doc<"skills">("skills:openclaw-hidden"),
       slug: "shared",
       ownerUserId: doc<"users">("users:openclaw"),
@@ -387,7 +387,7 @@ describe("skill slug owner fallbacks", () => {
             if (id === publicSkill.ownerPublisherId) {
               return { _id: id, kind: "org", handle: "alice" };
             }
-            if (id === hiddenPreferredSkill.ownerPublisherId) {
+            if (id === hiddenDuplicateSkill.ownerPublisherId) {
               return { _id: id, kind: "org", handle: "openclaw" };
             }
             return null;
@@ -409,7 +409,7 @@ describe("skill slug owner fallbacks", () => {
                 return {
                   take: async () =>
                     publicSkill.slug === constraints.slug
-                      ? [publicSkill, hiddenPreferredSkill]
+                      ? [publicSkill, hiddenDuplicateSkill]
                       : [],
                 };
               }
@@ -431,7 +431,73 @@ describe("skill slug owner fallbacks", () => {
     });
   });
 
-  it("does not let a preferred direct match hide public alias ambiguity", async () => {
+  it("prefers openclaw when duplicate legacy slug-only reads include one openclaw match", async () => {
+    const openclawSkill = {
+      _id: doc<"skills">("skills:openclaw"),
+      slug: "shared",
+      ownerUserId: doc<"users">("users:openclaw"),
+      ownerPublisherId: doc<"publishers">("publishers:openclaw"),
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationFlags: undefined,
+    } as Doc<"skills">;
+    const aliceSkill = {
+      _id: doc<"skills">("skills:alice"),
+      slug: "shared",
+      ownerUserId: doc<"users">("users:alice"),
+      ownerPublisherId: doc<"publishers">("publishers:alice"),
+      softDeletedAt: undefined,
+      moderationStatus: "active",
+      moderationFlags: undefined,
+    } as Doc<"skills">;
+    const publishers = [
+      { _id: openclawSkill.ownerPublisherId, kind: "org", handle: "openclaw" },
+      { _id: aliceSkill.ownerPublisherId, kind: "org", handle: "alice" },
+    ];
+
+    const result = await resolveLegacySkillBySlugOrAlias(
+      {
+        db: {
+          get: async (id: string) => publishers.find((publisher) => publisher._id === id) ?? null,
+          query: (table: "skills" | "skillSlugAliases") => ({
+            withIndex: (
+              indexName: string,
+              build?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              const constraints: Record<string, string> = {};
+              const q = {
+                eq: (field: string, value: string) => {
+                  constraints[field] = value;
+                  return q;
+                },
+              };
+              build?.(q);
+              if (table === "skills" && indexName === "by_slug") {
+                return {
+                  take: async () =>
+                    openclawSkill.slug === constraints.slug ? [openclawSkill, aliceSkill] : [],
+                };
+              }
+              if (table === "skillSlugAliases" && indexName === "by_slug") {
+                return { take: async () => [] };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          }),
+        },
+      } as never,
+      "shared",
+    );
+
+    expect(result).toMatchObject({
+      skill: openclawSkill,
+      alias: null,
+      ambiguous: false,
+      ambiguousMatches: [],
+    });
+  });
+
+  it("does not let a public direct match hide public alias ambiguity", async () => {
     const publicSkill = {
       _id: doc<"skills">("skills:public"),
       slug: "shared",

@@ -14,7 +14,6 @@ import {
   matchesExploratoryTokenPrefixes,
   tokenize,
 } from "./lib/searchText";
-import { SKILL_CAPABILITY_TAGS } from "./lib/skillCapabilityTags";
 import { isSkillSuspicious } from "./lib/skillSafety";
 import {
   digestToHydratableSkill,
@@ -51,9 +50,6 @@ type SkillSearchEntry = {
   embeddingId?: Id<"skillEmbeddings">;
   skill: NonNullable<ReturnType<typeof toPublicSkill>>;
   version: Doc<"skillVersions"> | null;
-  /** Mirrors `skillVersions.apiKeyRequired` of the latest version (sourced
-   * from `latestVersionSummary` to avoid hydrating the full version doc). */
-  apiKeyRequired?: boolean;
   ownerHandle: string | null;
   owner: PublicPublisher | null;
 };
@@ -76,7 +72,7 @@ const SLUG_PREFIX_BOOST = 0.8;
 const NAME_EXACT_BOOST = 1.1;
 const NAME_PREFIX_BOOST = 0.6;
 const STAR_POPULARITY_WEIGHT = 0.12;
-const DOWNLOAD_POPULARITY_WEIGHT = 0.005;
+const INSTALL_POPULARITY_WEIGHT = 0.005;
 const MAX_POPULARITY_BOOST = 0.09;
 const FALLBACK_SCAN_LIMIT = 2000;
 const MIN_FALLBACK_SCAN_LIMIT = 100;
@@ -88,7 +84,6 @@ const MIN_VECTOR_SEARCH_CANDIDATES = 50;
 const MAX_VECTOR_SEARCH_CANDIDATES = 128;
 const MAX_EXACT_SLUG_MATCHES = 25;
 const EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH = 3;
-const SKILL_CAPABILITY_TAG_SET = new Set<string>(SKILL_CAPABILITY_TAGS);
 
 function getNextCandidateLimit(current: number, max: number) {
   const next = Math.min(current * 2, max);
@@ -123,8 +118,6 @@ function getLexicalBoost(queryTokens: string[], displayName: string, slug: strin
 }
 
 type PopularityStats = {
-  downloads: number;
-  /** Accepted for compatibility with existing callers, but ignored for ranking. */
   installsAllTime?: number;
   stars: number;
 };
@@ -132,7 +125,7 @@ type PopularityStats = {
 function getPopularityBoost(stats: PopularityStats) {
   const rawBoost =
     Math.log1p(Math.max(stats.stars, 0)) * STAR_POPULARITY_WEIGHT +
-    Math.log1p(Math.max(stats.downloads, 0)) * DOWNLOAD_POPULARITY_WEIGHT;
+    Math.log1p(Math.max(stats.installsAllTime ?? 0, 0)) * INSTALL_POPULARITY_WEIGHT;
   return Math.min(rawBoost, MAX_POPULARITY_BOOST);
 }
 
@@ -151,7 +144,7 @@ function scoreSkillResult(
 function classifySkillMatch(
   query: string,
   queryTokens: string[],
-  skill: Pick<HydratableSkill, "displayName" | "slug" | "summary" | "capabilityTags">,
+  skill: Pick<HydratableSkill, "displayName" | "slug" | "summary">,
 ): SearchMatch | null {
   const needle = query.toLowerCase();
   const normalizedSlugQuery = queryTokens.join("-");
@@ -178,15 +171,6 @@ function classifySkillMatch(
   if (
     matchesExploratoryTokenPrefixes(
       queryTokens,
-      skill.capabilityTags ?? [],
-      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    return { rankTier: 2 };
-  }
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
       [skill.summary],
       EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
     )
@@ -197,7 +181,7 @@ function classifySkillMatch(
 }
 
 function comparePopularityStats(a: PopularityStats, b: PopularityStats) {
-  return b.stars - a.stars || b.downloads - a.downloads;
+  return b.stars - a.stars || (b.installsAllTime ?? 0) - (a.installsAllTime ?? 0);
 }
 
 function mergeUniqueBySkillId(primary: SkillSearchEntry[], fallback: SkillSearchEntry[]) {
@@ -224,26 +208,16 @@ function prefixUpperBound(value: string) {
   return `${value}\uffff`;
 }
 
-function matchesCapabilityTag(
-  skill: Pick<HydratableSkill, "capabilityTags">,
-  capabilityTag?: string,
-) {
-  if (!capabilityTag) return true;
-  return (skill.capabilityTags ?? []).includes(capabilityTag);
-}
-
 export const searchSkills: ReturnType<typeof action> = action({
   args: {
     query: v.string(),
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<PublicSearchResult[]> => {
     const query = args.query.trim();
     if (!query) return [];
-    if (args.capabilityTag && !SKILL_CAPABILITY_TAG_SET.has(args.capabilityTag)) return [];
     const queryTokens = tokenize(query);
     if (queryTokens.length === 0) return [];
     const rawExactSlugMatches = isSlugLikeQuery(query)
@@ -258,16 +232,11 @@ export const searchSkills: ReturnType<typeof action> = action({
         : rawExactSlugMatches
           ? [rawExactSlugMatches]
           : []
-    ).filter(
-      (entry) =>
-        (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-        matchesCapabilityTag(entry.skill, args.capabilityTag),
-    );
+    ).filter((entry) => !args.highlightedOnly || isSkillHighlighted(entry.skill));
     const directPrefixMatches = (await ctx.runQuery(internal.search.directPrefixSkillMatches, {
       query,
       highlightedOnly: args.highlightedOnly,
       nonSuspiciousOnly: args.nonSuspiciousOnly,
-      capabilityTag: args.capabilityTag,
     })) as SkillSearchEntry[];
     let vector: number[] | null;
     try {
@@ -290,6 +259,7 @@ export const searchSkills: ReturnType<typeof action> = action({
     let hydrated: SkillSearchEntry[] = [];
     const seenEmbeddingIds = new Set<Id<"skillEmbeddings">>();
     let scoreById = new Map<Id<"skillEmbeddings">, number>();
+    const scoreBySkillId = new Map<Id<"skills">, number>();
     let exactMatches: SkillSearchEntry[] = [];
 
     if (vector) {
@@ -318,12 +288,16 @@ export const searchSkills: ReturnType<typeof action> = action({
           scoreById.set(result._id, result._score);
         }
 
+        for (const entry of hydrated) {
+          if (!entry.embeddingId) continue;
+          const score = scoreById.get(entry.embeddingId);
+          if (score !== undefined) scoreBySkillId.set(entry.skill._id, score);
+        }
+
         // Skills already have badges from their docs (via toPublicSkill).
         // No need for a separate badge table lookup.
         const filtered = hydrated.filter(
-          (entry) =>
-            (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
-            matchesCapabilityTag(entry.skill, args.capabilityTag),
+          (entry) => !args.highlightedOnly || isSkillHighlighted(entry.skill),
         );
 
         exactMatches = filtered.filter((entry) =>
@@ -362,14 +336,15 @@ export const searchSkills: ReturnType<typeof action> = action({
             ),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
-            capabilityTag: args.capabilityTag,
             skipExactSlugLookup: true,
           })) as SkillSearchEntry[]);
     const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches);
 
     const rankedMatches = mergedMatches
       .map((entry): SearchResult | null => {
-        const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0;
+        const vectorScore = entry.embeddingId
+          ? (scoreById.get(entry.embeddingId) ?? scoreBySkillId.get(entry.skill._id) ?? 0)
+          : (scoreBySkillId.get(entry.skill._id) ?? 0);
         const match = classifySkillMatch(query, queryTokens, entry.skill);
         if (!match) return null;
         return {
@@ -381,7 +356,7 @@ export const searchSkills: ReturnType<typeof action> = action({
             entry.skill.displayName,
             entry.skill.slug,
             {
-              downloads: entry.skill.stats.downloads,
+              installsAllTime: entry.skill.stats.installsAllTime,
               stars: entry.skill.stats.stars,
             },
           ),
@@ -424,7 +399,6 @@ export const getExactSkillSlugMatch = internalQuery({
         const entry: SkillSearchEntry = {
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
-          apiKeyRequired: skill.latestVersionSummary?.apiKeyRequired,
           ownerHandle: resolved.ownerHandle,
           owner: resolved.owner,
         };
@@ -441,10 +415,8 @@ export const directPrefixSkillMatches = internalQuery({
     query: v.string(),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
-    if (args.capabilityTag && !SKILL_CAPABILITY_TAG_SET.has(args.capabilityTag)) return [];
     const normalizedQuery = normalizeSkillSearchText(args.query);
     if (!normalizedQuery) return [];
     const firstToken = getFirstSearchToken(args.query);
@@ -609,7 +581,6 @@ export const directPrefixSkillMatches = internalQuery({
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) return null;
         if (args.highlightedOnly && !isSkillHighlighted(skill)) return null;
-        if (!matchesCapabilityTag(skill, args.capabilityTag)) return null;
         const preResolved = digestToOwnerInfo(digest);
         const resolved = preResolved?.owner
           ? preResolved
@@ -619,7 +590,6 @@ export const directPrefixSkillMatches = internalQuery({
         return {
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
-          apiKeyRequired: digest.latestVersionSummary?.apiKeyRequired,
           ownerHandle: resolved.ownerHandle,
           owner: resolved.owner,
         };
@@ -673,9 +643,6 @@ export const hydrateResults = internalQuery({
           embeddingId,
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
-          apiKeyRequired:
-            digest?.latestVersionSummary?.apiKeyRequired ??
-            skill.latestVersionSummary?.apiKeyRequired,
           ownerHandle: resolved.ownerHandle,
           owner: resolved.owner,
         };
@@ -693,11 +660,9 @@ export const lexicalFallbackSkills = internalQuery({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     skipExactSlugLookup: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SkillSearchEntry[]> => {
-    if (args.capabilityTag && !SKILL_CAPABILITY_TAG_SET.has(args.capabilityTag)) return [];
     const limit = Math.min(Math.max(args.limit ?? 200, 10), FALLBACK_SCAN_LIMIT);
     const scanLimit = limit;
     const seenSkillIds = new Set<Id<"skills">>();
@@ -722,8 +687,7 @@ export const lexicalFallbackSkills = internalQuery({
       for (const exactSlugSkill of exactSlugSkills) {
         if (
           !exactSlugSkill.softDeletedAt &&
-          (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
-          matchesCapabilityTag(exactSlugSkill, args.capabilityTag)
+          (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill))
         ) {
           seenSkillIds.add(exactSlugSkill._id);
           candidates.push(exactSlugSkill);
@@ -763,7 +727,6 @@ export const lexicalFallbackSkills = internalQuery({
         if (seenSkillIds.has(digest.skillId)) continue;
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
-        if (!matchesCapabilityTag(skill, args.capabilityTag)) continue;
         seenSkillIds.add(digest.skillId);
         candidates.push(skill);
         // Pre-resolve owner from digest to avoid users table reads.
@@ -793,7 +756,6 @@ export const lexicalFallbackSkills = internalQuery({
         return {
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,
-          apiKeyRequired: skill.latestVersionSummary?.apiKeyRequired,
           ownerHandle: resolved.ownerHandle,
           owner: resolved.owner,
         };

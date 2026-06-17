@@ -10,7 +10,6 @@ import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
-import { ApiKeyRequiredBadge } from "./ApiKeyRequiredBadge";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { OfficialTag } from "./OfficialBadge";
@@ -329,7 +328,6 @@ export function SkillHeader({
                     </div>
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                  <ApiKeyRequiredBadge apiKeyRequired={latestVersion?.apiKeyRequired} />
                 </div>
                 {category ? (
                   <a
@@ -485,7 +483,7 @@ function SkillSidebarStats({
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
-        { label: "Downloads", value: formattedStats.downloads, large: true },
+        { label: "Installs", value: formattedStats.installsAllTime, large: true },
         { label: "Repository", value: githubRepositoryLink },
         {
           label: "Owner",

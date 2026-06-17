@@ -49,8 +49,8 @@ clawhub pin bear-notes --reason "scanner-flagged while awaiting moderation"
 clawhub update --all
 clawhub update --all --no-input --force
 clawhub unpin bear-notes
-clawhub skill publish ./my-skill-pack --slug my-skill-pack --name "My Skill Pack" --version 1.2.0 --changelog "Fixes + docs"
-clawhub skill publish ./org-skill --owner openclaw --version 1.2.0 --changelog "Org publish"
+clawhub skill publish ./my-skill-pack --slug my-skill-pack --name "My Skill Pack" --changelog "Fixes + docs"
+clawhub skill publish ./org-skill --owner openclaw --changelog "Org publish"
 clawhub package explore --family skill
 clawhub package explore --family code-plugin
 clawhub package inspect @openclaw/example-plugin
@@ -169,16 +169,6 @@ bun run --cwd packages/clawhub verify
 ```
 
 `test` runs source tests only. `test:artifact` builds `dist/` and runs a small smoke suite against the built CLI entrypoint.
-
-## Sync (upload local skills)
-
-```bash
-# Start anywhere; scans workdir first, then legacy Clawdis/Clawd/OpenClaw/Moltbot locations.
-clawhub sync
-
-# Explicit roots + non-interactive dry-run
-clawhub sync --root ../clawdis/skills --all --dry-run
-```
 
 ## Defaults
 

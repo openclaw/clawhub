@@ -1,5 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
+import { useQuery } from "convex/react";
 import {
   ArrowRight,
   ChevronDown,
@@ -11,15 +12,16 @@ import {
   Settings,
   Star,
   Sun,
+  UserRound,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
+import { api } from "../../convex/_generated/api";
 import {
   getUserFacingAuthError,
   isBannedAccountAuthError,
   routeToBannedAccountPage,
 } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
-import { NAV_ICONS } from "../lib/marketplaceIcons";
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
 import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
@@ -46,9 +48,12 @@ import {
   SheetHeader,
   SheetTitle,
 } from "./ui/sheet";
-import { ToggleGroup, ToggleGroupItem } from "./ui/toggle-group";
 
-const THEME_MODE_SEQUENCE: Array<"system" | "light" | "dark"> = ["system", "light", "dark"];
+const THEME_MODE_ITEMS = [
+  { mode: "system", label: "System theme", Icon: Monitor },
+  { mode: "light", label: "Light theme", Icon: Sun },
+  { mode: "dark", label: "Dark theme", Icon: Moon },
+] as const;
 
 function GitHubLogo({ className }: { className?: string }) {
   return (
@@ -88,6 +93,10 @@ export default function Header() {
   const handle = rawHandle.length > 25 ? `${rawHandle.slice(0, 25)}…` : rawHandle;
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
   const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
+  const profileHandle = useQuery(
+    api.publishers.getMyProfileHandle,
+    isAuthenticated && me ? {} : "skip",
+  );
   const signInRedirectTo = getCurrentRelativeUrl();
 
   const [navSearchQuery, setNavSearchQuery] = useState("");
@@ -96,7 +105,6 @@ export default function Header() {
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
-  const ThemeModeIcon = getThemeModeIcon(mode);
   const trimmedNavSearchQuery = navSearchQuery.trim();
   const showTypeahead = typeaheadOpen && trimmedNavSearchQuery.length > 0;
   const {
@@ -161,11 +169,6 @@ export default function Header() {
   const setThemeMode = (next: "system" | "light" | "dark") => {
     applyTheme(next, theme);
     setMode(next);
-  };
-
-  const cycleThemeMode = () => {
-    const currentIndex = Math.max(0, THEME_MODE_SEQUENCE.indexOf(mode));
-    setThemeMode(THEME_MODE_SEQUENCE[(currentIndex + 1) % THEME_MODE_SEQUENCE.length] ?? "system");
   };
 
   const handleNavSearch = (e: React.FormEvent) => {
@@ -272,9 +275,7 @@ export default function Header() {
                       <span className="mobile-nav-brand-name">{SITE_NAME}</span>
                     </span>
                   </SheetTitle>
-                  <SheetDescription>
-                    Browse sections, switch theme, and access account actions.
-                  </SheetDescription>
+                  <SheetDescription>Browse sections and access account actions.</SheetDescription>
                 </SheetHeader>
                 <div className="mobile-nav-section">
                   <SheetClose asChild>
@@ -311,20 +312,6 @@ export default function Header() {
                     </SheetClose>
                   ))}
                 </div>
-                <div className="mobile-nav-section">
-                  <div className="mobile-nav-section-title">Theme</div>
-                  <button
-                    className="mobile-nav-link"
-                    type="button"
-                    onClick={() => {
-                      cycleThemeMode();
-                      setMobileMenuOpen(false);
-                    }}
-                  >
-                    <ThemeModeIcon className="h-4 w-4" aria-hidden="true" />
-                    {mode === "system" ? "System theme" : `${mode} theme`}
-                  </button>
-                </div>
               </SheetContent>
             </Sheet>
           </div>
@@ -339,6 +326,34 @@ export default function Header() {
             </span>
             <span className="brand-name brand-name-responsive">{SITE_NAME}</span>
           </Link>
+
+          <nav className="navbar-top-links" aria-label="Primary navigation">
+            {[...PRIMARY_NAV_ITEMS, ...SECONDARY_NAV_ITEMS].map((item) => {
+              const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
+                location.pathname.startsWith(prefix),
+              );
+              return item.href ? (
+                <a
+                  key={item.href + item.label}
+                  href={item.href}
+                  className="navbar-tab"
+                  data-status={isActiveByPrefix ? "active" : undefined}
+                >
+                  {item.label}
+                </a>
+              ) : (
+                <Link
+                  key={item.to + item.label}
+                  to={item.to}
+                  className="navbar-tab"
+                  search={(item.search ?? {}) as never}
+                  data-status={isActiveByPrefix ? "active" : undefined}
+                >
+                  {item.label}
+                </Link>
+              );
+            })}
+          </nav>
 
           <div className="navbar-search-wrap" ref={searchWrapRef}>
             <form
@@ -389,42 +404,6 @@ export default function Header() {
             >
               <Search size={18} aria-hidden="true" />
             </button>
-            <div className="theme-toggle">
-              <div className="theme-cycle-group" aria-label="Theme controls">
-                <button
-                  type="button"
-                  className="theme-cycle-button theme-cycle-button-mode"
-                  onClick={cycleThemeMode}
-                  aria-label={`Cycle theme mode. Current: ${mode}`}
-                  title={`Theme mode: ${mode}`}
-                >
-                  <ThemeModeIcon className="h-4 w-4" aria-hidden="true" />
-                </button>
-              </div>
-              <ToggleGroup
-                className="theme-mode-toggle"
-                type="single"
-                value={mode}
-                onValueChange={(value) => {
-                  if (!value) return;
-                  setThemeMode(value as "system" | "light" | "dark");
-                }}
-                aria-label="Theme mode"
-              >
-                <ToggleGroupItem value="system" aria-label="System theme">
-                  <Monitor className="h-4 w-4" aria-hidden="true" />
-                  <span className="sr-only">System</span>
-                </ToggleGroupItem>
-                <ToggleGroupItem value="light" aria-label="Light theme">
-                  <Sun className="h-4 w-4" aria-hidden="true" />
-                  <span className="sr-only">Light</span>
-                </ToggleGroupItem>
-                <ToggleGroupItem value="dark" aria-label="Dark theme">
-                  <Moon className="h-4 w-4" aria-hidden="true" />
-                  <span className="sr-only">Dark</span>
-                </ToggleGroupItem>
-              </ToggleGroup>
-            </div>
             {isAuthenticated && me ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -439,6 +418,18 @@ export default function Header() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="user-dropdown-content">
+                  {profileHandle ? (
+                    <DropdownMenuItem asChild>
+                      <Link
+                        to="/user/$handle"
+                        params={{ handle: profileHandle }}
+                        className="flex items-center gap-2"
+                      >
+                        <UserRound size={14} aria-hidden="true" />
+                        Profile
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : null}
                   <DropdownMenuItem asChild>
                     <Link to="/dashboard" className="flex items-center gap-2">
                       <LayoutDashboard size={14} aria-hidden="true" />
@@ -457,6 +448,23 @@ export default function Header() {
                       Settings
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <div className="user-dropdown-theme-row" role="group" aria-label="Theme">
+                    {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
+                      <DropdownMenuItem
+                        key={themeMode}
+                        aria-label={label}
+                        aria-current={mode === themeMode ? "true" : undefined}
+                        className="user-dropdown-theme-button"
+                        data-status={mode === themeMode ? "active" : undefined}
+                        title={label}
+                        onClick={() => setThemeMode(themeMode)}
+                      >
+                        <Icon size={15} aria-hidden="true" />
+                        <span className="sr-only">{label}</span>
+                      </DropdownMenuItem>
+                    ))}
+                  </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem onClick={() => void signOut()}>Sign out</DropdownMenuItem>
                 </DropdownMenuContent>
@@ -523,55 +531,6 @@ export default function Header() {
             />
           </form>
         ) : null}
-
-        <nav className="navbar-tabs" aria-label="Content types">
-          <div className="navbar-tabs-primary">
-            {PRIMARY_NAV_ITEMS.map((item) => {
-              const Icon = item.icon ? NAV_ICONS[item.icon] : null;
-              const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
-                location.pathname.startsWith(prefix),
-              );
-              return (
-                <Link
-                  key={item.to + item.label}
-                  to={item.to}
-                  className="navbar-tab"
-                  search={(item.search ?? {}) as never}
-                  data-status={isActiveByPrefix ? "active" : undefined}
-                >
-                  {Icon ? <Icon size={14} className="opacity-50" aria-hidden="true" /> : null}
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-          <div className="navbar-tabs-secondary">
-            {SECONDARY_NAV_ITEMS.map((item) => {
-              const isActiveByPrefix = item.activePathPrefixes?.some((prefix) =>
-                location.pathname.startsWith(prefix),
-              );
-              return item.href ? (
-                <a
-                  key={item.href + item.label}
-                  href={item.href}
-                  className="navbar-tab navbar-tab-secondary"
-                >
-                  {item.label}
-                </a>
-              ) : (
-                <Link
-                  key={(item.to ?? "") + item.label}
-                  to={item.to}
-                  search={(item.search ?? {}) as never}
-                  className="navbar-tab navbar-tab-secondary"
-                  data-status={isActiveByPrefix ? "active" : undefined}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
-          </div>
-        </nav>
       </div>
     </header>
   );
@@ -752,16 +711,4 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
 function getCurrentRelativeUrl() {
   if (typeof window === "undefined") return "/";
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
-
-function getThemeModeIcon(mode: "system" | "light" | "dark") {
-  switch (mode) {
-    case "light":
-      return Sun;
-    case "dark":
-      return Moon;
-    case "system":
-    default:
-      return Monitor;
-  }
 }

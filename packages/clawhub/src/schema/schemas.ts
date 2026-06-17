@@ -160,8 +160,19 @@ export const CliTelemetryInstallRequestSchema = type({
   event: '"install"',
   slug: "string",
   version: "string?",
+  // Deprecated compatibility fields accepted and ignored by the backend.
   rootId: "string?",
   rootLabel: "string?",
+}).or({
+  // Legacy bulk snapshots remain accepted while older CLIs are in circulation.
+  roots: type({
+    rootId: "string",
+    label: "string",
+    skills: type({
+      slug: "string",
+      version: "string|null?",
+    }).array(),
+  }).array(),
 });
 export type CliTelemetryInstallRequest = (typeof CliTelemetryInstallRequestSchema)[inferred];
 
@@ -239,6 +250,48 @@ export const ApiV1PublisherDeleteResponseSchema = type({
 });
 export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
 
+export const ApiV1PublisherRecoveryResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  recovered: "boolean",
+  publisherId: "string",
+  handle: "string",
+  previousUser: {
+    userId: "string",
+    handle: "string|null",
+    nextHandle: "string|null",
+    githubProviderAccountId: "string",
+    authAccountCount: "number",
+  },
+  nextUser: {
+    userId: "string",
+    handle: "string|null",
+    nextHandle: "string",
+    githubProviderAccountId: "string",
+    authAccountCount: "number",
+  },
+  retiredPersonalPublisher: type({
+    publisherId: "string",
+    handle: "string",
+    skills: "number",
+    packages: "number",
+    githubSources: "number",
+  }).or("null"),
+  resourceOwnerMigration: {
+    limitPerTable: "number",
+    skills: "number",
+    skillSlugAliases: "number",
+    packages: "number",
+    packageInspectorWarnings: "number",
+    githubSourcesChecked: "number",
+    handleReservations: "number",
+  },
+  identityVerified: "boolean",
+  reason: "string",
+});
+export type ApiV1PublisherRecoveryResponse =
+  (typeof ApiV1PublisherRecoveryResponseSchema)[inferred];
+
 export const ApiV1OfficialPublisherListResponseSchema = type({
   ok: "true",
   items: type({
@@ -291,6 +344,7 @@ export const ApiV1SearchResponseSchema = type({
     summary: "string|null?",
     version: "string|null?",
     score: "number",
+    downloads: "number?",
     updatedAt: "number?",
     owner: type({
       handle: "string|null?",
@@ -534,6 +588,15 @@ export const ApiV1SkillRescanResponseSchema = type({
   skillId: "string",
   skillVersionId: "string",
   jobId: "string",
+  alreadyQueued: "boolean",
+}).or({
+  ok: "true",
+  slug: "string",
+  version: "string",
+  skillId: "string",
+  githubContentHash: "string",
+  jobId: "string?",
+  scheduled: "boolean",
   alreadyQueued: "boolean",
 });
 export type ApiV1SkillRescanResponse = (typeof ApiV1SkillRescanResponseSchema)[inferred];

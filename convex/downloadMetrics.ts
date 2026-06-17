@@ -105,16 +105,28 @@ export const pruneDownloadMetricDedupesInternal = internalMutation({
   args: {},
   handler: async (ctx) => {
     const cutoffDayStart = getDayStart(Date.now() - DEDUPE_RETENTION_MS);
-    const stale = await ctx.db
+    const staleDownloads = await ctx.db
       .query("downloadMetricDedupes")
       .withIndex("by_day", (q) => q.lt("dayStart", cutoffDayStart))
       .take(PRUNE_BATCH_SIZE);
+    const remainingBatchSize = PRUNE_BATCH_SIZE - staleDownloads.length;
+    const staleInstalls =
+      remainingBatchSize > 0
+        ? await ctx.db
+            .query("packageInstallMetricDedupes")
+            .withIndex("by_day", (q) => q.lt("dayStart", cutoffDayStart))
+            .take(remainingBatchSize)
+        : [];
 
-    for (const entry of stale) {
+    for (const entry of staleDownloads) {
+      await ctx.db.delete(entry._id);
+    }
+    for (const entry of staleInstalls) {
       await ctx.db.delete(entry._id);
     }
 
-    const hasMore = stale.length === PRUNE_BATCH_SIZE;
+    const deleted = staleDownloads.length + staleInstalls.length;
+    const hasMore = deleted === PRUNE_BATCH_SIZE;
     if (hasMore) {
       await ctx.scheduler.runAfter(
         0,
@@ -123,7 +135,7 @@ export const pruneDownloadMetricDedupesInternal = internalMutation({
       );
     }
 
-    return { deleted: stale.length, hasMore };
+    return { deleted, hasMore };
   },
 });
 

@@ -92,13 +92,27 @@ files.
 clawhub skill publish ./my-skill \
   --slug my-skill \
   --name "My Skill" \
-  --version 1.0.0 \
   --changelog "Initial release"
 ```
+
+The command skips unchanged content. New skills start at `1.0.0`; later changes
+automatically publish the next patch version. Use `--dry-run` to preview or
+`--version` to choose an explicit version.
 
 Before publishing, check the metadata in `SKILL.md`. Declare required
 environment variables, tools, and permissions so users can understand what the
 skill needs before they install it. See [Skill format](./skill-format.md).
+
+For repositories containing multiple skills, the reusable GitHub workflow calls
+`skill publish` for each immediate skill folder under `skills/`:
+
+```yaml
+jobs:
+  preview:
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
+    with:
+      dry_run: true
+```
 
 ## Publish a plugin
 
@@ -115,28 +129,6 @@ fields, source attribution, and upload plan without publishing.
 
 Code plugins must include OpenClaw compatibility metadata in `package.json`,
 including `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
-
-## Sync skills you maintain
-
-`sync` scans skill folders and publishes new or changed skills that are not
-already synchronized.
-
-```bash
-clawhub sync --all --dry-run
-clawhub sync --all
-```
-
-For catalog repos, ClawHub also provides a reusable GitHub workflow. By
-default it scans `skills/`; pass `skill_path` to process one folder.
-
-```yaml
-jobs:
-  dry-run:
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
-    with:
-      owner: nvidia
-      dry_run: true
-```
 
 ## Inspect before installing
 

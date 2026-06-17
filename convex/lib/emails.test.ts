@@ -13,7 +13,7 @@ function expectFooterLinksUnderlined(html: string) {
     /href="https:\/\/clawhub\.ai"[^>]*style="[^"]*color:#8a8a8e[^"]*text-decoration[^"]*underline[^"]*"[^>]*>ClawHub<\/a>/,
   );
   expect(html).toMatch(
-    /href="https:\/\/(?:clawhub\.ai\/docs|docs\.openclaw\.ai)"[^>]*style="[^"]*color:#8a8a8e[^"]*text-decoration[^"]*underline[^"]*"[^>]*>Docs<\/a>/,
+    /href="https:\/\/(?:clawhub\.ai\/docs|docs\.openclaw\.ai\/clawhub)"[^>]*style="[^"]*color:#8a8a8e[^"]*text-decoration[^"]*underline[^"]*"[^>]*>Docs<\/a>/,
   );
 }
 
@@ -57,7 +57,7 @@ describe("moderation notification email copy", () => {
     expect(email.html).not.toContain("If you already appealed");
     expect(email.html).not.toContain("separate support email");
     expect(email.html).not.toContain("You received this email because");
-    expect(email.html).toContain("https://clawhub.ai/docs");
+    expect(email.html).toContain("https://docs.openclaw.ai/clawhub");
     expectFooterLinksUnderlined(email.html);
     expect(email.text).not.toContain("clawhub scan ./my-skill --output clawhub-scan.zip");
     expect(email.text).not.toContain("https://docs.openclaw.ai/clawhub/cli#scan-path");
@@ -96,6 +96,38 @@ describe("moderation notification email copy", () => {
     expect(email.html).not.toContain("fixed local copy");
   });
 
+  it("builds publisher-abuse account-suspended copy from a structured manual reason", async () => {
+    const email = await buildBanNotificationEmail({
+      handle: "bulkpub",
+      source: "manual",
+      reason: "publisher_abuse: high catalog volume, low installs per skill, abnormal downloads",
+      hiddenArtifacts: 42,
+    });
+
+    expect(email.subject).toBe("Your ClawHub account has been suspended");
+    expect(email.context).toMatchObject({
+      appealUrl: APPEALS_URL,
+      artifact: null,
+      scannerLabel: null,
+      findingSummary:
+        "Your account was identified by ClawHub's publisher abuse review workflow for activity that appears inconsistent with our Acceptable Usage policy.",
+    });
+    expect(email.text).toContain("Hi bulkpub,");
+    expect(email.text).toContain("Bulk or spam publishing");
+    expect(email.text).toContain("Artificially inflating installs, downloads, stars");
+    expect(email.text).toContain(
+      "Abnormal download activity with little or no corresponding install activity",
+    );
+    expect(email.text).toContain("Artifacts hidden");
+    expect(email.text).not.toContain("publisher_abuse:");
+    expect(email.text).not.toContain(`Appeal: ${APPEALS_URL}`);
+    expect(email.html).toContain("Submit an appeal");
+    expect(email.html).toContain("Bulk or spam publishing");
+    expect(email.html).toContain("Artificially inflating installs, downloads, stars");
+    expect(email.html).toContain("Artifacts hidden");
+    expect(email.html).not.toContain("publisher_abuse:");
+  });
+
   it("builds restored-account copy that explains tokens stay revoked", async () => {
     const email = await buildRestoredAccountEmail({
       handle: "restored",
@@ -113,7 +145,7 @@ describe("moderation notification email copy", () => {
     expect(email.html).toContain("ACCOUNT REINSTATED");
     expect(email.html).toContain("API tokens issued before the suspension");
     expect(email.html).not.toContain("You received this email because");
-    expect(email.html).toContain("https://clawhub.ai/docs");
+    expect(email.html).toContain("https://docs.openclaw.ai/clawhub");
     expectFooterLinksUnderlined(email.html);
   });
 
@@ -343,15 +375,21 @@ describe("moderation notification email copy", () => {
     expect(email.subject).toBe("Content rights report");
     expect(email.text).toContain("Hi octocat,");
     expect(email.text).toContain("Action required: content rights report");
+    expect(email.text.indexOf("Action required: content rights report")).toBeLessThan(
+      email.text.indexOf("Hi octocat,"),
+    );
     expect(email.text).toContain("Open appeal: https://appeals.openclaw.ai/case-123");
     expect(email.html).toContain("font-size:18px");
     expect(email.html).toContain("ClawHub");
     expect(email.html).toContain("Action required: content rights report");
+    expect(email.html.indexOf("Action required: content rights report")).toBeLessThan(
+      email.html.indexOf("octocat"),
+    );
     expect(email.html).toContain("We received a report about &lt;package&gt;.");
     expect(email.html).toContain("Open appeal");
     expect(email.html).not.toContain("<package>");
     expect(email.html).not.toContain("You received this email because");
-    expect(email.html).toContain("https://clawhub.ai/docs");
+    expect(email.html).toContain("https://docs.openclaw.ai/clawhub");
     expectFooterLinksUnderlined(email.html);
   });
 
@@ -370,7 +408,7 @@ describe("moderation notification email copy", () => {
     expect(email.html).not.toContain("{{primary_action_url}}");
     expect(email.html).not.toContain('href="https://clawhub.ai" style="display:inline-block');
     expect(email.html).not.toContain("You received this email because");
-    expect(email.html).toContain("https://clawhub.ai/docs");
+    expect(email.html).toContain("https://docs.openclaw.ai/clawhub");
     expectFooterLinksUnderlined(email.html);
   });
 });

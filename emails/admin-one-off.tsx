@@ -52,7 +52,6 @@ export default function AdminOneOffEmail({
                           padding: "36px",
                         }}
                       >
-                        <Paragraph>Hi {recipientHandle},</Paragraph>
                         <h1
                           style={{
                             margin: 0,
@@ -64,6 +63,7 @@ export default function AdminOneOffEmail({
                         >
                           {title}
                         </h1>
+                        <Paragraph>Hi {recipientHandle},</Paragraph>
                         <Paragraph>
                           <MultilineText value={body} />
                         </Paragraph>

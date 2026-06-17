@@ -1,4 +1,3 @@
-import { buildCliAuthUrl, startLoopbackAuthServer } from "../../browserAuth.js";
 import { readGlobalConfig, writeGlobalConfig } from "../../config.js";
 import { pollForDeviceToken, requestDeviceCode } from "../../deviceAuth.js";
 import { discoverRegistryFromSite } from "../../discovery.js";
@@ -7,7 +6,7 @@ import { ApiRoutes, ApiV1WhoamiResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, openInBrowser, promptHidden } from "../ui.js";
+import { createCrabLoader, fail, formatError, promptHidden } from "../ui.js";
 
 export async function cmdLoginFlow(
   opts: GlobalOpts,
@@ -19,33 +18,7 @@ export async function cmdLoginFlow(
     return;
   }
 
-  if (options.device) {
-    await cmdDeviceLogin(opts);
-    return;
-  }
-
-  if (options.browser === false) {
-    fail("Token required (use --token, --device, or remove --no-browser)");
-  }
-
-  const label = (options.label ?? "CLI token").trim() || "CLI token";
-  const receiver = await startLoopbackAuthServer();
-  const discovery = await discoverRegistryFromSite(opts.site).catch(() => null);
-  const authBase = discovery?.authBase?.trim() || opts.site;
-  const authUrl = buildCliAuthUrl({
-    siteUrl: authBase,
-    redirectUri: receiver.redirectUri,
-    label,
-    state: receiver.state,
-  });
-
-  console.log(`Opening browser: ${authUrl}`);
-  openInBrowser(authUrl);
-
-  const result = await receiver.waitForResult();
-  const registry = result.registry?.trim() || opts.registry;
-  const registrySource = result.registry?.trim() ? "cli" : opts.registrySource;
-  await cmdLogin({ ...opts, registry, registrySource }, result.token, inputAllowed);
+  await cmdDeviceLogin(opts, { label: options.label });
 }
 
 async function cmdLogin(opts: GlobalOpts, tokenFlag: string | undefined, inputAllowed: boolean) {
@@ -55,7 +28,7 @@ async function cmdLogin(opts: GlobalOpts, tokenFlag: string | undefined, inputAl
   if (!token) fail("Token required");
 
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Verifying token");
+  const spinner = createCrabLoader("Verifying token");
   try {
     const whoami = await apiRequest(
       registry,
@@ -84,7 +57,7 @@ export async function cmdWhoami(opts: GlobalOpts) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
 
-  const spinner = createSpinner("Checking token");
+  const spinner = createCrabLoader("Checking token");
   try {
     const whoami = await apiRequest(
       registry,
@@ -107,15 +80,16 @@ export async function cmdToken() {
  * Device Flow login for headless environments.
  * Requests a device code, displays it to the user, then polls until authorized.
  */
-export async function cmdDeviceLogin(opts: GlobalOpts) {
+export async function cmdDeviceLogin(opts: GlobalOpts, options?: { label?: string }) {
   const discovery = await discoverRegistryFromSite(opts.site).catch(() => null);
   const authBase = discovery?.authBase?.trim() || opts.site;
   const registry = await getRegistry(opts, { cache: true });
+  const label = (options?.label ?? "CLI device login").trim() || "CLI device login";
 
-  const spinner = createSpinner("Requesting device code");
+  const spinner = createCrabLoader("Requesting device code");
   let deviceCode;
   try {
-    deviceCode = await requestDeviceCode({ apiUrl: registry, siteUrl: authBase });
+    deviceCode = await requestDeviceCode({ apiUrl: registry, siteUrl: authBase, label });
     spinner.succeed("Device code received");
   } catch (error) {
     spinner.fail(formatError(error));
@@ -132,7 +106,7 @@ export async function cmdDeviceLogin(opts: GlobalOpts) {
   console.log(`  Code expires in ${Math.floor(deviceCode.expires_in / 60)} minutes.`);
   console.log();
 
-  const pollSpinner = createSpinner("Waiting for authorization");
+  const pollSpinner = createCrabLoader("Waiting for authorization");
   try {
     const tokenResponse = await pollForDeviceToken(
       { apiUrl: registry, siteUrl: authBase },

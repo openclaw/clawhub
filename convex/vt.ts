@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalAction, internalMutation } from "./functions";
+import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { sourceSkillVersionFiles } from "./lib/skillCards";
 import { buildDeterministicPackageZip, buildDeterministicZip } from "./lib/skillZip";
 
@@ -492,9 +493,9 @@ export const scanWithVirusTotal = internalAction({
     }
 
     // Get the version details and files
-    const version = await ctx.runQuery(internal.skills.getVersionByIdInternal, {
+    const version = (await ctx.runQuery(internal.skills.getVersionByIdInternal, {
       versionId: args.versionId,
-    });
+    })) as Doc<"skillVersions"> | null;
 
     if (!version) {
       console.error(`Version ${args.versionId} not found for scanning`);
@@ -502,17 +503,20 @@ export const scanWithVirusTotal = internalAction({
     }
 
     // Fetch skill info for _meta.json
-    const skill = await ctx.runQuery(internal.skills.getSkillByIdInternal, {
+    const skill = (await ctx.runQuery(internal.skills.getSkillByIdInternal, {
       skillId: version.skillId,
-    });
+    })) as Doc<"skills"> | null;
     if (!skill) {
       console.error(`Skill ${version.skillId} not found for scanning`);
       return;
     }
 
-    const fingerprintEntries = await ctx.runQuery(internal.skills.listVersionFingerprintsInternal, {
-      skillVersionId: version._id,
-    });
+    const fingerprintEntries = (await ctx.runQuery(
+      internal.skills.listVersionFingerprintsInternal,
+      {
+        skillVersionId: version._id,
+      },
+    )) as Array<{ fingerprint: string; kind?: "source" | "generated-bundle" }>;
     const generatedBundleFingerprints = fingerprintEntries
       .filter((entry) => entry.kind === "generated-bundle")
       .map((entry) => entry.fingerprint);
@@ -722,11 +726,6 @@ export const scanPackageReleaseWithVirusTotal = internalAction({
       return;
     }
 
-    await runMutationRef(ctx, internalRefs.packages.updateReleaseScanResultsInternal, {
-      releaseId: args.releaseId,
-      sha256hash: artifact.sha256hash,
-    });
-
     try {
       const existingFile = await checkExistingFile(apiKey, artifact.sha256hash);
       const vtAnalysis = existingFile
@@ -812,7 +811,9 @@ export const pollPackageReleaseScanResults = internalAction({
     const release = (await runQueryRef(ctx, internalRefs.packages.getReleaseByIdInternal, {
       releaseId: args.releaseId,
     })) as Doc<"packageReleases"> | null;
-    if (!release || release.softDeletedAt || !release.sha256hash) return;
+    if (!release || release.softDeletedAt) return;
+    const artifactSha256 = getPackageReleaseArtifactSha256(release);
+    if (!artifactSha256) return;
     const pkg = (await runQueryRef(ctx, internalRefs.packages.getPackageByIdInternal, {
       packageId: release.packageId,
     })) as Doc<"packages"> | null;
@@ -820,7 +821,7 @@ export const pollPackageReleaseScanResults = internalAction({
 
     const attempt = args.attempt ?? 1;
     try {
-      const vtResult = await checkExistingFile(apiKey, release.sha256hash);
+      const vtResult = await checkExistingFile(apiKey, artifactSha256);
       if (!vtResult) {
         if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
           await runAfterRef(
@@ -870,7 +871,7 @@ export const pollPackageReleaseScanResults = internalAction({
         await enqueuePackageCodexForVtSignal(ctx, args.releaseId);
       }
     } catch (error) {
-      console.error(`[vt:package] Error polling ${release.sha256hash}:`, error);
+      console.error(`[vt:package] Error polling ${artifactSha256}:`, error);
       if (attempt < PACKAGE_SCAN_MAX_ATTEMPTS) {
         await runAfterRef(
           ctx,

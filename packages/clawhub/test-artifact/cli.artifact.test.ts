@@ -193,6 +193,18 @@ async function startLocalRegistry() {
     }
 
     if (request.method === "GET" && url.pathname === "/api/v1/resolve") {
+      if (url.searchParams.get("slug") === "new-skill") {
+        response.writeHead(404, { "Content-Type": "text/plain" });
+        response.end("Skill not found");
+        return;
+      }
+      if (url.searchParams.get("slug") === "changed-skill") {
+        writeJson(response, 200, {
+          match: null,
+          latestVersion: { version: "1.2.3" },
+        });
+        return;
+      }
       writeJson(response, 200, {
         match: { version: "1.0.0" },
         latestVersion: { version: "1.0.0" },
@@ -231,6 +243,78 @@ async function writeConfigWithToken(root: string, registry: string) {
 }
 
 describe("built CLI artifact", () => {
+  it("documents automatic skill publish versions without a bump flag", () => {
+    const result = runNode([binPath, "skill", "publish", "--help"]);
+
+    expect(result.status).toBe(0);
+    expect(result.stdout).toContain("--version <version>");
+    expect(result.stdout).toContain("--dry-run");
+    expect(result.stdout).toContain("--json");
+    expect(result.stdout).not.toContain("--bump");
+  });
+
+  it("resolves the next patch version in skill publish dry-run json mode", async () => {
+    const { registry, requests } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-skill-publish-");
+    const skillDir = join(workdir, "changed-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# Changed skill\n", "utf8");
+
+    const result = await runNodeAsync([
+      binPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      registry,
+      "skill",
+      "publish",
+      "changed-skill",
+      "--dry-run",
+      "--json",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: "would-publish",
+      slug: "changed-skill",
+      version: "1.2.4",
+      latestVersion: "1.2.3",
+    });
+    expect(requests.map((request) => request.method)).toEqual(["GET"]);
+    expect(requests[0]?.path).toMatch(/^\/api\/v1\/resolve\?slug=changed-skill&hash=/);
+  });
+
+  it("defaults a new skill to 1.0.0 when the resolver returns 404", async () => {
+    const { registry } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-new-skill-publish-");
+    const skillDir = join(workdir, "new-skill");
+    await mkdir(skillDir, { recursive: true });
+    await writeFile(join(skillDir, "SKILL.md"), "# New skill\n", "utf8");
+
+    const result = await runNodeAsync([
+      binPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      registry,
+      "skill",
+      "publish",
+      "new-skill",
+      "--dry-run",
+      "--json",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      status: "would-publish",
+      slug: "new-skill",
+      version: "1.0.0",
+      latestVersion: null,
+    });
+  });
+
   it("runs help from the published bin entrypoint", async () => {
     const result = runNode([binPath, "--help"]);
 
@@ -246,16 +330,13 @@ describe("built CLI artifact", () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Usage: clawhub");
-    expect(result.stdout).toContain("sync");
+    expect(result.stdout).not.toContain("sync");
   });
 
-  it("runs sync for bare logged-in invocations", async () => {
+  it("prints help for bare logged-in invocations", async () => {
     const { registry, requests } = await startLocalRegistry();
-    const workdir = await makeTmpDir("clawhub-artifact-bare-sync-");
+    const workdir = await makeTmpDir("clawhub-artifact-bare-help-");
     const configPath = await writeConfigWithToken(workdir, registry);
-    const skillDir = join(workdir, "skills", "demo");
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(join(skillDir, "SKILL.md"), "# Demo\n\nA local sync fixture.\n", "utf8");
 
     const result = await runNodeAsync(
       [binPath, "--workdir", workdir, "--registry", registry, "--no-input"],
@@ -263,20 +344,16 @@ describe("built CLI artifact", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stdout).not.toContain("Usage: clawhub");
-    expect(requests.map((request) => request.path)).toContain("/api/v1/whoami");
-    expect(requests.map((request) => request.path)).toContainEqual(
-      expect.stringMatching(/^\/api\/v1\/resolve\?slug=demo&hash=/),
-    );
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Usage: clawhub");
+    expect(requests).toHaveLength(0);
   });
 
-  it("exposes sync help for reusable publishing workflows", async () => {
-    const result = runNode([binPath, "sync", "--help"]);
+  it("does not expose the removed sync command", async () => {
+    const result = runNode([binPath, "sync"]);
 
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    expect(result.stdout).toContain("Usage: clawhub sync");
-    expect(result.stdout).toContain("Scan local skills and publish new/updated ones");
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("error: unknown command 'sync'");
   });
 
   it("reports unknown top-level commands clearly", async () => {
@@ -293,24 +370,6 @@ describe("built CLI artifact", () => {
     expect(result.status).toBe(1);
     expect(result.stderr).toContain("error: unknown command 'nope'");
     expect(result.stderr).not.toContain("too many arguments");
-  });
-
-  it("rejects invalid sync bump values before scanning", async () => {
-    const workdir = await makeTmpDir("clawhub-artifact-invalid-bump-");
-    const result = runNode([
-      binPath,
-      "--workdir",
-      workdir,
-      "sync",
-      "--bump",
-      "banana",
-      "--dry-run",
-      "--no-clawdbot-roots",
-    ]);
-
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("--bump must be patch, minor, or major");
-    expect(result.stderr).not.toContain("No skills found");
   });
 
   it("does not mask unknown global options", async () => {
@@ -331,6 +390,19 @@ describe("built CLI artifact", () => {
     expect(versionResult.status).toBe(0);
     expect(versionResult.stderr).toBe("");
     expect(versionResult.stdout).toMatch(/^\d+\.\d+\.\d+/);
+  });
+
+  it("supports explicit help commands from the published bin entrypoint", async () => {
+    const rootHelp = runNode([binPath, "help"]);
+    const skillHelp = runNode([binPath, "help", "skill"]);
+
+    expect(rootHelp.status).toBe(0);
+    expect(rootHelp.stderr).toBe("");
+    expect(rootHelp.stdout).toContain("Auth:");
+    expect(rootHelp.stdout).toContain("Skills:");
+    expect(skillHelp.status).toBe(0);
+    expect(skillHelp.stderr).toBe("");
+    expect(skillHelp.stdout).toContain("Usage: clawhub skill");
   });
 
   it("publishes a local code plugin in dry-run json mode from built output", async () => {
@@ -425,7 +497,7 @@ describe("built CLI artifact", () => {
     );
 
     expect(result.status).toBe(0);
-    expect(result.stderr).toContain("OK. Installed demo");
+    expect(`${result.stdout}${result.stderr}`).toContain("Installed demo");
 
     const telemetryRequests = requests.filter(
       (request) => request.path === "/api/cli/telemetry/install",
@@ -439,8 +511,6 @@ describe("built CLI artifact", () => {
         event: "install",
         slug: "demo",
         version: "1.0.0",
-        rootId: expect.any(String),
-        rootLabel: expect.stringContaining("skills"),
       },
     });
 
@@ -449,43 +519,6 @@ describe("built CLI artifact", () => {
       "/api/v1/skills/demo/versions/1.0.0",
       "/api/v1/download?slug=demo&version=1.0.0",
       "/api/cli/telemetry/install",
-    ]);
-  });
-
-  it("does not send install telemetry from the built sync command", async () => {
-    const { registry, requests } = await startLocalRegistry();
-    const workdir = await makeTmpDir("clawhub-artifact-sync-");
-    const configPath = await writeConfigWithToken(workdir, registry);
-    const skillDir = join(workdir, "skills", "demo");
-    await mkdir(skillDir, { recursive: true });
-    await writeFile(join(skillDir, "SKILL.md"), "# Demo\n\nA local sync fixture.\n", "utf8");
-
-    const result = await runNodeAsync(
-      [
-        binPath,
-        "--workdir",
-        workdir,
-        "--registry",
-        registry,
-        "sync",
-        "--dry-run",
-        "--json",
-        "--no-clawdbot-roots",
-      ],
-      { CLAWHUB_CONFIG_PATH: configPath },
-    );
-
-    expect(result.status).toBe(0);
-    expect(result.stderr).toBe("");
-    const output = JSON.parse(result.stdout.trim()) as { ok: boolean; dryRun: boolean };
-    expect(output).toMatchObject({ ok: true, dryRun: true });
-
-    expect(
-      requests.filter((request) => request.path.startsWith("/api/cli/telemetry/")),
-    ).toHaveLength(0);
-    expect(requests.map((request) => request.path)).toEqual([
-      "/api/v1/whoami",
-      expect.stringMatching(/^\/api\/v1\/resolve\?slug=demo&hash=/),
     ]);
   });
 

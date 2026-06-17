@@ -94,11 +94,12 @@ export function createUiModuleMocks(options?: { interactive?: boolean }) {
     fail,
     promptConfirm,
     moduleFactory: () => ({
-      createSpinner: vi.fn(() => spinner),
+      createCrabLoader: vi.fn(() => spinner),
       fail: (message: string) => fail(message),
       formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
       isInteractive: () => interactive,
       promptConfirm,
+      styleText: (value: string) => value,
     }),
   };
 }

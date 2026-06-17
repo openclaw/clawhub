@@ -1249,16 +1249,29 @@ describe("skills ownership", () => {
       displayName: "Old Name",
       ownerUserId: "users:creator",
       ownerPublisherId: "publishers:org",
+      latestVersionId: "skillVersions:latest",
       softDeletedAt: undefined,
     };
+    const latestVersion = {
+      _id: "skillVersions:latest",
+      version: "1.0.0",
+      files: [{ path: "SKILL.md", size: 5, storageId: "storage:skill", sha256: "sha" }],
+      createdAt: 1_700_000_000_000,
+      softDeletedAt: undefined,
+    };
+    const runAfter = vi.fn(async () => {});
 
     const result = await renameOwnedSkillInternalHandler(
       {
+        scheduler: { runAfter },
         db: {
           normalizeId: vi.fn(() => null),
           get: vi.fn(async (id: string) => {
             if (id === "users:actor") return { _id: "users:actor", role: "user" };
-            if (id === "publishers:org") return { _id: "publishers:org", kind: "org" };
+            if (id === "publishers:org") {
+              return { _id: "publishers:org", kind: "org", handle: "org" };
+            }
+            if (id === "skillVersions:latest") return latestVersion;
             return null;
           }),
           query: vi.fn((table: string) => {
@@ -1340,6 +1353,18 @@ describe("skills ownership", () => {
         skillId: "skills:source",
         ownerUserId: "users:creator",
         ownerPublisherId: "publishers:org",
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        skillId: "skills:source",
+        versionId: "skillVersions:latest",
+        slug: "new-name",
+        version: "1.0.0",
+        isLatest: true,
+        ownerHandle: "org",
       }),
     );
   });
@@ -1705,6 +1730,254 @@ describe("skills ownership", () => {
 
     expect(patch).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("allows platform admins to transfer a soft-deleted skill without restoring it", async () => {
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async () => "auditLogs:1");
+    const softDeletedAt = 123;
+    const skill = {
+      _id: "skills:deleted",
+      slug: "deleted-demo",
+      displayName: "Deleted Demo",
+      ownerUserId: "users:owner",
+      ownerPublisherId: "publishers:previous",
+      softDeletedAt,
+      hiddenBy: "users:admin",
+      moderationStatus: "hidden",
+      moderationVerdict: "clean",
+      forkOf: undefined as
+        | {
+            skillId: string;
+            kind: "duplicate";
+            at: number;
+          }
+        | undefined,
+      stats: defaultSkillStats,
+    };
+    let hideAuditActorRole: "admin" | "moderator" | "user" = "user";
+    let ownerCurrentRole: "admin" | "moderator" | "user" = "user";
+    let hasMergeAudit = false;
+
+    const ctx = {
+      db: {
+        normalizeId: vi.fn(() => null),
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: "users:admin", role: "admin" };
+          if (id === "users:owner") return { _id: "users:owner", role: ownerCurrentRole };
+          if (id === "publishers:previous") {
+            return {
+              _id: "publishers:previous",
+              kind: "user",
+              handle: "owner",
+              linkedUserId: "users:owner",
+            };
+          }
+          if (id === "publishers:team") {
+            return {
+              _id: "publishers:team",
+              kind: "org",
+              handle: "team",
+              displayName: "Team",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "skills") {
+            return {
+              withIndex: (name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
+                const constraints: Record<string, unknown> = {};
+                build(chainEq(constraints));
+                if (name !== "by_slug" && name !== "by_owner_publisher_slug") {
+                  throw new Error(`unexpected skills index ${name}`);
+                }
+                return {
+                  take: async () =>
+                    name === "by_slug" && constraints.slug === "deleted-demo" ? [skill] : [],
+                  unique: async () => null,
+                };
+              },
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: (name: string) => {
+                if (name !== "by_handle") throw new Error(`unexpected publishers index ${name}`);
+                return {
+                  unique: async () => ({
+                    _id: "publishers:team",
+                    kind: "org",
+                    handle: "team",
+                    displayName: "Team",
+                    deletedAt: undefined,
+                    deactivatedAt: undefined,
+                  }),
+                };
+              },
+            };
+          }
+          if (table === "auditLogs") {
+            return {
+              withIndex: (name: string, build: (q: ReturnType<typeof chainEq>) => unknown) => {
+                const constraints: Record<string, unknown> = {};
+                build(chainEq(constraints));
+                if (name !== "by_target_createdAt") {
+                  throw new Error(`unexpected auditLogs index ${name}`);
+                }
+                return {
+                  take: async () => {
+                    if (constraints.createdAt === softDeletedAt) {
+                      return [
+                        {
+                          _id: "auditLogs:delete",
+                          action: "skill.delete",
+                          actorUserId: skill.hiddenBy,
+                          targetType: "skill",
+                          targetId: skill._id,
+                          createdAt: softDeletedAt,
+                          metadata: {
+                            actorRole: hideAuditActorRole,
+                            softDeletedAt,
+                          },
+                        },
+                      ];
+                    }
+                    const duplicate = skill.forkOf;
+                    if (hasMergeAudit && duplicate && constraints.createdAt === duplicate.at) {
+                      return [
+                        {
+                          _id: "auditLogs:merge",
+                          action: "skill.merge",
+                          actorUserId: skill.hiddenBy,
+                          targetType: "skill",
+                          targetId: skill._id,
+                          createdAt: duplicate.at,
+                          metadata: {
+                            targetSkillId: duplicate.skillId,
+                          },
+                        },
+                      ];
+                    }
+                    return [];
+                  },
+                };
+              },
+            };
+          }
+          if (table === "skillSlugAliases") {
+            return {
+              withIndex: (name: string) => {
+                if (
+                  name !== "by_skill" &&
+                  name !== "by_slug" &&
+                  name !== "by_owner_publisher_slug" &&
+                  name !== "by_owner_slug"
+                ) {
+                  throw new Error(`unexpected skillSlugAliases index ${name}`);
+                }
+                return { collect: async () => [], take: async () => [], unique: async () => null };
+              },
+            };
+          }
+          if (table === "skillEmbeddings") {
+            return {
+              withIndex: (name: string) => {
+                if (name !== "by_skill")
+                  throw new Error(`unexpected skillEmbeddings index ${name}`);
+                return { collect: async () => [] };
+              },
+            };
+          }
+          if (table === "skillSearchDigest") {
+            return {
+              withIndex: (name: string) => {
+                if (name !== "by_skill") {
+                  throw new Error(`unexpected skillSearchDigest index ${name}`);
+                }
+                return { unique: async () => ({ _id: "skillSearchDigest:deleted" }) };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch,
+        insert,
+      },
+    } as never;
+
+    await expect(
+      transferSkillOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        slug: "deleted-demo",
+        toOwner: "team",
+        reason: "Publisher recovery",
+      }),
+    ).rejects.toThrow("Skill is not eligible for ownership transfer while under moderation");
+
+    skill.hiddenBy = "users:owner";
+
+    hideAuditActorRole = "moderator";
+    await expect(
+      transferSkillOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        slug: "deleted-demo",
+        toOwner: "team",
+        reason: "Publisher recovery",
+      }),
+    ).rejects.toThrow("Skill is not eligible for ownership transfer while under moderation");
+
+    hideAuditActorRole = "user";
+    skill.forkOf = {
+      skillId: "skills:canonical",
+      kind: "duplicate",
+      at: 100,
+    };
+    hasMergeAudit = true;
+    await expect(
+      transferSkillOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        slug: "deleted-demo",
+        toOwner: "team",
+        reason: "Publisher recovery",
+      }),
+    ).rejects.toThrow("Skill is not eligible for ownership transfer while under moderation");
+    hasMergeAudit = false;
+
+    // Deletion-time audit provenance remains authoritative after a later staff promotion.
+    ownerCurrentRole = "admin";
+    await expect(
+      transferSkillOwnerForUserInternalHandler(ctx, {
+        actorUserId: "users:admin",
+        slug: "deleted-demo",
+        toOwner: "team",
+      }),
+    ).rejects.toThrow("Reason required for soft-deleted skill ownership transfer");
+
+    const result = await transferSkillOwnerForUserInternalHandler(ctx, {
+      actorUserId: "users:admin",
+      slug: "deleted-demo",
+      toOwner: "team",
+      reason: "Publisher recovery",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      transferred: true,
+      skillSlug: "deleted-demo",
+      toPublisherHandle: "team",
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "skills:deleted",
+      expect.objectContaining({
+        ownerUserId: "users:admin",
+        ownerPublisherId: "publishers:team",
+      }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      "skills:deleted",
+      expect.objectContaining({ softDeletedAt: undefined }),
+    );
   });
 
   it("rejects stale personal publisher memberships as skill transfer destinations", async () => {

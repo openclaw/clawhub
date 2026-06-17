@@ -23,28 +23,6 @@ export const PackageCompatibilitySchema = type({
 });
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
 
-export const PackageCapabilitySummarySchema = type({
-  executesCode: "boolean",
-  runtimeId: "string?",
-  pluginKind: "string?",
-  channels: "string[]?",
-  providers: "string[]?",
-  hooks: "string[]?",
-  bundledSkills: "string[]?",
-  setupEntry: "boolean?",
-  configSchema: "boolean?",
-  configUiHints: "boolean?",
-  materializesDependencies: "boolean?",
-  toolNames: "string[]?",
-  commandNames: "string[]?",
-  serviceNames: "string[]?",
-  capabilityTags: "string[]?",
-  httpRouteCount: "number?",
-  bundleFormat: "string?",
-  hostTargets: "string[]?",
-});
-export type PackageCapabilitySummary = (typeof PackageCapabilitySummarySchema)[inferred];
-
 export const PackageVerificationSummarySchema = type({
   tier: PackageVerificationTierSchema,
   scope: PackageVerificationScopeSchema,
@@ -349,8 +327,6 @@ export const PackageListItemSchema = type({
   createdAt: "number",
   updatedAt: "number",
   latestVersion: "string|null?",
-  capabilityTags: "string[]?",
-  executesCode: "boolean?",
   verificationTier: PackageVerificationTierSchema.or("null").optional(),
   stats: PackageStatsSchema.optional(),
 });
@@ -383,7 +359,6 @@ export const ApiV1PackageResponseSchema = type({
     latestVersion: "string|null?",
     tags: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
-    capabilities: PackageCapabilitySummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -419,9 +394,9 @@ export const ApiV1PackageVersionResponseSchema = type({
     distTags: "string[]?",
     files: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
-    capabilities: PackageCapabilitySummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
+    // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
     sha256hash: "string|null?",
     vtAnalysis: PackageVtAnalysisSchema.or("null").optional(),
     skillSpectorAnalysis: PackageSkillSpectorAnalysisSchema.or("null").optional(),

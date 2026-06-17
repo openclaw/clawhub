@@ -12,6 +12,7 @@ import {
   fetchPackageDetail,
   fetchPackageReadme,
   fetchPackageVersion,
+  fetchPackageVersions,
   fetchPluginCatalog,
   fetchPackages,
   getPackageDownloadPath,
@@ -31,7 +32,7 @@ describe("fetchPackages", () => {
     vi.unstubAllEnvs();
   });
 
-  it("preserves search filters when using /packages/search", async () => {
+  it("omits retired execution and capability filters when using /packages/search", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -44,7 +45,7 @@ describe("fetchPackages", () => {
       capabilityTag: "tools",
       limit: 12,
       isOfficial: true,
-    });
+    } as Parameters<typeof fetchPackages>[0] & { executesCode?: boolean; capabilityTag?: string });
 
     const requestUrl = fetchMock.mock.calls[0]?.[0];
     if (typeof requestUrl !== "string") {
@@ -54,8 +55,8 @@ describe("fetchPackages", () => {
     expect(url.pathname).toBe("/api/v1/packages/search");
     expect(url.searchParams.get("q")).toBe("demo");
     expect(url.searchParams.get("family")).toBe("code-plugin");
-    expect(url.searchParams.get("executesCode")).toBe("true");
-    expect(url.searchParams.get("capabilityTag")).toBe("tools");
+    expect(url.searchParams.has("executesCode")).toBe(false);
+    expect(url.searchParams.has("capabilityTag")).toBe(false);
     expect(url.searchParams.get("limit")).toBe("12");
     expect(url.searchParams.get("isOfficial")).toBe("true");
   });
@@ -106,7 +107,7 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("limit")).toBe("12");
   });
 
-  it("preserves non-search listing filters on package listings", async () => {
+  it("omits retired execution and capability filters on package listings", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
@@ -119,7 +120,7 @@ describe("fetchPackages", () => {
       executesCode: false,
       capabilityTag: "storage",
       limit: 7,
-    });
+    } as Parameters<typeof fetchPackages>[0] & { executesCode?: boolean; capabilityTag?: string });
 
     const requestUrl = fetchMock.mock.calls[0]?.[0];
     if (typeof requestUrl !== "string") {
@@ -128,8 +129,8 @@ describe("fetchPackages", () => {
     const url = new URL(requestUrl);
     expect(url.pathname).toBe("/api/v1/packages");
     expect(url.searchParams.get("isOfficial")).toBe("false");
-    expect(url.searchParams.get("executesCode")).toBe("false");
-    expect(url.searchParams.get("capabilityTag")).toBe("storage");
+    expect(url.searchParams.has("executesCode")).toBe(false);
+    expect(url.searchParams.has("capabilityTag")).toBe(false);
     expect(url.searchParams.get("limit")).toBe("7");
   });
 
@@ -311,7 +312,6 @@ describe("fetchPackages", () => {
     await fetchPluginCatalog({
       q: "demo",
       limit: 8,
-      executesCode: false,
       category: "dev-tools",
     });
 
@@ -324,7 +324,7 @@ describe("fetchPackages", () => {
     expect(url.pathname).toBe("/api/v1/plugins/search");
     expect(url.searchParams.get("q")).toBe("demo");
     expect(url.searchParams.get("limit")).toBe("8");
-    expect(url.searchParams.get("executesCode")).toBe("false");
+    expect(url.searchParams.has("executesCode")).toBe(false);
     expect(url.searchParams.get("category")).toBe("dev-tools");
   });
 
@@ -411,6 +411,75 @@ describe("fetchPackages", () => {
     );
   });
 
+  it("fetches scoped package version history with pagination", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const response = {
+      items: [
+        {
+          version: "1.2.3",
+          createdAt: 123,
+          changelog: "Added package history",
+          distTags: ["latest"],
+        },
+      ],
+      nextCursor: "versions:next",
+    };
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response(JSON.stringify(response), { status: 200 }));
+
+    await expect(
+      fetchPackageVersions("@scope/demo-plugin", {
+        cursor: "versions:current",
+        limit: 25,
+      }),
+    ).resolves.toEqual(response);
+
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestUrl !== "string") {
+      throw new Error("Expected fetch to be called with a string URL");
+    }
+    const url = new URL(requestUrl);
+    expect(url.pathname).toBe("/api/v1/packages/%40scope%2Fdemo-plugin/versions");
+    expect(url.searchParams.get("cursor")).toBe("versions:current");
+    expect(url.searchParams.get("limit")).toBe("25");
+  });
+
+  it("omits unprovided package version history params and forwards the signal", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const signal = new AbortController().signal;
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPackageVersions("demo-plugin", { signal });
+
+    const requestUrl = fetchMock.mock.calls[0]?.[0];
+    if (typeof requestUrl !== "string") {
+      throw new Error("Expected fetch to be called with a string URL");
+    }
+    const url = new URL(requestUrl);
+    expect(url.searchParams.has("cursor")).toBe(false);
+    expect(url.searchParams.has("limit")).toBe(false);
+    expect(fetchMock.mock.calls[0]?.[1]?.signal).toBe(signal);
+  });
+
+  it("omits an empty package version history cursor", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
+      );
+
+    await fetchPackageVersions("demo-plugin", { cursor: "" });
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.searchParams.has("cursor")).toBe(false);
+  });
+
   it("returns null when no supported README variant exists", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const fetchMock = vi
@@ -489,22 +558,29 @@ describe("fetchPluginCatalog", () => {
     expect(url.searchParams.get("isOfficial")).toBe("true");
   });
 
-  it("forwards downloads sort to the dedicated plugins browse endpoint", async () => {
+  it("forwards explicit valid sort values to the dedicated plugins browse endpoint", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
-    const fetchMock = vi
-      .spyOn(globalThis, "fetch")
-      .mockResolvedValue(
-        new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 }),
-      );
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () => {
+      return new Response(JSON.stringify({ items: [], nextCursor: null }), { status: 200 });
+    });
 
     await fetchPluginCatalog({
-      sort: "downloads",
+      sort: "updated",
       limit: 20,
     });
 
     const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
     expect(url.pathname).toBe("/api/v1/plugins");
-    expect(url.searchParams.get("sort")).toBe("downloads");
+    expect(url.searchParams.get("sort")).toBe("updated");
+
+    await fetchPluginCatalog({
+      sort: "installs",
+      limit: 20,
+    });
+
+    const installsUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
+    expect(installsUrl.pathname).toBe("/api/v1/plugins");
+    expect(installsUrl.searchParams.get("sort")).toBe("installs");
   });
 
   it("uses the dedicated plugins search endpoint for search mode", async () => {

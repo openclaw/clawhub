@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.0 - 2026-06-15
+
+### Changes
+
+- CLI: remove the `clawhub sync` command. `clawhub skill publish <path>` now skips unchanged content, defaults new skills to `1.0.0`, defaults changed skills to the next patch version, and supports dry-run/JSON output.
+- GitHub Actions: preserve catalog publishing through the reusable `skill-publish.yml` workflow, which invokes ordinary `skill publish` once per skill folder.
+
 ## 0.21.0 - 2026-06-11
 
 ### Changes
@@ -47,7 +54,6 @@
 ### Changes
 
 - CLI/API: add Skill Card verification surfaces, including `clawhub skill verify <slug>` JSON output and `--card` Markdown retrieval (#2382).
-- Web/API: surface an "API key required" attribute on skills so listings, cards, and detail views show whether a skill needs an LLM API key, with publish-time inference from skill prompts and metadata (#2353) (thanks @momothemage).
 
 ### Fixes
 

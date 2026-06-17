@@ -7,23 +7,11 @@ updates:
       day: "monday"
       time: "09:00"
       timezone: "America/Los_Angeles"
-    open-pull-requests-limit: 3
-    labels:
-      - dependencies
-      - needs-cli-release
-    allow:
-      - dependency-name: "@openclaw/plugin-inspector"
-
-  - package-ecosystem: "bun"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-      day: "monday"
-      time: "09:00"
-      timezone: "America/Los_Angeles"
-    open-pull-requests-limit: 10
+    # Preserve the old total Bun capacity: 10 general updates plus the
+    # dedicated 3-PR Plugin Inspector queue that cannot remain as a duplicate
+    # root Bun config.
+    open-pull-requests-limit: 13
     ignore:
-      - dependency-name: "@openclaw/plugin-inspector"
       - dependency-name: "@auth/core"
         update-types:
           - "version-update:semver-minor"
@@ -32,6 +20,9 @@ updates:
         update-types:
           - "version-update:semver-major"
     groups:
+      plugin-inspector:
+        patterns:
+          - "@openclaw/plugin-inspector"
       production-minor-and-patch:
         dependency-type: "production"
         update-types:

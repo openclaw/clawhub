@@ -5,9 +5,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import {
   internalMutation,
-  isGitHubMirrorEligibleSkillDoc,
   repointPackageLatestRelease,
-  scheduleGitHubBackupDeletionForSkill,
   scheduleOwnerPublisherDigestSync,
   shouldScheduleOwnerPublisherDigestSyncForPublisherChange,
   shouldScheduleOwnerUserPackageDigestSyncForUserChange,
@@ -48,89 +46,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 describe("package digest sync", () => {
-  it("identifies GitHub mirror eligibility from skill visibility fields", () => {
-    expect(isGitHubMirrorEligibleSkillDoc({ softDeletedAt: undefined })).toBe(true);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "active",
-      }),
-    ).toBe(true);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "active",
-        moderationVerdict: "malicious",
-      }),
-    ).toBe(false);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "active",
-        moderationFlags: ["blocked.malware"],
-      }),
-    ).toBe(false);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "hidden",
-      }),
-    ).toBe(false);
-    expect(
-      isGitHubMirrorEligibleSkillDoc({
-        softDeletedAt: undefined,
-        moderationStatus: "removed",
-      }),
-    ).toBe(false);
-    expect(isGitHubMirrorEligibleSkillDoc({ softDeletedAt: 123 })).toBe(false);
-  });
-
-  it("schedules GitHub mirror deletion for a skill using the owner handle", async () => {
-    const ctx = {
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "users:owner") {
-            return {
-              _id: "users:owner",
-              handle: "alice",
-              deletedAt: undefined,
-              deactivatedAt: undefined,
-            };
-          }
-          return null;
-        }),
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            unique: vi.fn().mockResolvedValue(null),
-          })),
-        })),
-      },
-      scheduler: {
-        runAfter: vi.fn(),
-      },
-    };
-
-    await scheduleGitHubBackupDeletionForSkill(
-      ctx as never,
-      {
-        slug: "hidden-skill",
-        ownerUserId: "users:owner",
-        ownerPublisherId: undefined,
-        softDeletedAt: 123,
-        moderationStatus: "hidden",
-      } as never,
-    );
-
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
-      0,
-      internal.githubBackupsNode.deleteGitHubBackupForSlugInternal,
-      {
-        ownerHandle: "alice",
-        slug: "hidden-skill",
-      },
-    );
-  });
-
   it("clears latestVersion when the current package release is soft-deleted", async () => {
     const pkg = {
       _id: "packages:demo",
@@ -142,8 +57,6 @@ describe("package digest sync", () => {
       isOfficial: false,
       ownerUserId: "users:owner",
       summary: "demo",
-      capabilityTags: ["tools"],
-      executesCode: true,
       runtimeId: null,
       softDeletedAt: undefined,
       createdAt: 1,
@@ -191,14 +104,6 @@ describe("package digest sync", () => {
         packageId: "packages:demo",
         latestVersion: undefined,
         ownerHandle: "owner",
-        pluginCategoryTags: ["dev-tools"],
-      }),
-    );
-    expect(ctx.db.insert).toHaveBeenCalledWith(
-      "packagePluginCategorySearchDigest",
-      expect.objectContaining({
-        packageId: "packages:demo",
-        pluginCategory: "dev-tools",
       }),
     );
   });
@@ -284,10 +189,7 @@ describe("package digest sync", () => {
       },
       latestReleaseId: "packageReleases:demo-2",
       latestVersionSummary: { version: "2.0.0" },
-      capabilityTags: ["new"],
-      executesCode: true,
       compatibility: { openclaw: "^2.0.0" },
-      capabilities: { capabilityTags: ["new"], executesCode: true },
       verification: { tier: "community" },
       runtimeId: null,
       softDeletedAt: undefined,
@@ -302,7 +204,6 @@ describe("package digest sync", () => {
       changelog: "old stable",
       summary: "stable summary",
       compatibility: { openclaw: "^1.0.0" },
-      capabilities: { capabilityTags: ["stable"], executesCode: false },
       verification: { tier: "verified" },
       distTags: ["stable"],
       createdAt: 10,
@@ -316,7 +217,6 @@ describe("package digest sync", () => {
       changelog: "legacy hotfix",
       summary: "legacy summary",
       compatibility: { openclaw: "^0.9.0" },
-      capabilities: { capabilityTags: ["legacy"], executesCode: false },
       verification: { tier: "verified" },
       distTags: ["legacy"],
       createdAt: 20,
@@ -393,8 +293,6 @@ describe("package digest sync", () => {
         tags: { latest: "packageReleases:demo-1" },
         latestVersionSummary: expect.objectContaining({ version: "1.0.0" }),
         summary: "stable summary",
-        capabilityTags: ["stable"],
-        executesCode: false,
       }),
     );
     expect(ctx.db.insert).toHaveBeenCalledWith(
@@ -423,10 +321,7 @@ describe("package digest sync", () => {
       },
       latestReleaseId: "packageReleases:bundle-latest",
       latestVersionSummary: { version: "latest" },
-      capabilityTags: ["new"],
-      executesCode: false,
       compatibility: { hosts: ["openclaw"] },
-      capabilities: { capabilityTags: ["new"], executesCode: false },
       verification: { tier: "community" },
       runtimeId: "bundle.runtime",
       softDeletedAt: undefined,
@@ -441,7 +336,6 @@ describe("package digest sync", () => {
       changelog: "older semver",
       summary: "older semver summary",
       compatibility: { hosts: ["openclaw"] },
-      capabilities: { capabilityTags: ["semver"], executesCode: false },
       verification: { tier: "verified" },
       distTags: ["legacy"],
       createdAt: 10,
@@ -455,7 +349,6 @@ describe("package digest sync", () => {
       changelog: "newest bundle build",
       summary: "newest bundle summary",
       compatibility: { hosts: ["openclaw"] },
-      capabilities: { capabilityTags: ["bundle"], executesCode: false },
       verification: { tier: "verified" },
       distTags: ["release-2024-12"],
       createdAt: 20,
@@ -564,8 +457,6 @@ describe("package digest sync", () => {
       tags: {},
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
-      capabilityTags: [],
-      executesCode: false,
       runtimeId: null,
       softDeletedAt: undefined,
       createdAt: 1,

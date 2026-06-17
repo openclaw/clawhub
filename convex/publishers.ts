@@ -7,6 +7,7 @@ import { internalMutation, internalQuery, mutation, query } from "./functions";
 import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/access";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
+import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
@@ -22,20 +23,29 @@ import {
   canAccessPublisherOwnerScope,
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
+  getOwnerPublisher,
   getPublisherByHandle,
   getPublisherMembership,
   getPersonalPublisherForUserOrFallback,
   getPersonalPublisherForUser,
+  isPublisherActive,
   isPublisherRoleAllowed,
   PUBLISHER_HANDLE_PATTERN,
   PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
 } from "./lib/publishers";
-import { isHandleReservedForAnotherUser } from "./lib/reservedHandles";
+import {
+  getLatestActiveReservedHandle,
+  isHandleReservedForAnotherUser,
+} from "./lib/reservedHandles";
+import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
 import { readCanonicalStat } from "./lib/skillStats";
+import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
+const GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT = 10;
+const PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT = 100;
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -53,11 +63,11 @@ type PublisherListStats = {
 type PublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
+  installs: number;
+  /** Legacy response field retained while older frontend bundles are cached. */
   downloads: number;
 };
-type PublisherPublishedPreviewItem = PublisherPublishedItem & {
-  installs: number;
-};
+type PublisherPublishedPreviewItem = PublisherPublishedItem;
 
 type PublisherCatalogItem = {
   _id: Id<"skills"> | Id<"packages">;
@@ -71,6 +81,8 @@ type PublisherCatalogItem = {
   // Always `null` for plugins in Phase 1.
   icon: string | null;
   href: string;
+  installs: number;
+  /** Legacy response field retained while older frontend bundles are cached. */
   downloads: number;
   stars: number;
   isOfficial: boolean;
@@ -82,7 +94,8 @@ type PublisherCatalogItem = {
   sourceVerifiedCommit?: string | null;
 };
 
-type PublisherCatalogSort = "downloads" | "recent";
+type PublisherCatalogSort = "installs" | "recent";
+type PublisherCatalogSortArg = PublisherCatalogSort | "downloads";
 
 type PublisherListItem = NonNullable<ReturnType<typeof toPublicPublisher>> & {
   stats: PublisherListStats;
@@ -121,6 +134,12 @@ function validateHandle(rawHandle: string) {
     throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
   }
   return handle;
+}
+
+function publisherHandlesMatch(left: string | undefined | null, right: string | undefined | null) {
+  const normalizedLeft = normalizePublisherHandle(left);
+  const normalizedRight = normalizePublisherHandle(right);
+  return Boolean(normalizedLeft && normalizedLeft === normalizedRight);
 }
 
 function assertOrgPublisherMembershipManagement(publisher: Doc<"publishers">) {
@@ -298,16 +317,12 @@ function getPublisherPublishedItems(
     })),
   ];
   return items
-    .sort(
-      (a, b) =>
-        b.installs - a.installs ||
-        b.downloads - a.downloads ||
-        a.displayName.localeCompare(b.displayName),
-    )
+    .sort((a, b) => b.installs - a.installs || a.displayName.localeCompare(b.displayName))
     .slice(0, limit)
     .map((item) => ({
       kind: item.kind,
       displayName: item.displayName,
+      installs: item.installs,
       downloads: item.downloads,
     }));
 }
@@ -330,14 +345,14 @@ function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
     if (sort === "recent") {
       return (
         b.updatedAt - a.updatedAt ||
-        b.downloads - a.downloads ||
+        b.installs - a.installs ||
         b.stars - a.stars ||
         a.displayName.localeCompare(b.displayName)
       );
     }
 
     return (
-      b.downloads - a.downloads ||
+      b.installs - a.installs ||
       b.stars - a.stars ||
       b.updatedAt - a.updatedAt ||
       a.displayName.localeCompare(b.displayName)
@@ -345,11 +360,15 @@ function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
   };
 }
 
+function normalizePublisherCatalogSort(sort?: PublisherCatalogSortArg): PublisherCatalogSort {
+  return sort === "recent" ? "recent" : "installs";
+}
+
 function getPublisherCatalogItems(
   publisher: Doc<"publishers">,
   rows: PublisherPublishedRows,
   publisherOfficial: boolean,
-  sort: PublisherCatalogSort = "downloads",
+  sort: PublisherCatalogSort = "installs",
 ): PublisherCatalogItem[] {
   return [
     ...rows.skills.map((skill) => ({
@@ -360,6 +379,7 @@ function getPublisherCatalogItems(
       summary: skill.summary ?? null,
       icon: skill.icon ?? null,
       href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
+      installs: readCanonicalStat(skill, "installsAllTime"),
       downloads: readCanonicalStat(skill, "downloads"),
       stars: readCanonicalStat(skill, "stars"),
       isOfficial: publisherOfficial || Boolean(skill.badges?.official),
@@ -376,6 +396,7 @@ function getPublisherCatalogItems(
       summary: pkg.summary ?? null,
       icon: null,
       href: buildPluginDetailHref(pkg.name),
+      installs: pkg.stats.installs,
       downloads: pkg.stats.downloads,
       stars: pkg.stats.stars,
       isOfficial: publisherOfficial || pkg.isOfficial,
@@ -406,6 +427,7 @@ function toGitHubSkillCatalogItem(
     summary: item.summary,
     icon: item.icon,
     href: item.href,
+    installs: item.installs,
     downloads: item.downloads,
     stars: item.stars,
     isOfficial: item.isOfficial,
@@ -593,7 +615,7 @@ function comparePublisherListItems(a: PublisherListItem, b: PublisherListItem) {
   const bPublishedCount = b.stats.skills + b.stats.packages;
 
   return (
-    b.stats.downloads - a.stats.downloads ||
+    b.stats.installs - a.stats.installs ||
     b.stats.stars - a.stats.stars ||
     bPublishedCount - aPublishedCount ||
     a.displayName.localeCompare(b.displayName)
@@ -967,6 +989,497 @@ async function ensureOrgPublisherMemberWithActor(
   };
 }
 
+function normalizeGitHubProviderAccountId(providerAccountId: string) {
+  const normalized = providerAccountId.trim();
+  if (!/^\d+$/.test(normalized)) {
+    throw new ConvexError("GitHub provider account id must be numeric");
+  }
+  return normalized;
+}
+
+async function getUniqueUserForGitHubProviderAccountId(
+  ctx: Pick<MutationCtx, "db">,
+  providerAccountId: string,
+) {
+  const accounts = await ctx.db
+    .query("authAccounts")
+    .withIndex("providerAndAccountId", (q) =>
+      q.eq("provider", "github").eq("providerAccountId", providerAccountId),
+    )
+    .take(GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT + 1);
+  if (accounts.length === 0) {
+    throw new ConvexError(`No GitHub auth account found for provider id ${providerAccountId}`);
+  }
+  if (accounts.length > GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT) {
+    throw new ConvexError(
+      `Too many GitHub auth accounts match provider id ${providerAccountId}; manual reconciliation required`,
+    );
+  }
+
+  const userId = accounts[0]?.userId;
+  if (!userId || accounts.some((account) => account.userId !== userId)) {
+    throw new ConvexError(
+      `GitHub provider id ${providerAccountId} maps to multiple ClawHub users; manual reconciliation required`,
+    );
+  }
+
+  return {
+    userId,
+    accountCount: accounts.length,
+  };
+}
+
+async function getPublisherResourceCounts(
+  ctx: Pick<MutationCtx, "db">,
+  publisherId: Id<"publishers">,
+) {
+  const [skills, packages, githubSources] = await Promise.all([
+    ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+      .take(1),
+    ctx.db
+      .query("packages")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+      .take(1),
+    ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+      .take(1),
+  ]);
+  return {
+    skills: skills.length,
+    packages: packages.length,
+    githubSources: githubSources.length,
+    total: skills.length + packages.length + githubSources.length,
+  };
+}
+
+async function getRecoveryPersonalPublisherForUser(
+  ctx: Pick<MutationCtx, "db">,
+  user: Doc<"users">,
+) {
+  if (user.personalPublisherId) {
+    const publisher = await ctx.db.get(user.personalPublisherId);
+    if (publisher) return publisher;
+  }
+  return await getPersonalPublisherForUser(ctx, user._id);
+}
+
+function getUnexpectedRecoveryOwnerRows(
+  table: "skills" | "skillSlugAliases" | "packages" | "packageInspectorWarnings",
+  rows: Array<{ _id: string; ownerUserId: Id<"users"> }>,
+  previousUserId: Id<"users">,
+  nextUserId: Id<"users">,
+) {
+  return rows
+    .filter((row) => row.ownerUserId !== previousUserId && row.ownerUserId !== nextUserId)
+    .map((row) => ({ table, id: row._id, ownerUserId: row.ownerUserId }));
+}
+
+async function getPersonalPublisherRecoveryOwnerMigrationPlan(
+  ctx: MutationCtx,
+  publisherId: Id<"publishers">,
+  publisherHandle: string,
+  previousUserId: Id<"users">,
+  nextUserId: Id<"users">,
+) {
+  const limit = PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT;
+  const takeLimit = limit + 1;
+  const [skills, skillSlugAliases, packages, packageInspectorWarnings, githubSources] =
+    await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+      ctx.db
+        .query("skillSlugAliases")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+      ctx.db
+        .query("packages")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+      ctx.db
+        .query("packageInspectorWarnings")
+        .withIndex("by_owner_publisher_created", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+      ctx.db
+        .query("githubSkillSources")
+        .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
+        .take(takeLimit),
+    ]);
+  const activeHandleReservation = await getLatestActiveReservedHandle(ctx, publisherHandle);
+  const overflowTables = [
+    skills.length > limit ? "skills" : null,
+    skillSlugAliases.length > limit ? "skillSlugAliases" : null,
+    packages.length > limit ? "packages" : null,
+    packageInspectorWarnings.length > limit ? "packageInspectorWarnings" : null,
+    githubSources.length > limit ? "githubSkillSources" : null,
+  ].filter((table): table is string => table !== null);
+  if (overflowTables.length > 0) {
+    throw new ConvexError(
+      `Publisher has more than ${limit} rows in ${overflowTables.join(", ")}; use a resumable owner migration before recovery`,
+    );
+  }
+
+  const unexpectedOwnerRows = [
+    ...getUnexpectedRecoveryOwnerRows("skills", skills, previousUserId, nextUserId),
+    ...getUnexpectedRecoveryOwnerRows(
+      "skillSlugAliases",
+      skillSlugAliases,
+      previousUserId,
+      nextUserId,
+    ),
+    ...getUnexpectedRecoveryOwnerRows("packages", packages, previousUserId, nextUserId),
+    ...getUnexpectedRecoveryOwnerRows(
+      "packageInspectorWarnings",
+      packageInspectorWarnings,
+      previousUserId,
+      nextUserId,
+    ),
+  ];
+  if (unexpectedOwnerRows.length > 0) {
+    const first = unexpectedOwnerRows[0];
+    throw new ConvexError(
+      `Publisher resource ${first.table}:${first.id} belongs to another user; manual reconciliation required`,
+    );
+  }
+  if (
+    activeHandleReservation &&
+    activeHandleReservation.rightfulOwnerUserId !== previousUserId &&
+    activeHandleReservation.rightfulOwnerUserId !== nextUserId
+  ) {
+    throw new ConvexError(
+      `Handle reservation ${activeHandleReservation._id} belongs to another user; manual reconciliation required`,
+    );
+  }
+
+  return {
+    limitPerTable: limit,
+    skills: skills.filter((row) => row.ownerUserId === previousUserId),
+    skillSlugAliases: skillSlugAliases.filter((row) => row.ownerUserId === previousUserId),
+    packages: packages.filter((row) => row.ownerUserId === previousUserId),
+    packageInspectorWarnings: packageInspectorWarnings.filter(
+      (row) => row.ownerUserId === previousUserId,
+    ),
+    githubSources,
+    activeHandleReservation:
+      activeHandleReservation?.rightfulOwnerUserId === previousUserId
+        ? activeHandleReservation
+        : null,
+  };
+}
+
+async function applyPersonalPublisherRecoveryOwnerMigration(
+  ctx: Pick<MutationCtx, "db">,
+  plan: Awaited<ReturnType<typeof getPersonalPublisherRecoveryOwnerMigrationPlan>>,
+  nextUserId: Id<"users">,
+  now: number,
+) {
+  for (const skill of plan.skills) {
+    const previousSkill = { ...skill };
+    const nextSkill = { ...skill, ownerUserId: nextUserId, updatedAt: now };
+    await ctx.db.patch(skill._id, { ownerUserId: nextUserId, updatedAt: now });
+    await adjustUserSkillStatsForSkillChange(ctx, previousSkill, nextSkill);
+    await syncSkillSearchDigestForSkill(ctx, nextSkill);
+  }
+  for (const alias of plan.skillSlugAliases) {
+    await ctx.db.patch(alias._id, { ownerUserId: nextUserId, updatedAt: now });
+  }
+  for (const pkg of plan.packages) {
+    const nextPackage = { ...pkg, ownerUserId: nextUserId, updatedAt: now };
+    await ctx.db.patch(pkg._id, { ownerUserId: nextUserId, updatedAt: now });
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: nextPackage.ownerPublisherId,
+      ownerUserId: nextPackage.ownerUserId,
+    });
+    await upsertPackageSearchDigest(ctx, {
+      ...extractPackageDigestFields(nextPackage),
+      ownerHandle: owner?.handle ?? "",
+      ownerKind: owner?.kind,
+    });
+  }
+  for (const warning of plan.packageInspectorWarnings) {
+    await ctx.db.patch(warning._id, { ownerUserId: nextUserId });
+  }
+  if (plan.activeHandleReservation) {
+    await ctx.db.patch(plan.activeHandleReservation._id, {
+      rightfulOwnerUserId: nextUserId,
+      updatedAt: now,
+    });
+  }
+}
+
+export const recoverPersonalPublisherInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    publisherHandle: v.string(),
+    previousGitHubProviderAccountId: v.string(),
+    nextGitHubProviderAccountId: v.string(),
+    nextUserHandle: v.optional(v.string()),
+    retiredUserHandle: v.optional(v.string()),
+    reason: v.string(),
+    confirmIdentityVerified: v.boolean(),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const publisherHandle = validateHandle(args.publisherHandle);
+    const previousGitHubProviderAccountId = normalizeGitHubProviderAccountId(
+      args.previousGitHubProviderAccountId,
+    );
+    const nextGitHubProviderAccountId = normalizeGitHubProviderAccountId(
+      args.nextGitHubProviderAccountId,
+    );
+    if (previousGitHubProviderAccountId === nextGitHubProviderAccountId) {
+      throw new ConvexError("Previous and next GitHub provider ids must differ");
+    }
+
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && !args.confirmIdentityVerified) {
+      throw new ConvexError("Identity verification confirmation required before applying recovery");
+    }
+
+    const publisher = await getPublisherByHandle(ctx, publisherHandle);
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError(`Publisher "@${publisherHandle}" not found`);
+    }
+    if (publisher.kind !== "user") {
+      throw new ConvexError("Only personal publishers can be recovered through this operation");
+    }
+
+    const previousLookup = await getUniqueUserForGitHubProviderAccountId(
+      ctx,
+      previousGitHubProviderAccountId,
+    );
+    const nextLookup = await getUniqueUserForGitHubProviderAccountId(
+      ctx,
+      nextGitHubProviderAccountId,
+    );
+    if (previousLookup.userId === nextLookup.userId) {
+      throw new ConvexError("Previous and next GitHub provider ids resolve to the same user");
+    }
+
+    const previousUser = await ctx.db.get(previousLookup.userId);
+    const nextUser = await ctx.db.get(nextLookup.userId);
+    if (!previousUser || previousUser.deletedAt || previousUser.deactivatedAt) {
+      throw new ConvexError("Previous user must exist and be active before publisher recovery");
+    }
+    if (!nextUser || nextUser.deletedAt || nextUser.deactivatedAt) {
+      throw new ConvexError("Next user must exist and be active before publisher recovery");
+    }
+
+    const expectedNextHandle = normalizePublisherHandle(args.nextUserHandle);
+    if (expectedNextHandle && !publisherHandlesMatch(nextUser.handle, expectedNextHandle)) {
+      throw new ConvexError(`Next GitHub provider id does not belong to @${expectedNextHandle}`);
+    }
+
+    const publisherOwnedByPrevious = publisher.linkedUserId
+      ? publisher.linkedUserId === previousUser._id
+      : previousUser.personalPublisherId === publisher._id;
+    if (!publisherOwnedByPrevious) {
+      throw new ConvexError(
+        `Publisher "@${publisherHandle}" is not currently linked to the previous GitHub principal`,
+      );
+    }
+
+    const userAtRecoveredHandle = await getUserByHandle(ctx, publisher.handle);
+    if (
+      userAtRecoveredHandle &&
+      userAtRecoveredHandle._id !== previousUser._id &&
+      userAtRecoveredHandle._id !== nextUser._id
+    ) {
+      throw new ConvexError(`User handle "@${publisher.handle}" is claimed by another user`);
+    }
+
+    const nextPersonalPublisher = await getRecoveryPersonalPublisherForUser(ctx, nextUser);
+    const retiredPersonalPublisher =
+      nextPersonalPublisher &&
+      nextPersonalPublisher._id !== publisher._id &&
+      isPublisherActive(nextPersonalPublisher)
+        ? nextPersonalPublisher
+        : null;
+    const retiredPersonalPublisherCounts = retiredPersonalPublisher
+      ? await getPublisherResourceCounts(ctx, retiredPersonalPublisher._id)
+      : null;
+    if (retiredPersonalPublisherCounts && retiredPersonalPublisherCounts.total > 0) {
+      throw new ConvexError(
+        `Destination user has resources under @${retiredPersonalPublisher?.handle}; transfer or remove them before recovery`,
+      );
+    }
+    const resourceOwnerMigrationPlan = await getPersonalPublisherRecoveryOwnerMigrationPlan(
+      ctx,
+      publisher._id,
+      publisher.handle,
+      previousUser._id,
+      nextUser._id,
+    );
+    const resourceOwnerMigration = {
+      limitPerTable: resourceOwnerMigrationPlan.limitPerTable,
+      skills: resourceOwnerMigrationPlan.skills.length,
+      skillSlugAliases: resourceOwnerMigrationPlan.skillSlugAliases.length,
+      packages: resourceOwnerMigrationPlan.packages.length,
+      packageInspectorWarnings: resourceOwnerMigrationPlan.packageInspectorWarnings.length,
+      githubSourcesChecked: resourceOwnerMigrationPlan.githubSources.length,
+      handleReservations: resourceOwnerMigrationPlan.activeHandleReservation ? 1 : 0,
+    };
+
+    const retiredHandleBase =
+      normalizePublisherHandle(args.retiredUserHandle) ?? `${publisher.handle}-recovered`;
+    const previousUserHasRecoveredHandle = publisherHandlesMatch(
+      previousUser.handle,
+      publisher.handle,
+    );
+    const previousUserRetiredHandle = previousUserHasRecoveredHandle
+      ? await resolveAvailableUserHandle(ctx, retiredHandleBase, previousUser._id)
+      : undefined;
+    const nextPreviousUserHandle = previousUserHasRecoveredHandle
+      ? previousUserRetiredHandle
+      : (previousUser.handle ?? null);
+    const previousUserNeedsPatch =
+      previousUser.personalPublisherId === publisher._id || previousUserHasRecoveredHandle;
+    const nextUserPreviousHandle = nextUser.handle ?? null;
+
+    if (!dryRun) {
+      const now = Date.now();
+      if (retiredPersonalPublisher) {
+        await ctx.db.patch(retiredPersonalPublisher._id, {
+          linkedUserId: undefined,
+          deactivatedAt: retiredPersonalPublisher.deactivatedAt ?? now,
+          updatedAt: now,
+        });
+      }
+
+      if (previousUserNeedsPatch) {
+        await ctx.db.patch(previousUser._id, {
+          ...(previousUserRetiredHandle ? { handle: previousUserRetiredHandle } : {}),
+          ...(previousUser.personalPublisherId === publisher._id
+            ? { personalPublisherId: undefined }
+            : {}),
+          updatedAt: now,
+        });
+      }
+
+      await ctx.db.patch(nextUser._id, {
+        handle: publisher.handle,
+        personalPublisherId: publisher._id,
+        updatedAt: now,
+      });
+      await ctx.db.patch(publisher._id, {
+        linkedUserId: nextUser._id,
+        updatedAt: now,
+      });
+      await applyPersonalPublisherRecoveryOwnerMigration(
+        ctx,
+        resourceOwnerMigrationPlan,
+        nextUser._id,
+        now,
+      );
+
+      const members = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
+        .take(101);
+      if (members.length > 100) {
+        throw new ConvexError(
+          "Too many personal publisher members; manual reconciliation required",
+        );
+      }
+
+      let ensuredNextOwner = false;
+      for (const member of members) {
+        if (member.userId === nextUser._id) {
+          ensuredNextOwner = true;
+          if (member.role !== "owner") {
+            await ctx.db.patch(member._id, { role: "owner", updatedAt: now });
+          }
+        } else {
+          await ctx.db.delete(member._id);
+        }
+      }
+      if (!ensuredNextOwner) {
+        await ctx.db.insert("publisherMembers", {
+          publisherId: publisher._id,
+          userId: nextUser._id,
+          role: "owner",
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
+
+      await ctx.db.insert("auditLogs", {
+        actorUserId: actor._id,
+        action: "publisher.personal.recover",
+        targetType: "publisher",
+        targetId: publisher._id,
+        metadata: {
+          handle: publisher.handle,
+          previousUserId: previousUser._id,
+          nextUserId: nextUser._id,
+          previousGitHubProviderAccountId,
+          nextGitHubProviderAccountId,
+          reason,
+          identityVerified: args.confirmIdentityVerified,
+          previousUserPreviousHandle: previousUser.handle ?? null,
+          previousUserNextHandle: nextPreviousUserHandle,
+          nextUserPreviousHandle,
+          nextUserNextHandle: publisher.handle,
+          resourceOwnerMigration,
+          retiredPersonalPublisher: retiredPersonalPublisher
+            ? {
+                publisherId: retiredPersonalPublisher._id,
+                handle: retiredPersonalPublisher.handle,
+              }
+            : null,
+        },
+        createdAt: now,
+      });
+    }
+
+    return {
+      ok: true as const,
+      dryRun,
+      recovered: !dryRun,
+      publisherId: publisher._id,
+      handle: publisher.handle,
+      previousUser: {
+        userId: previousUser._id,
+        handle: previousUser.handle ?? null,
+        nextHandle: nextPreviousUserHandle,
+        githubProviderAccountId: previousGitHubProviderAccountId,
+        authAccountCount: previousLookup.accountCount,
+      },
+      nextUser: {
+        userId: nextUser._id,
+        handle: nextUser.handle ?? null,
+        nextHandle: publisher.handle,
+        githubProviderAccountId: nextGitHubProviderAccountId,
+        authAccountCount: nextLookup.accountCount,
+      },
+      retiredPersonalPublisher: retiredPersonalPublisher
+        ? {
+            publisherId: retiredPersonalPublisher._id,
+            handle: retiredPersonalPublisher.handle,
+            skills: retiredPersonalPublisherCounts?.skills ?? 0,
+            packages: retiredPersonalPublisherCounts?.packages ?? 0,
+            githubSources: retiredPersonalPublisherCounts?.githubSources ?? 0,
+          }
+        : null,
+      resourceOwnerMigration,
+      identityVerified: args.confirmIdentityVerified,
+      reason,
+    };
+  },
+});
+
 async function createOrgPublisherForUser(
   ctx: MutationCtx,
   args: {
@@ -1045,6 +1558,9 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
       .collect();
     sourceContents += contents.length;
     for (const content of contents) await ctx.db.delete(content._id);
+    await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
+      sourceId: source._id,
+    });
     await ctx.db.delete(source._id);
   }
 
@@ -1321,6 +1837,37 @@ export const listMine = query({
   },
 });
 
+export const getMyProfileHandle = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return null;
+    const user = await ctx.db.get(userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return null;
+
+    const getVisiblePersonalPublisher = async (
+      publisher: Doc<"publishers"> | null,
+    ): Promise<Doc<"publishers"> | null> => {
+      const isPersonalPublisher =
+        publisher?.kind === "user" &&
+        (publisher.linkedUserId === userId ||
+          (!publisher.linkedUserId && user.personalPublisherId === publisher._id));
+      if (!isPersonalPublisher) return null;
+
+      const visible = await getPublicPublisherVisibility(ctx, publisher);
+      return visible?.linkedUser?._id === userId ? publisher : null;
+    };
+
+    let publisher = await getVisiblePersonalPublisher(
+      user.personalPublisherId ? await ctx.db.get(user.personalPublisherId) : null,
+    );
+    if (!publisher) {
+      publisher = await getVisiblePersonalPublisher(await getPersonalPublisherForUser(ctx, userId));
+    }
+    return publisher?.handle ?? null;
+  },
+});
+
 export const getByHandle = query({
   args: { handle: v.string() },
   handler: async (ctx, args) =>
@@ -1344,7 +1891,7 @@ export const getProfileByHandle = query({
 export const listStarredPage = query({
   args: {
     handle: v.string(),
-    sort: v.optional(v.union(v.literal("downloads"), v.literal("recent"))),
+    sort: v.optional(v.union(v.literal("installs"), v.literal("recent"), v.literal("downloads"))),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -1384,6 +1931,7 @@ export const listStarredPage = query({
             summary: skill.summary ?? null,
             icon: skill.icon ?? null,
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
+            installs: readCanonicalStat(skill, "installsAllTime"),
             downloads: readCanonicalStat(skill, "downloads"),
             stars: readCanonicalStat(skill, "stars"),
             isOfficial: official || Boolean(skill.badges?.official),
@@ -1393,7 +1941,7 @@ export const listStarredPage = query({
       )
     )
       .filter((item): item is PublisherCatalogItem => Boolean(item))
-      .sort(comparePublisherCatalogItems(args.sort ?? "downloads"));
+      .sort(comparePublisherCatalogItems(normalizePublisherCatalogSort(args.sort)));
     const nextOffset = safeOffset + numItems;
     const page = items.slice(safeOffset, nextOffset);
 
@@ -1409,7 +1957,7 @@ export const listPublishedPage = query({
   args: {
     handle: v.string(),
     kind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
-    sort: v.optional(v.union(v.literal("downloads"), v.literal("recent"))),
+    sort: v.optional(v.union(v.literal("installs"), v.literal("recent"), v.literal("downloads"))),
     paginationOpts: paginationOptsValidator,
   },
   handler: async (ctx, args) => {
@@ -1427,7 +1975,7 @@ export const listPublishedPage = query({
       visiblePublisher,
       await getPublisherPublishedRows(ctx, visiblePublisher._id),
       await isOfficialPublisher(ctx, visiblePublisher),
-      args.sort ?? "downloads",
+      normalizePublisherCatalogSort(args.sort),
     ).filter((item) => !args.kind || item.kind === args.kind);
     const nextOffset = safeOffset + numItems;
     const page = items.slice(safeOffset, nextOffset);
@@ -1444,7 +1992,7 @@ export const getPublishedDisplayManifest = query({
   args: {
     handle: v.string(),
     kind: v.optional(v.union(v.literal("skill"), v.literal("plugin"))),
-    sort: v.optional(v.union(v.literal("downloads"), v.literal("recent"))),
+    sort: v.optional(v.union(v.literal("installs"), v.literal("recent"), v.literal("downloads"))),
   },
   handler: async (ctx, args): Promise<GitHubSkillCatalogDisplay | null> => {
     if (args.kind === "plugin") return null;
@@ -1468,7 +2016,7 @@ export const getPublishedDisplayManifest = query({
       visiblePublisher,
       rows,
       await isOfficialPublisher(ctx, visiblePublisher),
-      args.sort ?? "downloads",
+      normalizePublisherCatalogSort(args.sort),
     )
       .filter((item) => !args.kind || item.kind === args.kind)
       .map((item) => toGitHubSkillCatalogItem(item, sourceById));
@@ -1494,7 +2042,7 @@ export const listPublic = query({
     const kindFilter = args.kind as PublicPublisherKindFilter | undefined;
     const activeRows = await ctx.db
       .query("publishers")
-      .withIndex("by_active_total_downloads", (q) =>
+      .withIndex("by_active_total_installs", (q) =>
         q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
       )
       .order("desc")
@@ -1542,14 +2090,14 @@ export const listPublicPage = query({
     const activeRows = kindFilter
       ? await ctx.db
           .query("publishers")
-          .withIndex("by_active_kind_total_downloads", (q) =>
+          .withIndex("by_active_kind_total_installs", (q) =>
             q.eq("deletedAt", undefined).eq("deactivatedAt", undefined).eq("kind", kindFilter),
           )
           .order("desc")
           .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
       : await ctx.db
           .query("publishers")
-          .withIndex("by_active_total_downloads", (q) =>
+          .withIndex("by_active_total_installs", (q) =>
             q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
           )
           .order("desc")
@@ -1567,7 +2115,7 @@ export const listPublicPage = query({
           ctx,
           await ctx.db
             .query("publishers")
-            .withIndex("by_active_total_downloads", (q) =>
+            .withIndex("by_active_total_installs", (q) =>
               q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
             )
             .order("desc")
@@ -2002,9 +2550,6 @@ export const addOfficialPublisherInternal = internalMutation({
     const publisher = await getPublisherByHandle(ctx, handle);
     if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
       throw new ConvexError(`Publisher "@${handle}" not found`);
-    }
-    if (publisher.kind !== "org") {
-      throw new ConvexError("Only org publishers can be marked official");
     }
 
     const existing = await ctx.db

@@ -12,7 +12,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
-- user: upload skills (subject to GitHub age gate), report skills/comments/packages.
+- user: upload skills (subject to GitHub age gate), report skills/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
@@ -45,7 +45,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse scoring is a staff review signal for bulk-publishing abuse.
   It must not directly ban users; staff action goes through the publisher abuse
   nomination review path.
-- Official org publishers are excluded from publisher abuse scoring and
+- Catalog volume pressure is linear up to the 100-skill pivot and superlinear
+  above it. Doubling an already-bulk catalog should raise review pressure
+  meaningfully more than 2x while still allowing legitimate high-engagement
+  publishers to stay below review thresholds.
+- Official publishers are excluded from publisher abuse scoring and
   enforcement. An excluded publisher must not contribute to score-run cohort
   statistics, receive a score label/rank, open or update a nomination, appear in
   the dashboard/detail state, or be actionable through a stale nomination id.
@@ -55,13 +59,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Reporting + auto-hide
 
-- Reports are unique per user + target (skill/comment/package).
+- Reports are unique per user + target (skill/package).
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
 - Per-user cap: 20 **active** reports.
   - Active skill report = skill exists, not soft-deleted, not `moderationStatus = removed`,
     and the owner is not banned.
-  - Active comment report = comment exists, not soft-deleted, parent skill still active,
-    and the comment author is not banned/deactivated.
   - Active package report = package exists, not soft-deleted, and the owner is
     not banned/deactivated.
 - Auto-hide: when unique reports exceed 3 (4th report):
@@ -71,10 +73,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - set `moderationReason = auto.reports`
     - set embeddings visibility `deleted`
     - audit log entry: `skill.auto_hide`
-  - comment report flow:
-    - soft-delete comment (`softDeletedAt`)
-    - decrement comment stat via `uncomment` stat event
-    - audit log entry: `comment.auto_hide`
 - Package reports feed `clawhub-admin package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators can review a formal report
   with an explicit final action to quarantine or revoke the affected release.
@@ -129,6 +127,23 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   storage. Published scan requests may patch a version only when the caller can
   manage the skill and explicitly sets `update: true`; local uploads must reject
   update mode.
+- GitHub-backed skill verification also uses ephemeral `skillScanRequests` to
+  feed exact current skill-folder bytes into the normal ClawScan worker. Large
+  file manifests use a prepare, bounded child-chunk append, and finalize sequence
+  rather than one oversized Convex document or function argument. The request
+  must exist before blob storage begins, each bounded chunk is durably attached
+  as it is stored, descriptor metadata is capped at 4 MiB, and worker claims
+  hydrate one signed-URL-heavy job at a time. A recently prepared request remains
+  leased until finalization so concurrent syncs cannot replace it. Unlike
+  user-submitted upload scans, its completed ClawScan, SkillSpector, and static
+  context are persisted on `githubSkillScans` by skill and content hash so the
+  public Security audit remains available after request files are pruned through
+  bounded continuation batches. Cleanup cancels the linked worker job before
+  deleting the first chunk. Legacy source-backed statuses without a durable
+  `githubSkillScans` result must return to pending on sync rather than remain
+  trusted. Explicit owner/moderator rescans use the manual worker queue.
+  GitHub-backed verification must not create or patch a hosted `skillVersions`
+  row, and static findings remain input context rather than a blocking verdict.
 - `auditLogs` remains the global compliance/security ledger. Product-facing
   moderation timelines live in `skillModerationEventLogs` and
   `packageModerationEventLogs`.
@@ -189,6 +204,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
+- Current skill and plugin scans are queued through `securityScanJobs` and
+  completed by the external Codex worker.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
@@ -224,14 +241,30 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.
-- Operators can schedule targeted ClawScan rescans for suspicious skills by bucket
-  (`all`, `llm-only`, `vt-only`, `both`) and for suspicious plugin releases.
+- Operators can schedule ClawScan rescans through `securityScanJobs`: single
+  skill/package rescans for a chosen artifact, or paged all-active-latest skill
+  rescan batches. The old suspicious LLM bucket tools (`all`, `llm-only`,
+  `vt-only`, `both`) are retired.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,
   but those results remain ClawScan context and are not public trust status.
-- ClawPack package releases keep static/LLM scan inputs intentionally metadata-only for now:
-  `package.json`, `openclaw.plugin.json`, package/source metadata, and release facts. VirusTotal
-  scans the exact uploaded `.tgz`; ClawHub does not currently run deep static/LLM scans across every
-  tarball file.
+- ClawPack package releases materialize parsed npm-pack artifact entries into the release file
+  surface. Static scan, LLM review, package inspect/file APIs, and Codex package ClawScan use those
+  stored artifact entries instead of metadata-only `package.json` / `openclaw.plugin.json` rows.
+  VirusTotal still scans the exact uploaded `.tgz`; ClawHub also retains the stored ClawPack artifact
+  so scanner workers can download/extract it for artifact-backed review.
+- Historical ClawPack releases whose stored file rows are shorter than the artifact `npmFileCount`
+  are production data repair candidates, not normal scan-backfill work. Operators repair them through
+  the explicit `packages:repairHistoricalClawPackReleaseFiles` migration action:
+  - default to `dryRun: true` and inspect the returned `logLines`, candidate samples, parsed
+    artifact file counts, hashes, and resume `cursor` before writing.
+  - target narrowly with `releaseId`, or with `packageName` and optional `version`, before running
+    an all-release pass.
+  - pass `dryRun: false` plus `confirmation: "repair-historical-clawpack-files"` before any row
+    rewrite; the action replaces `release.files`, recomputes `integritySha256`, resets stale scan
+    analysis, and queues fresh static/Codex package scans for repaired releases.
+  - resume incomplete runs by passing the returned `cursor`; set `scheduleNext: true` only when an
+    operator intentionally wants the action to enqueue the next batch.
+    The ordinary package scan backfill must not schedule this repair implicitly.
 - Packages cache VirusTotal undetected-only engine results as clean VT telemetry.
   ClawHub does not request or consume VirusTotal AI/code-insight results; VT is
   engine/vendor telemetry only.
@@ -258,21 +291,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   obfuscated shell payload prompts, but those findings are context for ClawScan,
   not a standalone hard block or uploader moderation trigger.
 
-## AI comment scam backfill
-
-- Moderators/admins can run a comment backfill scanner to classify scam comments with OpenAI.
-- Scanner stores per-comment moderation metadata:
-  - `scamScanVerdict`: `not_scam | likely_scam | certain_scam`
-  - `scamScanConfidence`: `low | medium | high`
-  - explanation/evidence/model/check timestamp fields on `comments`.
-- Auto-ban trigger is intentionally strict:
-  - only `certain_scam` with `high` confidence can trigger account ban.
-  - moderator/admin accounts are never auto-banned by this pipeline.
-- Ban reason is bounded to 500 chars and includes concise evidence + comment/skill IDs.
-- CLI run examples:
-  - one-shot: `npx convex run commentModeration:backfillCommentScamModeration '{"batchSize":25,"maxBatches":20}'`
-  - background chain: `npx convex run commentModeration:scheduleCommentScamModeration '{"batchSize":25}'`
-
 ## Bans
 
 - Banning a user:
@@ -285,7 +303,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
       current ban so the next matching unban can restore them
   - retimestamps already ban-hidden owned skills to the current ban marker so
     a later matching unban can restore them
-  - soft-deletes all authored skill comments
   - revokes API tokens
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
@@ -335,21 +352,22 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 ## Upload gate (GitHub account age)
 
 - Skill publish actions require GitHub account age ≥ 14 days.
-- Skill comment creation also requires GitHub account age ≥ 14 days.
 - Lookup uses GitHub `created_at` fetched by the immutable GitHub numeric ID (`providerAccountId`)
   and caches on the user:
   - `githubCreatedAt` (source of truth)
-- Gate applies to web uploads, CLI publish, GitHub import, and comments.
+- Gate applies to web uploads, CLI publish, and GitHub import.
 - If GitHub responds `403` or `429`, publish fails with:
   - `GitHub API rate limit exceeded — please try again in a few minutes`
 - To reduce rate-limit failures, configure the ClawHub GitHub App in Convex env:
   `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, and `GITHUB_APP_PRIVATE_KEY`.
   Account-age/profile lookups prefer short-lived GitHub App installation
   tokens, then fall back to `GITHUB_TOKEN`, then to unauthenticated public
-  requests where safe. Trusted-publisher repository identity lookups avoid
-  GitHub App installation tokens because users may configure repositories
-  outside the App installation; they use `GITHUB_TOKEN` or unauthenticated
-  public requests instead.
+  requests where safe. Trusted-publisher repository identity lookups also
+  prefer authenticated GitHub App or token requests for public repository
+  metadata, then retry without App auth when that lookup is rejected. They must
+  only accept public repository responses; private repositories need a separate
+  GitHub authorization or installation flow before ClawHub can configure trusted
+  publishing for them.
 - If configured GitHub API auth is rejected with `401`, retry the account-age
   lookup without auth before failing. Never fall back to mutable GitHub usernames
   for this gate; use the operator backfill to cache missing ages for existing users.

@@ -11,25 +11,38 @@ const EXPECTED_BIN_PATH = "bin/clawdhub.js";
 
 function parseArgs(argv) {
   const resolved = {};
+  const errors = [];
+  const valueFlags = new Set(["--tag", "--release-tag", "--release-sha", "--release-main-ref"]);
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     const next = argv[index + 1];
-    if ((arg === "--tag" || arg === "--release-tag") && next) {
+
+    if (!valueFlags.has(arg)) {
+      errors.push(`Unknown argument: ${arg}.`);
+      continue;
+    }
+
+    if (!next || valueFlags.has(next) || next.startsWith("--")) {
+      errors.push(`${arg} requires a value.`);
+      continue;
+    }
+
+    if (arg === "--tag" || arg === "--release-tag") {
       resolved.tag = next;
       index += 1;
       continue;
     }
-    if (arg === "--release-sha" && next) {
+    if (arg === "--release-sha") {
       resolved.releaseSha = next;
       index += 1;
       continue;
     }
-    if (arg === "--release-main-ref" && next) {
+    if (arg === "--release-main-ref") {
       resolved.releaseMainRef = next;
       index += 1;
     }
   }
-  return resolved;
+  return { errors, values: resolved };
 }
 
 function normalizeUrl(value) {
@@ -158,7 +171,15 @@ function collectReleaseTagErrors({ packageVersion, releaseTag, releaseSha, relea
   return errors;
 }
 
-const args = parseArgs(process.argv.slice(2));
+const parsedArgs = parseArgs(process.argv.slice(2));
+if (parsedArgs.errors.length > 0) {
+  for (const error of parsedArgs.errors) {
+    console.error(error);
+  }
+  process.exit(1);
+}
+
+const args = parsedArgs.values;
 const pkg = readPackageJson();
 const releaseTag = args.tag ?? process.env.RELEASE_TAG ?? "";
 const releaseSha = args.releaseSha ?? process.env.RELEASE_SHA ?? "";

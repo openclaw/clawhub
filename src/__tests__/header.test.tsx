@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import type { ReactNode } from "react";
+import type { AriaAttributes, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type HeaderAuthStatus = {
@@ -13,7 +13,8 @@ type HeaderAuthStatus = {
 };
 
 const navigateMock = vi.fn();
-const { signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+const { profileHandleMock, signInMock, useUnifiedSearchMock } = vi.hoisted(() => ({
+  profileHandleMock: vi.fn(),
   signInMock: vi.fn(),
   useUnifiedSearchMock: vi.fn(),
 }));
@@ -64,11 +65,20 @@ const defaultUnifiedSearchResult = {
 };
 
 vi.mock("@tanstack/react-router", () => ({
-  Link: (props: { children: ReactNode; className?: string; hash?: string; to?: string }) => (
-    <a href={`${props.to ?? "/"}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
-      {props.children}
-    </a>
-  ),
+  Link: (props: {
+    children: ReactNode;
+    className?: string;
+    hash?: string;
+    params?: { handle?: string };
+    to?: string;
+  }) => {
+    const to = props.to?.replace("$handle", props.params?.handle ?? "$handle") ?? "/";
+    return (
+      <a href={`${to}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
+        {props.children}
+      </a>
+    );
+  },
   useLocation: () => ({ pathname: "/" }),
   useNavigate: () => navigateMock,
 }));
@@ -78,6 +88,10 @@ vi.mock("@convex-dev/auth/react", () => ({
     signIn: signInMock,
     signOut: vi.fn(),
   }),
+}));
+
+vi.mock("convex/react", () => ({
+  useQuery: () => profileHandleMock(),
 }));
 
 const authStatusMock = vi.fn<() => HeaderAuthStatus>(() => ({
@@ -130,8 +144,34 @@ vi.mock("../lib/useUnifiedSearch", () => ({
 
 vi.mock("../components/ui/dropdown-menu", () => ({
   DropdownMenu: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuItem: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuContent: ({ children, className }: { children: ReactNode; className?: string }) => (
+    <div className={className}>{children}</div>
+  ),
+  DropdownMenuItem: ({
+    children,
+    className,
+    onClick,
+    ...props
+  }: {
+    children: ReactNode;
+    className?: string;
+    onClick?: () => void;
+    "aria-current"?: AriaAttributes["aria-current"];
+    "aria-label"?: string;
+    "data-status"?: string;
+    title?: string;
+  }) => (
+    <div
+      aria-current={props["aria-current"]}
+      aria-label={props["aria-label"]}
+      className={className}
+      data-status={props["data-status"]}
+      onClick={onClick}
+      title={props.title}
+    >
+      {children}
+    </div>
+  ),
   DropdownMenuSeparator: () => <hr />,
   DropdownMenuTrigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
@@ -193,46 +233,85 @@ describe("Header", () => {
       isLoading: false,
       me: null,
     });
+    profileHandleMock.mockReturnValue(null);
     useUnifiedSearchMock.mockReturnValue(defaultUnifiedSearchResult);
     signInMock.mockReset();
     signInMock.mockResolvedValue({ signingIn: true });
   });
 
-  it("renders restored desktop nav rows and segmented theme controls", () => {
+  it("renders text-only content links in the top navbar", () => {
     setModeMock.mockClear();
 
     render(<Header />);
 
-    expect(document.querySelector(".navbar-tabs")).toBeTruthy();
-    expect(document.querySelector(".navbar-tabs-secondary")).toBeTruthy();
-    expect(document.querySelector(".theme-mode-toggle")).toBeTruthy();
-    expect(screen.getByLabelText("Theme mode").className).toContain("theme-mode-toggle");
-    expect(screen.getByRole("button", { name: /Cycle theme mode/i })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "System theme" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Light theme" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Dark theme" })).toBeTruthy();
+    const topNav = screen.getByRole("navigation", { name: "Primary navigation" });
+    expect(document.querySelector(".navbar-top-links")).toBeTruthy();
+    expect(document.querySelector(".navbar-tabs")).toBeNull();
+    expect(document.querySelector(".theme-mode-toggle")).toBeNull();
+    expect(within(topNav).getByText("Skills").closest("a")?.querySelector("svg")).toBeNull();
+    expect(within(topNav).getByText("Plugins").closest("a")?.querySelector("svg")).toBeNull();
+    expect(within(topNav).getByText("Docs").closest("a")?.getAttribute("href")).toBe(
+      "https://docs.openclaw.ai/clawhub/",
+    );
     expect(screen.getAllByText("Skills")).toHaveLength(1);
     expect(screen.getAllByText("Plugins")).toHaveLength(1);
-    expect(screen.getAllByText("Publishers")).toHaveLength(1);
+    expect(screen.queryByText("Publishers")).toBeNull();
     expect(screen.getAllByText("Docs")).toHaveLength(1);
     expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
     expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
-    expect(document.querySelector(".navbar-tabs")?.textContent).toContain("Publishers");
-    expect(document.querySelector(".navbar-tabs-secondary")?.textContent).toBe("Docs");
-
-    fireEvent.click(screen.getByRole("button", { name: /Cycle theme mode/i }));
-    expect(setModeMock).toHaveBeenCalledWith("light");
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
     expect(screen.getAllByText("Home")).toHaveLength(1);
     expect(screen.getAllByText("Skills")).toHaveLength(2);
     expect(screen.getAllByText("Plugins")).toHaveLength(2);
-    expect(screen.getAllByText("Publishers")).toHaveLength(2);
+    expect(screen.queryByText("Publishers")).toBeNull();
     expect(screen.getAllByText("Docs")).toHaveLength(2);
     expect(screen.queryByText("About")).toBeNull();
+  });
+
+  it("renders theme mode controls as a compact row between Settings and Sign out", () => {
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+
+    render(<Header />);
+
+    expect(document.querySelector(".theme-mode-toggle")).toBeNull();
+    expect(screen.queryByText("Theme")).toBeNull();
+
+    const themeRow = document.querySelector(".user-dropdown-theme-row");
+    const settings = screen.getByText("Settings");
+    const signOut = screen.getByText("Sign out");
+
+    expect(themeRow).toBeTruthy();
+    expect(themeRow?.children).toHaveLength(3);
+    expect(settings.compareDocumentPosition(themeRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(themeRow!.compareDocumentPosition(signOut) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(themeRow?.previousElementSibling?.tagName).toBe("HR");
+    expect(signOut.previousElementSibling?.tagName).toBe("HR");
+
+    expect(screen.getByLabelText("System theme").getAttribute("aria-current")).toBe("true");
+    expect(screen.getByLabelText("System theme").getAttribute("data-status")).toBe("active");
+    expect(screen.getByLabelText("Light theme").getAttribute("aria-current")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Light theme"));
+    expect(setModeMock).toHaveBeenCalledWith("light");
+    fireEvent.click(screen.getByLabelText("Dark theme"));
+    expect(setModeMock).toHaveBeenCalledWith("dark");
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {
@@ -426,11 +505,11 @@ describe("Header", () => {
       .map((element) => element.textContent?.trim())
       .filter((label): label is string => Boolean(label));
 
-    expect(labels.slice(0, 4)).toEqual(["Home", "Skills", "Plugins", "Publishers"]);
-    expect(labels[4]).toBe("Docs");
+    expect(labels.slice(0, 4)).toEqual(["Home", "Skills", "Plugins", "Docs"]);
   });
 
-  it("links starred skills from the signed-in avatar menu", () => {
+  it("links profile and starred skills from the signed-in avatar menu", () => {
+    profileHandleMock.mockReturnValue("patrick-profile");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -445,6 +524,13 @@ describe("Header", () => {
 
     render(<Header />);
 
+    const profile = screen.getByText("Profile");
+    const dashboard = screen.getAllByText("Dashboard").at(-1)!;
+
+    expect(profile.closest("a")?.getAttribute("href")).toBe("/user/patrick-profile");
+    expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
     expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();

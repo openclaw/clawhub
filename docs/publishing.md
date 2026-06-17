@@ -26,102 +26,22 @@ clawhub login
 clawhub skill publish ./my-skill \
   --slug my-skill \
   --name "My Skill" \
-  --version 1.0.0 \
   --owner <owner>
 ```
 
 Use `--owner <handle>` when publishing to an org owner. Omit it to publish as
-the authenticated user.
+the authenticated user. Publishing skips unchanged content. A new skill starts
+at `1.0.0`, and later changes automatically publish the next patch version. Pass
+`--version` only when you need an explicit version.
 
-For catalog repos, use `sync` to scan folders containing `SKILL.md` and publish
-new or changed skills:
-
-```bash
-clawhub sync --dry-run --owner <owner>
-clawhub sync --all --owner <owner>
-```
-
-Use `--dry-run` first to see the plan without uploading.
-
-### GitHub Actions for Skills
-
-If you want to run skill publishing from CI, call ClawHub's reusable
-[`skill-publish.yml` workflow](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml)
-from a small workflow in your repo.
-
-The example below is shaped for a catalog repo: operators choose whether to
-preview the full catalog, publish one skill folder, or publish the whole
-catalog.
+For catalog repos, use ClawHub's reusable
+[`skill-publish.yml` workflow](https://github.com/openclaw/clawhub/blob/main/.github/workflows/skill-publish.yml).
+It calls `skill publish` for each immediate skill folder under `root` (default:
+`skills`), or only the folder supplied as `skill_path`.
 
 ```yaml
-name: Publish Skills to ClawHub
-
-on:
-  workflow_dispatch:
-    inputs:
-      mode:
-        description: What to run.
-        type: choice
-        required: true
-        default: dry-run
-        options:
-          - dry-run
-          - publish-single
-          - publish-catalog
-      skill_path:
-        description: Skill folder for publish-single, for example skills/<slug>.
-        type: string
-        required: false
-        default: ""
-
-permissions:
-  contents: read
-  id-token: write
-
 jobs:
-  validate-single:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-single'
-    runs-on: ubuntu-latest
-    steps:
-      - name: Validate single-skill input
-        env:
-          SKILL_PATH: ${{ inputs.skill_path }}
-        run: |
-          set -euo pipefail
-          if [[ -z "${SKILL_PATH}" ]]; then
-            echo "::error::skill_path is required when mode is publish-single."
-            exit 1
-          fi
-          case "${SKILL_PATH}" in
-            skills/*) ;;
-            *)
-              echo "::error::skill_path must point under skills/, for example skills/<slug>."
-              exit 1
-              ;;
-          esac
-
-  dry-run:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'dry-run'
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
-    with:
-      owner: <owner>
-      dry_run: true
-    secrets:
-      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
-
-  publish-single:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-single'
-    needs: validate-single
-    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
-    with:
-      owner: <owner>
-      skill_path: ${{ inputs.skill_path }}
-      dry_run: false
-    secrets:
-      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
-
-  publish-catalog:
-    if: github.event_name == 'workflow_dispatch' && inputs.mode == 'publish-catalog'
+  publish:
     uses: openclaw/clawhub/.github/workflows/skill-publish.yml@main
     with:
       owner: <owner>
@@ -130,22 +50,7 @@ jobs:
       clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
 ```
 
-Replace `<owner>` with your ClawHub owner handle. The called workflow defaults to
-scanning `skills/`; pass `skill_path` only when you want to process one folder.
-
-Before running a real publish, sign in as a ClawHub user that can publish to the
-selected owner, then store the current CLI token as a `CLAWHUB_TOKEN` repository
-secret:
-
-```bash
-clawhub login --label "Skills GitHub Actions"
-gh secret set CLAWHUB_TOKEN \
-  --repo OWNER/REPO \
-  --body "$(clawhub token)"
-```
-
-Start with `dry-run`, then publish one skill with `publish-single`, and only then
-use `publish-catalog` for the full catalog.
+Use `dry_run: true` to preview new and changed skills without publishing.
 
 ## Plugins
 
@@ -162,6 +67,12 @@ The scope must match the selected publish owner. If your package is named
 
 This prevents a package from claiming an org namespace that the publisher does
 not control.
+
+If you are the rightful owner of an org, brand, package scope, owner handle, or
+namespace that is already claimed or reserved on ClawHub, open an
+[Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
+with public, non-sensitive proof. Do not use the account appeal form for
+namespace claims.
 
 ### Before Publishing a Plugin
 
@@ -197,6 +108,12 @@ OIDC/trusted publishing without storing a long-lived ClawHub token in the
 repository. The configured repository and workflow filename must match the
 GitHub Actions OIDC claim. If you also pass `--environment <name>`, the GitHub
 Actions environment claim must match that name exactly.
+
+ClawHub verifies the configured GitHub repository when trusted publisher config
+is set. Public repositories can be verified through public GitHub metadata.
+Private repositories require ClawHub to have GitHub access to that repository,
+for example through a future ClawHub GitHub App installation or another
+authorized GitHub integration.
 
 The current reusable package publish workflow supports secretless trusted
 publishing for `workflow_dispatch` publishes when `id-token: write` is
@@ -239,6 +156,11 @@ clawhub package transfer @opik/opik-openclaw --to opik
 Use package or skill transfer only when you have admin access to both the
 current owner and the destination publisher. Package transfer does not let you
 publish into a scope you cannot manage.
+
+If you do not have access to the current owner but believe your org, project, or
+brand is the rightful namespace owner, open an
+[Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
+with public, non-sensitive proof for staff review.
 
 This protects org namespaces. A package named `@openclaw/dronzer` claims the
 `@openclaw` namespace, so only publishers with access to the `@openclaw` owner

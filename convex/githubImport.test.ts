@@ -1,9 +1,35 @@
 /* @vitest-environment node */
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { internal } from "./_generated/api";
 import { __test } from "./githubImport";
 import { buildGitHubZipForTests } from "./lib/githubImport";
 
+vi.mock("./_generated/api", () => ({
+  internal: {
+    githubIdentity: {
+      getGitHubProviderAccountIdInternal: Symbol("getGitHubProviderAccountIdInternal"),
+    },
+    skills: {
+      getSkillBySlugInternal: Symbol("getSkillBySlugInternal"),
+    },
+  },
+}));
+
+const originalGitHubToken = process.env.GITHUB_TOKEN;
+
 describe("githubImport", () => {
+  beforeEach(() => {
+    delete process.env.GITHUB_TOKEN;
+  });
+
+  afterEach(() => {
+    if (originalGitHubToken) {
+      process.env.GITHUB_TOKEN = originalGitHubToken;
+    } else {
+      delete process.env.GITHUB_TOKEN;
+    }
+  });
+
   it("formats storage failure message with file context", () => {
     const message = __test.buildStoreFailureMessage("skill/SKILL.md", 123, new Error("disk full"));
     expect(message).toBe('Failed to store file "skill/SKILL.md" (123 bytes). disk full');
@@ -12,6 +38,15 @@ describe("githubImport", () => {
   it("formats publish failure message with fallback text", () => {
     expect(__test.buildPublishFailureMessage(new Error("slug exists"))).toBe(
       "Import failed during publish: slug exists. Check skill format, slug availability, and try again.",
+    );
+    expect(
+      __test.buildPublishFailureMessage(
+        new Error(
+          'Uncaught ConvexError: Publisher handle "@local-owner" is already claimed at ensurePersonalPublisherForUser (../../convex/lib/publishers.ts:235:4)',
+        ),
+      ),
+    ).toBe(
+      'Import failed during publish: Publisher handle "@local-owner" is already claimed. Check skill format, slug availability, and try again.',
     );
     expect(__test.buildPublishFailureMessage("unexpected")).toBe(
       "Import failed during publish: unexpected. Check skill format, slug availability, and try again.",
@@ -32,5 +67,526 @@ describe("githubImport", () => {
       "demo-repo/skill/SKILL.md",
       "demo-repo/skill/notes.md",
     ]);
+  });
+
+  it("uses publish-supported text extensions for tree path imports", () => {
+    expect(__test.isPreviewFetchableTextPath("skill/SKILL.md")).toBe(true);
+    expect(__test.isPreviewFetchableTextPath("skill/icon.svg")).toBe(true);
+    expect(__test.isPreviewFetchableTextPath("skill/styles.scss")).toBe(true);
+    expect(__test.isPreviewFetchableTextPath("skill/install.ps1")).toBe(true);
+    expect(__test.isPreviewFetchableTextPath("skill/config.conf")).toBe(true);
+    expect(__test.isPreviewFetchableTextPath("skill/binary.exe")).toBe(false);
+  });
+
+  it("rejects a public repo owned by another GitHub account before repo lookup", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 123,
+        login: "vyctorbrzezowski",
+        avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+      }),
+    });
+
+    await expect(
+      __test.requireOwnedPublicGitHubRepoForImport(
+        ctx as never,
+        "users:1" as never,
+        "someone-else",
+        "public-skill",
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/owned by your GitHub account/i);
+
+    expect(ctx.runQuery).toHaveBeenCalledWith(
+      internal.githubIdentity.getGitHubProviderAccountIdInternal,
+      { userId: "users:1" },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/user/123",
+      expect.objectContaining({
+        headers: expect.objectContaining({ "User-Agent": "clawhub/github-import" }),
+      }),
+    );
+  });
+
+  it("rejects a public repo when GitHub metadata owner id does not match the signed-in user", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 123,
+          login: "vyctorbrzezowski",
+          avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          name: "public-skill",
+          full_name: "vyctorbrzezowski/public-skill",
+          private: false,
+          visibility: "public",
+          owner: { id: 456, login: "vyctorbrzezowski" },
+        }),
+      });
+
+    await expect(
+      __test.requireOwnedPublicGitHubRepoForImport(
+        ctx as never,
+        "users:1" as never,
+        "vyctorbrzezowski",
+        "public-skill",
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/owned by your GitHub account/i);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/repos/vyctorbrzezowski/public-skill",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("rejects direct URL preview from another public GitHub owner before repo lookup", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 123,
+        login: "vyctorbrzezowski",
+        avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+      }),
+    });
+
+    await expect(
+      __test.previewGitHubImportForUser(
+        ctx as never,
+        "users:1" as never,
+        { url: "https://github.com/someone-else/public-skill" },
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/owned by your GitHub account/i);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/user/123",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("rejects direct URL candidate preview from another public GitHub owner before repo lookup", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 123,
+        login: "vyctorbrzezowski",
+        avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+      }),
+    });
+
+    await expect(
+      __test.previewGitHubImportCandidateForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          url: "https://github.com/someone-else/public-skill",
+          candidatePath: "",
+        },
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/owned by your GitHub account/i);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/user/123",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("rejects direct URL publish from another public GitHub owner before repo lookup", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        id: 123,
+        login: "vyctorbrzezowski",
+        avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+      }),
+    });
+
+    await expect(
+      __test.importGitHubSkillForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          url: "https://github.com/someone-else/public-skill",
+          commit: "a".repeat(40),
+          candidatePath: "",
+          selectedPaths: ["SKILL.md"],
+          slug: "public-skill",
+          displayName: "Public Skill",
+          version: "1.0.0",
+          tags: ["latest"],
+          acceptLicenseTerms: true,
+        },
+        fetchMock as never,
+      ),
+    ).rejects.toThrow(/owned by your GitHub account/i);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://api.github.com/user/123",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("lists only owned public skill file candidates", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 123,
+          login: "vyctorbrzezowski",
+          avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          {
+            name: "clawhub",
+            full_name: "vyctorbrzezowski/clawhub",
+            html_url: "https://github.com/vyctorbrzezowski/clawhub",
+            default_branch: "main",
+            pushed_at: "2026-05-27T00:00:00Z",
+            updated_at: "2026-05-27T00:00:00Z",
+            language: "TypeScript",
+            fork: false,
+            archived: false,
+            disabled: false,
+            private: false,
+            visibility: "public",
+            owner: { id: 123, login: "vyctorbrzezowski" },
+          },
+          {
+            name: "docs",
+            full_name: "vyctorbrzezowski/docs",
+            html_url: "https://github.com/vyctorbrzezowski/docs",
+            default_branch: "main",
+            pushed_at: "2026-05-26T00:00:00Z",
+            updated_at: "2026-05-26T00:00:00Z",
+            fork: false,
+            archived: false,
+            disabled: false,
+            private: false,
+            visibility: "public",
+            owner: { id: 123, login: "vyctorbrzezowski" },
+          },
+          {
+            name: "forked-skill",
+            full_name: "vyctorbrzezowski/forked-skill",
+            default_branch: "main",
+            fork: true,
+            archived: false,
+            disabled: false,
+            private: false,
+            visibility: "public",
+            owner: { id: 123, login: "vyctorbrzezowski" },
+          },
+          {
+            name: "archived-skill",
+            full_name: "vyctorbrzezowski/archived-skill",
+            default_branch: "main",
+            fork: false,
+            archived: true,
+            disabled: false,
+            private: false,
+            visibility: "public",
+            owner: { id: 123, login: "vyctorbrzezowski" },
+          },
+          {
+            name: "private-skill",
+            private: true,
+            visibility: "private",
+            owner: { id: 123, login: "vyctorbrzezowski" },
+          },
+          {
+            name: "org-skill",
+            private: false,
+            visibility: "public",
+            owner: { id: 456, login: "openclaw" },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          truncated: false,
+          tree: [
+            { path: "SKILL.md", type: "blob" },
+            { path: "skills/copilot/SKILL.md", type: "blob" },
+            { path: "legacy/skills.md", type: "blob" },
+            { path: ".agents/skills/internal/SKILL.md", type: "blob" },
+            { path: "README.md", type: "blob" },
+            { path: "skill.md", type: "tree" },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          truncated: false,
+          tree: [
+            { path: "README.md", type: "blob" },
+            { path: "guides/usage.md", type: "blob" },
+          ],
+        }),
+      });
+
+    const result = await __test.listOwnedPublicGitHubReposForUser(
+      ctx as never,
+      "users:1" as never,
+      { page: 1, perPage: 30 },
+      fetchMock as never,
+    );
+
+    expect(result.account.login).toBe("vyctorbrzezowski");
+    expect(result.account.avatarUrl).toBe("https://avatars.githubusercontent.com/u/123?v=4");
+    expect(result.repos).toEqual([
+      expect.objectContaining({
+        owner: "vyctorbrzezowski",
+        name: "clawhub",
+        repoName: "clawhub",
+        repoFullName: "vyctorbrzezowski/clawhub",
+        fullName: "vyctorbrzezowski/clawhub",
+        htmlUrl: "https://github.com/vyctorbrzezowski/clawhub",
+        candidatePath: "",
+        skillPath: "SKILL.md",
+        importable: true,
+      }),
+      expect.objectContaining({
+        owner: "vyctorbrzezowski",
+        name: "copilot",
+        repoName: "clawhub",
+        repoFullName: "vyctorbrzezowski/clawhub",
+        fullName: "vyctorbrzezowski/clawhub/skills/copilot",
+        htmlUrl: "https://github.com/vyctorbrzezowski/clawhub/tree/main/skills/copilot",
+        candidatePath: "skills/copilot",
+        skillPath: "skills/copilot/SKILL.md",
+        importable: true,
+      }),
+      expect.objectContaining({
+        owner: "vyctorbrzezowski",
+        name: "legacy",
+        repoName: "clawhub",
+        repoFullName: "vyctorbrzezowski/clawhub",
+        fullName: "vyctorbrzezowski/clawhub/legacy",
+        htmlUrl: "https://github.com/vyctorbrzezowski/clawhub/tree/main/legacy",
+        candidatePath: "legacy",
+        skillPath: "legacy/skills.md",
+        importable: true,
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      2,
+      "https://api.github.com/users/vyctorbrzezowski/repos?type=owner&sort=pushed&direction=desc&per_page=30&page=1",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      3,
+      "https://api.github.com/repos/vyctorbrzezowski/clawhub/git/trees/main?recursive=1",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "https://api.github.com/repos/vyctorbrzezowski/docs/git/trees/main?recursive=1",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
+  });
+
+  it("uses GitHub code search for owned skill file discovery when a token is configured", async () => {
+    process.env.GITHUB_TOKEN = "github-token";
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const ownedRepo = {
+      name: "skills",
+      full_name: "vyctorbrzezowski/skills",
+      html_url: "https://github.com/vyctorbrzezowski/skills",
+      default_branch: "main",
+      pushed_at: "2026-05-27T00:00:00Z",
+      updated_at: "2026-05-27T00:00:00Z",
+      fork: false,
+      archived: false,
+      disabled: false,
+      private: false,
+      visibility: "public",
+      owner: { id: 123, login: "vyctorbrzezowski" },
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 123,
+          login: "vyctorbrzezowski",
+          avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [
+            { path: "SKILL.md", repository: ownedRepo },
+            { path: "tools/review/SKILL.md", repository: ownedRepo },
+            { path: ".agents/skills/internal/SKILL.md", repository: ownedRepo },
+            {
+              path: "SKILL.md",
+              repository: {
+                ...ownedRepo,
+                name: "forked",
+                full_name: "vyctorbrzezowski/forked",
+                fork: true,
+              },
+            },
+            { path: "README.md", repository: ownedRepo },
+          ],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          items: [{ path: "legacy/skills.md", repository: ownedRepo }],
+        }),
+      });
+
+    const result = await __test.listOwnedPublicGitHubReposForUser(
+      ctx as never,
+      "users:1" as never,
+      { page: 1, perPage: 30 },
+      fetchMock as never,
+    );
+
+    expect(result.repos).toEqual([
+      expect.objectContaining({
+        name: "skills",
+        repoName: "skills",
+        candidatePath: "",
+        skillPath: "SKILL.md",
+      }),
+      expect.objectContaining({
+        name: "review",
+        repoName: "skills",
+        candidatePath: "tools/review",
+        skillPath: "tools/review/SKILL.md",
+      }),
+      expect.objectContaining({
+        name: "legacy",
+        repoName: "skills",
+        candidatePath: "legacy",
+        skillPath: "legacy/skills.md",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    const searchUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
+    expect(searchUrl.pathname).toBe("/search/code");
+    expect(searchUrl.searchParams.get("q")).toBe("filename:SKILL.md user:vyctorbrzezowski");
+    const legacySearchUrl = new URL(fetchMock.mock.calls[2]?.[0] as string);
+    expect(legacySearchUrl.pathname).toBe("/search/code");
+    expect(legacySearchUrl.searchParams.get("q")).toBe("filename:skills.md user:vyctorbrzezowski");
+    expect(fetchMock.mock.calls[1]?.[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer github-token" }),
+      }),
+    );
+  });
+
+  it("falls back to the repo archive when GitHub truncates the discovery tree", async () => {
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const zip = buildGitHubZipForTests({
+      "large-repo/tools/review/SKILL.md": "# Review",
+      "large-repo/tools/review/notes.md": "notes",
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          id: 123,
+          login: "vyctorbrzezowski",
+          avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => [
+          {
+            name: "large-repo",
+            full_name: "vyctorbrzezowski/large-repo",
+            html_url: "https://github.com/vyctorbrzezowski/large-repo",
+            default_branch: "main",
+            fork: false,
+            archived: false,
+            disabled: false,
+            private: false,
+            visibility: "public",
+            owner: { id: 123, login: "vyctorbrzezowski" },
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          truncated: true,
+          tree: [{ path: "README.md", type: "blob" }],
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: { get: () => null },
+        arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength),
+      });
+
+    const result = await __test.listOwnedPublicGitHubReposForUser(
+      ctx as never,
+      "users:1" as never,
+      { page: 1, perPage: 30 },
+      fetchMock as never,
+    );
+
+    expect(result.repos).toEqual([
+      expect.objectContaining({
+        name: "review",
+        repoName: "large-repo",
+        candidatePath: "tools/review",
+        skillPath: "tools/review/SKILL.md",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenNthCalledWith(
+      4,
+      "https://codeload.github.com/vyctorbrzezowski/large-repo/zip/main",
+      expect.objectContaining({ headers: expect.any(Object) }),
+    );
   });
 });

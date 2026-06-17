@@ -3,7 +3,7 @@ import { ApiRoutes, ApiV1DeleteResponseSchema, parseArk } from "../../schema/ind
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 
 type SkillActionLabels = {
   verb: string;
@@ -12,7 +12,7 @@ type SkillActionLabels = {
   promptSuffix?: string;
 };
 
-type SkillDeleteOptions = {
+type SkillActionOptions = {
   yes?: boolean;
   reason?: string;
   note?: string;
@@ -21,6 +21,10 @@ type SkillDeleteOptions = {
 type SkillRef = {
   slug: string;
   ownerHandle?: string;
+};
+
+type SkillDeleteOptions = SkillActionOptions & {
+  version?: string;
 };
 
 const deleteLabels: SkillActionLabels = {
@@ -61,31 +65,37 @@ export async function cmdDeleteSkill(
   const ref = parseSkillRef(slugArg);
   const slug = ref.slug;
   const reason = normalizeReason(options);
+  const version = normalizeVersion(options.version);
+  if (version && reason) fail("--reason/--note apply only to whole-skill deletion");
   const allowPrompt = isInteractive() && inputAllowed !== false;
 
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(formatPrompt(labels, formatSkillRef(ref)));
+    const ok = await promptConfirm(formatPrompt(labels, formatSkillRef(ref), version));
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`${labels.progress} ${formatSkillRef(ref)}`);
+  const target = version ? `${formatSkillRef(ref)} version ${version}` : formatSkillRef(ref);
+  const spinner = createCrabLoader(`${labels.progress} ${target}`);
   try {
-    const body = buildBody(reason, ref.ownerHandle);
+    const body = buildBody(reason, ref.ownerHandle, version);
     const result = await apiRequest(
       registry,
       {
         method: "DELETE",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}`,
+        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}${
+          version ? `/versions/${encodeURIComponent(version)}` : ""
+        }`,
         token,
         body,
+        ...(version ? { retryCount: 0 } : {}),
       },
       ApiV1DeleteResponseSchema,
     );
     const parsed = parseArk(ApiV1DeleteResponseSchema, result, "Delete response");
-    spinner.succeed(`OK. ${labels.past} ${formatSkillRef(ref)}${formatSlugReservation(parsed)}`);
+    spinner.succeed(`OK. ${labels.past} ${target}${version ? "" : formatSlugReservation(parsed)}`);
     return parsed;
   } catch (error) {
     spinner.fail(formatError(error));
@@ -96,7 +106,7 @@ export async function cmdDeleteSkill(
 export async function cmdUndeleteSkill(
   opts: GlobalOpts,
   slugArg: string,
-  options: SkillDeleteOptions,
+  options: SkillActionOptions,
   inputAllowed: boolean,
   labels: SkillActionLabels = undeleteLabels,
 ) {
@@ -113,7 +123,7 @@ export async function cmdUndeleteSkill(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`${labels.progress} ${formatSkillRef(ref)}`);
+  const spinner = createCrabLoader(`${labels.progress} ${formatSkillRef(ref)}`);
   try {
     const body = buildBody(reason, ref.ownerHandle);
     const result = await apiRequest(
@@ -137,7 +147,7 @@ export async function cmdUndeleteSkill(
 export async function cmdHideSkill(
   opts: GlobalOpts,
   slugArg: string,
-  options: SkillDeleteOptions,
+  options: SkillActionOptions,
   inputAllowed: boolean,
 ) {
   return cmdDeleteSkill(opts, slugArg, options, inputAllowed, hideLabels);
@@ -146,7 +156,7 @@ export async function cmdHideSkill(
 export async function cmdUnhideSkill(
   opts: GlobalOpts,
   slugArg: string,
-  options: SkillDeleteOptions,
+  options: SkillActionOptions,
   inputAllowed: boolean,
 ) {
   return cmdUndeleteSkill(opts, slugArg, options, inputAllowed, unhideLabels);
@@ -186,8 +196,9 @@ function formatSkillRef(ref: SkillRef) {
   return ref.ownerHandle ? `@${ref.ownerHandle}/${ref.slug}` : ref.slug;
 }
 
-function buildBody(reason: string | undefined, ownerHandle: string | undefined) {
+function buildBody(reason: string | undefined, ownerHandle: string | undefined, version?: string) {
   const body = {
+    ...(version ? { version } : {}),
     ...(reason ? { reason } : {}),
     ...(ownerHandle ? { ownerHandle } : {}),
   };
@@ -205,7 +216,17 @@ function normalizeReason(options: SkillDeleteOptions) {
   return value;
 }
 
-function formatPrompt(labels: SkillActionLabels, slug: string) {
+function normalizeVersion(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const version = value.trim();
+  if (!version) fail("--version cannot be empty");
+  return version;
+}
+
+function formatPrompt(labels: SkillActionLabels, slug: string, version?: string) {
+  if (version) {
+    return `${labels.verb} ${slug} version ${version}? (permanent; cannot be restored or republished; publish a replacement first if deleting the current latest version)`;
+  }
   const suffix = labels.promptSuffix ? ` (${labels.promptSuffix})` : "";
   return `${labels.verb} ${slug}?${suffix}`;
 }

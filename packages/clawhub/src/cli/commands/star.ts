@@ -3,7 +3,7 @@ import { ApiRoutes, ApiV1StarResponseSchema } from "../../schema/index.js";
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 
 function parseSkillRef(skillArg: string) {
   const value = skillArg.trim().toLowerCase();
@@ -48,7 +48,7 @@ export async function cmdStarSkill(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Starring ${slug}`);
+  const spinner = createCrabLoader(`Starring ${slug}`);
   try {
     const result = await apiRequest(
       registry,

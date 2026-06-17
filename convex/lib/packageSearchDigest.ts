@@ -19,8 +19,6 @@ const SHARED_KEYS = [
   "ownerUserId",
   "ownerPublisherId",
   "summary",
-  "capabilityTags",
-  "executesCode",
   "stats",
   "runtimeId",
   "scanStatus",
@@ -28,31 +26,6 @@ const SHARED_KEYS = [
   "createdAt",
   "updatedAt",
 ] as const satisfies readonly SharedPackageKey[];
-
-const CAPABILITY_SHARED_KEYS = [
-  "packageId",
-  "name",
-  "normalizedName",
-  "displayName",
-  "family",
-  "channel",
-  "isOfficial",
-  "ownerUserId",
-  "ownerPublisherId",
-  "ownerHandle",
-  "ownerKind",
-  "summary",
-  "latestVersion",
-  "runtimeId",
-  "capabilityTags",
-  "executesCode",
-  "verificationTier",
-  "stats",
-  "scanStatus",
-  "softDeletedAt",
-  "createdAt",
-  "updatedAt",
-] as const satisfies readonly (keyof Doc<"packageCapabilitySearchDigest">)[];
 
 const PLUGIN_CATEGORY_SHARED_KEYS = [
   "packageId",
@@ -69,9 +42,7 @@ const PLUGIN_CATEGORY_SHARED_KEYS = [
   "summary",
   "latestVersion",
   "runtimeId",
-  "capabilityTags",
   "pluginCategoryTags",
-  "executesCode",
   "verificationTier",
   "stats",
   "scanStatus",
@@ -87,13 +58,6 @@ export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEY
   ownerKind?: "user" | "org";
   verificationTier?: Doc<"packageSearchDigest">["verificationTier"];
   pluginCategoryTags?: string[];
-};
-
-type PackageCapabilitySearchDigestFields = Pick<
-  PackageSearchDigestFields,
-  (typeof CAPABILITY_SHARED_KEYS)[number]
-> & {
-  capabilityTag: string;
 };
 
 type PackagePluginCategorySearchDigestFields = Pick<
@@ -115,7 +79,6 @@ export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchD
       displayName: pkg.displayName,
       runtimeId: pkg.runtimeId,
       summary: pkg.summary,
-      capabilityTags: pkg.capabilityTags,
     }),
   };
 }
@@ -133,49 +96,13 @@ export async function upsertPackageSearchDigest(
     if (hasDigestChanged(existing, fields)) {
       await ctx.db.patch(existing._id, fields);
     }
-    await syncPackageCapabilitySearchDigests(ctx, fields);
     await syncPackagePluginCategorySearchDigests(ctx, fields);
     await adjustGlobalPublicPluginsCount(ctx, visibilityDelta);
     return;
   }
   await ctx.db.insert("packageSearchDigest", fields);
-  await syncPackageCapabilitySearchDigests(ctx, fields);
   await syncPackagePluginCategorySearchDigests(ctx, fields);
   await adjustGlobalPublicPluginsCount(ctx, getPublicPluginVisibilityDelta(null, fields));
-}
-
-async function syncPackageCapabilitySearchDigests(
-  ctx: Pick<MutationCtx, "db">,
-  fields: PackageSearchDigestFields,
-) {
-  const existing = await ctx.db
-    .query("packageCapabilitySearchDigest")
-    .withIndex("by_package", (q) => q.eq("packageId", fields.packageId))
-    .collect();
-  const tags = [...new Set((fields.capabilityTags ?? []).filter(Boolean))];
-  const nextByTag = new Map<string, PackageCapabilitySearchDigestFields>();
-  for (const capabilityTag of tags) {
-    nextByTag.set(capabilityTag, {
-      ...pick(fields, [...CAPABILITY_SHARED_KEYS]),
-      capabilityTag,
-    });
-  }
-  for (const row of existing) {
-    const next = nextByTag.get(row.capabilityTag);
-    if (!next) {
-      await ctx.db.delete(row._id);
-      continue;
-    }
-    if (!hasDigestChanged(row, next)) {
-      nextByTag.delete(row.capabilityTag);
-      continue;
-    }
-    await ctx.db.patch(row._id, next);
-    nextByTag.delete(row.capabilityTag);
-  }
-  for (const next of nextByTag.values()) {
-    await ctx.db.insert("packageCapabilitySearchDigest", next);
-  }
 }
 
 async function syncPackagePluginCategorySearchDigests(
@@ -223,12 +150,6 @@ export async function deletePackageSearchDigests(
   if (existing) {
     await adjustGlobalPublicPluginsCount(ctx, getPublicPluginVisibilityDelta(existing, null));
     await ctx.db.delete(existing._id);
-  }
-  for (const row of await ctx.db
-    .query("packageCapabilitySearchDigest")
-    .withIndex("by_package", (q) => q.eq("packageId", packageId))
-    .collect()) {
-    await ctx.db.delete(row._id);
   }
   for (const row of await ctx.db
     .query("packagePluginCategorySearchDigest")

@@ -19,7 +19,6 @@
 /convex/schema.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/auth.config.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/auth.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/convex/commentModeration.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/http.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/httpApi.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/httpApiV1/ @openclaw/openclaw-secops @Patrick-Erichsen
@@ -36,7 +35,6 @@
 /convex/webhooks.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/access.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/apiTokenAuth.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/convex/lib/commentScamPrompt.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/githubActionsOidc.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/httpHeaders.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /convex/lib/httpRateLimit.ts @openclaw/openclaw-secops @Patrick-Erichsen
@@ -90,8 +88,6 @@
 /packages/clawhub/src/cli/commands/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/commands/publish.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/cli/commands/transfer.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/clawhub/src/cli/commands/sync.ts @openclaw/openclaw-secops @Patrick-Erichsen
-/packages/clawhub/src/cli/scanSkills.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/schema/openclawContract.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/schema/packages.ts @openclaw/openclaw-secops @Patrick-Erichsen
 /packages/clawhub/src/schema/routes.ts @openclaw/openclaw-secops @Patrick-Erichsen
@@ -115,9 +111,9 @@
 /docs/acceptable-usage.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/api.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/auth.md @openclaw/openclaw-secops @Patrick-Erichsen
-/docs/deploy.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/http-api.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/security.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/webhook.md @openclaw/openclaw-secops @Patrick-Erichsen
+/specs/deploy.md @openclaw/openclaw-secops @Patrick-Erichsen
 /specs/github-import.md @openclaw/openclaw-secops @Patrick-Erichsen
 /public/api/v1/openapi.json @openclaw/openclaw-secops @Patrick-Erichsen

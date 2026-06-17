@@ -40,7 +40,6 @@ describe("SkillHeader", () => {
     forkOf: undefined,
     latestVersionId: undefined,
     tags: {},
-    capabilityTags: [],
     badges: {},
     stats: {
       downloads: 2,
@@ -121,8 +120,8 @@ describe("SkillHeader", () => {
     expect(onToggleStar).not.toHaveBeenCalled();
     expect(onOpenReport).not.toHaveBeenCalled();
     expect(screen.getByText("Owner")).toBeTruthy();
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.getByText("2")).toBeTruthy();
+    expect(screen.getByText("Installs")).toBeTruthy();
+    expect(screen.getByText("3")).toBeTruthy();
     expect(container.querySelector('a[href="/user/local"]')).toBeTruthy();
     expect(
       container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/user/local"]'),
@@ -174,7 +173,7 @@ describe("SkillHeader", () => {
   it("hides archive-only metadata for source-backed skills", () => {
     renderHeader({ showArchiveMetadata: false });
 
-    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.getByText("Installs")).toBeTruthy();
     expect(screen.getByText("Owner")).toBeTruthy();
     expect(screen.getByText("Last updated")).toBeTruthy();
     expect(screen.queryByText("Current version")).toBeNull();

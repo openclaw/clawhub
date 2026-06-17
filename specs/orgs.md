@@ -173,8 +173,14 @@ Use dual fields during rollout:
   administer both the current owner and destination publisher. User-to-user skill
   transfers remain recipient-accepted unless the actor controls the destination
   publisher.
-- No ownership transfer path should move a skill while it is hidden, removed,
-  suspicious, or malicious; the artifact must be cleared by moderation first.
+- Ownership transfer paths must not move hidden, removed, suspicious, or
+  malicious skills. The narrow exception is a platform-admin publisher recovery
+  that directly relocates a clean, owner-deleted skill without restoring it. The
+  current hide must have been written by a non-staff owner or publisher admin,
+  proven by the matching `skill.delete` audit event at the current deletion
+  timestamp; the platform admin must explicitly select an active destination,
+  and the audited transfer must include a reason. Moderator, scanner, ban,
+  security, merge, and unknown-provenance hides remain blocked.
 
 ## Naming Rules
 
@@ -292,7 +298,7 @@ migration.
   must include `migrateOwner: true`
 - owner migration requires admin or owner access on both the current publisher
   and the destination publisher
-- migration preserves the skill id, versions, stats, comments, forks, aliases,
+- migration preserves the skill id, versions, stats, forks, aliases,
   search digest identity, and audit history
 - migration writes a `skill.ownership.migrate` audit event; the new version's
   `createdBy` remains the publishing actor

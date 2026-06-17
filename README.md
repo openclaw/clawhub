@@ -53,7 +53,7 @@ Common CLI flows:
 - Browse unified catalog (skills + plugins): `clawhub package explore`, `clawhub package inspect <name>`
 - Manage local installs: `clawhub install @openclaw/demo`, `clawhub pin <skill>`, `clawhub unpin <skill>`, `clawhub uninstall <skill>`, `clawhub list`, `clawhub update --all`
 - Inspect without installing: `clawhub inspect @openclaw/demo`
-- Publish/sync skills: `clawhub skill publish <path>`, `clawhub sync`
+- Publish skills: `clawhub skill publish <path>`
 - Publish plugins: `clawhub package publish <source>`
 - Code-plugin manifests must include `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`; see [`docs/cli.md`](docs/cli.md) for a minimal example.
 - Canonicalize owned skills: `clawhub skill rename <skill> <new-name>`, `clawhub skill merge <source> <target>`

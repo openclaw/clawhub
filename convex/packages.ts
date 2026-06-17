@@ -1,6 +1,7 @@
 import {
   ServerPackagePublishRequestSchema,
   derivePluginCategoryTags,
+  guessTextContentType,
   getPackageScopeOwnerMismatch,
   isPluginCategorySlug,
   parseArk,
@@ -45,12 +46,13 @@ import {
   readArtifactReportStatus,
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
-import { sha256Hex } from "./lib/clawpack";
+import { parseClawPack, sha256Hex } from "./lib/clawpack";
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { isOfficialPublisher } from "./lib/officialPublishers";
+import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
   assertPackageVersion,
   ensurePluginNameMatchesPackage,
@@ -95,6 +97,7 @@ import {
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
+import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
 import schema from "./schema";
 
@@ -102,6 +105,8 @@ const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
 const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
+const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
+const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
@@ -329,6 +334,16 @@ function getScopedPackageMissingPublisherMessage(params: {
   return `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but ClawHub has no "@${params.scopedOwnerHandle}" publisher. Create it with "clawhub publisher create ${params.scopedOwnerHandle}".`;
 }
 
+function getScopedPackagePublishAccessMessage(params: {
+  scopedOwnerHandle: string;
+  packageName: string;
+}) {
+  return [
+    `Cannot publish ${params.packageName}: package.json name is scoped to "@${params.scopedOwnerHandle}", but your account does not have publish rights to the "@${params.scopedOwnerHandle}" ClawHub organization.`,
+    "Create the matching ClawHub organization if it does not exist, get publish rights to that organization, or rename package.json name to use an organization scope you control.",
+  ].join("\n\n");
+}
+
 function isTrustedOpenClawPluginPackage(params: {
   family: PackageFamily;
   normalizedName: string;
@@ -343,7 +358,10 @@ function isTrustedOpenClawPluginPackage(params: {
 const internalRefs = internal as unknown as {
   packages: {
     backfillPackageReleaseScansInternal: unknown;
+    repairClawPackReleaseFilesInternal: unknown;
+    repairHistoricalClawPackReleaseFilesInternal: unknown;
     scanPackageReleaseStaticallyInternal: unknown;
+    replaceReleaseFilesAfterClawPackRepairInternal: unknown;
     insertReleaseInternal: unknown;
     getPackageByNameInternal: unknown;
     getTrustedPublisherByPackageIdInternal: unknown;
@@ -351,6 +369,7 @@ const internalRefs = internal as unknown as {
     getPackageByIdInternal: unknown;
     getReleaseByIdInternal: unknown;
     getPackageReleaseScanBackfillBatchInternal: unknown;
+    getHistoricalClawPackRepairBatchInternal: unknown;
     listVersionsForViewerInternal: unknown;
     getVersionByNameForViewerInternal: unknown;
     publishPackageForUserInternal: unknown;
@@ -366,6 +385,12 @@ const internalRefs = internal as unknown as {
   };
   packageInspectorNode: {
     runPackageInspectorForPublishInternal: unknown;
+  };
+  registryArtifactBackupsNode: {
+    backupPackageForPublishInternal: unknown;
+  };
+  registryArtifactBackups: {
+    enqueueRegistryArtifactBackupJobInternal: unknown;
   };
   packagePublishTokens: {
     createInternal: unknown;
@@ -452,6 +477,86 @@ type PackageInspectorFinding = {
   decision?: string;
 };
 
+type PackageReleaseFilePatch = Array<{
+  path: string;
+  size: number;
+  storageId: Id<"_storage">;
+  sha256: string;
+  contentType?: string;
+}>;
+
+type ClawPackRepairCandidate = {
+  releaseId: Id<"packageReleases">;
+  packageId: Id<"packages">;
+  packageName: string;
+  version: string;
+  createdAt: number;
+  existingFileCount: number;
+  npmFileCount: number | null;
+  clawpackSha256: string | null;
+};
+
+type ClawPackRepairResult =
+  | {
+      ok: true;
+      repaired: boolean;
+      dryRun: boolean;
+      files: number;
+      existingFiles: number;
+      npmFileCount: number;
+      integritySha256: string;
+      samplePaths: string[];
+      artifactSha256: string;
+    }
+  | {
+      ok: true;
+      repaired: false;
+      dryRun: boolean;
+      skipped: "missing_release" | "not_needed" | "missing_package";
+    }
+  | {
+      ok: false;
+      repaired: false;
+      dryRun: boolean;
+      error: string;
+    };
+
+type HistoricalClawPackRepairStats = {
+  scanned: number;
+  candidates: number;
+  validated: number;
+  wouldRepair: number;
+  repaired: number;
+  skipped: number;
+  errors: number;
+};
+
+const CLAWPACK_REPAIR_WRITE_CONFIRMATION = "repair-historical-clawpack-files";
+
+function bytesToArrayBuffer(bytes: Uint8Array) {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
+}
+
+function inferClawPackEntryContentType(path: string) {
+  return guessTextContentType(path) ?? "application/octet-stream";
+}
+
+function needsClawPackReleaseFileRepair(
+  release: Pick<
+    Doc<"packageReleases">,
+    "artifactKind" | "clawpackStorageId" | "npmFileCount" | "files"
+  >,
+) {
+  return (
+    release.artifactKind === "npm-pack" &&
+    Boolean(release.clawpackStorageId) &&
+    typeof release.npmFileCount === "number" &&
+    release.npmFileCount > release.files.length
+  );
+}
+
 type PackageInspectorPublishResult = {
   status: "pass" | "fail";
   summary: {
@@ -520,8 +625,6 @@ type PublicPackageListItem = {
   createdAt: number;
   updatedAt: number;
   latestVersion: string | null;
-  capabilityTags: string[];
-  executesCode: boolean;
   verificationTier: PackageVerificationTier | null;
   stats: Doc<"packages">["stats"];
 };
@@ -770,17 +873,12 @@ type PackageDigestLike = Pick<
   | "createdAt"
   | "updatedAt"
   | "latestVersion"
-  | "capabilityTags"
   | "pluginCategoryTags"
-  | "executesCode"
   | "verificationTier"
   | "stats"
   | "scanStatus"
   | "softDeletedAt"
-> & {
-  capabilityTag?: string;
-  pluginCategory?: string;
-};
+> & { pluginCategory?: string };
 type PackageOwnerAccessRef = Pick<PackageDigestLike, "ownerUserId" | "ownerPublisherId"> &
   Partial<Pick<PackageDigestLike, "ownerKind">>;
 type PublicPageCursorState = {
@@ -842,7 +940,6 @@ type PublicPackageDoc = {
   latestReleaseId?: Id<"packageReleases">;
   latestVersion?: string | null;
   compatibility?: Doc<"packages">["compatibility"];
-  capabilities?: Doc<"packages">["capabilities"];
   verification?: Doc<"packages">["verification"];
   artifact?: PackageArtifactSummary;
   scanStatus?: Doc<"packages">["scanStatus"];
@@ -1010,7 +1107,6 @@ function toPublicPackage(
     latestReleaseId: pkg.latestReleaseId,
     latestVersion,
     compatibility: pkg.compatibility,
-    capabilities: pkg.capabilities,
     verification: resolvePublicPackageVerification(pkg, latestRelease),
     artifact:
       latestRelease === undefined
@@ -1026,10 +1122,13 @@ function toPublicPackage(
 }
 
 function toPublicPackageRelease(release: Doc<"packageReleases">) {
+  const { capabilities: _capabilities, ...publicRelease } = release as Doc<"packageReleases"> & {
+    capabilities?: unknown;
+  };
   const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
-  if (!release.verification || !sourcePath) return release;
+  if (!release.verification || !sourcePath) return publicRelease;
   return {
-    ...release,
+    ...publicRelease,
     verification: {
       ...release.verification,
       sourcePath,
@@ -1041,8 +1140,8 @@ function packageArtifactSummary(
   release: Pick<
     Doc<"packageReleases">,
     | "artifactKind"
-    | "integritySha256"
     | "clawpackSha256"
+    | "sha256hash"
     | "clawpackSize"
     | "clawpackFormat"
     | "npmIntegrity"
@@ -1055,7 +1154,7 @@ function packageArtifactSummary(
   if (release.artifactKind === "npm-pack") {
     return {
       kind: "npm-pack",
-      sha256: release.clawpackSha256,
+      sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
       size: release.clawpackSize,
       format: release.clawpackFormat ?? "tgz",
       npmIntegrity: release.npmIntegrity,
@@ -1067,64 +1166,12 @@ function packageArtifactSummary(
   }
   return {
     kind: "legacy-zip",
-    sha256: release.integritySha256,
+    sha256: getPackageReleaseArtifactSha256(release) ?? undefined,
     format: "zip",
   };
 }
 
-function packageArtifactCapabilityTags(
-  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
-) {
-  const artifactKind =
-    release.artifactKind === "npm-pack" || release.clawpackStorageId || release.npmIntegrity
-      ? "npm-pack"
-      : "legacy-zip";
-  return artifactKind === "npm-pack"
-    ? ["artifact:npm-pack", "npm-mirror:available"]
-    : ["artifact:legacy-zip"];
-}
-
-function mergeArtifactCapabilityTags(
-  capabilityTags: Doc<"packageReleases">["capabilities"] extends { capabilityTags?: infer Tags }
-    ? Tags
-    : string[] | undefined,
-  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
-) {
-  return [...new Set([...(capabilityTags ?? []), ...packageArtifactCapabilityTags(release)])];
-}
-
-function withArtifactCapabilityTags(
-  capabilities: Doc<"packageReleases">["capabilities"],
-  release: Pick<Doc<"packageReleases">, "artifactKind" | "clawpackStorageId" | "npmIntegrity">,
-) {
-  if (!capabilities) return capabilities;
-  return {
-    ...capabilities,
-    capabilityTags: mergeArtifactCapabilityTags(capabilities.capabilityTags, release),
-  };
-}
-
-function digestMatchesFilters(
-  digest: PackageDigestLike,
-  args: {
-    executesCode?: boolean;
-    capabilityTag?: string;
-    category?: string;
-  },
-) {
-  if (
-    typeof args.executesCode === "boolean" &&
-    Boolean(digest.executesCode) !== args.executesCode
-  ) {
-    return false;
-  }
-  if (args.capabilityTag) {
-    if (digest.capabilityTag) {
-      if (digest.capabilityTag !== args.capabilityTag) return false;
-    } else if (!(digest.capabilityTags ?? []).includes(args.capabilityTag)) {
-      return false;
-    }
-  }
+function digestMatchesFilters(digest: PackageDigestLike, args: { category?: string }) {
   if (args.category) {
     if (digest.pluginCategory) {
       if (digest.pluginCategory !== args.category) return false;
@@ -1141,8 +1188,6 @@ function digestMatchesSearchFilters(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
   },
 ) {
@@ -1160,20 +1205,12 @@ function packageMatchesListFilters(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
   },
 ) {
   if (args.family && pkg.family !== args.family) return false;
   if (args.channel && pkg.channel !== args.channel) return false;
   if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
-  if (typeof args.executesCode === "boolean" && Boolean(pkg.executesCode) !== args.executesCode) {
-    return false;
-  }
-  if (args.capabilityTag && !(pkg.capabilityTags ?? []).includes(args.capabilityTag)) {
-    return false;
-  }
   if (args.category) {
     const categories = derivePluginCategoryTags({
       family: pkg.family,
@@ -1181,7 +1218,6 @@ function packageMatchesListFilters(
       displayName: pkg.displayName,
       runtimeId: pkg.runtimeId,
       summary: pkg.summary,
-      capabilityTags: pkg.capabilityTags,
     });
     if (!categories.includes(args.category as PluginCategorySlug)) return false;
   }
@@ -1251,8 +1287,6 @@ async function toPublicPackageListItem(
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
     latestVersion: digest.latestVersion ?? null,
-    capabilityTags: digest.capabilityTags ?? [],
-    executesCode: digest.executesCode ?? false,
     verificationTier: digest.verificationTier ?? null,
     stats: await resolvePackageListStats(ctx, digest),
   };
@@ -1280,8 +1314,6 @@ async function toPublicPackageListItemFromPackage(
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     latestVersion: pkg.latestVersionSummary?.version ?? null,
-    capabilityTags: pkg.capabilityTags ?? [],
-    executesCode: pkg.executesCode ?? false,
     verificationTier: pkg.verification?.tier ?? null,
     stats: pkg.stats,
   };
@@ -1294,7 +1326,7 @@ async function toDashboardPackageListItem(
 ): Promise<DashboardPackageListItem | null> {
   if (pkg.softDeletedAt) return null;
   const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
-  const inspectorWarningCount = await countPackageInspectorFindings(ctx, pkg._id);
+  const inspectorWarningCount = await countPackageInspectorFindings(ctx, pkg.latestReleaseId);
   return {
     _id: pkg._id,
     name: pkg.name,
@@ -1328,9 +1360,13 @@ async function toDashboardPackageListItem(
   };
 }
 
-async function countPackageInspectorFindings(ctx: DbReaderCtx, packageId: Id<"packages">) {
-  const authorFindings = await takeAuthorRemediationWarningsByPackage(ctx, packageId, 101);
-  return authorFindings.length > 100 ? 100 : authorFindings.length;
+async function countPackageInspectorFindings(
+  ctx: DbReaderCtx,
+  latestReleaseId?: Id<"packageReleases">,
+) {
+  if (!latestReleaseId) return 0;
+  const findings = await takeAuthorRemediationWarningsByRelease(ctx, latestReleaseId, 101);
+  return findings.length > 100 ? 100 : findings.length;
 }
 
 async function listDashboardPackagesForOwnerPublisher(
@@ -1531,15 +1567,6 @@ function packageSearchMatch(
   ) {
     setMatch(3, 20);
   }
-  if (
-    matchesExploratoryTokenPrefixes(
-      queryTokens,
-      digest.capabilityTags ?? [],
-      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
-    )
-  ) {
-    setMatch(2, 12);
-  }
   if (!Number.isFinite(rankTier)) return null;
   return { rankTier, score };
 }
@@ -1621,78 +1648,11 @@ function buildPackageDigestQuery(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
   },
 ) {
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
-  const executesCode = args.executesCode;
-
-  if (family && channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_family_channel_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_family_official_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_channel_official_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_family_executes_updated", (q) =>
-        q.eq("softDeletedAt", undefined).eq("family", family).eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_channel_executes_updated", (q) =>
-        q.eq("softDeletedAt", undefined).eq("channel", channel).eq("executesCode", executesCode),
-      );
-  }
-  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_official_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageSearchDigest")
-      .withIndex("by_active_executes_updated", (q) =>
-        q.eq("softDeletedAt", undefined).eq("executesCode", executesCode),
-      );
-  }
 
   if (family && channel) {
     return ctx.db
@@ -1741,170 +1701,6 @@ function buildPackageDigestQuery(
     .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined));
 }
 
-function buildPackageCapabilityDigestQuery(
-  ctx: DbReaderCtx,
-  args: {
-    capabilityTag: string;
-    family?: PackageFamily;
-    channel?: PackageChannel;
-    isOfficial?: boolean;
-    executesCode?: boolean;
-  },
-) {
-  const family = args.family;
-  const channel = args.channel;
-  const isOfficial = args.isOfficial;
-  const executesCode = args.executesCode;
-
-  if (family && channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_channel_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_official_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_channel_official_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && channel) {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_channel_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (family && typeof isOfficial === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_official_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (channel && typeof isOfficial === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_channel_official_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (family && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_channel_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_official_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family) {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_family_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (channel) {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_channel_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (typeof isOfficial === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_official_tag_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("capabilityTag", args.capabilityTag),
-      );
-  }
-  if (typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packageCapabilitySearchDigest")
-      .withIndex("by_active_tag_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("capabilityTag", args.capabilityTag)
-          .eq("executesCode", executesCode),
-      );
-  }
-  return ctx.db
-    .query("packageCapabilitySearchDigest")
-    .withIndex("by_active_tag_updated", (q) =>
-      q.eq("softDeletedAt", undefined).eq("capabilityTag", args.capabilityTag),
-    );
-}
-
 function buildPackagePluginCategoryDigestQuery(
   ctx: DbReaderCtx,
   args: {
@@ -1912,50 +1708,11 @@ function buildPackagePluginCategoryDigestQuery(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
   },
 ) {
   const family = args.family;
   const channel = args.channel;
   const isOfficial = args.isOfficial;
-  const executesCode = args.executesCode;
-
-  if (family && channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_family_channel_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("channel", channel)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (family && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_family_official_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_channel_official_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
   if (family && channel) {
     return ctx.db
       .query("packagePluginCategorySearchDigest")
@@ -1989,39 +1746,6 @@ function buildPackagePluginCategoryDigestQuery(
           .eq("pluginCategory", args.category),
       );
   }
-  if (family && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_family_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("family", family)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (channel && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_channel_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("channel", channel)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
-  if (typeof isOfficial === "boolean" && typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_official_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("isOfficial", isOfficial)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
   if (family) {
     return ctx.db
       .query("packagePluginCategorySearchDigest")
@@ -2046,16 +1770,6 @@ function buildPackagePluginCategoryDigestQuery(
           .eq("pluginCategory", args.category),
       );
   }
-  if (typeof executesCode === "boolean") {
-    return ctx.db
-      .query("packagePluginCategorySearchDigest")
-      .withIndex("by_active_category_executes_updated", (q) =>
-        q
-          .eq("softDeletedAt", undefined)
-          .eq("pluginCategory", args.category)
-          .eq("executesCode", executesCode),
-      );
-  }
   return ctx.db
     .query("packagePluginCategorySearchDigest")
     .withIndex("by_active_category_updated", (q) =>
@@ -2069,8 +1783,6 @@ async function fetchHighlightedPackageDigests(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
     viewerUserId?: Id<"users">;
   },
@@ -2102,8 +1814,6 @@ async function fetchHighlightedPackagePage(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     viewerUserId?: Id<"users">;
     numItems: number;
   },
@@ -2283,6 +1993,38 @@ export const getManageContext = query({
   },
 });
 
+export const canDeleteVersions = query({
+  args: {
+    name: v.string(),
+    candidateNames: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalViewerUserId(ctx);
+    if (!viewerUserId) return false;
+
+    const candidates = [args.name, ...(args.candidateNames ?? [])]
+      .map((name) => normalizePackageName(name))
+      .filter(Boolean);
+    const uniqueCandidates = Array.from(new Set(candidates)).slice(
+      0,
+      MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES,
+    );
+
+    let pkg: Doc<"packages"> | null = null;
+    for (const candidate of uniqueCandidates) {
+      pkg = await getPackageByNormalizedName(ctx, candidate);
+      if (pkg && !pkg.softDeletedAt && pkg.family !== "skill") break;
+      pkg = null;
+    }
+    if (!pkg || isPackageBlockedFromPublic(pkg.scanStatus)) return false;
+
+    const actor = await ctx.db.get(viewerUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) return false;
+
+    return await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
+  },
+});
+
 function toPublicPackageInspectorFinding(warning: Doc<"packageInspectorWarnings">) {
   const findingKind =
     warning.findingKind ??
@@ -2327,8 +2069,9 @@ export const listPackageInspectorFindingsPublic = query({
       if (!canManage) return [];
     }
 
+    if (!pkg.latestReleaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, limit);
+    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
@@ -2349,7 +2092,9 @@ export const getPackageInspectorValidationSummaryPublic = query({
       };
     }
 
-    const findings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, 100);
+    const findings = pkg.latestReleaseId
+      ? await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, 100)
+      : [];
     const errorFindings = findings.filter((finding) => {
       const kind =
         finding.findingKind ??
@@ -2383,24 +2128,12 @@ export const listPackageInspectorWarningsForManager = query({
       const canManage = await viewerCanManagePackageOwner(ctx, pkg, viewerUserId);
       if (!canManage) return [];
     }
+    if (!pkg.latestReleaseId) return [];
     const limit = Math.max(1, Math.min(args.limit ?? 50, 100));
-    const warnings = await takeAuthorRemediationWarningsByPackage(ctx, pkg._id, limit);
+    const warnings = await takeAuthorRemediationWarningsByRelease(ctx, pkg.latestReleaseId, limit);
     return warnings.map(toPublicPackageInspectorFinding);
   },
 });
-
-async function takeAuthorRemediationWarningsByPackage(
-  ctx: DbReaderCtx,
-  packageId: Id<"packages">,
-  limit: number,
-) {
-  const findings = await ctx.db
-    .query("packageInspectorWarnings")
-    .withIndex("by_package_created", (q) => q.eq("packageId", packageId))
-    .order("desc")
-    .take(authorRemediationScanLimit(limit));
-  return findings.filter(hasStoredAuthorRemediation).slice(0, limit);
-}
 
 async function takeAuthorRemediationWarningsByRelease(
   ctx: DbReaderCtx,
@@ -2505,7 +2238,10 @@ export const listVersions = query({
       )
       .order("desc")
       .paginate(args.paginationOpts);
-    return result;
+    return {
+      ...result,
+      page: result.page.map(toPublicPackageRelease),
+    };
   },
 });
 
@@ -2525,7 +2261,10 @@ export const listVersionsForViewerInternal = internalQuery({
       )
       .order("desc")
       .paginate(args.paginationOpts);
-    return result;
+    return {
+      ...result,
+      page: result.page.map(toPublicPackageRelease),
+    };
   },
 });
 
@@ -2663,11 +2402,14 @@ export const listPublicPage = query({
     ),
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
-    executesCode: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
     sort: v.optional(
-      v.union(v.literal("updated"), v.literal("downloads"), v.literal("recommended")),
+      v.union(
+        v.literal("updated"),
+        v.literal("downloads"),
+        v.literal("recommended"),
+        v.literal("installs"),
+      ),
     ),
     paginationOpts: paginationOptsValidator,
   },
@@ -2684,7 +2426,7 @@ export const listAuditPage = query({
     const numItems = Math.max(1, Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
     const result = await ctx.db
       .query("packages")
-      .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined))
+      .withIndex("by_active_installs", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
       .paginate({ cursor: args.paginationOpts.cursor, numItems });
 
@@ -3133,11 +2875,14 @@ export const listPageForViewerInternal = internalQuery({
     ),
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
-    executesCode: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
     sort: v.optional(
-      v.union(v.literal("updated"), v.literal("downloads"), v.literal("recommended")),
+      v.union(
+        v.literal("updated"),
+        v.literal("downloads"),
+        v.literal("recommended"),
+        v.literal("installs"),
+      ),
     ),
     viewerUserId: v.optional(v.id("users")),
     paginationOpts: paginationOptsValidator,
@@ -3186,10 +2931,8 @@ async function listPackagePageImpl(
     channel?: PackageChannel;
     isOfficial?: boolean;
     highlightedOnly?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
-    sort?: "updated" | "downloads" | "recommended";
+    sort?: "updated" | "downloads" | "recommended" | "installs";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
@@ -3246,23 +2989,27 @@ async function listPackagePageImpl(
         : await getPackageRecommendedIndexName(ctx, family)
       : null;
 
-  if (args.sort === "downloads" || recommendedIndexName) {
+  if (args.sort === "downloads" || args.sort === "installs" || recommendedIndexName) {
     let cursor = pageCursor;
     let pageOffset = offset;
     let pageSize: number | null = decodedCursor.pageSize ?? null;
     let done = decodedCursor.done;
-    const buildSortedQuery = () =>
-      family
-        ? ctx.db
-            .query("packages")
-            .withIndex(recommendedIndexName ?? "by_active_family_downloads", (q) =>
-              q.eq("softDeletedAt", undefined).eq("family", family),
-            )
-        : ctx.db
-            .query("packages")
-            .withIndex(recommendedIndexName ?? "by_active_downloads", (q) =>
-              q.eq("softDeletedAt", undefined),
-            );
+    const buildSortedQuery = () => {
+      if (family) {
+        const indexName =
+          args.sort === "installs"
+            ? "by_active_family_installs"
+            : (recommendedIndexName ?? "by_active_family_downloads");
+        return ctx.db
+          .query("packages")
+          .withIndex(indexName, (q) => q.eq("softDeletedAt", undefined).eq("family", family));
+      }
+      const indexName =
+        args.sort === "installs"
+          ? "by_active_installs"
+          : (recommendedIndexName ?? "by_active_downloads");
+      return ctx.db.query("packages").withIndex(indexName, (q) => q.eq("softDeletedAt", undefined));
+    };
 
     while ((pageOffset > 0 || !done) && collected.length < targetCount) {
       const scanPageSize = Math.min(
@@ -3332,22 +3079,12 @@ async function listPackagePageImpl(
         family,
         channel,
         isOfficial,
-        executesCode: args.executesCode,
       })
-    : args.capabilityTag
-      ? buildPackageCapabilityDigestQuery(ctx, {
-          capabilityTag: args.capabilityTag,
-          family,
-          channel,
-          isOfficial,
-          executesCode: args.executesCode,
-        })
-      : buildPackageDigestQuery(ctx, {
-          family,
-          channel,
-          isOfficial,
-          executesCode: args.executesCode,
-        });
+    : buildPackageDigestQuery(ctx, {
+        family,
+        channel,
+        isOfficial,
+      });
   const page: {
     page: PackageDigestLike[];
     isDone: boolean;
@@ -3413,8 +3150,6 @@ export const searchPublic = query({
     ),
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
-    executesCode: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -3434,8 +3169,6 @@ export const searchForViewerInternal = internalQuery({
     ),
     isOfficial: v.optional(v.boolean()),
     highlightedOnly: v.optional(v.boolean()),
-    executesCode: v.optional(v.boolean()),
-    capabilityTag: v.optional(v.string()),
     category: v.optional(v.string()),
     viewerUserId: v.optional(v.id("users")),
   },
@@ -3453,8 +3186,6 @@ async function searchPackagesImpl(
     channel?: PackageChannel;
     isOfficial?: boolean;
     highlightedOnly?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
     viewerUserId?: Id<"users">;
   },
@@ -3499,28 +3230,17 @@ async function searchPackagesImpl(
           family: args.family,
           channel: args.channel,
           isOfficial: args.isOfficial,
-          executesCode: args.executesCode,
         })
-      : args.capabilityTag
-        ? buildPackageCapabilityDigestQuery(ctx, {
-            capabilityTag: args.capabilityTag,
-            family: args.family,
-            channel: args.channel,
-            isOfficial: args.isOfficial,
-            executesCode: args.executesCode,
-          })
-        : buildPackageDigestQuery(ctx, {
-            family: args.family,
-            channel: args.channel,
-            isOfficial: args.isOfficial,
-            executesCode: args.executesCode,
-          });
+      : buildPackageDigestQuery(ctx, {
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+        });
   const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
-  const directDigests =
-    args.capabilityTag || args.category
-      ? []
-      : await resolveDirectPackageSearchDigests(ctx, queryText);
+  const directDigests = args.category
+    ? []
+    : await resolveDirectPackageSearchDigests(ctx, queryText);
   for (const digest of directDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, args)) continue;
@@ -3576,12 +3296,47 @@ export const recordPackageDownloadInternal = internalMutation({
 });
 
 export const recordPackageInstallInternal = internalMutation({
-  args: { packageId: v.id("packages") },
+  args: {
+    packageId: v.id("packages"),
+    identityKind: v.optional(v.union(v.literal("user"), v.literal("ip"))),
+    identityHash: v.optional(v.string()),
+    dayStart: v.optional(v.number()),
+    occurredAt: v.optional(v.number()),
+  },
   handler: async (ctx, args) => {
+    const identityKind = args.identityKind;
+    const identityHash = args.identityHash;
+    const dayStart = args.dayStart;
+    if (identityKind && identityHash && typeof dayStart === "number") {
+      const existing = await ctx.db
+        .query("packageInstallMetricDedupes")
+        .withIndex("by_target_metric_identity_day", (q) =>
+          q
+            .eq("targetKind", "package")
+            .eq("targetId", args.packageId)
+            .eq("metricKind", "install")
+            .eq("identityKind", identityKind)
+            .eq("identityHash", identityHash)
+            .eq("dayStart", dayStart),
+        )
+        .unique();
+      if (existing) return;
+
+      await ctx.db.insert("packageInstallMetricDedupes", {
+        targetKind: "package",
+        targetId: args.packageId,
+        metricKind: "install",
+        identityKind,
+        identityHash,
+        dayStart,
+        createdAt: Date.now(),
+      });
+    }
+
     await ctx.db.insert("packageStatEvents", {
       packageId: args.packageId,
       kind: "install",
-      occurredAt: Date.now(),
+      occurredAt: args.occurredAt ?? Date.now(),
       processedAt: undefined,
     });
   },
@@ -4070,7 +3825,6 @@ function packageLatestSummaryFromRelease(release: Doc<"packageReleases"> | null)
         createdAt: release.createdAt,
         changelog: release.changelog,
         compatibility: release.compatibility,
-        capabilities: release.capabilities,
         verification: release.verification,
         artifact: packageArtifactSummary(release),
       }
@@ -4078,7 +3832,7 @@ function packageLatestSummaryFromRelease(release: Doc<"packageReleases"> | null)
 }
 
 function packageRuntimeIdFromRelease(release: Doc<"packageReleases"> | null) {
-  return release?.runtimeId ?? release?.capabilities?.runtimeId;
+  return release?.runtimeId;
 }
 
 function packageSourceRepoFromRelease(release: Doc<"packageReleases"> | null) {
@@ -4127,6 +3881,7 @@ async function restorePackageDoc(
   const restoredReleaseIds: Array<Id<"packageReleases">> = [];
   const activeReleases: Doc<"packageReleases">[] = [];
   for (const release of releases) {
+    if (release.ownerDeletedAt !== undefined) continue;
     if (release.softDeletedAt) {
       if (
         params.releaseSoftDeletedAt !== undefined &&
@@ -4170,19 +3925,12 @@ async function restorePackageDoc(
           createdAt: nextLatest.createdAt,
           changelog: nextLatest.changelog,
           compatibility: nextLatest.compatibility,
-          capabilities: nextLatest.capabilities,
           verification: nextLatest.verification,
           artifact: packageArtifactSummary(nextLatest),
         }
       : undefined,
     summary: nextLatest?.summary,
-    capabilityTags: nextLatest?.capabilities?.capabilityTags,
-    executesCode:
-      typeof nextLatest?.capabilities?.executesCode === "boolean"
-        ? nextLatest.capabilities.executesCode
-        : undefined,
     compatibility: nextLatest?.compatibility,
-    capabilities: nextLatest?.capabilities,
     verification: nextLatest?.verification,
     scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : pkg.scanStatus,
     updatedAt: now,
@@ -4733,6 +4481,182 @@ export const softDeletePackage = mutation({
       actorRole: user.role,
       source: "dashboard",
     });
+  },
+});
+
+async function hasBoundedAvailablePackageReleaseSurvivor(
+  ctx: MutationCtx,
+  packageId: Id<"packages">,
+  targetReleaseId: Id<"packageReleases">,
+) {
+  const candidates = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_active_created", (q) =>
+      q.eq("packageId", packageId).eq("softDeletedAt", undefined),
+    )
+    .take(MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN + 1);
+  const hasSurvivor = candidates.some(
+    (candidate) =>
+      candidate._id !== targetReleaseId &&
+      isPackageReleaseAvailableForOwnerDeleteSafety(candidate, packageId),
+  );
+  if (hasSurvivor) return true;
+  if (candidates.length > MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN) {
+    throw new ConvexError(
+      "This package has too many active releases to safely delete an individual release.",
+    );
+  }
+  return false;
+}
+
+function isPackageReleaseAvailableForOwnerDeleteSafety(
+  release: Doc<"packageReleases"> | null | undefined,
+  packageId: Id<"packages">,
+): release is Doc<"packageReleases"> {
+  return Boolean(
+    release &&
+    release.packageId === packageId &&
+    !release.softDeletedAt &&
+    release.ownerDeletedAt === undefined &&
+    resolvePackageReleaseScanStatus(release) !== "malicious",
+  );
+}
+
+async function hasAvailableLatestPackageReleasePointer(
+  ctx: MutationCtx,
+  pkg: Pick<Doc<"packages">, "_id" | "latestReleaseId" | "tags">,
+) {
+  const pointerIds = new Set<Id<"packageReleases">>();
+  if (pkg.latestReleaseId) pointerIds.add(pkg.latestReleaseId);
+  if (pkg.tags.latest) pointerIds.add(pkg.tags.latest);
+
+  for (const pointerId of pointerIds) {
+    const pointer = await ctx.db.get(pointerId);
+    if (isPackageReleaseAvailableForOwnerDeleteSafety(pointer, pkg._id)) return true;
+  }
+  return false;
+}
+
+export async function deleteOwnedPackageReleaseForActor(
+  ctx: MutationCtx,
+  actor: Doc<"users">,
+  args: { name: string; version: string },
+) {
+  const normalizedName = normalizePackageName(args.name);
+  const pkg = await getPackageByNormalizedName(ctx, normalizedName);
+  if (!pkg || pkg.softDeletedAt || isPackageBlockedFromPublic(pkg.scanStatus)) {
+    throw new ConvexError("This package is unavailable and its releases cannot be deleted.");
+  }
+  if (pkg.family === "skill") {
+    throw new ConvexError("Skill packages must use the skills deletion flow.");
+  }
+
+  await assertCanManageOwnedResource(ctx, {
+    actor,
+    ownerUserId: pkg.ownerUserId,
+    ownerPublisherId: pkg.ownerPublisherId,
+    allowedPublisherRoles: ["admin"],
+  });
+
+  const release = await ctx.db
+    .query("packageReleases")
+    .withIndex("by_package_version", (q) => q.eq("packageId", pkg._id).eq("version", args.version))
+    .unique();
+  if (!isPackageReleaseAvailableForOwnerDeleteSafety(release, pkg._id)) {
+    throw new ConvexError("This package release is already unavailable and cannot be deleted.");
+  }
+
+  let mustPublishReplacement =
+    pkg.latestReleaseId === release._id ||
+    pkg.tags.latest === release._id ||
+    pkg.latestVersionSummary?.version === release.version ||
+    release.distTags?.includes("latest") === true;
+  if (!mustPublishReplacement && !(await hasAvailableLatestPackageReleasePointer(ctx, pkg))) {
+    // Admin cleanup can clear latest pointers, so prove a survivor with a bounded indexed read.
+    mustPublishReplacement = !(await hasBoundedAvailablePackageReleaseSurvivor(
+      ctx,
+      pkg._id,
+      release._id,
+    ));
+  }
+  if (mustPublishReplacement) {
+    throw new ConvexError(
+      "Publish a replacement release before deleting the current latest release.",
+    );
+  }
+
+  const now = Date.now();
+  await ctx.db.patch(release._id, {
+    softDeletedAt: now,
+    ownerDeletedAt: now,
+    ownerDeletedBy: actor._id,
+  });
+
+  const nextTags = Object.fromEntries(
+    Object.entries(pkg.tags ?? {}).filter(([, releaseId]) => releaseId !== release._id),
+  ) as Doc<"packages">["tags"];
+  if (Object.keys(nextTags).length !== Object.keys(pkg.tags ?? {}).length) {
+    const packagePatch: Partial<Doc<"packages">> = {
+      tags: nextTags,
+      updatedAt: now,
+    };
+    const nextPackage: Doc<"packages"> = {
+      ...pkg,
+      ...packagePatch,
+    };
+    await ctx.db.patch(pkg._id, packagePatch);
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: pkg.ownerPublisherId,
+      ownerUserId: pkg.ownerUserId,
+    });
+    await upsertPackageSearchDigest(ctx, {
+      ...extractPackageDigestFields(nextPackage),
+      ownerHandle: owner?.handle ?? "",
+      ownerKind: owner?.kind,
+    });
+  }
+
+  await ctx.db.insert("auditLogs", {
+    actorUserId: actor._id,
+    action: "package.release.delete",
+    targetType: "packageRelease",
+    targetId: release._id,
+    metadata: {
+      packageId: pkg._id,
+      name: pkg.name,
+      version: release.version,
+    },
+    createdAt: now,
+  });
+
+  return { ok: true as const, packageId: pkg._id, releaseId: release._id };
+}
+
+export const deleteOwnedReleaseForUserInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    name: v.string(),
+    version: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+
+    const version = args.version.trim();
+    if (!version) throw new ConvexError("Version required");
+
+    return await deleteOwnedPackageReleaseForActor(ctx, actor, {
+      name: args.name,
+      version,
+    });
+  },
+});
+
+export const deleteOwnedRelease = mutation({
+  args: { name: v.string(), version: v.string() },
+  handler: async (ctx, args) => {
+    const { user } = await requireUser(ctx);
+    return await deleteOwnedPackageReleaseForActor(ctx, user, args);
   },
 });
 
@@ -5949,7 +5873,7 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       const pkg = await ctx.db.get(release.packageId);
       if (!pkg || pkg.softDeletedAt || pkg.family === "skill") continue;
 
-      const needsVt = !release.sha256hash || !release.vtAnalysis;
+      const needsVt = !release.vtAnalysis;
       const needsLlm = !release.llmAnalysis || release.llmAnalysis.status === "error";
       const needsStatic = !release.staticScan;
       if (!needsVt && !needsLlm && !needsStatic) continue;
@@ -5967,6 +5891,128 @@ export const getPackageReleaseScanBackfillBatchInternal = internalQuery({
       releases: results,
       nextCursor,
       done: backlogReleases.length < batchSize * 3,
+    };
+  },
+});
+
+export const getHistoricalClawPackRepairBatchInternal = internalQuery({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+    releaseId: v.optional(v.id("packageReleases")),
+    packageName: v.optional(v.string()),
+    version: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 25), 100));
+    const targetName = args.packageName ? normalizePackageName(args.packageName) : undefined;
+
+    const toCandidateForPackage = (
+      release: Doc<"packageReleases">,
+      pkg: Doc<"packages">,
+    ): ClawPackRepairCandidate | null => {
+      if (!isReleaseActive(release)) return null;
+      if (!needsClawPackReleaseFileRepair(release)) return null;
+      if (args.version && release.version !== args.version) return null;
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") return null;
+      if (targetName && pkg.normalizedName !== targetName) return null;
+
+      return {
+        releaseId: release._id,
+        packageId: release.packageId,
+        packageName: pkg.normalizedName,
+        version: release.version,
+        createdAt: release.createdAt,
+        existingFileCount: release.files.length,
+        npmFileCount: release.npmFileCount ?? null,
+        clawpackSha256: release.clawpackSha256 ?? null,
+      };
+    };
+
+    const toCandidate = async (release: Doc<"packageReleases">) => {
+      const pkg = await ctx.db.get(release.packageId);
+      if (!pkg) return null;
+      return toCandidateForPackage(release, pkg);
+    };
+
+    if (args.releaseId) {
+      const release = await ctx.db.get(args.releaseId);
+      const candidate = release ? await toCandidate(release) : null;
+      return {
+        candidates: candidate ? [candidate] : [],
+        scanned: release ? 1 : 0,
+        cursor: null,
+        isDone: true,
+      };
+    }
+
+    if (targetName) {
+      const pkg = await getPackageByNormalizedName(ctx, targetName);
+      if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+        return {
+          candidates: [],
+          scanned: 0,
+          cursor: null,
+          isDone: true,
+        };
+      }
+
+      if (args.version) {
+        const targetVersion = args.version;
+        const release = await ctx.db
+          .query("packageReleases")
+          .withIndex("by_package_version", (q) =>
+            q.eq("packageId", pkg._id).eq("version", targetVersion),
+          )
+          .unique();
+        const candidate = release ? toCandidateForPackage(release, pkg) : null;
+        return {
+          candidates: candidate ? [candidate] : [],
+          scanned: release ? 1 : 0,
+          cursor: null,
+          isDone: true,
+        };
+      }
+
+      const { page, continueCursor, isDone } = await ctx.db
+        .query("packageReleases")
+        .withIndex("by_package_active_created", (q) =>
+          q.eq("packageId", pkg._id).eq("softDeletedAt", undefined),
+        )
+        .order("asc")
+        .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+      const candidates: ClawPackRepairCandidate[] = [];
+      for (const release of page) {
+        const candidate = toCandidateForPackage(release, pkg);
+        if (candidate) candidates.push(candidate);
+      }
+
+      return {
+        candidates,
+        scanned: page.length,
+        cursor: isDone ? null : continueCursor,
+        isDone,
+      };
+    }
+
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packageReleases")
+      .withIndex("by_active_created", (q) => q.eq("softDeletedAt", undefined))
+      .order("asc")
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    const candidates: ClawPackRepairCandidate[] = [];
+    for (const release of page) {
+      const candidate = await toCandidate(release);
+      if (candidate) candidates.push(candidate);
+    }
+
+    return {
+      candidates,
+      scanned: page.length,
+      cursor: isDone ? null : continueCursor,
+      isDone,
     };
   },
 });
@@ -6088,19 +6134,26 @@ async function verifyPublishFileStorageMetadata(
   ctx: Pick<ActionCtx, "storage">,
   files: ReturnType<typeof normalizePublishFiles>,
 ) {
-  return await Promise.all(
+  const verified = await Promise.all(
     files.map(async (file) => {
       const blob = await ctx.storage.get(file.storageId as Id<"_storage">);
       if (!blob) throw new ConvexError(`Uploaded file no longer exists: ${file.path}`);
       const bytes = new Uint8Array(await blob.arrayBuffer());
       return {
-        ...file,
-        size: blob.size,
-        sha256: await sha256Hex(bytes),
-        contentType: file.contentType?.trim() || blob.type || undefined,
+        file: {
+          ...file,
+          size: blob.size,
+          sha256: await sha256Hex(bytes),
+          contentType: file.contentType?.trim() || blob.type || undefined,
+        },
+        zipEntry: { path: file.path, bytes },
       };
     }),
   );
+  return {
+    files: verified.map(({ file }) => file),
+    legacyZipEntries: verified.map(({ zipEntry }) => zipEntry),
+  };
 }
 
 async function publishPackageImpl(
@@ -6215,7 +6268,7 @@ async function publishPackageImpl(
         }
         if (/forbidden|publish access/i.test(error.message)) {
           throw new ConvexError(
-            `This package name uses the "@${scopedOwnerHandle}" namespace, but you do not have publish access to that publisher. Ask an owner or admin of "@${scopedOwnerHandle}" to add you.`,
+            getScopedPackagePublishAccessMessage({ scopedOwnerHandle, packageName: name }),
           );
         }
       }
@@ -6232,7 +6285,10 @@ async function publishPackageImpl(
   }
 
   const displayName = payload.displayName?.trim() || name;
-  const files = await verifyPublishFileStorageMetadata(ctx, normalizePublishFiles(payload.files));
+  const { files, legacyZipEntries } = await verifyPublishFileStorageMetadata(
+    ctx,
+    normalizePublishFiles(payload.files),
+  );
   if (payload.artifact?.kind !== "npm-pack") {
     const oversizedFile = findOversizedPublishFile(files);
     if (oversizedFile) {
@@ -6243,6 +6299,7 @@ async function publishPackageImpl(
   if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
     throw new ConvexError(getPublishTotalSizeError("package"));
   }
+  const legacyZipSha256 = await sha256Hex(buildDeterministicPackageZip(legacyZipEntries));
 
   const existingSkillSlug = await runQueryRef<boolean>(
     ctx,
@@ -6418,11 +6475,11 @@ async function publishPackageImpl(
     runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
     channel: payload.channel,
     compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-    capabilities: codeArtifacts?.capabilities ?? bundleArtifacts?.capabilities,
     verification,
     staticScan,
     files,
     integritySha256,
+    sha256hash: legacyZipSha256,
     artifactKind: payload.artifact?.kind ?? "legacy-zip",
     clawpackStorageId: payload.artifact?.storageId as Id<"_storage"> | undefined,
     clawpackSha256: payload.artifact?.sha256,
@@ -6529,7 +6586,76 @@ async function publishPackageImpl(
     source: "publish",
   });
 
+  if (payload.artifact?.storageId) {
+    const backupIsLatest = (
+      payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"]
+    ).includes("latest");
+    const backupOwner =
+      ownerPublisher ??
+      ((await runQueryRef<Doc<"users"> | null>(ctx, internalRefs.users.getByIdInternal, {
+        userId: ownerUserId,
+      })) as Doc<"users"> | null);
+    const ownerHandle = backupOwner?.handle ?? String(ownerPublisherId ?? ownerUserId);
+    await runAfterRef(
+      ctx,
+      0,
+      internalRefs.registryArtifactBackupsNode.backupPackageForPublishInternal,
+      {
+        ownerHandle,
+        packageId: publishResult.packageId,
+        releaseId: publishResult.releaseId,
+        packageName: name,
+        normalizedName: name,
+        displayName,
+        family,
+        version,
+        isLatest: backupIsLatest,
+        publishedAt: Date.now(),
+        artifactKind: payload.artifact.kind ?? "legacy-zip",
+        artifactStorageId: payload.artifact.storageId,
+        artifactFileName: payload.artifact.npmTarballName,
+        artifactSha256: payload.artifact.sha256,
+        artifactSize: payload.artifact.size,
+        artifactFormat: payload.artifact.format,
+        npmIntegrity: payload.artifact.npmIntegrity,
+        npmShasum: payload.artifact.npmShasum,
+        npmUnpackedSize: payload.artifact.npmUnpackedSize,
+        npmFileCount: payload.artifact.npmFileCount,
+        runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
+        sourceRepo: effectiveSource?.repo || effectiveSource?.url,
+        compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+        extractedPackageJson: storedPackageJson,
+        extractedPluginManifest: family === "code-plugin" ? storedPluginManifest : undefined,
+        normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
+        files: files.map((file) => ({
+          path: file.path,
+          size: file.size,
+          sha256: file.sha256,
+        })),
+      },
+    ).catch((error) => {
+      const message = errorMessage(error);
+      console.error("registry artifact package backup scheduling failed", error);
+      return runMutationRef(
+        ctx,
+        internalRefs.registryArtifactBackups.enqueueRegistryArtifactBackupJobInternal,
+        {
+          targetKind: "packageRelease",
+          packageReleaseId: publishResult.releaseId,
+          reason: "publish",
+          error: message,
+        },
+      ).catch((enqueueError) => {
+        console.error("registry artifact package backup retry enqueue failed", enqueueError);
+      });
+    });
+  }
+
   return inspectorFindings.length > 0 ? { ...publishResult, inspectorFindings } : publishResult;
+}
+
+function errorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
 }
 
 function toPackageInspectorPublishResponseFinding(
@@ -6684,8 +6810,6 @@ export const reservePackageNameInternal = internalMutation({
       channel: "private",
       isOfficial: false,
       tags: {},
-      capabilityTags: [],
-      executesCode: false,
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
       ...computePackageRecommendationPatch({
         downloads: 0,
@@ -7511,7 +7635,6 @@ export const insertReleaseInternal = internalMutation({
       v.union(v.literal("official"), v.literal("community"), v.literal("private")),
     ),
     compatibility: v.optional(v.any()),
-    capabilities: v.optional(v.any()),
     verification: v.optional(v.any()),
     staticScan: v.optional(v.any()),
     allowExistingRelease: v.optional(v.boolean()),
@@ -7525,6 +7648,7 @@ export const insertReleaseInternal = internalMutation({
       }),
     ),
     integritySha256: v.string(),
+    sha256hash: v.string(),
     artifactKind: v.optional(v.union(v.literal("legacy-zip"), v.literal("npm-pack"))),
     clawpackStorageId: v.optional(v.id("_storage")),
     clawpackSha256: v.optional(v.string()),
@@ -7592,8 +7716,6 @@ export const insertReleaseInternal = internalMutation({
     if (args.channel === "official" && !publisherOfficial) {
       throw new ConvexError("Only official publishers may publish to the official channel");
     }
-    const nextCapabilities = withArtifactCapabilityTags(args.capabilities, args);
-    const nextCapabilityTags = mergeArtifactCapabilityTags(args.capabilities?.capabilityTags, args);
     const existing = await getPackageByNormalizedName(ctx, normalizedName);
     const existingIsReservation = isReservedPackagePlaceholder(existing);
     const nextNameLabel = typeof args.name === "string" ? args.name : "<unknown>";
@@ -7670,10 +7792,7 @@ export const insertReleaseInternal = internalMutation({
         runtimeId: args.runtimeId,
         sourceRepo: args.sourceRepo,
         tags: {},
-        capabilityTags: nextCapabilityTags,
-        executesCode: nextCapabilities?.executesCode,
         compatibility: args.compatibility,
-        capabilities: nextCapabilities,
         verification: args.verification,
         scanStatus: args.verification?.scanStatus,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
@@ -7731,6 +7850,7 @@ export const insertReleaseInternal = internalMutation({
       distTags: effectiveTags,
       files: args.files,
       integritySha256: args.integritySha256,
+      sha256hash: args.sha256hash,
       artifactKind: args.artifactKind,
       clawpackStorageId: args.clawpackStorageId,
       clawpackSha256: args.clawpackSha256,
@@ -7745,7 +7865,6 @@ export const insertReleaseInternal = internalMutation({
       extractedPluginManifest: args.extractedPluginManifest,
       normalizedBundleManifest: args.normalizedBundleManifest,
       compatibility: args.compatibility,
-      capabilities: nextCapabilities,
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,
       verification: args.verification,
@@ -7786,20 +7905,12 @@ export const insertReleaseInternal = internalMutation({
             createdAt: now,
             changelog: args.changelog,
             compatibility: args.compatibility,
-            capabilities: nextCapabilities,
             verification: args.verification,
             artifact: packageArtifactSummary(args),
           }
         : pkg.latestVersionSummary,
       tags: nextTags,
-      capabilityTags: shouldPromoteLatest ? nextCapabilityTags : pkg.capabilityTags,
-      executesCode: shouldPromoteLatest
-        ? typeof nextCapabilities?.executesCode === "boolean"
-          ? nextCapabilities.executesCode
-          : pkg.executesCode
-        : pkg.executesCode,
       compatibility: shouldPromoteLatest ? args.compatibility : pkg.compatibility,
-      capabilities: shouldPromoteLatest ? nextCapabilities : pkg.capabilities,
       verification: shouldPromoteLatest ? args.verification : pkg.verification,
       scanStatus: shouldPromoteLatest ? args.verification?.scanStatus : pkg.scanStatus,
       stats: { ...pkg.stats, versions: (pkg.stats?.versions ?? 0) + 1 },
@@ -7825,6 +7936,7 @@ async function recordMaliciousPluginReleaseFinding(
   release: Doc<"packageReleases">,
   trigger: string,
 ) {
+  const artifactSha256 = getPackageReleaseArtifactSha256(release);
   await ctx.scheduler.runAfter(0, internal.users.recordMaliciousArtifactFindingInternal, {
     ownerUserId: release.createdBy,
     artifactKind: "plugin",
@@ -7832,7 +7944,7 @@ async function recordMaliciousPluginReleaseFinding(
     version: release.version,
     trigger,
     ...(release.llmAnalysis?.summary ? { findingSummary: release.llmAnalysis.summary } : {}),
-    ...(release.sha256hash ? { sha256hash: release.sha256hash } : {}),
+    ...(artifactSha256 ? { sha256hash: artifactSha256 } : {}),
   });
 }
 
@@ -7933,13 +8045,7 @@ async function quarantineMaliciousLatestPackageRelease(
     summary: nextLatest?.summary,
     sourceRepo: restoredSourceRepo,
     runtimeId: restoredRuntimeId,
-    capabilityTags: nextLatest?.capabilities?.capabilityTags,
-    executesCode:
-      typeof nextLatest?.capabilities?.executesCode === "boolean"
-        ? nextLatest.capabilities.executesCode
-        : undefined,
     compatibility: nextLatest?.compatibility,
-    capabilities: nextLatest?.capabilities,
     verification: nextLatest?.verification,
     scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : "malicious",
     updatedAt: now,
@@ -8044,7 +8150,6 @@ async function syncLatestPackageVerification(
 export const updateReleaseScanResultsInternal = internalMutation({
   args: {
     releaseId: v.id("packageReleases"),
-    sha256hash: v.optional(v.string()),
     vtAnalysis: v.optional(vtAnalysisValidator),
   },
   handler: async (ctx, args) => {
@@ -8052,7 +8157,6 @@ export const updateReleaseScanResultsInternal = internalMutation({
     if (!release || release.softDeletedAt) return;
 
     const patch: Partial<Doc<"packageReleases">> = {};
-    if (args.sha256hash !== undefined) patch.sha256hash = args.sha256hash;
     if (args.vtAnalysis !== undefined) {
       patch.vtAnalysis = args.vtAnalysis;
     }
@@ -8121,134 +8225,6 @@ export const updateReleaseLlmAnalysisInternal = internalMutation({
       quarantineMaliciousLatest: llmVerdict === "malicious",
       maliciousTrigger: "malicious.llm_malicious",
     });
-  },
-});
-
-export const getSuspiciousPluginReleaseBatchForLlmRescanInternal = internalQuery({
-  args: {
-    cursor: v.optional(v.union(v.string(), v.null())),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 100), 200));
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("packages")
-      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-      .order("asc")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    const releases: Array<{
-      packageId: Id<"packages">;
-      releaseId: Id<"packageReleases">;
-      name: string;
-      family: PackageFamily;
-    }> = [];
-
-    for (const pkg of page) {
-      if (pkg.family === "skill") continue;
-      if (pkg.scanStatus !== "suspicious") continue;
-      if (!pkg.latestReleaseId) continue;
-      const release = await ctx.db.get(pkg.latestReleaseId);
-      if (!isReleaseActive(release)) continue;
-      if (release.manualModeration?.state === "quarantined") continue;
-      if (release.manualModeration?.state === "revoked") continue;
-      if (resolvePackageReleaseScanStatus(release) !== "suspicious") continue;
-
-      releases.push({
-        packageId: pkg._id,
-        releaseId: release._id,
-        name: pkg.normalizedName,
-        family: pkg.family,
-      });
-    }
-
-    return {
-      releases,
-      examined: page.length,
-      continueCursor,
-      isDone,
-    };
-  },
-});
-
-export const getPluginScanStatusCountPageInternal = internalQuery({
-  args: {
-    cursor: v.optional(v.union(v.string(), v.null())),
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 200), 200));
-    const { page, continueCursor, isDone } = await ctx.db
-      .query("packages")
-      .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
-      .order("asc")
-      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
-
-    let activePlugins = 0;
-    let clean = 0;
-    let pending = 0;
-    let notRun = 0;
-    let suspicious = 0;
-    let malicious = 0;
-    let unknown = 0;
-    let latestSuspicious = 0;
-    let latestMalicious = 0;
-    let latestBlocked = 0;
-
-    for (const pkg of page) {
-      if (pkg.family === "skill") continue;
-      activePlugins++;
-
-      switch (pkg.scanStatus) {
-        case "clean":
-          clean++;
-          break;
-        case "pending":
-          pending++;
-          break;
-        case "not-run":
-          notRun++;
-          break;
-        case "suspicious":
-          suspicious++;
-          break;
-        case "malicious":
-          malicious++;
-          break;
-        default:
-          unknown++;
-      }
-
-      if (!pkg.latestReleaseId) continue;
-      const release = await ctx.db.get(pkg.latestReleaseId);
-      if (!isReleaseActive(release)) continue;
-      if (
-        release.manualModeration?.state === "quarantined" ||
-        release.manualModeration?.state === "revoked"
-      ) {
-        latestBlocked++;
-        continue;
-      }
-      const latestStatus = resolvePackageReleaseScanStatus(release);
-      if (latestStatus === "suspicious") latestSuspicious++;
-      if (latestStatus === "malicious") latestMalicious++;
-    }
-
-    return {
-      examined: page.length,
-      activePlugins,
-      clean,
-      pending,
-      notRun,
-      suspicious,
-      malicious,
-      unknown,
-      latestSuspicious,
-      latestMalicious,
-      latestBlocked,
-      continueCursor,
-      isDone,
-    };
   },
 });
 
@@ -8397,6 +8373,372 @@ export const updateReleaseStaticScanInternal = internalMutation({
   },
 });
 
+export const replaceReleaseFilesAfterClawPackRepairInternal = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    files: v.array(
+      v.object({
+        path: v.string(),
+        size: v.number(),
+        storageId: v.id("_storage"),
+        sha256: v.string(),
+        contentType: v.optional(v.string()),
+      }),
+    ),
+    clawpackSha256: v.string(),
+    npmIntegrity: v.string(),
+    npmShasum: v.string(),
+    npmTarballName: v.string(),
+    npmUnpackedSize: v.number(),
+    npmFileCount: v.number(),
+    integritySha256: v.string(),
+    extractedPackageJson: v.any(),
+    extractedPluginManifest: v.any(),
+    checkedAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!isReleaseActive(release) || !needsClawPackReleaseFileRepair(release)) {
+      return { repaired: false as const };
+    }
+
+    const nextVerification = release.verification
+      ? {
+          ...release.verification,
+          scanStatus: "pending" as const,
+        }
+      : release.verification;
+    const patch: Partial<Doc<"packageReleases">> = {
+      files: args.files,
+      integritySha256: args.integritySha256,
+      clawpackSha256: args.clawpackSha256,
+      npmIntegrity: args.npmIntegrity,
+      npmShasum: args.npmShasum,
+      npmTarballName: args.npmTarballName,
+      npmUnpackedSize: args.npmUnpackedSize,
+      npmFileCount: args.npmFileCount,
+      extractedPackageJson: args.extractedPackageJson,
+      extractedPluginManifest: args.extractedPluginManifest,
+      verification: nextVerification,
+      staticScan: undefined,
+      skillSpectorAnalysis: undefined,
+      llmAnalysis: {
+        status: "pending",
+        summary: "ClawPack file listing repaired from the stored artifact; fresh review queued.",
+        checkedAt: args.checkedAt,
+      },
+    };
+    await ctx.db.patch(args.releaseId, patch);
+
+    await syncLatestPackageVerification(ctx, {
+      ...release,
+      ...patch,
+    } as Doc<"packageReleases">);
+
+    return { repaired: true as const };
+  },
+});
+
+async function repairClawPackReleaseFiles(
+  ctx: ActionCtx,
+  args: { releaseId: Id<"packageReleases">; dryRun?: boolean },
+): Promise<ClawPackRepairResult> {
+  const dryRun = args.dryRun === true;
+  const release = await runQueryRef<Doc<"packageReleases"> | null>(
+    ctx,
+    internalRefs.packages.getReleaseByIdInternal,
+    { releaseId: args.releaseId },
+  );
+  if (!release || release.softDeletedAt) {
+    return { ok: true, repaired: false, dryRun, skipped: "missing_release" };
+  }
+  if (!needsClawPackReleaseFileRepair(release) || !release.clawpackStorageId) {
+    return { ok: true, repaired: false, dryRun, skipped: "not_needed" };
+  }
+
+  const pkg = await runQueryRef<Doc<"packages"> | null>(
+    ctx,
+    internalRefs.packages.getPackageByIdInternal,
+    { packageId: release.packageId },
+  );
+  if (!pkg || pkg.softDeletedAt || pkg.family === "skill") {
+    return { ok: true, repaired: false, dryRun, skipped: "missing_package" };
+  }
+
+  const blob = await ctx.storage.get(release.clawpackStorageId);
+  if (!blob) {
+    return {
+      ok: false,
+      repaired: false,
+      dryRun,
+      error: "ClawPack artifact missing",
+    };
+  }
+
+  const artifactBytes = new Uint8Array(await blob.arrayBuffer());
+  const parsed = await parseClawPack(artifactBytes);
+  if (release.clawpackSha256 && parsed.artifactSha256 !== release.clawpackSha256) {
+    throw new Error("Stored ClawPack artifact digest does not match package release metadata");
+  }
+  const parsedPackageName = normalizePackageName(parsed.packageName);
+  const storedPackageNames = new Set([pkg.normalizedName, normalizePackageName(pkg.name)]);
+  if (!storedPackageNames.has(parsedPackageName) || parsed.packageVersion !== release.version) {
+    throw new Error("Stored ClawPack artifact identity does not match package release metadata");
+  }
+
+  const parsedFiles = [];
+  for (const entry of parsed.entries) {
+    parsedFiles.push({
+      path: entry.path,
+      size: entry.bytes.byteLength,
+      sha256: await sha256Hex(entry.bytes),
+      contentType: inferClawPackEntryContentType(entry.path),
+      bytes: entry.bytes,
+    });
+  }
+  const integritySha256 = await hashSkillFiles(parsedFiles);
+
+  if (dryRun) {
+    return {
+      ok: true,
+      repaired: false,
+      dryRun: true,
+      files: parsedFiles.length,
+      existingFiles: release.files.length,
+      npmFileCount: parsed.fileCount,
+      integritySha256,
+      artifactSha256: parsed.artifactSha256,
+      samplePaths: parsedFiles.slice(0, 10).map((file) => file.path),
+    };
+  }
+
+  const files: PackageReleaseFilePatch = [];
+  for (const file of parsedFiles) {
+    const storageId = await ctx.storage.store(
+      new Blob([bytesToArrayBuffer(file.bytes)], { type: file.contentType }),
+    );
+    files.push({
+      path: file.path,
+      size: file.size,
+      storageId,
+      sha256: file.sha256,
+      contentType: file.contentType,
+    });
+  }
+
+  const result = await runMutationRef<{ repaired: boolean }>(
+    ctx,
+    internalRefs.packages.replaceReleaseFilesAfterClawPackRepairInternal,
+    {
+      releaseId: args.releaseId,
+      files,
+      clawpackSha256: parsed.artifactSha256,
+      npmIntegrity: parsed.npmIntegrity,
+      npmShasum: parsed.npmShasum,
+      npmTarballName: parsed.npmTarballName,
+      npmUnpackedSize: parsed.unpackedSize,
+      npmFileCount: parsed.fileCount,
+      integritySha256,
+      extractedPackageJson: toConvexSafeJsonValue(parsed.packageJson, {
+        maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
+      }),
+      extractedPluginManifest: toConvexSafeJsonValue(parsed.pluginManifest, {
+        maxDepth: MAX_STORED_PACKAGE_METADATA_DEPTH,
+      }),
+      checkedAt: Date.now(),
+    },
+  );
+
+  if (!result.repaired) {
+    return { ok: true, repaired: false, dryRun: false, skipped: "not_needed" };
+  }
+
+  await runAfterRef(ctx, 0, internalRefs.packages.scanPackageReleaseStaticallyInternal, {
+    releaseId: args.releaseId,
+  });
+  await runMutationRef(ctx, internalRefs.securityScan.enqueuePackageReleaseScanInternal, {
+    releaseId: args.releaseId,
+    source: "manual",
+  });
+
+  return {
+    ok: true,
+    repaired: true,
+    dryRun: false,
+    files: files.length,
+    existingFiles: release.files.length,
+    npmFileCount: parsed.fileCount,
+    integritySha256,
+    artifactSha256: parsed.artifactSha256,
+    samplePaths: files.slice(0, 10).map((file) => file.path),
+  };
+}
+
+export const repairClawPackReleaseFilesInternal = internalAction({
+  args: {
+    releaseId: v.id("packageReleases"),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: repairClawPackReleaseFiles,
+});
+
+export const repairHistoricalClawPackReleaseFilesInternal = internalAction({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    releaseId: v.optional(v.id("packageReleases")),
+    packageName: v.optional(v.string()),
+    version: v.optional(v.string()),
+    confirmation: v.optional(v.string()),
+    scheduleNext: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirmation !== CLAWPACK_REPAIR_WRITE_CONFIRMATION) {
+      throw new ConvexError(
+        `Set confirmation to "${CLAWPACK_REPAIR_WRITE_CONFIRMATION}" to repair historical ClawPack release files.`,
+      );
+    }
+
+    const batchSize = Math.max(1, Math.min(Math.floor(args.batchSize ?? 25), 100));
+    const maxBatches = Math.max(1, Math.min(Math.floor(args.maxBatches ?? 1), 20));
+    const stats: HistoricalClawPackRepairStats = {
+      scanned: 0,
+      candidates: 0,
+      validated: 0,
+      wouldRepair: 0,
+      repaired: 0,
+      skipped: 0,
+      errors: 0,
+    };
+    const logLines = [
+      `[clawpack-repair] mode=${dryRun ? "dry-run" : "apply"} batchSize=${batchSize} maxBatches=${maxBatches}`,
+    ];
+    const samples: Array<
+      ClawPackRepairCandidate & {
+        repairedFiles: number;
+        integritySha256: string;
+        artifactSha256: string;
+        samplePaths: string[];
+      }
+    > = [];
+    let cursor: string | null = args.cursor ?? null;
+    let isDone = false;
+
+    for (let batchIndex = 0; batchIndex < maxBatches; batchIndex++) {
+      const batch = await runQueryRef<{
+        candidates: ClawPackRepairCandidate[];
+        scanned: number;
+        cursor: string | null;
+        isDone: boolean;
+      }>(ctx, internalRefs.packages.getHistoricalClawPackRepairBatchInternal, {
+        cursor,
+        batchSize,
+        releaseId: args.releaseId,
+        packageName: args.packageName,
+        version: args.version,
+      });
+
+      stats.scanned += batch.scanned;
+      stats.candidates += batch.candidates.length;
+      cursor = batch.cursor;
+      isDone = batch.isDone;
+      logLines.push(
+        `[clawpack-repair] batch=${batchIndex + 1} scanned=${batch.scanned} candidates=${batch.candidates.length} nextCursor=${cursor ?? "<done>"}`,
+      );
+
+      for (const candidate of batch.candidates) {
+        try {
+          const result = await repairClawPackReleaseFiles(ctx, {
+            releaseId: candidate.releaseId,
+            dryRun,
+          });
+          if (!result.ok) {
+            stats.errors++;
+            logLines.push(
+              `[clawpack-repair] error package=${candidate.packageName} version=${candidate.version} release=${candidate.releaseId} error=${result.error}`,
+            );
+            continue;
+          }
+          if ("skipped" in result) {
+            stats.skipped++;
+            logLines.push(
+              `[clawpack-repair] skipped package=${candidate.packageName} version=${candidate.version} release=${candidate.releaseId} reason=${result.skipped}`,
+            );
+            continue;
+          }
+
+          stats.validated++;
+          if (dryRun) {
+            stats.wouldRepair++;
+          } else if (result.repaired) {
+            stats.repaired++;
+          }
+          if (samples.length < 20) {
+            samples.push({
+              ...candidate,
+              repairedFiles: result.files,
+              integritySha256: result.integritySha256,
+              artifactSha256: result.artifactSha256,
+              samplePaths: result.samplePaths,
+            });
+          }
+          logLines.push(
+            `[clawpack-repair] ${dryRun ? "would-repair" : "repaired"} package=${candidate.packageName} version=${candidate.version} release=${candidate.releaseId} files=${candidate.existingFileCount}->${result.files} npmFileCount=${result.npmFileCount} integrity=${result.integritySha256.slice(0, 12)}...`,
+          );
+        } catch (error) {
+          stats.errors++;
+          const message = error instanceof Error ? error.message : String(error);
+          logLines.push(
+            `[clawpack-repair] error package=${candidate.packageName} version=${candidate.version} release=${candidate.releaseId} error=${message}`,
+          );
+        }
+      }
+
+      if (args.releaseId || isDone) break;
+    }
+
+    if (!dryRun && args.scheduleNext === true && !isDone && cursor) {
+      await runAfterRef(
+        ctx,
+        0,
+        internalRefs.packages.repairHistoricalClawPackReleaseFilesInternal,
+        {
+          cursor,
+          batchSize,
+          maxBatches,
+          dryRun: false,
+          releaseId: args.releaseId,
+          packageName: args.packageName,
+          version: args.version,
+          confirmation: args.confirmation,
+          scheduleNext: true,
+        },
+      );
+      logLines.push(`[clawpack-repair] scheduled-next cursor=${cursor}`);
+    }
+
+    return {
+      ok: true as const,
+      dryRun,
+      confirmationRequired: !dryRun,
+      target: {
+        releaseId: args.releaseId ?? null,
+        packageName: args.packageName ?? null,
+        version: args.version ?? null,
+      },
+      cursor,
+      isDone,
+      stats,
+      samples,
+      logLines,
+      writeConfirmation: dryRun ? CLAWPACK_REPAIR_WRITE_CONFIRMATION : null,
+    };
+  },
+});
+
 export const scanPackageReleaseStaticallyInternal = internalAction({
   args: {
     releaseId: v.id("packageReleases"),
@@ -8519,6 +8861,32 @@ export const backfillPackageReleaseScans = action({
     return await runActionRef(ctx, internalRefs.packages.backfillPackageReleaseScansInternal, {
       batchSize: args.batchSize,
     });
+  },
+});
+
+export const repairHistoricalClawPackReleaseFiles = action({
+  args: {
+    cursor: v.optional(v.union(v.string(), v.null())),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    releaseId: v.optional(v.id("packageReleases")),
+    packageName: v.optional(v.string()),
+    version: v.optional(v.string()),
+    confirmation: v.optional(v.string()),
+    scheduleNext: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertAdmin(user);
+    return await runActionRef(
+      ctx,
+      internalRefs.packages.repairHistoricalClawPackReleaseFilesInternal,
+      {
+        ...args,
+        dryRun: args.dryRun !== false,
+      },
+    );
   },
 });
 

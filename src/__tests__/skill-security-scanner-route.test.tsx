@@ -1,9 +1,9 @@
 /* @vitest-environment jsdom */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { getFunctionName } from "convex/server";
 import type { ComponentType } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { api } from "../../convex/_generated/api";
 import { fetchSkillPageData } from "../lib/skillPage";
 
 const useQueryMock = vi.fn();
@@ -127,11 +127,6 @@ describe("skill security audit route", () => {
 
     render(<Component />);
 
-    expect(useQueryMock).toHaveBeenCalledWith(api.skills.getBySlug, {
-      slug: "local-agentic-risk-demo",
-      ownerHandle: "local",
-    });
-
     expect(screen.getByRole("button", { name: "Download security audit" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
 
@@ -163,5 +158,67 @@ describe("skill security audit route", () => {
     });
 
     expect(fetchSkillPageData).toHaveBeenCalledWith("local-agentic-risk-demo", "local");
+  });
+
+  it("renders the durable scan for a GitHub-backed skill without a hosted skill version", async () => {
+    const requestRescan = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockReturnValue(requestRescan);
+    useAuthStatusMock.mockReturnValue({
+      me: { _id: "users:moderator", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((ref: unknown, args: unknown) => {
+      if (args === "skip" || (args && Object.keys(args as Record<string, unknown>).length === 0)) {
+        return [];
+      }
+      const name = getFunctionName(ref as Parameters<typeof getFunctionName>[0]);
+      if (name === "skills:getGitHubScanForAudit") {
+        return {
+          contentHash: "a".repeat(64),
+          commit: "b".repeat(40),
+          status: "clean",
+          version: "1.2.3",
+          llmAnalysis: {
+            status: "clean",
+            verdict: "benign",
+            summary: "No material risks found.",
+            checkedAt: 123,
+          },
+        };
+      }
+      if (name === "skills:getBySlug") {
+        return {
+          skill: {
+            _id: "skills:github",
+            slug: "github-demo",
+            displayName: "GitHub Demo",
+            ownerUserId: "users:owner",
+            installKind: "github",
+          },
+          latestVersion: null,
+          owner: {
+            _id: "users:owner",
+            handle: "nvidia",
+          },
+        };
+      }
+      return undefined;
+    });
+
+    paramsMock = { owner: "nvidia", slug: "github-demo" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByText("Security audit is unavailable for this skill.")).toBeNull();
+    expect(screen.getByText("GitHub Demo")).toBeTruthy();
+    expect(screen.getByText("No material risks found.")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Rescan" }));
+
+    await waitFor(() =>
+      expect(requestRescan).toHaveBeenCalledWith({
+        skillId: "skills:github",
+      }),
+    );
   });
 });

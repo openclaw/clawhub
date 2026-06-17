@@ -75,7 +75,7 @@ describe("AuthCodeHandler", () => {
     window.history.replaceState(
       null,
       "",
-      "/docs/auth?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
+      "/auth/docs?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
     );
 
     render(<AuthCodeHandler />);
@@ -84,7 +84,7 @@ describe("AuthCodeHandler", () => {
       expect(signInMock).toHaveBeenCalledWith(undefined, { code: "abc123" });
     });
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
-      "/docs/auth?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
+      "/auth/docs?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
     );
   });
 
@@ -110,7 +110,7 @@ describe("AuthCodeHandler", () => {
     window.history.replaceState(
       null,
       "",
-      "/docs/auth?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
+      "/auth/docs?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
     );
 
     render(<AuthCodeHandler />);
@@ -118,14 +118,14 @@ describe("AuthCodeHandler", () => {
     await waitFor(() => {
       expect(signInMock).toHaveBeenNthCalledWith(1, undefined, { code: "abc123" });
       expect(signInMock).toHaveBeenNthCalledWith(2, "github", {
-        redirectTo: "/docs/auth?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
+        redirectTo: "/auth/docs?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
       });
     });
 
     expect(consoleLogMock).toHaveBeenCalledWith(
       "[ClawHub auth] GitHub code sign-in did not create a session",
       {
-        path: "/docs/auth",
+        path: "/auth/docs",
         retrying: true,
         hadRetryMarker: false,
         hasReturnTo: true,
@@ -139,7 +139,7 @@ describe("AuthCodeHandler", () => {
     window.history.replaceState(
       null,
       "",
-      "/docs/auth?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
+      "/auth/docs?code=abc123&return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask&auth_retry=1#molty",
     );
 
     render(<AuthCodeHandler />);
@@ -150,7 +150,7 @@ describe("AuthCodeHandler", () => {
 
     expect(signInMock).toHaveBeenCalledTimes(1);
     expect(`${window.location.pathname}${window.location.search}${window.location.hash}`).toBe(
-      "/docs/auth?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
+      "/auth/docs?return_to=https%3A%2F%2Fdocs.openclaw.ai%2Fask#molty",
     );
   });
 

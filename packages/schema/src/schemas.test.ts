@@ -7,10 +7,12 @@ import { getPackageScopeOwnerMismatch, inferPackageNameScope } from "./packages"
 import {
   ApiSearchResponseSchema,
   ApiV1SkillInstallResolveResponseSchema,
+  ApiV1SkillRescanResponseSchema,
   ApiV1SearchResponseSchema,
   ApiV1SkillVerifyResponseSchema,
   CliPublishRequestSchema,
   CliSkillDeleteRequestSchema,
+  CliTelemetryInstallRequestSchema,
   LockfileSchema,
   WellKnownConfigSchema,
 } from "./schemas";
@@ -150,6 +152,64 @@ describe("clawhub-schema", () => {
     expect(blocked.ok).toBe(false);
   });
 
+  it("accepts current and legacy install telemetry payloads", () => {
+    const current = parseArk(
+      CliTelemetryInstallRequestSchema,
+      { event: "install", slug: "demo", version: "1.0.0" },
+      "Install telemetry",
+    );
+    const legacy = parseArk(
+      CliTelemetryInstallRequestSchema,
+      {
+        roots: [
+          {
+            rootId: "root",
+            label: "~/skills",
+            skills: [{ slug: "demo", version: "1.0.0" }],
+          },
+        ],
+      },
+      "Install telemetry",
+    );
+
+    expect(current).toMatchObject({ event: "install", slug: "demo" });
+    expect(legacy).toMatchObject({ roots: [{ rootId: "root" }] });
+  });
+
+  it("accepts hosted and GitHub-backed skill rescan responses", () => {
+    const hosted = parseArk(
+      ApiV1SkillRescanResponseSchema,
+      {
+        ok: true,
+        slug: "demo",
+        version: "1.0.0",
+        skillId: "skills:demo",
+        skillVersionId: "skillVersions:demo",
+        jobId: "securityScanJobs:demo",
+        alreadyQueued: false,
+      },
+      "Hosted skill rescan response",
+    );
+    if (!("skillVersionId" in hosted)) throw new Error("expected hosted rescan response");
+    expect(hosted.skillVersionId).toBe("skillVersions:demo");
+
+    const github = parseArk(
+      ApiV1SkillRescanResponseSchema,
+      {
+        ok: true,
+        slug: "github-demo",
+        version: "abc123",
+        skillId: "skills:github-demo",
+        githubContentHash: "content-hash",
+        scheduled: true,
+        alreadyQueued: false,
+      },
+      "GitHub skill rescan response",
+    );
+    if (!("githubContentHash" in github)) throw new Error("expected GitHub rescan response");
+    expect(github.githubContentHash).toBe("content-hash");
+  });
+
   it("accepts publish payloads with an owner handle", () => {
     const payload = parseArk(
       CliPublishRequestSchema,
@@ -267,6 +327,7 @@ describe("clawhub-schema", () => {
             summary: null,
             version: "1.0.0",
             score: 1,
+            downloads: 42,
             ownerHandle: "openclaw",
             owner: {
               handle: "openclaw",
@@ -280,6 +341,7 @@ describe("clawhub-schema", () => {
     );
 
     expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
+    expect(parsed.results[0]?.downloads).toBe(42);
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
   });
 

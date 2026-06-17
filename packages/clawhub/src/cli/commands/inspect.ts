@@ -12,7 +12,7 @@ import {
 import { getOptionalAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError } from "../ui.js";
+import { createCrabLoader, fail, formatError, styleText } from "../ui.js";
 
 type InspectOptions = {
   version?: string;
@@ -67,7 +67,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
 
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Fetching skill");
+  const spinner = createCrabLoader("Fetching skill");
   try {
     let skillResult: Awaited<ReturnType<typeof fetchSkillDetail>> | null = null;
     let moderationDiagnostics: ModerationDiagnostics = null;
@@ -211,6 +211,7 @@ export async function cmdInspect(opts: GlobalOpts, slug: string, options: Inspec
       printVersionSummary(versionResult.version);
       printSecuritySummary(versionResult.version);
     }
+    if (shouldPrintMeta) printInspectFooter();
 
     if (versionsList?.items && Array.isArray(versionsList.items)) {
       if (versionsList.items.length === 0) {
@@ -260,7 +261,7 @@ export async function cmdVerifySkill(
 
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Fetching skill verification");
+  const spinner = createCrabLoader("Fetching skill verification");
   try {
     const url = registryUrl(`${ApiRoutes.skills}/${encodeURIComponent(trimmed)}/verify`, registry);
     if (requested.ownerHandle) url.searchParams.set("ownerHandle", requested.ownerHandle);
@@ -385,23 +386,61 @@ function printSkillSummary(result: {
   owner?: { handle?: string | null; displayName?: string | null; image?: string | null } | null;
 }) {
   const { skill } = result;
-  console.log(`${skill.slug}  ${skill.displayName}`);
-  if (skill.summary) console.log(`Summary: ${skill.summary}`);
-  const owner = result.owner?.handle || result.owner?.displayName;
-  if (owner) console.log(`Owner: ${owner}`);
-  console.log(`Created: ${formatTimestamp(skill.createdAt)}`);
-  console.log(`Updated: ${formatTimestamp(skill.updatedAt)}`);
-  if (result.latestVersion?.version) {
-    console.log(`Latest: ${result.latestVersion.version}`);
-  }
+  console.log("");
   console.log(
-    `License: ${result.versionLicense ?? result.latestVersion?.license ?? PLATFORM_SKILL_LICENSE} (${PLATFORM_SKILL_LICENSE_SUMMARY})`,
+    `${inspectRail("┌─")} ${styleText("inspect", "brand")} ${styleText("─".repeat(43), "muted")}`,
   );
+  console.log(
+    `${inspectRail("│")} ${styleText(skill.slug, "brand")}  ${styleText(
+      skill.displayName,
+      "strong",
+    )}`,
+  );
+  const owner = formatOwner(result.owner);
   const tags = normalizeTags(skill.tags);
   const tagEntries = Object.entries(tags);
-  if (tagEntries.length > 0) {
-    console.log(`Tags: ${tagEntries.map(([tag, version]) => `${tag}=${version}`).join(", ")}`);
+  const compactMeta = [
+    owner,
+    result.latestVersion?.version ? `v${result.latestVersion.version}` : null,
+    tagEntries.map(([tag, version]) => `${tag}=${version}`).join(", "),
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  if (compactMeta) console.log(`${inspectRail("│")} ${styleText(compactMeta, "muted")}`);
+  console.log(inspectRail("│"));
+  if (skill.summary) printInspectRow("Summary", skill.summary);
+  if (owner) printInspectRow("Owner", owner);
+  if (result.latestVersion?.version) {
+    printInspectRow("Latest", result.latestVersion.version);
   }
+  printInspectRow(
+    "License",
+    `${result.versionLicense ?? result.latestVersion?.license ?? PLATFORM_SKILL_LICENSE} (${PLATFORM_SKILL_LICENSE_SUMMARY})`,
+  );
+  printInspectRow("Updated", formatTimestamp(skill.updatedAt));
+  printInspectRow("Created", formatTimestamp(skill.createdAt));
+  if (tagEntries.length > 0) {
+    printInspectRow("Tags", tagEntries.map(([tag, version]) => `${tag}=${version}`).join(", "));
+  }
+}
+
+function printInspectRow(label: string, value: string) {
+  console.log(`${inspectRail("│")} ${styleText(label.padEnd(8), "brand")} ${value}`);
+}
+
+function printInspectFooter() {
+  console.log(`${inspectRail("└")}${styleText("─".repeat(54), "muted")}`);
+}
+
+function inspectRail(value: string) {
+  return styleText(value, "brand");
+}
+
+function formatOwner(
+  owner?: { handle?: string | null; displayName?: string | null; image?: string | null } | null,
+) {
+  if (owner?.handle) return `@${owner.handle}`;
+  return owner?.displayName ?? null;
 }
 
 function printVersionSummary(version: unknown) {
@@ -409,12 +448,12 @@ function printVersionSummary(version: unknown) {
   const entry = version as { version?: unknown; createdAt?: unknown; changelog?: unknown };
   const value = typeof entry.version === "string" ? entry.version : null;
   if (!value) return;
-  console.log(`Selected: ${value}`);
+  printInspectRow("Selected", value);
   if (typeof entry.createdAt === "number") {
-    console.log(`Selected At: ${formatTimestamp(entry.createdAt)}`);
+    printInspectRow("Sel Time", formatTimestamp(entry.createdAt));
   }
   if (typeof entry.changelog === "string" && entry.changelog.trim()) {
-    console.log(`Changelog: ${truncate(entry.changelog, 120)}`);
+    printInspectRow("Change", truncate(entry.changelog, 120));
   }
 }
 
@@ -426,24 +465,25 @@ function printModerationSummary(moderation: unknown) {
     : status.isSuspicious
       ? "SUSPICIOUS"
       : (status.verdict ?? "clean").toUpperCase();
-  console.log(`Moderation: ${label}`);
+  printInspectRow("Moderate", label);
   if (status.reasonCodes?.length) {
-    console.log(`Reasons: ${status.reasonCodes.join(", ")}`);
+    printInspectRow("Reasons", status.reasonCodes.join(", "));
   }
   if (status.legacyReason) {
-    console.log(`Moderation Reason: ${status.legacyReason}`);
+    printInspectRow("Reason", status.legacyReason);
   }
   if (typeof status.updatedAt === "number") {
-    console.log(`Moderation Updated: ${formatTimestamp(status.updatedAt)}`);
+    printInspectRow("Mod Time", formatTimestamp(status.updatedAt));
   }
   if (status.engineVersion) {
-    console.log(`Moderation Engine: ${status.engineVersion}`);
+    printInspectRow("Engine", status.engineVersion);
   }
   if (status.summary) {
-    console.log(`Moderation Summary: ${truncate(status.summary, 160)}`);
+    printInspectRow("Mod Note", truncate(status.summary, 160));
   }
   if (status.legacyReason === "quality.low") {
-    console.log(
+    printInspectRow(
+      "Guidance",
       "Visibility Guidance: publish a substantive update that passes quality assessment, then re-run inspect.",
     );
   }
@@ -555,15 +595,15 @@ function printSecuritySummary(version: unknown) {
   if (!version || typeof version !== "object") return;
   const sec = normalizeSecurity((version as { security?: unknown }).security);
   if (!sec) return;
-  console.log(`Security: ${sec.status.toUpperCase()}`);
+  printInspectRow("Security", sec.status.toUpperCase());
   if (sec.hasWarnings) {
-    console.log("Warnings: yes");
+    printInspectRow("Warnings", "yes");
   }
   if (typeof sec.checkedAt === "number") {
-    console.log(`Checked: ${formatTimestamp(sec.checkedAt)}`);
+    printInspectRow("Checked", formatTimestamp(sec.checkedAt));
   }
   if (sec.model) {
-    console.log(`Model: ${sec.model}`);
+    printInspectRow("Model", sec.model);
   }
 }
 
@@ -604,7 +644,13 @@ function formatFileLine(file: FileEntry) {
 
 function formatTimestamp(timestamp: number) {
   if (!Number.isFinite(timestamp)) return "unknown";
-  return new Date(timestamp).toISOString();
+  const date = new Date(timestamp);
+  const year = date.getUTCFullYear();
+  const month = String(date.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(date.getUTCDate()).padStart(2, "0");
+  const hours = String(date.getUTCHours()).padStart(2, "0");
+  const minutes = String(date.getUTCMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day} ${hours}:${minutes} UTC`;
 }
 
 function formatBytes(bytes: number) {

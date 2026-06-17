@@ -26,7 +26,6 @@ describe("OpenAPI contract", () => {
       "updated",
       "createdAt",
       "newest",
-      "downloads",
       "stars",
       "rating",
       "installsCurrent",

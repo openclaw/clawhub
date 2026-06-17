@@ -11,7 +11,6 @@ import {
 import { normalizeSkillSlug } from "../skillSlugValidator";
 
 type DbCtx = Pick<QueryCtx | MutationCtx, "db">;
-const LEGACY_PREFERRED_PUBLISHER_HANDLE = "openclaw";
 const MAX_LEGACY_OWNER_MATCHES = 25;
 
 type LegacyResultQuery<T> = {
@@ -281,33 +280,23 @@ async function selectLegacySkillMatch(
   const selectableSkills = options.includeSoftDeleted
     ? skills
     : skills.filter((skill) => isPublicSkillDoc(skill));
-  const preferred = await findPreferredPublisherSkill(ctx, selectableSkills);
-  if (preferred) return preferred;
   if (selectableSkills.length === 1) return selectableSkills[0];
-  return preferred ?? "ambiguous";
+  const openClawMatches = [];
+  for (const skill of selectableSkills) {
+    const owner = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    if (owner?.handle === "openclaw") openClawMatches.push(skill);
+  }
+  if (openClawMatches.length === 1) return openClawMatches[0];
+  return "ambiguous";
 }
 
 async function takeQueryResults<T>(query: LegacyResultQuery<T>, limit: number) {
   if (query.take) return query.take(limit);
   const unique = await query.unique?.();
   return unique ? [unique] : [];
-}
-
-async function findPreferredPublisherSkill(ctx: DbCtx, skills: Doc<"skills">[]) {
-  const matches: Doc<"skills">[] = [];
-  for (const skill of skills) {
-    if (!skill.ownerPublisherId) continue;
-    const publisher = await ctx.db.get(skill.ownerPublisherId);
-    if (
-      publisher &&
-      !publisher.deletedAt &&
-      !publisher.deactivatedAt &&
-      publisher.handle === LEGACY_PREFERRED_PUBLISHER_HANDLE
-    ) {
-      matches.push(skill);
-    }
-  }
-  return matches.length === 1 ? matches[0] : null;
 }
 
 async function buildLegacyAmbiguousSkillMatches(

@@ -77,6 +77,22 @@ describe("github import", () => {
     });
   });
 
+  it("parses legacy skills.md blob urls and derives folder path", () => {
+    expect(parseGitHubImportUrl("https://github.com/a/b/blob/main/skills/foo/skills.md")).toEqual({
+      owner: "a",
+      repo: "b",
+      ref: "main",
+      path: "skills/foo",
+      originalUrl: "https://github.com/a/b/blob/main/skills/foo/skills.md",
+    });
+  });
+
+  it("rejects blob urls that do not point to a skill file", () => {
+    expect(() =>
+      parseGitHubImportUrl("https://github.com/a/b/blob/main/skills/foo/README.md"),
+    ).toThrow(/SKILL\.md or skills\.md/i);
+  });
+
   it("strips single top-level folder from GitHub zip entries", () => {
     const zip = buildGitHubZipForTests({
       "repo-1/skill/SKILL.md": "Body",
@@ -106,10 +122,11 @@ describe("github import", () => {
     expect(candidates[0]?.name).toBe("demo");
   });
 
-  it("detects multiple candidates and supports skills.md", () => {
+  it("detects SKILL.md and legacy skills.md candidates", () => {
     const zip = buildGitHubZipForTests({
       "repo-1/alpha/SKILL.md": `---\nname: Alpha\n---\nBody`,
       "repo-1/beta/skills.md": `---\nname: Beta\n---\nBody`,
+      "repo-1/gamma/README.md": `---\nname: Gamma\n---\nBody`,
       "repo-1/readme.md": "x",
     });
     const stripped = stripGitHubZipRoot(unzipSync(zip));

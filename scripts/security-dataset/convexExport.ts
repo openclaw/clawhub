@@ -190,10 +190,8 @@ function skillVersionToExportRow(
       createdAt: numberValue(version.createdAt, "skillVersions.createdAt"),
       softDeletedAt: numberOrNull(version.softDeletedAt),
       files: filesFromExport(version.files),
-      capabilityTags: stringArray(version.capabilityTags ?? skill.capabilityTags),
       packageFamily: null,
       packageChannel: null,
-      packageExecutesCode: null,
       sourceRepoHost: null,
       vtAnalysis: vtAnalysisFromExport(version.vtAnalysis),
       skillSpectorAnalysis: skillSpectorAnalysisFromExport(version.skillSpectorAnalysis),
@@ -228,14 +226,12 @@ function packageReleaseToExportRow(
       ),
       publicSlug: stringOrNull(pkg.name),
       version: requiredString(release.version, "packageReleases.version"),
-      artifactSha256: stringOrNull(release.sha256hash) ?? stringOrNull(release.integritySha256),
+      artifactSha256: packageReleaseArtifactSha256(release),
       createdAt: numberValue(release.createdAt, "packageReleases.createdAt"),
       softDeletedAt: numberOrNull(release.softDeletedAt),
       files: filesFromExport(release.files),
-      capabilityTags: stringArray(pkg.capabilityTags),
       packageFamily: stringOrNull(pkg.family),
       packageChannel: stringOrNull(pkg.channel),
-      packageExecutesCode: booleanOrNull(pkg.executesCode),
       sourceRepoHost: sourceRepoHost(stringOrNull(pkg.sourceRepo)),
       vtAnalysis: vtAnalysisFromExport(release.vtAnalysis),
       skillSpectorAnalysis: skillSpectorAnalysisFromExport(release.skillSpectorAnalysis),
@@ -244,6 +240,13 @@ function packageReleaseToExportRow(
       moderationConsensus: null,
     },
   ];
+}
+
+function packageReleaseArtifactSha256(release: ConvexDoc) {
+  if (stringOrNull(release.artifactKind) === "npm-pack") {
+    return stringOrNull(release.clawpackSha256);
+  }
+  return stringOrNull(release.sha256hash);
 }
 
 function publicOwnerHandleFromExport(
@@ -566,10 +569,6 @@ function optionalNumber(value: unknown) {
 
 function numberOrNull(value: unknown) {
   return typeof value === "number" ? value : null;
-}
-
-function booleanOrNull(value: unknown) {
-  return typeof value === "boolean" ? value : null;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

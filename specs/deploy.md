@@ -113,7 +113,7 @@ Ensure Convex env is set (auth + embeddings):
 - `SITE_URL` (your web app URL)
 - Optional webhook env (see `docs/webhook.md`)
 - Recommended GitHub App env for authenticated GitHub API reads used by publish
-  gates and backups:
+  gates:
   - `GITHUB_APP_ID`
   - `GITHUB_APP_INSTALLATION_ID`
   - `GITHUB_APP_PRIVATE_KEY`

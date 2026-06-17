@@ -25,6 +25,11 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => children,
   useNavigate: () => navigateMock,
   useRouter: () => ({ invalidate: routerInvalidateMock }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { searchStr: string } }) => string;
+  }) => select({ location: { searchStr: "" } }),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -53,10 +58,6 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-vi.mock("../components/SkillCommentsPanel", () => ({
-  SkillCommentsPanel: () => <div data-testid="skill-comments-panel" />,
-}));
-
 vi.mock("../components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
   TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -72,6 +73,7 @@ describe("SkillDetailPage", () => {
   const storageId = "storage:1" as Id<"_storage">;
 
   beforeEach(() => {
+    window.location.hash = "";
     useQueryMock.mockReset();
     useMutationMock.mockReset();
     getReadmeMock.mockReset();
@@ -1681,6 +1683,207 @@ describe("SkillDetailPage", () => {
     expect(await screen.findByRole("heading", { name: /Skill settings/i })).toBeTruthy();
     expect(screen.getByText("Rename slug")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete skill" })).toBeNull();
+  });
+
+  it.each([
+    {
+      label: "active",
+      availability: {},
+      moderationInfo: null,
+      shouldShowDelete: true,
+    },
+    {
+      label: "soft-deleted",
+      availability: { softDeletedAt: 123 },
+      moderationInfo: null,
+      shouldShowDelete: false,
+    },
+    {
+      label: "hidden by moderation",
+      availability: { moderationStatus: "hidden" as const },
+      moderationInfo: null,
+      shouldShowDelete: false,
+    },
+    {
+      label: "removed by moderation",
+      availability: { moderationStatus: "removed" as const },
+      moderationInfo: null,
+      shouldShowDelete: false,
+    },
+    {
+      label: "legacy hiddenAt-only",
+      availability: { hiddenAt: 123 },
+      moderationInfo: null,
+      shouldShowDelete: true,
+    },
+    {
+      label: "owner-visible hidden public result",
+      availability: {},
+      moderationInfo: {
+        isPendingScan: false,
+        isMalwareBlocked: false,
+        isSuspicious: false,
+        isHiddenByMod: true,
+        isRemoved: false,
+      },
+      shouldShowDelete: false,
+    },
+  ])(
+    "$label skill aligns version Delete visibility with mutation availability",
+    async ({ availability, moderationInfo, shouldShowDelete }) => {
+      useAuthStatusMock.mockReturnValue({
+        isAuthenticated: true,
+        isLoading: false,
+        me: { _id: "users:1", role: "user" },
+      });
+      useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+        if (args === "skip") return undefined;
+        const name = getFunctionName(query as never);
+        if (name === "skills:getBySlug") {
+          return {
+            skill: {
+              _id: "skills:1",
+              slug: "weather",
+              displayName: "Weather",
+              summary: "Get current weather.",
+              ownerUserId: "users:1",
+              ownerPublisherId: "publishers:steipete",
+              tags: {},
+              stats: { stars: 0, downloads: 0 },
+              ...availability,
+            },
+            owner: {
+              _id: "publishers:steipete",
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: "users:1",
+            },
+            latestVersion: {
+              _id: "skillVersions:latest",
+              version: "2.0.0",
+              parsed: {},
+              files: [],
+            },
+            moderationInfo,
+          };
+        }
+        if (
+          name === "skills:listVersions" &&
+          args &&
+          typeof args === "object" &&
+          "limit" in args &&
+          args.limit === 50
+        ) {
+          return [
+            {
+              _id: "skillVersions:latest",
+              version: "2.0.0",
+              createdAt: 2,
+              changelog: "Current skill release",
+              parsed: {},
+              files: [],
+            },
+            {
+              _id: "skillVersions:older",
+              version: "1.0.0",
+              createdAt: 1,
+              changelog: "Older skill release",
+              parsed: {},
+              files: [],
+            },
+          ];
+        }
+        if (name === "publishers:listMine") return [];
+        return undefined;
+      });
+
+      render(<SkillDetailPage slug="weather" />);
+      fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+
+      expect(screen.getByText("Latest")).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Delete version 2.0.0" })).toBeNull();
+      const deleteAction = screen.queryByRole("button", { name: "Delete version 1.0.0" });
+      if (shouldShowDelete) {
+        expect(deleteAction).toBeTruthy();
+      } else {
+        expect(deleteAction).toBeNull();
+      }
+    },
+  );
+
+  it("keeps version Delete hidden from staff-only skill viewers", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:moderator", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((query: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query as never);
+      if (name === "skills:getBySlugForStaff") {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "weather",
+            displayName: "Weather",
+            summary: "Get current weather.",
+            ownerUserId: "users:1",
+            ownerPublisherId: "publishers:steipete",
+            tags: {},
+            stats: { stars: 0, downloads: 0 },
+          },
+          owner: {
+            _id: "publishers:steipete",
+            _creationTime: 0,
+            kind: "user",
+            handle: "steipete",
+            displayName: "Peter",
+            linkedUserId: "users:1",
+          },
+          latestVersion: {
+            _id: "skillVersions:latest",
+            version: "2.0.0",
+            parsed: {},
+            files: [],
+          },
+        };
+      }
+      if (
+        name === "skills:listVersions" &&
+        args &&
+        typeof args === "object" &&
+        "limit" in args &&
+        args.limit === 50
+      ) {
+        return [
+          {
+            _id: "skillVersions:latest",
+            version: "2.0.0",
+            createdAt: 2,
+            changelog: "Current skill release",
+            parsed: {},
+            files: [],
+          },
+          {
+            _id: "skillVersions:older",
+            version: "1.0.0",
+            createdAt: 1,
+            changelog: "Older skill release",
+            parsed: {},
+            files: [],
+          },
+        ];
+      }
+      return undefined;
+    });
+
+    render(<SkillDetailPage slug="weather" />);
+    fireEvent.click(await screen.findByRole("tab", { name: "Versions" }));
+
+    expect(screen.getByText("Latest")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
   });
 
   it("does not show the owner delete action to org skill creators without org admin access", async () => {

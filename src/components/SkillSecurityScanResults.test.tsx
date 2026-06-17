@@ -207,45 +207,6 @@ beforeEach(() => {
 });
 
 describe("SecurityScanResults static guidance", () => {
-  it("renders capability-only states without scanner verdicts", () => {
-    render(
-      <SecurityScanResults
-        capabilityTags={[
-          "posts-externally",
-          "requires-oauth-token",
-          "requires-sensitive-credentials",
-        ]}
-      />,
-    );
-
-    expect(screen.getByText("Capability signals")).toBeTruthy();
-    expect(screen.getByText("Posts externally")).toBeTruthy();
-    expect(screen.getByText("Requires OAuth token")).toBeTruthy();
-    expect(screen.getByText("Requires sensitive credentials")).toBeTruthy();
-  });
-
-  it("renders capability labels separately from scan verdicts", () => {
-    render(
-      <SecurityScanResults
-        capabilityTags={[
-          "crypto",
-          "financial-authority",
-          "requires-wallet",
-          "can-make-purchases",
-          "requires-paid-service",
-        ]}
-        llmAnalysis={{ status: "clean", checkedAt: Date.now() }}
-      />,
-    );
-
-    expect(screen.getByText("Capability signals")).toBeTruthy();
-    expect(screen.getByText("Crypto")).toBeTruthy();
-    expect(screen.getByText("Financial authority")).toBeTruthy();
-    expect(screen.getByText("Requires wallet")).toBeTruthy();
-    expect(screen.getByText("Can make purchases")).toBeTruthy();
-    expect(screen.getByText("Requires paid service")).toBeTruthy();
-  });
-
   it("hides advisory static findings from the public scan panel", () => {
     render(
       <SecurityScanResults

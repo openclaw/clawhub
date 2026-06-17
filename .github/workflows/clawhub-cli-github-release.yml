@@ -236,6 +236,47 @@ jobs:
             exit 1
           fi
 
+      - name: Verify publish proof artifact
+        if: ${{ inputs.publish_run_id != '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PUBLISH_RUN_ID: ${{ inputs.publish_run_id }}
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          PROOF_DIR="$RUNNER_TEMP/clawhub-cli-github-release-publish-proof"
+          rm -rf "$PROOF_DIR"
+          mkdir -p "$PROOF_DIR"
+          gh run download "$PUBLISH_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name "clawhub-cli-npm-publish-${RELEASE_TAG}" \
+            --dir "$PROOF_DIR"
+
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/release-tag.txt")" != "$RELEASE_TAG" ]]; then
+            echo "Publish artifact tag does not match ${RELEASE_TAG}." >&2
+            exit 1
+          fi
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/release-sha.txt")" != "$RELEASE_SHA" ]]; then
+            echo "Publish artifact SHA does not match ${RELEASE_SHA}." >&2
+            exit 1
+          fi
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/package-version.txt")" != "$PACKAGE_VERSION" ]]; then
+            echo "Publish artifact version does not match ${PACKAGE_VERSION}." >&2
+            exit 1
+          fi
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/preflight-only.txt")" != "false" ]]; then
+            echo "Publish artifact must come from a real publish run." >&2
+            exit 1
+          fi
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/npm-tarball-url.txt")" != "$NPM_TARBALL_URL" ]]; then
+            echo "Publish artifact tarball URL does not match npm metadata." >&2
+            exit 1
+          fi
+          if [[ "$(tr -d '\r\n' < "$PROOF_DIR/npm-integrity.txt")" != "$NPM_INTEGRITY" ]]; then
+            echo "Publish artifact integrity does not match npm metadata." >&2
+            exit 1
+          fi
+
       - name: Build release notes
         env:
           RELEASE_TAG: ${{ inputs.tag }}

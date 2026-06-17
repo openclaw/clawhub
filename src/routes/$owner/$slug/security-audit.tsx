@@ -72,12 +72,17 @@ function SkillSecurityAuditRoute() {
   const result = liveResult === undefined ? initialData?.result : liveResult;
   const skill = result?.skill;
   const latestVersion = result?.latestVersion;
+  const githubScan = useQuery(
+    api.skills.getGitHubScanForAudit,
+    skill?.installKind === "github" ? { slug } : "skip",
+  );
+  const audit = latestVersion ?? githubScan;
 
-  if (result === undefined) {
+  if (result === undefined || (skill?.installKind === "github" && githubScan === undefined)) {
     return <SecurityAuditPageSkeleton />;
   }
 
-  if (!skill || !latestVersion) {
+  if (!skill || !audit) {
     return (
       <main className="section">
         <div className="card">Security audit is unavailable for this skill.</div>
@@ -102,21 +107,25 @@ function SkillSecurityAuditRoute() {
         kind: "skill",
         title: skill.displayName,
         name: slug,
-        version: latestVersion.version,
+        version: audit.version,
         owner: result?.owner ?? null,
         ownerUserId: skill.ownerUserId,
         ownerPublisherId: skill.ownerPublisherId ?? null,
         detailPath: `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}`,
       }}
-      sha256hash={latestVersion.sha256hash ?? null}
-      vtAnalysis={latestVersion.vtAnalysis ?? null}
-      llmAnalysis={latestVersion.llmAnalysis ?? null}
-      skillSpectorAnalysis={latestVersion.skillSpectorAnalysis ?? null}
-      staticScan={latestVersion.staticScan ?? null}
+      sha256hash={latestVersion?.sha256hash ?? null}
+      vtAnalysis={latestVersion?.vtAnalysis ?? null}
+      llmAnalysis={audit.llmAnalysis ?? null}
+      skillSpectorAnalysis={audit.skillSpectorAnalysis ?? null}
+      staticScan={audit.staticScan ?? null}
       canManageArtifact={canManageArtifact}
       onRequestRescan={
         canManageArtifact
-          ? () => requestSkillRescan({ skillId: skill._id, version: latestVersion.version })
+          ? () =>
+              requestSkillRescan({
+                skillId: skill._id,
+                ...(latestVersion ? { version: latestVersion.version } : {}),
+              })
           : null
       }
     />

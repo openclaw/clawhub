@@ -20,7 +20,16 @@ const recordDownloadHandler = (
 )._handler;
 
 const recordInstallHandler = (
-  recordPackageInstallInternal as unknown as WrappedHandler<{ packageId: string }, void>
+  recordPackageInstallInternal as unknown as WrappedHandler<
+    {
+      packageId: string;
+      identityKind?: "user" | "ip";
+      identityHash?: string;
+      dayStart?: number;
+      occurredAt?: number;
+    },
+    void
+  >
 )._handler;
 
 const processStatsHandler = (
@@ -97,6 +106,73 @@ describe("package stat events", () => {
         processedAt: undefined,
       }),
     );
+  });
+
+  it("dedupes identity-backed installs before appending stat events", async () => {
+    const insert = vi.fn();
+    const unique = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce({
+      _id: "packageInstallMetricDedupes:existing",
+    });
+    const queryBuilder = {
+      eq: vi.fn(() => queryBuilder),
+    };
+    const withIndex = vi.fn((_indexName: string, buildQuery: (q: unknown) => unknown) => {
+      buildQuery(queryBuilder);
+      return { unique };
+    });
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ withIndex })),
+        get: vi.fn(),
+        normalizeId: vi.fn(),
+        insert,
+        patch: vi.fn(),
+        replace: vi.fn(),
+        delete: vi.fn(),
+        system: {
+          get: vi.fn(),
+          query: vi.fn(),
+        },
+      },
+    };
+    const args = {
+      packageId: "packages:one",
+      identityKind: "ip" as const,
+      identityHash: "hash-ip",
+      dayStart: 86_400_000,
+      occurredAt: 86_500_000,
+    };
+
+    await recordInstallHandler(ctx, args);
+    await recordInstallHandler(ctx, args);
+
+    expect(withIndex).toHaveBeenCalledWith("by_target_metric_identity_day", expect.any(Function));
+    expect(queryBuilder.eq).toHaveBeenCalledWith("targetKind", "package");
+    expect(queryBuilder.eq).toHaveBeenCalledWith("targetId", "packages:one");
+    expect(queryBuilder.eq).toHaveBeenCalledWith("metricKind", "install");
+    expect(queryBuilder.eq).toHaveBeenCalledWith("identityKind", "ip");
+    expect(queryBuilder.eq).toHaveBeenCalledWith("identityHash", "hash-ip");
+    expect(queryBuilder.eq).toHaveBeenCalledWith("dayStart", 86_400_000);
+    expect(insert).toHaveBeenCalledWith(
+      "packageInstallMetricDedupes",
+      expect.objectContaining({
+        targetKind: "package",
+        targetId: "packages:one",
+        metricKind: "install",
+        identityKind: "ip",
+        identityHash: "hash-ip",
+        dayStart: 86_400_000,
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "packageStatEvents",
+      expect.objectContaining({
+        packageId: "packages:one",
+        kind: "install",
+        occurredAt: 86_500_000,
+      }),
+    );
+    expect(insert).toHaveBeenCalledTimes(2);
   });
 
   it("aggregates queued downloads and installs before patching package stats", async () => {

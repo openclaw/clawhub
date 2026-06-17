@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { AlertTriangle, Box, Loader2, Package, Plus, Settings } from "lucide-react";
+import { AlertTriangle, Box, Download, Loader2, Package, Plus, Settings } from "lucide-react";
 import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
@@ -42,7 +42,6 @@ type DashboardSkill = Pick<
   | "forkOf"
   | "latestVersionId"
   | "tags"
-  | "capabilityTags"
   | "badges"
   | "stats"
   | "moderationStatus"
@@ -202,14 +201,19 @@ export function Dashboard() {
             Welcome to ClawHub
           </h1>
           <p className="empty-state-body">
-            You're signed in as @{ownerHandle}. Get started by publishing your first skill or
-            plugin.
+            You're signed in as @{ownerHandle}. Import a public GitHub repo or publish manually.
           </p>
           {publisherSelector}
-          <div className="flex gap-3 justify-center">
+          <div className="flex flex-wrap gap-3 justify-center">
             <Button asChild variant="primary">
+              <Link to="/import">
+                <Download className="h-4 w-4" aria-hidden="true" />
+                Import from GitHub
+              </Link>
+            </Button>
+            <Button asChild>
               <Link to="/skills/publish" search={{ updateSlug: undefined, ownerHandle }}>
-                Publish a Skill
+                Publish manually
               </Link>
             </Button>
             <Button asChild>
@@ -247,12 +251,20 @@ export function Dashboard() {
         <section className="dashboard-collection-block">
           <div className="dashboard-section-header">
             <h2 className="dashboard-collection-title">Skills</h2>
-            <Button asChild size="sm" className="dashboard-section-action">
-              <Link to="/skills/publish" search={{ updateSlug: undefined, ownerHandle }}>
-                <Plus className="h-4 w-4" aria-hidden="true" />
-                New Skill
-              </Link>
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button asChild size="sm" variant="outline" className="dashboard-section-action">
+                <Link to="/import">
+                  <Download className="h-4 w-4" aria-hidden="true" />
+                  Import from GitHub
+                </Link>
+              </Button>
+              <Button asChild size="sm" className="dashboard-section-action">
+                <Link to="/skills/publish" search={{ updateSlug: undefined, ownerHandle }}>
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  New Skill
+                </Link>
+              </Button>
+            </div>
           </div>
           {skills.length === 0 ? (
             <div className="dashboard-inline-empty">
@@ -319,7 +331,7 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
     buildSkillHref(ownerHandle, skill.ownerPublisherId ?? skill.ownerUserId ?? null, skill.slug);
   const settingsHref = skill.settingsHref ?? `${detailHref}/settings`;
   const stats = [
-    { label: "Downloads", value: formatCompactNumber(skill.stats?.downloads ?? 0) },
+    { label: "Installs", value: formatCompactNumber(skill.stats?.installsAllTime ?? 0) },
     { label: "Current version", value: formatVersion(skill.latestVersion?.version) },
     { label: "Last updated", value: formatShortDate(skill.updatedAt) },
   ];
@@ -345,7 +357,7 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
   const validationCount = pkg.inspectorWarningCount ?? 0;
   const titleId = `dashboard-package-title-${pkg._id}`;
   const stats = [
-    { label: "Downloads", value: formatCompactNumber(pkg.stats.downloads ?? 0) },
+    { label: "Installs", value: formatCompactNumber(pkg.stats.installs ?? 0) },
     { label: "Current version", value: formatVersion(pkg.latestVersion) },
     { label: "Last updated", value: formatShortDate(pkg.updatedAt) },
   ];

@@ -620,6 +620,15 @@ describe("public skill list deterministic cursors", () => {
       latestVersionId: "skillVersions:other",
       latestVersionSkillId: undefined,
     });
+    const withIndex = vi.fn(() => ({
+      order: vi.fn(() => ({
+        paginate: vi.fn().mockResolvedValue({
+          page: [digest],
+          isDone: true,
+          continueCursor: "",
+        }),
+      })),
+    }));
     const ctx = {
       db: {
         get: vi.fn(async (id: string) => {
@@ -641,17 +650,7 @@ describe("public skill list deterministic cursors", () => {
         }),
         query: vi.fn((table: string) => {
           if (table !== "skillSearchDigest") throw new Error(`unexpected table ${table}`);
-          return {
-            withIndex: vi.fn(() => ({
-              order: vi.fn(() => ({
-                paginate: vi.fn().mockResolvedValue({
-                  page: [digest],
-                  isDone: true,
-                  continueCursor: "",
-                }),
-              })),
-            })),
-          };
+          return { withIndex };
         }),
       },
     };
@@ -662,6 +661,10 @@ describe("public skill list deterministic cursors", () => {
 
     expect(result.page).toHaveLength(1);
     expect(result.page[0]).toMatchObject({ latestVersion: null });
+    expect(withIndex).toHaveBeenCalledWith(
+      "by_active_stats_installs_all_time",
+      expect.any(Function),
+    );
   });
 });
 

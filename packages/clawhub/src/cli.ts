@@ -46,7 +46,6 @@ import {
   cmdUpdate,
 } from "./cli/commands/skills.js";
 import { cmdStarSkill } from "./cli/commands/star.js";
-import { cmdSync } from "./cli/commands/sync.js";
 import {
   cmdTransferAccept,
   cmdTransferCancel,
@@ -55,20 +54,19 @@ import {
   cmdTransferRequest,
 } from "./cli/commands/transfer.js";
 import { cmdUnstarSkill } from "./cli/commands/unstar.js";
-import { configureCommanderHelp, styleEnvBlock, styleTitle } from "./cli/helpStyle.js";
+import { configureCommanderHelp, styleEnvBlock, styleError, styleTitle } from "./cli/helpStyle.js";
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
-import { fail } from "./cli/ui.js";
-import { readGlobalConfig } from "./config.js";
+import { fail, formatError } from "./cli/ui.js";
+
+const CLI_HELP_HEADER = styleTitle(`🦞 ClawHub CLI ${getCliBuildLabel()}`);
+const HELP_DESCRIPTION = "Display help for command";
 
 const program = new Command()
   .name("clawhub")
-  .description(
-    `${styleTitle(`ClawHub CLI ${getCliBuildLabel()}`)}\n${styleEnvBlock(
-      "install, update, search, and publish skills plus OpenClaw packages.",
-    )}`,
-  )
+  .description(styleEnvBlock("install, update, search, and publish skills plus OpenClaw packages."))
   .version(getCliVersion(), "-V, --cli-version", "Show CLI version")
+  .helpOption("-h, --help", HELP_DESCRIPTION)
   .option("--workdir <dir>", "Working directory (default: cwd)")
   .option("--dir <dir>", "Skills directory (relative to workdir, default: skills)")
   .option("--site <url>", "Site base URL (for browser login)")
@@ -76,6 +74,7 @@ const program = new Command()
   .option("--no-input", "Disable prompts")
   .showHelpAfterError()
   .showSuggestionAfterError()
+  .addHelpCommand("help [command]", HELP_DESCRIPTION)
   .addHelpText(
     "after",
     styleEnvBlock(
@@ -84,13 +83,32 @@ const program = new Command()
   );
 
 configureCommanderHelp(program);
+addCliHelpHeader(program);
+program.configureOutput({
+  outputError: (message, write) => write(styleError(message)),
+});
+
+function addCliHelpHeader(command: Command) {
+  command.addHelpText("beforeAll", `${CLI_HELP_HEADER}\n`);
+}
 
 function registerCommand(parent: Command, path: readonly string[]) {
-  return parent.command(path.at(-1) ?? "");
+  const command = parent.command(path.at(-1) ?? "").helpOption("-h, --help", HELP_DESCRIPTION);
+  configureCommanderHelp(command);
+  return command;
 }
 
 function registerCommandGroup(parent: Command, path: readonly string[]) {
-  return parent.command(path.at(-1) ?? "");
+  const command = parent.command(path.at(-1) ?? "").helpOption("-h, --help", HELP_DESCRIPTION);
+  configureCommanderHelp(command);
+  return command;
+}
+
+function applyCommandHelpGroups(parent: Command, groups: Record<string, string>) {
+  for (const command of parent.commands) {
+    const group = groups[command.name()];
+    if (group) command.helpGroup(group);
+  }
 }
 
 function validateTopLevelCommand(args: string[]) {
@@ -199,11 +217,11 @@ async function pathExists(path: string) {
 }
 
 registerCommand(program, ["login"])
-  .description("Log in (opens browser or stores token)")
+  .description("Log in with device flow or store a token")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "CLI token")
-  .option("--no-browser", "Do not open browser (requires --token)")
-  .option("--device", "Use Device Flow (for headless/remote environments)")
+  .option("--label <label>", "Token label", "CLI device login")
+  .option("--no-browser", "Do not open browser (device flow prints a verification URL)")
+  .option("--device", "Use device flow (default)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -235,11 +253,11 @@ const auth = registerCommandGroup(program, ["auth"])
   .showSuggestionAfterError();
 
 registerCommand(auth, ["auth", "login"])
-  .description("Log in (opens browser or stores token)")
+  .description("Log in with device flow or store a token")
   .option("--token <token>", "API token")
-  .option("--label <label>", "Token label (browser flow only)", "CLI token")
-  .option("--no-browser", "Do not open browser (requires --token)")
-  .option("--device", "Use Device Flow (for headless/remote environments)")
+  .option("--label <label>", "Token label", "CLI device login")
+  .option("--no-browser", "Do not open browser (device flow prints a verification URL)")
+  .option("--device", "Use device flow (default)")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();
     await cmdLoginFlow(opts, options, isInputAllowed());
@@ -335,7 +353,7 @@ registerCommand(program, ["explore"])
   )
   .option(
     "--sort <order>",
-    "Sort by newest, downloads, rating, installs, installsAllTime, or trending",
+    "Sort by newest, rating, installs, installsAllTime, or trending",
     "newest",
   )
   .option("--json", "Output JSON")
@@ -369,10 +387,16 @@ registerCommand(program, ["publish"])
   .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
   .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
-  .option("--version <version>", "Version (semver)")
+  .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
   .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--dry-run", "Preview without publishing")
+  .option("--json", "Output JSON")
+  .option("--source-repo <repo>", "GitHub source repository")
+  .option("--source-commit <sha>", "GitHub source commit")
+  .option("--source-ref <ref>", "GitHub source ref")
+  .option("--source-path <path>", "Path to the skill within the source repository")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
@@ -408,9 +432,13 @@ registerCommand(scanCmd, ["scan", "download"])
   });
 
 registerCommand(program, ["delete"])
-  .description("Soft-delete one of your skills")
-  .argument("<skill>", "Skill to delete")
-  .option("--reason <text>", "Moderation note/reason")
+  .description("Soft-delete a skill or permanently delete one version")
+  .argument("<skill>", "Skill ref")
+  .option(
+    "--version <version>",
+    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+  )
+  .option("--reason <text>", "Whole-skill moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
@@ -460,10 +488,16 @@ registerCommand(skill, ["skill", "publish"])
   .option("--owner <handle>", "Publish under an org/user publisher handle")
   .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
   .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
-  .option("--version <version>", "Version (semver)")
+  .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
   .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--dry-run", "Preview without publishing")
+  .option("--json", "Output JSON")
+  .option("--source-repo <repo>", "GitHub source repository")
+  .option("--source-commit <sha>", "GitHub source commit")
+  .option("--source-ref <ref>", "GitHub source ref")
+  .option("--source-path <path>", "Path to the skill within the source repository")
   .action(async (folder, options) => {
     const opts = await resolveGlobalOpts();
     await cmdPublish(opts, folder, options);
@@ -593,8 +627,12 @@ registerCommand(packageCmd, ["package", "validate"])
   });
 
 registerCommand(packageCmd, ["package", "delete"])
-  .description("Soft-delete a package and all releases")
+  .description("Soft-delete a package or permanently delete one version")
   .argument("<name>", "Package name")
+  .option(
+    "--version <version>",
+    "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
+  )
   .option("--yes", "Skip confirmation")
   .option("--json", "Output JSON")
   .action(async (name, options) => {
@@ -821,62 +859,52 @@ registerCommand(program, ["unstar"])
     await cmdUnstarSkill(opts, slug, options, isInputAllowed());
   });
 
-registerCommand(program, ["sync"])
-  .description("Scan local skills and publish new/updated ones")
-  .option("--root <dir...>", "Extra scan roots (one or more)")
-  .option("--all", "Upload all new/updated skills without prompting")
-  .option("--dry-run", "Show what would be uploaded")
-  .option("--json", "Output JSON")
-  .option("--owner <handle>", "Publish under an org/user publisher handle")
-  .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
-  .option("--changelog <text>", "Changelog to use for updates (non-interactive)")
-  .option("--tags <tags>", "Comma-separated tags", "latest")
-  .option("--concurrency <n>", "Concurrent registry/file checks", (value) =>
-    Number.parseInt(value, 10),
-  )
-  .option("--source-repo <repo>", "GitHub repo URL or owner/name for source provenance")
-  .option("--source-commit <sha>", "Git commit SHA for source provenance")
-  .option("--source-ref <ref>", "Git ref for source provenance")
-  .addOption(
-    new Option("--clawdbot-roots", "Include Clawdbot-configured roots").default(true, "enabled"),
-  )
-  .addOption(new Option("--no-clawdbot-roots", "Disable Clawdbot-configured roots"))
-  .action(async (options) => {
-    const opts = await resolveGlobalOpts();
-    const bump =
-      options.bump === "patch" || options.bump === "minor" || options.bump === "major"
-        ? options.bump
-        : fail("--bump must be patch, minor, or major");
-    const concurrency = options.concurrency ?? 6;
-    if (concurrency < 1 || concurrency > 32) fail("--concurrency must be between 1 and 32");
-    await cmdSync(
-      opts,
-      {
-        root: options.root,
-        all: options.all,
-        dryRun: options.dryRun,
-        json: options.json,
-        owner: options.owner,
-        bump,
-        changelog: options.changelog,
-        tags: options.tags,
-        concurrency,
-        clawdbotRoots: options.clawdbotRoots,
-        sourceRepo: options.sourceRepo,
-        sourceCommit: options.sourceCommit,
-        sourceRef: options.sourceRef,
-      },
-      isInputAllowed(),
-    );
-  });
+applyCommandHelpGroups(program, {
+  login: "Auth:",
+  logout: "Auth:",
+  whoami: "Auth:",
+  auth: "Auth:",
+  search: "Skills:",
+  install: "Skills:",
+  update: "Skills:",
+  uninstall: "Skills:",
+  list: "Skills:",
+  pin: "Skills:",
+  unpin: "Skills:",
+  explore: "Skills:",
+  inspect: "Skills:",
+  star: "Skills:",
+  unstar: "Skills:",
+  publish: "Publishing:",
+  skill: "Publishing:",
+  publisher: "Publishing:",
+  package: "Packages:",
+  delete: "Moderation:",
+  hide: "Moderation:",
+  undelete: "Moderation:",
+  unhide: "Moderation:",
+  transfer: "Moderation:",
+  help: "Help:",
+});
 
-program.action(async () => {
-  const opts = await resolveGlobalOpts();
-  const cfg = await readGlobalConfig();
-  if (cfg?.token) {
-    await cmdSync(opts, {}, isInputAllowed());
-    return;
-  }
+applyCommandHelpGroups(packageCmd, {
+  explore: "Discovery:",
+  inspect: "Discovery:",
+  download: "Artifacts:",
+  verify: "Artifacts:",
+  pack: "Publishing:",
+  publish: "Publishing:",
+  "trusted-publisher": "Publishing:",
+  delete: "Moderation:",
+  undelete: "Moderation:",
+  transfer: "Moderation:",
+  report: "Moderation:",
+  "moderation-status": "Moderation:",
+  readiness: "Operations:",
+  "migration-status": "Operations:",
+});
+
+program.action(() => {
   program.outputHelp();
   process.exitCode = 0;
 });
@@ -884,6 +912,5 @@ program.action(async () => {
 validateTopLevelCommand(process.argv.slice(2));
 
 void program.parseAsync(process.argv).catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  fail(message);
+  fail(formatError(error));
 });

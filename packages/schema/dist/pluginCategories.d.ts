@@ -49,5 +49,4 @@ export declare function derivePluginCategoryTags(input: {
     displayName?: string;
     runtimeId?: string;
     summary?: string;
-    capabilityTags?: string[] | null;
 }): PluginCategorySlug[];

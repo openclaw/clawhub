@@ -23,7 +23,7 @@ describe("packageRegistry", () => {
     expect(normalizePackageName("@demo/publish")).toBe("@demo/publish");
   });
 
-  it("extracts code plugin compatibility and capabilities", () => {
+  it("extracts code plugin compatibility and verification metadata", () => {
     const result = extractCodePluginArtifacts({
       packageName: "@scope/demo-plugin",
       packageJson: {
@@ -70,23 +70,7 @@ describe("packageRegistry", () => {
     expect(result.runtimeId).toBe("demo.plugin");
     expect(result.compatibility?.pluginApiRange).toBe("^1.2.0");
     expect(result.compatibility?.minGatewayVersion).toBe("2026.3.0");
-    expect(result.capabilities.executesCode).toBe(true);
-    expect(result.capabilities.hostTargets).toEqual(["darwin-arm64", "linux-x64"]);
-    expect(result.capabilities.toolNames).toContain("demoTool");
-    expect(result.capabilities.capabilityTags).toContain("host:darwin-arm64");
-    expect(result.capabilities.capabilityTags).toContain("host-os:darwin");
-    expect(result.capabilities.capabilityTags).toContain("host-arch:arm64");
-    expect(result.capabilities.capabilityTags).toContain("host-os:linux");
-    expect(result.capabilities.capabilityTags).toContain("host-arch:x64");
-    expect(result.capabilities.capabilityTags).toContain("environment:declared");
-    expect(result.capabilities.capabilityTags).toContain("requires:browser");
-    expect(result.capabilities.capabilityTags).toContain("requires:desktop");
-    expect(result.capabilities.capabilityTags).toContain("requires:native-deps");
-    expect(result.capabilities.capabilityTags).toContain("native-dep:sharp");
-    expect(result.capabilities.capabilityTags).toContain("requires:external-service");
-    expect(result.capabilities.capabilityTags).toContain("external-service:github");
-    expect(result.capabilities.capabilityTags).toContain("os-permission:screen-recording");
-    expect(result.capabilities.capabilityTags).toContain("binary:ffmpeg");
+    expect(result).not.toHaveProperty("capabilities");
     expect(result.verification.tier).toBe("source-linked");
     expect(result.verification.scanStatus).toBe("not-run");
   });
@@ -115,8 +99,9 @@ describe("packageRegistry", () => {
       },
     });
 
-    expect(result.capabilities.hostTargets).toEqual([]);
-    expect(result.capabilities.capabilityTags).not.toContain("environment:declared");
+    expect(result.runtimeId).toBe("demo.plugin");
+    expect(result.compatibility?.pluginApiRange).toBe("^1.0.0");
+    expect(result).not.toHaveProperty("capabilities");
   });
 
   it("requires source metadata for code plugins", () => {
@@ -202,8 +187,8 @@ describe("packageRegistry", () => {
       pluginManifest: { id: "demo-bundle" },
     });
 
-    expect(result.capabilities.hostTargets).toEqual([]);
-    expect(result.capabilities.capabilityTags).toContain("bundle-only");
+    expect(result.runtimeId).toBe("demo-bundle");
+    expect(result).not.toHaveProperty("capabilities");
   });
 
   it("validates package name consistency and summary extraction", () => {

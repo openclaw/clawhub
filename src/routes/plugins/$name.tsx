@@ -1,4 +1,10 @@
-import { createFileRoute, Outlet, redirect, useRouterState } from "@tanstack/react-router";
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useRouter,
+  useRouterState,
+} from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { AlertTriangle, Download, Info, Upload } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
@@ -13,6 +19,10 @@ import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { OfficialTag } from "../../components/OfficialBadge";
+import {
+  PLUGIN_VERSIONS_PAGE_SIZE,
+  PluginVersionsPanel,
+} from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Alert, AlertDescription } from "../../components/ui/alert";
@@ -26,8 +36,9 @@ import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlu
 import {
   fetchPackageDetail,
   fetchPackageReadme,
-  getPackageArtifactDownloadPath,
   fetchPackageVersion,
+  fetchPackageVersions,
+  getPackageArtifactDownloadPath,
   getPackageDownloadPath,
   isRateLimitedPackageApiError,
   type PackageDetailResponse,
@@ -47,7 +58,7 @@ type PluginDetailRateLimitState = {
   retryAfterSeconds: number | null;
 } | null;
 
-type PluginDetailTab = "readme" | "compatibility" | "validation";
+type PluginDetailTab = "readme" | "versions" | "compatibility" | "validation";
 
 type PluginInspectorFinding = {
   packageName: string;
@@ -79,6 +90,7 @@ type PluginInspectorValidationSummary = {
 export type PluginDetailLoaderData = {
   detail: PackageDetailResponse;
   version: PackageVersionDetail | null;
+  versions: Awaited<ReturnType<typeof fetchPackageVersions>> | null;
   readme: string | null;
   rateLimited: PluginDetailRateLimitState;
 };
@@ -98,6 +110,7 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
         return {
           detail: { package: null, owner: null },
           version: null,
+          versions: null,
           readme: null,
           rateLimited: {
             scope: "detail",
@@ -116,23 +129,25 @@ export async function loadPluginDetail(requestedName: string): Promise<PluginDet
   }
 
   if (!detail.package) {
-    return { detail, version: null, readme: null, rateLimited: null };
+    return { detail, version: null, versions: null, readme: null, rateLimited: null };
   }
 
   try {
-    const [version, readme] = await Promise.all([
+    const [version, versions, readme] = await Promise.all([
       detail.package.latestVersion
         ? fetchPackageVersion(resolvedName, detail.package.latestVersion)
         : Promise.resolve(null),
+      fetchPackageVersions(resolvedName, { limit: PLUGIN_VERSIONS_PAGE_SIZE }).catch(() => null),
       fetchPackageReadme(resolvedName),
     ]);
 
-    return { detail, version, readme, rateLimited: null };
+    return { detail, version, versions, readme, rateLimited: null };
   } catch (error) {
     if (isRateLimitedPackageApiError(error)) {
       return {
         detail,
         version: null,
+        versions: null,
         readme: null,
         rateLimited: {
           scope: "metadata",
@@ -202,14 +217,6 @@ export const Route = createFileRoute("/plugins/$name")({
   component: PluginDetailRoute,
 });
 
-function formatCapabilityValue(value: unknown): string {
-  if (typeof value === "boolean") return value ? "Yes" : "No";
-  if (typeof value === "number") return String(value);
-  if (typeof value === "string") return value;
-  if (Array.isArray(value)) return value.length === 0 ? "None" : value.join(", ");
-  return JSON.stringify(value);
-}
-
 function formatArtifactSize(value: number | null | undefined): string | null {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return null;
   if (value < 1024) return `${value} B`;
@@ -226,14 +233,15 @@ function formatArtifactSize(value: number | null | undefined): string | null {
 function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
   const hash = hashValue.replace("#", "");
   if (hash === "warnings") return "validation";
-  if (hash === "capabilities" || hash === "verification") return "compatibility";
-  return hash === "compatibility" || hash === "validation" ? hash : "readme";
+  if (hash === "verification") return "compatibility";
+  return hash === "versions" || hash === "compatibility" || hash === "validation" ? hash : "readme";
 }
 
 function PluginDetailTabs({
   activeTab,
   setActiveTab,
   readmePanel,
+  versionsPanel,
   compatibilityPanel,
   validationPanel,
   validationCount,
@@ -241,10 +249,12 @@ function PluginDetailTabs({
   activeTab: PluginDetailTab;
   setActiveTab: (tab: PluginDetailTab) => void;
   readmePanel: ReactNode;
+  versionsPanel: ReactNode;
   compatibilityPanel: ReactNode | null;
   validationPanel: ReactNode | null;
   validationCount: number;
 }) {
+  const [hasMountedVersions, setHasMountedVersions] = useState(false);
   const selectTab = (tab: PluginDetailTab) => {
     setActiveTab(tab);
     if (typeof window === "undefined") return;
@@ -257,11 +267,16 @@ function PluginDetailTabs({
   };
 
   const effectiveActiveTab =
-    activeTab === "compatibility" && compatibilityPanel
-      ? "compatibility"
-      : activeTab === "validation" && validationPanel
-        ? "validation"
-        : "readme";
+    activeTab === "versions"
+      ? "versions"
+      : activeTab === "compatibility" && compatibilityPanel
+        ? "compatibility"
+        : activeTab === "validation" && validationPanel
+          ? "validation"
+          : "readme";
+  useEffect(() => {
+    if (effectiveActiveTab === "versions") setHasMountedVersions(true);
+  }, [effectiveActiveTab]);
   const activePanel =
     effectiveActiveTab === "compatibility" && compatibilityPanel
       ? compatibilityPanel
@@ -280,6 +295,15 @@ function PluginDetailTabs({
           onClick={() => selectTab("readme")}
         >
           README
+        </button>
+        <button
+          className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={effectiveActiveTab === "versions"}
+          onClick={() => selectTab("versions")}
+        >
+          Versions
         </button>
         {compatibilityPanel ? (
           <button
@@ -304,7 +328,12 @@ function PluginDetailTabs({
           </button>
         ) : null}
       </div>
-      <div className="tab-body">{activePanel}</div>
+      <div className="tab-body">
+        {effectiveActiveTab === "versions" ? null : activePanel}
+        {hasMountedVersions || effectiveActiveTab === "versions" ? (
+          <div hidden={effectiveActiveTab !== "versions"}>{versionsPanel}</div>
+        ) : null}
+      </div>
     </div>
   );
 }
@@ -325,14 +354,18 @@ export function PluginDetailPending() {
   );
 }
 
-export function PluginDetailPage({
-  name,
-  loaderData,
-}: {
+type PluginDetailPageProps = {
   name: string;
   loaderData: PluginDetailLoaderData;
-}) {
-  const { detail, version, readme, rateLimited } = loaderData;
+};
+
+export function PluginDetailPage(props: PluginDetailPageProps) {
+  return <PluginDetailPageContent key={props.name} {...props} />;
+}
+
+function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
+  const { detail, version, versions, readme, rateLimited } = loaderData;
+  const router = useRouter();
   const pathname = useRouterState({ select: (state) => state.location.pathname });
   const { me } = useAuthStatus();
   const isNestedPluginRoute =
@@ -341,6 +374,12 @@ export function PluginDetailPage({
   const manageLookupName = detail.package?.name ?? manageCandidateNames[0] ?? name;
   const manageContext = useQuery(
     api.packages.getManageContext,
+    me && !isNestedPluginRoute && detail.package
+      ? { name: manageLookupName, candidateNames: manageCandidateNames }
+      : "skip",
+  );
+  const canDeleteVersions = useQuery(
+    api.packages.canDeleteVersions,
     me && !isNestedPluginRoute && detail.package
       ? { name: manageLookupName, candidateNames: manageCandidateNames }
       : "skip",
@@ -356,10 +395,7 @@ export function PluginDetailPage({
   const authorInspectorFindings = Array.isArray(inspectorFindings)
     ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
     : undefined;
-  const [activeTab, setActiveTab] = useState<PluginDetailTab>(() => {
-    if (typeof window === "undefined") return "readme";
-    return pluginDetailTabFromHash(window.location.hash);
-  });
+  const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
   useEffect(() => {
     const syncTabFromHash = () => setActiveTab(pluginDetailTabFromHash(window.location.hash));
     window.addEventListener("hashchange", syncTabFromHash);
@@ -415,7 +451,6 @@ export function PluginDetailPage({
         ? `openclaw plugins install clawhub:${pkg.name}`
         : `openclaw skills install ${pkg.name}`;
 
-  const capabilities = latestRelease?.capabilities ?? pkg.capabilities;
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const verification = latestRelease?.verification ?? pkg.verification;
   const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
@@ -435,10 +470,6 @@ export function PluginDetailPage({
         displayName: pkg.displayName,
       }).toString()}`
     : null;
-  const executesCodeValue =
-    typeof capabilities?.executesCode === "boolean"
-      ? formatCapabilityValue(capabilities.executesCode)
-      : null;
   const compatEntries = compatibility
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
@@ -449,6 +480,15 @@ export function PluginDetailPage({
       <p className="empty-state-title">No README available</p>
       <p className="empty-state-body">This plugin doesn't have a README yet.</p>
     </div>
+  );
+  const versionsPanel = (
+    <PluginVersionsPanel
+      packageName={pkg.name}
+      versions={versions}
+      latestVersion={pkg.latestVersion ?? null}
+      canDeleteVersions={canDeleteVersions === true}
+      onVersionDeleted={() => router.invalidate()}
+    />
   );
   const compatibilityPanel =
     compatEntries.length > 0 || artifact ? (
@@ -635,12 +675,7 @@ export function PluginDetailPage({
     </span>
   ) : null;
   const hasSourceMetadata = Boolean(
-    sourceRepoLink ||
-    ownerMetadataValue ||
-    latestRelease ||
-    executesCodeValue ||
-    pkg.latestVersion ||
-    tagMetadataValue,
+    sourceRepoLink || ownerMetadataValue || latestRelease || pkg.latestVersion || tagMetadataValue,
   );
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
@@ -697,8 +732,8 @@ export function PluginDetailPage({
                   density="compact"
                   blocks={[
                     {
-                      label: "Downloads",
-                      value: formatCompactStat(pkg.stats?.downloads ?? 0),
+                      label: "Installs",
+                      value: formatCompactStat(pkg.stats?.installs ?? 0),
                       large: true,
                     },
                     { label: "Repository", value: sourceRepoLink },
@@ -710,7 +745,6 @@ export function PluginDetailPage({
                           value: securitySummary,
                         }
                       : { label: "", value: null },
-                    { label: "Executes code", value: executesCodeValue },
                     {
                       grid: [
                         {
@@ -775,6 +809,7 @@ export function PluginDetailPage({
             activeTab={activeTab}
             setActiveTab={setActiveTab}
             readmePanel={readmePanel}
+            versionsPanel={versionsPanel}
             compatibilityPanel={compatibilityPanel}
             validationPanel={validationPanel}
             validationCount={validationCount}

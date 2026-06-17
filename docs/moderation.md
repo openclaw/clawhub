@@ -1,7 +1,7 @@
 ---
 summary: "How ClawHub reports, moderation holds, hidden listings, bans, and account standing work."
 read_when:
-  - Reporting a skill, plugin, package, or comment
+  - Reporting a skill, plugin, or package
   - Recovering from a held, hidden, or blocked listing
   - Understanding ClawHub moderation, bans, or account standing
 title: "Moderation and Account Safety"
@@ -20,11 +20,12 @@ This page covers moderation and account standing. For audit labels such as
 [Security Audits](./security-audits.md).
 
 See also [Security](./security.md) and
-[Acceptable usage](./acceptable-usage.md).
+[Acceptable usage](./acceptable-usage.md). For copyright or other content
+rights concerns, use [Content Rights Requests](./content-rights.md).
 
 ## Reports
 
-Signed-in users can report skills, plugins, packages, and comments.
+Signed-in users can report skills, plugins, and packages.
 
 Use ClawHub reports only for unsafe marketplace content, such as:
 
@@ -32,7 +33,7 @@ Use ClawHub reports only for unsafe marketplace content, such as:
 - misleading metadata
 - undeclared credentials or permission requirements
 - suspicious install instructions
-- scam comments or impersonation
+- impersonation
 - bad-faith registrations or trademark misuse
 - content that violates [Acceptable usage](./acceptable-usage.md)
 
@@ -51,6 +52,24 @@ advisories for vulnerabilities in third-party skills or plugins.
 
 Good reports are specific and actionable. Abuse of reporting can itself lead to
 account action.
+
+## Org and namespace claims
+
+Org, brand, package-scope, owner-handle, or namespace ownership disputes should
+use the
+[Org / Namespace Claim issue form](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml),
+not the in-product report flow or the account appeal form.
+
+Use that form when you need ClawHub staff to review non-sensitive proof that a
+namespace should be reserved, transferred, renamed, hidden, quarantined, aliased,
+or otherwise reviewed. Useful public evidence includes GitHub org or repo
+control, domain or official email-domain proof, package-registry scope control,
+trademark or brand evidence, source repo history, package history, and public
+project docs.
+
+Do not include secrets, private documents, private legal files, personal identity
+documents, API tokens, or DNS challenge tokens in a public issue. The issue form
+asks whether sensitive evidence needs a private staff channel.
 
 ## Moderation holds
 

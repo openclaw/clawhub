@@ -42,7 +42,6 @@ import {
   MAX_PACKAGE_MULTIPART_BYTES,
   normalizeOpenClawExternalPluginCompatibility,
   type PackageArtifactSummary,
-  type PackageCapabilitySummary,
   type PackageCompatibility,
   type PackageFamily,
   type PackageTrustedPublisher,
@@ -54,7 +53,14 @@ import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import {
+  createCrabLoader,
+  fail,
+  formatError,
+  isInteractive,
+  promptConfirm,
+  styleText,
+} from "../ui.js";
 import {
   fetchGitHubSource,
   normalizeGitHubRepo,
@@ -122,20 +128,6 @@ type PackageInspectOptions = {
 type PackageExploreOptions = {
   family?: PackageFamily;
   official?: boolean;
-  executesCode?: boolean;
-  target?: string;
-  os?: string;
-  arch?: string;
-  libc?: string;
-  requiresBrowser?: boolean;
-  requiresDesktop?: boolean;
-  requiresNativeDeps?: boolean;
-  requiresExternalService?: boolean;
-  externalService?: string;
-  binary?: string;
-  osPermission?: string;
-  artifactKind?: "legacy-zip" | "npm-pack";
-  npmMirror?: boolean;
   limit?: number;
   json?: boolean;
 };
@@ -225,9 +217,10 @@ type PackageTrustedPublisherDeleteOptions = {
 type PackageDeleteOptions = {
   yes?: boolean;
   json?: boolean;
+  version?: string;
 };
 
-type PackageUndeleteOptions = PackageDeleteOptions;
+type PackageUndeleteOptions = Omit<PackageDeleteOptions, "version">;
 
 type PackageTransferOptions = {
   to: string;
@@ -295,22 +288,6 @@ type PackedClawPack = {
   identity: ArtifactIdentity;
 };
 
-function appendPackageExploreFilters(url: URL, options: PackageExploreOptions) {
-  if (options.target) url.searchParams.set("target", options.target);
-  if (options.os) url.searchParams.set("os", options.os);
-  if (options.arch) url.searchParams.set("arch", options.arch);
-  if (options.libc) url.searchParams.set("libc", options.libc);
-  if (options.requiresBrowser) url.searchParams.set("requiresBrowser", "true");
-  if (options.requiresDesktop) url.searchParams.set("requiresDesktop", "true");
-  if (options.requiresNativeDeps) url.searchParams.set("requiresNativeDeps", "true");
-  if (options.requiresExternalService) url.searchParams.set("requiresExternalService", "true");
-  if (options.externalService) url.searchParams.set("externalService", options.externalService);
-  if (options.binary) url.searchParams.set("binary", options.binary);
-  if (options.osPermission) url.searchParams.set("osPermission", options.osPermission);
-  if (options.artifactKind) url.searchParams.set("artifactKind", options.artifactKind);
-  if (options.npmMirror) url.searchParams.set("npmMirror", "true");
-}
-
 type PrintableFile = {
   path: string;
   size: number | null;
@@ -336,7 +313,7 @@ export async function cmdExplorePackages(
   const trimmedQuery = query.trim();
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(trimmedQuery ? "Searching packages" : "Listing packages");
+  const spinner = createCrabLoader(trimmedQuery ? "Searching packages" : "Listing packages");
   try {
     const limit = clampLimit(options.limit ?? 25, 100);
     if (trimmedQuery) {
@@ -345,10 +322,6 @@ export async function cmdExplorePackages(
       url.searchParams.set("limit", String(limit));
       if (options.family) url.searchParams.set("family", options.family);
       if (options.official) url.searchParams.set("isOfficial", "true");
-      if (typeof options.executesCode === "boolean") {
-        url.searchParams.set("executesCode", String(options.executesCode));
-      }
-      appendPackageExploreFilters(url, options);
       const result = await apiRequest(
         registry,
         { method: "GET", url: url.toString(), token },
@@ -379,10 +352,6 @@ export async function cmdExplorePackages(
     url.searchParams.set("limit", String(limit));
     if (options.family === "skill") url.searchParams.set("family", "skill");
     if (options.official) url.searchParams.set("isOfficial", "true");
-    if (typeof options.executesCode === "boolean") {
-      url.searchParams.set("executesCode", String(options.executesCode));
-    }
-    appendPackageExploreFilters(url, options);
     const result = await apiRequest(
       registry,
       { method: "GET", url: url.toString(), token },
@@ -416,7 +385,7 @@ export async function cmdInspectPackage(
 
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Fetching package");
+  const spinner = createCrabLoader("Fetching package");
   try {
     const detail = await apiRequestPackageDetail(registry, trimmed, token);
     if (!detail.package) {
@@ -491,12 +460,10 @@ export async function cmdInspectPackage(
       printCompatibility(
         versionResult.version.compatibility ?? detail.package.compatibility ?? null,
       );
-      printCapabilities(versionResult.version.capabilities ?? detail.package.capabilities ?? null);
       printVerification(versionResult.version.verification ?? detail.package.verification ?? null);
       printArtifact(versionResult.version.artifact ?? detail.package.artifact ?? null);
     } else if (shouldPrintMeta) {
       printCompatibility(detail.package.compatibility ?? null);
-      printCapabilities(detail.package.capabilities ?? null);
       printVerification(detail.package.verification ?? null);
       printArtifact(detail.package.artifact ?? null);
     }
@@ -543,7 +510,7 @@ export async function cmdGetPackageTrustedPublisher(
   const trimmed = normalizePackageNameOrFail(packageName);
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Fetching trusted publisher");
+  const spinner = createCrabLoader("Fetching trusted publisher");
   try {
     const result = await apiRequestPackageTrustedPublisher(registry, trimmed, token);
     spinner.stop();
@@ -576,7 +543,7 @@ export async function cmdSetPackageTrustedPublisher(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Saving trusted publisher");
+  const spinner = createCrabLoader("Saving trusted publisher");
   try {
     const result = await apiRequest(
       registry,
@@ -615,7 +582,7 @@ export async function cmdDeletePackageTrustedPublisher(
   const trimmed = normalizePackageNameOrFail(packageName);
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Deleting trusted publisher");
+  const spinner = createCrabLoader("Deleting trusted publisher");
   try {
     const result = await apiRequest(
       registry,
@@ -672,7 +639,9 @@ export async function cmdPackPackage(
   const packDestination = resolve(opts.workdir, options.packDestination ?? ".");
   await mkdir(packDestination, { recursive: true });
 
-  const spinner = options.json ? null : createSpinner(`Packing ${packageName}@${packageVersion}`);
+  const spinner = options.json
+    ? null
+    : createCrabLoader(`Packing ${packageName}@${packageVersion}`);
   try {
     const packed = await createClawPackFromFolder({
       sourcePath,
@@ -928,7 +897,7 @@ export async function cmdPublishPackage(
     const registry = await getRegistry(opts, { cache: true });
     const spinner = options.json
       ? null
-      : createSpinner(`Preparing ${plan.payload.name}@${plan.payload.version}`);
+      : createCrabLoader(`Preparing ${plan.payload.name}@${plan.payload.version}`);
     try {
       const publishToken = await resolvePackagePublishToken({
         registry,
@@ -1171,7 +1140,7 @@ export async function cmdDownloadPackage(
 
   const token = await getOptionalAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner("Resolving package artifact");
+  const spinner = options.json ? null : createCrabLoader("Resolving package artifact");
   try {
     const targetVersion = await resolvePackageVersion(registry, trimmed, {
       token,
@@ -1232,7 +1201,7 @@ export async function cmdVerifyPackage(
     fail("--package is required with --version or --tag");
   }
 
-  const spinner = options.json ? null : createSpinner("Reading artifact");
+  const spinner = options.json ? null : createCrabLoader("Reading artifact");
   try {
     const bytes = new Uint8Array(await readFile(targetFile));
     const identity = computeArtifactIdentity(bytes);
@@ -1306,27 +1275,36 @@ export async function cmdDeletePackage(
 ) {
   const name = nameArg.trim();
   if (!name) fail("Package name required");
+  const version = normalizeDeleteVersion(options.version);
 
   if (!options.yes) {
     if (!isInteractive() || inputAllowed === false) fail("Pass --yes (no input)");
-    const ok = await promptConfirm(`Delete ${name}? (soft delete package and all releases)`);
+    const ok = await promptConfirm(
+      version
+        ? `Delete ${name} version ${version}? (permanent; cannot be restored or republished; publish a replacement first if deleting the current latest version)`
+        : `Delete ${name}? (soft delete package and all releases)`,
+    );
     if (!ok) return undefined;
   }
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Deleting ${name}`);
+  const target = version ? `${name} version ${version}` : name;
+  const spinner = createCrabLoader(`Deleting ${target}`);
   try {
     const result = await apiRequest(
       registry,
       {
         method: "DELETE",
-        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}`,
+        path: `${ApiRoutes.packages}/${encodeURIComponent(name)}${
+          version ? `/versions/${encodeURIComponent(version)}` : ""
+        }`,
         token,
+        ...(version ? { body: { version }, retryCount: 0 } : {}),
       },
       ApiV1DeleteResponseSchema,
     );
-    spinner.succeed(`OK. Deleted ${name}`);
+    spinner.succeed(`OK. Deleted ${target}`);
     if (options.json) {
       console.log(JSON.stringify(result, null, 2));
     }
@@ -1335,6 +1313,13 @@ export async function cmdDeletePackage(
     spinner.fail(formatError(error));
     throw error;
   }
+}
+
+function normalizeDeleteVersion(value: string | undefined) {
+  if (value === undefined) return undefined;
+  const version = value.trim();
+  if (!version) fail("--version cannot be empty");
+  return version;
 }
 
 export async function cmdUndeletePackage(
@@ -1354,7 +1339,7 @@ export async function cmdUndeletePackage(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Restoring ${name}`);
+  const spinner = createCrabLoader(`Restoring ${name}`);
   try {
     const result = await apiRequest(
       registry,
@@ -1388,7 +1373,7 @@ export async function cmdTransferPackage(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Transferring ${name} to @${toOwner}`);
+  const spinner = createCrabLoader(`Transferring ${name} to @${toOwner}`);
   try {
     const result = await apiRequest(
       registry,
@@ -1426,7 +1411,7 @@ export async function cmdReportPackage(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Reporting ${trimmed}`);
+  const spinner = options.json ? null : createCrabLoader(`Reporting ${trimmed}`);
   try {
     const result = await apiRequest(
       registry,
@@ -1748,7 +1733,7 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function spinnerText(spinner: ReturnType<typeof createSpinner> | null, text: string) {
+function spinnerText(spinner: ReturnType<typeof createCrabLoader> | null, text: string) {
   if (spinner) spinner.text = text;
 }
 
@@ -1773,8 +1758,11 @@ function formatPackageLine(item: {
     item.verificationTier ?? null,
   ].filter(Boolean);
   const version = item.latestVersion ? ` v${item.latestVersion}` : "";
-  const summary = item.summary ? `  ${item.summary}` : "";
-  return `${item.name}${version}  ${item.displayName}  [${flags.join(", ")}]${summary}`;
+  const summary = item.summary ? `  ${styleText(truncate(item.summary, 96), "muted")}` : "";
+  return `${styleText(`${item.name}${version}`, "brand")}  ${item.displayName}  ${styleText(
+    `[${flags.join(", ")}]`,
+    "muted",
+  )}${summary}`;
 }
 
 function computeArtifactIdentity(bytes: Uint8Array): ArtifactIdentity {
@@ -1921,27 +1909,6 @@ function formatCompatibilityEntries(compatibility: PackageCompatibility) {
     compatibility.pluginSdkVersion ? `sdk=${compatibility.pluginSdkVersion}` : null,
     compatibility.minGatewayVersion ? `minGateway=${compatibility.minGatewayVersion}` : null,
   ].filter(Boolean);
-}
-
-function printCapabilities(capabilities: PackageCapabilitySummary | null | undefined) {
-  if (!capabilities) return;
-  console.log(`Executes code: ${capabilities.executesCode ? "yes" : "no"}`);
-  if (capabilities.pluginKind) console.log(`Plugin kind: ${capabilities.pluginKind}`);
-  if (capabilities.bundleFormat) console.log(`Bundle format: ${capabilities.bundleFormat}`);
-  if (capabilities.hostTargets?.length) {
-    console.log(`Host targets: ${capabilities.hostTargets.join(", ")}`);
-  }
-  if (capabilities.channels?.length) console.log(`Channels: ${capabilities.channels.join(", ")}`);
-  if (capabilities.providers?.length) {
-    console.log(`Providers: ${capabilities.providers.join(", ")}`);
-  }
-  if (capabilities.toolNames?.length) console.log(`Tools: ${capabilities.toolNames.join(", ")}`);
-  if (capabilities.commandNames?.length) {
-    console.log(`Commands: ${capabilities.commandNames.join(", ")}`);
-  }
-  if (capabilities.serviceNames?.length) {
-    console.log(`Services: ${capabilities.serviceNames.join(", ")}`);
-  }
 }
 
 function printVerification(verification: PackageVerificationSummary | null | undefined) {
@@ -2116,7 +2083,7 @@ async function uploadClawPackToStorage(
   registry: string,
   publishToken: string,
   file: PackageFile,
-  spinner: ReturnType<typeof createSpinner> | null,
+  spinner: ReturnType<typeof createCrabLoader> | null,
 ) {
   if (spinner) spinner.text = `Uploading ${file.relPath}`;
   const { uploadUrl, uploadTicket } = await apiRequest(
@@ -2236,7 +2203,7 @@ async function preparePackagePublishPlan(
   if (sourceForFetch.kind === "github") {
     const fetchSpinner = options.json
       ? null
-      : createSpinner(`Fetching ${sourceForFetch.owner}/${sourceForFetch.repo}`);
+      : createCrabLoader(`Fetching ${sourceForFetch.owner}/${sourceForFetch.repo}`);
     try {
       const fetched = await fetchGitHubSource(sourceForFetch);
       folder = fetched.dir;
@@ -2519,7 +2486,7 @@ async function resolvePackagePublishToken(params: {
   packageName: string;
   version: string;
   manualOverrideReason?: string;
-  spinner: ReturnType<typeof createSpinner> | null;
+  spinner: ReturnType<typeof createCrabLoader> | null;
 }) {
   if (params.manualOverrideReason?.trim()) {
     return await requireAuthToken();

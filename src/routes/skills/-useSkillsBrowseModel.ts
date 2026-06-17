@@ -35,21 +35,8 @@ export type SkillsSearchState = {
   highlighted?: boolean;
   featured?: boolean;
   category?: string;
-  tag?: string;
   view?: LegacySkillsView;
   focus?: "search";
-};
-
-const SKILL_CAPABILITY_LABELS: Record<string, string> = {
-  crypto: "crypto",
-  "financial-authority": "financial authority",
-  "requires-wallet": "requires wallet",
-  "can-make-purchases": "payments",
-  "can-sign-transactions": "signs transactions",
-  "requires-paid-service": "paid service",
-  "requires-oauth-token": "oauth",
-  "requires-sensitive-credentials": "sensitive credentials",
-  "posts-externally": "external posting",
 };
 
 type SkillsNavigate = (options: {
@@ -79,7 +66,6 @@ export function useSkillsBrowseModel({
 
   const view: SkillsView = normalizeSkillsView(search.view) ?? "list";
   const featuredOnly = search.featured ?? search.highlighted ?? false;
-  const capabilityTag = search.tag;
   const searchSkills = useAction(api.search.searchSkills);
 
   const trimmedQuery = useMemo(() => query.trim(), [query]);
@@ -99,9 +85,7 @@ export function useSkillsBrowseModel({
         : (requestedSort ?? (hasQuery ? "relevance" : "recommended"));
   const listSort = toListSort(sort);
   const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
-  const searchKey = hasQuery
-    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${capabilityTag ?? ""}`
-    : "";
+  const searchKey = hasQuery ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}` : "";
 
   // One-shot paginated fetches (no reactive subscription)
   const [listResults, setListResults] = useState<SkillListEntry[]>([]);
@@ -118,7 +102,6 @@ export function useSkillsBrowseModel({
           ...(listSort ? { sort: listSort } : {}),
           dir,
           highlightedOnly: featuredOnly,
-          capabilityTag,
           categorySlug: activeCategory?.slug,
           categoryKeywords,
           excludeCategoryKeywords,
@@ -137,15 +120,7 @@ export function useSkillsBrowseModel({
         setListStatus(cursor ? "idle" : "done");
       }
     },
-    [
-      activeCategory?.slug,
-      capabilityTag,
-      categoryKeywords,
-      dir,
-      excludeCategoryKeywords,
-      featuredOnly,
-      listSort,
-    ],
+    [activeCategory?.slug, categoryKeywords, dir, excludeCategoryKeywords, featuredOnly, listSort],
   );
 
   // Reset and fetch first page when sort/dir/filters change
@@ -201,7 +176,6 @@ export function useSkillsBrowseModel({
           const data = (await searchSkills({
             query: trimmedQuery,
             highlightedOnly: featuredOnly,
-            capabilityTag,
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
           if (requestId === searchRequest.current) {
@@ -215,42 +189,17 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [capabilityTag, hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
+  }, [hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
 
   const baseItems = useMemo(() => {
     if (hasQuery) {
-      return searchResults.map((entry) => {
-        // Search paths return `version: null`. Synthesize a minimal stub
-        // so consumers can still render the API-key-required badge.
-        const apiKeyRequired = entry.apiKeyRequired ?? entry.version?.apiKeyRequired;
-        const latestVersion =
-          entry.version != null
-            ? {
-                version: entry.version.version,
-                createdAt: entry.version.createdAt,
-                changelog: entry.version.changelog,
-                changelogSource: entry.version.changelogSource,
-                parsed: entry.version.parsed?.clawdis
-                  ? { clawdis: entry.version.parsed.clawdis }
-                  : undefined,
-                apiKeyRequired,
-              }
-            : apiKeyRequired !== undefined
-              ? {
-                  version: "",
-                  createdAt: 0,
-                  changelog: "",
-                  apiKeyRequired,
-                }
-              : null;
-        return {
-          skill: entry.skill,
-          latestVersion,
-          ownerHandle: entry.ownerHandle ?? null,
-          owner: entry.owner ?? null,
-          searchScore: entry.score,
-        };
-      });
+      return searchResults.map((entry) => ({
+        skill: entry.skill,
+        latestVersion: entry.version,
+        ownerHandle: entry.ownerHandle ?? null,
+        owner: entry.owner ?? null,
+        searchScore: entry.score,
+      }));
     }
     return listResults;
   }, [hasQuery, listResults, searchResults]);
@@ -275,8 +224,6 @@ export function useSkillsBrowseModel({
       switch (sort) {
         case "relevance":
           return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier;
-        case "downloads":
-          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak();
         case "installs":
           return (
             ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
@@ -359,13 +306,10 @@ export function useSkillsBrowseModel({
           search: (prev) => {
             const hadQuery = typeof prev.q === "string" && prev.q.trim().length > 0;
             const enteringSearch = Boolean(trimmed) && !hadQuery;
-            const usesStaleImplicitDownloadsDefault =
-              prev.sort === "downloads" && prev.dir === undefined && !prev.category;
             return {
               ...prev,
               q: trimmed ? next : undefined,
-              ...(enteringSearch &&
-              (parseSort(prev.sort) === "recommended" || usesStaleImplicitDownloadsDefault)
+              ...(enteringSearch && parseSort(prev.sort) === "recommended"
                 ? { sort: undefined, dir: undefined }
                 : null),
             };
@@ -469,25 +413,10 @@ export function useSkillsBrowseModel({
 
   const activeFilters: string[] = [];
   if (featuredOnly) activeFilters.push("featured");
-  if (capabilityTag) activeFilters.push(SKILL_CAPABILITY_LABELS[capabilityTag] ?? capabilityTag);
-
-  const onCapabilityTagChange = useCallback(
-    (value: string) => {
-      void navigate({
-        search: (prev) => ({
-          ...prev,
-          tag: value === "__all__" ? undefined : value,
-        }),
-        replace: true,
-      });
-    },
-    [navigate],
-  );
 
   return {
     activeFilters,
     activeCategory: activeCategory?.slug,
-    capabilityTag,
     canAutoLoad,
     canLoadMore,
     dir,
@@ -497,7 +426,6 @@ export function useSkillsBrowseModel({
     isLoadingSkills,
     loadMore,
     loadMoreRef,
-    onCapabilityTagChange,
     onClearFilters,
     onClearQuery,
     onQueryChange,
