@@ -741,6 +741,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         isOfficial: true,
+        sort: "installs",
         limit: 25,
       }),
     );

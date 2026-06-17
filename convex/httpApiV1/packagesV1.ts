@@ -791,13 +791,13 @@ type CatalogSourceCursorState = {
 type UnifiedCatalogCursorState = {
   packages: CatalogSourceCursorState;
   skills: CatalogSourceCursorState;
-  recommendedFallback?: "updated";
+  recommendedFallback?: "installs";
 };
 
 type PluginCatalogCursorState = {
   codePlugins: CatalogSourceCursorState;
   bundlePlugins: CatalogSourceCursorState;
-  recommendedFallback?: "updated";
+  recommendedFallback?: "installs";
 };
 
 type CatalogPageResult<T> = {
@@ -818,6 +818,7 @@ const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const PACKAGE_PAGE_CURSOR_PREFIX = "pkgpage:";
+const RECOMMENDED_FALLBACK_SORT = "installs" as const;
 const CATALOG_CURSOR_PREFIXES = [
   UNIFIED_CATALOG_CURSOR_PREFIX,
   PLUGIN_CATALOG_CURSOR_PREFIX,
@@ -883,7 +884,10 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
     return {
       packages: normalize(parsed.packages),
       skills: normalize(parsed.skills),
-      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
+      recommendedFallback:
+        parsed.recommendedFallback === RECOMMENDED_FALLBACK_SORT
+          ? RECOMMENDED_FALLBACK_SORT
+          : undefined,
     };
   } catch {
     return {
@@ -924,7 +928,10 @@ function decodeMultiPluginCursor(
     return {
       codePlugins: normalize(parsed.codePlugins),
       bundlePlugins: normalize(parsed.bundlePlugins),
-      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
+      recommendedFallback:
+        parsed.recommendedFallback === RECOMMENDED_FALLBACK_SORT
+          ? RECOMMENDED_FALLBACK_SORT
+          : undefined,
     };
   } catch {
     return {
@@ -1464,7 +1471,7 @@ async function listPackages(
     options.pluginFamilies?.length &&
     !includeSkills &&
     (highlightedOnly || category)
-      ? "updated"
+      ? RECOMMENDED_FALLBACK_SORT
       : options?.defaultSort;
   const effectiveSort = sortParam.value ?? pluginDefaultSort;
   if (category && (effectiveFamily === "skill" || (!effectiveFamily && includeSkills))) {
@@ -1513,12 +1520,12 @@ async function listPackages(
             ),
           ])
         : [false, false];
-    const useUpdatedRecommendationFallback =
+    const useRecommendationFallback =
       effectiveSort === "recommended" &&
-      (decodedCursor.recommendedFallback === "updated" ||
+      (decodedCursor.recommendedFallback === RECOMMENDED_FALLBACK_SORT ||
         (isFreshRecommendedRequest &&
           (hasMissingPackageRecommendationScores || hasMissingSkillRecommendationScores)));
-    const unifiedListSort = useUpdatedRecommendationFallback ? "updated" : effectiveSort;
+    const unifiedListSort = useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : effectiveSort;
     const packageSource = initCatalogSource<CatalogListItem>(decodedCursor.packages);
     const skillSource = initCatalogSource<CatalogListItem>(decodedCursor.skills);
     const pageSize = limit;
@@ -1583,7 +1590,7 @@ async function listPackages(
     const nextState = {
       packages: finalizeCatalogSource(packageSource),
       skills: finalizeCatalogSource(skillSource),
-      recommendedFallback: useUpdatedRecommendationFallback ? ("updated" as const) : undefined,
+      recommendedFallback: useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : undefined,
     };
     const isDoneAll =
       nextState.packages.done &&
@@ -1624,11 +1631,11 @@ async function listPackages(
           },
         )
       : false;
-    const useUpdatedRecommendationFallback =
+    const useRecommendationFallback =
       effectiveSort === "recommended" &&
-      (decodedCursor.recommendedFallback === "updated" ||
+      (decodedCursor.recommendedFallback === RECOMMENDED_FALLBACK_SORT ||
         (isFreshRecommendedRequest && hasMissingRecommendationScores));
-    const pluginListSort = useUpdatedRecommendationFallback ? "updated" : effectiveSort;
+    const pluginListSort = useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : effectiveSort;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1689,7 +1696,7 @@ async function listPackages(
     const nextState = {
       codePlugins: finalizeCatalogSource(codePluginSource),
       bundlePlugins: finalizeCatalogSource(bundlePluginSource),
-      recommendedFallback: useUpdatedRecommendationFallback ? ("updated" as const) : undefined,
+      recommendedFallback: useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : undefined,
     };
     const isDoneAll =
       nextState.codePlugins.done &&

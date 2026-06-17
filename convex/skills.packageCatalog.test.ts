@@ -324,7 +324,7 @@ describe("skills package catalog queries", () => {
     ]);
   });
 
-  it("falls back to updated sort for recommended package catalog rows while scores backfill", async () => {
+  it("falls back to installs sort for recommended package catalog rows while scores backfill", async () => {
     const indexNames: string[] = [];
     const result = await listPackageCatalogPageHandler(
       makeCtx(
@@ -351,10 +351,10 @@ describe("skills package catalog queries", () => {
     expect(indexNames).toEqual([
       "by_active_recommended_score",
       "by_active_recommended_score_version",
-      "by_active_updated",
+      "by_active_stats_installs_all_time",
     ]);
     expect(result.page).toEqual([expect.objectContaining({ name: "fallback-skill" })]);
-    expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
+    expect(result.continueCursor).toContain('"recommendedFallback":"installs"');
   });
 
   it("uses the recommended score index for recommended package catalog rows", async () => {
@@ -385,13 +385,13 @@ describe("skills package catalog queries", () => {
     expect(result.page).toEqual([expect.objectContaining({ name: "recommended-skill" })]);
   });
 
-  it("falls recommended package catalog rows back to updated when scores are missing", async () => {
+  it("falls recommended package catalog rows back to installs when scores are missing", async () => {
     const indexNames: string[] = [];
     const result = await listPackageCatalogPageHandler(
       makeCtx(
         [
           {
-            page: [makeDigest("updated-fallback-skill")],
+            page: [makeDigest("install-fallback-skill")],
             isDone: false,
             continueCursor: "updated-next",
           },
@@ -404,9 +404,12 @@ describe("skills package catalog queries", () => {
       },
     );
 
-    expect(indexNames).toEqual(["by_active_recommended_score", "by_active_updated"]);
-    expect(result.page).toEqual([expect.objectContaining({ name: "updated-fallback-skill" })]);
-    expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_stats_installs_all_time",
+    ]);
+    expect(result.page).toEqual([expect.objectContaining({ name: "install-fallback-skill" })]);
+    expect(result.continueCursor).toContain('"recommendedFallback":"installs"');
   });
 
   it("keeps recommended package catalog cursors on their original index", async () => {

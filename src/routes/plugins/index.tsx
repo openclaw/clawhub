@@ -136,7 +136,7 @@ function hasPluginBrowseFilter(
 function getDefaultPluginBrowseSort(
   args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
 ): VisiblePluginSort {
-  return hasPluginBrowseFilter(args) ? "updated" : "recommended";
+  return hasPluginBrowseFilter(args) ? "installs" : "recommended";
 }
 
 function hasPersistentPluginBrowseFilter(
