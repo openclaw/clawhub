@@ -107,7 +107,7 @@ describe("Import route", () => {
     expect(screen.queryByText(/sign in to import/i)).toBeNull();
   });
 
-  it("omits blank topics so metadata.openclaw.json can supply them", async () => {
+  it("omits blank topics instead of clearing existing topics", async () => {
     importSkill.mockResolvedValue({ slug: "taken-skill" });
     render(<ImportGitHub />);
     fireEvent.change(screen.getByPlaceholderText("https://github.com/owner/repo"), {

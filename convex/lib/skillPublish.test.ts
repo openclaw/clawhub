@@ -1,41 +1,94 @@
 import { describe, expect, it, vi } from "vitest";
 import { publishVersionForUser, __test } from "./skillPublish";
 
-describe("skillPublish", () => {
-  it("parses exact controlled categories and author topics from metadata.openclaw.json", () => {
-    expect(
-      __test.parseCatalogMetadataFile([
-        {
-          path: "metadata.openclaw.json",
-          content: JSON.stringify({
-            categories: ["automation", "development"],
-            topics: ["React", " GPU development "],
-          }),
-        },
-      ]),
-    ).toEqual({
-      categories: ["automation", "development"],
-      topics: ["React", "GPU development"],
-    });
-  });
+vi.mock("./embeddings", () => ({
+  generateEmbedding: vi.fn(async () => [0, 1, 2]),
+}));
 
-  it("rejects invalid metadata.openclaw.json category declarations", () => {
-    expect(() =>
-      __test.parseCatalogMetadataFile([
-        {
-          path: "metadata.openclaw.json",
-          content: JSON.stringify({ categories: ["Automation Workflows"] }),
-        },
-      ]),
-    ).toThrow(/Unknown skill category slug/);
-    expect(() =>
-      __test.parseCatalogMetadataFile([
-        {
-          path: "metadata.openclaw.json",
-          content: JSON.stringify({ topics: "react" }),
-        },
-      ]),
-    ).toThrow(/"topics" must be an array of strings/);
+describe("skillPublish", () => {
+  it("ignores taxonomy declarations from metadata.openclaw.json", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Automation workflow for recurring reports.
+---
+# Automation Helper
+`,
+      ],
+      [
+        "_storage:metadata",
+        JSON.stringify({
+          categories: ["security"],
+          topics: ["Manifest Topic"],
+        }),
+      ],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "automation-helper",
+        displayName: "Automation Helper",
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 90,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+          {
+            path: "metadata.openclaw.json",
+            size: 70,
+            storageId: "_storage:metadata" as never,
+            sha256: "b".repeat(64),
+            contentType: "application/json",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipBackup: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        categories: ["automation"],
+        topics: undefined,
+      }),
+    );
   });
 
   it("merges github source into metadata", () => {

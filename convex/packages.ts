@@ -1161,21 +1161,6 @@ function packageMatchesListFilters(
   return true;
 }
 
-function readDeclaredCatalogArray(
-  value: unknown,
-  field: "categories" | "topics",
-  sourceLabel: string,
-): string[] | undefined {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
-  const record = value as Record<string, unknown>;
-  if (!Object.hasOwn(record, field)) return undefined;
-  const declared = record[field];
-  if (!Array.isArray(declared) || declared.some((entry) => typeof entry !== "string")) {
-    throw new ConvexError(`${sourceLabel} "${field}" must be an array of strings`);
-  }
-  return declared as string[];
-}
-
 async function upsertPackageBadge(
   ctx: MutationCtx,
   packageId: Id<"packages">,
@@ -6616,22 +6601,14 @@ async function publishPackageImpl(
     packageJson,
     readmeText: readmeEntry?.text ?? null,
   });
-  const manifestCategories = readDeclaredCatalogArray(
-    pluginManifest,
-    "categories",
-    "openclaw.plugin.json",
-  );
-  const manifestTopics = readDeclaredCatalogArray(pluginManifest, "topics", "openclaw.plugin.json");
   let categories: string[];
   let normalizedTopics: string[];
   try {
     categories = resolvePluginCategories({
-      declared: payload.categories ?? manifestCategories ?? existingPackage?.categories,
+      declared: payload.categories ?? existingPackage?.categories,
       inferred: inferPluginCategoriesFromManifest(pluginManifest),
     });
-    normalizedTopics = normalizeCatalogTopics(
-      payload.topics ?? manifestTopics ?? existingPackage?.topics,
-    );
+    normalizedTopics = normalizeCatalogTopics(payload.topics ?? existingPackage?.topics);
   } catch (error) {
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }

@@ -1,25 +1,10 @@
-import { normalizePluginCategories, resolvePluginCategories, } from "./catalogMetadata.js";
+import { resolvePluginCategories } from "./catalogMetadata.js";
 export { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS, PLUGIN_CATEGORY_SLUGS, } from "./catalogMetadata.js";
 function isRecord(value) {
     return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 function hasValues(value) {
     return Array.isArray(value) && value.length > 0;
-}
-function readValidManifestCategories(manifest) {
-    if (!isRecord(manifest) || !Object.hasOwn(manifest, "categories"))
-        return undefined;
-    if (!Array.isArray(manifest.categories) ||
-        manifest.categories.some((category) => typeof category !== "string")) {
-        return undefined;
-    }
-    try {
-        return normalizePluginCategories(manifest.categories);
-    }
-    catch {
-        // Legacy manifests may contain unrelated category values. Fall back to slot inference.
-        return undefined;
-    }
 }
 export function inferPluginCategoriesFromManifest(manifest) {
     if (!isRecord(manifest))
@@ -72,7 +57,7 @@ export function derivePluginCategoryTags(input) {
     if (input.family === "skill")
         return [];
     return resolvePluginCategories({
-        declared: input.categories ?? readValidManifestCategories(input.pluginManifest),
+        declared: input.categories,
         inferred: input.inferredCategories ?? inferPluginCategoriesFromManifest(input.pluginManifest),
     });
 }

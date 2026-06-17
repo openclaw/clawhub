@@ -8,12 +8,13 @@
 - Each item stores up to three category slugs. Unknown slugs are rejected.
 - Declaration precedence:
   1. Current publish input from CLI or UI.
-  2. `metadata.openclaw.json` for skills or `openclaw.plugin.json` for plugins.
-  3. Existing stored categories.
-  4. Controlled-slug inference.
-  5. `other`.
+  2. Existing stored categories.
+  3. Controlled-slug inference.
+  4. `other`.
 - An explicit empty category array means `other`; only an omitted declaration enables inference.
 - Skill inference uses title, summary, and slug. Plugin inference uses manifest contribution fields.
+- Metadata files are not author-facing taxonomy declaration sources. Plugin manifests are only used
+  for automatic contribution-slot inference.
 - Inference only emits controlled slugs and only runs when categories were omitted.
 - Backports and non-latest plugin releases do not replace current categories.
 - Capability tags are not taxonomy inputs.
@@ -22,7 +23,7 @@
 
 ## Topics
 
-- Authors may supply up to five topics through publish input or the metadata files above.
+- Authors may supply up to five topics through CLI or UI publish and edit surfaces.
 - Stored topics preserve author-facing labels. Lookup uses normalized topic slugs.
 - Reserved platform trust labels such as `official`, `featured`, and `verified` are rejected.
 - Topics are separate from release tags and are available to browse and exact-topic global search.
@@ -42,4 +43,4 @@
 ## Follow-Up
 
 The corpus classification and resumable LLM backfill are a separate migration PR. It will populate
-missing categories and topics without changing the declaration precedence above.
+missing categories and topics without changing the author input surfaces above.

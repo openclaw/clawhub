@@ -70,7 +70,7 @@ describe("plugin categories", () => {
     ).toEqual(["context"]);
   });
 
-  it("prefers valid manifest declarations and ignores unrelated legacy values", () => {
+  it("ignores manifest taxonomy declarations and uses contribution inference", () => {
     expect(
       derivePluginCategoryTags({
         family: "code-plugin",
@@ -79,7 +79,7 @@ describe("plugin categories", () => {
           contracts: { tools: ["demo"] },
         },
       }),
-    ).toEqual(["security"]);
+    ).toEqual(["tools"]);
     expect(
       derivePluginCategoryTags({
         family: "code-plugin",

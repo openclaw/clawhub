@@ -1,8 +1,4 @@
-import {
-  normalizePluginCategories,
-  resolvePluginCategories,
-  type PluginCategorySlug,
-} from "./catalogMetadata.js";
+import { resolvePluginCategories, type PluginCategorySlug } from "./catalogMetadata.js";
 
 export {
   isPluginCategorySlug,
@@ -19,22 +15,6 @@ function isRecord(value: unknown): value is JsonRecord {
 
 function hasValues(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
-}
-
-function readValidManifestCategories(manifest: unknown): PluginCategorySlug[] | undefined {
-  if (!isRecord(manifest) || !Object.hasOwn(manifest, "categories")) return undefined;
-  if (
-    !Array.isArray(manifest.categories) ||
-    manifest.categories.some((category) => typeof category !== "string")
-  ) {
-    return undefined;
-  }
-  try {
-    return normalizePluginCategories(manifest.categories);
-  } catch {
-    // Legacy manifests may contain unrelated category values. Fall back to slot inference.
-    return undefined;
-  }
 }
 
 export function inferPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[] {
@@ -99,7 +79,7 @@ export function derivePluginCategoryTags(input: {
 }): PluginCategorySlug[] {
   if (input.family === "skill") return [];
   return resolvePluginCategories({
-    declared: input.categories ?? readValidManifestCategories(input.pluginManifest),
+    declared: input.categories,
     inferred: input.inferredCategories ?? inferPluginCategoriesFromManifest(input.pluginManifest),
   });
 }

@@ -7088,6 +7088,8 @@ describe("packages public queries", () => {
         "storage:manifest",
         JSON.stringify({
           id: "demo.plugin",
+          categories: ["security"],
+          topics: ["Manifest Topic"],
           contracts: { tools: ["demoTool"] },
         }),
       ],
