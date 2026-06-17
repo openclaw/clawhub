@@ -68,16 +68,26 @@ import { useThemeMode } from "../lib/theme";
 import { timeAgo } from "../lib/timeAgo";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
-const settingsViews = ["account", "organizations", "githubSources", "tokens", "danger"] as const;
-type SettingsView = (typeof settingsViews)[number];
+const settingsSearchViews = [
+  "profile",
+  "account",
+  "appearance",
+  "organizations",
+  "members",
+  "githubSources",
+  "tokens",
+  "danger",
+] as const;
+type SettingsSearchView = (typeof settingsSearchViews)[number];
+type SettingsView = Exclude<SettingsSearchView, "account">;
 
-function isSettingsView(value: unknown): value is SettingsView {
-  return typeof value === "string" && settingsViews.includes(value as SettingsView);
+function isSettingsSearchView(value: unknown): value is SettingsSearchView {
+  return typeof value === "string" && settingsSearchViews.includes(value as SettingsSearchView);
 }
 
 export const Route = createFileRoute("/settings")({
-  validateSearch: (search: Record<string, unknown>): { view?: SettingsView } => ({
-    view: isSettingsView(search.view) ? search.view : undefined,
+  validateSearch: (search: Record<string, unknown>): { view?: SettingsSearchView } => ({
+    view: isSettingsSearchView(search.view) ? search.view : undefined,
   }),
   component: Settings,
 });
@@ -170,48 +180,12 @@ type GitHubSkillSource = {
   updatedAt: number;
 };
 
-const navigationGroups: Array<{
-  items: Array<{
-    view: SettingsView;
-    label: string;
-    mobileLabel: string;
-    icon: LucideIcon;
-  }>;
-}> = [
-  {
-    items: [
-      {
-        view: "account",
-        label: "Account & Preferences",
-        mobileLabel: "Account",
-        icon: UserRound,
-      },
-    ],
-  },
-  {
-    items: [
-      {
-        view: "organizations",
-        label: "Organizations",
-        mobileLabel: "Orgs",
-        icon: Building2,
-      },
-      {
-        view: "githubSources",
-        label: "GitHub Skill Sync",
-        mobileLabel: "Skill Sync",
-        icon: GitBranch,
-      },
-      { view: "tokens", label: "API tokens", mobileLabel: "Tokens", icon: KeyRound },
-      {
-        view: "danger",
-        label: "Account deletion",
-        mobileLabel: "Deletion",
-        icon: ShieldAlert,
-      },
-    ],
-  },
-];
+type SettingsNavigationItem = {
+  view: SettingsView;
+  label: string;
+  mobileLabel: string;
+  icon: LucideIcon;
+};
 
 const settingsStickyTop = "calc(128px + var(--space-4))";
 const settingsScrollMargin = "calc(128px + var(--space-5))";
@@ -225,7 +199,11 @@ export function Settings() {
   const navigate = useNavigate();
   const { signOut } = useAuthActions();
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
-  const { activePublisher } = useActivePublisher();
+  const {
+    activePublisher,
+    isLoading: isActivePublisherLoading,
+    setActivePublisherId,
+  } = useActivePublisher();
   const updateProfile = useMutation(api.users.updateProfile);
   const deleteAccount = useMutation(api.users.deleteAccount);
   const { mode: themeMode, setMode: setThemeMode } = useThemeMode();
@@ -255,13 +233,9 @@ export function Settings() {
   const [orgDisplayName, setOrgDisplayName] = useState("");
   const [createOrgError, setCreateOrgError] = useState<string | null>(null);
   const [isCreatingOrg, setIsCreatingOrg] = useState(false);
-  const [selectedOrgHandle, setSelectedOrgHandle] = useState("");
-  const [selectedOrgDisplayName, setSelectedOrgDisplayName] = useState("");
-  const [selectedOrgBio, setSelectedOrgBio] = useState("");
-  const [selectedOrgImage, setSelectedOrgImage] = useState("");
+  const [publisherImage, setPublisherImage] = useState("");
   const [memberHandle, setMemberHandle] = useState("");
   const [memberRole, setMemberRole] = useState<"owner" | "admin" | "publisher">("publisher");
-  const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
   const [isSyncingSource, setIsSyncingSource] = useState(false);
   const [deletingSourceId, setDeletingSourceId] = useState<Id<"githubSkillSources"> | null>(null);
@@ -271,106 +245,157 @@ export function Settings() {
   const [createOrgDialogOpen, setCreateOrgDialogOpen] = useState(false);
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false);
   const [revokeTokenId, setRevokeTokenId] = useState<Id<"apiTokens"> | null>(null);
-  const { activeView, navigateToView } = useActiveSettingsView();
-  const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
-  const manageablePublishers = (publisherMemberships ?? []).filter(
-    (entry) => entry.role !== "publisher",
+  const memberships = publisherMemberships ?? [];
+  const orgs = memberships.filter((entry) => entry.publisher.kind === "org");
+  const personalPublisher = memberships.find((entry) => entry.publisher.kind === "user") ?? null;
+  const activePublisherId = activePublisher?.publisher._id ?? null;
+  const activePublisherMembership = activePublisherId
+    ? memberships.find((entry) => entry.publisher._id === activePublisherId)
+    : null;
+  const settingsPublisher =
+    activePublisherMembership ?? personalPublisher ?? memberships[0] ?? null;
+  const isOrgSettings = settingsPublisher?.publisher.kind === "org";
+  const settingsPublisherRole = settingsPublisher?.role ?? "owner";
+  const canManageSettingsPublisher = Boolean(
+    settingsPublisher &&
+    (!isOrgSettings || settingsPublisherRole === "owner" || settingsPublisherRole === "admin"),
   );
-  const officialGitHubSourcePublishers = manageablePublishers.filter(
-    (entry) => entry.publisher.official === true,
+  const canDeleteSettingsPublisher = Boolean(isOrgSettings && settingsPublisherRole === "owner");
+  const canConfigureActiveGitHubSources = Boolean(
+    settingsPublisher?.publisher.official === true && canManageSettingsPublisher,
+  );
+  const settingsNavigationItems: SettingsNavigationItem[] = isOrgSettings
+    ? [
+        {
+          view: "profile",
+          label: "Profile",
+          mobileLabel: "Profile",
+          icon: Building2,
+        },
+        ...(canManageSettingsPublisher
+          ? [
+              {
+                view: "members" as const,
+                label: "Members",
+                mobileLabel: "Members",
+                icon: Users,
+              },
+            ]
+          : []),
+        ...(canConfigureActiveGitHubSources
+          ? [
+              {
+                view: "githubSources" as const,
+                label: "GitHub Skill Sync",
+                mobileLabel: "Skill Sync",
+                icon: GitBranch,
+              },
+            ]
+          : []),
+        ...(canDeleteSettingsPublisher
+          ? [
+              {
+                view: "danger" as const,
+                label: "Delete organization",
+                mobileLabel: "Delete",
+                icon: ShieldAlert,
+              },
+            ]
+          : []),
+      ]
+    : [
+        { view: "profile", label: "Profile", mobileLabel: "Profile", icon: UserRound },
+        { view: "appearance", label: "Appearance", mobileLabel: "Theme", icon: Palette },
+        {
+          view: "organizations",
+          label: "Organizations",
+          mobileLabel: "Orgs",
+          icon: Building2,
+        },
+        ...(canConfigureActiveGitHubSources
+          ? [
+              {
+                view: "githubSources" as const,
+                label: "GitHub Skill Sync",
+                mobileLabel: "Skill Sync",
+                icon: GitBranch,
+              },
+            ]
+          : []),
+        { view: "tokens", label: "API tokens", mobileLabel: "Tokens", icon: KeyRound },
+        {
+          view: "danger",
+          label: "Account deletion",
+          mobileLabel: "Deletion",
+          icon: ShieldAlert,
+        },
+      ];
+  const availableSettingsViews = settingsNavigationItems.map((item) => item.view);
+  const { activeView, navigateToView } = useActiveSettingsView(
+    availableSettingsViews,
+    Boolean(isOrgSettings),
   );
   const publisherMembershipsLoaded = publisherMemberships !== undefined;
-  const canConfigureGitHubSources = officialGitHubSourcePublishers.length > 0;
-  const effectiveActiveView =
-    activeView === "githubSources" && publisherMembershipsLoaded && !canConfigureGitHubSources
-      ? "account"
-      : activeView;
-  const selectedSourcePublisher =
-    officialGitHubSourcePublishers.find(
-      (entry) => entry.publisher._id === selectedSourcePublisherId,
-    ) ??
-    officialGitHubSourcePublishers[0] ??
-    null;
-  const selectedOrg =
-    orgs.find((entry) => entry.publisher.handle === selectedOrgHandle) ?? orgs[0] ?? null;
-  const hasOrgProfileChanges = selectedOrg
-    ? selectedOrgDisplayName !== (selectedOrg.publisher.displayName ?? "") ||
-      selectedOrgBio !== (selectedOrg.publisher.bio ?? "") ||
-      selectedOrgImage !== (selectedOrg.publisher.image ?? "")
-    : false;
-  const hasProfileChanges = me
-    ? displayName !== (me.displayName ?? "") || bio !== (me.bio ?? "")
-    : false;
+  const effectiveActiveView = activeView;
+  const hasProfileChanges =
+    isOrgSettings && settingsPublisher
+      ? displayName !== (settingsPublisher.publisher.displayName ?? "") ||
+        bio !== (settingsPublisher.publisher.bio ?? "") ||
+        publisherImage !== (settingsPublisher.publisher.image ?? "")
+      : me
+        ? displayName !== (me.displayName ?? "") || bio !== (me.bio ?? "")
+        : false;
   const activeTokens = (tokens ?? []).filter((token) => !token.revokedAt);
   const revokedTokens = (tokens ?? []).filter((token) => token.revokedAt);
   const orgMembers = useQuery(
     api.publishers.listMembers,
     shouldLoadAccountScopedQueries &&
-      activeView === "organizations" &&
-      selectedOrg &&
-      selectedOrg.role !== "publisher"
-      ? { publisherHandle: selectedOrg.publisher.handle }
+      effectiveActiveView === "members" &&
+      isOrgSettings &&
+      canManageSettingsPublisher &&
+      settingsPublisher
+      ? { publisherHandle: settingsPublisher.publisher.handle }
       : "skip",
   ) as OrgMembersResult | null | undefined;
   const githubSources = useQuery(
-    api.githubSkillSources.listForManageableOfficialPublishers,
+    api.githubSkillSources.listForPublisher,
     shouldLoadAccountScopedQueries &&
       effectiveActiveView === "githubSources" &&
-      canConfigureGitHubSources
-      ? {}
+      canConfigureActiveGitHubSources &&
+      settingsPublisher
+      ? { ownerPublisherId: settingsPublisher.publisher._id }
       : "skip",
   ) as GitHubSkillSource[] | undefined;
-  const deletionPublishers = (publisherMemberships ?? []).filter(
+  const deletionPublishers = memberships.filter(
     (entry) => entry.publisher.kind === "user" || entry.role === "owner",
   );
 
   useEffect(() => {
-    if (!me) return;
-    setDisplayName(me.displayName ?? "");
-    setBio(me.bio ?? "");
-  }, [me]);
-
-  useEffect(() => {
-    if (selectedOrgHandle) return;
-    if (activePublisher?.publisher.kind === "org") {
-      const activeOrg = orgs.find((entry) => entry.publisher._id === activePublisher.publisher._id);
-      if (activeOrg?.publisher.handle) {
-        setSelectedOrgHandle(activeOrg.publisher.handle);
-        return;
-      }
-    }
-    if (orgs[0]?.publisher.handle) {
-      setSelectedOrgHandle(orgs[0].publisher.handle);
-    }
-  }, [activePublisher, orgs, selectedOrgHandle]);
-
-  useEffect(() => {
-    if (!officialGitHubSourcePublishers.length) {
-      setSelectedSourcePublisherId("");
+    if (isOrgSettings && settingsPublisher) {
+      setDisplayName(settingsPublisher.publisher.displayName ?? "");
+      setBio(settingsPublisher.publisher.bio ?? "");
+      setPublisherImage(settingsPublisher.publisher.image ?? "");
       return;
     }
-    if (
-      selectedSourcePublisherId &&
-      officialGitHubSourcePublishers.some(
-        (entry) => entry.publisher._id === selectedSourcePublisherId,
-      )
-    ) {
-      return;
+    if (me) {
+      setDisplayName(me.displayName ?? "");
+      setBio(me.bio ?? "");
+      setPublisherImage("");
     }
-    setSelectedSourcePublisherId(officialGitHubSourcePublishers[0]?.publisher._id ?? "");
-  }, [officialGitHubSourcePublishers, selectedSourcePublisherId]);
+  }, [
+    isOrgSettings,
+    me,
+    settingsPublisher?.publisher.bio,
+    settingsPublisher?.publisher.displayName,
+    settingsPublisher?.publisher.image,
+    settingsPublisher?.publisher._id,
+  ]);
 
   useEffect(() => {
-    if (!selectedOrg) {
-      setSelectedOrgDisplayName("");
-      setSelectedOrgBio("");
-      setSelectedOrgImage("");
-      return;
+    if (settingsPublisherRole !== "owner" && memberRole === "owner") {
+      setMemberRole("publisher");
     }
-    setSelectedOrgDisplayName(selectedOrg.publisher.displayName ?? "");
-    setSelectedOrgBio(selectedOrg.publisher.bio ?? "");
-    setSelectedOrgImage(selectedOrg.publisher.image ?? "");
-  }, [selectedOrg]);
+  }, [memberRole, settingsPublisherRole]);
 
   if (isAuthLoading) {
     return <SettingsSkeleton />;
@@ -390,22 +415,56 @@ export function Settings() {
   }
 
   const activeSectionLoading =
-    (activeView === "organizations" &&
-      (publisherMemberships === undefined ||
-        (selectedOrg && selectedOrg.role !== "publisher" && orgMembers === undefined))) ||
-    (activeView === "tokens" && tokens === undefined);
+    !publisherMembershipsLoaded ||
+    isActivePublisherLoading ||
+    (effectiveActiveView === "members" &&
+      isOrgSettings &&
+      canManageSettingsPublisher &&
+      orgMembers === undefined) ||
+    (effectiveActiveView === "githubSources" &&
+      canConfigureActiveGitHubSources &&
+      githubSources === undefined) ||
+    (effectiveActiveView === "tokens" && tokens === undefined);
 
   if (activeSectionLoading) {
     return <SettingsSkeleton />;
   }
 
-  const accountAvatar = me.image ?? undefined;
-  const accountInitial = (displayName || me.displayName || me.name || me.handle || "U")
-    .charAt(0)
-    .toUpperCase();
+  const profileImage = isOrgSettings
+    ? publisherImage.trim() || undefined
+    : (settingsPublisher?.publisher.image ?? me.image ?? undefined);
+  const profileHandle = isOrgSettings
+    ? settingsPublisher?.publisher.handle
+    : (settingsPublisher?.publisher.handle ?? me.handle);
+  const profileKind = isOrgSettings ? "org" : "user";
+  const profileTitle = isOrgSettings ? "Organization profile" : "Profile";
+  const profileDescription = isOrgSettings
+    ? "Public publisher details for this organization."
+    : "Public profile details used across skills, plugins, and publisher pages.";
+  const settingsSubtitle = isOrgSettings
+    ? `Manage @${settingsPublisher?.publisher.handle ?? "this org"}'s publisher profile and access.`
+    : "Manage your personal publisher, organizations, and account access.";
 
-  async function onSave(event: FormEvent) {
+  async function onSaveProfile(event: FormEvent) {
     event.preventDefault();
+    if (isOrgSettings) {
+      if (!settingsPublisher || !canManageSettingsPublisher) {
+        toast.error("Only org owners and admins can update this profile.");
+        return;
+      }
+      try {
+        await updateOrgProfile({
+          publisherId: settingsPublisher.publisher._id,
+          displayName,
+          bio: bio || undefined,
+          image: publisherImage || undefined,
+        });
+        toast.success("Organization updated");
+      } catch (error) {
+        toast.error(getUserFacingConvexError(error, "Organization could not be updated."));
+      }
+      return;
+    }
     await updateProfile({ displayName, bio });
     toast.success("Saved");
   }
@@ -442,10 +501,13 @@ export function Settings() {
         bio: undefined,
       });
       if (result?.publisher?.handle) {
-        setSelectedOrgHandle(result.publisher.handle);
+        if (result.publisher._id) {
+          setActivePublisherId(result.publisher._id);
+        }
         setOrgHandle("");
         setOrgDisplayName("");
         setCreateOrgDialogOpen(false);
+        navigateToView("profile");
         toast.success("Organization created");
       }
     } catch (error) {
@@ -457,36 +519,27 @@ export function Settings() {
     }
   }
 
-  async function onSaveOrgProfile() {
-    if (!selectedOrg) return;
-    await updateOrgProfile({
-      publisherId: selectedOrg.publisher._id,
-      displayName: selectedOrgDisplayName,
-      bio: selectedOrgBio || undefined,
-      image: selectedOrgImage || undefined,
-    });
-    toast.success("Organization updated");
-  }
-
   async function onDeleteOrg() {
-    if (!selectedOrg) return;
-    const deletingHandle = selectedOrg.publisher.handle;
-    await deleteOrg({ publisherId: selectedOrg.publisher._id });
+    if (!settingsPublisher || !isOrgSettings) return;
+    const deletingHandle = settingsPublisher.publisher.handle;
+    await deleteOrg({ publisherId: settingsPublisher.publisher._id });
     setDeleteOrgDialogOpen(false);
-    const nextOrg = orgs.find((entry) => entry.publisher.handle !== deletingHandle);
-    setSelectedOrgHandle(nextOrg?.publisher.handle ?? "");
+    if (personalPublisher) {
+      setActivePublisherId(personalPublisher.publisher._id);
+    }
+    navigateToView("profile");
     toast.success(`Deleted @${deletingHandle}`);
   }
 
   async function onConfigureGitHubSource(event: FormEvent) {
     event.preventDefault();
-    if (!selectedSourcePublisher) return;
+    if (!settingsPublisher || !canConfigureActiveGitHubSources) return;
     const repo = parseGitHubRepoInput(githubRepo);
     if (!repo) return;
     setIsSyncingSource(true);
     try {
       const result = await configureGitHubSource({
-        ownerPublisherId: selectedSourcePublisher.publisher._id,
+        ownerPublisherId: settingsPublisher.publisher._id,
         repo,
       });
       setGithubRepo("");
@@ -499,7 +552,7 @@ export function Settings() {
   }
 
   async function onDeleteGitHubSource(source: GitHubSkillSource) {
-    const ownerPublisherId = source.ownerPublisher?._id ?? selectedSourcePublisher?.publisher._id;
+    const ownerPublisherId = source.ownerPublisher?._id ?? settingsPublisher?.publisher._id;
     if (!ownerPublisherId) return;
     setDeletingSourceId(source._id);
     try {
@@ -537,7 +590,7 @@ export function Settings() {
             Settings
           </h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-[color:var(--ink-soft)]">
-            Account identity, publishing organizations, and API access for ClawHub.
+            {settingsSubtitle}
           </p>
         </header>
         <Separator />
@@ -549,113 +602,149 @@ export function Settings() {
                 className="flex gap-2 overflow-x-auto pb-1 lg:flex-col lg:gap-1 lg:overflow-visible lg:pb-0"
                 aria-label="Settings sections"
               >
-                {navigationGroups.map((group, groupIndex) => (
-                  <div
-                    key={`settings-nav-group-${groupIndex}`}
-                    className="contents lg:flex lg:shrink lg:flex-col lg:gap-1"
-                  >
-                    {group.items.map((item) => {
-                      if (
-                        item.view === "githubSources" &&
-                        publisherMembershipsLoaded &&
-                        !canConfigureGitHubSources
-                      ) {
-                        return null;
-                      }
-                      const active = effectiveActiveView === item.view;
-                      return (
-                        <button
-                          key={item.view}
-                          type="button"
-                          onClick={() => navigateToView(item.view)}
-                          aria-current={active ? "true" : undefined}
-                          aria-label={item.label}
-                          className={`settings-sidebar-link inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm font-semibold no-underline transition-colors hover:no-underline lg:min-h-10 lg:px-2 ${
-                            active
-                              ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[color:var(--ink)]"
-                              : "text-[color:var(--ink-soft)] hover:bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] hover:text-[color:var(--ink)]"
-                          }`}
-                        >
-                          <item.icon
-                            size={16}
-                            className={
-                              active
-                                ? "text-[color:var(--ink)] opacity-75"
-                                : "text-[color:var(--ink-soft)] opacity-60"
-                            }
-                          />
-                          <span className="lg:hidden">{item.mobileLabel}</span>
-                          <span className="hidden lg:inline">{item.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ))}
+                {settingsNavigationItems.map((item) => {
+                  const active = effectiveActiveView === item.view;
+                  return (
+                    <button
+                      key={item.view}
+                      type="button"
+                      onClick={() => navigateToView(item.view)}
+                      aria-current={active ? "true" : undefined}
+                      aria-label={item.label}
+                      className={`settings-sidebar-link inline-flex min-h-11 shrink-0 items-center gap-2 whitespace-nowrap rounded-[var(--radius-sm)] px-3 py-2 text-left text-sm font-semibold no-underline transition-colors hover:no-underline lg:min-h-10 lg:px-2 ${
+                        active
+                          ? "bg-[color-mix(in_srgb,var(--accent)_12%,transparent)] text-[color:var(--ink)]"
+                          : "text-[color:var(--ink-soft)] hover:bg-[color-mix(in_srgb,var(--accent)_8%,transparent)] hover:text-[color:var(--ink)]"
+                      }`}
+                    >
+                      <item.icon
+                        size={16}
+                        className={
+                          active
+                            ? "text-[color:var(--ink)] opacity-75"
+                            : "text-[color:var(--ink-soft)] opacity-60"
+                        }
+                      />
+                      <span className="lg:hidden">{item.mobileLabel}</span>
+                      <span className="hidden lg:inline">{item.label}</span>
+                    </button>
+                  );
+                })}
               </nav>
             </div>
           </aside>
 
           <div className="flex min-w-0 flex-col lg:flex-1">
             <SettingsSection
-              id="account"
-              visible={effectiveActiveView === "account"}
-              icon={<UserRound size={18} />}
-              title="Account & Preferences"
-              description="Profile details and interface preferences."
+              id="profile"
+              visible={effectiveActiveView === "profile"}
+              icon={isOrgSettings ? <Building2 size={18} /> : <UserRound size={18} />}
+              title={profileTitle}
+              description={profileDescription}
             >
               <div className="flex flex-col gap-5">
                 <SettingsBlock>
                   <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
                     <div className="flex min-w-0 items-center gap-3">
-                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
-                        <UserRound size={17} />
+                      <span className="inline-flex h-10 w-10 shrink-0 overflow-hidden rounded-[var(--radius-sm)]">
+                        <MarketplaceIcon
+                          kind={profileKind}
+                          label={displayName || profileHandle || "Profile"}
+                          imageUrl={profileImage}
+                          size="xs"
+                        />
                       </span>
                       <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-[color:var(--ink)]">Account</h3>
+                        <h3 className="text-sm font-bold text-[color:var(--ink)]">
+                          {displayName || profileHandle || "Profile"}
+                        </h3>
                         <p className="text-sm text-[color:var(--ink-soft)]">
-                          Public profile details used across skills, plugins, and publisher pages.
+                          @{profileHandle ?? me.handle}
                         </p>
                       </div>
                     </div>
-                    <Avatar className="hidden h-14 w-14 rounded-full sm:flex" title="github avatar">
-                      {accountAvatar ? (
-                        <AvatarImage src={accountAvatar} alt="GitHub avatar" />
-                      ) : null}
-                      <AvatarFallback>{accountInitial}</AvatarFallback>
-                    </Avatar>
                   </div>
 
-                  <form className="flex min-w-0 flex-col gap-4" onSubmit={onSave}>
+                  <form className="flex min-w-0 flex-col gap-4" onSubmit={onSaveProfile}>
                     <Field label="Display name" htmlFor="settings-display-name">
                       <Input
                         id="settings-display-name"
                         value={displayName}
                         onChange={(event) => setDisplayName(event.target.value)}
+                        disabled={isOrgSettings && !canManageSettingsPublisher}
                       />
                     </Field>
+                    {isOrgSettings ? (
+                      <div className="flex min-w-0 items-center gap-2">
+                        <div className="min-w-0 flex-1">
+                          <Field label="Avatar URL" htmlFor="settings-publisher-image">
+                            <Input
+                              id="settings-publisher-image"
+                              value={publisherImage}
+                              onChange={(event) => setPublisherImage(event.target.value)}
+                              disabled={!canManageSettingsPublisher}
+                              placeholder="https://example.com/logo.png"
+                            />
+                          </Field>
+                        </div>
+                        {publisherImage && canManageSettingsPublisher ? (
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                            aria-label="Clear avatar URL"
+                            className="mt-6 shrink-0"
+                            onClick={() => setPublisherImage("")}
+                          >
+                            <X size={15} />
+                          </Button>
+                        ) : null}
+                      </div>
+                    ) : null}
                     <Field label="Bio" htmlFor="settings-bio">
                       <Textarea
                         id="settings-bio"
                         rows={5}
                         value={bio}
                         onChange={(event) => setBio(event.target.value)}
+                        disabled={isOrgSettings && !canManageSettingsPublisher}
                         placeholder="Tell people what you're building."
                       />
                     </Field>
+                    {isOrgSettings && !canManageSettingsPublisher ? (
+                      <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/30 p-3 text-sm text-[color:var(--ink-soft)]">
+                        You can publish under this org. Owners and admins manage profile and
+                        members.
+                      </div>
+                    ) : null}
                     <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end">
                       {hasProfileChanges ? (
                         <span className="text-sm font-semibold text-red-700 dark:text-red-300">
                           You have unsaved changes.
                         </span>
                       ) : null}
-                      <Button variant="primary" type="submit">
+                      <Button
+                        variant="primary"
+                        type="submit"
+                        disabled={isOrgSettings && !canManageSettingsPublisher}
+                      >
                         <Save size={16} />
                         Save profile
                       </Button>
                     </div>
                   </form>
                 </SettingsBlock>
+              </div>
+            </SettingsSection>
 
+            <SettingsSection
+              id="appearance"
+              visible={effectiveActiveView === "appearance"}
+              icon={<Palette size={18} />}
+              title="Appearance"
+              description="Interface theme preference."
+            >
+              <div className="flex flex-col gap-5">
                 <SettingsBlock>
                   <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                     <div className="flex items-center gap-3">
@@ -715,523 +804,292 @@ export function Settings() {
               visible={effectiveActiveView === "organizations"}
               icon={<Building2 size={18} />}
               title="Organizations"
-              description="Publisher profiles and access."
+              description="Switch into an organization to manage its profile and access."
             >
               <div className="flex flex-col gap-5">
-                {orgs.length > 0 ? (
-                  <>
-                    <div className="flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-between">
-                      <Select
-                        value={selectedOrg?.publisher.handle ?? ""}
-                        onValueChange={setSelectedOrgHandle}
+                <div className="flex justify-end">
+                  <Dialog
+                    open={createOrgDialogOpen}
+                    onOpenChange={(open) => {
+                      setCreateOrgDialogOpen(open);
+                      if (open) setCreateOrgError(null);
+                    }}
+                  >
+                    <DialogTrigger asChild>
+                      <Button
+                        variant={orgs.length ? "outline" : "primary"}
+                        type="button"
+                        className="sm:w-auto"
                       >
-                        <SelectTrigger
-                          id="settings-manage-org"
-                          aria-label="Manage organization"
-                          className="h-12 sm:min-w-[280px]"
+                        <Plus size={16} />
+                        {orgs.length ? "Add new org" : "Create org"}
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent>
+                      <DialogHeader>
+                        <DialogTitle>Create organization</DialogTitle>
+                        <DialogDescription>
+                          Create a publisher profile for a team or project.
+                        </DialogDescription>
+                      </DialogHeader>
+                      <div className="grid gap-4">
+                        <Field label="Handle" htmlFor="settings-org-handle">
+                          <Input
+                            id="settings-org-handle"
+                            value={orgHandle}
+                            onChange={(event) => {
+                              setOrgHandle(event.target.value);
+                              setCreateOrgError(null);
+                            }}
+                            placeholder="example.tools"
+                          />
+                        </Field>
+                        <Field label="Display name" htmlFor="settings-org-display-name">
+                          <Input
+                            id="settings-org-display-name"
+                            value={orgDisplayName}
+                            onChange={(event) => {
+                              setOrgDisplayName(event.target.value);
+                              setCreateOrgError(null);
+                            }}
+                            placeholder="OpenClaw"
+                          />
+                        </Field>
+                      </div>
+                      {createOrgError ? (
+                        <p
+                          className="text-sm font-medium text-red-600 dark:text-red-400"
+                          role="alert"
                         >
-                          {selectedOrg ? (
-                            <span className="flex min-w-0 items-center gap-2">
-                              <OrgLogoSmall
-                                image={selectedOrg.publisher.image}
-                                name={selectedOrg.publisher.displayName}
-                                handle={selectedOrg.publisher.handle}
-                                className="h-6 w-6"
-                              />
-                              <span className="truncate">
-                                @{selectedOrg.publisher.handle} · {selectedOrg.role}
-                              </span>
-                            </span>
-                          ) : (
-                            <SelectValue placeholder="Select an org" />
-                          )}
-                        </SelectTrigger>
-                        <SelectContent>
-                          {orgs.map((entry) => (
-                            <SelectItem key={entry.publisher._id} value={entry.publisher.handle}>
-                              <span className="flex min-w-0 items-center gap-2">
-                                <OrgLogoSmall
-                                  image={entry.publisher.image}
-                                  name={entry.publisher.displayName}
-                                  handle={entry.publisher.handle}
-                                  className="h-6 w-6"
-                                />
-                                <span className="truncate">
-                                  @{entry.publisher.handle} · {entry.role}
-                                </span>
-                              </span>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Dialog
-                        open={createOrgDialogOpen}
-                        onOpenChange={(open) => {
-                          setCreateOrgDialogOpen(open);
-                          if (open) setCreateOrgError(null);
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <Button variant="outline" type="button" className="h-12 sm:w-auto">
-                            <Plus size={16} />
-                            Add new org
+                          {createOrgError}
+                        </p>
+                      ) : null}
+                      <DialogFooter>
+                        <Button variant="ghost" onClick={() => setCreateOrgDialogOpen(false)}>
+                          Cancel
+                        </Button>
+                        <Button
+                          variant="primary"
+                          type="button"
+                          disabled={!orgHandle.trim() || isCreatingOrg}
+                          onClick={() => void onCreateOrg()}
+                        >
+                          <Building2 size={16} />
+                          {isCreatingOrg ? "Creating..." : "Create org"}
+                        </Button>
+                      </DialogFooter>
+                    </DialogContent>
+                  </Dialog>
+                </div>
+
+                {orgs.length ? (
+                  <div className="grid gap-3">
+                    {orgs.map((entry) => (
+                      <SettingsBlock key={entry.publisher._id} className="gap-3">
+                        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex min-w-0 items-center gap-3">
+                            <OrgLogoSmall
+                              image={entry.publisher.image}
+                              name={entry.publisher.displayName}
+                              handle={entry.publisher.handle}
+                              className="h-10 w-10"
+                            />
+                            <div className="min-w-0">
+                              <h3 className="truncate text-sm font-bold text-[color:var(--ink)]">
+                                {entry.publisher.displayName || entry.publisher.handle}
+                              </h3>
+                              <p className="truncate text-sm text-[color:var(--ink-soft)]">
+                                @{entry.publisher.handle} · {entry.role}
+                              </p>
+                            </div>
+                          </div>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            className="sm:w-auto"
+                            onClick={() => {
+                              setActivePublisherId(entry.publisher._id);
+                              navigateToView("profile");
+                            }}
+                          >
+                            Manage
                           </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Create organization</DialogTitle>
-                            <DialogDescription>
-                              Create a publisher profile for a team or project.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="grid gap-4">
-                            <Field label="Handle" htmlFor="settings-org-handle">
-                              <Input
-                                id="settings-org-handle"
-                                value={orgHandle}
-                                onChange={(event) => {
-                                  setOrgHandle(event.target.value);
-                                  setCreateOrgError(null);
-                                }}
-                                placeholder="example.tools"
-                              />
-                            </Field>
-                            <Field label="Display name" htmlFor="settings-org-display-name">
-                              <Input
-                                id="settings-org-display-name"
-                                value={orgDisplayName}
-                                onChange={(event) => {
-                                  setOrgDisplayName(event.target.value);
-                                  setCreateOrgError(null);
-                                }}
-                                placeholder="OpenClaw"
-                              />
-                            </Field>
-                          </div>
-                          {createOrgError ? (
-                            <p
-                              className="text-sm font-medium text-red-600 dark:text-red-400"
-                              role="alert"
-                            >
-                              {createOrgError}
-                            </p>
-                          ) : null}
-                          <DialogFooter>
-                            <Button variant="ghost" onClick={() => setCreateOrgDialogOpen(false)}>
-                              Cancel
-                            </Button>
-                            <Button
-                              variant="primary"
-                              type="button"
-                              disabled={!orgHandle.trim() || isCreatingOrg}
-                              onClick={() => void onCreateOrg()}
-                            >
-                              <Building2 size={16} />
-                              {isCreatingOrg ? "Creating..." : "Create org"}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
-                    </div>
-
-                    {selectedOrg && selectedOrg.role !== "publisher" ? (
-                      <>
-                        <SettingsBlock>
-                          <div className="flex min-w-0 w-full flex-col gap-5">
-                            <div className="flex min-w-0 items-center gap-4">
-                              <OrgLogo
-                                image={selectedOrgImage.trim() || undefined}
-                                name={selectedOrgDisplayName}
-                                handle={selectedOrg.publisher.handle}
-                                className="h-16 w-16"
-                              />
-                              <div className="min-w-0">
-                                <h3 className="truncate text-base font-bold text-[color:var(--ink)]">
-                                  {selectedOrgDisplayName || selectedOrg.publisher.handle}
-                                </h3>
-                                <p className="truncate text-sm text-[color:var(--ink-soft)]">
-                                  @{selectedOrg.publisher.handle}
-                                </p>
-                              </div>
-                            </div>
-
-                            <div className="grid w-full grid-cols-1 gap-4 lg:grid-cols-2">
-                              <Field
-                                label="Display name"
-                                htmlFor="settings-selected-org-display-name"
-                              >
-                                <Input
-                                  id="settings-selected-org-display-name"
-                                  value={selectedOrgDisplayName}
-                                  onChange={(event) =>
-                                    setSelectedOrgDisplayName(event.target.value)
-                                  }
-                                  placeholder="OpenClaw"
-                                />
-                              </Field>
-                              <div className="flex min-w-0 items-center gap-2">
-                                <div className="min-w-0 flex-1">
-                                  <Field label="Avatar URL" htmlFor="settings-selected-org-image">
-                                    <Input
-                                      id="settings-selected-org-image"
-                                      value={selectedOrgImage}
-                                      onChange={(event) => setSelectedOrgImage(event.target.value)}
-                                      placeholder="https://example.com/logo.png"
-                                    />
-                                  </Field>
-                                </div>
-                                {selectedOrgImage ? (
-                                  <Button
-                                    type="button"
-                                    variant="ghost"
-                                    size="icon-sm"
-                                    aria-label="Clear avatar URL"
-                                    className="mt-6 shrink-0"
-                                    onClick={() => setSelectedOrgImage("")}
-                                  >
-                                    <X size={15} />
-                                  </Button>
-                                ) : null}
-                              </div>
-                              <div className="lg:col-span-2">
-                                <Field label="Bio" htmlFor="settings-selected-org-bio">
-                                  <Textarea
-                                    id="settings-selected-org-bio"
-                                    rows={4}
-                                    value={selectedOrgBio}
-                                    onChange={(event) => setSelectedOrgBio(event.target.value)}
-                                    placeholder="Tell people what this organization publishes."
-                                  />
-                                </Field>
-                              </div>
-                              <div className="flex flex-col gap-3 lg:col-span-2 lg:flex-row lg:items-center lg:justify-end">
-                                {hasOrgProfileChanges ? (
-                                  <span className="text-sm font-semibold text-red-700 dark:text-red-300">
-                                    You have unsaved changes.
-                                  </span>
-                                ) : null}
-                                <Button type="button" onClick={() => void onSaveOrgProfile()}>
-                                  <Save size={16} />
-                                  Save changes
-                                </Button>
-                              </div>
-                            </div>
-                          </div>
-                        </SettingsBlock>
-
-                        <SettingsBlock>
-                          <div className="flex items-center justify-between gap-3">
-                            <div className="flex min-w-0 items-center gap-3">
-                              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
-                                <Users size={16} />
-                              </span>
-                              <div className="min-w-0">
-                                <div className="flex items-center gap-2">
-                                  <h3 className="text-sm font-bold text-[color:var(--ink)]">
-                                    Members
-                                  </h3>
-                                  <span className="inline-flex h-5 items-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-2 text-[11px] font-semibold text-[color:var(--ink-soft)]">
-                                    {(orgMembers?.members ?? []).length}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                            <Dialog
-                              open={addMemberDialogOpen}
-                              onOpenChange={setAddMemberDialogOpen}
-                            >
-                              <DialogTrigger asChild>
-                                <Button
-                                  type="button"
-                                  className="h-10 w-auto shrink-0 px-3 text-sm sm:h-11 sm:px-4"
-                                >
-                                  <Users size={16} />
-                                  Add member
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Add member</DialogTitle>
-                                  <DialogDescription>
-                                    Give a user access to @{selectedOrg.publisher.handle}.
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <div className="grid gap-4">
-                                  <Field label="User handle" htmlFor="settings-add-member">
-                                    <Input
-                                      id="settings-add-member"
-                                      value={memberHandle}
-                                      onChange={(event) => setMemberHandle(event.target.value)}
-                                      placeholder="@username"
-                                    />
-                                  </Field>
-                                  <Field label="Role" htmlFor="settings-member-role">
-                                    <Select
-                                      value={memberRole}
-                                      onValueChange={(value) =>
-                                        setMemberRole(value as "owner" | "admin" | "publisher")
-                                      }
-                                    >
-                                      <SelectTrigger id="settings-member-role">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="publisher">Publisher</SelectItem>
-                                        <SelectItem value="admin">Admin</SelectItem>
-                                        <SelectItem value="owner">Owner</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </Field>
-                                </div>
-                                <DialogFooter>
-                                  <Button
-                                    variant="ghost"
-                                    onClick={() => setAddMemberDialogOpen(false)}
-                                  >
-                                    Cancel
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    disabled={!memberHandle.trim()}
-                                    onClick={() =>
-                                      void addOrgMember({
-                                        publisherId: selectedOrg.publisher._id,
-                                        userHandle: memberHandle,
-                                        role: memberRole,
-                                      }).then(() => {
-                                        setMemberHandle("");
-                                        setAddMemberDialogOpen(false);
-                                      })
-                                    }
-                                  >
-                                    <Users size={16} />
-                                    Add member
-                                  </Button>
-                                </DialogFooter>
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-
-                          <div className="flex min-w-0 flex-col gap-4">
-                            {(orgMembers?.members ?? []).length ? (
-                              <div className="divide-y divide-[color:var(--line)] overflow-hidden">
-                                {orgMembers?.members.map((entry) => (
-                                  <div
-                                    key={`${entry.user._id}:${entry.role}`}
-                                    className="flex items-center justify-between gap-3 py-3"
-                                  >
-                                    <div className="flex min-w-0 items-center gap-3">
-                                      <Avatar className="h-9 w-9 rounded-full">
-                                        {entry.user.image ? (
-                                          <AvatarImage
-                                            src={entry.user.image}
-                                            alt={
-                                              entry.user.displayName ?? entry.user.handle ?? "User"
-                                            }
-                                          />
-                                        ) : null}
-                                        <AvatarFallback>
-                                          {(entry.user.displayName ?? entry.user.handle ?? "U")
-                                            .charAt(0)
-                                            .toUpperCase()}
-                                        </AvatarFallback>
-                                      </Avatar>
-                                      <div className="flex min-w-0 flex-col gap-1">
-                                        <div className="flex min-w-0 items-center gap-2">
-                                          <span className="truncate pr-1 text-sm font-semibold text-[color:var(--ink)]">
-                                            {entry.user.displayName ??
-                                              entry.user.handle ??
-                                              entry.user._id}
-                                          </span>
-                                          <Badge className="shrink-0 self-center px-2.5 py-0.5 text-fs-xs">
-                                            {entry.role}
-                                          </Badge>
-                                        </div>
-                                        <div className="truncate text-xs text-[color:var(--ink-soft)]">
-                                          @{entry.user.handle ?? "user"}
-                                        </div>
-                                      </div>
-                                    </div>
-                                    <div className="flex shrink-0 items-center">
-                                      {entry.role !== "owner" ? (
-                                        <Button
-                                          variant="ghost"
-                                          size="sm"
-                                          type="button"
-                                          onClick={() =>
-                                            void removeOrgMember({
-                                              publisherId: selectedOrg.publisher._id,
-                                              userId: entry.user._id,
-                                            })
-                                          }
-                                        >
-                                          Remove
-                                        </Button>
-                                      ) : null}
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : null}
-                          </div>
-                        </SettingsBlock>
-
-                        {selectedOrg.role === "owner" ? (
-                          <SettingsBlock tone="danger">
-                            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                              <div className="flex min-w-0 items-center gap-3">
-                                <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300">
-                                  <ShieldAlert size={17} />
-                                </span>
-                                <div className="min-w-0">
-                                  <h3 className="text-sm font-bold text-red-700 dark:text-red-300">
-                                    Delete organization
-                                  </h3>
-                                  <p className="text-sm text-[color:var(--ink-soft)]">
-                                    Permanently remove this org and its published skills and
-                                    plugins.
-                                  </p>
-                                </div>
-                              </div>
-                              <Dialog
-                                open={deleteOrgDialogOpen}
-                                onOpenChange={setDeleteOrgDialogOpen}
-                              >
-                                <DialogTrigger asChild>
-                                  <Button variant="destructive" type="button" className="sm:w-auto">
-                                    <Trash2 size={16} />
-                                    Delete organization
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent>
-                                  <DialogHeader>
-                                    <DialogTitle>Delete organization</DialogTitle>
-                                    <DialogDescription>
-                                      Permanently delete @{selectedOrg.publisher.handle} and its
-                                      published resources. This action cannot be undone.
-                                    </DialogDescription>
-                                  </DialogHeader>
-                                  <DeletionResourceSummary
-                                    publishers={[selectedOrg]}
-                                    emptyLabel="This organization has no published skills or plugins."
-                                  />
-                                  <DialogFooter>
-                                    <Button
-                                      variant="ghost"
-                                      onClick={() => setDeleteOrgDialogOpen(false)}
-                                    >
-                                      Cancel
-                                    </Button>
-                                    <Button
-                                      variant="destructive"
-                                      onClick={() => void onDeleteOrg()}
-                                    >
-                                      Permanently delete organization
-                                    </Button>
-                                  </DialogFooter>
-                                </DialogContent>
-                              </Dialog>
-                            </div>
-                          </SettingsBlock>
-                        ) : null}
-                      </>
-                    ) : selectedOrg ? (
-                      <div className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/30 p-4 text-sm text-[color:var(--ink-soft)]">
-                        You can publish under this org. Owners and admins manage profile and
-                        members.
-                      </div>
-                    ) : null}
-                  </>
-                ) : null}
-
-                {!orgs.length ? (
-                  <SettingsBlock>
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
-                      <div className="flex min-w-0 items-center gap-3">
-                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
-                          <Building2 size={17} />
-                        </span>
-                        <div className="min-w-0">
-                          <h3 className="text-sm font-bold text-[color:var(--ink)]">
-                            Create organization
-                          </h3>
-                          <p className="text-sm text-[color:var(--ink-soft)]">
-                            Add a publisher profile for a team or project.
-                          </p>
                         </div>
+                      </SettingsBlock>
+                    ))}
+                  </div>
+                ) : (
+                  <SettingsBlock>
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
+                        <Building2 size={17} />
+                      </span>
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-bold text-[color:var(--ink)]">
+                          No organizations yet
+                        </h3>
                       </div>
-                      <Dialog
-                        open={createOrgDialogOpen}
-                        onOpenChange={(open) => {
-                          setCreateOrgDialogOpen(open);
-                          if (open) setCreateOrgError(null);
-                        }}
-                      >
-                        <DialogTrigger asChild>
-                          <Button variant="primary" type="button" className="lg:w-auto">
-                            <Building2 size={16} />
-                            Create org
-                          </Button>
-                        </DialogTrigger>
-                        <DialogContent>
-                          <DialogHeader>
-                            <DialogTitle>Create organization</DialogTitle>
-                            <DialogDescription>
-                              Create a publisher profile for a team or project.
-                            </DialogDescription>
-                          </DialogHeader>
-                          <div className="grid gap-4">
-                            <Field label="Handle" htmlFor="settings-org-handle-empty">
-                              <Input
-                                id="settings-org-handle-empty"
-                                value={orgHandle}
-                                onChange={(event) => {
-                                  setOrgHandle(event.target.value);
-                                  setCreateOrgError(null);
-                                }}
-                                placeholder="example.tools"
-                              />
-                            </Field>
-                            <Field label="Display name" htmlFor="settings-org-display-name-empty">
-                              <Input
-                                id="settings-org-display-name-empty"
-                                value={orgDisplayName}
-                                onChange={(event) => {
-                                  setOrgDisplayName(event.target.value);
-                                  setCreateOrgError(null);
-                                }}
-                                placeholder="OpenClaw"
-                              />
-                            </Field>
-                          </div>
-                          {createOrgError ? (
-                            <p
-                              className="text-sm font-medium text-red-600 dark:text-red-400"
-                              role="alert"
-                            >
-                              {createOrgError}
-                            </p>
-                          ) : null}
-                          <DialogFooter>
-                            <Button variant="ghost" onClick={() => setCreateOrgDialogOpen(false)}>
-                              Cancel
-                            </Button>
-                            <Button
-                              variant="primary"
-                              type="button"
-                              disabled={!orgHandle.trim() || isCreatingOrg}
-                              onClick={() => void onCreateOrg()}
-                            >
-                              <Building2 size={16} />
-                              {isCreatingOrg ? "Creating..." : "Create org"}
-                            </Button>
-                          </DialogFooter>
-                        </DialogContent>
-                      </Dialog>
                     </div>
                   </SettingsBlock>
-                ) : null}
+                )}
               </div>
+            </SettingsSection>
+
+            <SettingsSection
+              id="members"
+              visible={effectiveActiveView === "members"}
+              icon={<Users size={18} />}
+              title="Members"
+              description="Organization access for the active publisher."
+            >
+              {settingsPublisher && isOrgSettings ? (
+                <SettingsBlock>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
+                        <Users size={16} />
+                      </span>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-bold text-[color:var(--ink)]">Members</h3>
+                          <span className="inline-flex h-5 items-center rounded-full border border-[color:var(--line)] bg-[color:var(--surface-muted)] px-2 text-[11px] font-semibold text-[color:var(--ink-soft)]">
+                            {(orgMembers?.members ?? []).length}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <Dialog open={addMemberDialogOpen} onOpenChange={setAddMemberDialogOpen}>
+                      <DialogTrigger asChild>
+                        <Button
+                          type="button"
+                          className="h-10 w-auto shrink-0 px-3 text-sm sm:h-11 sm:px-4"
+                        >
+                          <Users size={16} />
+                          Add member
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent>
+                        <DialogHeader>
+                          <DialogTitle>Add member</DialogTitle>
+                          <DialogDescription>
+                            Give a user access to @{settingsPublisher.publisher.handle}.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <div className="grid gap-4">
+                          <Field label="User handle" htmlFor="settings-add-member">
+                            <Input
+                              id="settings-add-member"
+                              value={memberHandle}
+                              onChange={(event) => setMemberHandle(event.target.value)}
+                              placeholder="@username"
+                            />
+                          </Field>
+                          <Field label="Role" htmlFor="settings-member-role">
+                            <Select
+                              value={memberRole}
+                              onValueChange={(value) =>
+                                setMemberRole(value as "owner" | "admin" | "publisher")
+                              }
+                            >
+                              <SelectTrigger id="settings-member-role">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="publisher">Publisher</SelectItem>
+                                <SelectItem value="admin">Admin</SelectItem>
+                                {settingsPublisherRole === "owner" ? (
+                                  <SelectItem value="owner">Owner</SelectItem>
+                                ) : null}
+                              </SelectContent>
+                            </Select>
+                          </Field>
+                        </div>
+                        <DialogFooter>
+                          <Button variant="ghost" onClick={() => setAddMemberDialogOpen(false)}>
+                            Cancel
+                          </Button>
+                          <Button
+                            type="button"
+                            disabled={!memberHandle.trim()}
+                            onClick={() =>
+                              void addOrgMember({
+                                publisherId: settingsPublisher.publisher._id,
+                                userHandle: memberHandle,
+                                role: memberRole,
+                              }).then(() => {
+                                setMemberHandle("");
+                                setAddMemberDialogOpen(false);
+                              })
+                            }
+                          >
+                            <Users size={16} />
+                            Add member
+                          </Button>
+                        </DialogFooter>
+                      </DialogContent>
+                    </Dialog>
+                  </div>
+
+                  <div className="flex min-w-0 flex-col gap-4">
+                    {(orgMembers?.members ?? []).length ? (
+                      <div className="divide-y divide-[color:var(--line)] overflow-hidden">
+                        {orgMembers?.members.map((entry) => (
+                          <div
+                            key={entry.user._id + ":" + entry.role}
+                            className="flex items-center justify-between gap-3 py-3"
+                          >
+                            <div className="flex min-w-0 items-center gap-3">
+                              <Avatar className="h-9 w-9 rounded-full">
+                                {entry.user.image ? (
+                                  <AvatarImage
+                                    src={entry.user.image}
+                                    alt={entry.user.displayName ?? entry.user.handle ?? "User"}
+                                  />
+                                ) : null}
+                                <AvatarFallback>
+                                  {(entry.user.displayName ?? entry.user.handle ?? "U")
+                                    .charAt(0)
+                                    .toUpperCase()}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex min-w-0 flex-col gap-1">
+                                <div className="flex min-w-0 items-center gap-2">
+                                  <span className="truncate pr-1 text-sm font-semibold text-[color:var(--ink)]">
+                                    {entry.user.displayName ?? entry.user.handle ?? entry.user._id}
+                                  </span>
+                                  <Badge className="shrink-0 self-center px-2.5 py-0.5 text-fs-xs">
+                                    {entry.role}
+                                  </Badge>
+                                </div>
+                                <div className="truncate text-xs text-[color:var(--ink-soft)]">
+                                  @{entry.user.handle ?? "user"}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex shrink-0 items-center">
+                              {entry.role !== "owner" ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  type="button"
+                                  onClick={() =>
+                                    void removeOrgMember({
+                                      publisherId: settingsPublisher.publisher._id,
+                                      userId: entry.user._id,
+                                    })
+                                  }
+                                >
+                                  Remove
+                                </Button>
+                              ) : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                </SettingsBlock>
+              ) : null}
             </SettingsSection>
 
             <SettingsSection
@@ -1259,11 +1117,8 @@ export function Settings() {
                       </div>
                     </div>
 
-                    {selectedSourcePublisher ? (
+                    {settingsPublisher && canConfigureActiveGitHubSources ? (
                       <GitHubSourceForm
-                        publisherOptions={officialGitHubSourcePublishers}
-                        selectedPublisherId={selectedSourcePublisher.publisher._id}
-                        onPublisherChange={setSelectedSourcePublisherId}
                         githubRepo={githubRepo}
                         onGithubRepoChange={setGithubRepo}
                         onConfigure={onConfigureGitHubSource}
@@ -1436,71 +1291,125 @@ export function Settings() {
               id="danger"
               visible={effectiveActiveView === "danger"}
               icon={<ShieldAlert size={18} />}
-              title="Account deletion"
-              description="Delete your account permanently and hide personal published resources."
+              title={isOrgSettings ? "Delete organization" : "Account deletion"}
+              description={
+                isOrgSettings
+                  ? "Delete the active organization permanently."
+                  : "Delete your account permanently and hide personal published resources."
+              }
               tone="danger"
               hideHeader
             >
               <SettingsBlock>
-                <div className="flex flex-col gap-4">
-                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 items-center gap-3">
-                      <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
-                        <ShieldAlert size={18} />
-                      </span>
-                      <div className="min-w-0">
-                        <h3 className="text-sm font-bold text-[color:var(--ink)]">
-                          Account deletion
-                        </h3>
+                {isOrgSettings && settingsPublisher ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-red-300/40 bg-red-500/10 text-red-700 dark:border-red-500/30 dark:text-red-300">
+                          <ShieldAlert size={18} />
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-red-700 dark:text-red-300">
+                            Delete organization
+                          </h3>
+                          <p className="text-sm text-[color:var(--ink-soft)]">
+                            Permanently remove @{settingsPublisher.publisher.handle} and its
+                            published skills and plugins.
+                          </p>
+                        </div>
+                      </div>
+                      <Dialog open={deleteOrgDialogOpen} onOpenChange={setDeleteOrgDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="destructive" type="button" className="sm:w-auto">
+                            <Trash2 size={16} />
+                            Delete organization
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Delete organization</DialogTitle>
+                            <DialogDescription>
+                              Permanently delete @{settingsPublisher.publisher.handle}. This action
+                              cannot be undone.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <DeletionResourceSummary
+                            publishers={[settingsPublisher]}
+                            emptyLabel="This organization has no published skills or plugins."
+                          />
+                          <DialogFooter>
+                            <Button variant="ghost" onClick={() => setDeleteOrgDialogOpen(false)}>
+                              Cancel
+                            </Button>
+                            <Button variant="destructive" onClick={() => void onDeleteOrg()}>
+                              Permanently delete organization
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)]">
+                          <ShieldAlert size={18} />
+                        </span>
+                        <div className="min-w-0">
+                          <h3 className="text-sm font-bold text-[color:var(--ink)]">
+                            Account deletion
+                          </h3>
+                        </div>
+                      </div>
+                      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+                        <DialogTrigger asChild>
+                          <Button variant="destructive" type="button" className="sm:w-auto">
+                            <Trash2 size={16} />
+                            Delete account
+                          </Button>
+                        </DialogTrigger>
+                        <DialogContent>
+                          <DialogHeader>
+                            <DialogTitle>Delete account</DialogTitle>
+                            <DialogDescription>
+                              This permanently deletes your account and eligible owned resources.
+                              This action cannot be undone.
+                            </DialogDescription>
+                          </DialogHeader>
+                          <DeletionResourceSummary
+                            publishers={deletionPublishers}
+                            emptyLabel="No published skills or plugins are attached to your account."
+                          />
+                          <DialogFooter>
+                            <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
+                              Cancel
+                            </Button>
+                            <Button variant="destructive" onClick={() => void onDelete()}>
+                              Permanently delete account
+                            </Button>
+                          </DialogFooter>
+                        </DialogContent>
+                      </Dialog>
+                    </div>
+
+                    <div className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-red-300/20 bg-red-500/[0.04] p-4 dark:border-red-500/20 dark:bg-red-500/[0.06]">
+                      <ShieldAlert
+                        size={18}
+                        className="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
+                      />
+                      <div className="flex flex-col gap-1">
+                        <p className="text-sm font-semibold text-red-700 dark:text-red-300">
+                          This will permanently delete your account
+                        </p>
+                        <p className="text-sm text-[color:var(--ink-soft)]">
+                          Your profile, API tokens, personal publisher resources, and sole-owner org
+                          resources will be permanently removed.
+                        </p>
                       </div>
                     </div>
-                    <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
-                      <DialogTrigger asChild>
-                        <Button variant="destructive" type="button" className="sm:w-auto">
-                          <Trash2 size={16} />
-                          Delete account
-                        </Button>
-                      </DialogTrigger>
-                      <DialogContent>
-                        <DialogHeader>
-                          <DialogTitle>Delete account</DialogTitle>
-                          <DialogDescription>
-                            This permanently deletes your account and eligible owned resources. This
-                            action cannot be undone.
-                          </DialogDescription>
-                        </DialogHeader>
-                        <DeletionResourceSummary
-                          publishers={deletionPublishers}
-                          emptyLabel="No published skills or plugins are attached to your account."
-                        />
-                        <DialogFooter>
-                          <Button variant="ghost" onClick={() => setDeleteDialogOpen(false)}>
-                            Cancel
-                          </Button>
-                          <Button variant="destructive" onClick={() => void onDelete()}>
-                            Permanently delete account
-                          </Button>
-                        </DialogFooter>
-                      </DialogContent>
-                    </Dialog>
                   </div>
-
-                  <div className="flex items-start gap-3 rounded-[var(--radius-sm)] border border-red-300/20 bg-red-500/[0.04] p-4 dark:border-red-500/20 dark:bg-red-500/[0.06]">
-                    <ShieldAlert
-                      size={18}
-                      className="mt-0.5 shrink-0 text-red-600 dark:text-red-400"
-                    />
-                    <div className="flex flex-col gap-1">
-                      <p className="text-sm font-semibold text-red-700 dark:text-red-300">
-                        This will permanently delete your account
-                      </p>
-                      <p className="text-sm text-[color:var(--ink-soft)]">
-                        Your profile, API tokens, personal publisher resources, and sole-owner org
-                        resources will be permanently removed.
-                      </p>
-                    </div>
-                  </div>
-                </div>
+                )}
               </SettingsBlock>
             </SettingsSection>
           </div>
@@ -1694,26 +1603,6 @@ function SettingsBlock({
     >
       {children}
     </div>
-  );
-}
-
-function OrgLogo({
-  image,
-  name,
-  handle,
-  className,
-}: {
-  image?: string | null;
-  name: string;
-  handle: string;
-  className?: string;
-}) {
-  return (
-    <span
-      className={`settings-org-logo inline-flex overflow-hidden rounded-[var(--radius-sm)] ${className ?? ""}`}
-    >
-      <MarketplaceIcon kind="org" label={name || handle} imageUrl={image} size="md" />
-    </span>
   );
 }
 
@@ -2096,17 +1985,11 @@ function GitHubSourceStatusPill({ needsAttention }: { needsAttention: boolean })
 }
 
 function GitHubSourceForm({
-  publisherOptions,
-  selectedPublisherId,
-  onPublisherChange,
   githubRepo,
   onGithubRepoChange,
   onConfigure,
   isSyncing,
 }: {
-  publisherOptions: PublisherMembership[];
-  selectedPublisherId: string;
-  onPublisherChange: (publisherId: string) => void;
   githubRepo: string;
   onGithubRepoChange: (repo: string) => void;
   onConfigure: (event: FormEvent) => void;
@@ -2114,22 +1997,6 @@ function GitHubSourceForm({
 }) {
   return (
     <form className="flex flex-col gap-3 sm:flex-row sm:items-end" onSubmit={onConfigure}>
-      <div className="min-w-0 sm:w-64 sm:shrink-0">
-        <Field label="Publisher" htmlFor="settings-github-source-publisher">
-          <Select value={selectedPublisherId} onValueChange={onPublisherChange}>
-            <SelectTrigger id="settings-github-source-publisher">
-              <SelectValue placeholder="Select org" />
-            </SelectTrigger>
-            <SelectContent>
-              {publisherOptions.map((entry) => (
-                <SelectItem key={entry.publisher._id} value={entry.publisher._id}>
-                  @{entry.publisher.handle}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-      </div>
       <div className="flex min-w-0 flex-1 flex-col gap-3 sm:flex-row sm:items-end">
         <div className="min-w-0 flex-1">
           <Field label="GitHub repo URL" htmlFor="settings-github-repo">
@@ -2377,22 +2244,45 @@ function Field({
   );
 }
 
-function useActiveSettingsView() {
+function normalizeSettingsView(
+  view: SettingsSearchView | null | undefined,
+  availableViews: SettingsView[],
+  isOrgContext: boolean,
+): SettingsView {
+  const fallback = availableViews[0] ?? "profile";
+  if (!view) return fallback;
+  if (view === "account") return availableViews.includes("profile") ? "profile" : fallback;
+  if (view === "organizations" && isOrgContext) {
+    return availableViews.includes("profile") ? "profile" : fallback;
+  }
+  return availableViews.includes(view) ? view : fallback;
+}
+
+function useActiveSettingsView(availableViews: SettingsView[], isOrgContext: boolean) {
   const navigate = useNavigate({ from: "/settings" });
   const search = useSearch({ from: "/settings" });
-  const [migratedHashView, setMigratedHashView] = useState<SettingsView | null>(null);
+  const [migratedHashView, setMigratedHashView] = useState<SettingsSearchView | null>(null);
   const [hasCheckedHash, setHasCheckedHash] = useState(false);
-  const activeView = isSettingsView(search.view) ? search.view : (migratedHashView ?? "account");
+  const requestedView = isSettingsSearchView(search.view) ? search.view : migratedHashView;
+  const activeView = normalizeSettingsView(requestedView, availableViews, isOrgContext);
 
   useEffect(() => {
     if (hasCheckedHash) return;
     setHasCheckedHash(true);
     const hash = window.location.hash.replace("#", "");
-    if (isSettingsView(hash)) {
+    if (isSettingsSearchView(hash)) {
       setMigratedHashView(hash);
-      void navigate({ search: { view: hash }, replace: true });
+      void navigate({
+        search: { view: normalizeSettingsView(hash, availableViews, isOrgContext) },
+        replace: true,
+      });
     }
-  }, [hasCheckedHash, navigate]);
+  }, [availableViews, hasCheckedHash, isOrgContext, navigate]);
+
+  useEffect(() => {
+    if (!search.view || search.view === activeView) return;
+    void navigate({ search: { view: activeView }, replace: true });
+  }, [activeView, navigate, search.view]);
 
   const navigateToView = (view: SettingsView) => {
     void navigate({ search: { view } });

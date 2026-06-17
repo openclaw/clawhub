@@ -131,10 +131,11 @@ const clawkitMembers = {
 
 function mockSignedInSettings({
   search = {},
-  memberships = [orgMembership],
+  memberships = [personalMembership, orgMembership],
   members = orgMembers,
   githubSources = [],
   activePublisher = null,
+  setActivePublisherId = vi.fn(),
 }: {
   search?: Record<string, unknown>;
   memberships?: Array<typeof orgMembership | typeof personalMembership | typeof clawkitMembership>;
@@ -144,6 +145,7 @@ function mockSignedInSettings({
     | typeof personalMembership
     | typeof clawkitMembership
     | null;
+  setActivePublisherId?: ReturnType<typeof vi.fn>;
   githubSources?: Array<{
     _id: string;
     repo: string;
@@ -201,7 +203,7 @@ function mockSignedInSettings({
     isLoading: false,
     memberships,
     personalPublisher: memberships.find((entry) => entry.publisher.kind === "user") ?? null,
-    setActivePublisherId: vi.fn(),
+    setActivePublisherId,
   });
   useQueryMock.mockImplementation((query, args) => {
     const queryName = query ? getFunctionName(query) : "";
@@ -210,6 +212,7 @@ function mockSignedInSettings({
     if (queryName === "tokens:listMine") return [];
     if (queryName === "publishers:listMine") return memberships;
     if (queryName === "publishers:listMembers") return members;
+    if (queryName === "githubSkillSources:listForPublisher") return githubSources;
     if (queryName === "githubSkillSources:listForManageableOfficialPublishers")
       return githubSources;
     if (args && typeof args === "object" && "publisherHandle" in args) return members;
@@ -281,15 +284,29 @@ describe("Settings", () => {
     expect(useQueryMock.mock.calls.some(([, args]) => args === "skip")).toBe(true);
   });
 
-  it("renders account and appearance inside signed-in account preferences", () => {
+  it("renders the personal profile as the default settings view", () => {
     mockSignedInSettings();
 
     render(<Settings />);
 
-    expect(screen.getByRole("button", { name: "Account & Preferences" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Account" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Appearance" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Profile" }).getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("heading", { name: "Patrick" })).toBeTruthy();
+    expect((screen.getByLabelText("Display name") as HTMLInputElement).value).toBe("Patrick");
     expect(screen.queryByRole("heading", { name: "Stars" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: /system/i })).toBeNull();
+  });
+
+  it("keeps appearance as a separate personal settings view", () => {
+    mockSignedInSettings({ search: { view: "appearance" } });
+
+    render(<Settings />);
+
+    expect(screen.getByRole("button", { name: "Appearance" }).getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("heading", { name: "Appearance" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: /system/i })).toBeTruthy();
     expect(screen.queryByText(/tweakcn overlay/i)).toBeNull();
     expect(screen.queryByText(/density/i)).toBeNull();
@@ -299,7 +316,7 @@ describe("Settings", () => {
     expect(screen.queryByText(/experimental features/i)).toBeNull();
   });
 
-  it("does not load organization members on the default account view", () => {
+  it("does not load organization members on the default profile view", () => {
     mockSignedInSettings();
 
     render(<Settings />);
@@ -318,8 +335,9 @@ describe("Settings", () => {
     expect(navigateMock).toHaveBeenCalledWith({ search: { view: "organizations" } });
   });
 
-  it("renders organization management and loads members only on the organizations view", async () => {
-    mockSignedInSettings({ search: { view: "organizations" } });
+  it("renders personal organization switching without loading members", async () => {
+    const setActivePublisherId = vi.fn();
+    mockSignedInSettings({ search: { view: "organizations" }, setActivePublisherId });
 
     render(<Settings />);
 
@@ -328,38 +346,67 @@ describe("Settings", () => {
     );
     expect(await screen.findByText("OpenClaw Team")).toBeTruthy();
     expect(screen.getByText("@openclaw · owner")).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Members" })).toBeTruthy();
-    expect(screen.getByText("Patrick")).toBeTruthy();
-    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
-      publisherHandle: "openclaw",
-    });
+    expect(screen.queryByRole("heading", { name: "Members" })).toBeNull();
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, "skip");
+    fireEvent.click(screen.getByRole("button", { name: "Manage" }));
+
+    expect(setActivePublisherId).toHaveBeenCalledWith("publisher_openclaw");
+    expect(navigateMock).toHaveBeenCalledWith({ search: { view: "profile" } });
   });
 
-  it("preselects the active org when opening organization settings", async () => {
+  it("uses the active org as the members settings scope", async () => {
     mockSignedInSettings({
-      search: { view: "organizations" },
-      memberships: [orgMembership, clawkitMembership],
+      search: { view: "members" },
+      memberships: [personalMembership, orgMembership, clawkitMembership],
       members: clawkitMembers,
       activePublisher: clawkitMembership,
     });
 
     render(<Settings />);
 
-    expect(await screen.findByText("@clawkit · admin")).toBeTruthy();
-    expect(await screen.findByText("ClawKit")).toBeTruthy();
+    expect(screen.getByText("Manage @clawkit's publisher profile and access.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Members" }).getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(await screen.findByText("Patrick")).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
       publisherHandle: "clawkit",
     });
   });
 
-  it("lets organization owners confirm org deletion", async () => {
-    const deleteOrg = vi.fn().mockResolvedValue({ deleted: true });
-    useMutationMock.mockReturnValue(deleteOrg);
-    mockSignedInSettings({ search: { view: "organizations" } });
+  it("aliases legacy organization settings URLs to the active org profile", () => {
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [personalMembership, orgMembership],
+      activePublisher: orgMembership,
+    });
 
     render(<Settings />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Delete organization" }));
+    expect(screen.getByRole("button", { name: "Profile" }).getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("button", { name: "Organizations" })).toBeNull();
+    expect(navigateMock).toHaveBeenCalledWith({ search: { view: "profile" }, replace: true });
+  });
+
+  it("lets organization owners confirm org deletion", async () => {
+    const deleteOrg = vi.fn().mockResolvedValue({ deleted: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:deleteOrg" ? deleteOrg : vi.fn(),
+    );
+    mockSignedInSettings({
+      search: { view: "danger" },
+      memberships: [personalMembership, orgMembership],
+      activePublisher: orgMembership,
+    });
+
+    render(<Settings />);
+
+    const deleteOrganizationButtons = screen.getAllByRole("button", {
+      name: "Delete organization",
+    });
+    fireEvent.click(deleteOrganizationButtons[deleteOrganizationButtons.length - 1]);
 
     expect(await screen.findByText(/Permanently delete @openclaw/)).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Permanently delete organization" }));
@@ -422,6 +469,7 @@ describe("Settings", () => {
     mockSignedInSettings({
       search: { view: "githubSources" },
       memberships: [personalMembership, orgMembership],
+      activePublisher: orgMembership,
     });
 
     render(<Settings />);
@@ -432,10 +480,13 @@ describe("Settings", () => {
     expect(screen.getByRole("heading", { name: "Sync GitHub skills repo" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Synced repositories" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "No synced repositories" })).toBeTruthy();
-    expect(screen.getByLabelText("Publisher")).toBeTruthy();
+    expect(screen.queryByLabelText("Publisher")).toBeNull();
     expect(screen.getByPlaceholderText("https://github.com/owner/repo")).toBeTruthy();
     expect(screen.queryByText(/Publishing as/i)).toBeNull();
     expect(screen.queryByText(/skills\.sh\.json/i)).toBeNull();
+    expect(useQueryMock).toHaveBeenCalledWith(api.githubSkillSources.listForPublisher, {
+      ownerPublisherId: "publisher_openclaw",
+    });
 
     fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
       target: { value: "https://github.com/NVIDIA/skills" },
@@ -460,7 +511,8 @@ describe("Settings", () => {
     );
     mockSignedInSettings({
       search: { view: "githubSources" },
-      memberships: [orgMembership],
+      memberships: [personalMembership, orgMembership],
+      activePublisher: orgMembership,
       githubSources: [
         {
           _id: "githubSkillSources:matt",
@@ -571,11 +623,11 @@ describe("Settings", () => {
     render(<Settings />);
 
     expect(screen.queryByRole("button", { name: "GitHub Skill Sync" })).toBeNull();
-    expect(
-      screen.getByRole("button", { name: "Account & Preferences" }).getAttribute("aria-current"),
-    ).toBe("true");
+    expect(screen.getByRole("button", { name: "Profile" }).getAttribute("aria-current")).toBe(
+      "true",
+    );
     expect(screen.queryByRole("heading", { name: "GitHub Skill Sync" })).toBeNull();
-    expect(screen.queryByPlaceholderText("Enter a public repo")).toBeNull();
+    expect(screen.queryByPlaceholderText("https://github.com/owner/repo")).toBeNull();
   });
 
   it("shows create organization mutation errors to the user", async () => {
