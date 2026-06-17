@@ -105,6 +105,8 @@ import { runStaticPublishScan } from "./lib/staticPublishScan";
 import schema from "./schema";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
+const MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS = 500;
+const MAX_PUBLIC_LIST_FILTER_SCAN_PAGES = 6;
 const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
@@ -3284,14 +3286,27 @@ async function listPackagePageImpl(
     args.sort === "downloads" || args.sort === "installs" || args.sort === "recommended";
   const requiresDigestPostFilterScan =
     Boolean(topic && category) || (usesMetadataSortIndex && Boolean(family || channel));
+  let digestScanPages = 0;
+  let remainingDigestScanBudget = requiresDigestPostFilterScan
+    ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS
+    : MAX_PUBLIC_LIST_PAGE_SIZE;
 
-  while ((pageOffset > 0 || !done) && collected.length < targetCount) {
+  while (
+    (pageOffset > 0 || !done) &&
+    collected.length < targetCount &&
+    digestScanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
+    remainingDigestScanBudget > 0
+  ) {
     const scanPageSize = Math.min(
+      remainingDigestScanBudget,
       MAX_PUBLIC_LIST_PAGE_SIZE,
       pageOffset > 0 && pageSize
         ? Math.max(pageSize, pageOffset + targetCount)
         : Math.max(effectivePageSize, targetCount),
     );
+    if (scanPageSize <= 0) break;
+    digestScanPages += 1;
+    remainingDigestScanBudget -= scanPageSize;
     const currentCursor = cursor;
     const page: {
       page: PackageDigestLike[];

@@ -3661,6 +3661,42 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledTimes(2);
   });
 
+  it("bounds sparse combined-filter scans and resumes from the returned cursor", async () => {
+    const topicPages = Array.from({ length: 7 }, (_, index) => ({
+      page: [
+        makeDigest(index === 6 ? "calendar-api" : `calendar-noise-${index}`, {
+          topic: "calendar",
+          topics: ["calendar"],
+          pluginCategoryTags: [index === 6 ? "tools" : "channels"],
+        }),
+      ],
+      isDone: index === 6,
+      continueCursor: index === 6 ? "" : `topic:${index + 1}`,
+    }));
+    const { ctx, paginate } = makeDigestCtx({ topicPages });
+
+    const first = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      category: "tools",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(first.continueCursor.startsWith("pkgpage:")).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(6);
+
+    const second = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      category: "tools",
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+
+    expect(second.page.map((entry) => entry.name)).toEqual(["calendar-api"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(7);
+  });
+
   it("paginates official category plugins before community fallback", async () => {
     const { ctx } = makeDigestCtx({
       categoryPages: [
