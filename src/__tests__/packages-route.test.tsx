@@ -171,22 +171,19 @@ describe("plugins route", () => {
     );
   });
 
-  it("redirects raw legacy category URLs to the canonical plugin category", async () => {
+  it("keeps validated legacy category URLs without a redundant redirect", async () => {
     const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
     const beforeLoad = (
       route.__config as never as {
         beforeLoad?: (args: { search: Record<string, unknown> }) => void;
       }
     ).beforeLoad;
 
-    expect(() => beforeLoad?.({ search: { category: "data" } })).toThrow();
-    expect(redirectMock).toHaveBeenCalledWith(
-      expect.objectContaining({
-        search: expect.objectContaining({
-          category: "tools",
-        }),
-      }),
-    );
+    expect(() => beforeLoad?.({ search: validateSearch({ category: "data" }) })).not.toThrow();
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 
   it("drops removed downloads sort links to the plugin browse default", async () => {
@@ -813,6 +810,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         isOfficial: true,
+        sort: "installs",
         limit: 25,
       }),
     );
@@ -845,6 +843,29 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       sort: undefined,
+    });
+  });
+
+  it("keeps recommended explicit when selected from filtered plugin browse", async () => {
+    searchMock = { category: "security" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Recommended" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean;
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ category: "security", cursor: "cursor:current" })).toEqual({
+      category: "security",
+      cursor: undefined,
+      family: undefined,
+      featured: undefined,
+      sort: "recommended",
     });
   });
 

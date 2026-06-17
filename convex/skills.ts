@@ -6067,8 +6067,10 @@ type SkillCatalogCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
-  recommendedFallback?: "updated";
+  recommendedFallback?: "installs" | "updated";
 };
+
+const SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT = "installs" as const;
 
 function encodeSkillCatalogCursor(state: SkillCatalogCursorState) {
   if (state.done && state.offset === 0) return "";
@@ -6089,7 +6091,11 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
       pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
-      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
+      recommendedFallback:
+        parsed.recommendedFallback === SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT ||
+        parsed.recommendedFallback === "updated"
+          ? parsed.recommendedFallback
+          : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -6361,8 +6367,8 @@ export const listPackageCatalogPage = query({
       v.union(
         v.literal("updated"),
         v.literal("downloads"),
-        v.literal("recommended"),
         v.literal("installs"),
+        v.literal("recommended"),
       ),
     ),
     paginationOpts: paginationOptsValidator,
@@ -6393,11 +6399,13 @@ export const listPackageCatalogPage = query({
     let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
     const isFreshRecommendedRequest =
       args.sort === "recommended" && args.paginationOpts.cursor === null;
-    const useUpdatedRecommendationFallback =
+    const useRecommendationFallback =
       args.sort === "recommended" &&
-      (decodedCursor.recommendedFallback === "updated" ||
+      (decodedCursor.recommendedFallback === SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT ||
         (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))));
-    const catalogSort = useUpdatedRecommendationFallback ? "updated" : args.sort;
+    const catalogSort = useRecommendationFallback
+      ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
+      : args.sort;
 
     while (
       (offset > 0 || !done) &&
@@ -6447,6 +6455,9 @@ export const listPackageCatalogPage = query({
             pageSize = effectivePageSize;
             done = page.isDone;
           }
+          const recommendedFallback = useRecommendationFallback
+            ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
+            : undefined;
           return {
             page: collected,
             isDone: done && offset === 0,
@@ -6455,7 +6466,7 @@ export const listPackageCatalogPage = query({
               offset,
               pageSize,
               done,
-              recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+              recommendedFallback,
             }),
           };
         }
@@ -6467,6 +6478,9 @@ export const listPackageCatalogPage = query({
       pageSize = effectivePageSize;
     }
 
+    const recommendedFallback = useRecommendationFallback
+      ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
+      : undefined;
     return {
       page: collected,
       isDone: done,
@@ -6475,7 +6489,7 @@ export const listPackageCatalogPage = query({
         offset,
         pageSize,
         done,
-        recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+        recommendedFallback,
       }),
     };
   },

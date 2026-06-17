@@ -1062,7 +1062,9 @@ function toPublicPackage(
 }
 
 function toPublicPackageRelease(release: Doc<"packageReleases">) {
-  const { capabilities: _capabilities, ...publicRelease } = release;
+  const { capabilities: _capabilities, ...publicRelease } = release as Doc<"packageReleases"> & {
+    capabilities?: unknown;
+  };
   const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
   if (!release.verification || !sourcePath) return publicRelease;
   return {
