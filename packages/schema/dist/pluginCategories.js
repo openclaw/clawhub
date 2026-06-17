@@ -6,6 +6,9 @@ function isRecord(value) {
 function hasValues(value) {
     return Array.isArray(value) && value.length > 0;
 }
+function hasProperties(value) {
+    return isRecord(value) && Object.keys(value).length > 0;
+}
 export function inferPluginCategoriesFromManifest(manifest) {
     if (!isRecord(manifest))
         return [];
@@ -48,7 +51,8 @@ export function inferPluginCategoriesFromManifest(manifest) {
     }
     if (hasValues(contracts.gatewayMethodDispatch))
         add("gateway");
-    if (hasValues(contracts.externalAuthProviders) || isRecord(manifest.secretProviderIntegrations)) {
+    if (hasValues(contracts.externalAuthProviders) ||
+        hasProperties(manifest.secretProviderIntegrations)) {
         add("security");
     }
     return categories.slice(0, 3);

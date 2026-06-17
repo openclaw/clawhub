@@ -71,6 +71,21 @@ describe("plugin categories", () => {
     ).toEqual(["context"]);
   });
 
+  it("requires a declared secret provider integration before inferring security", () => {
+    expect(
+      derivePluginCategoryTags({
+        family: "code-plugin",
+        pluginManifest: { secretProviderIntegrations: {} },
+      }),
+    ).toEqual(["other"]);
+    expect(
+      derivePluginCategoryTags({
+        family: "code-plugin",
+        pluginManifest: { secretProviderIntegrations: { vault: {} } },
+      }),
+    ).toEqual(["security"]);
+  });
+
   it("ignores manifest taxonomy declarations and uses contribution inference", () => {
     expect(
       derivePluginCategoryTags({

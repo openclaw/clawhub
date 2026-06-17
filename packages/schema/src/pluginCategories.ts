@@ -17,6 +17,10 @@ function hasValues(value: unknown): boolean {
   return Array.isArray(value) && value.length > 0;
 }
 
+function hasProperties(value: unknown): boolean {
+  return isRecord(value) && Object.keys(value).length > 0;
+}
+
 export function inferPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[] {
   if (!isRecord(manifest)) return [];
 
@@ -60,7 +64,10 @@ export function inferPluginCategoriesFromManifest(manifest: unknown): PluginCate
     add("runtime");
   }
   if (hasValues(contracts.gatewayMethodDispatch)) add("gateway");
-  if (hasValues(contracts.externalAuthProviders) || isRecord(manifest.secretProviderIntegrations)) {
+  if (
+    hasValues(contracts.externalAuthProviders) ||
+    hasProperties(manifest.secretProviderIntegrations)
+  ) {
     add("security");
   }
 
