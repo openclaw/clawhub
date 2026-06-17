@@ -546,7 +546,11 @@ export function PublishPluginRoute() {
                 </div>
                 <div className="flex flex-col gap-2">
                   <Label>Publishing as</Label>
-                  <div className="flex min-h-[44px] w-full items-center rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)]">
+                  <div
+                    role="group"
+                    aria-label="Publishing as"
+                    className="flex min-h-[44px] w-full items-center rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)]"
+                  >
                     <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
                   </div>
                 </div>
