@@ -1,7 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import { AlertTriangle, Box, Download, Loader2, Package, Plus, Settings } from "lucide-react";
-import { useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { ArtifactCard } from "../components/artifacts/ArtifactCard";
@@ -10,13 +9,7 @@ import { SignInPrompt } from "../components/SignInPrompt";
 import { DashboardSkeleton } from "../components/skeletons/DashboardSkeleton";
 import { buildSkillHref } from "../components/skillDetailUtils";
 import { Button } from "../components/ui/button";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "../components/ui/select";
+import { useActivePublisher } from "../lib/activePublisher";
 import { buildPluginDetailHref, buildPluginValidationHref } from "../lib/pluginRoutes";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
@@ -105,34 +98,18 @@ export const Route = createFileRoute("/dashboard")({
 
 export function Dashboard() {
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
-  const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
-    | Array<{
-        publisher: {
-          _id: string;
-          handle: string;
-          displayName: string;
-          kind: "user" | "org";
-        };
-        role: "owner" | "admin" | "publisher";
-      }>
-    | undefined;
-  const [selectedPublisherId, setSelectedPublisherId] = useState<string>("");
-  const defaultPublisher =
-    publishers?.find((entry) => entry.publisher.kind === "user") ?? publishers?.[0] ?? null;
-  const selectedPublisherFromState = selectedPublisherId
-    ? (publishers?.find((entry) => entry.publisher._id === selectedPublisherId) ?? null)
-    : null;
-  const selectedPublisher = selectedPublisherFromState ?? defaultPublisher ?? null;
-  const activePublisherId = selectedPublisher?.publisher._id ?? "";
+  const {
+    activePublisherId,
+    activeOwnerHandle,
+    canManageActivePublisher,
+    isLoading: isPublisherLoading,
+  } = useActivePublisher();
 
-  const skillsQueryArgs =
-    selectedPublisher?.publisher.kind === "user" && me?._id
+  const skillsQueryArgs = activePublisherId
+    ? { ownerPublisherId: activePublisherId }
+    : me?._id
       ? { ownerUserId: me._id }
-      : activePublisherId
-        ? { ownerPublisherId: activePublisherId as Doc<"publishers">["_id"] }
-        : me?._id
-          ? { ownerUserId: me._id }
-          : "skip";
+      : "skip";
   const {
     results: paginatedSkills,
     status: skillsStatus,
@@ -144,7 +121,7 @@ export function Dashboard() {
   const myPackages = useQuery(
     api.packages.list,
     activePublisherId
-      ? { ownerPublisherId: activePublisherId as Doc<"publishers">["_id"], limit: 100 }
+      ? { ownerPublisherId: activePublisherId, limit: 100 }
       : me?._id
         ? { ownerUserId: me._id, limit: 100 }
         : "skip",
@@ -161,36 +138,13 @@ export function Dashboard() {
   const skills = mySkills ?? [];
   const packages = myPackages ?? [];
   const isLoading =
-    publishers === undefined || skillsStatus === "LoadingFirstPage" || myPackages === undefined;
-  const ownerHandle =
-    selectedPublisher?.publisher.handle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
+    isPublisherLoading || skillsStatus === "LoadingFirstPage" || myPackages === undefined;
+  const ownerHandle = activeOwnerHandle ?? me.handle ?? me.name ?? me.displayName ?? me._id;
   const isDashboardEmpty = !isLoading && skills.length === 0 && packages.length === 0;
 
   if (isLoading) {
     return <DashboardSkeleton />;
   }
-
-  const publisherSelector =
-    publishers && publishers.length > 1 ? (
-      <div className="dashboard-publisher-select">
-        <span className="text-sm font-medium text-muted-foreground">Viewing as</span>
-        <Select value={activePublisherId} onValueChange={setSelectedPublisherId}>
-          <SelectTrigger
-            aria-label="Dashboard publisher"
-            className="min-w-[220px] rounded-[var(--radius-sm)]"
-          >
-            <SelectValue placeholder="Select publisher" />
-          </SelectTrigger>
-          <SelectContent>
-            {publishers.map((entry) => (
-              <SelectItem key={entry.publisher._id} value={entry.publisher._id}>
-                @{entry.publisher.handle} · {entry.publisher.kind === "org" ? "Org" : "Personal"}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-    ) : null;
 
   // Welcome state for new users with no content
   if (isDashboardEmpty) {
@@ -203,7 +157,6 @@ export function Dashboard() {
           <p className="empty-state-body">
             You're signed in as @{ownerHandle}. Import a public GitHub repo or publish manually.
           </p>
-          {publisherSelector}
           <div className="flex flex-wrap gap-3 justify-center">
             <Button asChild variant="primary">
               <Link to="/import">
@@ -242,9 +195,10 @@ export function Dashboard() {
       <div className="dashboard-header">
         <div>
           <h1 className="section-title m-0">Dashboard</h1>
-          <p className="section-subtitle m-0">View your published skills and plugins.</p>
+          <p className="section-subtitle m-0">
+            View published skills and plugins for @{ownerHandle}.
+          </p>
         </div>
-        {publisherSelector}
       </div>
 
       <div className="dashboard-owner-grid">
@@ -276,7 +230,12 @@ export function Dashboard() {
           ) : (
             <div className="dashboard-list">
               {skills.map((skill) => (
-                <SkillRow key={skill._id} skill={skill} ownerHandle={ownerHandle} />
+                <SkillRow
+                  key={skill._id}
+                  skill={skill}
+                  ownerHandle={ownerHandle}
+                  showManageActions={canManageActivePublisher}
+                />
               ))}
             </div>
           )}
@@ -323,7 +282,15 @@ export function Dashboard() {
   );
 }
 
-function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: string }) {
+function SkillRow({
+  skill,
+  ownerHandle,
+  showManageActions,
+}: {
+  skill: DashboardSkill;
+  ownerHandle: string;
+  showManageActions: boolean;
+}) {
   const status = skillArtifactStatus(skill);
   const titleId = `dashboard-skill-title-${skill._id}`;
   const detailHref =
@@ -345,7 +312,9 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
       status={status}
       stats={stats}
       actions={
-        <SettingsLink href={settingsHref} label={`Open settings for ${skill.displayName}`} />
+        showManageActions ? (
+          <SettingsLink href={settingsHref} label={`Open settings for ${skill.displayName}`} />
+        ) : null
       }
     />
   );

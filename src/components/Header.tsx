@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
   ArrowRight,
+  Check,
   ChevronDown,
   Command,
   LayoutDashboard,
@@ -19,6 +20,7 @@ import {
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { useActivePublisher } from "../lib/activePublisher";
 import {
   getUserFacingAuthError,
   isBannedAccountAuthError,
@@ -119,6 +121,13 @@ type TypeaheadItem =
 
 export default function Header() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
+  const {
+    activePublisher,
+    activePublisherId,
+    hasMultiplePublishers,
+    memberships: publisherMemberships,
+    setActivePublisherId,
+  } = useActivePublisher();
   const { signIn, signOut } = useAuthActions();
   const { theme, mode, setMode } = useThemeMode();
   const navigate = useNavigate();
@@ -128,6 +137,9 @@ export default function Header() {
   const rawHandle = me?.handle ?? me?.displayName ?? "user";
   const handle = rawHandle.length > 25 ? `${rawHandle.slice(0, 25)}…` : rawHandle;
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
+  const triggerPublisher = activePublisher?.publisher;
+  const triggerHandle = triggerPublisher?.handle ?? rawHandle;
+  const triggerLabel = triggerHandle.length > 25 ? `${triggerHandle.slice(0, 25)}…` : triggerHandle;
   const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
   const profileHandle = useQuery(
     api.publishers.getMyProfileHandle,
@@ -566,17 +578,77 @@ export default function Header() {
             {isAuthenticated && me ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
-                  <button className="user-trigger" type="button">
-                    {avatar ? (
+                  <button
+                    className="user-trigger"
+                    type="button"
+                    aria-label={`Open account menu for @${triggerHandle}`}
+                  >
+                    {triggerPublisher ? (
+                      <span className="user-menu-publisher-icon" aria-hidden="true">
+                        <MarketplaceIcon
+                          kind={triggerPublisher.kind}
+                          label={triggerPublisher.displayName || triggerPublisher.handle}
+                          imageUrl={triggerPublisher.image}
+                          size="xs"
+                        />
+                      </span>
+                    ) : avatar ? (
                       <img src={avatar} alt={me.displayName ?? me.name ?? "User avatar"} />
                     ) : (
                       <span className="user-menu-fallback">{initial}</span>
                     )}
-                    <span className="user-trigger-handle truncate">@{handle}</span>
+                    <span className="user-trigger-handle truncate">@{triggerLabel}</span>
                     <ChevronDown className="user-menu-chevron" size={16} />
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="user-dropdown-content">
+                  {hasMultiplePublishers && publisherMemberships ? (
+                    <>
+                      <div className="user-dropdown-publisher-list" aria-label="Active publisher">
+                        {publisherMemberships.map((entry) => {
+                          const active = entry.publisher._id === activePublisherId;
+                          return (
+                            <DropdownMenuItem
+                              key={entry.publisher._id}
+                              aria-current={active ? "true" : undefined}
+                              className="user-dropdown-publisher-item"
+                              data-status={active ? "active" : undefined}
+                              onClick={() => setActivePublisherId(entry.publisher._id)}
+                            >
+                              <span className="user-dropdown-publisher-icon" aria-hidden="true">
+                                <MarketplaceIcon
+                                  kind={entry.publisher.kind}
+                                  label={entry.publisher.displayName || entry.publisher.handle}
+                                  imageUrl={entry.publisher.image}
+                                  size="xs"
+                                />
+                              </span>
+                              <span className="user-dropdown-publisher-copy">
+                                <span className="user-dropdown-publisher-title">
+                                  @{entry.publisher.handle}
+                                </span>
+                                <span className="user-dropdown-publisher-meta">
+                                  {entry.publisher.kind === "org" ? "Org" : "Personal"} ·{" "}
+                                  {entry.role}
+                                </span>
+                              </span>
+                              {active ? (
+                                <Check
+                                  className="user-dropdown-publisher-check"
+                                  size={15}
+                                  aria-hidden="true"
+                                />
+                              ) : null}
+                            </DropdownMenuItem>
+                          );
+                        })}
+                      </div>
+                      {activePublisher?.publisher.kind === "org" ? (
+                        <div className="user-dropdown-signed-in">Signed in as @{handle}</div>
+                      ) : null}
+                      <DropdownMenuSeparator />
+                    </>
+                  ) : null}
                   {profileHandle ? (
                     <DropdownMenuItem asChild>
                       <Link
