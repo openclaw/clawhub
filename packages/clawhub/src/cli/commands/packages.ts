@@ -2342,7 +2342,7 @@ async function preparePackagePublishPlan(
       ? { manualOverrideReason: options.manualOverrideReason.trim() }
       : {}),
     tags,
-    ...(categories.length ? { categories } : {}),
+    ...(options.categories !== undefined ? { categories } : {}),
     ...(options.topics !== undefined ? { topics } : {}),
     ...(source ? { source } : {}),
     ...(family === "bundle-plugin"

@@ -1264,7 +1264,7 @@ describe("package commands", () => {
     }
   });
 
-  it("sends explicit empty topics to clear existing package topics", async () => {
+  it("sends explicit empty catalog metadata to clear existing package values", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "clear-topics-plugin");
@@ -1293,10 +1293,11 @@ describe("package commands", () => {
       await cmdPublishPackage(makeOpts(workdir), "clear-topics-plugin", {
         sourceRepo: "openclaw/clear-topics-plugin",
         sourceCommit: "abc123",
+        categories: "",
         topics: "",
       });
 
-      expect(getPublishPayload()).toMatchObject({ topics: [] });
+      expect(getPublishPayload()).toMatchObject({ categories: [], topics: [] });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

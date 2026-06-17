@@ -147,7 +147,7 @@ export async function cmdPublish(
         changelog,
         acceptLicenseTerms: true,
         tags,
-        ...(categories.length ? { categories } : {}),
+        ...(options.categories !== undefined ? { categories } : {}),
         ...(options.topics !== undefined ? { topics } : {}),
         ...(source ? { source } : {}),
         ...(forkOf ? { forkOf } : {}),

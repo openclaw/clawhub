@@ -236,7 +236,7 @@ describe("cmdPublish", () => {
     }
   });
 
-  it("sends explicit empty topics to clear existing skill topics", async () => {
+  it("sends explicit empty catalog metadata to clear existing skill values", async () => {
     const workdir = await makeTmpWorkdir();
     try {
       const folder = join(workdir, "clear-topics");
@@ -248,9 +248,9 @@ describe("cmdPublish", () => {
         versionId: "ver_1",
       });
 
-      await cmdPublish(makeOpts(workdir), "clear-topics", { topics: "" });
+      await cmdPublish(makeOpts(workdir), "clear-topics", { categories: "", topics: "" });
 
-      expect(publishPayload()).toMatchObject({ topics: [] });
+      expect(publishPayload()).toMatchObject({ categories: [], topics: [] });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
