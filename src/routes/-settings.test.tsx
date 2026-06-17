@@ -86,6 +86,19 @@ const clawkitMembership = {
   role: "admin",
 };
 
+const publisherOnlyOrgMembership = {
+  publisher: {
+    _id: "publisher_readonly",
+    handle: "readonly-org",
+    displayName: "Readonly Org",
+    kind: "org",
+    image: null,
+    bio: "Publish-only org",
+    official: true,
+  },
+  role: "publisher",
+};
+
 const personalMembership = {
   publisher: {
     _id: "publisher_patrick",
@@ -138,12 +151,18 @@ function mockSignedInSettings({
   setActivePublisherId = vi.fn(),
 }: {
   search?: Record<string, unknown>;
-  memberships?: Array<typeof orgMembership | typeof personalMembership | typeof clawkitMembership>;
+  memberships?: Array<
+    | typeof orgMembership
+    | typeof personalMembership
+    | typeof clawkitMembership
+    | typeof publisherOnlyOrgMembership
+  >;
   members?: typeof orgMembers | typeof clawkitMembers;
   activePublisher?:
     | typeof orgMembership
     | typeof personalMembership
     | typeof clawkitMembership
+    | typeof publisherOnlyOrgMembership
     | null;
   setActivePublisherId?: ReturnType<typeof vi.fn>;
   githubSources?: Array<{
@@ -372,6 +391,32 @@ describe("Settings", () => {
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, {
       publisherHandle: "clawkit",
     });
+  });
+
+  it("shows publish-only org settings as read-only", () => {
+    mockSignedInSettings({
+      memberships: [personalMembership, publisherOnlyOrgMembership],
+      activePublisher: publisherOnlyOrgMembership,
+    });
+
+    render(<Settings />);
+
+    expect(screen.getByText("Manage @readonly-org's publisher profile and access.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Profile" }).getAttribute("aria-current")).toBe(
+      "true",
+    );
+    expect(screen.queryByRole("button", { name: "Members" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Delete organization" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "GitHub Skill Sync" })).toBeNull();
+    expect((screen.getByLabelText("Display name") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Avatar URL") as HTMLInputElement).disabled).toBe(true);
+    expect((screen.getByLabelText("Bio") as HTMLTextAreaElement).disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Save profile" }).hasAttribute("disabled")).toBe(
+      true,
+    );
+    expect(screen.getByText(/You can publish under this org/i)).toBeTruthy();
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, "skip");
+    expect(useQueryMock).toHaveBeenCalledWith(api.githubSkillSources.listForPublisher, "skip");
   });
 
   it("aliases legacy organization settings URLs to the active org profile", () => {
