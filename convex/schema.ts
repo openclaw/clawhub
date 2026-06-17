@@ -501,29 +501,6 @@ const packageCompatibilityValidator = v.optional(
   }),
 );
 
-const packageCapabilitiesValidator = v.optional(
-  v.object({
-    executesCode: v.boolean(),
-    runtimeId: v.optional(v.string()),
-    pluginKind: v.optional(v.string()),
-    channels: v.optional(v.array(v.string())),
-    providers: v.optional(v.array(v.string())),
-    hooks: v.optional(v.array(v.string())),
-    bundledSkills: v.optional(v.array(v.string())),
-    setupEntry: v.optional(v.boolean()),
-    configSchema: v.optional(v.boolean()),
-    configUiHints: v.optional(v.boolean()),
-    materializesDependencies: v.optional(v.boolean()),
-    toolNames: v.optional(v.array(v.string())),
-    commandNames: v.optional(v.array(v.string())),
-    serviceNames: v.optional(v.array(v.string())),
-    capabilityTags: v.optional(v.array(v.string())),
-    httpRouteCount: v.optional(v.number()),
-    bundleFormat: v.optional(v.string()),
-    hostTargets: v.optional(v.array(v.string())),
-  }),
-);
-
 const packageVerificationValidator = v.optional(
   v.object({
     tier: packageVerificationTierValidator,
@@ -659,7 +636,6 @@ const skills = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
-  capabilityTags: v.optional(v.array(v.string())),
   softDeletedAt: v.optional(v.number()),
   badges: badgesValidator,
   moderationStatus: moderationStatusValidator,
@@ -871,7 +847,6 @@ const skillVersions = defineTable({
       checkedAt: v.number(),
     }),
   ),
-  capabilityTags: v.optional(v.array(v.string())),
   depRegistryAnalysis: v.optional(depRegistryAnalysisValidator),
   depRegistryScanStatus: v.optional(depRegistryStatusValidator),
   staticScan: v.optional(
@@ -1016,7 +991,6 @@ const skillSearchDigest = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
-  capabilityTags: v.optional(v.array(v.string())),
   badges: badgesValidator,
   stats: statsValidator,
   statsDownloads: v.optional(v.number()),
@@ -1140,16 +1114,12 @@ const packages = defineTable({
       createdAt: v.number(),
       changelog: v.string(),
       compatibility: packageCompatibilityValidator,
-      capabilities: packageCapabilitiesValidator,
       verification: packageVerificationValidator,
       artifact: packageArtifactSummaryValidator,
     }),
   ),
   tags: v.record(v.string(), v.id("packageReleases")),
-  capabilityTags: v.optional(v.array(v.string())),
-  executesCode: v.optional(v.boolean()),
   compatibility: packageCompatibilityValidator,
-  capabilities: packageCapabilitiesValidator,
   verification: packageVerificationValidator,
   scanStatus: packageScanStatusValidator,
   stats: packageStatsValidator,
@@ -1248,7 +1218,6 @@ const packageReleases = defineTable({
   extractedPluginManifest: v.optional(v.any()),
   normalizedBundleManifest: v.optional(v.any()),
   compatibility: packageCompatibilityValidator,
-  capabilities: packageCapabilitiesValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
   verification: packageVerificationValidator,
@@ -1439,7 +1408,6 @@ const skillScanRequests = defineTable({
   vtAnalysis: v.optional(vtAnalysisValidator),
   skillSpectorAnalysis: v.optional(skillSpectorAnalysisValidator),
   llmAnalysis: v.optional(llmAnalysisValidator),
-  capabilityTags: v.optional(v.array(v.string())),
   staticScan: v.optional(staticScanValidator),
   lastError: v.optional(v.string()),
   runId: v.optional(v.string()),
@@ -1562,9 +1530,7 @@ const packageSearchDigest = defineTable({
   summary: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
-  capabilityTags: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
-  executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
   scanStatus: packageScanStatusValidator,
@@ -1582,170 +1548,17 @@ const packageSearchDigest = defineTable({
     "isOfficial",
     "updatedAt",
   ])
-  .index("by_active_executes_updated", ["softDeletedAt", "executesCode", "updatedAt"])
   .index("by_active_family_updated", ["softDeletedAt", "family", "updatedAt"])
   .index("by_active_family_channel_updated", ["softDeletedAt", "family", "channel", "updatedAt"])
-  .index("by_active_family_channel_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "channel",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_family_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_family_official_updated", [
     "softDeletedAt",
     "family",
     "isOfficial",
     "updatedAt",
   ])
-  .index("by_active_family_official_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_channel_executes_updated", [
-    "softDeletedAt",
-    "channel",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_channel_official_executes_updated", [
-    "softDeletedAt",
-    "channel",
-    "isOfficial",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_official_executes_updated", [
-    "softDeletedAt",
-    "isOfficial",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_normalized_name", ["softDeletedAt", "normalizedName", "updatedAt"])
   .index("by_active_runtime_id", ["softDeletedAt", "runtimeId", "updatedAt"])
   .index("by_active_name", ["softDeletedAt", "displayName"]);
-
-const packageCapabilitySearchDigest = defineTable({
-  packageId: v.id("packages"),
-  name: v.string(),
-  normalizedName: v.string(),
-  displayName: v.string(),
-  family: packageFamilyValidator,
-  channel: packageChannelValidator,
-  isOfficial: v.boolean(),
-  ownerUserId: v.id("users"),
-  ownerPublisherId: v.optional(v.id("publishers")),
-  ownerHandle: v.optional(v.string()),
-  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
-  summary: v.optional(v.string()),
-  latestVersion: v.optional(v.string()),
-  runtimeId: v.optional(v.string()),
-  capabilityTags: v.optional(v.array(v.string())),
-  capabilityTag: v.string(),
-  executesCode: v.optional(v.boolean()),
-  verificationTier: v.optional(packageVerificationTierValidator),
-  stats: v.optional(packageStatsValidator),
-  scanStatus: packageScanStatusValidator,
-  softDeletedAt: v.optional(v.number()),
-  createdAt: v.number(),
-  updatedAt: v.number(),
-})
-  .index("by_package", ["packageId", "capabilityTag"])
-  .index("by_active_tag_updated", ["softDeletedAt", "capabilityTag", "updatedAt"])
-  .index("by_active_tag_executes_updated", [
-    "softDeletedAt",
-    "capabilityTag",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_family_tag_updated", ["softDeletedAt", "family", "capabilityTag", "updatedAt"])
-  .index("by_active_family_tag_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "capabilityTag",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_channel_tag_updated", [
-    "softDeletedAt",
-    "channel",
-    "capabilityTag",
-    "updatedAt",
-  ])
-  .index("by_active_channel_tag_executes_updated", [
-    "softDeletedAt",
-    "channel",
-    "capabilityTag",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_official_tag_updated", [
-    "softDeletedAt",
-    "isOfficial",
-    "capabilityTag",
-    "updatedAt",
-  ])
-  .index("by_active_official_tag_executes_updated", [
-    "softDeletedAt",
-    "isOfficial",
-    "capabilityTag",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_family_channel_tag_updated", [
-    "softDeletedAt",
-    "family",
-    "channel",
-    "capabilityTag",
-    "updatedAt",
-  ])
-  .index("by_active_family_channel_tag_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "channel",
-    "capabilityTag",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_family_official_tag_updated", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "capabilityTag",
-    "updatedAt",
-  ])
-  .index("by_active_family_official_tag_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "capabilityTag",
-    "executesCode",
-    "updatedAt",
-  ])
-  .index("by_active_channel_official_tag_updated", [
-    "softDeletedAt",
-    "channel",
-    "isOfficial",
-    "capabilityTag",
-    "updatedAt",
-  ])
-  .index("by_active_channel_official_tag_executes_updated", [
-    "softDeletedAt",
-    "channel",
-    "isOfficial",
-    "capabilityTag",
-    "executesCode",
-    "updatedAt",
-  ]);
 
 const packagePluginCategorySearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -1762,10 +1575,8 @@ const packagePluginCategorySearchDigest = defineTable({
   summary: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
-  capabilityTags: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
   pluginCategory: v.string(),
-  executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
   scanStatus: packageScanStatusValidator,
@@ -1775,23 +1586,10 @@ const packagePluginCategorySearchDigest = defineTable({
 })
   .index("by_package", ["packageId", "pluginCategory"])
   .index("by_active_category_updated", ["softDeletedAt", "pluginCategory", "updatedAt"])
-  .index("by_active_category_executes_updated", [
-    "softDeletedAt",
-    "pluginCategory",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_family_category_updated", [
     "softDeletedAt",
     "family",
     "pluginCategory",
-    "updatedAt",
-  ])
-  .index("by_active_family_category_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "pluginCategory",
-    "executesCode",
     "updatedAt",
   ])
   .index("by_active_channel_category_updated", [
@@ -1800,24 +1598,10 @@ const packagePluginCategorySearchDigest = defineTable({
     "pluginCategory",
     "updatedAt",
   ])
-  .index("by_active_channel_category_executes_updated", [
-    "softDeletedAt",
-    "channel",
-    "pluginCategory",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_official_category_updated", [
     "softDeletedAt",
     "isOfficial",
     "pluginCategory",
-    "updatedAt",
-  ])
-  .index("by_active_official_category_executes_updated", [
-    "softDeletedAt",
-    "isOfficial",
-    "pluginCategory",
-    "executesCode",
     "updatedAt",
   ])
   .index("by_active_family_channel_category_updated", [
@@ -1827,14 +1611,6 @@ const packagePluginCategorySearchDigest = defineTable({
     "pluginCategory",
     "updatedAt",
   ])
-  .index("by_active_family_channel_category_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "channel",
-    "pluginCategory",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_family_official_category_updated", [
     "softDeletedAt",
     "family",
@@ -1842,27 +1618,11 @@ const packagePluginCategorySearchDigest = defineTable({
     "pluginCategory",
     "updatedAt",
   ])
-  .index("by_active_family_official_category_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "pluginCategory",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_channel_official_category_updated", [
     "softDeletedAt",
     "channel",
     "isOfficial",
     "pluginCategory",
-    "updatedAt",
-  ])
-  .index("by_active_channel_official_category_executes_updated", [
-    "softDeletedAt",
-    "channel",
-    "isOfficial",
-    "pluginCategory",
-    "executesCode",
     "updatedAt",
   ]);
 
@@ -2548,7 +2308,6 @@ export default defineSchema({
   packagePublishUploadTickets,
   packageBadges,
   packageSearchDigest,
-  packageCapabilitySearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
   depRegistryCache,
