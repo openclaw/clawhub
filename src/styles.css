@@ -15541,6 +15541,21 @@ a[class*="rounded-full"] {
   --clawhub-segmented-active-bg: color-mix(in srgb, var(--hv2-text) 10%, transparent);
 }
 
+.navbar-search-typeahead-tabs.clawhub-segmented,
+.app-shell:has(.home-v2-main) .navbar-search-typeahead-tabs.clawhub-segmented {
+  --clawhub-segmented-border: #3a3a3f;
+  --clawhub-segmented-bg: #101011;
+  --clawhub-segmented-fg: #8f8f98;
+  --clawhub-segmented-fg-hover: #d6d6da;
+  --clawhub-segmented-fg-active: #f7f7f8;
+  --clawhub-segmented-active-bg: #303033;
+  border-radius: 14px;
+}
+
+.navbar-search-typeahead-tab.clawhub-segmented-btn {
+  border-radius: 10px;
+}
+
 .app-shell:has(.home-v2-main) main.home-v2-main {
   margin-top: -64px;
   padding-bottom: 0;
