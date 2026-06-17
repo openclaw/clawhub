@@ -1125,6 +1125,53 @@ const skillSearchDigest = defineTable({
     filterFields: ["softDeletedAt", "isSuspicious"],
   });
 
+const curatedSkillSearchDigest = defineTable({
+  skillId: v.id("skills"),
+  slug: v.string(),
+  displayName: v.string(),
+  summary: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
+  statsDownloads: v.optional(v.number()),
+  statsStars: v.optional(v.number()),
+  statsInstallsAllTime: v.optional(v.number()),
+  recommendedScore: v.optional(v.number()),
+  softDeletedAt: v.optional(v.number()),
+  isSuspicious: v.optional(v.boolean()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"])
+  .index("by_active_created", ["softDeletedAt", "createdAt"])
+  .index("by_active_name", ["softDeletedAt", "displayName"])
+  .index("by_active_downloads", ["softDeletedAt", "statsDownloads", "updatedAt"])
+  .index("by_active_stars", ["softDeletedAt", "statsStars", "updatedAt"])
+  .index("by_active_installs", ["softDeletedAt", "statsInstallsAllTime", "updatedAt"])
+  .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
+  .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
+  .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
+  .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
+  .index("by_nonsuspicious_downloads", [
+    "softDeletedAt",
+    "isSuspicious",
+    "statsDownloads",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_stars", ["softDeletedAt", "isSuspicious", "statsStars", "updatedAt"])
+  .index("by_nonsuspicious_installs", [
+    "softDeletedAt",
+    "isSuspicious",
+    "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_recommended_score", [
+    "softDeletedAt",
+    "isSuspicious",
+    "recommendedScore",
+    "updatedAt",
+  ]);
+
 const skillTopicSearchDigest = defineTable({
   skillId: v.id("skills"),
   topic: v.string(),
@@ -2770,6 +2817,7 @@ export default defineSchema({
   skillEmbeddings,
   embeddingSkillMap,
   skillSearchDigest,
+  curatedSkillSearchDigest,
   skillTopicSearchDigest,
   skillDailyStats,
   skillLeaderboards,

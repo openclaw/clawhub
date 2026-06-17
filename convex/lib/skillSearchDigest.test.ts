@@ -315,6 +315,68 @@ describe("upsertSkillSearchDigest", () => {
 
     expect(deleteRow).toHaveBeenCalledWith("skillTopicSearchDigest:supply-chain");
   });
+
+  it("syncs a compact curated projection for official or highlighted skills", async () => {
+    const fields = extractDigestFields(
+      makeSkillDoc({ badges: { official: { byUserId: "users:admin", at: 3 } } }) as never,
+    );
+    const insert = vi.fn(async (table: string) => `${table}:inserted`);
+    const query = vi.fn(() => ({
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () => null),
+        collect: vi.fn(async () => []),
+      })),
+    }));
+
+    await upsertSkillSearchDigest({ db: { query, insert } } as never, fields);
+
+    expect(insert).toHaveBeenCalledWith(
+      "curatedSkillSearchDigest",
+      expect.objectContaining({
+        skillId: "skills:abc",
+        categories: ["operations"],
+        topics: ["supply-chain", "vetting"],
+        statsDownloads: 42,
+      }),
+    );
+  });
+
+  it("removes the curated projection when the last curated badge is cleared", async () => {
+    const fields = extractDigestFields(makeSkillDoc({ badges: {} }) as never);
+    const deleteRow = vi.fn(async () => {});
+    const query = vi.fn((table: string) => ({
+      withIndex: vi.fn(() => ({
+        unique: vi.fn(async () => {
+          if (table === "skillSearchDigest") {
+            return {
+              ...fields,
+              badges: { official: { byUserId: "users:admin", at: 3 } },
+              _id: "skillSearchDigest:abc",
+            };
+          }
+          if (table === "curatedSkillSearchDigest") {
+            return { skillId: fields.skillId, _id: "curatedSkillSearchDigest:abc" };
+          }
+          return null;
+        }),
+        collect: vi.fn(async () => []),
+      })),
+    }));
+
+    await upsertSkillSearchDigest(
+      {
+        db: {
+          query,
+          insert: vi.fn(),
+          patch: vi.fn(),
+          delete: deleteRow,
+        },
+      } as never,
+      fields,
+    );
+
+    expect(deleteRow).toHaveBeenCalledWith("curatedSkillSearchDigest:abc");
+  });
 });
 
 describe("digestToOwnerInfo", () => {

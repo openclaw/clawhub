@@ -120,6 +120,69 @@ describe("Upload route", () => {
     });
   });
 
+  it("sends explicit empty metadata arrays when clearing an existing override", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "categorized-skill" });
+    const existing = {
+      skill: {
+        slug: "categorized-skill",
+        displayName: "Categorized Skill",
+        categories: ["development"],
+        topics: ["Existing topic"],
+      },
+      latestVersion: { version: "1.0.0" },
+      owner: { handle: "alice", displayName: "Alice" },
+    };
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") return existing;
+      return null;
+    });
+    generateUploadUrl.mockResolvedValue("https://upload.local");
+    publishVersion.mockResolvedValue(undefined);
+
+    render(<Upload />);
+
+    const development = await screen.findByRole("checkbox", { name: "Development" });
+    expect((development as HTMLInputElement).checked).toBe(true);
+    fireEvent.click(development);
+    fireEvent.change(screen.getByLabelText("Topics"), { target: { value: "" } });
+    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
+      target: { value: "latest" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("Describe what changed in this skill..."), {
+      target: { value: "Clear catalog overrides." },
+    });
+
+    const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
+    fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i have the rights to publish this skill under mit-0/i,
+      }),
+    );
+
+    const publishButton = screen.getByRole("button", { name: /publish skill/i });
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.click(publishButton);
+
+    await waitFor(() => {
+      expect(
+        publishVersion.mock.calls.some((call) =>
+          Array.isArray((call[0] as { files?: unknown }).files),
+        ),
+      ).toBe(true);
+    });
+    const args = publishVersion.mock.calls
+      .map((call) => call[0] as Record<string, unknown>)
+      .find((call) => Array.isArray(call.files));
+    expect(Object.hasOwn(args ?? {}, "categories")).toBe(false);
+    expect(args?.clearCategories).toBe(true);
+    expect(args?.topics).toEqual([]);
+  });
+
   it("keeps required validation quiet before submit", async () => {
     render(<Upload />);
     const publishButton = screen.getByRole("button", { name: /publish/i });
@@ -276,7 +339,9 @@ describe("Upload route", () => {
       .map((call) => call[0] as Record<string, unknown> & { files?: Array<{ path: string }> })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
-    expect(Object.hasOwn(args ?? {}, "topics")).toBe(false);
+    expect(Object.hasOwn(args ?? {}, "categories")).toBe(false);
+    expect(args?.clearCategories).toBe(true);
+    expect(args?.topics).toEqual([]);
   });
 
   it("blocks non-text folder uploads (png)", async () => {

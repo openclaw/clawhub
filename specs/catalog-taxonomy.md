@@ -21,9 +21,10 @@
 - Capability tags are not taxonomy inputs.
 - Existing skills without stored categories use deterministic inference into controlled slugs.
 - Existing plugins without stored categories remain in `other` until the follow-up corpus backfill.
-- Backend deploys run the tracked `rebuildCatalogTaxonomyPackageDigests` migration before contract
-  verification so retired category digest rows are deterministically replaced with controlled
-  inference or `other`.
+- Backend deploys run the tracked package and skill catalog digest migrations before contract
+  verification so retired category rows are deterministically replaced with controlled inference
+  or `other`, and the indexed curated-skill projection is complete before browse traffic relies on
+  it.
 
 ## Topics
 
@@ -41,6 +42,8 @@
 
 - Skill and plugin browse paths remain separate.
 - Category browse places official or curated entries before community entries.
+- Skill category browse paginates an indexed curated projection before community results; it does
+  not cap the curated corpus or hydrate curated entries outside the requested page.
 - Category and topic filters use per-value digest rows that preserve the selected browse sort.
 - Publisher profiles group authored items by their first topic when multiple groups exist.
 

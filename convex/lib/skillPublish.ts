@@ -76,6 +76,7 @@ export type PublishVersionArgs = {
   changelog: string;
   tags?: string[];
   categories?: string[];
+  clearCategories?: boolean;
   topics?: string[];
   forkOf?: { slug: string; version?: string };
   source?: {
@@ -282,13 +283,21 @@ export async function publishVersionForUser(
   const otherFiles = fileContents
     .filter((file) => !file.path.toLowerCase().endsWith(".md"))
     .slice(0, MAX_FILES_FOR_EMBEDDING);
-  let categories: string[];
+  let categories: string[] | undefined;
   let topics: string[];
   try {
-    categories = resolveSkillCategories({
-      declared: args.categories ?? normalizeStoredSkillCategoryOverride(existingSkill?.categories),
-      inferred: inferSkillCategories({ slug, displayName, summary }),
-    });
+    if (args.clearCategories) {
+      if (args.categories?.length) {
+        throw new Error("Cannot set and clear categories in the same publish");
+      }
+      categories = undefined;
+    } else {
+      categories = resolveSkillCategories({
+        declared:
+          args.categories ?? normalizeStoredSkillCategoryOverride(existingSkill?.categories),
+        inferred: inferSkillCategories({ slug, displayName, summary }),
+      });
+    }
     topics = normalizeCatalogTopics(args.topics ?? existingSkill?.topics);
   } catch (error) {
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");

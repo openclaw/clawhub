@@ -137,63 +137,34 @@ function makeSearchDigest(overrides: Record<string, unknown> = {}) {
 
 function makeOfficialFirstCategoryCtx(curatedDigests: Array<ReturnType<typeof makeSearchDigest>>) {
   const digestsBySkillId = new Map(curatedDigests.map((digest) => [digest.skillId, digest]));
+  const query = vi.fn((table: string) => {
+    if (table === "skillSearchDigest") {
+      return {
+        withIndex: vi.fn(
+          (
+            _indexName: string,
+            builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+          ) => {
+            let skillId = "";
+            const queryBuilder = {
+              eq: (_field: string, value: string) => {
+                skillId = value;
+                return queryBuilder;
+              },
+            };
+            builder(queryBuilder);
+            return {
+              unique: vi.fn().mockResolvedValue(digestsBySkillId.get(skillId) ?? null),
+            };
+          },
+        ),
+      };
+    }
+    throw new Error(`Unexpected table: ${table}`);
+  });
   return {
     db: {
-      query: vi.fn((table: string) => {
-        if (table === "skillBadges") {
-          return {
-            withIndex: vi.fn(
-              (
-                _indexName: string,
-                builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-              ) => {
-                let kind = "";
-                const queryBuilder = {
-                  eq: (_field: string, value: string) => {
-                    kind = value;
-                    return queryBuilder;
-                  },
-                };
-                builder(queryBuilder);
-                return {
-                  order: vi.fn(() => ({
-                    take: vi
-                      .fn()
-                      .mockResolvedValue(
-                        kind === "official"
-                          ? curatedDigests.map((digest) => ({ skillId: digest.skillId }))
-                          : [],
-                      ),
-                  })),
-                };
-              },
-            ),
-          };
-        }
-        if (table === "skillSearchDigest") {
-          return {
-            withIndex: vi.fn(
-              (
-                _indexName: string,
-                builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-              ) => {
-                let skillId = "";
-                const queryBuilder = {
-                  eq: (_field: string, value: string) => {
-                    skillId = value;
-                    return queryBuilder;
-                  },
-                };
-                builder(queryBuilder);
-                return {
-                  unique: vi.fn().mockResolvedValue(digestsBySkillId.get(skillId) ?? null),
-                };
-              },
-            ),
-          };
-        }
-        throw new Error(`Unexpected table: ${table}`);
-      }),
+      query,
     },
   };
 }
@@ -819,6 +790,11 @@ describe("public skill list deterministic cursors", () => {
     const ctx = makeOfficialFirstCategoryCtx([official]);
     getPageMock
       .mockResolvedValueOnce({
+        page: [official],
+        hasMore: false,
+        indexKeys: [[undefined, 1, 1, "curatedSkillSearchDigest:official-dev"]],
+      })
+      .mockResolvedValueOnce({
         page: [community, official],
         hasMore: false,
         indexKeys: [
@@ -904,6 +880,84 @@ describe("public skill list deterministic cursors", () => {
     expect(result.nextCursor).toBeNull();
   });
 
+  it("uses the indexed curated projection instead of a capped badge list", async () => {
+    const official = makeSearchDigest({
+      skillId: "skills:older-official-dev",
+      slug: "older-official-dev",
+      displayName: "Older Official Dev",
+      categories: ["development"],
+      badges: { official: { byUserId: "users:admin", at: 1 } },
+      updatedAt: 1,
+    });
+    const ctx = makeOfficialFirstCategoryCtx([official]);
+    getPageMock
+      .mockResolvedValueOnce({
+        page: [official],
+        hasMore: false,
+        indexKeys: [[undefined, 1, 1, "curatedSkillSearchDigest:older-official-dev"]],
+      })
+      .mockResolvedValueOnce({ page: [], hasMore: false, indexKeys: [] });
+
+    const result = await listPublicPageV4Handler(ctx as never, {
+      categorySlug: "development",
+      officialFirst: true,
+      numItems: 1,
+      sort: "updated",
+    });
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["older-official-dev"]);
+    expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
+      table: "curatedSkillSearchDigest",
+      index: "by_active_updated",
+    });
+    expect(ctx.db.query).not.toHaveBeenCalledWith("skillBadges");
+  });
+
+  it("hydrates only curated rows that match the requested category page", async () => {
+    const research = makeSearchDigest({
+      skillId: "skills:official-research",
+      slug: "official-research",
+      displayName: "Official Research",
+      categories: ["research"],
+      badges: { official: { byUserId: "users:admin", at: 2 } },
+      updatedAt: 2,
+    });
+    const development = makeSearchDigest({
+      skillId: "skills:official-dev",
+      slug: "official-dev",
+      displayName: "Official Dev",
+      categories: ["development"],
+      badges: { highlighted: { byUserId: "users:admin", at: 1 } },
+      updatedAt: 1,
+    });
+    const ctx = makeOfficialFirstCategoryCtx([research, development]);
+    getPageMock
+      .mockResolvedValueOnce({
+        page: [research, development],
+        hasMore: false,
+        indexKeys: [
+          [undefined, 2, 2, "curatedSkillSearchDigest:official-research"],
+          [undefined, 1, 1, "curatedSkillSearchDigest:official-dev"],
+        ],
+      })
+      .mockResolvedValueOnce({ page: [], hasMore: false, indexKeys: [] });
+
+    const result = await listPublicPageV4Handler(ctx as never, {
+      categorySlug: "development",
+      officialFirst: true,
+      numItems: 1,
+      sort: "updated",
+    });
+
+    expect(
+      (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
+    ).toEqual(["official-dev"]);
+    expect(ctx.db.query).toHaveBeenCalledTimes(1);
+    expect(ctx.db.query).toHaveBeenCalledWith("skillSearchDigest");
+  });
+
   it("preserves community scan progress after a sparse category probe", async () => {
     const official = makeSearchDigest({
       skillId: "skills:official-dev",
@@ -921,6 +975,11 @@ describe("public skill list deterministic cursors", () => {
       updatedAt: 2,
     });
     const ctx = makeOfficialFirstCategoryCtx([official]);
+    getPageMock.mockResolvedValueOnce({
+      page: [official],
+      hasMore: false,
+      indexKeys: [[undefined, 1, 1, "curatedSkillSearchDigest:official-dev"]],
+    });
     for (let downloads = 100; downloads > 96; downloads -= 1) {
       getPageMock.mockResolvedValueOnce({
         page: [
@@ -963,7 +1022,7 @@ describe("public skill list deterministic cursors", () => {
     expect(
       (second.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
     ).toEqual(["community-dev"]);
-    expect(getPageMock.mock.calls[4]?.[1].startIndexKey).toEqual([
+    expect(getPageMock.mock.calls[5]?.[1].startIndexKey).toEqual([
       undefined,
       97,
       97,

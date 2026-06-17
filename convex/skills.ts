@@ -5050,13 +5050,32 @@ const NONSUSPICIOUS_TOPIC_SORT_INDEXES = {
   stars: "by_nonsuspicious_topic_stars",
   installs: "by_nonsuspicious_topic_installs",
 } as const satisfies Record<PublicListSort, string>;
+const CURATED_SORT_INDEXES = {
+  recommended: "by_active_recommended_score",
+  newest: "by_active_created",
+  updated: "by_active_updated",
+  name: "by_active_name",
+  downloads: "by_active_downloads",
+  stars: "by_active_stars",
+  installs: "by_active_installs",
+} as const satisfies Record<PublicListSort, string>;
+const NONSUSPICIOUS_CURATED_SORT_INDEXES = {
+  recommended: "by_nonsuspicious_recommended_score",
+  newest: "by_nonsuspicious_created",
+  updated: "by_nonsuspicious_updated",
+  name: "by_nonsuspicious_name",
+  downloads: "by_nonsuspicious_downloads",
+  stars: "by_nonsuspicious_stars",
+  installs: "by_nonsuspicious_installs",
+} as const satisfies Record<PublicListSort, string>;
 type SkillSearchDigestSortIndexName =
   | (typeof SORT_INDEXES)[keyof typeof SORT_INDEXES]
   | (typeof NONSUSPICIOUS_SORT_INDEXES)[keyof typeof NONSUSPICIOUS_SORT_INDEXES]
   | (typeof RECOMMENDED_RANK_INDEXES)[keyof typeof RECOMMENDED_RANK_INDEXES];
 type OfficialFirstSkillCategoryCursorState = {
-  curatedOffset: number;
-  communityCursor: string | null;
+  phase: "curated" | "community";
+  cursor: string | null;
+  sort?: PublicListSort;
 };
 type PublicSkillListPage = {
   page: PublicSkillEntry[];
@@ -5188,23 +5207,30 @@ function encodeOfficialFirstSkillCategoryCursor(state: OfficialFirstSkillCategor
 function decodeOfficialFirstSkillCategoryCursor(
   raw: string | null | undefined,
 ): OfficialFirstSkillCategoryCursorState {
-  if (!raw) return { curatedOffset: 0, communityCursor: null };
+  if (!raw) return { phase: "curated", cursor: null };
   if (!raw.startsWith(OFFICIAL_FIRST_SKILL_CATEGORY_CURSOR_PREFIX)) {
-    return { curatedOffset: Number.MAX_SAFE_INTEGER, communityCursor: raw };
+    return { phase: "community", cursor: raw };
   }
   try {
     const parsed = JSON.parse(
       raw.slice(OFFICIAL_FIRST_SKILL_CATEGORY_CURSOR_PREFIX.length),
     ) as Partial<OfficialFirstSkillCategoryCursorState>;
     return {
-      curatedOffset:
-        typeof parsed.curatedOffset === "number" && parsed.curatedOffset > 0
-          ? parsed.curatedOffset
-          : 0,
-      communityCursor: typeof parsed.communityCursor === "string" ? parsed.communityCursor : null,
+      phase: parsed.phase === "community" ? "community" : "curated",
+      cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
+      sort:
+        parsed.sort === "recommended" ||
+        parsed.sort === "newest" ||
+        parsed.sort === "updated" ||
+        parsed.sort === "name" ||
+        parsed.sort === "downloads" ||
+        parsed.sort === "stars" ||
+        parsed.sort === "installs"
+          ? parsed.sort
+          : undefined,
     };
   } catch {
-    return { curatedOffset: 0, communityCursor: null };
+    return { phase: "curated", cursor: null };
   }
 }
 
@@ -5252,9 +5278,7 @@ export const listPublicPageV4 = query({
       args.officialFirst && categorySlug
         ? decodeOfficialFirstSkillCategoryCursor(args.cursor)
         : null;
-    const publicListCursor = officialFirstCursor
-      ? (officialFirstCursor.communityCursor ?? undefined)
-      : args.cursor;
+    const publicListCursor = args.cursor;
     const requestedSort = normalizePublicListSort(args.sort);
     const dir = resolvePublicListDir(requestedSort, args.dir);
     const numItems = clampInt(args.numItems ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
@@ -5297,6 +5321,26 @@ export const listPublicPageV4 = query({
         numItems,
         categorySlug,
         topic,
+        categoryKeywords,
+        excludeCategoryKeywords,
+        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
+      });
+    }
+
+    if (officialFirstCursor && categorySlug) {
+      const sort =
+        officialFirstCursor.sort ??
+        (requestedSort === "recommended" &&
+        (await hasMissingRecommendedScores(ctx, args.nonSuspiciousOnly ?? false, null))
+          ? "updated"
+          : requestedSort);
+      return await listOfficialFirstSkillCategoryPage(ctx, {
+        state: { ...officialFirstCursor, sort },
+        sort,
+        dir: resolvePublicListDir(sort, args.dir),
+        numItems,
+        topic,
+        categorySlug,
         categoryKeywords,
         excludeCategoryKeywords,
         nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
@@ -5353,24 +5397,6 @@ export const listPublicPageV4 = query({
       });
     const isFirstPage = !decodedCursor;
     const startIndexKey: IndexKey = decodedCursor ?? eqPrefix;
-
-    if (officialFirstCursor && categorySlug) {
-      return await listOfficialFirstSkillCategoryPage(ctx, {
-        state: officialFirstCursor,
-        sort,
-        dir,
-        numItems,
-        indexName,
-        startIndexKey,
-        startInclusive: !decodedCursor,
-        eqPrefix,
-        topic,
-        categorySlug,
-        categoryKeywords,
-        excludeCategoryKeywords,
-        nonSuspiciousOnly: args.nonSuspiciousOnly ?? false,
-      });
-    }
 
     const hasDigestFilters =
       Boolean(categorySlug) ||
@@ -5529,7 +5555,10 @@ function digestMatchesRelatedCategory(
 }
 
 function digestPassesPublicListFilters(
-  digest: Doc<"skillSearchDigest">,
+  digest: Pick<
+    Doc<"skillSearchDigest">,
+    "slug" | "displayName" | "summary" | "categories" | "topics"
+  >,
   opts: {
     categorySlug: ServerSkillCategorySlug | null;
     topic?: string;
@@ -5575,7 +5604,7 @@ async function listSkillTopicFilteredPage(
     categoryKeywords: string[];
     excludeCategoryKeywords: string[];
     nonSuspiciousOnly: boolean;
-    excludeSkillIds?: Set<string>;
+    excludeCurated?: boolean;
   },
 ): Promise<PublicSkillListPage> {
   const eqPrefix: IndexKey = opts.nonSuspiciousOnly
@@ -5640,23 +5669,22 @@ async function listSkillTopicFilteredPage(
     for (let index = 0; index < result.page.length; index += 1) {
       const topicDigest = result.page[index];
       const cursor = result.indexKeys[index];
-      if (!opts.excludeSkillIds?.has(String(topicDigest.skillId))) {
-        const digest = await ctx.db
-          .query("skillSearchDigest")
-          .withIndex("by_skill", (q) => q.eq("skillId", topicDigest.skillId))
-          .unique();
-        if (
-          digest &&
-          digestPassesPublicListFilters(digest, {
-            categorySlug: opts.categorySlug,
-            topic: opts.topic,
-            categoryKeywords: opts.categoryKeywords,
-            excludeCategoryKeywords: opts.excludeCategoryKeywords,
-          })
-        ) {
-          const item = await buildPublicSkillEntryFromDigest(ctx, digest);
-          if (item) items.push(item);
-        }
+      const digest = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_skill", (q) => q.eq("skillId", topicDigest.skillId))
+        .unique();
+      if (
+        digest &&
+        (!opts.excludeCurated || !isCuratedSkillDigest(digest)) &&
+        digestPassesPublicListFilters(digest, {
+          categorySlug: opts.categorySlug,
+          topic: opts.topic,
+          categoryKeywords: opts.categoryKeywords,
+          excludeCategoryKeywords: opts.excludeCategoryKeywords,
+        })
+      ) {
+        const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+        if (item) items.push(item);
       }
       if (items.length >= opts.numItems) {
         hasMore = result.hasMore || index < result.page.length - 1;
@@ -6070,6 +6098,10 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
 
 function isSkillCatalogOfficial(digest: Doc<"skillSearchDigest">) {
   return Boolean(digest.badges?.official);
+}
+
+function isCuratedSkillDigest(digest: Pick<Doc<"skillSearchDigest">, "badges">) {
+  return Boolean(digest.badges?.official || digest.badges?.highlighted);
 }
 
 function getSkillCatalogChannel(digest: Doc<"skillSearchDigest">): "official" | "community" {
@@ -6797,180 +6829,174 @@ function compareSkillDigestsForPublicSort(
   }
 }
 
-async function loadCuratedSkillCategoryDigests(
-  ctx: Pick<QueryCtx, "db">,
-  opts: {
-    sort: PublicListSort;
-    dir: "asc" | "desc";
-    topic?: string;
-    categorySlug: ServerSkillCategorySlug;
-    categoryKeywords: string[];
-    excludeCategoryKeywords: string[];
-    nonSuspiciousOnly: boolean;
-  },
-) {
-  const [officialBadges, highlightedBadges] = await Promise.all([
-    ctx.db
-      .query("skillBadges")
-      .withIndex("by_kind_at", (q) => q.eq("kind", "official"))
-      .order("desc")
-      .take(MAX_LIST_TAKE),
-    ctx.db
-      .query("skillBadges")
-      .withIndex("by_kind_at", (q) => q.eq("kind", "highlighted"))
-      .order("desc")
-      .take(MAX_LIST_TAKE),
-  ]);
-  const skillIds = new Set<string>();
-  for (const badge of [...officialBadges, ...highlightedBadges]) {
-    skillIds.add(String(badge.skillId));
+type OfficialFirstSkillCategoryPageOptions = {
+  sort: PublicListSort;
+  dir: "asc" | "desc";
+  numItems: number;
+  topic?: string;
+  categorySlug: ServerSkillCategorySlug;
+  categoryKeywords: string[];
+  excludeCategoryKeywords: string[];
+  nonSuspiciousOnly: boolean;
+};
+
+async function listCuratedSkillCategoryPage(
+  ctx: QueryCtx,
+  opts: OfficialFirstSkillCategoryPageOptions & { cursor: string | null },
+): Promise<PublicSkillListPage> {
+  const indexName = opts.nonSuspiciousOnly
+    ? NONSUSPICIOUS_CURATED_SORT_INDEXES[opts.sort]
+    : CURATED_SORT_INDEXES[opts.sort];
+  const eqPrefix: IndexKey = opts.nonSuspiciousOnly ? [undefined, false] : [undefined];
+  const decodedCursor = getPublicListCursorKey({
+    cursor: opts.cursor ?? undefined,
+    sort: opts.sort,
+    nonSuspiciousOnly: opts.nonSuspiciousOnly,
+    indexName,
+    eqPrefix,
+    allowLegacyArray: false,
+  });
+  const items: PublicSkillEntry[] = [];
+  let scanCursor = decodedCursor ?? eqPrefix;
+  let scanInclusive = !decodedCursor;
+  let hasMore = false;
+  let nextCursor: string | null = null;
+  let remainingRows = Math.max(
+    opts.numItems,
+    Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, opts.numItems * 12),
+  );
+
+  for (let pageCount = 0; pageCount < MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES; pageCount += 1) {
+    if (remainingRows <= 0) break;
+    const batchSize = Math.min(remainingRows, Math.max(opts.numItems * 3, opts.numItems));
+    const result = await getPage(ctx, {
+      table: "curatedSkillSearchDigest",
+      startIndexKey: scanCursor,
+      startInclusive: scanInclusive,
+      endIndexKey: eqPrefix,
+      endInclusive: true,
+      absoluteMaxRows: batchSize,
+      order: opts.dir,
+      index: indexName,
+      schema,
+    });
+    remainingRows -= batchSize;
+    if (result.indexKeys.length === 0) {
+      hasMore = false;
+      nextCursor = null;
+      break;
+    }
+
+    for (let index = 0; index < result.page.length; index += 1) {
+      const curatedDigest = result.page[index];
+      const cursor = result.indexKeys[index];
+      if (
+        digestPassesPublicListFilters(curatedDigest, {
+          topic: opts.topic,
+          categorySlug: opts.categorySlug,
+          categoryKeywords: opts.categoryKeywords,
+          excludeCategoryKeywords: opts.excludeCategoryKeywords,
+        })
+      ) {
+        const digest = await ctx.db
+          .query("skillSearchDigest")
+          .withIndex("by_skill", (q) => q.eq("skillId", curatedDigest.skillId))
+          .unique();
+        if (
+          digest &&
+          isCuratedSkillDigest(digest) &&
+          (!opts.nonSuspiciousOnly || !digest.isSuspicious) &&
+          digestPassesPublicListFilters(digest, {
+            topic: opts.topic,
+            categorySlug: opts.categorySlug,
+            categoryKeywords: opts.categoryKeywords,
+            excludeCategoryKeywords: opts.excludeCategoryKeywords,
+          })
+        ) {
+          const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+          if (item) items.push(item);
+        }
+      }
+      if (items.length >= opts.numItems) {
+        hasMore = result.hasMore || index < result.page.length - 1;
+        nextCursor = hasMore ? encodeIndexKey(indexName, cursor) : null;
+        return { page: items, hasMore, nextCursor };
+      }
+    }
+
+    if (!result.hasMore) {
+      hasMore = false;
+      nextCursor = null;
+      break;
+    }
+    scanCursor = result.indexKeys[result.indexKeys.length - 1];
+    scanInclusive = false;
+    hasMore = true;
+    nextCursor = encodeIndexKey(indexName, scanCursor);
   }
 
-  const digests: Doc<"skillSearchDigest">[] = [];
-  for (const skillId of skillIds) {
-    const digest = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_skill", (q) => q.eq("skillId", skillId as Id<"skills">))
-      .unique();
-    if (!digest || digest.softDeletedAt) continue;
-    if (opts.nonSuspiciousOnly && digest.isSuspicious) continue;
-    if (
-      !digestPassesPublicListFilters(digest, {
-        topic: opts.topic,
-        categorySlug: opts.categorySlug,
-        categoryKeywords: opts.categoryKeywords,
-        excludeCategoryKeywords: opts.excludeCategoryKeywords,
-      })
-    ) {
-      continue;
-    }
-    digests.push(digest);
-  }
-  digests.sort((a, b) => compareSkillDigestsForPublicSort(a, b, opts.sort, opts.dir));
-  return digests;
+  return { page: items, hasMore, nextCursor };
 }
 
-async function listOfficialFirstSkillCategoryPage(
+async function listCommunitySkillCategoryPage(
   ctx: QueryCtx,
-  opts: {
-    state: OfficialFirstSkillCategoryCursorState;
-    sort: PublicListSort;
-    dir: "asc" | "desc";
-    numItems: number;
-    indexName: SkillSearchDigestSortIndexName;
-    startIndexKey: IndexKey;
-    startInclusive: boolean;
-    eqPrefix: IndexKey;
-    topic?: string;
-    categorySlug: ServerSkillCategorySlug;
-    categoryKeywords: string[];
-    excludeCategoryKeywords: string[];
-    nonSuspiciousOnly: boolean;
-  },
+  opts: OfficialFirstSkillCategoryPageOptions & { cursor: string | null },
 ): Promise<PublicSkillListPage> {
-  const curatedDigests = await loadCuratedSkillCategoryDigests(ctx, opts);
-  const curatedSkillIds = new Set(curatedDigests.map((digest) => String(digest.skillId)));
-  const curatedItems: PublicSkillEntry[] = [];
-  for (const digest of curatedDigests) {
-    const item = await buildPublicSkillEntryFromDigest(ctx, digest);
-    if (item) curatedItems.push(item);
-  }
-
-  const curatedOffset = Math.min(opts.state.curatedOffset, curatedItems.length);
-  const items = curatedItems.slice(curatedOffset, curatedOffset + opts.numItems);
-  const nextCuratedOffset = curatedOffset + items.length;
-  if (nextCuratedOffset < curatedItems.length) {
-    return {
-      page: items,
-      hasMore: true,
-      nextCursor: encodeOfficialFirstSkillCategoryCursor({
-        curatedOffset: nextCuratedOffset,
-        communityCursor: null,
-      }),
-    };
-  }
-  if (items.length >= opts.numItems) {
-    const communityProbe = await listOfficialFirstSkillCategoryPage(ctx, {
-      ...opts,
-      state: {
-        curatedOffset: curatedItems.length,
-        communityCursor: null,
-      },
-      numItems: 1,
-    });
-    const hasCommunityPage = communityProbe.page.length > 0 || communityProbe.hasMore;
-    const nextCommunityCursor =
-      communityProbe.page.length > 0
-        ? null
-        : decodeOfficialFirstSkillCategoryCursor(communityProbe.nextCursor).communityCursor;
-    return {
-      page: items,
-      hasMore: hasCommunityPage,
-      nextCursor: hasCommunityPage
-        ? encodeOfficialFirstSkillCategoryCursor({
-            curatedOffset: nextCuratedOffset,
-            communityCursor: nextCommunityCursor,
-          })
-        : null,
-    };
-  }
-
   if (opts.topic) {
-    const communityPage = await listSkillTopicFilteredPage(ctx, {
-      cursor: opts.state.communityCursor ?? undefined,
+    return await listSkillTopicFilteredPage(ctx, {
+      cursor: opts.cursor ?? undefined,
       dir: opts.dir,
-      numItems: opts.numItems - items.length,
+      numItems: opts.numItems,
       sort: opts.sort,
       topic: opts.topic,
       categorySlug: opts.categorySlug,
       categoryKeywords: opts.categoryKeywords,
       excludeCategoryKeywords: opts.excludeCategoryKeywords,
       nonSuspiciousOnly: opts.nonSuspiciousOnly,
-      excludeSkillIds: curatedSkillIds,
+      excludeCurated: true,
     });
-    items.push(...communityPage.page);
-    return {
-      page: items,
-      hasMore: communityPage.hasMore,
-      nextCursor: communityPage.hasMore
-        ? encodeOfficialFirstSkillCategoryCursor({
-            curatedOffset: curatedItems.length,
-            communityCursor: communityPage.nextCursor,
-          })
-        : null,
-    };
   }
 
-  let scanCursor = opts.startIndexKey;
-  let scanInclusive = opts.startInclusive;
+  const indexName = opts.nonSuspiciousOnly
+    ? NONSUSPICIOUS_SORT_INDEXES[opts.sort]
+    : SORT_INDEXES[opts.sort];
+  const eqPrefix: IndexKey = opts.nonSuspiciousOnly ? [undefined, false] : [undefined];
+  const decodedCursor = getPublicListCursorKey({
+    cursor: opts.cursor ?? undefined,
+    sort: opts.sort,
+    nonSuspiciousOnly: opts.nonSuspiciousOnly,
+    indexName,
+    eqPrefix,
+    allowLegacyArray: false,
+  });
+  const items: PublicSkillEntry[] = [];
+  let scanCursor = decodedCursor ?? eqPrefix;
+  let scanInclusive = !decodedCursor;
   let hasMore = false;
-  let nextCommunityCursor: string | null = null;
+  let nextCursor: string | null = null;
   let remainingRows = Math.max(
-    opts.numItems - items.length,
+    opts.numItems,
     Math.min(MAX_FILTERED_PUBLIC_LIST_SCAN_ROWS, opts.numItems * 12),
   );
 
   for (let pageCount = 0; pageCount < MAX_FILTERED_PUBLIC_LIST_SCAN_PAGES; pageCount += 1) {
     if (remainingRows <= 0) break;
-    const batchSize = Math.min(
-      remainingRows,
-      Math.max((opts.numItems - items.length) * 3, opts.numItems),
-    );
+    const batchSize = Math.min(remainingRows, Math.max(opts.numItems * 3, opts.numItems));
     const result = await getPage(ctx, {
       table: "skillSearchDigest",
       startIndexKey: scanCursor,
       startInclusive: scanInclusive,
-      endIndexKey: opts.eqPrefix,
+      endIndexKey: eqPrefix,
       endInclusive: true,
       absoluteMaxRows: batchSize,
       order: opts.dir,
-      index: opts.indexName,
+      index: indexName,
       schema,
     });
     remainingRows -= batchSize;
     if (result.indexKeys.length === 0) {
       hasMore = false;
-      nextCommunityCursor = null;
+      nextCursor = null;
       break;
     }
 
@@ -6978,7 +7004,7 @@ async function listOfficialFirstSkillCategoryPage(
       const digest = result.page[index];
       const cursor = result.indexKeys[index];
       if (
-        !curatedSkillIds.has(String(digest.skillId)) &&
+        !isCuratedSkillDigest(digest) &&
         digestPassesPublicListFilters(digest, {
           topic: opts.topic,
           categorySlug: opts.categorySlug,
@@ -6991,38 +7017,84 @@ async function listOfficialFirstSkillCategoryPage(
       }
       if (items.length >= opts.numItems) {
         hasMore = result.hasMore || index < result.page.length - 1;
-        nextCommunityCursor = hasMore ? encodeIndexKey(opts.indexName, cursor) : null;
-        return {
-          page: items,
-          hasMore,
-          nextCursor: hasMore
-            ? encodeOfficialFirstSkillCategoryCursor({
-                curatedOffset: curatedItems.length,
-                communityCursor: nextCommunityCursor,
-              })
-            : null,
-        };
+        nextCursor = hasMore ? encodeIndexKey(indexName, cursor) : null;
+        return { page: items, hasMore, nextCursor };
       }
     }
 
     if (!result.hasMore) {
       hasMore = false;
-      nextCommunityCursor = null;
+      nextCursor = null;
       break;
     }
     scanCursor = result.indexKeys[result.indexKeys.length - 1];
     scanInclusive = false;
     hasMore = true;
-    nextCommunityCursor = encodeIndexKey(opts.indexName, scanCursor);
+    nextCursor = encodeIndexKey(indexName, scanCursor);
   }
 
+  return { page: items, hasMore, nextCursor };
+}
+
+async function listOfficialFirstSkillCategoryPage(
+  ctx: QueryCtx,
+  opts: OfficialFirstSkillCategoryPageOptions & {
+    state: OfficialFirstSkillCategoryCursorState;
+  },
+): Promise<PublicSkillListPage> {
+  const items: PublicSkillEntry[] = [];
+  if (opts.state.phase === "curated") {
+    const curatedPage = await listCuratedSkillCategoryPage(ctx, {
+      ...opts,
+      cursor: opts.state.cursor,
+    });
+    items.push(...curatedPage.page);
+    if (curatedPage.hasMore) {
+      return {
+        page: items,
+        hasMore: true,
+        nextCursor: encodeOfficialFirstSkillCategoryCursor({
+          phase: "curated",
+          cursor: curatedPage.nextCursor,
+          sort: opts.sort,
+        }),
+      };
+    }
+    if (items.length >= opts.numItems) {
+      const communityProbe = await listCommunitySkillCategoryPage(ctx, {
+        ...opts,
+        cursor: null,
+        numItems: 1,
+      });
+      const hasCommunityPage = communityProbe.page.length > 0 || communityProbe.hasMore;
+      return {
+        page: items,
+        hasMore: hasCommunityPage,
+        nextCursor: hasCommunityPage
+          ? encodeOfficialFirstSkillCategoryCursor({
+              phase: "community",
+              cursor: communityProbe.page.length > 0 ? null : communityProbe.nextCursor,
+              sort: opts.sort,
+            })
+          : null,
+      };
+    }
+  }
+
+  const communityPage = await listCommunitySkillCategoryPage(ctx, {
+    ...opts,
+    cursor: opts.state.phase === "community" ? opts.state.cursor : null,
+    numItems: opts.numItems - items.length,
+  });
+  items.push(...communityPage.page);
   return {
     page: items,
-    hasMore,
-    nextCursor: hasMore
+    hasMore: communityPage.hasMore,
+    nextCursor: communityPage.hasMore
       ? encodeOfficialFirstSkillCategoryCursor({
-          curatedOffset: curatedItems.length,
-          communityCursor: nextCommunityCursor,
+          phase: "community",
+          cursor: communityPage.nextCursor,
+          sort: opts.sort,
         })
       : null,
   };
@@ -9327,6 +9399,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     acceptLicenseTerms: v.optional(v.boolean()),
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
+    clearCategories: v.optional(v.boolean()),
     topics: v.optional(v.array(v.string())),
     forkOf: v.optional(
       v.object({

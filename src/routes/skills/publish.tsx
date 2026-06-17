@@ -698,8 +698,8 @@ export function Upload() {
         changelog: trimmedChangelog,
         acceptLicenseTerms: acceptedLicenseTerms,
         tags: parsedTags,
-        ...(categories.length ? { categories } : {}),
-        ...(topics.trim() ? { topics: parseCatalogTopicsInput(topics) } : {}),
+        ...(categories.length ? { categories } : { clearCategories: true }),
+        topics: parseCatalogTopicsInput(topics),
         files: uploaded,
       });
       setStatus(null);

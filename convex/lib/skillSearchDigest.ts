@@ -153,6 +153,50 @@ export async function upsertSkillSearchDigest(
   if ((existing?.topics?.length ?? 0) > 0 || (fields.topics?.length ?? 0) > 0) {
     await syncSkillTopicSearchDigests(ctx, fields);
   }
+  await syncCuratedSkillSearchDigest(
+    ctx,
+    fields,
+    Boolean(existing?.badges?.official || existing?.badges?.highlighted),
+  );
+}
+
+async function syncCuratedSkillSearchDigest(
+  ctx: Pick<MutationCtx, "db">,
+  fields: SkillSearchDigestFields,
+  wasCurated: boolean,
+) {
+  const isCurated = Boolean(fields.badges?.official || fields.badges?.highlighted);
+  if (!isCurated && !wasCurated) return;
+  const existing = await ctx.db
+    .query("curatedSkillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", fields.skillId))
+    .unique();
+  if (!isCurated) {
+    if (existing) await ctx.db.delete(existing._id);
+    return;
+  }
+
+  const next = {
+    skillId: fields.skillId,
+    slug: fields.slug,
+    displayName: fields.displayName,
+    summary: fields.summary,
+    categories: fields.categories,
+    topics: fields.topics,
+    statsDownloads: fields.statsDownloads,
+    statsStars: fields.statsStars,
+    statsInstallsAllTime: fields.statsInstallsAllTime,
+    recommendedScore: fields.recommendedScore,
+    softDeletedAt: fields.softDeletedAt,
+    isSuspicious: fields.isSuspicious,
+    createdAt: fields.createdAt,
+    updatedAt: fields.updatedAt,
+  };
+  if (existing) {
+    if (hasDigestChanged(existing, next)) await ctx.db.patch(existing._id, next);
+  } else {
+    await ctx.db.insert("curatedSkillSearchDigest", next);
+  }
 }
 
 async function syncSkillTopicSearchDigests(
@@ -212,6 +256,11 @@ export async function deleteSkillSearchDigests(
     .collect()) {
     await ctx.db.delete(topicDigest._id);
   }
+  const curatedDigest = await ctx.db
+    .query("curatedSkillSearchDigest")
+    .withIndex("by_skill", (q) => q.eq("skillId", skillId))
+    .unique();
+  if (curatedDigest) await ctx.db.delete(curatedDigest._id);
 }
 
 export async function syncSkillSearchDigestForSkill(
