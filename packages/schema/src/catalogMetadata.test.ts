@@ -58,6 +58,9 @@ describe("catalog metadata", () => {
     expect(() => normalizePluginCategories(["model provider"])).toThrow(
       'Unknown plugin category slug "model provider"',
     );
+    expect(() => normalizePluginCategories(["mcp-tooling"])).toThrow(
+      'Unknown plugin category slug "mcp-tooling"',
+    );
     expect(() => normalizeSkillCategories(["web"])).toThrow('Unknown skill category slug "web"');
   });
 

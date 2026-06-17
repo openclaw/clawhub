@@ -8218,6 +8218,43 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("plugins list maps retired v1 category filters to controlled categories", async () => {
+    const aliases = {
+      "mcp-tooling": "tools",
+      data: "tools",
+      observability: "gateway",
+      automation: "tools",
+      deployment: "gateway",
+      "dev-tools": "runtime",
+    } as const;
+
+    for (const [legacyCategory, controlledCategory] of Object.entries(aliases)) {
+      const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+        if (hasPluginRecommendedScoreReadinessArgs(args)) {
+          return false;
+        }
+        return { page: [], isDone: true, continueCursor: "" };
+      });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+
+      const response = await __handlers.listPluginsV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins?category=${legacyCategory}&limit=7`),
+      );
+
+      expect(response.status).toBe(200);
+      for (const [, args] of runQuery.mock.calls) {
+        if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
+        expect(args).toEqual(
+          expect.objectContaining({
+            category: controlledCategory,
+            paginationOpts: { cursor: null, numItems: 7 },
+          }),
+        );
+      }
+    }
+  });
+
   it("plugin and package lists reject removed downloads sort links", async () => {
     const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -8748,6 +8785,29 @@ describe("httpApiV1 handlers", () => {
         expect.objectContaining({
           query: "weather",
           category: "tools",
+          limit: 7,
+        }),
+      );
+    }
+  });
+
+  it("plugins search maps retired v1 category filters to controlled categories", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/plugins/search?q=metrics&category=observability&limit=7",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          query: "metrics",
+          category: "gateway",
           limit: 7,
         }),
       );

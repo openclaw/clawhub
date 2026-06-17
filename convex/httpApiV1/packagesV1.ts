@@ -22,6 +22,7 @@ import {
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageReportListStatus,
+  type PluginCategorySlug,
   type ServerPackagePublishRequest,
 } from "clawhub-schema";
 import { api, internal } from "../_generated/api";
@@ -306,10 +307,26 @@ const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "installs"] as const;
+const LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES = {
+  "mcp-tooling": "tools",
+  data: "tools",
+  observability: "gateway",
+  automation: "tools",
+  deployment: "gateway",
+  "dev-tools": "runtime",
+} as const satisfies Record<string, PluginCategorySlug>;
 const MAX_PLUGIN_EXPORT_FILE_COUNT = 10_000;
 const MAX_PLUGIN_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT = 250;
 const MAX_PLUGIN_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
+
+function resolvePluginCategoryFilter(value: string | undefined): PluginCategorySlug | undefined {
+  if (!value) return undefined;
+  if (isPluginCategorySlug(value)) return value;
+  return LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES[
+    value as keyof typeof LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES
+  ];
+}
 
 function invalidQueryParamMessage(name: string) {
   return `Invalid ${name} query parameter`;
@@ -1437,11 +1454,12 @@ async function listPackages(
   if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
   const effectiveSort = sortParam.value ?? options?.defaultSort;
   const cursor = rawCursor;
-  const category = url.searchParams.get("category")?.trim() || undefined;
+  const rawCategory = url.searchParams.get("category")?.trim() || undefined;
+  const category = resolvePluginCategoryFilter(rawCategory);
   const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
   const officialFirst = parseBooleanQueryParam(url.searchParams, "officialFirst");
   if (!officialFirst.ok) return text(officialFirst.message, 400, rate.headers);
-  if (category && !isPluginCategorySlug(category)) {
+  if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
   const effectiveFamily = family ?? familyParam.value;
@@ -3051,9 +3069,10 @@ async function searchPackages(
   const highlightedOnlyParam = parseBooleanQueryParam(url.searchParams, "highlightedOnly");
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
   const highlightedOnly = featured.value === true || highlightedOnlyParam.value === true;
-  const category = url.searchParams.get("category")?.trim() || undefined;
+  const rawCategory = url.searchParams.get("category")?.trim() || undefined;
+  const category = resolvePluginCategoryFilter(rawCategory);
   const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
-  if (category && !isPluginCategorySlug(category)) {
+  if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
   const family = familyParam.value;

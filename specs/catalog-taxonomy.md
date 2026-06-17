@@ -41,6 +41,9 @@
 ## Browse
 
 - Skill and plugin browse paths remain separate.
+- Public v1 plugin read endpoints accept the retired documented filter slugs as aliases to their
+  closest controlled categories. These compatibility aliases never become stored or author-facing
+  taxonomy values.
 - Category browse places official or curated entries before community entries.
 - Skill category browse paginates an indexed curated projection before community results; it does
   not cap the curated corpus or hydrate curated entries outside the requested page.
