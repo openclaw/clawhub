@@ -878,6 +878,7 @@ code {
 .mobile-nav-link:hover {
   background: var(--hover-bg);
   border-color: var(--line);
+  text-decoration: none;
 }
 
 .nav-mobile-trigger {
