@@ -15548,17 +15548,20 @@ a[class*="rounded-full"] {
 
 .navbar-search-typeahead-tabs.clawhub-segmented,
 .app-shell:has(.home-v2-main) .navbar-search-typeahead-tabs.clawhub-segmented {
+  --navbar-search-typeahead-tabs-radius: var(--r-btn);
+  --navbar-search-typeahead-tabs-inset: 3px;
   --clawhub-segmented-border: #3a3a3f;
   --clawhub-segmented-bg: #101011;
   --clawhub-segmented-fg: #8f8f98;
   --clawhub-segmented-fg-hover: #d6d6da;
   --clawhub-segmented-fg-active: #f7f7f8;
   --clawhub-segmented-active-bg: #303033;
-  border-radius: 14px;
+  padding: var(--navbar-search-typeahead-tabs-inset);
+  border-radius: var(--navbar-search-typeahead-tabs-radius);
 }
 
 .navbar-search-typeahead-tab.clawhub-segmented-btn {
-  border-radius: 10px;
+  border-radius: calc(var(--navbar-search-typeahead-tabs-radius) - 2px);
 }
 
 .app-shell:has(.home-v2-main) main.home-v2-main {
