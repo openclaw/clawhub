@@ -3106,44 +3106,6 @@ export const getSkillBySlugInternal = internalQuery({
   },
 });
 
-type SkillSlugAliasQueryResult = {
-  take: (limit: number) => Promise<Doc<"skillSlugAliases">[]>;
-  [Symbol.asyncIterator]?: () => AsyncIterator<Doc<"skillSlugAliases">>;
-};
-
-export const hasAnySkillWithSlugInternal = internalQuery({
-  args: { slug: v.string() },
-  handler: async (ctx, args) => {
-    const slug = normalizeSkillSlugKey(args.slug);
-    if (!slug) return false;
-    const matches = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", slug))
-      .take(1);
-    if (matches.length > 0) return true;
-
-    const aliasQuery = ctx.db
-      .query("skillSlugAliases")
-      .withIndex("by_slug", (q) => q.eq("slug", slug)) as SkillSlugAliasQueryResult;
-    const iterator = aliasQuery[Symbol.asyncIterator]?.bind(aliasQuery);
-    const aliases = iterator
-      ? await (async () => {
-          const results: Doc<"skillSlugAliases">[] = [];
-          for await (const alias of { [Symbol.asyncIterator]: iterator }) {
-            results.push(alias);
-          }
-          return results;
-        })()
-      : await aliasQuery.take(10_000);
-
-    for (const alias of aliases) {
-      const targetSkill = await ctx.db.get(alias.skillId);
-      if (targetSkill && !targetSkill.softDeletedAt) return true;
-    }
-    return false;
-  },
-});
-
 export const getSkillForPublishPreflightInternal = internalQuery({
   args: {
     userId: v.id("users"),

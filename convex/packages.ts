@@ -394,7 +394,6 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     getSkillBySlugInternal: unknown;
-    hasAnySkillWithSlugInternal: unknown;
   };
   users: {
     getByIdInternal: unknown;
@@ -6094,16 +6093,6 @@ async function publishPackageImpl(
   }
   const legacyZipSha256 = await sha256Hex(buildDeterministicPackageZip(legacyZipEntries));
 
-  const existingSkillSlug = await runQueryRef<boolean>(
-    ctx,
-    internalRefs.skills.hasAnySkillWithSlugInternal,
-    {
-      slug: name,
-    },
-  );
-  if (existingSkillSlug) {
-    throw new ConvexError(`Package name collides with existing skill slug "${name}"`);
-  }
   if (family === "code-plugin" && (!effectiveSource?.repo || !effectiveSource?.commit)) {
     throw new ConvexError("Code plugins require source repo and commit metadata");
   }

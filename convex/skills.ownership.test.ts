@@ -11,7 +11,6 @@ import {
   getBySlug,
   getSkillForPublishPreflightInternal,
   getSkillBySlugInternal,
-  hasAnySkillWithSlugInternal,
   mergeOwnedSkillIntoCanonicalInternal,
   renameOwnedSkillInternal,
   resolveVersionByHash,
@@ -25,9 +24,6 @@ type WrappedHandler<TArgs, TResult = unknown> = {
 
 const getSkillBySlugInternalHandler = (
   getSkillBySlugInternal as unknown as WrappedHandler<{ slug: string }>
-)._handler;
-const hasAnySkillWithSlugInternalHandler = (
-  hasAnySkillWithSlugInternal as unknown as WrappedHandler<{ slug: string }, boolean>
 )._handler;
 const getBySlugHandler = (
   getBySlug as unknown as WrappedHandler<{ slug: string; ownerHandle?: string }>
@@ -318,56 +314,6 @@ describe("skills ownership", () => {
         slug: "demo",
       }),
     );
-  });
-
-  it("treats live historical aliases as package-name skill collisions", async () => {
-    const result = await hasAnySkillWithSlugInternalHandler(
-      {
-        db: {
-          get: vi.fn(async (id: string) => {
-            if (id === "skills:target") {
-              return {
-                _id: "skills:target",
-                slug: "demo",
-                ownerUserId: "users:1",
-                softDeletedAt: undefined,
-              };
-            }
-            return null;
-          }),
-          query: vi.fn((table: string) => {
-            if (table === "skills") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") throw new Error(`unexpected skills index ${name}`);
-                  return { take: async () => [] };
-                },
-              };
-            }
-            if (table === "skillSlugAliases") {
-              return {
-                withIndex: (name: string) => {
-                  if (name !== "by_slug") throw new Error(`unexpected alias index ${name}`);
-                  return {
-                    take: async () => [
-                      {
-                        _id: "skillSlugAliases:1",
-                        slug: "demo-old",
-                        skillId: "skills:target",
-                      },
-                    ],
-                  };
-                },
-              };
-            }
-            throw new Error(`unexpected table ${table}`);
-          }),
-        },
-      } as never,
-      { slug: "demo-old" },
-    );
-
-    expect(result).toBe(true);
   });
 
   it("prefers openclaw for legacy slug-only reads when duplicate visible skills exist", async () => {
