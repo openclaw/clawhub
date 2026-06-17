@@ -19,6 +19,7 @@ export { formatCatalogTopicsInput, parseCatalogTopicsInput } from "./CatalogTopi
 
 type CatalogMetadataFieldsProps = {
   kind: "skill" | "plugin";
+  idPrefix?: string;
   categories: string[];
   suggestedCategories?: string[];
   topics: string;
@@ -29,6 +30,7 @@ type CatalogMetadataFieldsProps = {
 
 export function CatalogMetadataFields({
   kind,
+  idPrefix,
   categories: selectedCategories,
   suggestedCategories,
   topics,
@@ -38,6 +40,7 @@ export function CatalogMetadataFields({
 }: CatalogMetadataFieldsProps) {
   const categories = kind === "skill" ? SKILL_CATEGORY_DEFINITIONS : PLUGIN_CATEGORY_DEFINITIONS;
   const prefix = kind === "skill" ? "skill" : "plugin";
+  const fieldIdPrefix = idPrefix ?? prefix;
   const selected = new Set(selectedCategories);
   const limitReached = selectedCategories.length >= CATALOG_CATEGORY_LIMIT;
   const selectedLabels = categories
@@ -71,7 +74,7 @@ export function CatalogMetadataFields({
     <>
       <div className="flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <Label htmlFor={`${prefix}Categories`}>Categories</Label>
+          <Label htmlFor={`${fieldIdPrefix}Categories`}>Categories</Label>
           <div className="flex items-center gap-2">
             {generatedCategories ? (
               <Button
@@ -100,7 +103,7 @@ export function CatalogMetadataFields({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <button
-              id={`${prefix}Categories`}
+              id={`${fieldIdPrefix}Categories`}
               type="button"
               disabled={disabled}
               aria-label="Categories"
@@ -142,9 +145,9 @@ export function CatalogMetadataFields({
         </DropdownMenu>
       </div>
       <div className="flex flex-col gap-2">
-        <Label htmlFor={`${prefix}Topics`}>Topics</Label>
+        <Label htmlFor={`${fieldIdPrefix}Topics`}>Topics</Label>
         <CatalogTopicInput
-          id={`${prefix}Topics`}
+          id={`${fieldIdPrefix}Topics`}
           value={topics}
           disabled={disabled}
           onChange={onTopicsChange}

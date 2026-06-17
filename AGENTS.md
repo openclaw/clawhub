@@ -23,7 +23,8 @@ Keep this section as the command map agents normally need, not a full `package.j
 - `bun run dev` — foreground local app server at `http://localhost:3000`.
 - `bunx convex dev --typecheck=disable` — local Convex backend/function watcher for manual setup.
 - `bunx convex codegen` — regenerate `convex/_generated` after Convex API/schema changes.
-- `bun run setup:worktree` — link `.env.local` and `.convex` from a usable source worktree into the current worktree. Use `-- --from <path>` or `CLAWHUB_WORKTREE_SOURCE=<path>` when auto-discovery picks the wrong source.
+- `.worktreeinclude` — Codex-managed worktrees copy ignored local state (`.env.local`, `.convex/`, and `node_modules/`) from the local checkout at creation time.
+- `bun run setup:worktree` — validate copied `.env.local` / `.convex` state, or link missing fallback state from a usable source worktree. Use `-- --from <path>` or `CLAWHUB_WORKTREE_SOURCE=<path>` when auto-discovery picks the wrong source.
 - `bun run dev:worktree` — Worktrunk-managed detached worktree server that also seeds local fixtures plus the public corpus once before starting the app when `VITE_CONVEX_URL` and `CONVEX_DEPLOYMENT` are local. Requires `wt` on `PATH`; from that worktree use `wt --yes url` to print the branch URL and `wt --yes stop` to stop it.
 - `bun run seed:dev` — manual reseed path; runs worktree setup, waits for local Convex, seeds local fixtures plus the public corpus, and refreshes stats.
 - `bun run build` — production build (Vite + Nitro).
@@ -99,9 +100,10 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 
 ## Convex Ops (Gotchas)
 
+- Before any `bunx convex ...` command, name the target runtime (`local`, `dev`, or `prod`), the exact deployment when known, and whether the current function/schema code has already been pushed or deployed.
 - New Convex functions must be pushed before `convex run`: use `bunx convex dev --once` (dev) or `bunx convex deploy` (prod).
 - For non-interactive prod deploys, use `bunx convex deploy -y` to skip confirmation.
-- If `bunx convex run --env-file .env.local ...` returns `401 MissingAccessToken` despite `bunx convex login`, workaround: omit `--env-file` and use `--deployment-name <name>` / `--prod`.
+- If `bunx convex run --env-file .env.local ...` returns `401 MissingAccessToken` despite `bunx convex login`, workaround: omit `--env-file` and use `--deployment <name>` / `--prod`.
 
 ## Convex Migrations & Backfills
 

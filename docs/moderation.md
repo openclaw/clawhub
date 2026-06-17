@@ -53,6 +53,24 @@ advisories for vulnerabilities in third-party skills or plugins.
 Good reports are specific and actionable. Abuse of reporting can itself lead to
 account action.
 
+## Org and namespace claims
+
+Org, brand, package-scope, owner-handle, or namespace ownership disputes should
+use the
+[Org / Namespace Claim issue form](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml),
+not the in-product report flow or the account appeal form.
+
+Use that form when you need ClawHub staff to review non-sensitive proof that a
+namespace should be reserved, transferred, renamed, hidden, quarantined, aliased,
+or otherwise reviewed. Useful public evidence includes GitHub org or repo
+control, domain or official email-domain proof, package-registry scope control,
+trademark or brand evidence, source repo history, package history, and public
+project docs.
+
+Do not include secrets, private documents, private legal files, personal identity
+documents, API tokens, or DNS challenge tokens in a public issue. The issue form
+asks whether sensitive evidence needs a private staff channel.
+
 ## Moderation holds
 
 Some severe findings or policy issues can place a publisher or listing under a

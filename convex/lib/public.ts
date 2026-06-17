@@ -1,5 +1,6 @@
 import type { Doc } from "../_generated/dataModel";
 import { isPublicSkillDoc } from "./globalStats";
+import { readCanonicalStat } from "./skillStats";
 
 export type PublicUser = Pick<
   Doc<"users">,
@@ -121,19 +122,10 @@ export function toPublicSkill(skill: HydratableSkill | null | undefined): Public
   if (!skill) return null;
   if (!isPublicSkillDoc(skill)) return null;
   const stats = {
-    downloads:
-      typeof skill.statsDownloads === "number"
-        ? skill.statsDownloads
-        : (skill.stats?.downloads ?? 0),
-    stars: typeof skill.statsStars === "number" ? skill.statsStars : (skill.stats?.stars ?? 0),
-    installsCurrent:
-      typeof skill.statsInstallsCurrent === "number"
-        ? skill.statsInstallsCurrent
-        : (skill.stats?.installsCurrent ?? 0),
-    installsAllTime:
-      typeof skill.statsInstallsAllTime === "number"
-        ? skill.statsInstallsAllTime
-        : (skill.stats?.installsAllTime ?? 0),
+    downloads: readCanonicalStat(skill, "downloads"),
+    stars: readCanonicalStat(skill, "stars"),
+    installsCurrent: readCanonicalStat(skill, "installsCurrent"),
+    installsAllTime: readCanonicalStat(skill, "installsAllTime"),
     versions: skill.stats?.versions ?? 0,
     comments: skill.stats?.comments ?? 0,
   };

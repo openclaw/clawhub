@@ -9,6 +9,16 @@ type SkillStatDeltas = {
   installsAllTime?: number;
 };
 
+type SkillStatReadable = {
+  stats: Partial<
+    Pick<Doc<"skills">["stats"], "downloads" | "stars" | "installsCurrent" | "installsAllTime">
+  >;
+  statsDownloads?: number;
+  statsStars?: number;
+  statsInstallsCurrent?: number;
+  statsInstallsAllTime?: number;
+};
+
 /**
  * Read the canonical value of a migrated stat field from a skill document.
  *
@@ -21,7 +31,7 @@ type SkillStatDeltas = {
  * rather than accessing `skill.stats.*` directly.
  */
 export function readCanonicalStat(
-  skill: Doc<"skills">,
+  skill: SkillStatReadable,
   field: "downloads" | "stars" | "installsCurrent" | "installsAllTime",
 ): number {
   const topLevelKey = `stats${field[0].toUpperCase()}${field.slice(1)}` as

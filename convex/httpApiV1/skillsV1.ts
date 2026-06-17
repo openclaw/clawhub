@@ -40,6 +40,7 @@ import {
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
+import { readCanonicalStat } from "../lib/skillStats";
 import {
   buildDeterministicZip,
   buildMergedExportZip,
@@ -80,6 +81,13 @@ type SearchSkillEntry = {
     displayName?: string;
     summary?: string | null;
     updatedAt?: number;
+    stats: {
+      downloads?: number;
+      stars?: number;
+      installsCurrent?: number;
+      installsAllTime?: number;
+    };
+    statsDownloads?: number;
   } | null;
   version: { version?: string; createdAt?: number } | null;
   ownerHandle?: string | null;
@@ -1351,6 +1359,7 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
           displayName: result.skill?.displayName,
           summary: result.skill?.summary ?? null,
           version: result.version?.version ?? null,
+          downloads: result.skill ? readCanonicalStat(result.skill, "downloads") : 0,
           updatedAt: result.skill?.updatedAt,
           ownerHandle: result.ownerHandle ?? owner?.handle ?? null,
           owner,

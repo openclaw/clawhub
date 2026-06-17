@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { MAX_PUBLISH_FILE_BYTES } from "./publishLimits";
 import { publishVersionForUser, __test } from "./skillPublish";
 
 vi.mock("./embeddings", () => ({
@@ -282,6 +283,49 @@ description: Research helper for literature reviews.
     ]);
 
     expect(fingerprint).toBe(expected);
+  });
+
+  it("derives publish file metadata from stored bytes", async () => {
+    const storage = {
+      get: vi.fn(async () => new Blob(["hello"], { type: "text/markdown" })),
+    };
+
+    const files = await __test.derivePublishFilesFromStorage({ storage } as never, [
+      {
+        path: "SKILL.md",
+        size: 1,
+        storageId: "_storage:skill" as never,
+        sha256: "caller-supplied",
+        contentType: "text/plain",
+      },
+    ]);
+
+    expect(files).toEqual([
+      expect.objectContaining({
+        path: "SKILL.md",
+        storageId: "_storage:skill",
+        size: 5,
+        sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      }),
+    ]);
+  });
+
+  it("rejects oversized stored files even when caller metadata is small", async () => {
+    const storage = {
+      get: vi.fn(async () => new Blob([new Uint8Array(MAX_PUBLISH_FILE_BYTES + 1)])),
+    };
+
+    await expect(
+      __test.derivePublishFilesFromStorage({ storage } as never, [
+        {
+          path: "SKILL.md",
+          size: 1,
+          storageId: "_storage:skill" as never,
+          sha256: "caller-supplied",
+          contentType: "text/plain",
+        },
+      ]),
+    ).rejects.toThrow(/exceeds 10MB limit/i);
   });
 
   it("rejects publisher-authored skill-card.md files", async () => {

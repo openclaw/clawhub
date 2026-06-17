@@ -204,6 +204,7 @@ export const ApiV1SearchResponseSchema = type({
         summary: "string|null?",
         version: "string|null?",
         score: "number",
+        downloads: "number?",
         updatedAt: "number?",
         ownerHandle: "string|null?",
         owner: type({

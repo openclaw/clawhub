@@ -40,6 +40,7 @@ describe("packages/clawhub skill metadata schema", () => {
             summary: null,
             version: "1.0.0",
             score: 1,
+            downloads: 42,
             ownerHandle: "openclaw",
             owner: {
               handle: "openclaw",
@@ -53,6 +54,7 @@ describe("packages/clawhub skill metadata schema", () => {
     );
 
     expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
+    expect(parsed.results[0]?.downloads).toBe(42);
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
   });
 

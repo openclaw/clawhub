@@ -25,6 +25,11 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => children,
   useNavigate: () => navigateMock,
   useRouter: () => ({ invalidate: routerInvalidateMock }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { searchStr: string } }) => string;
+  }) => select({ location: { searchStr: "" } }),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({

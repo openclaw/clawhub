@@ -434,7 +434,7 @@ describe("Dashboard rows", () => {
     });
 
     expect(
-      (await screen.findByRole("link", { name: "Publish a Skill" })).getAttribute("href"),
+      (await screen.findByRole("link", { name: "Publish manually" })).getAttribute("href"),
     ).toBe("/skills/publish?ownerHandle=clawkit");
   });
 

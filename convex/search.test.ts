@@ -1592,6 +1592,46 @@ describe("search helpers", () => {
     expect(resultA).toBeDefined();
     expect(resultA!.score).toBeGreaterThan(1.0);
   });
+
+  it("preserves vector scores when a direct lexical match shadows the hydrated candidate", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+
+    const lexicalEntry = {
+      skill: makePublicSkill({
+        id: "skills:the-news",
+        slug: "the-news",
+        displayName: "The News",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const vectorEntry = {
+      ...lexicalEntry,
+      embeddingId: "skillEmbeddings:the-news",
+    };
+
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([lexicalEntry]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([vectorEntry]) // hydrateResults
+      .mockResolvedValueOnce([]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi
+          .fn()
+          .mockResolvedValueOnce([{ _id: "skillEmbeddings:the-news", _score: 0.33 }]),
+        runQuery,
+      },
+      { query: "news", limit: 10 },
+    );
+
+    expect(result).toHaveLength(1);
+    expect(result[0].skill.slug).toBe("the-news");
+    expect(result[0].score).toBeGreaterThan(2.8);
+  });
 });
 
 function makePublicSkill(params: {

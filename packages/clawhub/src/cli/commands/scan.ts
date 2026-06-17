@@ -10,7 +10,7 @@ import {
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError } from "../ui.js";
+import { createCrabLoader, fail, formatError } from "../ui.js";
 
 const DEFAULT_POLL_INTERVAL_MS = 2_000;
 const MAX_POLL_ATTEMPTS = 900;
@@ -37,7 +37,7 @@ export async function cmdScan(opts: GlobalOpts, pathArg: string | undefined, opt
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Submitting scan");
+  const spinner = createCrabLoader("Submitting scan");
 
   try {
     const submitted = await submitPublishedScan(registry, token, options);
@@ -141,7 +141,7 @@ async function pollScan(
   registry: string,
   token: string,
   scanId: string,
-  spinner: ReturnType<typeof createSpinner>,
+  spinner: ReturnType<typeof createCrabLoader>,
 ) {
   for (let attempt = 0; attempt < MAX_POLL_ATTEMPTS; attempt += 1) {
     const status = await apiRequest(

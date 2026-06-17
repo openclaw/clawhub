@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { getAuthUserId } from "@convex-dev/auth/server";
+import { gzipSync } from "fflate";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { sha256Hex } from "./lib/clawpack";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
@@ -12,6 +13,8 @@ import { buildDeterministicPackageZip } from "./lib/skillZip";
 import {
   backfillLatestPackageScanStatusInternal,
   backfillPackageReleaseScansInternal,
+  repairHistoricalClawPackReleaseFilesInternal,
+  getHistoricalClawPackRepairBatchInternal,
   getPackageReleaseScanBackfillBatchInternal,
   getByName,
   list,
@@ -45,6 +48,7 @@ import {
   listPublicPage,
   listPageForViewerInternal,
   listVersions,
+  repairClawPackReleaseFilesInternal,
   updateReleaseLlmAnalysisInternal,
   updateReleaseStaticScanInternal,
   applyAccountDeletionToOwnedPackagesBatchInternal,
@@ -679,6 +683,78 @@ const backfillPackageReleaseScansInternalHandler = (
     { scheduled: number; nextCursor: number; done: boolean }
   >
 )._handler;
+const repairClawPackReleaseFilesInternalHandler = (
+  repairClawPackReleaseFilesInternal as unknown as WrappedHandler<
+    { releaseId: string; dryRun?: boolean },
+    {
+      ok: boolean;
+      repaired: boolean;
+      dryRun?: boolean;
+      files?: number;
+      skipped?: string;
+      error?: string;
+      integritySha256?: string;
+      samplePaths?: string[];
+    }
+  >
+)._handler;
+const getHistoricalClawPackRepairBatchInternalHandler = (
+  getHistoricalClawPackRepairBatchInternal as unknown as WrappedHandler<
+    {
+      cursor?: string | null;
+      batchSize?: number;
+      releaseId?: string;
+      packageName?: string;
+      version?: string;
+    },
+    {
+      candidates: Array<{
+        releaseId: string;
+        packageId: string;
+        packageName: string;
+        version: string;
+        existingFileCount: number;
+        npmFileCount: number | null;
+      }>;
+      scanned: number;
+      cursor: string | null;
+      isDone: boolean;
+    }
+  >
+)._handler;
+const repairHistoricalClawPackReleaseFilesInternalHandler = (
+  repairHistoricalClawPackReleaseFilesInternal as unknown as WrappedHandler<
+    {
+      cursor?: string | null;
+      batchSize?: number;
+      maxBatches?: number;
+      dryRun?: boolean;
+      releaseId?: string;
+      packageName?: string;
+      version?: string;
+      confirmation?: string;
+      scheduleNext?: boolean;
+    },
+    {
+      ok: true;
+      dryRun: boolean;
+      cursor: string | null;
+      isDone: boolean;
+      stats: {
+        scanned: number;
+        candidates: number;
+        validated: number;
+        wouldRepair: number;
+        repaired: number;
+        skipped: number;
+        errors: number;
+      };
+      samples: Array<{ releaseId: string; repairedFiles: number; samplePaths: string[] }>;
+      logLines: string[];
+      writeConfirmation: string | null;
+    }
+  >
+)._handler;
 const listOfficialPluginMigrationsInternalHandler = (
   listOfficialPluginMigrationsInternal as unknown as WrappedHandler<
     {
@@ -1073,6 +1149,63 @@ function makeReleaseDoc(overrides: Partial<Record<string, unknown>> = {}) {
     publishActor: { kind: "user", userId: "users:owner" },
     ...overrides,
   };
+}
+
+const TAR_BLOCK_SIZE = 512;
+
+function tarOctal(value: number, width: number) {
+  return `${value.toString(8).padStart(width - 1, "0")}\0`;
+}
+
+function writeTarString(target: Uint8Array, offset: number, width: number, value: string) {
+  const encoded = new TextEncoder().encode(value);
+  target.set(encoded.subarray(0, width), offset);
+}
+
+function tarFile(path: string, content: string | Uint8Array) {
+  const bytes = typeof content === "string" ? new TextEncoder().encode(content) : content;
+  const header = new Uint8Array(TAR_BLOCK_SIZE);
+  writeTarString(header, 0, 100, path);
+  writeTarString(header, 100, 8, tarOctal(0o644, 8));
+  writeTarString(header, 108, 8, tarOctal(0, 8));
+  writeTarString(header, 116, 8, tarOctal(0, 8));
+  writeTarString(header, 124, 12, tarOctal(bytes.byteLength, 12));
+  writeTarString(header, 136, 12, tarOctal(0, 12));
+  header.fill(0x20, 148, 156);
+  header[156] = "0".charCodeAt(0);
+  writeTarString(header, 257, 6, "ustar");
+  writeTarString(header, 263, 2, "00");
+
+  let checksum = 0;
+  for (const byte of header) checksum += byte;
+  writeTarString(header, 148, 8, tarOctal(checksum, 8));
+
+  const paddedSize = Math.ceil(bytes.byteLength / TAR_BLOCK_SIZE) * TAR_BLOCK_SIZE;
+  const body = new Uint8Array(paddedSize);
+  body.set(bytes);
+  return [header, body];
+}
+
+function npmPackFixture(files: Record<string, string | Uint8Array>) {
+  const parts: Uint8Array[] = [];
+  for (const [path, content] of Object.entries(files)) {
+    parts.push(...tarFile(path, content));
+  }
+  parts.push(new Uint8Array(TAR_BLOCK_SIZE), new Uint8Array(TAR_BLOCK_SIZE));
+  const size = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const tar = new Uint8Array(size);
+  let offset = 0;
+  for (const part of parts) {
+    tar.set(part, offset);
+    offset += part.byteLength;
+  }
+  return gzipSync(tar);
+}
+
+function bytesToArrayBuffer(bytes: Uint8Array): ArrayBuffer {
+  const copy = new Uint8Array(bytes.byteLength);
+  copy.set(bytes);
+  return copy.buffer;
 }
 
 function makeDigestCtx(options: {
@@ -8219,6 +8352,57 @@ describe("packages public queries", () => {
     });
   });
 
+  it("summarizes only latest-release plugin inspector findings", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null);
+    const warningIndexEq = vi.fn(() => ({}));
+    const warningWithIndex = vi.fn(
+      (_indexName: string, build: (q: { eq: typeof warningIndexEq }) => unknown) => {
+        build({ eq: warningIndexEq });
+        return {
+          order: vi.fn(() => ({
+            take: vi.fn().mockResolvedValue([]),
+          })),
+        };
+      },
+    );
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packages:demo",
+                  name: "demo-plugin",
+                  normalizedName: "demo-plugin",
+                  family: "code-plugin",
+                  latestReleaseId: "packageReleases:demo-2",
+                }),
+              })),
+            };
+          }
+          if (table === "packageInspectorWarnings") {
+            return { withIndex: warningWithIndex };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      getPackageInspectorValidationSummaryPublicHandler(ctx as never, { name: "demo-plugin" }),
+    ).resolves.toEqual({
+      findingCount: 0,
+      errorCount: 0,
+      warningCount: 0,
+      incompatibleAfterOpenClawVersion: null,
+    });
+    expect(warningWithIndex).toHaveBeenCalledWith("by_release_created", expect.any(Function));
+    expect(warningIndexEq).toHaveBeenCalledWith("releaseId", "packageReleases:demo-2");
+    expect(warningIndexEq).not.toHaveBeenCalledWith("packageId", "packages:demo");
+  });
+
   it("does not list detailed plugin inspector findings for signed-out viewers", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const ctx = {
@@ -8772,6 +8956,71 @@ describe("packages public queries", () => {
       }),
     ).resolves.toEqual([]);
     expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("lists manager plugin inspector findings only for the latest release", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const warningIndexEq = vi.fn(() => ({}));
+    const warningWithIndex = vi.fn(
+      (_indexName: string, build: (q: { eq: typeof warningIndexEq }) => unknown) => {
+        build({ eq: warningIndexEq });
+        return {
+          order: vi.fn(() => ({
+            take: vi.fn().mockResolvedValue([
+              {
+                _id: "packageInspectorWarnings:latest",
+                packageName: "demo-plugin",
+                version: "2.0.0",
+                findingKind: "warning",
+                code: "latest-warning",
+                message: "latest release warning",
+                createdAt: 2,
+                authorRemediation: {
+                  summary: "Update the plugin API usage.",
+                },
+              },
+            ]),
+          })),
+        };
+      },
+    );
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: "users:owner", role: "user" };
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packages:demo",
+                  name: "demo-plugin",
+                  normalizedName: "demo-plugin",
+                  family: "code-plugin",
+                  ownerUserId: "users:owner",
+                  latestReleaseId: "packageReleases:demo-2",
+                }),
+              })),
+            };
+          }
+          if (table === "packageInspectorWarnings") {
+            return { withIndex: warningWithIndex };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      listPackageInspectorWarningsForManagerHandler(ctx as never, {
+        name: "demo-plugin",
+      }),
+    ).resolves.toMatchObject([{ code: "latest-warning", version: "2.0.0" }]);
+    expect(warningWithIndex).toHaveBeenCalledWith("by_release_created", expect.any(Function));
+    expect(warningIndexEq).toHaveBeenCalledWith("releaseId", "packageReleases:demo-2");
+    expect(warningIndexEq).not.toHaveBeenCalledWith("packageId", "packages:demo");
   });
 
   it("infers owner handle from scoped package names for user package publishes", async () => {
@@ -11349,6 +11598,56 @@ describe("package scan backfill", () => {
     ]);
   });
 
+  it("does not hide historical ClawPack file repair inside the scan backfill batch", async () => {
+    const result = await getPackageReleaseScanBackfillBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              order: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([]),
+              })),
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue([
+                    {
+                      _id: "packageReleases:truncated-clawpack",
+                      _creationTime: 10,
+                      packageId: "packages:demo",
+                      artifactKind: "npm-pack",
+                      clawpackStorageId: "storage:clawpack",
+                      npmFileCount: 4,
+                      files: [
+                        { path: "package.json", size: 10, storageId: "storage:package" },
+                        {
+                          path: "openclaw.plugin.json",
+                          size: 10,
+                          storageId: "storage:plugin",
+                        },
+                      ],
+                      sha256hash: "hash",
+                      vtAnalysis: { status: "clean" },
+                      llmAnalysis: { status: "clean" },
+                      staticScan: { status: "clean" },
+                    },
+                  ]),
+                })),
+              })),
+            };
+          }),
+          get: vi.fn(async (id: string) => {
+            if (id === "packages:demo") return makePackageDoc();
+            return null;
+          }),
+        },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result.releases).toEqual([]);
+  });
+
   it("schedules static rescans for releases missing only static scan data", async () => {
     const originalVtApiKey = process.env.VT_API_KEY;
     process.env.VT_API_KEY = "vt-test-key";
@@ -11388,6 +11687,521 @@ describe("package scan backfill", () => {
         process.env.VT_API_KEY = originalVtApiKey;
       }
     }
+  });
+
+  it("keeps scan backfill scoped to scan work for historical ClawPack releases", async () => {
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+    const runMutation = vi.fn();
+    const result = await backfillPackageReleaseScansInternalHandler(
+      {
+        runQuery: vi.fn().mockResolvedValue({
+          releases: [
+            {
+              releaseId: "packageReleases:truncated-clawpack",
+              needsVt: false,
+              needsLlm: true,
+              needsStatic: true,
+            },
+          ],
+          nextCursor: 123,
+          done: true,
+        }),
+        runMutation,
+        scheduler: { runAfter },
+      } as never,
+      { batchSize: 10 },
+    );
+
+    expect(result).toEqual({ scheduled: 1, nextCursor: 123, done: true });
+    expect(runAfter).toHaveBeenCalledTimes(1);
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:truncated-clawpack" }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:truncated-clawpack",
+        source: "backfill",
+      }),
+    );
+  });
+
+  it("lists historical ClawPack repair candidates with cursor progress and package targeting", async () => {
+    const packageWithIndex = vi.fn(() => ({
+      unique: vi.fn().mockResolvedValue(
+        makePackageDoc({
+          _id: "packages:demo",
+          name: "@scope/demo",
+          normalizedName: "@scope/demo",
+        }),
+      ),
+    }));
+    const paginate = vi.fn().mockResolvedValue({
+      page: [
+        makeReleaseDoc({
+          _id: "packageReleases:truncated-clawpack",
+          _creationTime: 10,
+          packageId: "packages:demo",
+          version: "1.0.0",
+          artifactKind: "npm-pack",
+          clawpackStorageId: "storage:clawpack",
+          clawpackSha256: "a".repeat(64),
+          npmFileCount: 4,
+          files: [
+            { path: "package.json", size: 10, storageId: "storage:package" },
+            { path: "openclaw.plugin.json", size: 10, storageId: "storage:plugin" },
+          ],
+        }),
+        makeReleaseDoc({
+          _id: "packageReleases:complete-clawpack",
+          _creationTime: 11,
+          packageId: "packages:demo",
+          version: "1.0.1",
+          artifactKind: "npm-pack",
+          clawpackStorageId: "storage:clawpack-complete",
+          npmFileCount: 2,
+          files: [
+            { path: "package.json", size: 10, storageId: "storage:package" },
+            { path: "openclaw.plugin.json", size: 10, storageId: "storage:plugin" },
+          ],
+        }),
+      ],
+      continueCursor: "cursor:next",
+      isDone: false,
+    });
+
+    const result = await getHistoricalClawPackRepairBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return { withIndex: packageWithIndex };
+            }
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({ paginate })),
+              })),
+            };
+          }),
+          get: vi.fn(),
+        },
+      } as never,
+      { cursor: "cursor:start", batchSize: 2, packageName: "@scope/demo" },
+    );
+
+    expect(packageWithIndex).toHaveBeenCalledWith("by_name", expect.any(Function));
+    expect(paginate).toHaveBeenCalledWith({ cursor: "cursor:start", numItems: 2 });
+    expect(result).toEqual({
+      candidates: [
+        expect.objectContaining({
+          releaseId: "packageReleases:truncated-clawpack",
+          packageName: "@scope/demo",
+          version: "1.0.0",
+          existingFileCount: 2,
+          npmFileCount: 4,
+        }),
+      ],
+      scanned: 2,
+      cursor: "cursor:next",
+      isDone: false,
+    });
+  });
+
+  it("uses package/version indexes for targeted ClawPack repair beyond the first global page", async () => {
+    const packageWithIndex = vi.fn(() => ({
+      unique: vi.fn().mockResolvedValue(
+        makePackageDoc({
+          _id: "packages:target",
+          name: "@scope/target",
+          normalizedName: "@scope/target",
+        }),
+      ),
+    }));
+    const releaseWithIndex = vi.fn(() => ({
+      unique: vi.fn().mockResolvedValue(
+        makeReleaseDoc({
+          _id: "packageReleases:target-2",
+          _creationTime: 9999,
+          packageId: "packages:target",
+          version: "2.0.0",
+          artifactKind: "npm-pack",
+          clawpackStorageId: "storage:clawpack",
+          npmFileCount: 4,
+          files: [
+            { path: "package.json", size: 10, storageId: "storage:package" },
+            { path: "openclaw.plugin.json", size: 10, storageId: "storage:plugin" },
+          ],
+        }),
+      ),
+    }));
+    const globalPaginate = vi.fn().mockResolvedValue({
+      page: [
+        makeReleaseDoc({
+          _id: "packageReleases:unrelated",
+          packageId: "packages:other",
+          version: "1.0.0",
+        }),
+      ],
+      continueCursor: "cursor:global-next",
+      isDone: false,
+    });
+
+    const result = await getHistoricalClawPackRepairBatchInternalHandler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table === "packages") {
+              return { withIndex: packageWithIndex };
+            }
+            if (table !== "packageReleases") throw new Error(`Unexpected table ${table}`);
+            return {
+              withIndex: releaseWithIndex,
+              order: vi.fn(() => ({ paginate: globalPaginate })),
+            };
+          }),
+          get: vi.fn(),
+        },
+      } as never,
+      { batchSize: 1, packageName: "@scope/target", version: "2.0.0" },
+    );
+
+    expect(packageWithIndex).toHaveBeenCalledWith("by_name", expect.any(Function));
+    expect(releaseWithIndex).toHaveBeenCalledWith("by_package_version", expect.any(Function));
+    expect(globalPaginate).not.toHaveBeenCalled();
+    expect(result).toEqual({
+      candidates: [
+        expect.objectContaining({
+          releaseId: "packageReleases:target-2",
+          packageName: "@scope/target",
+          version: "2.0.0",
+          existingFileCount: 2,
+          npmFileCount: 4,
+        }),
+      ],
+      scanned: 1,
+      cursor: null,
+      isDone: true,
+    });
+  });
+
+  it("dry-runs historical ClawPack repair with artifact validation and no writes", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "@scope/demo", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "scope.demo" }),
+      "package/README.md": "# Demo\n",
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    const storageGet = vi.fn(
+      async () => new Blob([bytesToArrayBuffer(pack)], { type: "application/octet-stream" }),
+    );
+    const storageStore = vi.fn();
+    const runMutation = vi.fn();
+    const runAfter = vi.fn();
+
+    const result = await repairHistoricalClawPackReleaseFilesInternalHandler(
+      {
+        runQuery: vi.fn(async (_ref: unknown, args: { packageId?: string; releaseId?: string }) => {
+          if ("batchSize" in (args as Record<string, unknown>)) {
+            return {
+              candidates: [
+                {
+                  releaseId: "packageReleases:truncated-clawpack",
+                  packageId: "packages:demo",
+                  packageName: "@scope/demo",
+                  version: "1.0.0",
+                  createdAt: 10,
+                  existingFileCount: 2,
+                  npmFileCount: 4,
+                  clawpackSha256: null,
+                },
+              ],
+              scanned: 1,
+              cursor: null,
+              isDone: true,
+            };
+          }
+          if (args.releaseId) {
+            return makeReleaseDoc({
+              _id: args.releaseId,
+              packageId: "packages:demo",
+              version: "1.0.0",
+              artifactKind: "npm-pack",
+              clawpackStorageId: "storage:clawpack",
+              npmFileCount: 4,
+              files: [
+                { path: "package.json", size: 10, storageId: "storage:package" },
+                { path: "openclaw.plugin.json", size: 10, storageId: "storage:plugin" },
+              ],
+            });
+          }
+          if (args.packageId === "packages:demo") {
+            return makePackageDoc({
+              _id: "packages:demo",
+              name: "@scope/demo",
+              normalizedName: "@scope/demo",
+            });
+          }
+          return null;
+        }),
+        runMutation,
+        scheduler: { runAfter },
+        storage: { get: storageGet, store: storageStore },
+      } as never,
+      { dryRun: true, batchSize: 1, maxBatches: 1, packageName: "@scope/demo" },
+    );
+
+    expect(result.stats).toEqual({
+      scanned: 1,
+      candidates: 1,
+      validated: 1,
+      wouldRepair: 1,
+      repaired: 0,
+      skipped: 0,
+      errors: 0,
+    });
+    expect(result.writeConfirmation).toBe("repair-historical-clawpack-files");
+    expect(result.samples[0]).toEqual(
+      expect.objectContaining({
+        releaseId: "packageReleases:truncated-clawpack",
+        repairedFiles: 4,
+        samplePaths: ["package.json", "openclaw.plugin.json", "README.md", "dist/index.js"],
+      }),
+    );
+    expect(result.logLines.join("\n")).toContain("would-repair package=@scope/demo");
+    expect(storageStore).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
+  it("requires explicit confirmation before applying historical ClawPack repair", async () => {
+    await expect(
+      repairHistoricalClawPackReleaseFilesInternalHandler(
+        {
+          runQuery: vi.fn(),
+          runMutation: vi.fn(),
+          scheduler: { runAfter: vi.fn() },
+          storage: { get: vi.fn(), store: vi.fn() },
+        } as never,
+        { dryRun: false, batchSize: 1 },
+      ),
+    ).rejects.toThrow(/confirmation/);
+  });
+
+  it("applies historical ClawPack repair with confirmation and schedules resumable follow-up", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "@scope/demo", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "scope.demo" }),
+      "package/README.md": "# Demo\n",
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    const storageGet = vi.fn(
+      async () => new Blob([bytesToArrayBuffer(pack)], { type: "application/octet-stream" }),
+    );
+    const storageStore = vi.fn(async () => `storage:repaired-${storageStore.mock.calls.length}`);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (Array.isArray(args.files)) return { repaired: true };
+      return { jobId: "securityScanJobs:1" };
+    });
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await repairHistoricalClawPackReleaseFilesInternalHandler(
+      {
+        runQuery: vi.fn(async (_ref: unknown, args: { packageId?: string; releaseId?: string }) => {
+          if ("batchSize" in (args as Record<string, unknown>)) {
+            return {
+              candidates: [
+                {
+                  releaseId: "packageReleases:truncated-clawpack",
+                  packageId: "packages:demo",
+                  packageName: "@scope/demo",
+                  version: "1.0.0",
+                  createdAt: 10,
+                  existingFileCount: 2,
+                  npmFileCount: 4,
+                  clawpackSha256: null,
+                },
+              ],
+              scanned: 1,
+              cursor: "cursor:next",
+              isDone: false,
+            };
+          }
+          if (args.releaseId) {
+            return makeReleaseDoc({
+              _id: args.releaseId,
+              packageId: "packages:demo",
+              version: "1.0.0",
+              artifactKind: "npm-pack",
+              clawpackStorageId: "storage:clawpack",
+              npmFileCount: 4,
+              files: [
+                { path: "package.json", size: 10, storageId: "storage:package" },
+                { path: "openclaw.plugin.json", size: 10, storageId: "storage:plugin" },
+              ],
+            });
+          }
+          if (args.packageId === "packages:demo") {
+            return makePackageDoc({
+              _id: "packages:demo",
+              name: "@scope/demo",
+              normalizedName: "@scope/demo",
+            });
+          }
+          return null;
+        }),
+        runMutation,
+        scheduler: { runAfter },
+        storage: { get: storageGet, store: storageStore },
+      } as never,
+      {
+        dryRun: false,
+        batchSize: 1,
+        maxBatches: 1,
+        packageName: "@scope/demo",
+        confirmation: "repair-historical-clawpack-files",
+        scheduleNext: true,
+      },
+    );
+
+    expect(result.stats).toEqual({
+      scanned: 1,
+      candidates: 1,
+      validated: 1,
+      wouldRepair: 0,
+      repaired: 1,
+      skipped: 0,
+      errors: 0,
+    });
+    expect(result.cursor).toBe("cursor:next");
+    expect(result.isDone).toBe(false);
+    expect(storageStore).toHaveBeenCalledTimes(4);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:truncated-clawpack",
+        files: expect.arrayContaining([
+          expect.objectContaining({ path: "README.md", contentType: "text/markdown" }),
+        ]),
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:truncated-clawpack",
+        source: "manual",
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:truncated-clawpack" }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        cursor: "cursor:next",
+        dryRun: false,
+        confirmation: "repair-historical-clawpack-files",
+        scheduleNext: true,
+      }),
+    );
+  });
+
+  it("repairs historical ClawPack release file rows from the stored npm-pack artifact", async () => {
+    const pack = npmPackFixture({
+      "package/package.json": JSON.stringify({ name: "@scope/demo", version: "1.0.0" }),
+      "package/openclaw.plugin.json": JSON.stringify({ id: "scope.demo" }),
+      "package/README.md": "# Demo\n",
+      "package/dist/index.js": "export const demo = true;\n",
+    });
+    const storageGet = vi.fn(async (storageId: string) =>
+      storageId === "storage:clawpack"
+        ? new Blob([bytesToArrayBuffer(pack)], { type: "application/octet-stream" })
+        : null,
+    );
+    const storageStore = vi.fn(async () => `storage:repaired-${storageStore.mock.calls.length}`);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (Array.isArray(args.files)) return { repaired: true };
+      return { jobId: "securityScanJobs:1" };
+    });
+    const runAfter = vi.fn().mockResolvedValue(undefined);
+
+    const result = await repairClawPackReleaseFilesInternalHandler(
+      {
+        runQuery: vi.fn(async (_ref: unknown, args: { packageId?: string; releaseId?: string }) => {
+          if (args.releaseId) {
+            return makeReleaseDoc({
+              _id: args.releaseId,
+              packageId: "packages:demo",
+              version: "1.0.0",
+              artifactKind: "npm-pack",
+              clawpackStorageId: "storage:clawpack",
+              npmFileCount: 4,
+              files: [
+                { path: "package.json", size: 10, storageId: "storage:package" },
+                {
+                  path: "openclaw.plugin.json",
+                  size: 10,
+                  storageId: "storage:plugin",
+                },
+              ],
+            });
+          }
+          if (args.packageId === "packages:demo") {
+            return makePackageDoc({ _id: "packages:demo", name: "@scope/demo" });
+          }
+          return null;
+        }),
+        runMutation,
+        scheduler: { runAfter },
+        storage: { get: storageGet, store: storageStore },
+      } as never,
+      { releaseId: "packageReleases:truncated-clawpack" },
+    );
+
+    expect(result).toEqual(
+      expect.objectContaining({
+        ok: true,
+        repaired: true,
+        dryRun: false,
+        files: 4,
+        existingFiles: 2,
+        npmFileCount: 4,
+        integritySha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        samplePaths: ["package.json", "openclaw.plugin.json", "README.md", "dist/index.js"],
+      }),
+    );
+    expect(storageStore).toHaveBeenCalledTimes(4);
+    const repairCall = runMutation.mock.calls.find(([, args]) => Array.isArray(args.files));
+    expect(repairCall?.[1]).toEqual(
+      expect.objectContaining({
+        releaseId: "packageReleases:truncated-clawpack",
+        npmFileCount: 4,
+        integritySha256: expect.stringMatching(/^[a-f0-9]{64}$/),
+        files: [
+          expect.objectContaining({ path: "package.json" }),
+          expect.objectContaining({ path: "openclaw.plugin.json" }),
+          expect.objectContaining({ path: "README.md", contentType: "text/markdown" }),
+          expect.objectContaining({ path: "dist/index.js", contentType: "application/javascript" }),
+        ],
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:truncated-clawpack" }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:truncated-clawpack",
+        source: "manual",
+      }),
+    );
   });
 
   it("backfills legacy static-only package scan status into the package search digest", async () => {

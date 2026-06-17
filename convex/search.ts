@@ -270,6 +270,7 @@ export const searchSkills: ReturnType<typeof action> = action({
     let hydrated: SkillSearchEntry[] = [];
     const seenEmbeddingIds = new Set<Id<"skillEmbeddings">>();
     let scoreById = new Map<Id<"skillEmbeddings">, number>();
+    const scoreBySkillId = new Map<Id<"skills">, number>();
     let exactMatches: SkillSearchEntry[] = [];
 
     if (vector) {
@@ -297,6 +298,12 @@ export const searchSkills: ReturnType<typeof action> = action({
 
         for (const result of results) {
           scoreById.set(result._id, result._score);
+        }
+
+        for (const entry of hydrated) {
+          if (!entry.embeddingId) continue;
+          const score = scoreById.get(entry.embeddingId);
+          if (score !== undefined) scoreBySkillId.set(entry.skill._id, score);
         }
 
         // Skills already have badges from their docs (via toPublicSkill).
@@ -350,7 +357,9 @@ export const searchSkills: ReturnType<typeof action> = action({
 
     const rankedMatches = mergedMatches
       .map((entry): SearchResult | null => {
-        const vectorScore = entry.embeddingId ? (scoreById.get(entry.embeddingId) ?? 0) : 0;
+        const vectorScore = entry.embeddingId
+          ? (scoreById.get(entry.embeddingId) ?? scoreBySkillId.get(entry.skill._id) ?? 0)
+          : (scoreBySkillId.get(entry.skill._id) ?? 0);
         const match = classifySkillMatch(query, queryTokens, entry.skill);
         if (!match) return null;
         return {
