@@ -3,9 +3,20 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
+
+const useMutationMock = vi.fn();
+
+vi.mock("convex/react", () => ({
+  useMutation: (...args: unknown[]) => useMutationMock(...args),
+}));
+
+beforeEach(() => {
+  useMutationMock.mockReset();
+  useMutationMock.mockReturnValue(vi.fn());
+});
 
 function renderReadme(readmeContent: string) {
   return render(
@@ -81,7 +92,7 @@ describe("SkillDetailTabs README links", () => {
         hasSkillCard={true}
         latestFiles={[]}
         latestVersionId={null}
-        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
         onCompareIntent={vi.fn()}
         diffVersions={undefined}
         versions={undefined}
@@ -144,7 +155,7 @@ describe("SkillDetailTabs README links", () => {
         hasSkillCard={true}
         latestFiles={[]}
         latestVersionId={null}
-        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
         ownerHandle="clawkit"
         onCompareIntent={vi.fn()}
         diffVersions={undefined}
@@ -174,7 +185,7 @@ describe("SkillDetailTabs README links", () => {
         hasSkillCard={false}
         latestFiles={[]}
         latestVersionId={null}
-        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
         ownerHandle="clawkit"
         onCompareIntent={vi.fn()}
         diffVersions={undefined}

@@ -160,6 +160,169 @@ async function spawnCommand(
   });
 }
 
+type PublishMultipartArgs = {
+  registry: string;
+  token: string;
+  slug: string;
+  ownerHandle?: string;
+  version: string;
+  displayName?: string;
+  changelog?: string;
+  markdown?: string;
+};
+
+type SkillDetailBody = {
+  skill?: { slug?: unknown };
+  latestVersion?: { version?: unknown } | null;
+  owner?: { handle?: unknown };
+};
+
+type SkillVersionsBody = {
+  items?: Array<{ version?: unknown }>;
+  nextCursor?: string | null;
+};
+
+function extractLastJsonObject(output: string) {
+  const trimmed = output.trim();
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (trimmed[index] !== "{") continue;
+    const candidate = trimmed.slice(index);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Convex can print status lines before the JSON payload.
+    }
+  }
+  throw new Error(`No JSON object in convex run output:\n${output}`);
+}
+
+function runConvexJson<T>(functionName: string, args: Record<string, unknown>) {
+  const result = spawnSync(
+    "bunx",
+    ["convex", "run", "--no-push", functionName, JSON.stringify(args)],
+    {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: process.env,
+    },
+  );
+  if (result.status !== 0) {
+    throw new Error(
+      `convex run ${functionName} failed:\n${result.stderr || result.stdout || "no output"}`,
+    );
+  }
+  return JSON.parse(extractLastJsonObject(result.stdout)) as T;
+}
+
+async function createOrgPublisher(params: {
+  registry: string;
+  token: string;
+  handle: string;
+  displayName: string;
+}) {
+  const response = await fetchWithTimeout(
+    new URL(ApiRoutes.publishers, params.registry).toString(),
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${params.token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ handle: params.handle, displayName: params.displayName }),
+    },
+    60_000,
+  );
+  if (response.status !== 201) {
+    throw new Error(
+      `create publisher ${params.handle} failed: ${response.status} ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as { handle?: unknown; publisherId?: unknown };
+}
+
+async function publishSkillMultipart(params: PublishMultipartArgs) {
+  const payload: Record<string, unknown> = {
+    slug: params.slug,
+    displayName: params.displayName ?? `E2E ${params.slug}`,
+    version: params.version,
+    changelog: params.changelog ?? `Publish ${params.version}`,
+    acceptLicenseTerms: true,
+    tags: ["latest"],
+  };
+  if (params.ownerHandle) payload.ownerHandle = params.ownerHandle;
+
+  const form = new FormData();
+  form.set("payload", JSON.stringify(payload));
+  form.append(
+    "files",
+    new Blob([params.markdown ?? buildE2ESkillMarkdown(params.slug)], { type: "text/markdown" }),
+    "SKILL.md",
+  );
+
+  const response = await fetchWithTimeout(
+    new URL(ApiRoutes.skills, params.registry).toString(),
+    {
+      method: "POST",
+      headers: {
+        Accept: "application/json",
+        Authorization: `Bearer ${params.token}`,
+      },
+      body: form,
+    },
+    60_000,
+  );
+  if (response.status !== 200) {
+    throw new Error(
+      `publish ${params.ownerHandle ? `@${params.ownerHandle}/` : ""}${params.slug}@${
+        params.version
+      } failed: ${response.status} ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as { skillId?: unknown; versionId?: unknown };
+}
+
+async function readScopedSkill(registry: string, slug: string, ownerHandle: string) {
+  const url = new URL(`${ApiRoutes.skills}/${encodeURIComponent(slug)}`, registry);
+  url.searchParams.set("ownerHandle", ownerHandle);
+  const response = await fetchWithTimeout(url.toString(), {
+    headers: { Accept: "application/json" },
+  });
+  if (response.status !== 200) {
+    throw new Error(
+      `read @${ownerHandle}/${slug} failed: ${response.status} ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as SkillDetailBody;
+}
+
+async function readScopedSkillVersions(registry: string, slug: string, ownerHandle: string) {
+  const url = new URL(`${ApiRoutes.skills}/${encodeURIComponent(slug)}/versions`, registry);
+  url.searchParams.set("ownerHandle", ownerHandle);
+  url.searchParams.set("limit", "10");
+  const response = await fetchWithTimeout(url.toString(), {
+    headers: { Accept: "application/json" },
+  });
+  if (response.status !== 200) {
+    throw new Error(
+      `read @${ownerHandle}/${slug} versions failed: ${response.status} ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as SkillVersionsBody;
+}
+
+async function expectUnscopedSkillAmbiguous(registry: string, slug: string) {
+  const response = await fetchWithTimeout(
+    new URL(`${ApiRoutes.skills}/${encodeURIComponent(slug)}`, registry).toString(),
+    { headers: { Accept: "text/plain" } },
+  );
+  expect(response.status).toBe(409);
+  const message = await response.text();
+  expect(message).toContain("Ambiguous skill slug");
+  expect(message).toContain(`/api/v1/skills/${slug}?ownerHandle=<owner>`);
+}
+
 describe("clawhub e2e", () => {
   it("prints CLI version via --cli-version", async () => {
     const result = spawnSync("bun", ["clawhub", "--cli-version"], {
@@ -1219,6 +1382,142 @@ describe("clawhub e2e", () => {
         await rm(installWorkdir, { recursive: true, force: true });
         await rm(cfg.dir, { recursive: true, force: true });
       }
+    },
+    180_000,
+  );
+
+  itIfLocalRoleHelpMutations(
+    "publishes the same slug under separate org namespaces and appends versions in the selected org",
+    async () => {
+      const registry = getRegistry();
+      const { adminToken } = await resolveRoleHelpTokens(registry);
+      const suffix = Date.now().toString(36);
+      const slug = `org-scope-e2e-${suffix}`;
+      const orgAHandle = `org-a-${suffix}`;
+      const orgBHandle = `org-b-${suffix}`;
+
+      const orgA = await createOrgPublisher({
+        registry,
+        token: adminToken,
+        handle: orgAHandle,
+        displayName: `Org A ${suffix}`,
+      });
+      const orgB = await createOrgPublisher({
+        registry,
+        token: adminToken,
+        handle: orgBHandle,
+        displayName: `Org B ${suffix}`,
+      });
+      expect(orgA.handle).toBe(orgAHandle);
+      expect(orgB.handle).toBe(orgBHandle);
+
+      const firstOrgAPublish = await publishSkillMultipart({
+        registry,
+        token: adminToken,
+        slug,
+        ownerHandle: orgAHandle,
+        version: "1.0.0",
+        changelog: "first org-a owner-scoped publish",
+      });
+      expect(typeof firstOrgAPublish.skillId).toBe("string");
+      expect(typeof firstOrgAPublish.versionId).toBe("string");
+
+      // Authless availability checks namespace occupancy; authenticated owners can still publish new versions.
+      const orgAAvailability = runConvexJson<{
+        available: boolean;
+        reason: string;
+        message: string | null;
+      }>("skills:checkSlugAvailability", { slug, ownerHandle: orgAHandle });
+      expect(orgAAvailability).toMatchObject({ available: false, reason: "taken" });
+
+      const orgBAvailability = runConvexJson<{
+        available: boolean;
+        reason: string;
+      }>("skills:checkSlugAvailability", { slug, ownerHandle: orgBHandle });
+      expect(orgBAvailability).toMatchObject({ available: true, reason: "available" });
+
+      const orgBPublish = await publishSkillMultipart({
+        registry,
+        token: adminToken,
+        slug,
+        ownerHandle: orgBHandle,
+        version: "1.0.0",
+        changelog: "same slug in org-b namespace",
+      });
+      expect(typeof orgBPublish.skillId).toBe("string");
+      expect(orgBPublish.skillId).not.toBe(firstOrgAPublish.skillId);
+
+      const secondOrgAPublish = await publishSkillMultipart({
+        registry,
+        token: adminToken,
+        slug,
+        ownerHandle: orgAHandle,
+        version: "1.0.1",
+        changelog: "second org-a version should target the existing skill",
+      });
+      expect(secondOrgAPublish.skillId).toBe(firstOrgAPublish.skillId);
+      expect(secondOrgAPublish.versionId).not.toBe(firstOrgAPublish.versionId);
+
+      const orgARead = await readScopedSkill(registry, slug, orgAHandle);
+      expect(orgARead.skill?.slug).toBe(slug);
+      expect(orgARead.owner?.handle).toBe(orgAHandle);
+      expect(orgARead.latestVersion?.version).toBe("1.0.1");
+
+      const orgBRead = await readScopedSkill(registry, slug, orgBHandle);
+      expect(orgBRead.skill?.slug).toBe(slug);
+      expect(orgBRead.owner?.handle).toBe(orgBHandle);
+      expect(orgBRead.latestVersion?.version).toBe("1.0.0");
+
+      const orgAVersions = await readScopedSkillVersions(registry, slug, orgAHandle);
+      expect(orgAVersions.items?.map((item) => item.version)).toEqual(
+        expect.arrayContaining(["1.0.0", "1.0.1"]),
+      );
+
+      const orgBVersions = await readScopedSkillVersions(registry, slug, orgBHandle);
+      expect(orgBVersions.items?.map((item) => item.version)).toEqual(["1.0.0"]);
+
+      await expectUnscopedSkillAmbiguous(registry, slug);
+    },
+    180_000,
+  );
+
+  itIfLocalRoleHelpMutations(
+    "preserves old ownerless publish payloads as personal-namespace publishes",
+    async () => {
+      const registry = getRegistry();
+      const { adminToken, userToken } = await resolveRoleHelpTokens(registry);
+      const slug = `old-ownerless-e2e-${Date.now().toString(36)}`;
+
+      const adminPublish = await publishSkillMultipart({
+        registry,
+        token: adminToken,
+        slug,
+        version: "1.0.0",
+        changelog: "old payload publish by cli-admin without ownerHandle",
+      });
+      const userPublish = await publishSkillMultipart({
+        registry,
+        token: userToken,
+        slug,
+        version: "1.0.0",
+        changelog: "old payload publish by cli-user without ownerHandle",
+      });
+
+      expect(typeof adminPublish.skillId).toBe("string");
+      expect(typeof userPublish.skillId).toBe("string");
+      expect(adminPublish.skillId).not.toBe(userPublish.skillId);
+
+      const adminRead = await readScopedSkill(registry, slug, "cli-admin");
+      expect(adminRead.skill?.slug).toBe(slug);
+      expect(adminRead.owner?.handle).toBe("cli-admin");
+      expect(adminRead.latestVersion?.version).toBe("1.0.0");
+
+      const userRead = await readScopedSkill(registry, slug, "cli-user");
+      expect(userRead.skill?.slug).toBe(slug);
+      expect(userRead.owner?.handle).toBe("cli-user");
+      expect(userRead.latestVersion?.version).toBe("1.0.0");
+
+      await expectUnscopedSkillAmbiguous(registry, slug);
     },
     180_000,
   );

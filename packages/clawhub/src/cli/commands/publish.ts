@@ -97,20 +97,18 @@ export async function cmdPublish(
 
     const hashed = hashSkillFiles(filesOnDisk);
     const optionalToken = await getOptionalAuthToken();
-    const ownerToken = explicitOwnerHandle
-      ? optionalToken
-      : (optionalToken ?? (await requireAuthToken()));
     let defaultOwnerHandle: string | undefined;
     const getDefaultOwnerHandle = async (token: string) => {
       defaultOwnerHandle ??= await resolveDefaultOwnerHandle(registry, token);
       return defaultOwnerHandle;
     };
     const ownerHandle =
-      explicitOwnerHandle || (ownerToken ? await getDefaultOwnerHandle(ownerToken) : undefined);
+      explicitOwnerHandle ||
+      (optionalToken ? await getDefaultOwnerHandle(optionalToken) : undefined);
     const sourceOwnerHandle =
       options.migrateOwner && ownerHandle
         ? explicitSourceOwnerHandle ||
-          (ownerToken ? await getDefaultOwnerHandle(ownerToken) : undefined)
+          (optionalToken ? await getDefaultOwnerHandle(optionalToken) : undefined)
         : undefined;
     const resolved = await resolveSkillVersion(
       registry,
@@ -154,7 +152,7 @@ export async function cmdPublish(
       return result;
     }
 
-    const token = ownerToken ?? (await requireAuthToken());
+    const token = optionalToken ?? (await requireAuthToken());
     const publishOwnerHandle = ownerHandle || (await getDefaultOwnerHandle(token));
     const publishSourceOwnerHandle =
       options.migrateOwner && publishOwnerHandle

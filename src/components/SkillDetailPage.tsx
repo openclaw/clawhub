@@ -196,7 +196,13 @@ export function SkillDetailPage({
   const initialResult = initialData?.result ?? undefined;
 
   const isStaff = isModerator(me);
-  const skillLookupArgs = canonicalOwner ? { slug, ownerHandle: canonicalOwner } : { slug };
+  const liveLookupOwnerHandle =
+    initialData && "lookupOwnerHandle" in initialData
+      ? initialData.lookupOwnerHandle
+      : canonicalOwner;
+  const skillLookupArgs = liveLookupOwnerHandle
+    ? { slug, ownerHandle: liveLookupOwnerHandle }
+    : { slug };
   const staffResult = useQuery(api.skills.getBySlugForStaff, isStaff ? skillLookupArgs : "skip") as
     | SkillBySlugResult
     | undefined;

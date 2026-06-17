@@ -63,7 +63,12 @@ export const Route = createFileRoute("/$owner/$slug/security-audit")({
 function SkillSecurityAuditRoute() {
   const { owner, slug } = Route.useParams();
   const { initialData } = Route.useLoaderData();
-  const liveResult = useQuery(api.skills.getBySlug, { slug, ownerHandle: owner });
+  const liveLookupOwnerHandle =
+    initialData && "lookupOwnerHandle" in initialData ? initialData.lookupOwnerHandle : owner;
+  const liveResult = useQuery(
+    api.skills.getBySlug,
+    liveLookupOwnerHandle ? { slug, ownerHandle: liveLookupOwnerHandle } : { slug },
+  );
   const requestSkillRescan = useMutation(api.securityScan.requestSkillRescan);
   const { me } = useAuthStatus();
   const myPublishers = useQuery(api.publishers.listMine, me ? {} : "skip") as

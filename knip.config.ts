@@ -62,6 +62,9 @@ const config = {
         "@fontsource/noto-sans-sc",
         "tailwindcss",
         "tw-animate-css",
+        // The Convex skill frontmatter parser imports this through the
+        // convex/lib/skills directory index, which Knip's production pass does not trace.
+        "yaml",
       ],
       project: [
         "src/**/*.{ts,tsx}!",

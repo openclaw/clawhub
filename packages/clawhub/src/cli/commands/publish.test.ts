@@ -39,10 +39,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  httpMocks.apiRequest.mockResolvedValue({
-    match: null,
-    latestVersion: null,
-  });
+  mockDefaultApiRequest();
 });
 
 describe("cmdPublish", () => {
@@ -199,9 +196,6 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_1",
       });
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: "me" },
-      });
 
       const options = {
         slug: "my-skill",
@@ -243,16 +237,10 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: "steipete" },
-      });
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
-      });
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: "me" },
       });
 
       await cmdPublish(makeOpts(workdir), "demo-fork", {
@@ -295,9 +283,6 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_1",
       });
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: "me" },
-      });
 
       await cmdPublish(makeOpts(workdir), "downloaded-skill", {
         slug: "downloaded-skill",
@@ -332,9 +317,6 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_2",
       });
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: "me" },
-      });
 
       await cmdPublish(makeOpts(workdir), "existing-skill", {
         version: "1.0.1",
@@ -365,9 +347,6 @@ describe("cmdPublish", () => {
         ok: true,
         skillId: "skill_1",
         versionId: "ver_1",
-      });
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: "me" },
       });
 
       await cmdPublish(makeOpts(workdir), "ignored-manifest", {
@@ -403,9 +382,6 @@ describe("cmdPublish", () => {
         skillId: "skill_1",
         versionId: "ver_2",
       });
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: "me" },
-      });
 
       await cmdPublish(makeOpts(workdir), "org-skill", {
         owner: "@openclaw",
@@ -439,10 +415,7 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
-      httpMocks.apiRequest.mockReset();
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: null },
-      });
+      mockDefaultApiRequest(null);
 
       await expect(
         cmdPublish(makeOpts(workdir), "anonymous-skill", {
@@ -465,10 +438,7 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
-      httpMocks.apiRequest.mockReset();
-      httpMocks.apiRequest.mockResolvedValueOnce({
-        user: { handle: "steipete" },
-      });
+      mockDefaultApiRequest("steipete");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         skillId: "skill_1",
@@ -549,4 +519,28 @@ function publishPayload() {
   const payload = form?.get("payload");
   if (typeof payload !== "string") throw new Error("Missing publish payload");
   return JSON.parse(payload) as Record<string, unknown>;
+}
+
+function mockDefaultApiRequest(whoamiHandle: string | null = "me") {
+  httpMocks.apiRequest.mockReset();
+  httpMocks.apiRequest.mockImplementation(async (_registry: unknown, request: unknown) => {
+    if (isWhoamiRequest(request)) {
+      return { user: { handle: whoamiHandle } };
+    }
+    return {
+      match: null,
+      latestVersion: null,
+    };
+  });
+}
+
+function isWhoamiRequest(request: unknown) {
+  const args = request as { path?: unknown; url?: unknown } | null | undefined;
+  if (args?.path === "/api/v1/whoami") return true;
+  if (typeof args?.url !== "string") return false;
+  try {
+    return new URL(args.url).pathname === "/api/v1/whoami";
+  } catch {
+    return false;
+  }
 }

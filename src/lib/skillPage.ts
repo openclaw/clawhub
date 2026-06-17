@@ -49,6 +49,7 @@ export type SkillPageInitialData = {
   result: SkillBySlugResult;
   readme: string | null;
   readmeError: string | null;
+  lookupOwnerHandle?: string | null;
 };
 
 type SkillPageLoaderData = {
@@ -59,15 +60,54 @@ type SkillPageLoaderData = {
   initialData: SkillPageInitialData | null;
 };
 
+type SkillLookupResult = {
+  result: SkillBySlugResult;
+  lookupOwnerHandle?: string | null;
+};
+
+function normalizeOwnerLookupSegment(value: string | null | undefined) {
+  return value?.trim().replace(/^@+/, "").toLowerCase() || null;
+}
+
+function ownerMatchesLookup(
+  owner: PublicPublisher | null | undefined,
+  ownerHandle: string | undefined,
+) {
+  const requested = normalizeOwnerLookupSegment(ownerHandle);
+  if (!requested) return true;
+  const candidates = [owner?.handle, owner?._id, owner?.linkedUserId]
+    .map((candidate) => normalizeOwnerLookupSegment(candidate))
+    .filter(Boolean);
+  return candidates.includes(requested);
+}
+
+async function querySkillBySlug(slug: string, ownerHandle?: string): Promise<SkillLookupResult> {
+  if (!ownerHandle) {
+    const result = (await convexHttp.query(api.skills.getBySlug, { slug })) as SkillBySlugResult;
+    return { result };
+  }
+
+  try {
+    const result = (await convexHttp.query(api.skills.getBySlug, {
+      slug,
+      ownerHandle,
+    })) as SkillBySlugResult;
+    return { result, lookupOwnerHandle: ownerHandle };
+  } catch {
+    const result = (await convexHttp.query(api.skills.getBySlug, { slug })) as SkillBySlugResult;
+    if (!result?.skill || !ownerMatchesLookup(result.owner, ownerHandle)) {
+      return { result: null, lookupOwnerHandle: null };
+    }
+    return { result, lookupOwnerHandle: null };
+  }
+}
+
 export async function fetchSkillPageData(
   slug: string,
   ownerHandle?: string,
 ): Promise<SkillPageLoaderData> {
   try {
-    const result = (await convexHttp.query(api.skills.getBySlug, {
-      slug,
-      ...(ownerHandle ? { ownerHandle } : {}),
-    })) as SkillBySlugResult;
+    const { result, lookupOwnerHandle } = await querySkillBySlug(slug, ownerHandle);
 
     if (!result?.skill) {
       return {
@@ -106,6 +146,7 @@ export async function fetchSkillPageData(
         result,
         readme,
         readmeError,
+        ...(ownerHandle ? { lookupOwnerHandle } : {}),
       },
     };
   } catch {
