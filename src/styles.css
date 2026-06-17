@@ -15640,6 +15640,15 @@ a[class*="rounded-full"] {
     display: none;
   }
 
+  .navbar-search-typeahead {
+    width: calc(100vw - 20px);
+    max-width: none;
+  }
+
+  .navbar-search-typeahead-hint {
+    display: none;
+  }
+
   .navbar-calm .navbar-top {
     grid-template-columns: auto minmax(180px, 360px) auto;
   }
@@ -15693,8 +15702,8 @@ a[class*="rounded-full"] {
   }
 
   .navbar-search-typeahead {
-    right: 0;
-    left: 0;
+    right: calc(-40px - 8px);
+    left: calc(-40px - 8px);
     width: auto;
     transform: none;
   }
