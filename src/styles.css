@@ -15288,23 +15288,26 @@ a[class*="rounded-full"] {
 }
 
 .navbar-calm-more-trigger {
+  appearance: none;
   display: none;
   align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
-  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
-  border-radius: var(--r-btn);
-  background: color-mix(in srgb, var(--surface) 65%, transparent);
+  padding: 0;
+  border: 0;
+  background: transparent;
   color: color-mix(in srgb, var(--ink-soft) 94%, transparent);
   cursor: pointer;
 }
 
 .navbar-calm-more-trigger:hover,
 .navbar-calm-more-trigger:focus-visible {
-  border-color: color-mix(in srgb, var(--ink) 18%, transparent);
-  background: color-mix(in srgb, var(--surface) 88%, transparent);
   color: color-mix(in srgb, var(--ink) 82%, transparent);
+}
+
+.navbar-calm-more-trigger svg {
+  pointer-events: none;
 }
 
 .navbar-calm-more-menu {
