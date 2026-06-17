@@ -8044,7 +8044,7 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledTimes(2);
   });
 
-  it("packages list keeps recommended merges on recommended sort", async () => {
+  it("packages list falls recommended merges back to updated while scores backfill", async () => {
     const pluginPackage = makeCatalogItem("plugin-older-high-score", {
       family: "code-plugin",
       updatedAt: 100,
@@ -8055,13 +8055,14 @@ describe("httpApiV1 handlers", () => {
       updatedAt: 200,
       stats: { downloads: 1, installs: 0, stars: 0, versions: 1 },
     });
+    let readinessCalls = 0;
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      expect(args).toEqual(expect.objectContaining({ sort: "recommended" }));
+      if (Object.keys(args).length === 0) {
+        readinessCalls += 1;
+        return readinessCalls === 1;
+      }
+      expect(args).toEqual(expect.objectContaining({ sort: "updated" }));
       if (Object.hasOwn(args, "viewerUserId")) {
-        const pagination = args.paginationOpts as { cursor: string | null };
-        if (pagination.cursor === "plugin-next") {
-          return { page: [], isDone: true, continueCursor: "" };
-        }
         return { page: [pluginPackage], isDone: false, continueCursor: "plugin-next" };
       }
       return { page: [skillPackage], isDone: true, continueCursor: "" };
@@ -8076,9 +8077,10 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "plugin-older-high-score",
       "skill-newer-low-score",
+      "plugin-older-high-score",
     ]);
+    expect(json.nextCursor).toContain('"recommendedFallback":"updated"');
   });
 
   it("plugins list defaults to plugin package families", async () => {
@@ -8324,7 +8326,7 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
-  it("plugins list keeps recommended sort without score readiness fallback", async () => {
+  it("plugins list falls back to updated sort while recommendation scores backfill", async () => {
     const codePlugin = makeCatalogItem("code-older-high-score", {
       family: "code-plugin",
       updatedAt: 100,
@@ -8337,7 +8339,8 @@ describe("httpApiV1 handlers", () => {
     });
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (Object.keys(args).length === 0) return 2;
-      expect(args).toEqual(expect.objectContaining({ sort: "recommended" }));
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return true;
+      expect(args).toEqual(expect.objectContaining({ sort: "updated" }));
       if (args.family === "code-plugin") {
         return { page: [codePlugin], isDone: true, continueCursor: "" };
       }
@@ -8356,9 +8359,47 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "code-older-high-score",
       "bundle-newer-low-score",
+      "code-older-high-score",
     ]);
+  });
+
+  it("plugins list keeps updated fallback sort from recommended pagination cursors", async () => {
+    const fallbackCursor = `pkgplugins:${JSON.stringify({
+      codePlugins: { cursor: null, offset: 0, pageSize: 1, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 1, done: true },
+      recommendedFallback: "updated",
+    })}`;
+    const codePlugin = makeCatalogItem("code-next", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 50_000, installs: 500, stars: 10, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 1;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        throw new Error("readiness should come from the pagination cursor");
+      }
+      expect(args).toEqual(expect.objectContaining({ sort: "updated" }));
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=1&sort=recommended&cursor=${encodeURIComponent(
+          fallbackCursor,
+        )}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["code-next"]);
   });
 
   it("plugins list keeps legacy recommended cursors on recommended sort", async () => {

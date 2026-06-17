@@ -139,6 +139,76 @@ function getPackageRecommendedScoreIndexName(family: Doc<"packages">["family"] |
   return family ? "by_active_family_recommended_score" : "by_active_recommended_score";
 }
 
+async function getPackageRecommendedIndexName(
+  ctx: Pick<QueryCtx, "db">,
+  family: Doc<"packages">["family"] | undefined,
+) {
+  const missingScore = await hasMissingPackageRecommendedScore(ctx, family);
+  if (missingScore) return null;
+  return getPackageRecommendedScoreIndexName(family);
+}
+
+async function hasMissingPackageRecommendedScore(
+  ctx: Pick<QueryCtx, "db">,
+  family: Doc<"packages">["family"] | undefined,
+) {
+  if (family) {
+    const missingScore = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score", (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", family).eq("recommendedScore", undefined),
+      )
+      .first();
+    if (missingScore) return true;
+
+    const missingVersion = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .eq("recommendedScoreVersion", undefined),
+      )
+      .first();
+    if (missingVersion) return true;
+
+    const staleVersion = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score_version", (q) =>
+        q
+          .eq("softDeletedAt", undefined)
+          .eq("family", family)
+          .lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+      )
+      .first();
+    return Boolean(staleVersion);
+  }
+
+  const missingScore = await ctx.db
+    .query("packages")
+    .withIndex("by_active_recommended_score", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScore", undefined),
+    )
+    .first();
+  if (missingScore) return true;
+
+  const missingVersion = await ctx.db
+    .query("packages")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).eq("recommendedScoreVersion", undefined),
+    )
+    .first();
+  if (missingVersion) return true;
+
+  const staleVersion = await ctx.db
+    .query("packages")
+    .withIndex("by_active_recommended_score_version", (q) =>
+      q.eq("softDeletedAt", undefined).lt("recommendedScoreVersion", RECOMMENDATION_SCORE_VERSION),
+    )
+    .first();
+  return Boolean(staleVersion);
+}
+
 const llmAgenticRiskEvidenceValidator = v.object({
   path: v.string(),
   snippet: v.string(),
@@ -2746,6 +2816,23 @@ export const countPublicPluginsInternal = internalQuery({
   },
 });
 
+export const hasMissingRecommendationScoresInternal = internalQuery({
+  args: {
+    families: v.optional(
+      v.array(v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (!args.families || args.families.length === 0) {
+      return await hasMissingPackageRecommendedScore(ctx, undefined);
+    }
+    for (const family of args.families) {
+      if (await hasMissingPackageRecommendedScore(ctx, family)) return true;
+    }
+    return false;
+  },
+});
+
 export const countPublicPlugins = query({
   args: {},
   handler: async (ctx) => {
@@ -2807,8 +2894,17 @@ async function listPackagePageImpl(
     ),
   );
 
+  const keepDigestCursor = args.sort === "recommended" && decodedCursor.mode === "digest";
+  const keepRecommendedPackageCursor =
+    args.sort === "recommended" &&
+    Boolean(args.paginationOpts.cursor) &&
+    decodedCursor.mode !== "digest";
   const recommendedIndexName =
-    args.sort === "recommended" ? getPackageRecommendedScoreIndexName(family) : null;
+    args.sort === "recommended" && !keepDigestCursor
+      ? keepRecommendedPackageCursor
+        ? getPackageRecommendedScoreIndexName(family)
+        : await getPackageRecommendedIndexName(ctx, family)
+      : null;
 
   if (args.sort === "downloads" || args.sort === "installs" || recommendedIndexName) {
     let cursor = pageCursor;

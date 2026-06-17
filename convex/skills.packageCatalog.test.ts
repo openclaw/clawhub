@@ -103,11 +103,15 @@ function makeDigest(
 
 function makeCtx(
   pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>,
-  optionsOrIndexNames: { indexNames?: string[] } | string[] = {},
+  optionsOrIndexNames:
+    | { indexNames?: string[]; missingRecommendedScores?: boolean }
+    | string[] = {},
 ) {
   const indexNames = Array.isArray(optionsOrIndexNames)
     ? optionsOrIndexNames
     : optionsOrIndexNames.indexNames;
+  const missingRecommendedScores =
+    !Array.isArray(optionsOrIndexNames) && optionsOrIndexNames.missingRecommendedScores === true;
   const pageByCursor = new Map<
     string | null,
     { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
@@ -154,7 +158,10 @@ function makeCtx(
                 paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
                   pageByCursor.get(pageCursor) ?? { page: [], isDone: true, continueCursor: "" },
               }),
-              first: async () => null,
+              first: async () =>
+                missingRecommendedScores && indexName.startsWith("by_active_recommended_")
+                  ? (allDigests[0] ?? {})
+                  : null,
               unique: async () => null,
             };
           },
@@ -286,18 +293,18 @@ describe("skills package catalog queries", () => {
     expect(result.page).toEqual([expect.objectContaining({ name: "recommended-skill" })]);
   });
 
-  it("keeps recommended package catalog rows on the recommended score index", async () => {
+  it("falls recommended package catalog rows back to updated when scores are missing", async () => {
     const indexNames: string[] = [];
     const result = await listPackageCatalogPageHandler(
       makeCtx(
         [
           {
-            page: [makeDigest("recommended-skill")],
+            page: [makeDigest("updated-fallback-skill")],
             isDone: false,
-            continueCursor: "recommended-next",
+            continueCursor: "updated-next",
           },
         ],
-        { indexNames },
+        { indexNames, missingRecommendedScores: true },
       ),
       {
         sort: "recommended",
@@ -305,8 +312,9 @@ describe("skills package catalog queries", () => {
       },
     );
 
-    expect(indexNames).toEqual(["by_active_recommended_score"]);
-    expect(result.page).toEqual([expect.objectContaining({ name: "recommended-skill" })]);
+    expect(indexNames).toEqual(["by_active_recommended_score", "by_active_updated"]);
+    expect(result.page).toEqual([expect.objectContaining({ name: "updated-fallback-skill" })]);
+    expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
   });
 
   it("keeps recommended package catalog cursors on their original index", async () => {
@@ -335,7 +343,7 @@ describe("skills package catalog queries", () => {
             continueCursor: "",
           },
         ],
-        { indexNames },
+        { indexNames, missingRecommendedScores: true },
       ),
       {
         sort: "recommended",
