@@ -95,6 +95,7 @@ import {
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./lib/publishLimits";
 import {
+  compareRecommendationStats,
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
@@ -1062,7 +1063,9 @@ function toPublicPackage(
 }
 
 function toPublicPackageRelease(release: Doc<"packageReleases">) {
-  const { capabilities: _capabilities, ...publicRelease } = release;
+  const { capabilities: _capabilities, ...publicRelease } = release as Doc<"packageReleases"> & {
+    capabilities?: unknown;
+  };
   const sourcePath = release.verification?.sourcePath ?? getReleaseSourcePath(release);
   if (!release.verification || !sourcePath) return publicRelease;
   return {
@@ -1701,6 +1704,24 @@ function buildPackagePluginCategoryDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   if (args.sort === "downloads") {
+    if (family && typeof isOfficial === "boolean") {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_family_official_category_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("isOfficial", isOfficial)
+            .eq("pluginCategory", args.category),
+        );
+    }
+    if (family) {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_family_category_downloads", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+        );
+    }
     if (typeof isOfficial === "boolean") {
       return ctx.db
         .query("packagePluginCategorySearchDigest")
@@ -1718,6 +1739,24 @@ function buildPackagePluginCategoryDigestQuery(
       );
   }
   if (args.sort === "installs") {
+    if (family && typeof isOfficial === "boolean") {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_family_official_category_installs", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("isOfficial", isOfficial)
+            .eq("pluginCategory", args.category),
+        );
+    }
+    if (family) {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_family_category_installs", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+        );
+    }
     if (typeof isOfficial === "boolean") {
       return ctx.db
         .query("packagePluginCategorySearchDigest")
@@ -1735,6 +1774,24 @@ function buildPackagePluginCategoryDigestQuery(
       );
   }
   if (args.sort === "recommended") {
+    if (family && typeof isOfficial === "boolean") {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_family_official_category_recommended_score", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("isOfficial", isOfficial)
+            .eq("pluginCategory", args.category),
+        );
+    }
+    if (family) {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_family_category_recommended_score", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+        );
+    }
     if (typeof isOfficial === "boolean") {
       return ctx.db
         .query("packagePluginCategorySearchDigest")
@@ -1971,24 +2028,42 @@ async function fetchHighlightedPackagePage(
     isOfficial?: boolean;
     category?: string;
     topic?: string;
+    officialFirst?: boolean;
+    sort?: "updated" | "downloads" | "recommended" | "installs";
     viewerUserId?: Id<"users">;
     numItems: number;
   },
 ) {
   const digests = await fetchHighlightedPackageDigests(ctx, args);
-  const page = digests
-    .sort(
-      (a, b) =>
-        Number(b.isOfficial) - Number(a.isOfficial) ||
+  const items = await Promise.all(
+    digests.map(async (digest) => await toPublicPackageListItem(ctx, digest)),
+  );
+  return items
+    .sort((a, b) => {
+      if (args.officialFirst) {
+        const official = Number(b.isOfficial) - Number(a.isOfficial);
+        if (official !== 0) return official;
+      }
+      if (args.sort === "recommended") {
+        const recommendation = compareRecommendationStats(a.stats, b.stats);
+        if (recommendation !== 0) return recommendation;
+      }
+      if (args.sort === "installs") {
+        const installs = b.stats.installs - a.stats.installs;
+        if (installs !== 0) return installs;
+      }
+      if (args.sort === "downloads") {
+        const downloads = b.stats.downloads - a.stats.downloads;
+        if (downloads !== 0) return downloads;
+      }
+      return (
         b.updatedAt - a.updatedAt ||
-        a.name.localeCompare(b.name),
-    )
+        b.createdAt - a.createdAt ||
+        a.family.localeCompare(b.family) ||
+        a.name.localeCompare(b.name)
+      );
+    })
     .slice(0, args.numItems);
-  const items: PublicPackageListItem[] = [];
-  for (const digest of page) {
-    items.push(await toPublicPackageListItem(ctx, digest));
-  }
-  return items;
 }
 
 async function getPackageByNormalizedName(ctx: DbReaderCtx, normalizedName: string) {

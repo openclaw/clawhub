@@ -291,6 +291,21 @@ describe("plugins route", () => {
     ).not.toThrow();
   });
 
+  it("keeps featured browse URLs when there is no search query", async () => {
+    const route = await loadRoute();
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() =>
+      beforeLoad?.({
+        search: { featured: true, sort: "recommended" },
+      }),
+    ).not.toThrow();
+  });
+
   it("redirects browse-only featured URLs when search is active", async () => {
     const route = await loadRoute();
     const beforeLoad = (
@@ -813,13 +828,14 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         isOfficial: true,
+        sort: "installs",
         limit: 25,
       }),
     );
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
   });
 
-  it("selects recommended from the plugin sort group", async () => {
+  it("preserves featured browse when selecting recommended from the plugin sort group", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
@@ -843,8 +859,31 @@ describe("plugins route", () => {
     ).toEqual({
       family: undefined,
       cursor: undefined,
+      featured: true,
+      sort: "recommended",
+    });
+  });
+
+  it("keeps recommended explicit when selected from filtered plugin browse", async () => {
+    searchMock = { category: "security" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Recommended" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean;
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ category: "security", cursor: "cursor:current" })).toEqual({
+      category: "security",
+      cursor: undefined,
+      family: undefined,
       featured: undefined,
-      sort: undefined,
+      sort: "recommended",
     });
   });
 
@@ -1157,12 +1196,32 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
+    expect(screen.getByRole("radio", { name: "Most installed" }).getAttribute("aria-checked")).toBe(
       "true",
     );
-    expect(screen.getByRole("radio", { name: "Most installed" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Recommended" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Recently updated" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
+  });
+
+  it("keeps featured browse active when selecting recommended sort", async () => {
+    searchMock = { featured: true };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Recommended" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({ featured: true, cursor: "cursor:current" })).toEqual({
+      featured: true,
+      cursor: undefined,
+      family: undefined,
+      sort: "recommended",
+    });
   });
 
   it("selects visible search sort without changing the query", async () => {

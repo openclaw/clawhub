@@ -129,6 +129,23 @@ function normalizeActivePluginSort(sort: LegacyPluginSort | undefined): PluginSo
   return sort;
 }
 
+function hasPluginBrowseFilter(
+  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
+) {
+  return Boolean(args.category || args.featured || args.official);
+}
+
+function getDefaultPluginBrowseSort(
+  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
+): VisiblePluginSort {
+  return hasPluginBrowseFilter(args) ? "installs" : "recommended";
+}
+
+function hasPersistentPluginBrowseFilter(
+  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
+) {
+  return Boolean(args.category || args.featured || args.official);
+}
 function isNavigationAbortError(err: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return true;
   return err instanceof Error && err.name === "AbortError";
@@ -151,7 +168,7 @@ export async function loadPluginsPageData(
         args.sort === "updated" ||
         !args.sort ||
         args.sort === "recommended")
-        ? { sort: args.sort ?? "recommended" }
+        ? { sort: args.sort ?? getDefaultPluginBrowseSort(args) }
         : {}),
       limit: PLUGINS_PAGE_SIZE,
       signal: args.signal,
@@ -229,7 +246,7 @@ export const Route = createFileRoute("/plugins/")({
       search.sort !== "updated" &&
       search.sort !== "installs" &&
       !(hasQuery && search.sort === "relevance");
-    const staleFeatured = Boolean(search.featured);
+    const staleFeatured = Boolean(hasQuery && search.featured);
     const resolvedCategory = resolvePluginBrowseCategorySlug(search.category);
     const invalidCategory = Boolean(search.category && !resolvedCategory);
     const legacyCategory = Boolean(search.category && resolvedCategory !== search.category);
@@ -384,7 +401,7 @@ function PluginsIndex() {
   const activeSort: PluginSort =
     search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
       ? "recommended"
-      : (search.sort ?? "recommended");
+      : (search.sort ?? (hasQuery ? "recommended" : getDefaultPluginBrowseSort(search)));
   const visibleItems = useMemo(() => {
     return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
   }, [activeSort, hasQuery, items]);
@@ -426,22 +443,25 @@ function PluginsIndex() {
 
   const handleSortChange = (value: string) => {
     const nextSort = parsePluginSort(value);
-    const sort =
-      nextSort === "recommended" ||
-      nextSort === "relevance" ||
-      nextSort === "newest" ||
-      nextSort === "name"
-        ? undefined
-        : nextSort;
 
     void navigate({
-      search: (prev: PluginSearchState) => ({
-        ...prev,
-        cursor: undefined,
-        family: undefined,
-        featured: undefined,
-        sort,
-      }),
+      search: (prev: PluginSearchState) => {
+        const isExplicitFilteredRecommendation =
+          nextSort === "recommended" && !prev.q && hasPersistentPluginBrowseFilter(prev);
+        const sort =
+          isExplicitFilteredRecommendation || nextSort === "installs"
+            ? nextSort
+            : nextSort === "updated"
+              ? "updated"
+              : undefined;
+        return {
+          ...prev,
+          cursor: undefined,
+          family: undefined,
+          featured: prev.q ? undefined : prev.featured,
+          sort,
+        };
+      },
       replace: true,
     });
   };

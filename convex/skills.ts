@@ -6067,8 +6067,20 @@ type SkillCatalogCursorState = {
   offset: number;
   pageSize: number | null;
   done: boolean;
-  recommendedFallback?: "updated";
+  recommendedFallback?: SkillCatalogRecommendedFallbackSort;
 };
+
+type SkillCatalogRecommendedFallbackSort = "updated" | "installs";
+
+const SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT = "installs" as const;
+
+function normalizeSkillCatalogRecommendedFallbackSort(
+  value: unknown,
+): SkillCatalogRecommendedFallbackSort | undefined {
+  return value === "updated" || value === SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
+    ? value
+    : undefined;
+}
 
 function encodeSkillCatalogCursor(state: SkillCatalogCursorState) {
   if (state.done && state.offset === 0) return "";
@@ -6089,7 +6101,7 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
       offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
       pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
       done: parsed.done === true,
-      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
+      recommendedFallback: normalizeSkillCatalogRecommendedFallbackSort(parsed.recommendedFallback),
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -6187,11 +6199,14 @@ async function listSkillPackageCatalogTopicPage(
   let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
   const isFreshRecommendedRequest =
     args.sort === "recommended" && args.paginationOpts.cursor === null;
-  const useUpdatedRecommendationFallback =
-    args.sort === "recommended" &&
-    (decodedCursor.recommendedFallback === "updated" ||
-      (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))));
-  const catalogSort = useUpdatedRecommendationFallback ? "updated" : args.sort;
+  const recommendedFallback =
+    args.sort === "recommended"
+      ? (decodedCursor.recommendedFallback ??
+        (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))
+          ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
+          : undefined))
+      : undefined;
+  const catalogSort = recommendedFallback ?? args.sort;
 
   while (
     (offset > 0 || !done) &&
@@ -6253,7 +6268,7 @@ async function listSkillPackageCatalogTopicPage(
             offset,
             pageSize,
             done,
-            recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+            recommendedFallback,
           }),
         };
       }
@@ -6273,7 +6288,7 @@ async function listSkillPackageCatalogTopicPage(
       offset,
       pageSize,
       done,
-      recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+      recommendedFallback,
     }),
   };
 }
@@ -6361,8 +6376,8 @@ export const listPackageCatalogPage = query({
       v.union(
         v.literal("updated"),
         v.literal("downloads"),
-        v.literal("recommended"),
         v.literal("installs"),
+        v.literal("recommended"),
       ),
     ),
     paginationOpts: paginationOptsValidator,
@@ -6393,11 +6408,14 @@ export const listPackageCatalogPage = query({
     let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
     const isFreshRecommendedRequest =
       args.sort === "recommended" && args.paginationOpts.cursor === null;
-    const useUpdatedRecommendationFallback =
-      args.sort === "recommended" &&
-      (decodedCursor.recommendedFallback === "updated" ||
-        (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))));
-    const catalogSort = useUpdatedRecommendationFallback ? "updated" : args.sort;
+    const recommendedFallback =
+      args.sort === "recommended"
+        ? (decodedCursor.recommendedFallback ??
+          (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))
+            ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
+            : undefined))
+        : undefined;
+    const catalogSort = recommendedFallback ?? args.sort;
 
     while (
       (offset > 0 || !done) &&
@@ -6455,7 +6473,7 @@ export const listPackageCatalogPage = query({
               offset,
               pageSize,
               done,
-              recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+              recommendedFallback,
             }),
           };
         }
@@ -6475,7 +6493,7 @@ export const listPackageCatalogPage = query({
         offset,
         pageSize,
         done,
-        recommendedFallback: useUpdatedRecommendationFallback ? "updated" : undefined,
+        recommendedFallback,
       }),
     };
   },

@@ -23,10 +23,6 @@ vi.mock("./_generated/api", () => ({
         "applySkillFingerprintBackfillPatchInternal",
       ),
       backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
-      cleanupRetiredCapabilityMetadataBatchInternal: Symbol(
-        "cleanupRetiredCapabilityMetadataBatchInternal",
-      ),
-      cleanupRetiredCapabilityMetadataInternal: Symbol("cleanupRetiredCapabilityMetadataInternal"),
       resyncPluginCatalogMetadataDigestsBatchInternal: Symbol(
         "resyncPluginCatalogMetadataDigestsBatchInternal",
       ),
@@ -64,8 +60,6 @@ const {
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
-  cleanupRetiredCapabilityMetadataBatchInternal,
-  cleanupRetiredCapabilityMetadataInternal,
   resyncPluginCatalogMetadataDigestsBatchInternal,
   resyncPluginCatalogMetadataDigestsInternal,
   cleanupEmptySkillsInternalHandler,
@@ -334,7 +328,6 @@ function makeLegacyPublisherOwnershipDb() {
       },
     ],
   ]);
-  const packageCapabilitySearchDigest = new Map<string, Record<string, unknown>>();
   const packageTopicSearchDigest = new Map<string, Record<string, unknown>>();
   const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
 
@@ -349,7 +342,6 @@ function makeLegacyPublisherOwnershipDb() {
     skillSearchDigest,
     packages,
     packageSearchDigest,
-    packageCapabilitySearchDigest,
     packageTopicSearchDigest,
     packagePluginCategorySearchDigest,
   };
@@ -956,196 +948,6 @@ describe("maintenance badge denormalization", () => {
         official: { byUserId: "users:2", at: 456 },
       },
     });
-  });
-});
-
-describe("maintenance retired capability metadata cleanup", () => {
-  it("counts package legacy fields during dry run without mutating", async () => {
-    const patch = vi.fn();
-    const paginate = vi.fn().mockResolvedValue({
-      page: [
-        {
-          _id: "packages:1",
-          capabilityTags: ["tools"],
-          executesCode: true,
-          capabilities: { capabilityTags: ["tools"] },
-          latestVersionSummary: {
-            version: "1.0.0",
-            capabilities: { capabilityTags: ["tools"] },
-            artifact: null,
-          },
-        },
-      ],
-      continueCursor: null,
-      isDone: true,
-    });
-
-    const result = await (
-      cleanupRetiredCapabilityMetadataBatchInternal as unknown as { _handler: Function }
-    )._handler(
-      {
-        db: {
-          query: vi.fn().mockReturnValue({ paginate }),
-          get: vi.fn(),
-          insert: vi.fn(),
-          patch,
-          replace: vi.fn(),
-          delete: vi.fn(),
-          normalizeId: vi.fn(),
-        },
-      } as never,
-      { table: "packages", dryRun: true, batchSize: 10 },
-    );
-
-    expect(result).toEqual({
-      table: "packages",
-      cursor: null,
-      isDone: true,
-      scanned: 1,
-      matched: 1,
-      mutated: 0,
-    });
-    expect(patch).not.toHaveBeenCalled();
-  });
-
-  it("requires confirmation before applying package legacy field cleanup", async () => {
-    const row = {
-      _id: "packages:1",
-      capabilityTags: ["tools"],
-      executesCode: true,
-      capabilities: { capabilityTags: ["tools"] },
-      latestVersionSummary: {
-        version: "1.0.0",
-        capabilities: { capabilityTags: ["tools"] },
-        artifact: null,
-      },
-    };
-    const makeCtx = () => ({
-      db: {
-        query: vi.fn().mockReturnValue({
-          paginate: vi.fn().mockResolvedValue({
-            page: [row],
-            continueCursor: null,
-            isDone: true,
-          }),
-        }),
-        get: vi.fn(),
-        insert: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        normalizeId: vi.fn(),
-      },
-    });
-
-    await expect(
-      (cleanupRetiredCapabilityMetadataBatchInternal as unknown as { _handler: Function })._handler(
-        makeCtx() as never,
-        { table: "packages", dryRun: false },
-      ),
-    ).rejects.toThrow('Pass confirm="remove-retired-capability-metadata" to apply.');
-
-    const ctx = makeCtx();
-    const result = await (
-      cleanupRetiredCapabilityMetadataBatchInternal as unknown as { _handler: Function }
-    )._handler(ctx as never, {
-      table: "packages",
-      dryRun: false,
-      confirm: "remove-retired-capability-metadata",
-    });
-
-    expect(result).toMatchObject({ scanned: 1, matched: 1, mutated: 1 });
-    expect(ctx.db.patch).toHaveBeenCalledWith("packages:1", {
-      capabilityTags: undefined,
-      executesCode: undefined,
-      capabilities: undefined,
-      latestVersionSummary: {
-        version: "1.0.0",
-        artifact: null,
-      },
-    });
-  });
-
-  it("deletes retired package capability digest rows when confirmed", async () => {
-    const deleteDoc = vi.fn();
-
-    const result = await (
-      cleanupRetiredCapabilityMetadataBatchInternal as unknown as { _handler: Function }
-    )._handler(
-      {
-        db: {
-          query: vi.fn().mockReturnValue({
-            paginate: vi.fn().mockResolvedValue({
-              page: [{ _id: "packageCapabilitySearchDigest:1" }],
-              continueCursor: null,
-              isDone: true,
-            }),
-          }),
-          get: vi.fn(),
-          insert: vi.fn(),
-          patch: vi.fn(),
-          replace: vi.fn(),
-          delete: deleteDoc,
-          normalizeId: vi.fn(),
-        },
-      } as never,
-      {
-        table: "packageCapabilitySearchDigest",
-        dryRun: false,
-        confirm: "remove-retired-capability-metadata",
-      },
-    );
-
-    expect(result).toMatchObject({ scanned: 1, matched: 1, mutated: 1 });
-    expect(deleteDoc).toHaveBeenCalledWith("packageCapabilitySearchDigest:1");
-  });
-
-  it("walks cleanup tables through the internal action", async () => {
-    const runMutation = vi.fn(async (_endpoint, args) => {
-      if (args.table === "skills") {
-        return {
-          table: "skills",
-          cursor: null,
-          isDone: true,
-          scanned: 1,
-          matched: 1,
-          mutated: 0,
-        };
-      }
-      return {
-        table: "skillVersions",
-        cursor: "next-page",
-        isDone: false,
-        scanned: 1,
-        matched: 0,
-        mutated: 0,
-      };
-    });
-
-    const result = await (
-      cleanupRetiredCapabilityMetadataInternal as unknown as { _handler: Function }
-    )._handler({ runMutation } as never, { dryRun: true, maxBatches: 2, batchSize: 10 });
-
-    expect(runMutation).toHaveBeenNthCalledWith(
-      1,
-      internal.maintenance.cleanupRetiredCapabilityMetadataBatchInternal,
-      expect.objectContaining({ table: "skills", dryRun: true, batchSize: 10 }),
-    );
-    expect(runMutation).toHaveBeenNthCalledWith(
-      2,
-      internal.maintenance.cleanupRetiredCapabilityMetadataBatchInternal,
-      expect.objectContaining({ table: "skillVersions", dryRun: true, batchSize: 10 }),
-    );
-    expect(result).toMatchObject({
-      ok: true,
-      dryRun: true,
-      confirmRequired: "remove-retired-capability-metadata",
-      table: "skillVersions",
-      cursor: "next-page",
-      isDone: false,
-    });
-    expect(result.stats.skills).toEqual({ scanned: 1, matched: 1, mutated: 0 });
-    expect(result.stats.skillVersions).toEqual({ scanned: 1, matched: 0, mutated: 0 });
   });
 });
 
