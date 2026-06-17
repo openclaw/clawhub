@@ -15,6 +15,7 @@ import {
   Star,
   Sun,
   UserRound,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
@@ -142,11 +143,15 @@ export default function Header() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
+  const mobileSearchWrapRef = useRef<HTMLDivElement | null>(null);
+  const mobileSearchTriggerRef = useRef<HTMLButtonElement | null>(null);
   const navSearchInputRef = useRef<HTMLInputElement | null>(null);
+  const mobileSearchInputRef = useRef<HTMLInputElement | null>(null);
   const isAppleSearchShortcut = useAppleSearchShortcut();
   const trimmedNavSearchQuery = navSearchQuery.trim();
   const hasNavSearchQuery = trimmedNavSearchQuery.length > 0;
   const showTypeahead = typeaheadOpen;
+  const showMobileTypeahead = showTypeahead && hasNavSearchQuery;
   const {
     skillResults,
     pluginResults,
@@ -210,14 +215,18 @@ export default function Header() {
   }, [typeaheadTab]);
 
   useEffect(() => {
-    if (!typeaheadOpen) return () => {};
+    if (!typeaheadOpen && !mobileSearchOpen) return () => {};
     const handlePointerDown = (event: PointerEvent) => {
-      if (searchWrapRef.current?.contains(event.target as Node)) return;
+      const target = event.target as Node;
+      if (searchWrapRef.current?.contains(target)) return;
+      if (mobileSearchWrapRef.current?.contains(target)) return;
+      if (mobileSearchTriggerRef.current?.contains(target)) return;
       setTypeaheadOpen(false);
+      setMobileSearchOpen(false);
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [typeaheadOpen]);
+  }, [typeaheadOpen, mobileSearchOpen]);
 
   useEffect(() => {
     const threshold = 8;
@@ -317,6 +326,7 @@ export default function Header() {
   const handleSearchKeyDown = (event: React.KeyboardEvent<HTMLInputElement>) => {
     if (event.key === "Escape") {
       setTypeaheadOpen(false);
+      setMobileSearchOpen(false);
       return;
     }
     if (
@@ -519,7 +529,7 @@ export default function Header() {
                 />
                 <NavSearchShortcutKbd isApple={isAppleSearchShortcut} />
               </form>
-              {showTypeahead ? (
+              {showTypeahead && !mobileSearchOpen ? (
                 <SearchTypeahead
                   activeIndex={typeaheadActiveIndex}
                   activeTab={typeaheadTab}
@@ -538,12 +548,22 @@ export default function Header() {
 
           <div className="navbar-calm-actions nav-actions">
             <button
+              ref={mobileSearchTriggerRef}
               className="navbar-search-mobile-trigger"
               type="button"
-              aria-label="Search"
-              onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+              aria-label={mobileSearchOpen ? "Close search" : "Search"}
+              aria-expanded={mobileSearchOpen}
+              onClick={() => {
+                const nextOpen = !mobileSearchOpen;
+                setMobileSearchOpen(nextOpen);
+                setTypeaheadOpen(nextOpen && hasNavSearchQuery);
+              }}
             >
-              <Search size={18} aria-hidden="true" />
+              {mobileSearchOpen ? (
+                <X size={18} aria-hidden="true" />
+              ) : (
+                <Search size={18} aria-hidden="true" />
+              )}
             </button>
             {isAuthenticated && me ? (
               <DropdownMenu>
@@ -658,19 +678,75 @@ export default function Header() {
           </div>
         </div>
 
+        {mobileSearchOpen ? (
+          <button
+            className="navbar-search-mobile-overlay"
+            type="button"
+            aria-label="Close search"
+            tabIndex={-1}
+            onPointerDown={() => {
+              setTypeaheadOpen(false);
+              setMobileSearchOpen(false);
+            }}
+          />
+        ) : null}
+
         {/* Mobile search bar (expandable) */}
         {mobileSearchOpen ? (
-          <form className="navbar-search-mobile" onSubmit={handleNavSearch}>
-            <Search size={16} className="navbar-search-icon" aria-hidden="true" />
-            <input
-              className="navbar-search-input"
-              type="text"
-              placeholder="Search skills and plugins"
-              value={navSearchQuery}
-              onChange={(e) => setNavSearchQuery(e.target.value)}
-              autoFocus
-            />
-          </form>
+          <div className="navbar-search-mobile-wrap" ref={mobileSearchWrapRef}>
+            <form className="navbar-search-mobile" onSubmit={handleNavSearch}>
+              <Search size={16} className="navbar-search-icon" aria-hidden="true" />
+              <input
+                ref={mobileSearchInputRef}
+                className="navbar-search-input"
+                type="search"
+                role="combobox"
+                placeholder="Search skills and plugins"
+                value={navSearchQuery}
+                onChange={(e) => {
+                  setNavSearchQuery(e.target.value);
+                  setTypeaheadOpen(true);
+                }}
+                onFocus={() => setTypeaheadOpen(true)}
+                onKeyDown={handleSearchKeyDown}
+                aria-label="Search"
+                aria-autocomplete="list"
+                aria-expanded={showMobileTypeahead}
+                aria-controls="navbar-search-typeahead"
+                aria-activedescendant={activeTypeaheadId}
+                autoComplete="off"
+                autoFocus
+              />
+              {hasNavSearchQuery ? (
+                <button
+                  className="navbar-search-mobile-clear"
+                  type="button"
+                  aria-label="Clear search"
+                  onClick={() => {
+                    setNavSearchQuery("");
+                    setTypeaheadOpen(false);
+                    mobileSearchInputRef.current?.focus();
+                  }}
+                >
+                  Clear
+                </button>
+              ) : null}
+            </form>
+            {showMobileTypeahead ? (
+              <SearchTypeahead
+                activeIndex={typeaheadActiveIndex}
+                activeTab={typeaheadTab}
+                items={typeaheadItems}
+                loading={typeaheadSearching}
+                onHoverItem={setTypeaheadActiveIndex}
+                onSelectItem={navigateToTypeaheadItem}
+                onTabChange={setTypeaheadTab}
+                pluginItems={typeaheadPluginItems}
+                query={trimmedNavSearchQuery}
+                skillItems={typeaheadSkillItems}
+              />
+            ) : null}
+          </div>
         ) : null}
       </div>
     </header>
