@@ -1,12 +1,12 @@
 {
   "baseline": "origin/main",
-  "candidate": "local pending UI preview; PR head 15e1e225eec7302f08318ce99f81d9c3e5ab5286",
+  "candidate": "78a87d2411d23849c6c74bc533597a1084231683",
   "generatedAt": "2026-06-17T05:55:00Z",
   "lanes": [
     {
       "localOutputDir": "/Users/jason/workspace/clawhub-taxonomy-local-seed/.artifacts/clawhub-ui-proof/pr-2699-catalog-metadata-edit-preview/candidate",
       "name": "candidate",
-      "ref": "local pending UI preview",
+      "ref": "78a87d2411d23849c6c74bc533597a1084231683",
       "status": "pass",
       "steps": [
         {
@@ -30,6 +30,6 @@
   "mode": "feature",
   "outputDir": "/Users/jason/workspace/clawhub-taxonomy-local-seed/.artifacts/clawhub-ui-proof/pr-2699-catalog-metadata-edit-preview",
   "provider": "local signed-in browser",
-  "scenario": "Catalog metadata edit controls (local preview; pending source update)",
+  "scenario": "Catalog metadata edit controls",
   "status": "pass"
 }
