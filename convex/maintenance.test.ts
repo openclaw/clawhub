@@ -23,8 +23,6 @@ vi.mock("./_generated/api", () => ({
         "applySkillFingerprintBackfillPatchInternal",
       ),
       backfillSkillFingerprintsInternal: Symbol("backfillSkillFingerprintsInternal"),
-      applySkillCapabilityTagsInternal: Symbol("applySkillCapabilityTagsInternal"),
-      backfillSkillCapabilityTagsInternal: Symbol("backfillSkillCapabilityTagsInternal"),
       backfillSkillSearchDigestModerationVerdictsInternal: Symbol(
         "backfillSkillSearchDigestModerationVerdictsInternal",
       ),
@@ -50,7 +48,6 @@ vi.mock("./lib/skillSummary", () => ({
 }));
 
 const {
-  applySkillCapabilityTagsInternal,
   backfillLatestVersionSummaryInternal,
   backfillSkillSearchDigestModerationVerdictsInternal,
   backfillPublisherStatsInternalHandler,
@@ -323,7 +320,6 @@ function makeLegacyPublisherOwnershipDb() {
       },
     ],
   ]);
-  const packageCapabilitySearchDigest = new Map<string, Record<string, unknown>>();
   const packagePluginCategorySearchDigest = new Map<string, Record<string, unknown>>();
 
   const tableMap: Record<string, Map<string, Record<string, unknown>>> = {
@@ -337,7 +333,6 @@ function makeLegacyPublisherOwnershipDb() {
     skillSearchDigest,
     packages,
     packageSearchDigest,
-    packageCapabilitySearchDigest,
     packagePluginCategorySearchDigest,
   };
   const patchCalls: Array<{ id: string; patch: Record<string, unknown> }> = [];
@@ -942,188 +937,6 @@ describe("maintenance badge denormalization", () => {
       badges: {
         official: { byUserId: "users:2", at: 456 },
       },
-    });
-  });
-});
-
-describe("maintenance capability tag backfill", () => {
-  it("keeps latest skill search digest capability tags in sync", async () => {
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(1234);
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({
-        _id: "skillVersions:1",
-        capabilityTags: ["can-make-purchases"],
-      })
-      .mockResolvedValueOnce({
-        _id: "skills:1",
-        latestVersionId: "skillVersions:1",
-        capabilityTags: ["can-make-purchases"],
-      });
-    const unique = vi.fn().mockResolvedValue({
-      _id: "skillSearchDigest:1",
-      capabilityTags: ["can-make-purchases"],
-    });
-    const withIndex = vi.fn((_indexName, callback) => {
-      callback({ eq: vi.fn() });
-      return { unique };
-    });
-    const query = vi.fn().mockReturnValue({ withIndex });
-    const patch = vi.fn().mockResolvedValue(undefined);
-
-    const result = await (
-      applySkillCapabilityTagsInternal as unknown as { _handler: Function }
-    )._handler(
-      {
-        db: {
-          get,
-          patch,
-          query,
-          normalizeId: vi.fn(),
-        },
-      } as never,
-      {
-        skillId: "skills:1",
-        versionId: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
-      },
-    );
-
-    expect(result).toEqual({
-      ok: true,
-      versionPatched: true,
-      skillPatched: true,
-      digestPatched: true,
-    });
-    expect(patch).toHaveBeenNthCalledWith(1, "skillVersions:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-    });
-    expect(patch).toHaveBeenNthCalledWith(2, "skills:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-      updatedAt: 1234,
-    });
-    expect(patch).toHaveBeenNthCalledWith(3, "skillSearchDigest:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-      updatedAt: 1234,
-    });
-    expect(query).toHaveBeenCalledWith("skillSearchDigest");
-    expect(withIndex).toHaveBeenCalledWith("by_skill", expect.any(Function));
-
-    nowSpy.mockRestore();
-  });
-
-  it("counts trigger-synced digest tags when the latest skill tags change", async () => {
-    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(2222);
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({
-        _id: "skillVersions:1",
-        capabilityTags: ["can-make-purchases"],
-      })
-      .mockResolvedValueOnce({
-        _id: "skills:1",
-        latestVersionId: "skillVersions:1",
-        capabilityTags: ["can-make-purchases"],
-      });
-    const unique = vi.fn().mockResolvedValue({
-      _id: "skillSearchDigest:1",
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-    });
-    const withIndex = vi.fn((_indexName, callback) => {
-      callback({ eq: vi.fn() });
-      return { unique };
-    });
-    const query = vi.fn().mockReturnValue({ withIndex });
-    const patch = vi.fn().mockResolvedValue(undefined);
-
-    const result = await (
-      applySkillCapabilityTagsInternal as unknown as { _handler: Function }
-    )._handler(
-      {
-        db: {
-          get,
-          patch,
-          query,
-          normalizeId: vi.fn(),
-        },
-      } as never,
-      {
-        skillId: "skills:1",
-        versionId: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
-      },
-    );
-
-    expect(result).toEqual({
-      ok: true,
-      versionPatched: true,
-      skillPatched: true,
-      digestPatched: true,
-    });
-    expect(patch).toHaveBeenCalledTimes(2);
-    expect(patch).toHaveBeenNthCalledWith(1, "skillVersions:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-    });
-    expect(patch).toHaveBeenNthCalledWith(2, "skills:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-      updatedAt: 2222,
-    });
-
-    nowSpy.mockRestore();
-  });
-
-  it("repairs a stale latest skill search digest even when skill tags already match", async () => {
-    const get = vi
-      .fn()
-      .mockResolvedValueOnce({
-        _id: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
-      })
-      .mockResolvedValueOnce({
-        _id: "skills:1",
-        latestVersionId: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
-        updatedAt: 987,
-      });
-    const unique = vi.fn().mockResolvedValue({
-      _id: "skillSearchDigest:1",
-      capabilityTags: ["can-make-purchases"],
-    });
-    const withIndex = vi.fn((_indexName, callback) => {
-      callback({ eq: vi.fn() });
-      return { unique };
-    });
-    const query = vi.fn().mockReturnValue({ withIndex });
-    const patch = vi.fn().mockResolvedValue(undefined);
-
-    const result = await (
-      applySkillCapabilityTagsInternal as unknown as { _handler: Function }
-    )._handler(
-      {
-        db: {
-          get,
-          patch,
-          query,
-          normalizeId: vi.fn(),
-        },
-      } as never,
-      {
-        skillId: "skills:1",
-        versionId: "skillVersions:1",
-        capabilityTags: ["financial-authority", "can-make-purchases"],
-      },
-    );
-
-    expect(result).toEqual({
-      ok: true,
-      versionPatched: false,
-      skillPatched: false,
-      digestPatched: true,
-    });
-    expect(patch).toHaveBeenCalledTimes(1);
-    expect(patch).toHaveBeenCalledWith("skillSearchDigest:1", {
-      capabilityTags: ["financial-authority", "can-make-purchases"],
-      updatedAt: 987,
     });
   });
 });

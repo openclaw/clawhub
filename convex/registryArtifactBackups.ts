@@ -67,7 +67,6 @@ type PackageBackupPageItem =
       runtimeId?: string;
       sourceRepo?: string;
       compatibility?: unknown;
-      capabilities?: unknown;
       extractedPackageJson?: unknown;
       extractedPluginManifest?: unknown;
       normalizedBundleManifest?: unknown;
@@ -240,7 +239,6 @@ async function toPackageBackupPageItem(
     runtimeId: release.runtimeId,
     sourceRepo: release.sourceRepo,
     compatibility: release.compatibility,
-    capabilities: release.capabilities,
     extractedPackageJson: release.extractedPackageJson,
     extractedPluginManifest: release.extractedPluginManifest,
     normalizedBundleManifest: release.normalizedBundleManifest,

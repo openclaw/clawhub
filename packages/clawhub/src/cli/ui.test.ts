@@ -9,7 +9,7 @@ vi.mock("node:child_process", () => ({
   spawn: (...args: unknown[]) => mockSpawn(...args),
 }));
 
-const { formatError, openInBrowser } = await import("./ui");
+const { createCrabLoader, formatError, openInBrowser } = await import("./ui");
 
 type ErrorHandler = (error: NodeJS.ErrnoException) => void;
 
@@ -121,6 +121,16 @@ describe("formatError", () => {
     expect(formatted).toContain("http://[redacted]@proxy.example:8080");
   });
 
+  it("redacts token-only URL userinfo in transport details", () => {
+    const error = new Error("proxy https://proxy-token@proxy.example failed");
+
+    const formatted = formatError(error);
+
+    expect(formatted).toContain("Network request failed");
+    expect(formatted).not.toContain("proxy-token");
+    expect(formatted).toContain("https://[redacted]@proxy.example");
+  });
+
   it("redacts generic Authorization schemes with separated credentials", () => {
     const error = new Error("fetch failed: Authorization: Basic dXNlcjpwYXNz");
 
@@ -182,5 +192,26 @@ describe("formatError", () => {
 
     expect(formatError(tls)).toContain("TLS or certificate validation failed");
     expect(formatError(timeout)).toContain("the request timed out");
+  });
+});
+
+describe("createCrabLoader", () => {
+  it("keeps non-interactive spinner output stable", () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const spinner = createCrabLoader("Searching");
+    spinner.text = "Downloading";
+    spinner.stop();
+    expect(logSpy).not.toHaveBeenCalledWith("Searching");
+    expect(logSpy).not.toHaveBeenCalledWith("Downloading");
+
+    spinner.succeed("Done");
+    spinner.fail("Failed");
+
+    expect(logSpy).toHaveBeenCalledWith("Done");
+    expect(errorSpy).toHaveBeenCalledWith("Failed");
+    logSpy.mockRestore();
+    errorSpy.mockRestore();
   });
 });

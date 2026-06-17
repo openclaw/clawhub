@@ -73,8 +73,67 @@ export function isInteractive() {
   return process.stdout.isTTY && stdin.isTTY;
 }
 
-export function createSpinner(text: string) {
-  return ora({ text, spinner: "dots", isEnabled: isInteractive() }).start();
+const clawhubCrab = {
+  interval: 110,
+  frames: [
+    "🦀      ",
+    " 🦀     ",
+    "  🦀    ",
+    "   🦀   ",
+    "    🦀  ",
+    "     🦀 ",
+    "      🦀",
+    "     🦀 ",
+    "    🦀  ",
+    "   🦀   ",
+    "  🦀    ",
+    " 🦀     ",
+  ],
+};
+
+type CrabLoader = {
+  text: string;
+  readonly isSpinning: boolean;
+  start(text?: string): CrabLoader;
+  stop(): CrabLoader;
+  succeed(text?: string): CrabLoader;
+  fail(text?: string): CrabLoader;
+};
+
+function createNonInteractiveCrabLoader(text: string): CrabLoader {
+  let currentText = text;
+  const loader = {
+    get text() {
+      return currentText;
+    },
+    set text(value: string) {
+      currentText = value;
+    },
+    get isSpinning() {
+      return false;
+    },
+    start(value?: string) {
+      if (value) currentText = value;
+      return loader;
+    },
+    stop() {
+      return loader;
+    },
+    succeed(value?: string) {
+      if (value) console.log(value);
+      return loader;
+    },
+    fail(value?: string) {
+      if (value) console.error(value);
+      return loader;
+    },
+  };
+  return loader;
+}
+
+export function createCrabLoader(text: string): CrabLoader {
+  if (!isInteractive()) return createNonInteractiveCrabLoader(text);
+  return ora({ text, spinner: clawhubCrab, color: "red" }).start();
 }
 
 export function formatError(error: unknown) {
@@ -86,8 +145,36 @@ export function formatError(error: unknown) {
   return redactSensitiveText(String(error));
 }
 
+function isStdoutColorEnabled() {
+  if (!process.stdout.isTTY) return false;
+  if (process.env.NO_COLOR) return false;
+  return true;
+}
+
+const textStyles = {
+  brand: "\x1b[1m\x1b[31m",
+  strong: "\x1b[1m",
+  muted: "\x1b[2m",
+};
+
+export function styleText(value: string, style: keyof typeof textStyles) {
+  if (!isStdoutColorEnabled()) return value;
+  return `${textStyles[style]}${value}\x1b[0m`;
+}
+
+function isErrorColorEnabled() {
+  if (!process.stderr.isTTY) return false;
+  if (process.env.NO_COLOR) return false;
+  return true;
+}
+
+function formatErrorLabel() {
+  if (!isErrorColorEnabled()) return "Error:";
+  return "\x1b[1m\x1b[31mError:\x1b[0m";
+}
+
 export function fail(message: string): never {
-  console.error(`Error: ${message}`);
+  console.error(`${formatErrorLabel()} ${message}`);
   process.exit(1);
 }
 
@@ -211,5 +298,5 @@ function redactSensitiveText(value: string) {
       /([?&](?:access_token|api[_-]?key|auth|authorization|callback|callback_url|code|key|redirect_uri|return_to|secret|state|token)=)[^&#\s]+/gi,
       "$1[redacted]",
     )
-    .replace(/:\/\/[^/\s:@]+:[^/\s@]+@/g, "://[redacted]@");
+    .replace(/:\/\/[^/\s@]+@/g, "://[redacted]@");
 }

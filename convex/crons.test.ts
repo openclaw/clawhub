@@ -5,7 +5,13 @@ const mocks = vi.hoisted(() => {
   const interval = vi.fn();
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
   const registryArtifactBackupRetryRef = Symbol("registry-artifact-backup-retry");
-  return { interval, githubSkillSyncRef, registryArtifactBackupRetryRef };
+  const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
+  return {
+    interval,
+    githubSkillSyncRef,
+    registryArtifactBackupRetryRef,
+    installTelemetryDedupePruneRef,
+  };
 });
 
 vi.mock("convex/server", () => ({
@@ -43,6 +49,9 @@ vi.mock("./_generated/api", () => ({
     downloads: { pruneDownloadDedupesInternal: Symbol("download-dedupe-prune") },
     downloadMetrics: {
       pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
+    },
+    telemetry: {
+      pruneInstallTelemetryDedupesInternal: mocks.installTelemetryDedupePruneRef,
     },
   },
 }));
@@ -96,6 +105,17 @@ describe("crons", () => {
       { hours: 6 },
       expect.anything(),
       { batchSize: 10 },
+    );
+  });
+
+  it("prunes install telemetry dedupe rows daily", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "install-telemetry-dedupe-prune",
+      { hours: 24 },
+      mocks.installTelemetryDedupePruneRef,
+      {},
     );
   });
 });

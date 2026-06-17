@@ -46,7 +46,6 @@ type LatestPackageRelease = Pick<
   | "changelog"
   | "summary"
   | "compatibility"
-  | "capabilities"
   | "verification"
   | "distTags"
 > & {
@@ -62,7 +61,6 @@ function toPackageLatestVersionSummary(
     createdAt: release.createdAt,
     changelog: release.changelog,
     compatibility: release.compatibility,
-    capabilities: release.capabilities,
     verification: release.verification,
   };
 }
@@ -108,7 +106,6 @@ async function getPreferredFallbackPackageRelease(
         changelog: release.changelog,
         summary: release.summary,
         compatibility: release.compatibility,
-        capabilities: release.capabilities,
         verification: release.verification,
         scanStatus: release.verification?.scanStatus,
         distTags: release.distTags,
@@ -399,13 +396,7 @@ export async function repointPackageLatestRelease(
     patch.latestReleaseId = nextLatest?._id;
     patch.latestVersionSummary = toPackageLatestVersionSummary(nextLatest);
     patch.summary = nextLatest?.summary;
-    patch.capabilityTags = nextLatest?.capabilities?.capabilityTags;
-    patch.executesCode =
-      typeof nextLatest?.capabilities?.executesCode === "boolean"
-        ? nextLatest.capabilities.executesCode
-        : undefined;
     patch.compatibility = nextLatest?.compatibility;
-    patch.capabilities = nextLatest?.capabilities;
     patch.verification = nextLatest?.verification;
     patch.scanStatus = nextLatest?.scanStatus;
   }

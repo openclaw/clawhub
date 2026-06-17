@@ -121,6 +121,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     internal.downloadMetrics.pruneDownloadMetricDedupesInternal,
     {},
   );
+
+  crons.interval(
+    "install-telemetry-dedupe-prune",
+    { hours: 24 },
+    internal.telemetry.pruneInstallTelemetryDedupesInternal,
+    {},
+  );
 }
 
 export default crons;

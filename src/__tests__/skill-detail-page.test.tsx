@@ -25,6 +25,11 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => children,
   useNavigate: () => navigateMock,
   useRouter: () => ({ invalidate: routerInvalidateMock }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { searchStr: string } }) => string;
+  }) => select({ location: { searchStr: "" } }),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -51,10 +56,6 @@ vi.mock("sonner", () => ({
 
 vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
-}));
-
-vi.mock("../components/SkillCommentsPanel", () => ({
-  SkillCommentsPanel: () => <div data-testid="skill-comments-panel" />,
 }));
 
 vi.mock("../components/ui/tooltip", () => ({

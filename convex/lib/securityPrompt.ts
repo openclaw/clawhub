@@ -106,7 +106,6 @@ export type SkillEvalContext = {
     engineVersion: string;
     checkedAt: number;
   };
-  capabilityTags?: string[];
 };
 
 export type LlmEvalDimension = {
@@ -525,11 +524,6 @@ function formatStaticScanForPrompt(staticScan: SkillEvalContext["staticScan"]) {
   ].join("\n");
 }
 
-function formatCapabilitySignals(capabilityTags: string[] | undefined) {
-  if (!capabilityTags || capabilityTags.length === 0) return "No capability tags were derived.";
-  return capabilityTags.map((tag) => `- ${tag}`).join("\n");
-}
-
 export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
   const fm = ctx.parsed.frontmatter ?? {};
   const rawClawdis = (ctx.parsed.clawdis ?? {}) as Record<string, unknown>;
@@ -655,9 +649,8 @@ export function assembleEvalUserMessage(ctx: SkillEvalContext): string {
     sections.push("### Pre-scan injection signals\nNone detected.");
   }
 
-  if (ctx.staticScan || ctx.capabilityTags) {
+  if (ctx.staticScan) {
     sections.push(`### Static scan signals\n${formatStaticScanForPrompt(ctx.staticScan)}`);
-    sections.push(`### Capability signals\n${formatCapabilitySignals(ctx.capabilityTags)}`);
   }
 
   // SKILL.md content

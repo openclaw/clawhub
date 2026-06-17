@@ -30,7 +30,6 @@ let loaderDataMock:
         family: "skill" | "code-plugin" | "bundle-plugin";
         channel: "official" | "community" | "private";
         isOfficial: boolean;
-        executesCode?: boolean;
         summary?: string | null;
         ownerHandle?: string | null;
         latestVersion?: string | null;
@@ -116,7 +115,6 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       official: undefined,
-      executesCode: undefined,
       sort: undefined,
       view: undefined,
     });
@@ -133,7 +131,6 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       official: undefined,
-      executesCode: undefined,
       sort: undefined,
       view: undefined,
     });
@@ -151,13 +148,12 @@ describe("plugins route", () => {
       cursor: undefined,
       featured: undefined,
       official: true,
-      executesCode: undefined,
       sort: undefined,
       view: undefined,
     });
   });
 
-  it("normalizes legacy downloads sort links to installs", async () => {
+  it("drops removed downloads sort links to the plugin browse default", async () => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (
       search: Record<string, unknown>,
@@ -165,7 +161,7 @@ describe("plugins route", () => {
 
     expect(validateSearch({ sort: "downloads", cursor: "legacy-download-cursor" })).toEqual(
       expect.objectContaining({
-        sort: "installs",
+        sort: undefined,
         cursor: undefined,
       }),
     );
@@ -389,6 +385,17 @@ describe("plugins route", () => {
         limit: 25,
       }),
     );
+
+    await loadPluginsPageData({
+      sort: "updated",
+    });
+
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sort: "updated",
+        limit: 25,
+      }),
+    );
   });
 
   it("forwards category through catalog loading without changing the query", async () => {
@@ -419,7 +426,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -456,7 +462,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
           stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
@@ -481,7 +486,6 @@ describe("plugins route", () => {
       family: "code-plugin" as const,
       channel: "community" as const,
       isOfficial: false,
-      executesCode: true,
       createdAt: 1,
       updatedAt: 1,
     };
@@ -518,7 +522,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -546,7 +549,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -608,7 +610,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -672,7 +673,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -741,6 +741,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         isOfficial: true,
+        sort: "installs",
         limit: 25,
       }),
     );
@@ -776,6 +777,29 @@ describe("plugins route", () => {
     });
   });
 
+  it("keeps recommended explicit when selected from filtered plugin browse", async () => {
+    searchMock = { category: "security" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Recommended" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      replace?: boolean;
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.replace).toBe(true);
+    expect(lastCall.search({ category: "security", cursor: "cursor:current" })).toEqual({
+      category: "security",
+      cursor: undefined,
+      family: undefined,
+      featured: undefined,
+      sort: "recommended",
+    });
+  });
+
   it("returns a retryable empty state when the catalog is rate limited", async () => {
     fetchPluginCatalogMock.mockRejectedValue({ status: 429, retryAfterSeconds: 22 });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
@@ -799,7 +823,6 @@ describe("plugins route", () => {
 
     const result = await loadPluginsPageData({
       q: "demo",
-      executesCode: true,
     });
 
     expect(result).toEqual({
@@ -1030,7 +1053,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 1,
         },
@@ -1083,7 +1105,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 2,
           updatedAt: 20,
           stats: { downloads: 1, installs: 10, stars: 0, versions: 1 },
@@ -1094,7 +1115,6 @@ describe("plugins route", () => {
           family: "code-plugin",
           channel: "community",
           isOfficial: false,
-          executesCode: true,
           createdAt: 1,
           updatedAt: 10,
           stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
@@ -1112,6 +1132,45 @@ describe("plugins route", () => {
     const zulu = screen.getByText("Zulu Plugin");
     const alpha = screen.getByText("Alpha Plugin");
     expect(zulu.compareDocumentPosition(alpha) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("sorts loaded search results by install count", async () => {
+    searchMock = { q: "security", sort: "installs" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "zulu-plugin",
+          displayName: "Zulu Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 2,
+          updatedAt: 20,
+          stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
+        },
+        {
+          name: "alpha-plugin",
+          displayName: "Alpha Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 10,
+          stats: { downloads: 1, installs: 10, stars: 0, versions: 1 },
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const alpha = screen.getByText("Alpha Plugin");
+    const zulu = screen.getByText("Zulu Plugin");
+    expect(alpha.compareDocumentPosition(zulu) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps search sort visible even if a stale featured flag is present", async () => {

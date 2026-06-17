@@ -5,6 +5,15 @@ export const MALICIOUS_REJECTION_ACCOUNT_WARNING =
 const MAX_EMAIL_FINDING_SUMMARY_LENGTH = 280;
 export const ADMIN_ONE_OFF_TEMPLATE = "generic-one-off";
 
+const PUBLISHER_ABUSE_FINDING_SUMMARY =
+  "Your account was identified by ClawHub's publisher abuse review workflow for activity that appears inconsistent with our Acceptable Usage policy.";
+const PUBLISHER_ABUSE_POLICY_ITEMS = [
+  "Bulk or spam publishing of large numbers of low-effort, duplicative, placeholder, or machine-generated listings.",
+  "Publishing large catalogs with little or no usage, maintenance, source clarity, or meaningful differentiation.",
+  "Artificially inflating installs, downloads, stars, or other engagement metrics.",
+  "Abnormal download activity with little or no corresponding install activity.",
+];
+
 export type NotificationArtifact = {
   kind: "skill" | "plugin";
   name: string;
@@ -27,6 +36,7 @@ export type BanNotificationEmailContext = {
   artifact: NotificationArtifact | null;
   scannerLabel: string | null;
   findingSummary: string;
+  policyReasonItems: string[];
 };
 
 export type TransactionalEmail = {
@@ -87,6 +97,8 @@ export type AdminOneOffEmailArgs = {
 type BanReasonSummary = {
   scannerLabel: string | null;
   findingSummary: string;
+  policyReasonItems?: string[];
+  omitTextAppealUrl?: boolean;
 };
 
 function normalizeReasonInput(args: Pick<BanNotificationEmailArgs, "reason" | "trigger">) {
@@ -132,6 +144,15 @@ function summarizeBanReason(args: BanNotificationEmailArgs): BanReasonSummary {
     };
   }
 
+  if (/\bpublisher[_\-\s]?abuse\b/.test(normalized)) {
+    return {
+      scannerLabel: null,
+      findingSummary: PUBLISHER_ABUSE_FINDING_SUMMARY,
+      policyReasonItems: PUBLISHER_ABUSE_POLICY_ITEMS,
+      omitTextAppealUrl: true,
+    };
+  }
+
   return {
     scannerLabel: null,
     findingSummary: "ClawHub staff disabled the account after a security review.",
@@ -164,6 +185,7 @@ async function renderAccountSuspendedTemplate(args: {
   suspendedAt?: number;
   hiddenArtifacts?: number;
   findingSummary: string;
+  policyReasonItems: string[];
   preheader: string;
 }) {
   const { renderAccountSuspendedEmail } = await import("./emailRendering");
@@ -176,6 +198,7 @@ async function renderAccountSuspendedTemplate(args: {
     suspendedAt: formatUtcTimestamp(args.suspendedAt, "moderation review"),
     ...(hiddenArtifacts === undefined ? {} : { hiddenArtifacts }),
     findingSummary: args.findingSummary,
+    policyReasonItems: args.policyReasonItems,
     preheader: args.preheader,
   });
   return rendered.html;
@@ -242,11 +265,19 @@ export async function buildBanNotificationEmail(
 ): Promise<TransactionalEmail> {
   const summary = summarizeBanReason(args);
   const artifact = args.artifact ?? null;
+  const policyReasonItems = summary.policyReasonItems ?? [];
+  const hiddenArtifacts =
+    typeof args.hiddenArtifacts === "number" && Number.isFinite(args.hiddenArtifacts)
+      ? Math.max(0, Math.trunc(args.hiddenArtifacts))
+      : artifact
+        ? 1
+        : undefined;
   const context: BanNotificationEmailContext = {
     appealUrl: APPEALS_URL,
     artifact,
     scannerLabel: summary.scannerLabel,
     findingSummary: summary.findingSummary,
+    policyReasonItems,
   };
 
   const lines = [
@@ -256,6 +287,10 @@ export async function buildBanNotificationEmail(
     `Reason: ${context.findingSummary}`,
   ];
   if (artifact) lines.push(artifactLabel(artifact));
+  if (typeof hiddenArtifacts === "number") lines.push(`Artifacts hidden: ${hiddenArtifacts}`);
+  if (policyReasonItems.length > 0) {
+    lines.push("", "Policy signals:", ...policyReasonItems.map((item) => `- ${item}`));
+  }
 
   lines.push(
     "",
@@ -263,9 +298,8 @@ export async function buildBanNotificationEmail(
     "- Your ClawHub account cannot sign in.",
     "- Existing API tokens for the account have been revoked.",
     "- Published listings owned by the account may be hidden from public view.",
-    "",
-    `Appeal: ${APPEALS_URL}`,
   );
+  if (!summary.omitTextAppealUrl) lines.push("", `Appeal: ${APPEALS_URL}`);
 
   lines.push("", "ClawHub Security");
 
@@ -276,20 +310,16 @@ export async function buildBanNotificationEmail(
   ];
   const detailLines = [
     context.findingSummary,
+    ...policyReasonItems,
     ...(artifact ? [artifact.name] : []),
     ...impactItems,
   ];
-  const hiddenArtifacts =
-    typeof args.hiddenArtifacts === "number" && Number.isFinite(args.hiddenArtifacts)
-      ? args.hiddenArtifacts
-      : artifact
-        ? 1
-        : undefined;
   const html = await renderAccountSuspendedTemplate({
     handle: args.handle,
     suspendedAt: args.bannedAt,
     hiddenArtifacts,
     findingSummary: context.findingSummary,
+    policyReasonItems,
     preheader: detailLines.join(" "),
   });
 

@@ -40,6 +40,7 @@ import {
   getSkillFileModerationInfoFromSkill,
   isSkillVersionForSkill,
 } from "../lib/skillFileAccess";
+import { readCanonicalStat } from "../lib/skillStats";
 import {
   buildDeterministicZip,
   buildMergedExportZip,
@@ -80,6 +81,13 @@ type SearchSkillEntry = {
     displayName?: string;
     summary?: string | null;
     updatedAt?: number;
+    stats: {
+      downloads?: number;
+      stars?: number;
+      installsCurrent?: number;
+      installsAllTime?: number;
+    };
+    statsDownloads?: number;
   } | null;
   version: { version?: string; createdAt?: number } | null;
   ownerHandle?: string | null;
@@ -157,7 +165,6 @@ type PublicSkillVersionResponse = {
   skillSpectorAnalysis?: Doc<"skillVersions">["skillSpectorAnalysis"];
   llmAnalysis?: Doc<"skillVersions">["llmAnalysis"];
   staticScan?: PublicSkillVersionStaticScan;
-  capabilityTags?: string[];
 };
 
 type ModerationEvidence = {
@@ -268,7 +275,6 @@ type SkillSecuritySnapshot = {
   hasScanResult: boolean;
   sha256hash: string | null;
   virustotalUrl: string | null;
-  capabilityTags: string[];
   scanners: {
     vt: {
       status: string;
@@ -555,16 +561,15 @@ function hasLlmDimensionWarnings(dimensions: LlmEvalDimension[] | undefined) {
 function buildSkillSecuritySnapshot(
   version: Pick<
     PublicSkillVersionResponse,
-    "sha256hash" | "vtAnalysis" | "skillSpectorAnalysis" | "llmAnalysis" | "capabilityTags"
+    "sha256hash" | "vtAnalysis" | "skillSpectorAnalysis" | "llmAnalysis"
   >,
 ): SkillSecuritySnapshot | null {
-  const capabilityTags = version.capabilityTags ?? [];
   const sha256hash = version.sha256hash ?? null;
   const vt = version.vtAnalysis;
   const skillSpector = version.skillSpectorAnalysis;
   const llm = version.llmAnalysis;
 
-  if (!sha256hash && !vt && !skillSpector && !llm && capabilityTags.length === 0) {
+  if (!sha256hash && !vt && !skillSpector && !llm) {
     return null;
   }
 
@@ -593,7 +598,6 @@ function buildSkillSecuritySnapshot(
     hasScanResult,
     sha256hash,
     virustotalUrl: sha256hash ? `https://www.virustotal.com/gui/file/${sha256hash}` : null,
-    capabilityTags,
     scanners: {
       vt: vt
         ? {
@@ -1355,6 +1359,7 @@ export async function searchSkillsV1Handler(ctx: ActionCtx, request: Request) {
           displayName: result.skill?.displayName,
           summary: result.skill?.summary ?? null,
           version: result.version?.version ?? null,
+          downloads: result.skill ? readCanonicalStat(result.skill, "downloads") : 0,
           updatedAt: result.skill?.updatedAt,
           ownerHandle: result.ownerHandle ?? owner?.handle ?? null,
           owner,

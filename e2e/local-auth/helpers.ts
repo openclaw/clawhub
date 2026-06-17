@@ -243,5 +243,8 @@ export async function publishSkillVersion(
   expect(actualOwnerHandle?.toLowerCase()).toContain(args.ownerHandle.toLowerCase());
   expect(actualSlug).toBe(args.slug);
   await expect(page.locator(".skill-page-title")).toHaveText(args.displayName);
+  await expect(page.getByRole("dialog", { name: /it's alive/i })).toBeVisible();
+  await page.getByRole("button", { name: "View skill" }).click();
+  await expect(page.getByRole("dialog", { name: /it's alive/i })).toBeHidden();
   return actualOwnerHandle!;
 }

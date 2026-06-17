@@ -1,5 +1,10 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const telemetryRefs = vi.hoisted(() => ({
+  clearUserTelemetryInternal: Symbol("clearUserTelemetryInternal"),
+  pruneInstallTelemetryDedupesInternal: Symbol("pruneInstallTelemetryDedupesInternal"),
+}));
 
 vi.mock("./functions", () => ({
   internalAction: (def: { handler: unknown }) => ({ _handler: def.handler }),
@@ -15,11 +20,14 @@ vi.mock("./_generated/api", () => ({
       processSkillStatEventsAction: Symbol("processSkillStatEventsAction"),
       processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
     },
+    telemetry: telemetryRefs,
   },
 }));
 
 const {
+  __test,
   clearUserTelemetryInternal,
+  pruneInstallTelemetryDedupesInternal,
   reportCliInstallInternal,
   reportCliLegacyInstallBatchInternal,
 } = await import("./telemetry");
@@ -44,22 +52,32 @@ const reportCliLegacyInstallBatchHandler = (
 
 const clearUserTelemetryHandler = (
   clearUserTelemetryInternal as unknown as {
-    _handler: (ctx: unknown, args: { userId: string }) => Promise<void>;
+    _handler: (ctx: unknown, args: { userId: string; clearStartedAt?: number }) => Promise<void>;
+  }
+)._handler;
+
+const pruneInstallTelemetryDedupesHandler = (
+  pruneInstallTelemetryDedupesInternal as unknown as {
+    _handler: (ctx: unknown) => Promise<{ deleted: number; hasMore: boolean }>;
   }
 )._handler;
 
 function makeIndexBuilder() {
   const builder = {
     eq: vi.fn(() => builder),
+    lt: vi.fn(() => builder),
+    lte: vi.fn(() => builder),
   };
   return builder;
 }
 
 function makeInstallCtx(params: {
-  skills: Array<{ _id: string; slug: string } | null>;
+  skills: Array<{ _id: string; slug: string; softDeletedAt?: number } | null>;
+  dedupes: Array<Record<string, unknown> | null>;
   installs: Array<Record<string, unknown> | null>;
 }) {
   const skills = [...params.skills];
+  const dedupes = [...params.dedupes];
   const installs = [...params.installs];
   const insert = vi.fn();
   const patch = vi.fn();
@@ -69,6 +87,9 @@ function makeInstallCtx(params: {
         callback(makeIndexBuilder());
         if (table === "skills" && indexName === "by_slug") {
           return { unique: async () => skills.shift() ?? null };
+        }
+        if (table === "installTelemetryDedupes" && indexName === "by_user_skill_day") {
+          return { unique: async () => dedupes.shift() ?? null };
         }
         if (table === "userSkillInstalls" && indexName === "by_user_skill") {
           return { unique: async () => installs.shift() ?? null };
@@ -82,12 +103,17 @@ function makeInstallCtx(params: {
 }
 
 describe("telemetry install events", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
   it("records legacy snapshot batches as rootless user-skill installs", async () => {
-    const { ctx, insert, query } = makeInstallCtx({
+    const { ctx, insert } = makeInstallCtx({
       skills: [
         { _id: "skills:weather", slug: "weather" },
         { _id: "skills:calendar", slug: "calendar" },
       ],
+      dedupes: [null, null],
       installs: [null, null],
     });
 
@@ -96,9 +122,14 @@ describe("telemetry install events", () => {
       skills: [{ slug: "weather", version: "1.0.0" }, { slug: "calendar" }],
     });
 
-    expect(query).not.toHaveBeenCalledWith("userSyncRoots");
-    expect(query).not.toHaveBeenCalledWith("userSkillRootInstalls");
-    expect(insert).toHaveBeenCalledTimes(4);
+    expect(insert).toHaveBeenCalledTimes(6);
+    expect(insert).toHaveBeenCalledWith(
+      "installTelemetryDedupes",
+      expect.objectContaining({
+        userId: "users:one",
+        skillId: "skills:weather",
+      }),
+    );
     expect(insert).toHaveBeenCalledWith(
       "userSkillInstalls",
       expect.objectContaining({
@@ -116,6 +147,7 @@ describe("telemetry install events", () => {
   it("records the first CLI install without root state", async () => {
     const { ctx, insert } = makeInstallCtx({
       skills: [{ _id: "skills:demo", slug: "demo" }],
+      dedupes: [null],
       installs: [null],
     });
 
@@ -125,6 +157,14 @@ describe("telemetry install events", () => {
       version: "1.0.0",
     });
 
+    expect(insert).toHaveBeenCalledWith(
+      "installTelemetryDedupes",
+      expect.objectContaining({
+        userId: "users:one",
+        skillId: "skills:demo",
+        dayStart: expect.any(Number),
+      }),
+    );
     expect(insert).toHaveBeenCalledWith("userSkillInstalls", {
       userId: "users:one",
       skillId: "skills:demo",
@@ -132,8 +172,6 @@ describe("telemetry install events", () => {
       lastSeenAt: expect.any(Number),
       lastVersion: "1.0.0",
     });
-    expect(insert).not.toHaveBeenCalledWith("userSyncRoots", expect.anything());
-    expect(insert).not.toHaveBeenCalledWith("userSkillRootInstalls", expect.anything());
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
       expect.objectContaining({ skillId: "skills:demo", kind: "install_new" }),
@@ -143,6 +181,7 @@ describe("telemetry install events", () => {
   it("keeps repeated CLI install events idempotent per user and skill", async () => {
     const { ctx, insert, patch } = makeInstallCtx({
       skills: [{ _id: "skills:demo", slug: "demo" }],
+      dedupes: [null],
       installs: [
         {
           _id: "userSkillInstalls:one",
@@ -160,26 +199,45 @@ describe("telemetry install events", () => {
     });
 
     expect(patch).toHaveBeenCalledWith("userSkillInstalls:one", {
-      activeRoots: undefined,
       lastSeenAt: expect.any(Number),
       lastVersion: "1.0.1",
     });
+    expect(insert).toHaveBeenCalledWith(
+      "installTelemetryDedupes",
+      expect.objectContaining({ userId: "users:one", skillId: "skills:demo" }),
+    );
     expect(insert).not.toHaveBeenCalledWith("skillStatEvents", expect.anything());
   });
 
-  it("reactivates a legacy inactive install while removing its root count", async () => {
-    const { ctx, insert, patch } = makeInstallCtx({
-      skills: [{ _id: "skills:demo", slug: "demo" }],
-      installs: [
-        {
-          _id: "userSkillInstalls:one",
-          userId: "users:one",
-          skillId: "skills:demo",
-          activeRoots: 0,
-          lastVersion: "1.0.0",
-        },
-      ],
-    });
+  it("dedupes repeated install telemetry for the same user, skill, and day", async () => {
+    vi.setSystemTime(86_500_000);
+    const skill = { _id: "skills:demo", slug: "demo" };
+    const insert = vi.fn();
+    const patch = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              const builder = makeIndexBuilder();
+              callback(builder);
+              if (table === "skills" && indexName === "by_slug") {
+                return { unique: async () => skill };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user_skill_day") {
+                expect(builder.eq).toHaveBeenCalledWith("userId", "users:one");
+                expect(builder.eq).toHaveBeenCalledWith("skillId", "skills:demo");
+                expect(builder.eq).toHaveBeenCalledWith("dayStart", 86_400_000);
+                return { unique: async () => ({ _id: "installTelemetryDedupes:existing" }) };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
+        })),
+        insert,
+        patch,
+      },
+    };
 
     await reportCliInstallHandler(ctx, {
       userId: "users:one",
@@ -187,52 +245,47 @@ describe("telemetry install events", () => {
       version: "1.0.1",
     });
 
-    expect(patch).toHaveBeenCalledWith(
-      "userSkillInstalls:one",
-      expect.objectContaining({ activeRoots: undefined, lastVersion: "1.0.1" }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "skillStatEvents",
-      expect.objectContaining({ skillId: "skills:demo", kind: "install_reactivate" }),
-    );
+    expect(insert).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
   });
 
-  it("clears rootless installs while preserving legacy inactive count semantics", async () => {
+  it("clears installs and dedupe rows", async () => {
     const insert = vi.fn();
     const deleteDoc = vi.fn();
     const installs = [
-      { _id: "installs:rootless", skillId: "skills:rootless" },
-      { _id: "installs:inactive", skillId: "skills:inactive", activeRoots: 0 },
+      { _id: "installs:one", skillId: "skills:one" },
+      { _id: "installs:two", skillId: "skills:two" },
     ];
-    const roots = [{ _id: "roots:one" }];
-    const rootInstalls = [{ _id: "rootInstalls:one" }];
+    const dedupes = [{ _id: "installTelemetryDedupes:one" }];
     const ctx = {
       db: {
         query: vi.fn((table: string) => ({
-          withIndex: vi.fn((_name, callback) => {
-            callback(makeIndexBuilder());
-            return {
-              take: async () =>
-                table === "userSkillInstalls"
-                  ? installs
-                  : table === "userSyncRoots"
-                    ? roots
-                    : rootInstalls,
-            };
-          }),
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              callback(makeIndexBuilder());
+              if (table === "userSkillInstalls" && indexName === "by_user_lastSeenAt") {
+                return { take: async () => installs };
+              }
+              if (table === "installTelemetryDedupes" && indexName === "by_user_createdAt") {
+                return { take: async () => dedupes };
+              }
+              throw new Error(`unexpected query ${table}.${indexName}`);
+            },
+          ),
         })),
         get: vi.fn(async (id: string) => ({ _id: id })),
         insert,
         delete: deleteDoc,
       },
+      scheduler: { runAfter: vi.fn() },
     };
 
-    await clearUserTelemetryHandler(ctx, { userId: "users:one" });
+    await clearUserTelemetryHandler(ctx, { userId: "users:one", clearStartedAt: 123 });
 
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
       expect.objectContaining({
-        skillId: "skills:rootless",
+        skillId: "skills:one",
         kind: "install_clear",
         delta: { allTime: -1, current: -1 },
       }),
@@ -240,13 +293,139 @@ describe("telemetry install events", () => {
     expect(insert).toHaveBeenCalledWith(
       "skillStatEvents",
       expect.objectContaining({
-        skillId: "skills:inactive",
+        skillId: "skills:two",
         kind: "install_clear",
-        delta: { allTime: -1, current: 0 },
+        delta: { allTime: -1, current: -1 },
       }),
     );
-    expect(deleteDoc).toHaveBeenCalledTimes(4);
-    expect(deleteDoc).toHaveBeenCalledWith("roots:one");
-    expect(deleteDoc).toHaveBeenCalledWith("rootInstalls:one");
+    expect(deleteDoc).toHaveBeenCalledTimes(3);
+    expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:one");
+  });
+
+  it.each([
+    {
+      table: "userSkillInstalls",
+      indexName: "by_user_lastSeenAt",
+      batchSize: 5_000,
+      laterTables: ["installTelemetryDedupes"],
+    },
+    {
+      table: "installTelemetryDedupes",
+      indexName: "by_user_createdAt",
+      batchSize: 10_000,
+      laterTables: [],
+    },
+  ])(
+    "reschedules user telemetry clearing after a full $table batch before reading later tables",
+    async ({ table, indexName, batchSize, laterTables }) => {
+      const rows = Array.from({ length: batchSize }, (_, index) => ({
+        _id: `${table}:${index}`,
+        skillId: "skills:demo",
+      }));
+      const queriedTables: string[] = [];
+      const deleteDoc = vi.fn();
+      const runAfter = vi.fn();
+      const ctx = {
+        db: {
+          get: vi.fn(async () => ({ _id: "skills:demo" })),
+          query: vi.fn((queriedTable: string) => {
+            queriedTables.push(queriedTable);
+            return {
+              withIndex: vi.fn(
+                (
+                  actualIndexName: string,
+                  callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown,
+                ) => {
+                  if (queriedTable === table) {
+                    expect(actualIndexName).toBe(indexName);
+                  }
+                  callback(makeIndexBuilder());
+                  return {
+                    take: async () => (queriedTable === table ? rows : []),
+                  };
+                },
+              ),
+            };
+          }),
+          insert: vi.fn(),
+          delete: deleteDoc,
+        },
+        scheduler: { runAfter },
+      };
+
+      await clearUserTelemetryHandler(ctx, { userId: "users:one", clearStartedAt: 123 });
+
+      expect(deleteDoc).toHaveBeenCalledTimes(batchSize);
+      expect(runAfter).toHaveBeenCalledWith(0, telemetryRefs.clearUserTelemetryInternal, {
+        userId: "users:one",
+        clearStartedAt: 123,
+      });
+      for (const laterTable of laterTables) {
+        expect(queriedTables).not.toContain(laterTable);
+      }
+    },
+  );
+
+  it("prunes stale install telemetry dedupe rows by day bucket", async () => {
+    vi.setSystemTime(20 * 86_400_000);
+    const stale = [{ _id: "installTelemetryDedupes:one" }, { _id: "installTelemetryDedupes:two" }];
+    const deleteDoc = vi.fn();
+    const take = vi.fn(async () => stale);
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn(
+            (indexName: string, callback: (q: ReturnType<typeof makeIndexBuilder>) => unknown) => {
+              expect(table).toBe("installTelemetryDedupes");
+              expect(indexName).toBe("by_day");
+              const builder = makeIndexBuilder();
+              callback(builder);
+              expect(builder.lt).toHaveBeenCalledWith("dayStart", 6 * 86_400_000);
+              return { take };
+            },
+          ),
+        })),
+        delete: deleteDoc,
+      },
+      scheduler: { runAfter: vi.fn() },
+    };
+
+    const result = await pruneInstallTelemetryDedupesHandler(ctx);
+
+    expect(take).toHaveBeenCalledWith(200);
+    expect(result).toEqual({ deleted: 2, hasMore: false });
+    expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:one");
+    expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:two");
+  });
+
+  it("reschedules stale dedupe pruning when one bounded batch fills", async () => {
+    vi.setSystemTime(20 * 86_400_000);
+    const stale = Array.from({ length: 200 }, (_, index) => ({
+      _id: `installTelemetryDedupes:${index}`,
+    }));
+    const runAfter = vi.fn();
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ take: async () => stale })),
+        })),
+        delete: vi.fn(),
+      },
+      scheduler: { runAfter },
+    };
+
+    const result = await pruneInstallTelemetryDedupesHandler(ctx);
+
+    expect(result).toEqual({ deleted: 200, hasMore: true });
+    expect(runAfter).toHaveBeenCalledWith(
+      0,
+      telemetryRefs.pruneInstallTelemetryDedupesInternal,
+      {},
+    );
+  });
+
+  it("computes UTC day starts", () => {
+    expect(__test.getDayStart(86_399_999)).toBe(0);
+    expect(__test.getDayStart(86_400_000)).toBe(86_400_000);
   });
 });

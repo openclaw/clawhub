@@ -12,7 +12,7 @@ import { getOptionalAuthToken, requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import { sanitizeSlug, titleCase } from "../slug.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError } from "../ui.js";
+import { createCrabLoader, fail, formatError } from "../ui.js";
 import { normalizeGitHubRepo } from "./github.js";
 
 type SkillPublishResult = {
@@ -77,7 +77,7 @@ export async function cmdPublish(
   if (!displayName) fail("--name required");
   if (explicitVersion && !semver.valid(explicitVersion)) fail("--version must be valid semver");
 
-  const spinner = options.json ? null : createSpinner(`Preparing ${slug}`);
+  const spinner = options.json ? null : createCrabLoader(`Preparing ${slug}`);
   try {
     const filesOnDisk = stripGeneratedSkillCards(
       await ensureRootManifestFile(folder, await listTextFiles(folder)),

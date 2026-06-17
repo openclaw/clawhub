@@ -38,6 +38,7 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
+import { setPostPublishFlash } from "../../lib/postPublishFlash";
 import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
@@ -688,11 +689,15 @@ export function Upload() {
       setHasAttempted(false);
       setChangelogSource("user");
       if (result) {
-        toast.success(`Published ${trimmedSlug}@${trimmedVersion}`);
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
+        const didSetPostPublishFlash = setPostPublishFlash(ownerParam, trimmedSlug);
+        if (!didSetPostPublishFlash) {
+          toast.success(`Published ${trimmedSlug}@${trimmedVersion}`);
+        }
         void navigate({
           to: "/$owner/$slug",
           params: { owner: ownerParam, slug: trimmedSlug },
+          search: {},
         });
       }
     } catch (publishError) {
@@ -1064,8 +1069,8 @@ export function Upload() {
                     <span>
                       Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
                       <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
-                      Versions, tags, stats, comments and stars are preserved; the old URL redirects
-                      to the new one.
+                      Versions, tags, stats and stars are preserved; the old URL redirects to the
+                      new one.
                     </span>
                   </label>
                 ) : null}
