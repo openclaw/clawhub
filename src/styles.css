@@ -15394,7 +15394,7 @@ a[class*="rounded-full"] {
 }
 
 .navbar-search-typeahead-panel {
-  padding: 8px 0 6px;
+  padding: 8px 0 0;
 }
 
 .navbar-search-typeahead-tab {
@@ -15407,7 +15407,7 @@ a[class*="rounded-full"] {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 0 6px 6px;
+  padding: 0 6px;
 }
 
 .navbar-search-typeahead-row {
@@ -15428,7 +15428,7 @@ a[class*="rounded-full"] {
   padding-top: 10px;
   padding-bottom: 8px;
   border-top: 1px solid var(--line);
-  border-radius: 0;
+  border-radius: 8px;
   font-size: var(--fs-sm);
   font-weight: 500;
 }
