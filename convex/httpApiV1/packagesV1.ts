@@ -831,26 +831,6 @@ function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
   return { cursor: null, offset: 0, pageSize: null, done: false };
 }
 
-function hasCatalogSourceCursorState(state: CatalogSourceCursorState) {
-  return state.cursor !== null || state.offset > 0 || state.pageSize !== null || state.done;
-}
-
-function isUnifiedCatalogFreshStart(state: UnifiedCatalogCursorState) {
-  return (
-    !state.recommendedFallback &&
-    !hasCatalogSourceCursorState(state.packages) &&
-    !hasCatalogSourceCursorState(state.skills)
-  );
-}
-
-function isPluginCatalogFreshStart(state: PluginCatalogCursorState) {
-  return (
-    !state.recommendedFallback &&
-    !hasCatalogSourceCursorState(state.codePlugins) &&
-    !hasCatalogSourceCursorState(state.bundlePlugins)
-  );
-}
-
 function encodeUnifiedCatalogCursor(state: UnifiedCatalogCursorState) {
   return `${UNIFIED_CATALOG_CURSOR_PREFIX}${JSON.stringify(state)}`;
 }
@@ -1503,8 +1483,7 @@ async function listPackages(
 
   if (!effectiveFamily && includeSkills) {
     const decodedCursor = decodeUnifiedCatalogCursor(cursor);
-    const isFreshRecommendedRequest =
-      effectiveSort === "recommended" && isUnifiedCatalogFreshStart(decodedCursor);
+    const isFreshRecommendedRequest = effectiveSort === "recommended" && !cursor;
     const [hasMissingPackageRecommendationScores, hasMissingSkillRecommendationScores] =
       isFreshRecommendedRequest
         ? await Promise.all([
@@ -1620,8 +1599,7 @@ async function listPackages(
     const decodedCursor = decodePluginCatalogCursor(cursor);
     const codePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.codePlugins);
     const bundlePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.bundlePlugins);
-    const isFreshRecommendedRequest =
-      effectiveSort === "recommended" && isPluginCatalogFreshStart(decodedCursor);
+    const isFreshRecommendedRequest = effectiveSort === "recommended" && !cursor;
     const hasMissingRecommendationScores = isFreshRecommendedRequest
       ? await runQueryRef<boolean>(
           ctx,

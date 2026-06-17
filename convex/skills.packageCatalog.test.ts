@@ -337,7 +337,7 @@ describe("skills package catalog queries", () => {
         ],
         {
           firstByIndex: {
-            by_active_recommended_score_version: { _id: "skillSearchDigest:stale" },
+            by_active_recommended_score_version: { _id: "skillSearchDigest:backfill-needed" },
           },
           indexNames,
         },
