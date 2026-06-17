@@ -22,9 +22,9 @@
 - Capability tags are not taxonomy inputs.
 - Existing items without valid stored categories remain in `other` until an author or operator
   explicitly accepts generated or manually selected categories.
-- Backend deploys run the tracked package and skill catalog digest migrations before contract
-  verification so retired category rows are replaced with `other`, and the indexed curated-skill
-  projection is complete before browse traffic relies on it.
+- Operators run the tracked package and skill catalog digest migrations after backend deployment
+  and verify completion before considering the taxonomy rollout complete. The deploy workflow does
+  not invoke them automatically.
 
 ## Topics
 
@@ -56,5 +56,5 @@
 
 Corpus classification and resumable LLM suggestion tooling are separate follow-up work. Suggestions
 must require an explicit author or operator acceptance step before they are persisted. The
-deploy-time digest rebuild in this PR only reprojects current stored package data into the controlled
-taxonomy; it does not classify the corpus.
+operator-run digest rebuild in this PR only reprojects current stored package data into the
+controlled taxonomy; it does not classify the corpus.
