@@ -22,7 +22,6 @@ const notificationArtifactValidator = v.object({
 
 type SendEmailArgs = {
   idempotencyKey: string;
-  template: string;
   to: string;
   subject: string;
   text: string;
@@ -103,7 +102,6 @@ export const sendBanNotificationInternal = internalAction({
     });
     return await sendTransactionalEmail({
       idempotencyKey: `ban:${args.userId}:${args.bannedAt}`,
-      template: email.template,
       to: args.to,
       subject: email.subject,
       text: email.text,
@@ -132,7 +130,6 @@ export const sendRestoredAccountNotificationInternal = internalAction({
     });
     return await sendTransactionalEmail({
       idempotencyKey: `account-restored:${args.userId}:${args.restoredAt}`,
-      template: email.template,
       to: args.to,
       subject: email.subject,
       text: email.text,
@@ -162,7 +159,6 @@ export const sendMaliciousArtifactNotificationInternal = internalAction({
     });
     return await sendTransactionalEmail({
       idempotencyKey: `malicious-artifact:${args.userId}:${args.findingAt}:${args.artifact.kind}:${args.artifact.name}:${args.version ?? ""}`,
-      template: email.template,
       to: args.to,
       subject: email.subject,
       text: email.text,

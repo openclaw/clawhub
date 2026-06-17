@@ -4,10 +4,6 @@ export const MALICIOUS_REJECTION_ACCOUNT_WARNING =
   "Repeated malicious rejections may lead to account disablement.";
 const MAX_EMAIL_FINDING_SUMMARY_LENGTH = 280;
 export const ADMIN_ONE_OFF_TEMPLATE = "generic-one-off";
-export const ACCOUNT_SUSPENDED_TEMPLATE = "account-suspended";
-export const ACCOUNT_REINSTATED_TEMPLATE = "account-reinstated";
-export const BLOCKED_VERSION_TEMPLATE = "blocked-version";
-export const PACKAGE_INSPECTOR_FINDINGS_TEMPLATE = "plugin-inspector-findings";
 
 const PUBLISHER_ABUSE_FINDING_SUMMARY =
   "Your account was identified by ClawHub's publisher abuse review workflow for activity that appears inconsistent with our Acceptable Usage policy.";
@@ -44,7 +40,6 @@ export type BanNotificationEmailContext = {
 };
 
 export type TransactionalEmail = {
-  template: string;
   subject: string;
   context: BanNotificationEmailContext;
   text: string;
@@ -108,12 +103,6 @@ type BanReasonSummary = {
 
 function normalizeReasonInput(args: Pick<BanNotificationEmailArgs, "reason" | "trigger">) {
   return `${args.reason ?? ""} ${args.trigger ?? ""}`.trim().toLowerCase();
-}
-
-export function selectBanNotificationEmailTemplate(
-  _args: Pick<BanNotificationEmailArgs, "source" | "reason" | "trigger">,
-) {
-  return ACCOUNT_SUSPENDED_TEMPLATE;
 }
 
 function summarizeBanReason(args: BanNotificationEmailArgs): BanReasonSummary {
@@ -335,7 +324,6 @@ export async function buildBanNotificationEmail(
   });
 
   return {
-    template: selectBanNotificationEmailTemplate(args),
     subject: "Your ClawHub account has been suspended",
     context,
     text: lines.join("\n"),
@@ -371,7 +359,6 @@ export async function buildRestoredAccountEmail(args: RestoredAccountEmailArgs) 
   });
 
   return {
-    template: ACCOUNT_REINSTATED_TEMPLATE,
     subject: "Your ClawHub account has been reinstated",
     text: lines.join("\n"),
     html,
@@ -427,7 +414,6 @@ export async function buildMaliciousArtifactEmail(args: MaliciousArtifactEmailAr
   });
 
   return {
-    template: BLOCKED_VERSION_TEMPLATE,
     subject,
     text: lines.join("\n"),
     html: rendered.html,
@@ -487,7 +473,6 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
   });
 
   return {
-    template: PACKAGE_INSPECTOR_FINDINGS_TEMPLATE,
     subject,
     text: lines.join("\n"),
     html: rendered.html,
@@ -505,7 +490,6 @@ export async function buildAdminOneOffEmail(args: AdminOneOffEmailArgs) {
   const html = await renderGenericOneOffTemplate(args);
 
   return {
-    template: ADMIN_ONE_OFF_TEMPLATE,
     subject: args.subject.trim(),
     text: lines.join("\n"),
     html,
