@@ -62,6 +62,11 @@ export function derivePluginCategoryTags(input) {
     });
 }
 export function resolveStoredPluginCategories(input) {
-    return derivePluginCategoryTags(input);
+    try {
+        return derivePluginCategoryTags(input);
+    }
+    catch {
+        return derivePluginCategoryTags({ ...input, categories: undefined });
+    }
 }
 //# sourceMappingURL=pluginCategories.js.map

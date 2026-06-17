@@ -38,6 +38,31 @@ describe("packageSearchDigest", () => {
     expect(digest.recommendedScore).toBe(7);
   });
 
+  it("tolerates retired stored categories during plugin digest rebuilds", () => {
+    const digest = extractPackageDigestFields({
+      _id: "packages:legacy",
+      family: "code-plugin",
+      name: "@openclaw/legacy",
+      normalizedName: "@openclaw/legacy",
+      displayName: "Legacy",
+      categories: ["retired-category"],
+      channel: "community",
+      isOfficial: false,
+      ownerUserId: "users:owner",
+      capabilityTags: [],
+      compatibility: {},
+      capabilities: {},
+      verification: {},
+      scanStatus: "clean",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      tags: {},
+      createdAt: 1,
+      updatedAt: 2,
+    } as never);
+
+    expect(digest.pluginCategoryTags).toEqual(["other"]);
+  });
+
   it("decrements the public plugin count when deleting a public plugin digest", async () => {
     const patch = vi.fn();
     const deleteDoc = vi.fn();

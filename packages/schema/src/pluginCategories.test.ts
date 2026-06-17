@@ -3,6 +3,7 @@ import {
   derivePluginCategoryTags,
   inferPluginCategoriesFromManifest,
   isPluginCategorySlug,
+  resolveStoredPluginCategories,
 } from "./pluginCategories";
 
 describe("plugin categories", () => {
@@ -93,6 +94,16 @@ describe("plugin categories", () => {
 
   it("does not classify skills as plugin categories", () => {
     expect(derivePluginCategoryTags({ family: "skill", categories: ["other"] })).toEqual([]);
+  });
+
+  it("maps retired stored categories through controlled fallback inference", () => {
+    expect(
+      resolveStoredPluginCategories({
+        family: "code-plugin",
+        categories: ["retired-category"],
+        pluginManifest: { contracts: { tools: ["demo"] } },
+      }),
+    ).toEqual(["tools"]);
   });
 
   it("validates public category slugs", () => {

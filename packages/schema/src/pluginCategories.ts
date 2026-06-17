@@ -87,5 +87,9 @@ export function derivePluginCategoryTags(input: {
 export function resolveStoredPluginCategories(
   input: Parameters<typeof derivePluginCategoryTags>[0],
 ): PluginCategorySlug[] {
-  return derivePluginCategoryTags(input);
+  try {
+    return derivePluginCategoryTags(input);
+  } catch {
+    return derivePluginCategoryTags({ ...input, categories: undefined });
+  }
 }
