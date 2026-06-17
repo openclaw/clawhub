@@ -24,6 +24,7 @@ import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
 import {
   CatalogMetadataFields,
+  formatCatalogTopicsInput,
   parseCatalogTopicsInput,
 } from "../../components/CatalogMetadataFields";
 import { EmptyState } from "../../components/EmptyState";
@@ -267,7 +268,7 @@ export function Upload() {
         ? current
         : nextCategories,
     );
-    const nextTopics = (existing.skill.topics ?? []).join(", ");
+    const nextTopics = formatCatalogTopicsInput(existing.skill.topics ?? []);
     setTopics((current) => (current === nextTopics ? current : nextTopics));
     // Pre-populate the icon picker from the existing skill so a New Version
     // publish keeps the previously selected icon unless the user changes it.

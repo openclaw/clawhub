@@ -6,7 +6,11 @@ import {
 } from "clawhub-schema";
 import { useEffect, useState } from "react";
 import { getUserFacingConvexError } from "../lib/convexError";
-import { CatalogMetadataFields, parseCatalogTopicsInput } from "./CatalogMetadataFields";
+import {
+  CatalogMetadataFields,
+  formatCatalogTopicsInput,
+  parseCatalogTopicsInput,
+} from "./CatalogMetadataFields";
 import { Button } from "./ui/button";
 
 type CatalogMetadataEditorProps = {
@@ -41,7 +45,7 @@ export function CatalogMetadataEditor({
 }: CatalogMetadataEditorProps) {
   const sanitizedInitialCategories = sanitizeInitialCategories(kind, initialCategories);
   const [categories, setCategories] = useState(sanitizedInitialCategories);
-  const [topics, setTopics] = useState((initialTopics ?? []).join(", "));
+  const [topics, setTopics] = useState(formatCatalogTopicsInput(initialTopics ?? []));
   const [isSaving, setIsSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const serializedInitialCategories = JSON.stringify(sanitizedInitialCategories);
@@ -50,7 +54,7 @@ export function CatalogMetadataEditor({
   useEffect(() => {
     // Convex updates can recreate equivalent arrays; reset only when their values change.
     setCategories(JSON.parse(serializedInitialCategories) as string[]);
-    setTopics((JSON.parse(serializedInitialTopics) as string[]).join(", "));
+    setTopics(formatCatalogTopicsInput(JSON.parse(serializedInitialTopics) as string[]));
   }, [serializedInitialCategories, serializedInitialTopics]);
 
   async function handleSave() {

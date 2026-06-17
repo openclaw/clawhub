@@ -3,8 +3,15 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { CatalogMetadataEditor } from "./CatalogMetadataEditor";
+import { formatCatalogTopicsInput, parseCatalogTopicsInput } from "./CatalogMetadataFields";
 
 describe("CatalogMetadataEditor", () => {
+  it("round-trips topic labels containing commas and quotes", () => {
+    const topics = ["CI, CD", 'He said "ship"', "Calendar"];
+
+    expect(parseCatalogTopicsInput(formatCatalogTopicsInput(topics))).toEqual(topics);
+  });
+
   it("saves exact category slugs and parsed author topics", async () => {
     const onSave = vi.fn(async () => {});
     render(
@@ -43,6 +50,21 @@ describe("CatalogMetadataEditor", () => {
       expect(onSave).toHaveBeenCalledWith({
         categories: undefined,
         topics: ["Calendar", "Scheduling"],
+      }),
+    );
+  });
+
+  it("preserves a single topic label containing a comma when saving categories", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<CatalogMetadataEditor kind="skill" topics={["CI, CD"]} onSave={onSave} />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Research" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        categories: ["research"],
+        topics: ["CI, CD"],
       }),
     );
   });
