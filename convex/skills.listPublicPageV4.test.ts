@@ -74,33 +74,12 @@ describe("skills.listPublicPageV4", () => {
       __test.resolveRecommendedPublicListQuery({
         scoreIndexName: "by_active_recommended_score",
         rankIndexName: "by_active_recommended_rank",
-        updatedIndexName: "by_active_updated",
         scoreCursor: null,
         rankCursor: null,
-        updatedCursor: null,
-        hasMissingScores: false,
       }),
     ).toEqual({
       sort: "recommended",
       indexName: "by_active_recommended_score",
-      decodedCursor: null,
-    });
-  });
-
-  it("falls back to updated results while recommendation scores are missing", () => {
-    expect(
-      __test.resolveRecommendedPublicListQuery({
-        scoreIndexName: "by_active_recommended_score",
-        rankIndexName: "by_active_recommended_rank",
-        updatedIndexName: "by_active_updated",
-        scoreCursor: null,
-        rankCursor: null,
-        updatedCursor: null,
-        hasMissingScores: true,
-      }),
-    ).toEqual({
-      sort: "updated",
-      indexName: "by_active_updated",
       decodedCursor: null,
     });
   });

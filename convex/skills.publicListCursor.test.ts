@@ -141,71 +141,36 @@ function cursorForIndex(index: string, key: unknown[]): string {
   return JSON.stringify({ v: 1, index, key });
 }
 
-class TestEqBuilder {
-  eq(_field: string, _value: unknown) {
-    return this;
-  }
-}
-
-function makeMissingRecommendedScoresCtx() {
-  const first = vi.fn(async () => makeSearchDigest({ statsStars: undefined }));
-  const withIndex = vi.fn((_indexName: string, build: (q: TestEqBuilder) => unknown) => {
-    build(new TestEqBuilder());
-    return { first };
-  });
-  const query = vi.fn((table: string) => {
-    if (table !== "skillSearchDigest") throw new Error(`unexpected table ${table}`);
-    return { withIndex };
-  });
-
-  return {
-    ctx: { db: { query } },
-    first,
-    query,
-    withIndex,
-  };
-}
-
 describe("public skill list deterministic cursors", () => {
   beforeEach(() => {
     getPageMock.mockReset();
     getPageMock.mockResolvedValue({ page: [], hasMore: false, indexKeys: [] });
   });
 
-  it("falls back to the updated index while recommendation scores are missing", async () => {
-    const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
-
-    await listPublicPageV4Handler(ctx, {
+  it("uses the recommended score index for default recommended results", async () => {
+    await listPublicPageV4Handler({} as never, {
       numItems: 10,
     });
 
-    expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
-      "by_active_recommended_score",
-    ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
-      index: "by_active_updated",
+      index: "by_active_recommended_score",
       startIndexKey: [undefined],
       endIndexKey: [undefined],
       startInclusive: true,
     });
   });
 
-  it("falls back to the non-suspicious updated index while recommendation scores are missing", async () => {
-    const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
-
-    await listPublicApiPageV1Handler(ctx, {
+  it("uses the non-suspicious recommended score index for recommended API results", async () => {
+    await listPublicApiPageV1Handler({} as never, {
       numItems: 10,
       sort: "recommended",
       nonSuspiciousOnly: true,
     });
 
-    expect(withIndex.mock.calls.map(([indexName]) => indexName)).toEqual([
-      "by_nonsuspicious_recommended_score",
-    ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
-      index: "by_nonsuspicious_updated",
+      index: "by_nonsuspicious_recommended_score",
       startIndexKey: [undefined, false],
       endIndexKey: [undefined, false],
       startInclusive: true,

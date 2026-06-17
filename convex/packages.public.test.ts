@@ -2477,7 +2477,7 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
   });
 
-  it("uses a family-scoped weighted recommended score index after backfill", async () => {
+  it("uses a family-scoped weighted recommended score index", async () => {
     const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
       packagePages: [
         {
@@ -2526,36 +2526,8 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-downloaded"]);
     expect(result.isDone).toBe(false);
     expect(result.continueCursor.startsWith("pkgpage:")).toBe(true);
-    expect(indexNames).toEqual([
-      "by_active_family_recommended_score",
-      "by_active_family_recommended_score_version",
-      "by_active_family_recommended_score_version",
-      "by_active_family_recommended_score",
-    ]);
+    expect(indexNames).toEqual(["by_active_family_recommended_score"]);
     expect(indexFilters).toEqual([
-      {
-        indexName: "by_active_family_recommended_score",
-        filters: [
-          { field: "softDeletedAt", value: undefined },
-          { field: "family", value: "code-plugin" },
-          { field: "recommendedScore", value: undefined },
-        ],
-      },
-      {
-        indexName: "by_active_family_recommended_score_version",
-        filters: [
-          { field: "softDeletedAt", value: undefined },
-          { field: "family", value: "code-plugin" },
-          { field: "recommendedScoreVersion", value: undefined },
-        ],
-      },
-      {
-        indexName: "by_active_family_recommended_score_version",
-        filters: [
-          { field: "softDeletedAt", value: undefined },
-          { field: "family", value: "code-plugin" },
-        ],
-      },
       {
         indexName: "by_active_family_recommended_score",
         filters: [
@@ -2566,127 +2538,6 @@ describe("packages public queries", () => {
     ]);
     expect(paginate).toHaveBeenCalledTimes(1);
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
-  });
-
-  it("falls back to updated family digests while recommendation scores are missing", async () => {
-    const { ctx, indexFilters, indexNames } = makeDigestCtx({
-      pages: [
-        {
-          page: [
-            makeDigest("code-plugin-downloaded", {
-              packageId: "packages:code-plugin-downloaded",
-              displayName: "Code Plugin Downloaded",
-              family: "code-plugin",
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-      packagePages: [
-        {
-          page: [
-            makePackageDoc({
-              _id: "packages:code-plugin-downloaded",
-              name: "code-plugin-downloaded",
-              normalizedName: "code-plugin-downloaded",
-              displayName: "Code Plugin Downloaded",
-              family: "code-plugin",
-              stats: { downloads: 43_080, installs: 2, stars: 0, versions: 1 },
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-    });
-
-    await listPublicPageHandler(ctx, {
-      family: "code-plugin",
-      sort: "recommended",
-      paginationOpts: { cursor: null, numItems: 1 },
-    });
-
-    expect(indexNames).toEqual(["by_active_family_recommended_score", "by_active_family_updated"]);
-    expect(indexFilters).toEqual([
-      {
-        indexName: "by_active_family_recommended_score",
-        filters: [
-          { field: "softDeletedAt", value: undefined },
-          { field: "family", value: "code-plugin" },
-          { field: "recommendedScore", value: undefined },
-        ],
-      },
-    ]);
-  });
-
-  it("falls back to updated family digests while recommendation score versions are missing", async () => {
-    const { ctx, indexFilters, indexNames } = makeDigestCtx({
-      pages: [
-        {
-          page: [
-            makeDigest("code-plugin-updated", {
-              packageId: "packages:code-plugin-updated",
-              displayName: "Code Plugin Updated",
-              family: "code-plugin",
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-      packagePages: [
-        {
-          page: [
-            makePackageDoc({
-              _id: "packages:code-plugin-stale-score",
-              name: "code-plugin-stale-score",
-              normalizedName: "code-plugin-stale-score",
-              displayName: "Code Plugin Stale Score",
-              family: "code-plugin",
-              stats: { downloads: 43_080, installs: 2, stars: 0, versions: 1 },
-              recommendedScore: computeRecommendationScore({
-                downloads: 43_080,
-                installs: 2,
-                stars: 0,
-              }),
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-    });
-
-    await listPublicPageHandler(ctx, {
-      family: "code-plugin",
-      sort: "recommended",
-      paginationOpts: { cursor: null, numItems: 1 },
-    });
-
-    expect(indexNames).toEqual([
-      "by_active_family_recommended_score",
-      "by_active_family_recommended_score_version",
-      "by_active_family_updated",
-    ]);
-    expect(indexFilters).toEqual([
-      {
-        indexName: "by_active_family_recommended_score",
-        filters: [
-          { field: "softDeletedAt", value: undefined },
-          { field: "family", value: "code-plugin" },
-          { field: "recommendedScore", value: undefined },
-        ],
-      },
-      {
-        indexName: "by_active_family_recommended_score_version",
-        filters: [
-          { field: "softDeletedAt", value: undefined },
-          { field: "family", value: "code-plugin" },
-          { field: "recommendedScoreVersion", value: undefined },
-        ],
-      },
-    ]);
   });
 
   it("keeps legacy recommended package cursors on the recommended score index", async () => {
@@ -2737,73 +2588,6 @@ describe("packages public queries", () => {
         ],
       },
     ]);
-  });
-
-  it("keeps recommended digest fallback cursors on the digest path after backfill", async () => {
-    const fallbackCursor = `pkgpage:${JSON.stringify({
-      cursor: "digest-next",
-      offset: 0,
-      pageSize: 50,
-      done: false,
-      mode: "digest",
-    })}`;
-    const { ctx, indexFilters, indexNames } = makeDigestCtx({
-      pages: [
-        {
-          page: [
-            makeDigest("code-plugin-first", {
-              packageId: "packages:code-plugin-first",
-              displayName: "Code Plugin First",
-              family: "code-plugin",
-            }),
-          ],
-          isDone: false,
-          continueCursor: "digest-next",
-        },
-        {
-          page: [
-            makeDigest("code-plugin-second", {
-              packageId: "packages:code-plugin-second",
-              displayName: "Code Plugin Second",
-              family: "code-plugin",
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-      packagePages: [
-        {
-          page: [
-            makePackageDoc({
-              _id: "packages:code-plugin-second",
-              name: "code-plugin-second",
-              normalizedName: "code-plugin-second",
-              displayName: "Code Plugin Second",
-              family: "code-plugin",
-              stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
-              recommendedScore: computeRecommendationScore({
-                downloads: 1,
-                installs: 1,
-                stars: 0,
-              }),
-            }),
-          ],
-          isDone: true,
-          continueCursor: "",
-        },
-      ],
-    });
-
-    const result = await listPublicPageHandler(ctx, {
-      family: "code-plugin",
-      sort: "recommended",
-      paginationOpts: { cursor: fallbackCursor, numItems: 1 },
-    });
-
-    expect(result.page.map((entry) => entry.name)).toEqual(["code-plugin-second"]);
-    expect(indexNames).toEqual(["by_active_family_updated"]);
-    expect(indexFilters).toEqual([]);
   });
 
   it("uses global download-sorted pages without retired capability filters", async () => {

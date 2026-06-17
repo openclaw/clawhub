@@ -102,7 +102,6 @@ const internalRefs = internal as unknown as {
   packages: {
     countPublicPluginsInternal: unknown;
     getByNameForViewerInternal: unknown;
-    hasMissingRecommendationScoresInternal: unknown;
     listPluginExportPageInternal: unknown;
     listPageForViewerInternal: unknown;
     searchForViewerInternal: unknown;
@@ -150,7 +149,6 @@ const internalRefs = internal as unknown as {
   };
   skills: {
     getSkillBySlugInternal: unknown;
-    hasMissingPackageCatalogRecommendationScoresInternal: unknown;
     searchPackageCatalogForHttpInternal: unknown;
     getVersionByIdInternal: unknown;
     getVersionBySkillAndVersionInternal: unknown;
@@ -791,13 +789,11 @@ type CatalogSourceCursorState = {
 type UnifiedCatalogCursorState = {
   packages: CatalogSourceCursorState;
   skills: CatalogSourceCursorState;
-  recommendedFallback?: "updated";
 };
 
 type PluginCatalogCursorState = {
   codePlugins: CatalogSourceCursorState;
   bundlePlugins: CatalogSourceCursorState;
-  recommendedFallback?: "updated";
 };
 
 type CatalogPageResult<T> = {
@@ -863,7 +859,6 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
     return {
       packages: normalize(parsed.packages),
       skills: normalize(parsed.skills),
-      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
     };
   } catch {
     return {
@@ -904,7 +899,6 @@ function decodeMultiPluginCursor(
     return {
       codePlugins: normalize(parsed.codePlugins),
       bundlePlugins: normalize(parsed.bundlePlugins),
-      recommendedFallback: parsed.recommendedFallback === "updated" ? "updated" : undefined,
     };
   } catch {
     return {
@@ -1471,26 +1465,7 @@ async function listPackages(
     const decodedCursor = decodeUnifiedCatalogCursor(cursor);
     const packageSource = initCatalogSource<CatalogListItem>(decodedCursor.packages);
     const skillSource = initCatalogSource<CatalogListItem>(decodedCursor.skills);
-    const isFreshRecommendedRequest = effectiveSort === "recommended" && !cursor;
-    const hasMissingRecommendationScores = isFreshRecommendedRequest
-      ? await Promise.all([
-          runQueryRef<boolean>(
-            ctx,
-            internalRefs.packages.hasMissingRecommendationScoresInternal,
-            {},
-          ),
-          runQueryRef<boolean>(
-            ctx,
-            internalRefs.skills.hasMissingPackageCatalogRecommendationScoresInternal,
-            {},
-          ),
-        ]).then((results) => results.some(Boolean))
-      : false;
-    const useUpdatedRecommendationFallback =
-      effectiveSort === "recommended" &&
-      (decodedCursor.recommendedFallback === "updated" ||
-        (isFreshRecommendedRequest && hasMissingRecommendationScores));
-    const unifiedListSort = useUpdatedRecommendationFallback ? "updated" : effectiveSort;
+    const unifiedListSort = effectiveSort;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
 
@@ -1553,7 +1528,6 @@ async function listPackages(
     const nextState = {
       packages: finalizeCatalogSource(packageSource),
       skills: finalizeCatalogSource(skillSource),
-      recommendedFallback: useUpdatedRecommendationFallback ? ("updated" as const) : undefined,
     };
     const isDoneAll =
       nextState.packages.done &&
@@ -1583,21 +1557,7 @@ async function listPackages(
     const decodedCursor = decodePluginCatalogCursor(cursor);
     const codePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.codePlugins);
     const bundlePluginSource = initCatalogSource<CatalogListItem>(decodedCursor.bundlePlugins);
-    const isFreshRecommendedRequest = effectiveSort === "recommended" && !cursor;
-    const hasMissingRecommendationScores = isFreshRecommendedRequest
-      ? await runQueryRef<boolean>(
-          ctx,
-          internalRefs.packages.hasMissingRecommendationScoresInternal,
-          {
-            families: options.pluginFamilies,
-          },
-        )
-      : false;
-    const useUpdatedRecommendationFallback =
-      effectiveSort === "recommended" &&
-      (decodedCursor.recommendedFallback === "updated" ||
-        (isFreshRecommendedRequest && hasMissingRecommendationScores));
-    const pluginListSort = useUpdatedRecommendationFallback ? "updated" : effectiveSort;
+    const pluginListSort = effectiveSort;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1658,7 +1618,6 @@ async function listPackages(
     const nextState = {
       codePlugins: finalizeCatalogSource(codePluginSource),
       bundlePlugins: finalizeCatalogSource(bundlePluginSource),
-      recommendedFallback: useUpdatedRecommendationFallback ? ("updated" as const) : undefined,
     };
     const isDoneAll =
       nextState.codePlugins.done &&
