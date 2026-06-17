@@ -486,6 +486,38 @@ Compatibility should have clear limits:
 - return canonical scoped locator in responses
 - do not allow old format to remain canonical in docs or new UI
 
+## Active Publisher UI Context
+
+Signed-in users can select one active publisher globally in the app shell.
+
+This active publisher is a convenience default for owned surfaces, not an auth
+boundary and not a marketplace filter.
+
+Rules:
+
+- The active publisher represents "who I am publishing or managing as" for UI
+  defaults.
+- Backend mutations and queries remain the authority for membership, role, and
+  ownership checks.
+- Public browse, search, home, detail, install, and star flows stay global or
+  personal; they must not silently scope themselves to the active publisher.
+- Personal actions such as stars, API tokens, account profile, sign out, and
+  account deletion stay tied to the signed-in user.
+- Dashboard and new publish flows may default to the active publisher.
+- A URL-level `ownerHandle` is an explicit page override. It may prefill the
+  current screen, but it must not persist a new global active publisher unless
+  the user changes the global selector directly.
+- Existing resources keep their current owner as the default for updates and new
+  versions. Active publisher selection must not trigger owner migration.
+- Owner migration remains an explicit confirmed flow that sends
+  `migrateOwner: true`; normal active-publisher defaults must not set it.
+- Role handling must distinguish publish access from management access. A
+  `publisher` member can publish for that publisher but must not see org member
+  management, destructive publisher actions, or other admin-only controls.
+- If a persisted active publisher is no longer available in `publishers.listMine`,
+  the UI must fall back to the personal publisher when possible, then the first
+  available publisher.
+
 ## UI Surfaces
 
 Need updates in:
