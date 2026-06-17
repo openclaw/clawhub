@@ -4,8 +4,8 @@ import {
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
-  normalizeSkillCategories,
   normalizeTextContentType,
+  resolveSkillCategories,
   resolveStoredSkillCategories,
   type SkillCategorySlug,
 } from "clawhub-schema";
@@ -9971,9 +9971,10 @@ export const setCatalogMetadata = mutation({
     let categories: string[] | undefined;
     let topics: string[];
     try {
-      const normalizedCategories =
-        args.categories === undefined ? undefined : normalizeSkillCategories(args.categories);
-      categories = normalizedCategories?.length ? normalizedCategories : undefined;
+      categories =
+        args.categories === undefined
+          ? undefined
+          : resolveSkillCategories({ declared: args.categories });
       topics = normalizeCatalogTopics(args.topics);
     } catch (error) {
       throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");

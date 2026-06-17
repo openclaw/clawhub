@@ -230,6 +230,47 @@ describe("catalog metadata settings", () => {
     );
   });
 
+  it("persists Other when skill categories are explicitly cleared", async () => {
+    const skill = {
+      _id: "skills:demo",
+      slug: "demo",
+      displayName: "Demo",
+      categories: ["development"],
+      ownerUserId: user._id,
+      tags: {},
+      stats: {
+        downloads: 0,
+        stars: 0,
+        installsCurrent: 0,
+        installsAllTime: 0,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const { ctx, patch } = makeCtx(skill._id, skill);
+
+    await setSkillCatalogMetadataHandler(ctx, {
+      skillId: skill._id,
+      categories: [],
+      topics: [],
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      skill._id,
+      expect.objectContaining({
+        categories: ["other"],
+      }),
+    );
+    expect(upsertSkillSearchDigestMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        categories: ["other"],
+      }),
+    );
+  });
+
   it("clears stored plugin categories when automatic categorization is selected", async () => {
     const release = {
       _id: "packageReleases:demo",
@@ -269,6 +310,45 @@ describe("catalog metadata settings", () => {
       expect.anything(),
       expect.objectContaining({
         categories: undefined,
+        pluginCategoryTags: ["other"],
+      }),
+    );
+  });
+
+  it("persists Other when plugin categories are explicitly cleared", async () => {
+    const pkg = {
+      _id: "packages:legacy-bundle",
+      name: "legacy-bundle",
+      normalizedName: "legacy-bundle",
+      displayName: "Legacy Bundle",
+      family: "bundle-plugin",
+      channel: "community",
+      isOfficial: false,
+      categories: ["tools"],
+      ownerUserId: user._id,
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      scanStatus: "clean",
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const { ctx, patch } = makeCtx(pkg._id, pkg);
+
+    await setPackageCatalogMetadataHandler(ctx, {
+      packageId: pkg._id,
+      categories: [],
+      topics: [],
+    });
+
+    expect(patch).toHaveBeenCalledWith(
+      pkg._id,
+      expect.objectContaining({
+        categories: ["other"],
+      }),
+    );
+    expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        categories: ["other"],
         pluginCategoryTags: ["other"],
       }),
     );

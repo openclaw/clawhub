@@ -3176,14 +3176,10 @@ async function listPackagePageImpl(
         ? getPackageRecommendedScoreIndexName(family)
         : await getPackageRecommendedIndexName(ctx, family)
       : null;
-  const legacyDigestSort = hasCatalogMetadataFilter
-    ? args.sort
-    : args.sort === "recommended"
-      ? "updated"
-      : args.sort;
+  // Digest cursors created before sort persistence always came from updated indexes.
   const effectiveDigestSort =
     decodedCursor.mode === "digest"
-      ? (decodedCursor.sort ?? legacyDigestSort)
+      ? (decodedCursor.sort ?? "updated")
       : args.sort === "recommended"
         ? recommendedIndexName
           ? "recommended"
@@ -7430,7 +7426,9 @@ export const setPackageCatalogMetadata = mutation({
     let normalizedTopics: string[];
     try {
       normalizedCategories =
-        args.categories === undefined ? undefined : normalizePluginCategories(args.categories);
+        args.categories === undefined
+          ? undefined
+          : resolvePluginCategories({ declared: args.categories });
       normalizedTopics = normalizeCatalogTopics(args.topics);
     } catch (error) {
       throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");

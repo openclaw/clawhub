@@ -3520,6 +3520,38 @@ describe("packages public queries", () => {
     expect(indexNames).toEqual(["by_active_category_installs"]);
   });
 
+  it("resumes legacy category digest cursors on the updated index", async () => {
+    const legacyCursor = `pkgpage:${JSON.stringify({
+      cursor: "category:next",
+      offset: 0,
+      pageSize: 50,
+      done: false,
+      mode: "digest",
+    })}`;
+    const { ctx, indexNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPublicPageHandler(ctx, {
+      category: "tools",
+      sort: "installs",
+      paginationOpts: { cursor: legacyCursor, numItems: 10 },
+    });
+
+    expect(indexNames).toEqual(["by_active_category_updated"]);
+  });
+
   it("preserves family filters on sorted category digest pages", async () => {
     const { ctx } = makeDigestCtx({
       categoryPages: [
