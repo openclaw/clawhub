@@ -12,7 +12,7 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Roles + permissions
 
-- user: upload skills (subject to GitHub age gate), report skills/comments/packages.
+- user: upload skills (subject to GitHub age gate), report skills/packages.
 - moderator: hide/restore skills, view hidden skills, unhide, soft-delete, ban users (except admins).
 - admin: all moderator actions + hard delete skills, change owners, change roles.
 
@@ -45,7 +45,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Publisher abuse scoring is a staff review signal for bulk-publishing abuse.
   It must not directly ban users; staff action goes through the publisher abuse
   nomination review path.
-- Official org publishers are excluded from publisher abuse scoring and
+- Catalog volume pressure is linear up to the 100-skill pivot and superlinear
+  above it. Doubling an already-bulk catalog should raise review pressure
+  meaningfully more than 2x while still allowing legitimate high-engagement
+  publishers to stay below review thresholds.
+- Official publishers are excluded from publisher abuse scoring and
   enforcement. An excluded publisher must not contribute to score-run cohort
   statistics, receive a score label/rank, open or update a nomination, appear in
   the dashboard/detail state, or be actionable through a stale nomination id.
@@ -55,13 +59,11 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Reporting + auto-hide
 
-- Reports are unique per user + target (skill/comment/package).
+- Reports are unique per user + target (skill/package).
 - Report reason required (trimmed, max 500 chars). Abuse of reporting may result in account bans.
 - Per-user cap: 20 **active** reports.
   - Active skill report = skill exists, not soft-deleted, not `moderationStatus = removed`,
     and the owner is not banned.
-  - Active comment report = comment exists, not soft-deleted, parent skill still active,
-    and the comment author is not banned/deactivated.
   - Active package report = package exists, not soft-deleted, and the owner is
     not banned/deactivated.
 - Auto-hide: when unique reports exceed 3 (4th report):
@@ -71,10 +73,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
     - set `moderationReason = auto.reports`
     - set embeddings visibility `deleted`
     - audit log entry: `skill.auto_hide`
-  - comment report flow:
-    - soft-delete comment (`softDeletedAt`)
-    - decrement comment stat via `uncomment` stat event
-    - audit log entry: `comment.auto_hide`
 - Package reports feed `clawhub-admin package moderation-queue` and audit `package.report`,
   but do not auto-hide or block downloads. Moderators can review a formal report
   with an explicit final action to quarantine or revoke the affected release.
@@ -206,6 +204,8 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   hosted LLM call. Publishes enqueue a scan job that waits at most 10 minutes
   for VirusTotal telemetry, then Codex reviews the materialized artifact
   workspace with static and VT signals as context.
+- Current skill and plugin scans are queued through `securityScanJobs` and
+  completed by the external Codex worker.
 - ClawScan worker concurrency is an operator-controlled compute concern. The
   backend claim path must cap only a single worker claim size and must not impose
   a global active-scan ceiling; horizontal capacity is controlled by worker
@@ -241,8 +241,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 - Plugins under `@openclaw/*` owned by the OpenClaw publisher are trusted by
   default. They may still be audited, but scanner telemetry alone must not
   downgrade them.
-- Operators can schedule targeted ClawScan rescans for suspicious skills by bucket
-  (`all`, `llm-only`, `vt-only`, `both`) and for suspicious plugin releases.
+- Operators can schedule ClawScan rescans through `securityScanJobs`: single
+  skill/package rescans for a chosen artifact, or paged all-active-latest skill
+  rescan batches. The old suspicious LLM bucket tools (`all`, `llm-only`,
+  `vt-only`, `both`) are retired.
 - Package/plugin scan backfills may recompute deterministic static scan results for older releases,
   but those results remain ClawScan context and are not public trust status.
 - ClawPack package releases keep static/LLM scan inputs intentionally metadata-only for now:
@@ -275,21 +277,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
   obfuscated shell payload prompts, but those findings are context for ClawScan,
   not a standalone hard block or uploader moderation trigger.
 
-## AI comment scam backfill
-
-- Moderators/admins can run a comment backfill scanner to classify scam comments with OpenAI.
-- Scanner stores per-comment moderation metadata:
-  - `scamScanVerdict`: `not_scam | likely_scam | certain_scam`
-  - `scamScanConfidence`: `low | medium | high`
-  - explanation/evidence/model/check timestamp fields on `comments`.
-- Auto-ban trigger is intentionally strict:
-  - only `certain_scam` with `high` confidence can trigger account ban.
-  - moderator/admin accounts are never auto-banned by this pipeline.
-- Ban reason is bounded to 500 chars and includes concise evidence + comment/skill IDs.
-- CLI run examples:
-  - one-shot: `npx convex run commentModeration:backfillCommentScamModeration '{"batchSize":25,"maxBatches":20}'`
-  - background chain: `npx convex run commentModeration:scheduleCommentScamModeration '{"batchSize":25}'`
-
 ## Bans
 
 - Banning a user:
@@ -302,7 +289,6 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
       current ban so the next matching unban can restore them
   - retimestamps already ban-hidden owned skills to the current ban marker so
     a later matching unban can restore them
-  - soft-deletes all authored skill comments
   - revokes API tokens
   - sets `deletedAt` on the user
 - Admins can manually unban (`deletedAt` + `banReason` cleared); revoked API tokens
@@ -352,11 +338,10 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 ## Upload gate (GitHub account age)
 
 - Skill publish actions require GitHub account age ≥ 14 days.
-- Skill comment creation also requires GitHub account age ≥ 14 days.
 - Lookup uses GitHub `created_at` fetched by the immutable GitHub numeric ID (`providerAccountId`)
   and caches on the user:
   - `githubCreatedAt` (source of truth)
-- Gate applies to web uploads, CLI publish, GitHub import, and comments.
+- Gate applies to web uploads, CLI publish, and GitHub import.
 - If GitHub responds `403` or `429`, publish fails with:
   - `GitHub API rate limit exceeded — please try again in a few minutes`
 - To reduce rate-limit failures, configure the ClawHub GitHub App in Convex env:

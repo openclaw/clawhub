@@ -128,10 +128,8 @@ export type ArtifactExportInput = {
   createdAt: number;
   softDeletedAt: number | null;
   files: ExportFileInput[];
-  capabilityTags: string[];
   packageFamily: string | null;
   packageChannel: string | null;
-  packageExecutesCode: boolean | null;
   sourceRepoHost: string | null;
   vtAnalysis: VtAnalysisInput | null;
   skillSpectorAnalysis: SkillSpectorAnalysisInput | null;
@@ -166,10 +164,8 @@ export type ArtifactRow = {
   file_count: number;
   total_bytes: number;
   file_ext_counts: Record<string, number>;
-  capability_tags: string[];
   package_family: string | null;
   package_channel: string | null;
-  package_executes_code: boolean | null;
   source_repo_host: string | null;
   has_vt_scan: boolean;
   has_skillspector_scan: boolean;
@@ -369,10 +365,8 @@ function buildArtifactRow(input: ArtifactExportInput, artifactId: string): Artif
     file_count: input.files.length,
     total_bytes: input.files.reduce((sum, file) => sum + file.size, 0),
     file_ext_counts: countFileExtensions(input.files),
-    capability_tags: [...input.capabilityTags].sort((a, b) => a.localeCompare(b)),
     package_family: input.packageFamily,
     package_channel: input.packageChannel,
-    package_executes_code: input.packageExecutesCode,
     source_repo_host: input.sourceRepoHost,
     has_vt_scan: input.vtAnalysis !== null,
     has_skillspector_scan: input.skillSpectorAnalysis !== null,

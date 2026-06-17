@@ -41,18 +41,6 @@ type LlmRiskSummaryBucket = {
 
 type LlmRiskSummary = Record<ClawScanRiskBucket, LlmRiskSummaryBucket>;
 
-const SKILL_CAPABILITY_LABELS: Record<string, string> = {
-  crypto: "Crypto",
-  "financial-authority": "Financial authority",
-  "requires-wallet": "Requires wallet",
-  "can-make-purchases": "Can make purchases",
-  "can-sign-transactions": "Can sign transactions",
-  "requires-paid-service": "Requires paid service",
-  "requires-oauth-token": "Requires OAuth token",
-  "requires-sensitive-credentials": "Requires sensitive credentials",
-  "posts-externally": "Posts externally",
-};
-
 export type VtAnalysis = {
   status: string;
   verdict?: string;
@@ -132,7 +120,6 @@ type SecurityScanResultsProps = {
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   staticFindings?: StaticFinding[];
-  capabilityTags?: string[] | null;
   variant?: "panel" | "badge";
 };
 
@@ -672,11 +659,9 @@ export function SecurityScanResults({
   sha256hash,
   vtAnalysis,
   llmAnalysis,
-  capabilityTags,
   variant = "panel",
 }: SecurityScanResultsProps) {
-  const visibleCapabilityTags = (capabilityTags ?? []).filter(Boolean);
-  if (!sha256hash && !llmAnalysis && visibleCapabilityTags.length === 0) {
+  if (!sha256hash && !llmAnalysis) {
     return null;
   }
 
@@ -720,22 +705,6 @@ export function SecurityScanResults({
     <div className="scan-results-panel">
       <div className="scan-results-title">Security Scan</div>
       <div className="scan-results-list">
-        {visibleCapabilityTags.length > 0 ? (
-          <div className="scan-capabilities-section">
-            <div className="scan-findings-title">Capability signals</div>
-            <div className="scan-capability-tags">
-              {visibleCapabilityTags.map((tag) => (
-                <Badge key={tag} className="scan-capability-tag">
-                  {SKILL_CAPABILITY_LABELS[tag] ?? tag}
-                </Badge>
-              ))}
-            </div>
-            <div className="scan-capability-note">
-              These labels describe what authority the skill may exercise. They are separate from
-              warning or malicious moderation verdicts.
-            </div>
-          </div>
-        ) : null}
         {sha256hash ? (
           <div className="scan-result-row">
             <div className="scan-result-scanner">

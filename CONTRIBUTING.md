@@ -99,7 +99,7 @@ bun run setup:worktree -- --from /path/to/source/worktree
 CLAWHUB_WORKTREE_SOURCE=/path/to/source/worktree bun run setup:worktree
 ```
 
-`dev:worktree` is the Worktrunk entrypoint. It runs the hooks in `.config/wt.toml`, copies ignored dependencies listed in `.worktreeinclude` when possible, falls back to `bun install` if Vite is missing, and starts detached services on a branch-hashed loopback port. Use `wt --yes url` from the same worktree to print the URL.
+`dev:worktree` is the Worktrunk entrypoint. It runs the hooks in `.config/wt.toml`, copies ignored dependencies listed in `.worktreeinclude` when possible, falls back to `bun install` if Vite is missing, seeds local fixtures plus the public corpus once when `VITE_CONVEX_URL` and `CONVEX_DEPLOYMENT` are local, refreshes cached global stats, and starts detached services on a branch-hashed loopback port. Use `wt --yes url` from the same worktree to print the URL.
 
 The detached server writes runtime state under `.codex/runtime/`. Stop it with `wt --yes stop` before removing the worktree.
 
@@ -121,9 +121,9 @@ one.
 Without those workers, local ClawScan and Skill Card jobs stay pending until you
 opt in, seed/mock results, or use the production workflows.
 
-### Seed the database
+### Reseed the database
 
-Populate local QA fixtures and the committed public corpus so the UI isn't empty:
+`dev:worktree` seeds local QA fixtures and the committed public corpus before starting the app when `VITE_CONVEX_URL` points at local Convex and `CONVEX_DEPLOYMENT` is an anonymous/local deployment marker, then records `.codex/runtime/dev-worktree.seeded` so ordinary restarts skip the expensive corpus pass. Remote-backed previews or mismatched deployment markers skip seeding and keep starting. To force the seed path without restarting the preview:
 
 ```bash
 bun run seed:dev

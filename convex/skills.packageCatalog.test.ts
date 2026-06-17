@@ -110,13 +110,19 @@ function makeDigest(
 function makeCtx(
   pages: Array<{ page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }>,
   optionsOrIndexNames:
-    | { firstByIndex?: Record<string, unknown>; indexNames?: string[] }
+    | {
+        firstByIndex?: Record<string, unknown>;
+        indexNames?: string[];
+        missingRecommendedScores?: boolean;
+      }
     | string[] = {},
 ) {
   const options = Array.isArray(optionsOrIndexNames)
     ? { indexNames: optionsOrIndexNames }
     : optionsOrIndexNames;
   const indexNames = options.indexNames;
+  const missingRecommendedScores =
+    !Array.isArray(optionsOrIndexNames) && optionsOrIndexNames.missingRecommendedScores === true;
   const pageByCursor = new Map<
     string | null,
     { page: Array<Record<string, unknown>>; isDone: boolean; continueCursor: string }
@@ -159,11 +165,15 @@ function makeCtx(
           withIndex: (indexName: string) => {
             indexNames?.push(indexName);
             return {
-              first: async () => options.firstByIndex?.[indexName] ?? null,
               order: () => ({
                 paginate: async ({ cursor: pageCursor }: { cursor: string | null }) =>
                   pageByCursor.get(pageCursor) ?? { page: [], isDone: true, continueCursor: "" },
               }),
+              first: async () =>
+                options.firstByIndex?.[indexName] ??
+                (missingRecommendedScores && indexName.startsWith("by_active_recommended_")
+                  ? (allDigests[0] ?? {})
+                  : null),
               unique: async () => null,
             };
           },
@@ -353,6 +363,96 @@ describe("skills package catalog queries", () => {
     expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
   });
 
+  it("uses the recommended score index for recommended package catalog rows", async () => {
+    const indexNames: string[] = [];
+    const result = await listPackageCatalogPageHandler(
+      makeCtx(
+        [
+          {
+            page: [
+              makeDigest("recommended-skill", {
+                recommendedScore: 12,
+                recommendedScoreVersion: 1,
+              }),
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        { indexNames },
+      ),
+      {
+        sort: "recommended",
+        paginationOpts: { cursor: null, numItems: 10 },
+      },
+    );
+
+    expect(indexNames.at(-1)).toBe("by_active_recommended_score");
+    expect(result.page).toEqual([expect.objectContaining({ name: "recommended-skill" })]);
+  });
+
+  it("falls recommended package catalog rows back to updated when scores are missing", async () => {
+    const indexNames: string[] = [];
+    const result = await listPackageCatalogPageHandler(
+      makeCtx(
+        [
+          {
+            page: [makeDigest("updated-fallback-skill")],
+            isDone: false,
+            continueCursor: "updated-next",
+          },
+        ],
+        { indexNames, missingRecommendedScores: true },
+      ),
+      {
+        sort: "recommended",
+        paginationOpts: { cursor: null, numItems: 1 },
+      },
+    );
+
+    expect(indexNames).toEqual(["by_active_recommended_score", "by_active_updated"]);
+    expect(result.page).toEqual([expect.objectContaining({ name: "updated-fallback-skill" })]);
+    expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
+  });
+
+  it("keeps recommended package catalog cursors on their original index", async () => {
+    const indexNames: string[] = [];
+    const recommendedCursor = `skillcat:${JSON.stringify({
+      cursor: null,
+      offset: 1,
+      pageSize: 2,
+      done: false,
+    })}`;
+    const result = await listPackageCatalogPageHandler(
+      makeCtx(
+        [
+          {
+            page: [
+              makeDigest("already-seen-skill", {
+                recommendedScore: 20,
+                recommendedScoreVersion: 1,
+              }),
+              makeDigest("next-recommended-skill", {
+                recommendedScore: 10,
+                recommendedScoreVersion: 1,
+              }),
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        { indexNames, missingRecommendedScores: true },
+      ),
+      {
+        sort: "recommended",
+        paginationOpts: { cursor: recommendedCursor, numItems: 1 },
+      },
+    );
+
+    expect(indexNames).toEqual(["by_active_recommended_score"]);
+    expect(result.page).toEqual([expect.objectContaining({ name: "next-recommended-skill" })]);
+  });
+
   it("searches skills with package-style lexical scoring", async () => {
     const result = await searchPackageCatalogPublicHandler(
       makeCtx([
@@ -436,15 +536,14 @@ describe("skills package catalog queries", () => {
     expect(result[0]).not.toHaveProperty("matchReason");
   });
 
-  it("uses capability tags as skill package search evidence", async () => {
+  it("uses skill summary as package search evidence", async () => {
     const result = await searchPackageCatalogPublicHandler(
       makeCtx([
         {
           page: [
             makeDigest("wallet-helper", {
               displayName: "Wallet Helper",
-              summary: "Payment helper.",
-              capabilityTags: ["crypto", "requires-wallet"],
+              summary: "Crypto payment helper.",
             }),
             makeDigest("weather"),
           ],
@@ -470,7 +569,6 @@ describe("skills package catalog queries", () => {
             makeDigest("database-tools", {
               displayName: "Database Tools",
               summary: "Postgres database helper.",
-              capabilityTags: ["postgres"],
             }),
           ],
           isDone: true,
@@ -486,14 +584,11 @@ describe("skills package catalog queries", () => {
     expect(result).toEqual([]);
   });
 
-  it("filters skills by capability tag", async () => {
+  it("ignores retired capability filter args in skill package listings", async () => {
     const result = await listPackageCatalogPageHandler(
       makeCtx([
         {
-          page: [
-            makeDigest("paytoll", { capabilityTags: ["crypto", "requires-wallet"] }),
-            makeDigest("weather"),
-          ],
+          page: [makeDigest("paytoll"), makeDigest("weather")],
           isDone: true,
           continueCursor: "",
         },
@@ -501,32 +596,16 @@ describe("skills package catalog queries", () => {
       {
         capabilityTag: "crypto",
         paginationOpts: { cursor: null, numItems: 10 },
-      },
+      } as Parameters<typeof listPackageCatalogPageHandler>[1] & { capabilityTag?: string },
     );
 
     expect(result.page).toEqual([
       expect.objectContaining({
         name: "paytoll",
-        capabilityTags: ["crypto", "requires-wallet"],
+      }),
+      expect.objectContaining({
+        name: "weather",
       }),
     ]);
-  });
-
-  it("returns empty immediately for unknown capability tags", async () => {
-    const result = await listPackageCatalogPageHandler(
-      makeCtx([
-        {
-          page: [makeDigest("paytoll", { capabilityTags: ["crypto", "requires-wallet"] })],
-          isDone: true,
-          continueCursor: "",
-        },
-      ]),
-      {
-        capabilityTag: "not-a-real-tag",
-        paginationOpts: { cursor: null, numItems: 10 },
-      },
-    );
-
-    expect(result).toEqual({ page: [], isDone: true, continueCursor: "" });
   });
 });

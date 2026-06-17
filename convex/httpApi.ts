@@ -253,8 +253,6 @@ async function cliTelemetryInstallHandler(ctx: ActionCtx, request: Request) {
         for (let offset = 0; offset < root.skills.length; offset += LEGACY_TELEMETRY_BATCH_SIZE) {
           await ctx.runMutation(internal.telemetry.reportCliLegacyInstallBatchInternal, {
             userId,
-            rootId: root.rootId,
-            rootLabel: root.label,
             skills: root.skills
               .slice(offset, offset + LEGACY_TELEMETRY_BATCH_SIZE)
               .map((skill) => ({
@@ -269,8 +267,6 @@ async function cliTelemetryInstallHandler(ctx: ActionCtx, request: Request) {
         userId,
         slug: args.slug,
         version: args.version,
-        rootId: args.rootId,
-        rootLabel: args.rootLabel,
       });
     }
     const ok = parseArk(ApiCliTelemetryInstallResponseSchema, { ok: true }, "Telemetry response");

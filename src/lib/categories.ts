@@ -68,7 +68,6 @@ type SkillCategoryCandidate = {
   slug: string;
   displayName: string;
   summary?: string | null;
-  capabilityTags?: string[] | null;
 };
 
 const OTHER_SKILL_CATEGORY = SKILL_CATEGORIES.find((category) => category.slug === "other") ?? null;
@@ -102,9 +101,7 @@ function stripGeneratedSlugPrefixTokens(tokens: string[]) {
 }
 
 function getSkillCategoryPrimarySearchTokens(skill: SkillCategoryCandidate) {
-  return tokenizeCategoryText(
-    [skill.displayName, skill.summary ?? "", ...(skill.capabilityTags ?? [])].join(" "),
-  );
+  return tokenizeCategoryText([skill.displayName, skill.summary ?? ""].join(" "));
 }
 
 function scoreSkillCategory(

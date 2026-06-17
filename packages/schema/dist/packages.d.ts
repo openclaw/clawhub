@@ -22,27 +22,6 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
     minGatewayVersion?: string | undefined;
 }, {}>;
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
-export declare const PackageCapabilitySummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
-    executesCode: boolean;
-    runtimeId?: string | undefined;
-    pluginKind?: string | undefined;
-    channels?: string[] | undefined;
-    providers?: string[] | undefined;
-    hooks?: string[] | undefined;
-    bundledSkills?: string[] | undefined;
-    setupEntry?: boolean | undefined;
-    configSchema?: boolean | undefined;
-    configUiHints?: boolean | undefined;
-    materializesDependencies?: boolean | undefined;
-    toolNames?: string[] | undefined;
-    commandNames?: string[] | undefined;
-    serviceNames?: string[] | undefined;
-    capabilityTags?: string[] | undefined;
-    httpRouteCount?: number | undefined;
-    bundleFormat?: string | undefined;
-    hostTargets?: string[] | undefined;
-}, {}>;
-export type PackageCapabilitySummary = (typeof PackageCapabilitySummarySchema)[inferred];
 export declare const PackageVerificationSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
     scope: "artifact-only" | "dependency-graph-aware";
@@ -328,8 +307,6 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     summary?: string | null | undefined;
     ownerHandle?: string | null | undefined;
     latestVersion?: string | null | undefined;
-    capabilityTags?: string[] | undefined;
-    executesCode?: boolean | undefined;
     verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
     stats?: {
         downloads: number;
@@ -352,8 +329,6 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         summary?: string | null | undefined;
         ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
-        capabilityTags?: string[] | undefined;
-        executesCode?: boolean | undefined;
         verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
         stats?: {
             downloads: number;
@@ -380,8 +355,6 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             summary?: string | null | undefined;
             ownerHandle?: string | null | undefined;
             latestVersion?: string | null | undefined;
-            capabilityTags?: string[] | undefined;
-            executesCode?: boolean | undefined;
             verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
             stats?: {
                 downloads: number;
@@ -412,26 +385,6 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             builtWithOpenClawVersion?: string | undefined;
             pluginSdkVersion?: string | undefined;
             minGatewayVersion?: string | undefined;
-        } | null | undefined;
-        capabilities?: {
-            executesCode: boolean;
-            runtimeId?: string | undefined;
-            pluginKind?: string | undefined;
-            channels?: string[] | undefined;
-            providers?: string[] | undefined;
-            hooks?: string[] | undefined;
-            bundledSkills?: string[] | undefined;
-            setupEntry?: boolean | undefined;
-            configSchema?: boolean | undefined;
-            configUiHints?: boolean | undefined;
-            materializesDependencies?: boolean | undefined;
-            toolNames?: string[] | undefined;
-            commandNames?: string[] | undefined;
-            serviceNames?: string[] | undefined;
-            capabilityTags?: string[] | undefined;
-            httpRouteCount?: number | undefined;
-            bundleFormat?: string | undefined;
-            hostTargets?: string[] | undefined;
         } | null | undefined;
         verification?: {
             tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
@@ -503,26 +456,6 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             builtWithOpenClawVersion?: string | undefined;
             pluginSdkVersion?: string | undefined;
             minGatewayVersion?: string | undefined;
-        } | null | undefined;
-        capabilities?: {
-            executesCode: boolean;
-            runtimeId?: string | undefined;
-            pluginKind?: string | undefined;
-            channels?: string[] | undefined;
-            providers?: string[] | undefined;
-            hooks?: string[] | undefined;
-            bundledSkills?: string[] | undefined;
-            setupEntry?: boolean | undefined;
-            configSchema?: boolean | undefined;
-            configUiHints?: boolean | undefined;
-            materializesDependencies?: boolean | undefined;
-            toolNames?: string[] | undefined;
-            commandNames?: string[] | undefined;
-            serviceNames?: string[] | undefined;
-            capabilityTags?: string[] | undefined;
-            httpRouteCount?: number | undefined;
-            bundleFormat?: string | undefined;
-            hostTargets?: string[] | undefined;
         } | null | undefined;
         verification?: {
             tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";

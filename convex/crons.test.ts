@@ -1,11 +1,17 @@
 /* @vitest-environment node */
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => {
   const interval = vi.fn();
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
   const registryArtifactBackupRetryRef = Symbol("registry-artifact-backup-retry");
-  return { interval, githubSkillSyncRef, registryArtifactBackupRetryRef };
+  const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
+  return {
+    interval,
+    githubSkillSyncRef,
+    registryArtifactBackupRetryRef,
+    installTelemetryDedupePruneRef,
+  };
 });
 
 vi.mock("convex/server", () => ({
@@ -44,10 +50,31 @@ vi.mock("./_generated/api", () => ({
     downloadMetrics: {
       pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
     },
+    telemetry: {
+      pruneInstallTelemetryDedupesInternal: mocks.installTelemetryDedupePruneRef,
+    },
   },
 }));
 
 describe("crons", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    mocks.interval.mockReset();
+    delete process.env.CLAWHUB_DISABLE_CRONS;
+  });
+
+  afterEach(() => {
+    delete process.env.CLAWHUB_DISABLE_CRONS;
+  });
+
+  it("does not register production cron work when explicitly disabled", async () => {
+    process.env.CLAWHUB_DISABLE_CRONS = "1";
+
+    await import("./crons");
+
+    expect(mocks.interval).not.toHaveBeenCalled();
+  });
+
   it("drains registry artifact backup retries frequently enough for publish bursts", async () => {
     await import("./crons");
 
@@ -78,6 +105,17 @@ describe("crons", () => {
       { hours: 6 },
       expect.anything(),
       { batchSize: 10 },
+    );
+  });
+
+  it("prunes install telemetry dedupe rows daily", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "install-telemetry-dedupe-prune",
+      { hours: 24 },
+      mocks.installTelemetryDedupePruneRef,
+      {},
     );
   });
 });

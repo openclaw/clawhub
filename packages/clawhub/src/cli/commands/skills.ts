@@ -259,7 +259,6 @@ export async function cmdInstall(
     await reportInstalledSkillsTelemetryIfEnabled({
       token,
       registry,
-      root: opts.dir,
       slug: skillMeta.skill?.slug ?? trimmed,
       version: resolvedVersion,
     });

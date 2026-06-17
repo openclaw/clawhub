@@ -290,8 +290,6 @@ describe("httpApi handlers", () => {
       userId: "users:1",
       slug: "weather",
       version: "1.0.0",
-      rootId: "abc",
-      rootLabel: "~/skills",
     });
   });
 
@@ -322,8 +320,6 @@ describe("httpApi handlers", () => {
     expect(await response.json()).toEqual({ ok: true });
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
       userId: "users:1",
-      rootId: "abc",
-      rootLabel: "~/skills",
       skills: [
         { slug: "weather", version: "1.0.0" },
         { slug: "calendar", version: undefined },
@@ -354,14 +350,10 @@ describe("httpApi handlers", () => {
     expect(runMutation).toHaveBeenCalledTimes(2);
     expect(runMutation.mock.calls[0]?.[1]).toMatchObject({
       userId: "users:1",
-      rootId: "abc",
-      rootLabel: "~/skills",
       skills: skills.slice(0, 100),
     });
     expect(runMutation.mock.calls[1]?.[1]).toMatchObject({
       userId: "users:1",
-      rootId: "abc",
-      rootLabel: "~/skills",
       skills: skills.slice(100),
     });
   });

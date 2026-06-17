@@ -8,7 +8,6 @@ import { assertAdmin } from "./lib/access";
 import { guessContentTypeForPath } from "./lib/contentTypes";
 import { isPublicSkillDoc } from "./lib/globalStats";
 import {
-  fetchSkillBackupIndex,
   fetchSkillVersionBackupMeta,
   getRegistryArtifactBackupContext,
   isRegistryArtifactBackupConfigured,
@@ -32,6 +31,19 @@ type BulkRestoreResult = {
   totalErrors: number;
 };
 
+type SkillBackupMeta = NonNullable<Awaited<ReturnType<typeof fetchSkillVersionBackupMeta>>>;
+
+type VerifiedSkillBackup = {
+  meta: SkillBackupMeta;
+  files: Array<{
+    path: string;
+    size: number;
+    sha256: string;
+    contentType: string;
+    content: Uint8Array;
+  }>;
+};
+
 /**
  * Admin-only: restore a single skill from registry artifact backup.
  * Reads backed-up objects and re-creates the skill in the database.
@@ -42,6 +54,7 @@ export const restoreSkillFromBackup = internalAction({
     ownerHandle: v.string(),
     ownerUserId: v.id("users"),
     slug: v.string(),
+    version: v.optional(v.string()),
     forceOverwriteSquatter: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<RestoreResult> => {
@@ -59,6 +72,80 @@ export const restoreSkillFromBackup = internalAction({
       }
 
       const backupContext = getRegistryArtifactBackupContext();
+      if (!args.version) {
+        return {
+          slug: args.slug,
+          status: "no_backup",
+          detail: "Restore requires an explicit backup version",
+        };
+      }
+
+      let verifiedBackup: VerifiedSkillBackup | null = null;
+      const loadVerifiedBackup = async (): Promise<VerifiedSkillBackup | RestoreResult> => {
+        if (verifiedBackup) return verifiedBackup;
+        const meta = await fetchSkillVersionBackupMeta(
+          backupContext,
+          args.ownerHandle,
+          args.slug,
+          args.version!,
+        );
+        if (!meta) {
+          return { slug: args.slug, status: "no_backup", detail: "No version backup found" };
+        }
+
+        const backupFiles = meta.metadata.files;
+        if (backupFiles.length === 0) {
+          return { slug: args.slug, status: "no_backup", detail: "Backup has no files" };
+        }
+
+        const owner = normalizeOwner(args.ownerHandle);
+        const files: VerifiedSkillBackup["files"] = [];
+        for (const file of backupFiles) {
+          if (!validateFilePath(file.path)) {
+            return { slug: args.slug, status: "error", detail: "Backup contains unsafe file path" };
+          }
+          const fileContent = await readRegistryArtifactBackupObject(
+            backupContext,
+            `${backupContext.skillsRoot}/${owner}/${args.slug}/${encodeBackupPathSegment(
+              meta.version,
+            )}/${file.path}`,
+          );
+          if (!fileContent) {
+            return {
+              slug: args.slug,
+              status: "error",
+              detail: `Backup missing file ${file.path}`,
+            };
+          }
+          if (fileContent.byteLength !== file.size) {
+            return {
+              slug: args.slug,
+              status: "error",
+              detail: `Backup file size mismatch for ${file.path}`,
+            };
+          }
+
+          const sha256 = await sha256Hex(fileContent);
+          if (sha256 !== file.sha256) {
+            return {
+              slug: args.slug,
+              status: "error",
+              detail: `Backup file checksum mismatch for ${file.path}`,
+            };
+          }
+
+          files.push({
+            path: file.path,
+            size: fileContent.byteLength,
+            sha256,
+            contentType: file.contentType ?? guessContentTypeForPath(file.path),
+            content: fileContent,
+          });
+        }
+
+        verifiedBackup = { meta, files };
+        return verifiedBackup;
+      };
 
       // Check if skill already exists in the DB
       const existingSkill = (await ctx.runQuery(
@@ -97,6 +184,8 @@ export const restoreSkillFromBackup = internalAction({
             detail: `Slug occupied by another user. Set forceOverwriteSquatter=true to reclaim.`,
           };
         } else {
+          const backup = await loadVerifiedBackup();
+          if ("status" in backup) return backup;
           // Free the slug in-transaction by renaming the squatter, then enqueue cleanup.
           await ctx.runMutation(
             internal.registryArtifactRestoreMutations.evictSquatterSkillForRestoreInternal,
@@ -109,25 +198,9 @@ export const restoreSkillFromBackup = internalAction({
         }
       }
 
-      const index = await fetchSkillBackupIndex(backupContext, args.ownerHandle, args.slug);
-      if (!index?.latest?.version) {
-        return { slug: args.slug, status: "no_backup", detail: "No backup index found" };
-      }
-
-      const meta = await fetchSkillVersionBackupMeta(
-        backupContext,
-        args.ownerHandle,
-        args.slug,
-        index.latest.version,
-      );
-      if (!meta) {
-        return { slug: args.slug, status: "no_backup", detail: "No version backup found" };
-      }
-
-      const backupFiles = meta.metadata.files;
-      if (backupFiles.length === 0) {
-        return { slug: args.slug, status: "no_backup", detail: "Backup has no files" };
-      }
+      const backup = verifiedBackup ?? (await loadVerifiedBackup());
+      if ("status" in backup) return backup;
+      const { meta } = backup;
 
       // Download and store each file in Convex storage
       const storedFiles: Array<{
@@ -138,47 +211,16 @@ export const restoreSkillFromBackup = internalAction({
         contentType: string;
       }> = [];
 
-      const owner = normalizeOwner(args.ownerHandle);
-      for (const file of backupFiles) {
-        if (!validateFilePath(file.path)) {
-          return { slug: args.slug, status: "error", detail: "Backup contains unsafe file path" };
-        }
-        const fileContent = await readRegistryArtifactBackupObject(
-          backupContext,
-          `${backupContext.skillsRoot}/${owner}/${args.slug}/${encodeBackupPathSegment(
-            meta.version,
-          )}/${file.path}`,
-        );
-        if (!fileContent) {
-          return { slug: args.slug, status: "error", detail: `Backup missing file ${file.path}` };
-        }
-        if (fileContent.byteLength !== file.size) {
-          return {
-            slug: args.slug,
-            status: "error",
-            detail: `Backup file size mismatch for ${file.path}`,
-          };
-        }
-
-        const sha256 = await sha256Hex(fileContent);
-        if (sha256 !== file.sha256) {
-          return {
-            slug: args.slug,
-            status: "error",
-            detail: `Backup file checksum mismatch for ${file.path}`,
-          };
-        }
-
-        const contentType = file.contentType ?? guessContentTypeForPath(file.path);
-        const blob = new Blob([Buffer.from(fileContent)], { type: contentType });
+      for (const file of backup.files) {
+        const blob = new Blob([Buffer.from(file.content)], { type: file.contentType });
         const storageId = await ctx.storage.store(blob);
 
         storedFiles.push({
           path: file.path,
-          size: fileContent.byteLength,
+          size: file.size,
           storageId,
-          sha256,
-          contentType,
+          sha256: file.sha256,
+          contentType: file.contentType,
         });
       }
 
@@ -251,6 +293,7 @@ export const restoreUserSkillsFromBackup = internalAction({
     ownerHandle: v.string(),
     ownerUserId: v.id("users"),
     slugs: v.array(v.string()),
+    versionsBySlug: v.optional(v.record(v.string(), v.string())),
     forceOverwriteSquatter: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<BulkRestoreResult> => {
@@ -266,6 +309,7 @@ export const restoreUserSkillsFromBackup = internalAction({
         ownerHandle: args.ownerHandle,
         ownerUserId: args.ownerUserId,
         slug,
+        version: args.versionsBySlug?.[slug],
         forceOverwriteSquatter: args.forceOverwriteSquatter,
       })) as RestoreResult;
 

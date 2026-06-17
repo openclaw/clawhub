@@ -303,6 +303,13 @@ const org = program
   .showHelpAfterError()
   .showSuggestionAfterError();
 
+const publisher = program
+  .command("publisher")
+  .alias("publishers")
+  .description("Publisher administration")
+  .showHelpAfterError()
+  .showSuggestionAfterError();
+
 const email = program
   .command("email")
   .description("Guarded staff email operations")
@@ -328,6 +335,7 @@ registerPluginGovernanceCommands(plugins);
 registerPluginOperations(packages);
 registerPluginModerationCommands(packages);
 registerPluginGovernanceCommands(packages);
+registerOfficialPublisherCommands(publisher);
 registerOrgCommands(org);
 registerEmailCommands(email);
 registerContentRightsCommands(contentRights);
@@ -395,16 +403,16 @@ function registerEmailCommands(command: Command) {
     });
 }
 
-function registerOrgCommands(command: Command) {
+function registerOfficialPublisherCommands(command: Command) {
   const official = command
     .command("official")
-    .description("Manage official org publishers")
+    .description("Manage official publishers")
     .showHelpAfterError()
     .showSuggestionAfterError();
 
   official
     .command("list")
-    .description("List official org publishers")
+    .description("List official publishers")
     .option("--json", "Output JSON")
     .action(async (options) => {
       const opts = await resolveGlobalOpts();
@@ -413,8 +421,8 @@ function registerOrgCommands(command: Command) {
 
   official
     .command("add")
-    .description("Mark an org publisher as official")
-    .argument("<handle>", "Org publisher handle")
+    .description("Mark a publisher as official")
+    .argument("<handle>", "Publisher handle")
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
@@ -425,8 +433,8 @@ function registerOrgCommands(command: Command) {
 
   official
     .command("remove")
-    .description("Remove an org publisher from the official list")
-    .argument("<handle>", "Org publisher handle")
+    .description("Remove a publisher from the official list")
+    .argument("<handle>", "Publisher handle")
     .requiredOption("--reason <reason>", "Audit reason")
     .option("--yes", "Skip confirmation")
     .option("--json", "Output JSON")
@@ -434,6 +442,10 @@ function registerOrgCommands(command: Command) {
       const opts = await resolveGlobalOpts();
       await cmdRemoveOfficialOrg(opts, handle, options, isInputAllowed());
     });
+}
+
+function registerOrgCommands(command: Command) {
+  registerOfficialPublisherCommands(command);
 
   command
     .command("create")

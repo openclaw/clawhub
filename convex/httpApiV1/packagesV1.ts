@@ -302,18 +302,10 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
   }
 }
 
-function normalizeCapabilityTagSegment(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "");
-}
-
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
-const PACKAGE_LIST_SORT_VALUES = ["updated", "downloads", "recommended", "installs"] as const;
+const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "installs"] as const;
 const MAX_PLUGIN_EXPORT_FILE_COUNT = 10_000;
 const MAX_PLUGIN_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT = 250;
@@ -343,6 +335,14 @@ function parseBooleanQueryParam(
   if (value === "true" || value === "1") return { ok: true, value: true };
   if (value === "false" || value === "0") return { ok: true, value: false };
   return { ok: false, message: invalidQueryParamMessage(name) };
+}
+
+function normalizeCapabilityTagSegment(value: string) {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
 }
 
 function getCapabilityTagFromQueryParams(params: URLSearchParams) {
@@ -375,35 +375,43 @@ function getCapabilityTagFromQueryParams(params: URLSearchParams) {
     return `artifact:${artifactKind}`;
   }
   if (params.has("artifactKind")) return { error: invalidQueryParamMessage("artifactKind") };
+
   const npmMirror = parseBooleanQueryParam(params, "npmMirror");
   if (!npmMirror.ok) return { error: npmMirror.message };
   if (npmMirror.value) return "npm-mirror:available";
+
   const requiresBrowser = parseBooleanQueryParam(params, "requiresBrowser");
   if (!requiresBrowser.ok) return { error: requiresBrowser.message };
   if (requiresBrowser.value) return "requires:browser";
+
   const requiresDesktop = parseBooleanQueryParam(params, "requiresDesktop");
   if (!requiresDesktop.ok) return { error: requiresDesktop.message };
   if (requiresDesktop.value) return "requires:desktop";
+
   const requiresNativeDeps = parseBooleanQueryParam(params, "requiresNativeDeps");
   if (!requiresNativeDeps.ok) return { error: requiresNativeDeps.message };
   if (requiresNativeDeps.value) return "requires:native-deps";
+
   const nativeDeps = parseBooleanQueryParam(params, "nativeDeps");
   if (!nativeDeps.ok) return { error: nativeDeps.message };
   if (nativeDeps.value) return "requires:native-deps";
+
   const requiresExternalService = parseBooleanQueryParam(params, "requiresExternalService");
   if (!requiresExternalService.ok) return { error: requiresExternalService.message };
-  if (requiresExternalService.value) {
-    return "requires:external-service";
-  }
+  if (requiresExternalService.value) return "requires:external-service";
+
   const requiresBinary = parseBooleanQueryParam(params, "requiresBinary");
   if (!requiresBinary.ok) return { error: requiresBinary.message };
   if (requiresBinary.value) return "requires:binary";
+
   const requiresOsPermission = parseBooleanQueryParam(params, "requiresOsPermission");
   if (!requiresOsPermission.ok) return { error: requiresOsPermission.message };
   if (requiresOsPermission.value) return "requires:os-permission";
+
   const environmentDeclared = parseBooleanQueryParam(params, "environmentDeclared");
   if (!environmentDeclared.ok) return { error: environmentDeclared.message };
   if (environmentDeclared.value) return "environment:declared";
+
   return undefined;
 }
 
@@ -528,7 +536,6 @@ type ReleaseLike = {
     contentType?: string;
   }>;
   compatibility?: Doc<"packageReleases">["compatibility"];
-  capabilities?: Doc<"packageReleases">["capabilities"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
@@ -844,8 +851,6 @@ type CatalogListItem = {
   createdAt: number;
   updatedAt: number;
   latestVersion?: string | null;
-  capabilityTags?: string[];
-  executesCode?: boolean;
   verificationTier?: string | null;
   stats?: { downloads: number; installs: number; stars: number; versions: number };
 };
@@ -893,7 +898,6 @@ const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const PACKAGE_PAGE_CURSOR_PREFIX = "pkgpage:";
-const LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX = "pkginstalls:";
 const CATALOG_CURSOR_PREFIXES = [
   UNIFIED_CATALOG_CURSOR_PREFIX,
   PLUGIN_CATALOG_CURSOR_PREFIX,
@@ -1098,10 +1102,6 @@ function compareCatalogItemsForSort(
     );
     if (score !== 0) return score;
   }
-  if (sort === "downloads") {
-    const downloads = (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0);
-    if (downloads !== 0) return downloads;
-  }
   if (sort === "installs") {
     const installs = (b.stats?.installs ?? 0) - (a.stats?.installs ?? 0);
     if (installs !== 0) return installs;
@@ -1134,8 +1134,6 @@ async function searchPackageCatalog(
     channel?: "official" | "community" | "private";
     isOfficial?: boolean;
     highlightedOnly?: boolean;
-    executesCode?: boolean;
-    capabilityTag?: string;
     category?: string;
     viewerUserId?: Id<"users">;
   },
@@ -1150,8 +1148,6 @@ async function searchPackageCatalog(
       channel: args.channel,
       isOfficial: args.isOfficial,
       highlightedOnly: args.highlightedOnly,
-      executesCode: args.executesCode,
-      capabilityTag: args.capabilityTag,
       category: args.category,
       viewerUserId: args.viewerUserId,
     },
@@ -1193,7 +1189,6 @@ function toSkillPackageDetail(
       latestVersion: latestVersion?.version ?? null,
       tags: resolvedTags,
       compatibility: null,
-      capabilities: null,
       verification: null,
     },
     owner: owner
@@ -1204,6 +1199,20 @@ function toSkillPackageDetail(
         }
       : null,
   };
+}
+
+function toPackageDetailResponsePackage(pkg: PublicPackageDocLike) {
+  const {
+    capabilityTags: _capabilityTags,
+    capabilities: _capabilities,
+    executesCode: _executesCode,
+    ...publicPackage
+  } = pkg as PublicPackageDocLike & {
+    capabilityTags?: unknown;
+    capabilities?: unknown;
+    executesCode?: unknown;
+  };
+  return publicPackage;
 }
 
 function skillVersionTags(tags: Record<string, string>, version: string) {
@@ -1526,14 +1535,7 @@ async function listPackages(
   if (!executesCode.ok) return text(executesCode.message, 400, rate.headers);
   const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
   if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
-  const isLegacyDownloadsSort = sortParam.value === "downloads";
-  const cursor = isLegacyDownloadsSort
-    ? rawCursor?.startsWith(LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX)
-      ? rawCursor.slice(LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX.length)
-      : null
-    : rawCursor;
-  const nextCursor = (value: string | null) =>
-    isLegacyDownloadsSort && value ? `${LEGACY_DOWNLOADS_INSTALL_CURSOR_PREFIX}${value}` : value;
+  const cursor = rawCursor;
   const category = url.searchParams.get("category")?.trim() || undefined;
   if (category && !isPluginCategorySlug(category)) {
     return text("Invalid plugin category", 400, rate.headers);
@@ -1548,7 +1550,7 @@ async function listPackages(
     (highlightedOnly || category || capabilityTag)
       ? "updated"
       : options?.defaultSort;
-  const effectiveSort = isLegacyDownloadsSort ? "installs" : (sortParam.value ?? pluginDefaultSort);
+  const effectiveSort = sortParam.value ?? pluginDefaultSort;
   if (category && (effectiveFamily === "skill" || (!effectiveFamily && includeSkills))) {
     return text(
       "Plugin category is only supported for plugin package endpoints",
@@ -1572,7 +1574,7 @@ async function listPackages(
       paginationOpts: { cursor, numItems: limit },
     });
     return json(
-      { items: result.page, nextCursor: result.isDone ? null : nextCursor(result.continueCursor) },
+      { items: result.page, nextCursor: result.isDone ? null : result.continueCursor },
       200,
       rate.headers,
     );
@@ -1619,9 +1621,9 @@ async function listPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
+            category,
             executesCode: executesCode.value,
             capabilityTag,
-            category,
             sort: unifiedListSort,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
@@ -1681,7 +1683,7 @@ async function listPackages(
     return json(
       {
         items,
-        nextCursor: isDoneAll ? null : nextCursor(encodeUnifiedCatalogCursor(nextState)),
+        nextCursor: isDoneAll ? null : encodeUnifiedCatalogCursor(nextState),
       },
       200,
       rate.headers,
@@ -1791,7 +1793,7 @@ async function listPackages(
     return json(
       {
         items,
-        nextCursor: isDoneAll ? null : nextCursor(encodePluginCatalogCursor(nextState)),
+        nextCursor: isDoneAll ? null : encodePluginCatalogCursor(nextState),
         ...(totalCount !== null ? { totalCount } : {}),
       },
       200,
@@ -1816,7 +1818,7 @@ async function listPackages(
     paginationOpts: { cursor, numItems: limit },
   } satisfies PackageListQueryArgs);
   return json(
-    { items: result.page, nextCursor: result.isDone ? null : nextCursor(result.continueCursor) },
+    { items: result.page, nextCursor: result.isDone ? null : result.continueCursor },
     200,
     rate.headers,
   );
@@ -3143,8 +3145,6 @@ async function searchPackages(
   const queryText = url.searchParams.get("q")?.trim() ?? "";
   if (!queryText) return text("Missing q query parameter", 400, rate.headers);
   const limit = Math.max(1, Math.min(toOptionalNumber(url.searchParams.get("limit")) ?? 20, 100));
-  const capabilityTag = getCapabilityTagFromQueryParams(url.searchParams);
-  if (typeof capabilityTag === "object") return text(capabilityTag.error, 400, rate.headers);
   const familyParam = parseEnumQueryParam(url.searchParams, "family", PACKAGE_FAMILY_VALUES);
   if (!familyParam.ok) return text(familyParam.message, 400, rate.headers);
   const channelParam = parseEnumQueryParam(url.searchParams, "channel", PACKAGE_CHANNEL_VALUES);
@@ -3155,8 +3155,6 @@ async function searchPackages(
   if (!featured.ok) return text(featured.message, 400, rate.headers);
   const highlightedOnlyParam = parseBooleanQueryParam(url.searchParams, "highlightedOnly");
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
-  const executesCode = parseBooleanQueryParam(url.searchParams, "executesCode");
-  if (!executesCode.ok) return text(executesCode.message, 400, rate.headers);
   const highlightedOnly = featured.value === true || highlightedOnlyParam.value === true;
   const category = url.searchParams.get("category")?.trim() || undefined;
   if (category && !isPluginCategorySlug(category)) {
@@ -3183,8 +3181,6 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
       },
     );
   } else if (family || !includeSkills) {
@@ -3198,8 +3194,6 @@ async function searchPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
-            executesCode: executesCode.value,
-            capabilityTag,
             category,
             viewerUserId: viewerUserId ?? undefined,
           }),
@@ -3224,8 +3218,6 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
         category,
         viewerUserId: viewerUserId ?? undefined,
       });
@@ -3238,8 +3230,6 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
-        executesCode: executesCode.value,
-        capabilityTag,
         category,
         viewerUserId: viewerUserId ?? undefined,
       }),
@@ -3252,8 +3242,6 @@ async function searchPackages(
           channel: channelParam.value,
           isOfficial: isOfficial.value,
           highlightedOnly: highlightedOnly || undefined,
-          executesCode: executesCode.value,
-          capabilityTag,
         },
       ),
     ]);
@@ -3493,7 +3481,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return json(
       {
         package: {
-          ...publicPackage!,
+          ...toPackageDetailResponsePackage(publicPackage!),
           tags: await resolvePackageTags(ctx, publicPackage!.tags),
         },
         owner: packageOwner
@@ -3678,7 +3666,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
               contentType: file.contentType,
             })),
             compatibility: null,
-            capabilities: null,
             verification: null,
             artifact: null,
           },
@@ -3720,7 +3707,6 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
             contentType: file.contentType,
           })),
           compatibility: result.version.compatibility ?? null,
-          capabilities: result.version.capabilities ?? null,
           verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,
@@ -4051,7 +4037,6 @@ type PublicPackageDocLike = {
   summary?: string;
   latestVersion?: string | null;
   compatibility?: Doc<"packages">["compatibility"];
-  capabilities?: Doc<"packages">["capabilities"];
   verification?: Doc<"packages">["verification"];
   artifact?: {
     kind: "legacy-zip" | "npm-pack";
@@ -4079,9 +4064,6 @@ type PackageReadinessCheck = {
 function buildPackageReadiness(pkg: PublicPackageDocLike) {
   const checks: PackageReadinessCheck[] = [];
   const add = (check: PackageReadinessCheck) => checks.push(check);
-  const hostTargets = pkg.capabilities?.hostTargets ?? [];
-  const capabilityTags = pkg.capabilities?.capabilityTags ?? [];
-  const hasEnvironmentMetadata = capabilityTags.includes("environment:declared");
   const scanStatus = pkg.verification?.scanStatus ?? "not-run";
 
   add({
@@ -4131,23 +4113,6 @@ function buildPackageReadiness(pkg: PublicPackageDocLike) {
       pkg.compatibility?.pluginApiRange && pkg.compatibility?.builtWithOpenClawVersion
         ? `pluginApi=${pkg.compatibility.pluginApiRange}, builtWith=${pkg.compatibility.builtWithOpenClawVersion}.`
         : "pluginApi range and build OpenClaw version are required.",
-  });
-  add({
-    id: "host-targets",
-    label: "Host targets",
-    status: hostTargets.length > 0 ? "pass" : "warn",
-    message:
-      hostTargets.length > 0
-        ? `Targets: ${hostTargets.join(", ")}.`
-        : "Host targets are optional and not declared.",
-  });
-  add({
-    id: "environment",
-    label: "Environment metadata",
-    status: hasEnvironmentMetadata ? "pass" : "warn",
-    message: hasEnvironmentMetadata
-      ? "Runtime environment requirements are declared."
-      : "Runtime environment metadata is optional and not declared.",
   });
   add({
     id: "scan",

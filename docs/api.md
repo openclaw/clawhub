@@ -99,7 +99,8 @@ Public read:
 - `GET /api/v1/resolve?slug=&hash=`
 - `GET /api/v1/download?slug=&version=&tag=`
 - `GET /api/v1/packages?limit=&cursor=&sort=`
-  - `sort`: `updated` (default), `recommended`, `installs`, `downloads`
+  - `sort`: `updated` (default), `recommended`, `installs`
+  - Invalid `sort` values return `400`
 - `GET /api/v1/plugins?limit=&cursor=&sort=`
   - `sort`: `recommended` (default), `installs`, `updated`
 - `GET /api/v1/plugins/search?q=...`

@@ -29,7 +29,6 @@ type PluginSearchState = {
   family?: undefined;
   featured?: boolean;
   official?: boolean;
-  executesCode?: boolean;
   sort?: LegacyPluginSort;
   view?: LegacyPluginView;
 };
@@ -65,7 +64,6 @@ type PluginsPageDataRequest = {
   cursor?: string;
   featured?: boolean;
   official?: boolean;
-  executesCode?: boolean;
   sort?: PluginSort;
   signal?: AbortSignal;
 };
@@ -92,7 +90,6 @@ function formatRetryDelay(retryAfterSeconds: number | null) {
 }
 
 function parsePluginSort(value: unknown): LegacyPluginSort | undefined {
-  if (value === "downloads") return "installs";
   if (
     value === "recommended" ||
     value === "relevance" ||
@@ -234,10 +231,6 @@ export const Route = createFileRoute("/plugins/")({
       search.verified === "1"
         ? true
         : undefined,
-    executesCode:
-      search.executesCode === true || search.executesCode === "true" || search.executesCode === "1"
-        ? true
-        : undefined,
     sort: parsePluginSort(search.sort),
     view: normalizePluginView(search.view),
   }),
@@ -302,10 +295,7 @@ function PluginsIndexPending() {
           sortOptions={PLUGIN_SORT_OPTIONS}
           activeSort="recommended"
           onSortChange={() => {}}
-          filters={[
-            { key: "official", label: "Official only", active: false },
-            { key: "executesCode", label: "Executes code", active: false },
-          ]}
+          filters={[{ key: "official", label: "Official only", active: false }]}
           onFilterToggle={() => {}}
         />
         <div className="browse-results">
@@ -352,11 +342,7 @@ function PluginsIndex() {
 
   const hasQuery = Boolean(search.q?.trim());
   const hasActiveFilters =
-    hasQuery ||
-    Boolean(search.category) ||
-    Boolean(search.official) ||
-    Boolean(search.executesCode) ||
-    Boolean(search.featured);
+    hasQuery || Boolean(search.category) || Boolean(search.official) || Boolean(search.featured);
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalCount) : null;
 
   useEffect(() => {
@@ -372,7 +358,6 @@ function PluginsIndex() {
       cursor: search.cursor,
       featured: search.featured,
       official: search.official,
-      executesCode: search.executesCode,
       sort: normalizeActivePluginSort(search.sort),
       signal: controller.signal,
     })
@@ -390,15 +375,7 @@ function PluginsIndex() {
         });
       });
     return () => controller.abort();
-  }, [
-    search.category,
-    search.cursor,
-    search.executesCode,
-    search.featured,
-    search.official,
-    search.q,
-    search.sort,
-  ]);
+  }, [search.category, search.cursor, search.featured, search.official, search.q, search.sort]);
 
   const activeCategory = search.category;
 
@@ -418,14 +395,6 @@ function PluginsIndex() {
           ...prev,
           cursor: undefined,
           official: prev.official ? undefined : true,
-        }),
-      });
-    } else if (key === "executesCode") {
-      void navigate({
-        search: (prev: PluginSearchState) => ({
-          ...prev,
-          cursor: undefined,
-          executesCode: prev.executesCode ? undefined : true,
         }),
       });
     }
@@ -602,10 +571,7 @@ function PluginsIndex() {
           sortOptions={PLUGIN_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}
-          filters={[
-            { key: "official", label: "Official only", active: search.official ?? false },
-            { key: "executesCode", label: "Executes code", active: search.executesCode ?? false },
-          ]}
+          filters={[{ key: "official", label: "Official only", active: search.official ?? false }]}
           onFilterToggle={handleFilterToggle}
         />
         <div className="browse-results">

@@ -285,8 +285,8 @@ describe("cmdDeleteOrg", () => {
   });
 });
 
-describe("official org commands", () => {
-  it("lists official org publishers", async () => {
+describe("official publisher commands", () => {
+  it("lists official publishers", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
       items: [
@@ -321,7 +321,36 @@ describe("official org commands", () => {
     );
   });
 
-  it("requires --yes to add an official org when input is disabled", async () => {
+  it("prints official personal publishers", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      items: [
+        {
+          officialPublisherId: "officialPublishers:steipete",
+          publisherId: "publishers:steipete",
+          handle: "steipete",
+          displayName: "Peter Steinberger",
+          kind: "user",
+          active: true,
+          reason: "Verified individual publisher",
+          createdByUserId: "users:admin",
+          createdByHandle: "patrick-erichsen-2",
+          createdAt: 1,
+          updatedAt: 1,
+        },
+      ],
+    });
+
+    await cmdListOfficialOrgs(makeGlobalOpts());
+
+    expect(log).toHaveBeenCalledWith(
+      "@steipete  Peter Steinberger - Verified individual publisher",
+    );
+    log.mockRestore();
+  });
+
+  it("requires --yes to add an official publisher when input is disabled", async () => {
     await expect(
       cmdAddOfficialOrg(
         makeGlobalOpts(),
@@ -333,7 +362,7 @@ describe("official org commands", () => {
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 
-  it("marks an org publisher official", async () => {
+  it("marks a publisher official", async () => {
     httpMocks.apiRequest.mockResolvedValueOnce({
       ok: true,
       publisherId: "publishers:nvidia",

@@ -58,10 +58,11 @@ The copy step is best effort. If `.convex` is already a symlink to the source wo
 
 ## Runtime Contract
 
-`scripts/dev-worktree.ts` loads `.env.local`, checks `VITE_CONVEX_URL`, starts local Convex if it is not reachable, then starts Vite on the requested port. Detached runtime state lives under `.codex/runtime/`:
+`scripts/dev-worktree.ts` loads `.env.local`, checks `VITE_CONVEX_URL`, starts local Convex if it is not reachable, optionally seeds local fixtures plus the public corpus once when both `VITE_CONVEX_URL` and `CONVEX_DEPLOYMENT` describe a local target, then starts Vite on the requested port. Worktrunk passes `--seed` for normal `dev:worktree` startup. Detached runtime state lives under `.codex/runtime/`:
 
 - `.codex/runtime/dev-worktree.pid`
 - `.codex/runtime/dev-worktree.log`
+- `.codex/runtime/dev-worktree.seeded`
 
 Use `wt --yes stop` before removing or recreating a worktree. If a stale pid blocks startup, stop the service and inspect the runtime log before deleting files by hand.
 
@@ -75,4 +76,4 @@ operator provides `CODEX_HOME`.
 
 ## Seeding Contract
 
-`bun run seed:dev` uses the same worktree setup helper and the same local Convex readiness checks as the detached dev server. It must remain the documented default seed command. Lower-level Convex calls and `seed:public-corpus` are recovery or fixture-authoring tools, not the first-run path.
+`bun run dev:worktree` is the documented first-run path and seeds before starting the detached app when both the Convex URL and deployment marker are local. Successful automatic seeding records the Convex deployment plus URL in `.codex/runtime/dev-worktree.seeded`, so restarts against the same local backend skip seeding. Remote-backed previews or mismatched deployment markers skip seeding and keep starting. `bun run seed:dev` uses the same worktree setup helper and the same local Convex readiness checks as the detached dev server for manual reseeding, bypasses the sentinel, and remains local-only. Lower-level Convex calls and `seed:public-corpus` are recovery or fixture-authoring tools, not the first-run path.

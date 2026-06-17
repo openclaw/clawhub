@@ -159,17 +159,10 @@ export function derivePluginCategoryTags(input: {
   displayName?: string;
   runtimeId?: string;
   summary?: string;
-  capabilityTags?: string[] | null;
 }): PluginCategorySlug[] {
   if (input.family === "skill") return [];
 
-  const text = [
-    input.name,
-    input.displayName,
-    input.runtimeId,
-    input.summary,
-    ...(input.capabilityTags ?? []),
-  ]
+  const text = [input.name, input.displayName, input.runtimeId, input.summary]
     .map(normalizeCategoryText)
     .filter(Boolean)
     .join(" ");

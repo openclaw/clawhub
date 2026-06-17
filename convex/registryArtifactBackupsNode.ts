@@ -9,14 +9,10 @@ import { isPublicSkillDoc } from "./lib/globalStats";
 import {
   backupPackageReleaseToObjectStorage,
   backupSkillVersionToObjectStorage,
-  fetchPackageBackupIndex,
   fetchPackageReleaseBackupMeta,
-  fetchSkillBackupIndex,
   fetchSkillVersionBackupMeta,
   getRegistryArtifactBackupContext,
   isRegistryArtifactBackupConfigured,
-  repairPackageReleaseBackupIndexes,
-  repairSkillVersionBackupIndexes,
   type RegistryArtifactBackupContext,
 } from "./lib/registryArtifactBackup";
 
@@ -32,9 +28,6 @@ const UNKNOWN_SKILL_ARTIFACT_BYTES = 50 * 1024 * 1024;
 const MAX_PARALLEL_RETRY_ARTIFACT_BYTES = UNKNOWN_PACKAGE_ARTIFACT_BYTES;
 const STALE_BACKUP_JOB_MS = 24 * 60 * 60 * 1000;
 const RETRY_LEASE_TTL_MS = 20 * 60 * 1000;
-const INDEX_LEASE_TTL_MS = 5 * 60 * 1000;
-const INDEX_LEASE_RETRY_DELAY_MS = 250;
-const INDEX_LEASE_MAX_WAIT_MS = 30_000;
 
 type BackupPageItem =
   | {
@@ -76,7 +69,6 @@ type PackageBackupPageItem =
       runtimeId?: string;
       sourceRepo?: string;
       compatibility?: unknown;
-      capabilities?: unknown;
       extractedPackageJson?: unknown;
       extractedPluginManifest?: unknown;
       normalizedBundleManifest?: unknown;
@@ -159,7 +151,7 @@ export const backupSkillForPublishInternal = internalAction({
       if (args.versionId && !item) {
         return { skipped: true as const };
       }
-      await backupSkillVersionWithIndexLease(ctx, item ?? args);
+      await backupSkillVersionToObjectStorage(ctx, item ?? args);
       return { skipped: false as const };
     } catch (error) {
       if (args.versionId) {
@@ -204,7 +196,6 @@ export const backupPackageForPublishInternal = internalAction({
     runtimeId: v.optional(v.string()),
     sourceRepo: v.optional(v.string()),
     compatibility: v.optional(v.any()),
-    capabilities: v.optional(v.any()),
     extractedPackageJson: v.optional(v.any()),
     extractedPluginManifest: v.optional(v.any()),
     normalizedBundleManifest: v.optional(v.any()),
@@ -219,7 +210,7 @@ export const backupPackageForPublishInternal = internalAction({
       if (!item) {
         return { skipped: true as const };
       }
-      await backupPackageReleaseWithIndexLease(ctx, item);
+      await backupPackageReleaseToObjectStorage(ctx, item);
       return { skipped: false as const };
     } catch (error) {
       await ctx.runMutation(
@@ -314,7 +305,7 @@ export async function seedRegistryArtifactBackupsInternalHandler(
         }
 
         if (!dryRun) {
-          await backupSkillVersionWithIndexLease(
+          await backupSkillVersionToObjectStorage(
             ctx,
             {
               skillId: item.skillId,
@@ -437,7 +428,7 @@ async function syncPackageReleaseBackups(
           continue;
         }
         if (!dryRun) {
-          await backupPackageReleaseWithIndexLease(ctx, item, context);
+          await backupPackageReleaseToObjectStorage(ctx, item, context);
           stats.packagesBackedUp += 1;
         }
       } catch (error) {
@@ -527,10 +518,6 @@ type RetryJobWorkItem =
       estimatedBytes: number;
     };
 
-type ArtifactRetryJobWorkItem =
-  | Extract<RetryJobWorkItem, { kind: "packageRelease" }>
-  | Extract<RetryJobWorkItem, { kind: "skillVersion" }>;
-
 type RetryJobGroup = {
   estimatedBytes: number;
   items: RetryJobWorkItem[];
@@ -598,8 +585,6 @@ async function processRetryJobGroup(
   group: RetryJobGroup,
 ) {
   const result = { processed: 0, succeeded: 0, failed: 0 };
-  const packageIndexRepairs: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
-  const skillIndexRepairs: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
   for (const workItem of group.items) {
     result.processed += 1;
     try {
@@ -610,17 +595,19 @@ async function processRetryJobGroup(
         result.succeeded += 1;
       } else if (workItem.kind === "packageRelease") {
         if (await hasMatchingPackageReleaseMeta(context, workItem.item)) {
-          packageIndexRepairs.push(workItem);
+          await markRetryJobSucceeded(ctx, workItem.job);
+          result.succeeded += 1;
         } else {
-          await backupPackageReleaseWithIndexLease(ctx, workItem.item, context);
+          await backupPackageReleaseToObjectStorage(ctx, workItem.item, context);
           await markRetryJobSucceeded(ctx, workItem.job);
           result.succeeded += 1;
         }
       } else {
         if (await hasMatchingSkillVersionMeta(context, workItem.item)) {
-          skillIndexRepairs.push(workItem);
+          await markRetryJobSucceeded(ctx, workItem.job);
+          result.succeeded += 1;
         } else {
-          await backupSkillVersionWithIndexLease(ctx, workItem.item, context);
+          await backupSkillVersionToObjectStorage(ctx, workItem.item, context);
           await markRetryJobSucceeded(ctx, workItem.job);
           result.succeeded += 1;
         }
@@ -637,198 +624,7 @@ async function processRetryJobGroup(
       );
     }
   }
-  await flushPackageIndexRepairs(ctx, context, packageIndexRepairs, result);
-  await flushSkillIndexRepairs(ctx, context, skillIndexRepairs, result);
   return result;
-}
-
-async function flushPackageIndexRepairs(
-  ctx: ActionCtx,
-  context: RegistryArtifactBackupContext,
-  workItems: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>,
-  result: { succeeded: number; failed: number },
-) {
-  if (workItems.length === 0) return;
-  let splitItems: {
-    indexed: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>;
-    missing: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>;
-  };
-  try {
-    splitItems = await splitPackageIndexRepairItems(context, workItems);
-  } catch (error) {
-    result.failed += workItems.length;
-    await markRetryJobsFailed(ctx, workItems, error);
-    return;
-  }
-
-  const { indexed, missing } = splitItems;
-  await markIndexedRetryJobsSucceeded(ctx, indexed, result);
-  if (missing.length === 0) return;
-
-  try {
-    await repairPackageReleaseBackupIndexes(
-      ctx,
-      missing.map((workItem) => workItem.item),
-      context,
-      {
-        withIndexWrite: (indexPath, write) =>
-          withRegistryArtifactBackupIndexLease(ctx, indexPath, write),
-      },
-    );
-    for (const workItem of missing) {
-      await markRetryJobSucceeded(ctx, workItem.job);
-    }
-    result.succeeded += missing.length;
-  } catch (error) {
-    result.failed += missing.length;
-    await markRetryJobsFailed(ctx, missing, error);
-  }
-}
-
-async function flushSkillIndexRepairs(
-  ctx: ActionCtx,
-  context: RegistryArtifactBackupContext,
-  workItems: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>,
-  result: { succeeded: number; failed: number },
-) {
-  if (workItems.length === 0) return;
-  let splitItems: {
-    indexed: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>;
-    missing: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>;
-  };
-  try {
-    splitItems = await splitSkillIndexRepairItems(context, workItems);
-  } catch (error) {
-    result.failed += workItems.length;
-    await markRetryJobsFailed(ctx, workItems, error);
-    return;
-  }
-
-  const { indexed, missing } = splitItems;
-  await markIndexedRetryJobsSucceeded(ctx, indexed, result);
-  if (missing.length === 0) return;
-
-  try {
-    await repairSkillVersionBackupIndexes(
-      ctx,
-      missing.map((workItem) => workItem.item),
-      context,
-      {
-        withIndexWrite: (indexPath, write) =>
-          withRegistryArtifactBackupIndexLease(ctx, indexPath, write),
-      },
-    );
-    for (const workItem of missing) {
-      await markRetryJobSucceeded(ctx, workItem.job);
-    }
-    result.succeeded += missing.length;
-  } catch (error) {
-    result.failed += missing.length;
-    await markRetryJobsFailed(ctx, missing, error);
-  }
-}
-
-async function splitPackageIndexRepairItems(
-  context: RegistryArtifactBackupContext,
-  workItems: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>>,
-) {
-  const first = workItems[0];
-  const index = first
-    ? await fetchPackageBackupIndex(context, first.item.ownerHandle, first.item.normalizedName)
-    : null;
-  const indexed: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
-  const missing: Array<Extract<RetryJobWorkItem, { kind: "packageRelease" }>> = [];
-  for (const workItem of workItems) {
-    const present = packageIndexEntryMatchesRetry(index, workItem.item);
-    (present ? indexed : missing).push(workItem);
-  }
-  return { indexed, missing };
-}
-
-async function splitSkillIndexRepairItems(
-  context: RegistryArtifactBackupContext,
-  workItems: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>>,
-) {
-  const first = workItems[0];
-  const index = first
-    ? await fetchSkillBackupIndex(context, first.item.ownerHandle, first.item.slug)
-    : null;
-  const indexed: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
-  const missing: Array<Extract<RetryJobWorkItem, { kind: "skillVersion" }>> = [];
-  for (const workItem of workItems) {
-    const present = skillIndexEntryMatchesRetry(index, workItem.item);
-    (present ? indexed : missing).push(workItem);
-  }
-  return { indexed, missing };
-}
-
-function packageIndexEntryMatchesRetry(
-  index: Awaited<ReturnType<typeof fetchPackageBackupIndex>>,
-  item: Extract<RetryJobWorkItem, { kind: "packageRelease" }>["item"],
-) {
-  const entry = index?.versions.find(
-    (candidate) => candidate.releaseId === item.releaseId && candidate.version === item.version,
-  );
-  if (!entry) return false;
-  if (typeof item.isLatest !== "boolean") return true;
-  if (entry.isLatest !== item.isLatest) return false;
-  const latestMatches = Boolean(
-    index && index.latest.releaseId === item.releaseId && index.latest.version === item.version,
-  );
-  return item.isLatest ? latestMatches : !latestMatches;
-}
-
-function skillIndexEntryMatchesRetry(
-  index: Awaited<ReturnType<typeof fetchSkillBackupIndex>>,
-  item: Extract<RetryJobWorkItem, { kind: "skillVersion" }>["item"],
-) {
-  const entry = index?.versions.find(
-    (candidate) => candidate.versionId === item.versionId && candidate.version === item.version,
-  );
-  if (!entry) return false;
-  if (typeof item.isLatest !== "boolean") return true;
-  if (entry.isLatest !== item.isLatest) return false;
-  const latestMatches = Boolean(
-    index && index.latest.versionId === item.versionId && index.latest.version === item.version,
-  );
-  return item.isLatest ? latestMatches : !latestMatches;
-}
-
-async function markIndexedRetryJobsSucceeded(
-  ctx: ActionCtx,
-  workItems: ArtifactRetryJobWorkItem[],
-  result: { succeeded: number; failed: number },
-) {
-  for (const workItem of workItems) {
-    try {
-      await markRetryJobSucceeded(ctx, workItem.job);
-      result.succeeded += 1;
-    } catch (error) {
-      result.failed += 1;
-      try {
-        await markRetryJobsFailed(ctx, [workItem], error);
-      } catch (markFailedError) {
-        console.error("Registry artifact backup retry status update failed", markFailedError);
-      }
-    }
-  }
-}
-
-async function markRetryJobsFailed(
-  ctx: ActionCtx,
-  workItems: ArtifactRetryJobWorkItem[],
-  error: unknown,
-) {
-  for (const workItem of workItems) {
-    await ctx.runMutation(
-      internal.registryArtifactBackups.markRegistryArtifactBackupJobFailedInternal,
-      {
-        jobId: workItem.job._id,
-        error: errorMessage(error),
-        maxAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
-      },
-    );
-  }
 }
 
 async function markRetryJobSucceeded(ctx: ActionCtx, job: Doc<"registryArtifactBackupJobs">) {
@@ -905,68 +701,6 @@ function chunkRetryJobGroups(groups: RetryJobGroup[]) {
   return chunks;
 }
 
-async function backupSkillVersionWithIndexLease(
-  ctx: ActionCtx,
-  item: Parameters<typeof backupSkillVersionToObjectStorage>[1],
-  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
-) {
-  await backupSkillVersionToObjectStorage(ctx, item, context, {
-    withIndexWrite: (indexPath, write) =>
-      withRegistryArtifactBackupIndexLease(ctx, indexPath, write),
-  });
-}
-
-async function backupPackageReleaseWithIndexLease(
-  ctx: ActionCtx,
-  item: Parameters<typeof backupPackageReleaseToObjectStorage>[1],
-  context: RegistryArtifactBackupContext = getRegistryArtifactBackupContext(),
-) {
-  await backupPackageReleaseToObjectStorage(ctx, item, context, {
-    withIndexWrite: (indexPath, write) =>
-      withRegistryArtifactBackupIndexLease(ctx, indexPath, write),
-  });
-}
-
-async function withRegistryArtifactBackupIndexLease<T>(
-  ctx: ActionCtx,
-  indexPath: string,
-  run: () => Promise<T>,
-) {
-  const token = `index-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const deadline = Date.now() + INDEX_LEASE_MAX_WAIT_MS;
-  while (true) {
-    const lease = (await ctx.runMutation(
-      internal.registryArtifactBackups.tryAcquireRegistryArtifactBackupIndexLeaseInternal,
-      {
-        indexPath,
-        token,
-        ttlMs: INDEX_LEASE_TTL_MS,
-      },
-    )) as { acquired: boolean };
-    if (lease.acquired) break;
-    if (Date.now() >= deadline) {
-      throw new Error(`Registry artifact backup index ${indexPath} is busy`);
-    }
-    await sleep(INDEX_LEASE_RETRY_DELAY_MS);
-  }
-
-  try {
-    return await run();
-  } finally {
-    await ctx.runMutation(
-      internal.registryArtifactBackups.releaseRegistryArtifactBackupIndexLeaseInternal,
-      {
-        indexPath,
-        token,
-      },
-    );
-  }
-}
-
-function sleep(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 async function getPackageBackupItemForRelease(
   ctx: ActionCtx,
   releaseId: Id<"packageReleases">,
@@ -1013,7 +747,6 @@ async function getPackageBackupItemForRelease(
     runtimeId: release.runtimeId,
     sourceRepo: release.sourceRepo,
     compatibility: release.compatibility,
-    capabilities: release.capabilities,
     extractedPackageJson: release.extractedPackageJson,
     extractedPluginManifest: release.extractedPluginManifest,
     normalizedBundleManifest: release.normalizedBundleManifest,

@@ -31,6 +31,7 @@ import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
  *
  * - download: User downloaded skill as zip (+1 downloads)
  * - star/unstar: legacy queued events; star rows now update counts synchronously
+ * - comment/uncomment: retired comment events; retained as no-op compatibility for old rows
  * - install_new: First time this user installed this skill (+1 installsAllTime, +1 installsCurrent)
  * - install_reactivate: User re-added skill after removing it (+1 installsCurrent only)
  * - install_deactivate: User removed skill from all projects (-1 installsCurrent)
@@ -93,7 +94,6 @@ export async function insertStatEvent(
 type AggregatedDeltas = {
   downloads: number;
   stars: number;
-  comments: number;
   installsAllTime: number;
   installsCurrent: number;
   /** Original timestamps for each download event (for daily stats bucketing) */
@@ -125,7 +125,6 @@ function aggregateEvents(events: Doc<"skillStatEvents">[]): AggregatedDeltas {
   const result: AggregatedDeltas = {
     downloads: 0,
     stars: 0,
-    comments: 0,
     installsAllTime: 0,
     installsCurrent: 0,
     downloadEvents: [],
@@ -146,10 +145,9 @@ function aggregateEvents(events: Doc<"skillStatEvents">[]): AggregatedDeltas {
         // See `star` above.
         break;
       case "comment":
-        result.comments += 1;
-        break;
       case "uncomment":
-        result.comments -= 1;
+        // Skill comments are retired. Keep old rows schema-valid and mark
+        // them processed without changing historical `stats.comments`.
         break;
       case "install_new":
         // New user installing for the first time: count toward both lifetime and current
@@ -400,14 +398,12 @@ export const processSkillStatEventBatchInternal = internalMutation({
       if (
         deltas.downloads !== 0 ||
         deltas.stars !== 0 ||
-        deltas.comments !== 0 ||
         deltas.installsAllTime !== 0 ||
         deltas.installsCurrent !== 0
       ) {
         const patch = applySkillStatDeltas(skill, {
           downloads: deltas.downloads,
           stars: deltas.stars,
-          comments: deltas.comments,
           installsAllTime: deltas.installsAllTime,
           installsCurrent: deltas.installsCurrent,
         });
@@ -639,7 +635,6 @@ const skillDeltaValidator = v.object({
   skillId: v.id("skills"),
   downloads: v.number(),
   stars: v.number(),
-  comments: v.number(),
   installsAllTime: v.number(),
   installsCurrent: v.number(),
   downloadEvents: v.array(v.number()),
@@ -747,7 +742,6 @@ export const processSkillStatEventsAction = internalAction({
       {
         downloads: number;
         stars: number;
-        comments: number;
         installsAllTime: number;
         installsCurrent: number;
         downloadEvents: number[];
@@ -781,7 +775,6 @@ export const processSkillStatEventsAction = internalAction({
           skillDelta = {
             downloads: 0,
             stars: 0,
-            comments: 0,
             installsAllTime: 0,
             installsCurrent: 0,
             downloadEvents: [],
@@ -803,10 +796,8 @@ export const processSkillStatEventsAction = internalAction({
             // Historical queued unstar events should not double-apply.
             break;
           case "comment":
-            skillDelta.comments += 1;
-            break;
           case "uncomment":
-            skillDelta.comments -= 1;
+            // Skill comments are retired; old rows only advance the cursor.
             break;
           case "install_new":
             skillDelta.installsAllTime += 1;

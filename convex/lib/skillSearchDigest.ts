@@ -33,7 +33,6 @@ const SHARED_KEYS = [
   "githubScanStatus",
   "latestVersionSummary",
   "tags",
-  "capabilityTags",
   "badges",
   "stats",
   "statsDownloads",

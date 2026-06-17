@@ -47,7 +47,6 @@ function makeSkill(overrides: Partial<PublicSkill> = {}): PublicSkill {
     forkOf: undefined,
     latestVersionId: undefined,
     tags: {},
-    capabilityTags: [],
     badges: {},
     stats: {
       downloads: 9,

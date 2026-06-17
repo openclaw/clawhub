@@ -95,7 +95,6 @@ export type PublicSkill = Pick<
   | "githubScanStatus"
   | "githubHasSkillCard"
   | "tags"
-  | "capabilityTags"
   | "badges"
   | "stats"
   | "isSuspicious"

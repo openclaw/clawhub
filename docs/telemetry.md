@@ -25,14 +25,12 @@ On each reported `clawhub install`, the CLI sends one best-effort install event.
 
 The event includes:
 
-- `rootId`: a **SHA-256 hash** of the canonical root path (server never sees the raw path).
-- `rootLabel`: a short label derived from the last two path segments (home paths are shown with `~`).
 - `slug`: the installed skill slug.
 - `version`: the installed version, when known.
 
 ### What we do _not_ collect
 
-- No raw absolute folder paths (only hashed `rootId` + a short display label).
+- No folder paths or folder-derived identifiers.
 - No file contents.
 - No per-run logs, prompts, or other CLI output.
 
@@ -46,13 +44,7 @@ ClawHub maintains aggregate counters per skill:
 
 ## Transparency + user controls
 
-ClawHub provides a private “Installed” tab on your own profile:
-
-- Shows install telemetry associated with your account.
-- Includes a **JSON export** view.
-- Includes a **Delete telemetry** action to remove all stored telemetry for your account.
-
-Everyone else only sees **aggregated install counters**.
+Everyone only sees **aggregated install counters**.
 
 Deleting your account also deletes your telemetry data.
 

@@ -53,10 +53,6 @@ vi.mock("../lib/useAuthStatus", () => ({
   useAuthStatus: () => useAuthStatusMock(),
 }));
 
-vi.mock("../components/SkillCommentsPanel", () => ({
-  SkillCommentsPanel: () => <div data-testid="skill-comments-panel" />,
-}));
-
 vi.mock("../components/ui/tooltip", () => ({
   Tooltip: ({ children }: { children: ReactNode }) => children,
   TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,

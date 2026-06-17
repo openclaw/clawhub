@@ -10,8 +10,3 @@ export function familyLabel(family: PackageFamily) {
       return "Skill";
   }
 }
-
-export function packageCapabilityLabel(family: PackageFamily, executesCode?: boolean | null) {
-  if (family === "skill") return "Skill";
-  return executesCode ? "Executes code" : "Bundle only";
-}

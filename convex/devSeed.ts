@@ -112,7 +112,6 @@ type SeedGitHubBackedSkillSourceArgs = {
     githubCurrentCheckedAt?: number;
     githubScanStatus: GitHubSkillScanStatus;
     githubRemovedAt?: number;
-    capabilityTags?: string[];
   }>;
 };
 
@@ -135,7 +134,6 @@ const publicCorpusSkillRowValidator = v.object({
   version: v.string(),
   skillMd: v.string(),
   summary: v.optional(v.string()),
-  capabilityTags: v.optional(v.array(v.string())),
   createdAt: v.optional(v.number()),
   dummyOwner: publicCorpusDummyOwnerValidator,
 });
@@ -147,12 +145,10 @@ const publicCorpusPluginRowValidator = v.object({
   version: v.string(),
   readme: v.string(),
   summary: v.optional(v.string()),
-  capabilityTags: v.optional(v.array(v.string())),
   family: v.optional(
     v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
   ),
   channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
-  executesCode: v.optional(v.boolean()),
   sourceRepoHost: v.optional(v.union(v.string(), v.null())),
   createdAt: v.optional(v.number()),
   dummyOwner: publicCorpusDummyOwnerValidator,
@@ -170,7 +166,6 @@ const publicCorpusPreparedSkillRowValidator = v.object({
   version: v.string(),
   skillMd: v.string(),
   summary: v.optional(v.string()),
-  capabilityTags: v.optional(v.array(v.string())),
   createdAt: v.optional(v.number()),
   dummyOwner: publicCorpusDummyOwnerValidator,
   storageId: v.id("_storage"),
@@ -184,12 +179,10 @@ const publicCorpusPreparedPluginRowValidator = v.object({
   version: v.string(),
   readme: v.string(),
   summary: v.optional(v.string()),
-  capabilityTags: v.optional(v.array(v.string())),
   family: v.optional(
     v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
   ),
   channel: v.optional(v.union(v.literal("official"), v.literal("community"), v.literal("private"))),
-  executesCode: v.optional(v.boolean()),
   sourceRepoHost: v.optional(v.union(v.string(), v.null())),
   createdAt: v.optional(v.number()),
   dummyOwner: publicCorpusDummyOwnerValidator,
@@ -727,16 +720,6 @@ async function retireLegacyLocalOwnerPublishers(
           ownerPublisherId: owner.publisherId,
         });
       }
-      const capabilityDigests = await ctx.db
-        .query("packageCapabilitySearchDigest")
-        .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
-        .collect();
-      for (const digest of capabilityDigests) {
-        await ctx.db.patch(digest._id, {
-          ownerUserId: owner.userId,
-          ownerPublisherId: owner.publisherId,
-        });
-      }
       const categoryDigests = await ctx.db
         .query("packagePluginCategorySearchDigest")
         .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
@@ -907,7 +890,6 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           latestVersionId: undefined,
           latestVersionSummary: undefined,
           tags: {},
-          capabilityTags: row.capabilityTags ?? [],
           badges: { highlighted: undefined, redactionApproved: undefined },
           batch: PUBLIC_CORPUS_BATCH,
           statsDownloads: stats.downloads,
@@ -993,14 +975,7 @@ export const seedPublicCorpusBatchMutation = internalMutation({
 
         const createdAt = row.createdAt ?? now;
         const stats = publicCorpusPackageStats(row.name);
-        const capabilityTags = row.capabilityTags ?? [];
         const compatibility = { pluginApiRange: ">=0.1.0" };
-        const capabilities = {
-          executesCode: row.executesCode ?? true,
-          runtimeId: normalizedName,
-          pluginKind: "runtime",
-          capabilityTags,
-        };
         const verification = {
           tier: "structural" as const,
           scope: "artifact-only" as const,
@@ -1021,10 +996,7 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           latestReleaseId: undefined,
           latestVersionSummary: undefined,
           tags: {},
-          capabilityTags,
-          executesCode: row.executesCode ?? true,
           compatibility,
-          capabilities,
           verification,
           scanStatus: "clean",
           stats: { ...stats, versions: 0 },
@@ -1055,7 +1027,6 @@ export const seedPublicCorpusBatchMutation = internalMutation({
             description: row.summary ?? `${row.displayName} public corpus plugin fixture.`,
           },
           compatibility,
-          capabilities,
           verification,
           sha256hash: `public-corpus-hash-${normalizedName}`,
           source: row.sourceRepoHost
@@ -1073,7 +1044,6 @@ export const seedPublicCorpusBatchMutation = internalMutation({
             createdAt,
             changelog: "Seeded from the public corpus fixture.",
             compatibility,
-            capabilities,
             verification,
           },
           tags: { latest: releaseId },
@@ -2289,7 +2259,6 @@ export async function seedLocalModerationFixturesHandler(
       checkedAt: now,
     },
     llmAnalysis: clawScanRiskAnalysis(now),
-    capabilityTags: ["requires-oauth-token", "posts-externally"],
     staticScan: scannedSkillStaticScan,
   });
   const scannedSkillEmbeddingId = await ctx.db.insert("skillEmbeddings", {
@@ -2336,15 +2305,7 @@ export async function seedLocalModerationFixturesHandler(
     latestReleaseId: undefined,
     latestVersionSummary: undefined,
     tags: {},
-    capabilityTags: ["dev-tools"],
-    executesCode: true,
     compatibility: { pluginApiRange: ">=0.1.0" },
-    capabilities: {
-      executesCode: true,
-      runtimeId: "local.flagged.runtime",
-      pluginKind: "runtime",
-      capabilityTags: ["dev-tools"],
-    },
     verification: {
       tier: "structural",
       scope: "artifact-only",
@@ -2380,12 +2341,6 @@ export async function seedLocalModerationFixturesHandler(
       version: "0.1.0",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
-    capabilities: {
-      executesCode: true,
-      runtimeId: "local.flagged.runtime",
-      pluginKind: "runtime",
-      capabilityTags: ["dev-tools"],
-    },
     verification: {
       tier: "structural",
       scope: "artifact-only",
@@ -2424,12 +2379,6 @@ export async function seedLocalModerationFixturesHandler(
       createdAt: now,
       changelog: "Seeded flagged local release for security review testing.",
       compatibility: { pluginApiRange: ">=0.1.0" },
-      capabilities: {
-        executesCode: true,
-        runtimeId: "local.flagged.runtime",
-        pluginKind: "runtime",
-        capabilityTags: ["dev-tools"],
-      },
       verification: {
         tier: "structural",
         scope: "artifact-only",
@@ -2458,15 +2407,7 @@ export async function seedLocalModerationFixturesHandler(
     latestReleaseId: undefined,
     latestVersionSummary: undefined,
     tags: {},
-    capabilityTags: ["dev-tools", "security"],
-    executesCode: true,
     compatibility: { pluginApiRange: ">=0.1.0" },
-    capabilities: {
-      executesCode: true,
-      runtimeId: "local.scanned.runtime",
-      pluginKind: "runtime",
-      capabilityTags: ["dev-tools", "security"],
-    },
     verification: {
       tier: "structural",
       scope: "artifact-only",
@@ -2502,12 +2443,6 @@ export async function seedLocalModerationFixturesHandler(
       version: "0.1.0",
     },
     compatibility: { pluginApiRange: ">=0.1.0" },
-    capabilities: {
-      executesCode: true,
-      runtimeId: "local.scanned.runtime",
-      pluginKind: "runtime",
-      capabilityTags: ["dev-tools", "security"],
-    },
     verification: {
       tier: "structural",
       scope: "artifact-only",
@@ -2538,12 +2473,6 @@ export async function seedLocalModerationFixturesHandler(
       createdAt: now,
       changelog: "Seeded public scanned release for plugin scanner page previews.",
       compatibility: { pluginApiRange: ">=0.1.0" },
-      capabilities: {
-        executesCode: true,
-        runtimeId: "local.scanned.runtime",
-        pluginKind: "runtime",
-        capabilityTags: ["dev-tools", "security"],
-      },
       verification: {
         tier: "structural",
         scope: "artifact-only",
@@ -2760,7 +2689,6 @@ export async function seedGitHubBackedSkillSourceHandler(
       latestVersionId: undefined,
       latestVersionSummary: undefined,
       tags: {},
-      capabilityTags: spec.capabilityTags ?? [],
       softDeletedAt: undefined,
       badges: { highlighted: { byUserId: userId, at: now }, redactionApproved: undefined },
       moderationStatus: moderation.moderationStatus,
@@ -2823,7 +2751,6 @@ export const seedGitHubBackedSkillSourceMutation = internalMutation({
         githubCurrentCheckedAt: v.optional(v.number()),
         githubScanStatus: githubSkillScanStatusValidator,
         githubRemovedAt: v.optional(v.number()),
-        capabilityTags: v.optional(v.array(v.string())),
       }),
     ),
   },
@@ -2926,7 +2853,6 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
         runtimeId: v.string(),
         sourceRepo: v.string(),
         isOfficial: v.boolean(),
-        capabilityTags: v.array(v.string()),
         stats: v.object({
           downloads: v.number(),
           installs: v.number(),
@@ -2956,12 +2882,6 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
       }
 
       const compatibility = { pluginApiRange: ">=0.1.0" };
-      const capabilities = {
-        executesCode: true,
-        runtimeId: spec.runtimeId,
-        pluginKind: "runtime" as const,
-        capabilityTags: spec.capabilityTags,
-      };
       const verification = {
         tier: "source-linked" as const,
         scope: "artifact-only" as const,
@@ -2986,10 +2906,7 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
         latestReleaseId: undefined,
         latestVersionSummary: undefined,
         tags: {},
-        capabilityTags: spec.capabilityTags,
-        executesCode: true,
         compatibility,
-        capabilities,
         verification,
         scanStatus: "clean",
         stats: { ...spec.stats, versions: 0 },
@@ -3020,7 +2937,6 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
           description: spec.summary,
         },
         compatibility,
-        capabilities,
         verification,
         sha256hash: `seeded-featured-plugin-hash-${normalizedName}`,
         vtAnalysis: {
@@ -3060,7 +2976,6 @@ export const seedFeaturedPluginPackagesMutation = internalMutation({
           createdAt: now,
           changelog: "Seeded local featured plugin release.",
           compatibility,
-          capabilities,
           verification,
         },
         tags: { latest: releaseId },
@@ -3180,7 +3095,6 @@ export const seedAgenticRiskDemoSkillMutation = internalMutation({
         checkedAt: now,
       },
       llmAnalysis: clawScanRiskAnalysis(now),
-      capabilityTags: ["requires-oauth-token", "posts-externally"],
       staticScan: scannedSkillStaticScan,
     });
     const scannedSkillEmbeddingId = await ctx.db.insert("skillEmbeddings", {
@@ -3345,7 +3259,6 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
       latestVersionId: undefined,
       latestVersionSummary: undefined,
       tags: {},
-      capabilityTags: ["dev-tools"],
       softDeletedAt: undefined,
       badges: { highlighted: undefined, redactionApproved: undefined },
       moderationStatus: "active",
@@ -3379,7 +3292,6 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
         },
         metadata: {},
       },
-      capabilityTags: ["dev-tools"],
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -3405,12 +3317,6 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
     });
 
     const compatibility = { pluginApiRange: ">=0.1.0" };
-    const capabilities = {
-      executesCode: true,
-      runtimeId: normalizedName,
-      pluginKind: "runtime",
-      capabilityTags: ["dev-tools"],
-    };
     const verification = {
       tier: "structural" as const,
       scope: "artifact-only" as const,
@@ -3431,10 +3337,7 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
       tags: {},
-      capabilityTags: ["dev-tools"],
-      executesCode: true,
       compatibility,
-      capabilities,
       verification,
       scanStatus: "clean",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
@@ -3456,7 +3359,6 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
         version: "1.0.0",
       },
       compatibility,
-      capabilities,
       verification,
       sha256hash: `org-delete-fixture-${normalizedName}`,
       createdBy: userId,
@@ -3471,7 +3373,6 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
         createdAt: now,
         changelog: "Seeded local-auth org deletion fixture.",
         compatibility,
-        capabilities,
         verification,
       },
       tags: { latest: packageReleaseId },
@@ -3611,7 +3512,6 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
       latestVersionId: undefined,
       latestVersionSummary: undefined,
       tags: {},
-      capabilityTags: ["dev-tools"],
       softDeletedAt: undefined,
       badges: { highlighted: undefined, redactionApproved: undefined },
       moderationStatus: "active",
@@ -3645,7 +3545,6 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
         },
         metadata: {},
       },
-      capabilityTags: ["dev-tools"],
       createdBy: userId,
       createdAt: olderCreatedAt,
       softDeletedAt: undefined,
@@ -3663,7 +3562,6 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
         },
         metadata: {},
       },
-      capabilityTags: ["dev-tools"],
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -3689,12 +3587,6 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
     });
 
     const compatibility = { pluginApiRange: ">=0.1.0" };
-    const capabilities = {
-      executesCode: true,
-      runtimeId: normalizedName,
-      pluginKind: "runtime",
-      capabilityTags: ["dev-tools"],
-    };
     const verification = {
       tier: "structural" as const,
       scope: "artifact-only" as const,
@@ -3715,10 +3607,7 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
       tags: {},
-      capabilityTags: ["dev-tools"],
-      executesCode: true,
       compatibility,
-      capabilities,
       verification,
       scanStatus: "clean",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
@@ -3740,7 +3629,6 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
         version: "1.0.0",
       },
       compatibility,
-      capabilities,
       verification,
       sha256hash: `version-delete-fixture-old-${normalizedName}`,
       createdBy: userId,
@@ -3761,7 +3649,6 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
         version: "2.0.0",
       },
       compatibility,
-      capabilities,
       verification,
       sha256hash: `version-delete-fixture-latest-${normalizedName}`,
       createdBy: userId,
@@ -3776,7 +3663,6 @@ export const seedVersionDeletionFixtureMutation = internalMutation({
         createdAt: now,
         changelog: "Latest disposable release retained after owner deletion.",
         compatibility,
-        capabilities,
         verification,
       },
       tags: { latest: latestPackageReleaseId },
@@ -4015,7 +3901,6 @@ export const seedAccountDeletionFixtureMutation = internalMutation({
       latestVersionId: undefined,
       latestVersionSummary: undefined,
       tags: {},
-      capabilityTags: ["dev-tools"],
       softDeletedAt: undefined,
       badges: { highlighted: undefined, redactionApproved: undefined },
       moderationStatus: "active",
@@ -4049,7 +3934,6 @@ export const seedAccountDeletionFixtureMutation = internalMutation({
         },
         metadata: {},
       },
-      capabilityTags: ["dev-tools"],
       createdBy: userId,
       createdAt: now,
       softDeletedAt: undefined,
@@ -4075,12 +3959,6 @@ export const seedAccountDeletionFixtureMutation = internalMutation({
     });
 
     const compatibility = { pluginApiRange: ">=0.1.0" };
-    const capabilities = {
-      executesCode: true,
-      runtimeId: normalizedName,
-      pluginKind: "runtime",
-      capabilityTags: ["dev-tools"],
-    };
     const verification = {
       tier: "structural" as const,
       scope: "artifact-only" as const,
@@ -4101,10 +3979,7 @@ export const seedAccountDeletionFixtureMutation = internalMutation({
       latestReleaseId: undefined,
       latestVersionSummary: undefined,
       tags: {},
-      capabilityTags: ["dev-tools"],
-      executesCode: true,
       compatibility,
-      capabilities,
       verification,
       scanStatus: "clean",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
@@ -4126,7 +4001,6 @@ export const seedAccountDeletionFixtureMutation = internalMutation({
         version: "1.0.0",
       },
       compatibility,
-      capabilities,
       verification,
       sha256hash: `account-delete-fixture-${normalizedName}`,
       createdBy: userId,
@@ -4141,7 +4015,6 @@ export const seedAccountDeletionFixtureMutation = internalMutation({
         createdAt: now,
         changelog: "Seeded local-auth account deletion fixture.",
         compatibility,
-        capabilities,
         verification,
       },
       tags: { latest: packageReleaseId },

@@ -93,13 +93,21 @@ Org publisher administration:
 
 ```bash
 bun run admin -- org create <handle> --member <handle> [--display-name <name>] [--role owner|admin|publisher] [--trusted] [--json]
-bun run admin -- org official list [--json]
-bun run admin -- org official add <handle> --reason <text> [--yes] [--json]
-bun run admin -- org official remove <handle> --reason <text> [--yes] [--json]
 ```
 
 `org create` requires `--member` and defaults that member to `owner`; it does
 not add the admin running the command as an org member.
+
+Publisher administration:
+
+```bash
+bun run admin -- publisher official list [--json]
+bun run admin -- publisher official add <handle> --reason <text> [--yes] [--json]
+bun run admin -- publisher official remove <handle> --reason <text> [--yes] [--json]
+```
+
+`org official ...` is retained as a compatibility alias for existing operator
+scripts.
 
 Package moderation and operations:
 

@@ -405,6 +405,7 @@ describe("httpApiV1 handlers", () => {
         body: JSON.stringify({
           handle: "Target",
           slugs: ["a", "b"],
+          versionsBySlug: { a: "1.0.0", b: "1.1.0" },
           forceOverwriteSquatter: true,
         }),
       }),
@@ -415,8 +416,40 @@ describe("httpApiV1 handlers", () => {
       ownerHandle: "target",
       ownerUserId: "users:target",
       slugs: ["a", "b"],
+      versionsBySlug: { a: "1.0.0", b: "1.1.0" },
       forceOverwriteSquatter: true,
     });
+  });
+
+  it("users/restore requires a backup version for every slug", async () => {
+    const runAction = vi.fn();
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return { ok: true };
+    });
+    const runQuery = vi.fn();
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery, runAction, runMutation }),
+      new Request("https://example.com/api/v1/users/restore", {
+        method: "POST",
+        body: JSON.stringify({
+          handle: "Target",
+          slugs: ["a", "b"],
+          versionsBySlug: { a: "1.0.0" },
+          forceOverwriteSquatter: true,
+        }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe("Missing backup version for slug b");
+    expect(runQuery).not.toHaveBeenCalled();
+    expect(runAction).not.toHaveBeenCalled();
   });
 
   it("skills export allows authenticated non-admin users at the key rate limit", async () => {
@@ -1530,7 +1563,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("users/publisher-official adds official org publishers for admin", async () => {
+  it("users/publisher-official adds official publishers for admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -1568,7 +1601,7 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
-  it("users/publisher-official removes official org publishers for admin", async () => {
+  it("users/publisher-official removes official publishers for admin", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
       user: { _id: "users:admin", role: "admin" },
@@ -3748,11 +3781,7 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.security.status).toBe("suspicious");
     expect(json.security.hasScanResult).toBe(true);
-    expect(json.security.capabilityTags).toEqual([
-      "crypto",
-      "requires-wallet",
-      "can-make-purchases",
-    ]);
+    expect(json.security).not.toHaveProperty("capabilityTags");
     expect(json.security.scanners.llm.verdict).toBe("suspicious");
     expect(json.moderation.scope).toBe("skill");
     expect(json.moderation.sourceVersion).toEqual({
@@ -3899,7 +3928,7 @@ describe("httpApiV1 handlers", () => {
     });
   }
 
-  it("returns capability tags even when no scanner result exists yet", async () => {
+  it("omits security when no scanner result exists yet", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
         return {
@@ -3942,8 +3971,7 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(200);
     const json = await response.json();
-    expect(json.security.capabilityTags).toEqual(["posts-externally", "requires-oauth-token"]);
-    expect(json.security.hasScanResult).toBe(false);
+    expect(json.security).toBeNull();
   });
 
   it("blocks exact scan status for moderated skills", async () => {
@@ -7827,7 +7855,7 @@ describe("httpApiV1 handlers", () => {
     expect(json.unstarred).toBe(true);
   });
 
-  it("packages search forwards executesCode and capabilityTag", async () => {
+  it("packages search ignores retired execution and capability filters", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("query" in args) return [];
       return null;
@@ -7844,8 +7872,16 @@ describe("httpApiV1 handlers", () => {
       expect.objectContaining({
         query: "test",
         limit: 5,
-        executesCode: true,
-        capabilityTag: "tools",
+      }),
+    );
+    expect(runQuery.mock.calls.map(([, args]) => args)).not.toContainEqual(
+      expect.objectContaining({
+        executesCode: expect.anything(),
+      }),
+    );
+    expect(runQuery.mock.calls.map(([, args]) => args)).not.toContainEqual(
+      expect.objectContaining({
+        capabilityTag: expect.anything(),
       }),
     );
     expect(findRateLimitCallArgs(runMutation)).toMatchObject({
@@ -7855,7 +7891,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("RateLimit-Limit")).toBeTruthy();
   });
 
-  it("packages search maps environment filters to capability tags", async () => {
+  it("packages search ignores retired environment capability shorthands", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("query" in args) return [];
       return null;
@@ -7866,14 +7902,14 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/search?q=test&requiresBrowser=true"),
     );
     if (response.status !== 200) throw new Error(await response.text());
-    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
+    expect(runQuery.mock.calls.map(([, args]) => args)).not.toContainEqual(
       expect.objectContaining({
-        capabilityTag: "requires:browser",
+        capabilityTag: expect.anything(),
       }),
     );
   });
 
-  it("packages search maps artifact filters to capability tags", async () => {
+  it("packages search ignores retired artifact capability shorthands", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if ("query" in args) return [];
       return null;
@@ -7884,9 +7920,9 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/packages/search?q=test&artifactKind=npm-pack"),
     );
     if (response.status !== 200) throw new Error(await response.text());
-    expect(runQuery.mock.calls.map(([, args]) => args)).toContainEqual(
+    expect(runQuery.mock.calls.map(([, args]) => args)).not.toContainEqual(
       expect.objectContaining({
-        capabilityTag: "artifact:npm-pack",
+        capabilityTag: expect.anything(),
       }),
     );
   });
@@ -7899,10 +7935,7 @@ describe("httpApiV1 handlers", () => {
       ["family=bad", "Invalid family query parameter"],
       ["channel=bad", "Invalid channel query parameter"],
       ["isOfficial=maybe", "Invalid isOfficial query parameter"],
-      ["executesCode=maybe", "Invalid executesCode query parameter"],
       ["featured=maybe", "Invalid featured query parameter"],
-      ["artifactKind=bad", "Invalid artifactKind query parameter"],
-      ["requiresBrowser=maybe", "Invalid requiresBrowser query parameter"],
     ]) {
       const response = await __handlers.packagesGetRouterV1Handler(
         makeCtx({ runQuery, runMutation }),
@@ -8217,17 +8250,8 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("plugin and package lists normalize legacy downloads sorts and cursors to installs", async () => {
-    let emittedInstallCursor = false;
-    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      if (Object.keys(args).length === 0) return 0;
-      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
-      if (!emittedInstallCursor) {
-        emittedInstallCursor = true;
-        return { page: [], isDone: false, continueCursor: "install-cursor" };
-      }
-      return { page: [], isDone: true, continueCursor: "" };
-    });
+  it("plugin and package lists reject removed downloads sort links", async () => {
+    const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const packageResponse = await __handlers.listPackagesV1Handler(
@@ -8258,32 +8282,11 @@ describe("httpApiV1 handlers", () => {
       ),
     );
 
-    expect(packageResponse.status).toBe(200);
-    expect(pluginResponse.status).toBe(200);
-    const packageJson = await packageResponse.json();
-    expect(packageJson.nextCursor).toMatch(/^pkginstalls:/);
-    const paginationCursors = runQuery.mock.calls
-      .map(([, args]) => (args as { paginationOpts?: { cursor: string | null } }).paginationOpts)
-      .filter(Boolean)
-      .map((pagination) => pagination?.cursor ?? null);
-    expect(paginationCursors).toEqual(paginationCursors.map(() => null));
-
-    runQuery.mockClear();
-    await __handlers.listPackagesV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request(
-        `https://example.com/api/v1/packages?family=code-plugin&sort=downloads&cursor=${encodeURIComponent(
-          packageJson.nextCursor,
-        )}`,
-      ),
-    );
-    expect(runQuery).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        sort: "installs",
-        paginationOpts: { cursor: "install-cursor", numItems: 25 },
-      }),
-    );
+    expect(packageResponse.status).toBe(400);
+    expect(await packageResponse.text()).toBe("Invalid sort query parameter");
+    expect(pluginResponse.status).toBe(400);
+    expect(await pluginResponse.text()).toBe("Invalid sort query parameter");
+    expect(runQuery).not.toHaveBeenCalled();
   });
 
   it("plugins list defaults filtered browse to updated sort", async () => {
@@ -9208,6 +9211,13 @@ describe("httpApiV1 handlers", () => {
             isOfficial: false,
             summary: "Plugin summary",
             latestVersion: "1.2.3",
+            capabilityTags: ["tools"],
+            executesCode: true,
+            capabilities: {
+              executesCode: true,
+              toolNames: ["demoTool"],
+              capabilityTags: ["tools"],
+            },
             stats: { downloads: 7, installs: 3, stars: 2, versions: 4 },
             createdAt: 1,
             updatedAt: 2,
@@ -9226,7 +9236,8 @@ describe("httpApiV1 handlers", () => {
     );
 
     if (response.status !== 200) throw new Error(await response.text());
-    await expect(response.json()).resolves.toMatchObject({
+    const json = await response.json();
+    expect(json).toMatchObject({
       package: {
         name: "demo-plugin",
         latestVersion: "1.2.3",
@@ -9236,6 +9247,9 @@ describe("httpApiV1 handlers", () => {
         handle: "owner",
       },
     });
+    expect(json.package).not.toHaveProperty("capabilityTags");
+    expect(json.package).not.toHaveProperty("capabilities");
+    expect(json.package).not.toHaveProperty("executesCode");
   });
 
   it("packages detail accepts double-encoded scoped package names", async () => {
@@ -10602,8 +10616,8 @@ describe("httpApiV1 handlers", () => {
       checks: expect.arrayContaining([
         expect.objectContaining({ id: "official", status: "fail" }),
         expect.objectContaining({ id: "clawpack", status: "fail" }),
-        expect.objectContaining({ id: "host-targets", status: "pass" }),
-        expect.objectContaining({ id: "environment", status: "pass" }),
+        expect.objectContaining({ id: "compatibility", status: "pass" }),
+        expect.objectContaining({ id: "scan", status: "pass" }),
       ]),
     });
   });
