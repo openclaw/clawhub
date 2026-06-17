@@ -132,6 +132,10 @@ jobs:
             bun run convex:deploy
           fi
 
+      - name: Rebuild catalog taxonomy package digests
+        if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
+        run: bunx convex run migrations:runCatalogTaxonomyPrerequisites --prod
+
       - name: Verify Convex contract
         if: needs.validate-deploy-request.outputs.deploy_backend == 'true'
         run: bun run verify:convex-contract -- --prod

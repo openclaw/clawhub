@@ -21,6 +21,9 @@
 - Capability tags are not taxonomy inputs.
 - Existing skills without stored categories use deterministic inference into controlled slugs.
 - Existing plugins without stored categories remain in `other` until the follow-up corpus backfill.
+- Backend deploys run the tracked `rebuildCatalogTaxonomyPackageDigests` migration before contract
+  verification so retired category digest rows are deterministically replaced with controlled
+  inference or `other`.
 
 ## Topics
 
@@ -44,4 +47,6 @@
 ## Follow-Up
 
 The corpus classification and resumable LLM backfill are a separate migration PR. It will populate
-missing categories and topics without changing the author input surfaces above.
+missing categories and topics without changing the author input surfaces above. The deploy-time
+digest rebuild in this PR only reprojects current stored package data into the controlled taxonomy;
+it does not classify the corpus.

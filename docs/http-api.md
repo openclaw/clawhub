@@ -589,8 +589,10 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `sort` (optional): `recommended` (default), `installs`, `updated`
 - `category` (optional): plugin category filter. Current values:
-  `channels`, `mcp-tooling`, `data`, `security`, `observability`,
-  `automation`, `deployment`, `dev-tools`.
+  `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
+  `tools`, `runtime`, `gateway`, `security`, `other`.
+
+Retired category slugs are not accepted as public filters.
 
 ### `GET /api/v1/plugins/export`
 
@@ -638,11 +640,12 @@ Query params:
 - `limit` (optional): integer (1-100)
 - `isOfficial` (optional): `true` or `false`
 - `category` (optional): plugin category filter. Current values:
-  `channels`, `mcp-tooling`, `data`, `security`, `observability`,
-  `automation`, `deployment`, `dev-tools`.
+  `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
+  `tools`, `runtime`, `gateway`, `security`, `other`.
 
 Notes:
 
+- Retired category slugs are not accepted as public filters.
 - Category filtering is a real API filter backed by plugin category digest
   rows, not a search-query rewrite.
 - Results are returned in relevance order and do not currently paginate.

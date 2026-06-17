@@ -1847,12 +1847,10 @@ const packageTopicSearchDigest = defineTable({
   summary: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
-  capabilityTags: v.optional(v.array(v.string())),
   categories: v.optional(v.array(v.string())),
   topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
   topic: v.string(),
-  executesCode: v.optional(v.boolean()),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
   recommendedScore: v.optional(v.number()),
@@ -1893,49 +1891,14 @@ const packageTopicSearchDigest = defineTable({
     "recommendedScore",
     "updatedAt",
   ])
-  .index("by_active_topic_executes_updated", [
-    "softDeletedAt",
-    "topic",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_family_topic_updated", ["softDeletedAt", "family", "topic", "updatedAt"])
-  .index("by_active_family_topic_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "topic",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_channel_topic_updated", ["softDeletedAt", "channel", "topic", "updatedAt"])
-  .index("by_active_channel_topic_executes_updated", [
-    "softDeletedAt",
-    "channel",
-    "topic",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_official_topic_updated", ["softDeletedAt", "isOfficial", "topic", "updatedAt"])
-  .index("by_active_official_topic_executes_updated", [
-    "softDeletedAt",
-    "isOfficial",
-    "topic",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_family_channel_topic_updated", [
     "softDeletedAt",
     "family",
     "channel",
     "topic",
-    "updatedAt",
-  ])
-  .index("by_active_family_channel_topic_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "channel",
-    "topic",
-    "executesCode",
     "updatedAt",
   ])
   .index("by_active_family_official_topic_updated", [
@@ -1945,27 +1908,11 @@ const packageTopicSearchDigest = defineTable({
     "topic",
     "updatedAt",
   ])
-  .index("by_active_family_official_topic_executes_updated", [
-    "softDeletedAt",
-    "family",
-    "isOfficial",
-    "topic",
-    "executesCode",
-    "updatedAt",
-  ])
   .index("by_active_channel_official_topic_updated", [
     "softDeletedAt",
     "channel",
     "isOfficial",
     "topic",
-    "updatedAt",
-  ])
-  .index("by_active_channel_official_topic_executes_updated", [
-    "softDeletedAt",
-    "channel",
-    "isOfficial",
-    "topic",
-    "executesCode",
     "updatedAt",
   ]);
 

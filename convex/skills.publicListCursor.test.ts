@@ -358,6 +358,84 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
+  it("paginates topic browse from the selected sort's full self-describing cursor", async () => {
+    const firstDigest = makeSearchDigest({
+      skillId: "skills:calendar-one",
+      slug: "calendar-one",
+      topics: ["Calendar"],
+      statsDownloads: 42,
+      updatedAt: 10,
+    });
+    const secondDigest = makeSearchDigest({
+      skillId: "skills:calendar-two",
+      slug: "calendar-two",
+      topics: ["Calendar"],
+      statsDownloads: 21,
+      updatedAt: 9,
+    });
+    const firstIndexKey = [
+      undefined,
+      "calendar",
+      firstDigest.statsDownloads,
+      firstDigest.updatedAt,
+      "skillTopicSearchDigest:calendar-one",
+    ];
+    getPageMock
+      .mockResolvedValueOnce({
+        page: [
+          {
+            skillId: firstDigest.skillId,
+            topic: "calendar",
+            statsDownloads: firstDigest.statsDownloads,
+            updatedAt: firstDigest.updatedAt,
+          },
+        ],
+        hasMore: true,
+        indexKeys: [firstIndexKey],
+      })
+      .mockResolvedValueOnce({
+        page: [
+          {
+            skillId: secondDigest.skillId,
+            topic: "calendar",
+            statsDownloads: secondDigest.statsDownloads,
+            updatedAt: secondDigest.updatedAt,
+          },
+        ],
+        hasMore: false,
+        indexKeys: [
+          [
+            undefined,
+            "calendar",
+            secondDigest.statsDownloads,
+            secondDigest.updatedAt,
+            "skillTopicSearchDigest:calendar-two",
+          ],
+        ],
+      });
+    const ctx = makeTopicFilteredCtx([firstDigest, secondDigest]) as never;
+
+    const first = await listPublicPageV4Handler(ctx, {
+      topic: "calendar",
+      sort: "downloads",
+      numItems: 1,
+    });
+    const second = await listPublicPageV4Handler(ctx, {
+      cursor: first.nextCursor!,
+      topic: "calendar",
+      sort: "downloads",
+      numItems: 1,
+    });
+
+    expect(first.nextCursor).not.toBeNull();
+    expect(second.nextCursor).toBeNull();
+    expect(getPageMock.mock.calls[1]?.[1]).toMatchObject({
+      index: "by_active_topic_downloads",
+      startIndexKey: firstIndexKey,
+      startInclusive: false,
+    });
+  });
+
   it("falls back to the updated index while recommendation scores are missing", async () => {
     const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
 

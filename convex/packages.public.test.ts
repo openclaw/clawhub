@@ -3601,6 +3601,31 @@ describe("packages public queries", () => {
     expect(indexNames).toEqual(["by_active_topic_downloads"]);
   });
 
+  it("does not revive retired capability filters for topic-filtered listings", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [makeDigest("calendar-demo", { topic: "calendar", topics: ["calendar"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      capabilityTag: "tools",
+      executesCode: true,
+      paginationOpts: { cursor: null, numItems: 10 },
+    } as Parameters<typeof listPublicPageHandler>[1] & {
+      capabilityTag?: string;
+      executesCode?: boolean;
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-demo"]);
+    expect(indexNames).toEqual(["by_active_topic_updated"]);
+  });
+
   it("rejects invalid topic filters instead of returning an unfiltered listing", async () => {
     const { ctx, tableNames } = makeDigestCtx({
       pages: [

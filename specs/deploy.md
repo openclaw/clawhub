@@ -32,6 +32,9 @@ Production deploy notes:
 
 - `deploy.yml` is manual-only (`workflow_dispatch`). Merging to `main` does not deploy.
 - The workflow must be started from `main`.
+- Backend deploys run the tracked catalog-taxonomy package digest rebuild after Convex deploy and
+  before contract verification. The migration is idempotent, resumable, and a no-op after it
+  completes.
 - Deploy targets:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production
