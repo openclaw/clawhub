@@ -741,19 +741,28 @@ describe("public skill list deterministic cursors", () => {
     ).toEqual(["navigation-without-screens"]);
   });
 
-  it("does not exclude an explicitly assigned Other skill by inferred keywords", async () => {
+  it("does not exclude Other skills by inferred keywords", async () => {
     getPageMock.mockResolvedValueOnce({
       page: [
         makeDigest({
-          slug: "code-calendar-helper",
-          displayName: "Code Calendar Helper",
+          slug: "explicit-code-calendar-helper",
+          displayName: "Explicit Code Calendar Helper",
           summary: "API utilities for calendar workflows.",
           categories: ["other"],
           statsDownloads: 22,
         }),
+        makeDigest({
+          slug: "implicit-code-calendar-helper",
+          displayName: "Implicit Code Calendar Helper",
+          summary: "API utilities for calendar workflows.",
+          statsDownloads: 21,
+        }),
       ],
       hasMore: false,
-      indexKeys: [[undefined, 22, 1]],
+      indexKeys: [
+        [undefined, 22, 1],
+        [undefined, 21, 2],
+      ],
     });
 
     const result = await listPublicPageV4Handler({} as never, {
@@ -766,7 +775,7 @@ describe("public skill list deterministic cursors", () => {
 
     expect(
       (result.page as Array<{ skill: { slug: string } }>).map((entry) => entry.skill.slug),
-    ).toEqual(["code-calendar-helper"]);
+    ).toEqual(["explicit-code-calendar-helper", "implicit-code-calendar-helper"]);
   });
 
   it("paginates curated category skills before community fallback", async () => {

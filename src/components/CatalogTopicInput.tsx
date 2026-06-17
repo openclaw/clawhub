@@ -129,8 +129,7 @@ export function CatalogTopicInput({ id, value, disabled, onChange }: CatalogTopi
         onChange={(event) => setDraft(event.target.value)}
         onKeyDown={(event) => {
           if (event.nativeEvent.isComposing) return;
-          // Space intentionally commits word-like tags; paste multi-word topics and press Enter.
-          if (event.key === " " || event.key === "Enter" || event.key === ",") {
+          if (event.key === "Enter") {
             if (!draft.trim()) return;
             event.preventDefault();
             commitDraft();

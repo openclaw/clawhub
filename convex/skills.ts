@@ -5566,9 +5566,6 @@ function digestPassesPublicListFilters(
     excludeCategoryKeywords: string[];
   },
 ) {
-  const hasExplicitCategoryMatch = Boolean(
-    opts.categorySlug && digest.categories?.includes(opts.categorySlug),
-  );
   if (opts.categorySlug && !resolveStoredSkillCategories(digest).includes(opts.categorySlug)) {
     return false;
   }
@@ -5583,7 +5580,7 @@ function digestPassesPublicListFilters(
     return false;
   }
   if (
-    !hasExplicitCategoryMatch &&
+    !opts.categorySlug &&
     opts.excludeCategoryKeywords.length > 0 &&
     digestMatchesRelatedCategory(digest, opts.excludeCategoryKeywords)
   ) {

@@ -1264,6 +1264,44 @@ describe("package commands", () => {
     }
   });
 
+  it("sends explicit empty topics to clear existing package topics", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "clear-topics-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/clear-topics-plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "clear.topics.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "clear-topics-plugin", {
+        sourceRepo: "openclaw/clear-topics-plugin",
+        sourceCommit: "abc123",
+        topics: "",
+      });
+
+      expect(getPublishPayload()).toMatchObject({ topics: [] });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("uses the README H1 as a package display name fallback", async () => {
     const workdir = await makeTmpWorkdir();
     try {

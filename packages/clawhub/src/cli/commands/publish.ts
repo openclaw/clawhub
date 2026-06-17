@@ -148,7 +148,7 @@ export async function cmdPublish(
         acceptLicenseTerms: true,
         tags,
         ...(categories.length ? { categories } : {}),
-        ...(topics.length ? { topics } : {}),
+        ...(options.topics !== undefined ? { topics } : {}),
         ...(source ? { source } : {}),
         ...(forkOf ? { forkOf } : {}),
       }),

@@ -42,7 +42,7 @@ describe("CatalogMetadataEditor", () => {
     closeCategoryMenu();
     const topicsInput = screen.getByLabelText("Topics");
     fireEvent.change(topicsInput, { target: { value: "travel" } });
-    fireEvent.keyDown(topicsInput, { key: " " });
+    fireEvent.keyDown(topicsInput, { key: "Enter" });
 
     expect(screen.getByText("2 categories")).toBeTruthy();
     expect(screen.getByText("3 topics")).toBeTruthy();
@@ -63,7 +63,7 @@ describe("CatalogMetadataEditor", () => {
     closeCategoryMenu();
     const topicsInput = screen.getByLabelText("Topics");
     fireEvent.change(topicsInput, { target: { value: "CUDA" } });
-    fireEvent.keyDown(topicsInput, { key: " " });
+    fireEvent.keyDown(topicsInput, { key: "Enter" });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -101,7 +101,7 @@ describe("CatalogMetadataEditor", () => {
 
     const topicsInput = screen.getByLabelText("Topics");
     fireEvent.change(topicsInput, { target: { value: "Scheduling" } });
-    fireEvent.keyDown(topicsInput, { key: " " });
+    fireEvent.keyDown(topicsInput, { key: "Enter" });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -161,7 +161,7 @@ describe("CatalogMetadataEditor", () => {
 
     const topicsInput = screen.getByLabelText("Topics");
     fireEvent.change(topicsInput, { target: { value: "Scheduling" } });
-    fireEvent.keyDown(topicsInput, { key: " " });
+    fireEvent.keyDown(topicsInput, { key: "Enter" });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await waitFor(() =>
@@ -219,7 +219,7 @@ describe("CatalogMetadataEditor", () => {
     closeCategoryMenu();
     const topicsInput = screen.getByLabelText("Topics");
     fireEvent.change(topicsInput, { target: { value: "CUDA" } });
-    fireEvent.keyDown(topicsInput, { key: " " });
+    fireEvent.keyDown(topicsInput, { key: "Enter" });
 
     rerender(
       <CatalogMetadataEditor
@@ -254,7 +254,7 @@ describe("CatalogMetadataEditor", () => {
     closeCategoryMenu();
     const topicsInput = screen.getByLabelText("Topics");
     fireEvent.change(topicsInput, { target: { value: "CUDA" } });
-    fireEvent.keyDown(topicsInput, { key: " " });
+    fireEvent.keyDown(topicsInput, { key: "Enter" });
     fireEvent.click(screen.getByRole("button", { name: "Save" }));
 
     await screen.findByText("Save failed");

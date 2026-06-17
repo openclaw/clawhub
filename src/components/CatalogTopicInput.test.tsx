@@ -11,28 +11,32 @@ function TopicInputHarness({ initialValue = "" }: { initialValue?: string }) {
 }
 
 describe("CatalogTopicInput", () => {
-  it("commits a topic chip when space is pressed", () => {
+  it("allows typing a multi-word topic before Enter commits it", () => {
     render(<TopicInputHarness />);
 
     const input = screen.getByLabelText("Topics");
-    fireEvent.change(input, { target: { value: "email" } });
+    fireEvent.change(input, { target: { value: "GPU" } });
     fireEvent.keyDown(input, { key: " " });
 
-    expect(screen.getByText("#email")).toBeTruthy();
-    expect((input as HTMLInputElement).value).toBe("");
+    expect(screen.queryByText("#gpu")).toBeNull();
+    fireEvent.change(input, { target: { value: "GPU development" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(screen.getByText("#gpu development")).toBeTruthy();
   });
 
-  it("commits topics with Enter and comma", () => {
+  it("allows typing a comma-containing topic before Enter commits it", () => {
     render(<TopicInputHarness />);
 
     const input = screen.getByLabelText("Topics");
-    fireEvent.change(input, { target: { value: "calendar" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    fireEvent.change(input, { target: { value: "productivity" } });
+    fireEvent.change(input, { target: { value: "CI" } });
     fireEvent.keyDown(input, { key: "," });
 
-    expect(screen.getByText("#calendar")).toBeTruthy();
-    expect(screen.getByText("#productivity")).toBeTruthy();
+    expect(screen.queryByText("#ci")).toBeNull();
+    fireEvent.change(input, { target: { value: "CI, CD" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(screen.getByText("#ci, cd")).toBeTruthy();
   });
 
   it("normalizes topic chips to lowercase", () => {

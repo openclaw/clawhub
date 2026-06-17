@@ -2343,7 +2343,7 @@ async function preparePackagePublishPlan(
       : {}),
     tags,
     ...(categories.length ? { categories } : {}),
-    ...(topics.length ? { topics } : {}),
+    ...(options.topics !== undefined ? { topics } : {}),
     ...(source ? { source } : {}),
     ...(family === "bundle-plugin"
       ? {

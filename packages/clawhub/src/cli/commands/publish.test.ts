@@ -236,6 +236,26 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("sends explicit empty topics to clear existing skill topics", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "clear-topics");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Clear topics\n", "utf8");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "clear-topics", { topics: "" });
+
+      expect(publishPayload()).toMatchObject({ topics: [] });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("strips generated Skill Cards before publishing downloaded bundles", async () => {
     const workdir = await makeTmpWorkdir();
     try {
