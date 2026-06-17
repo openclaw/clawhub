@@ -554,7 +554,7 @@ export default function Header() {
                     ) : (
                       <span className="user-menu-fallback">{initial}</span>
                     )}
-                    <span className="mono truncate">@{handle}</span>
+                    <span className="user-trigger-handle truncate">@{handle}</span>
                     <ChevronDown className="user-menu-chevron" size={16} />
                   </button>
                 </DropdownMenuTrigger>

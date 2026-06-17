@@ -999,6 +999,13 @@ code {
   font-size: 0.95rem;
 }
 
+.user-trigger-handle {
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
 .user-menu-chevron {
   color: var(--ink-soft);
   flex-shrink: 0;
