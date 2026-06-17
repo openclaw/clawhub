@@ -1824,6 +1824,27 @@ const packagePluginCategorySearchDigest = defineTable({
     "recommendedScore",
     "updatedAt",
   ])
+  .index("by_active_family_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_installs", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_recommended_score", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
   .index("by_active_official_category_downloads", [
     "softDeletedAt",
     "isOfficial",
@@ -1840,6 +1861,30 @@ const packagePluginCategorySearchDigest = defineTable({
   ])
   .index("by_active_official_category_recommended_score", [
     "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_installs", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_recommended_score", [
+    "softDeletedAt",
+    "family",
     "isOfficial",
     "pluginCategory",
     "recommendedScore",

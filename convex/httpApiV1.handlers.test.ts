@@ -8134,6 +8134,45 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledTimes(4);
   });
 
+  it("packages list keeps legacy updated fallback sort from recommended pagination cursors", async () => {
+    const fallbackCursor = `pkgcatalog:${JSON.stringify({
+      packages: { cursor: "legacy-package-next", offset: 0, pageSize: 1, done: false },
+      skills: { cursor: null, offset: 0, pageSize: 1, done: true },
+      recommendedFallback: "updated",
+    })}`;
+    const pluginPackage = makeCatalogItem("plugin-next", {
+      family: "code-plugin",
+      updatedAt: 100,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        throw new Error("readiness should come from the pagination cursor");
+      }
+      expect(args).toEqual(
+        expect.objectContaining({
+          sort: "updated",
+          paginationOpts: expect.objectContaining({ cursor: "legacy-package-next" }),
+        }),
+      );
+      return { page: [pluginPackage], isDone: false, continueCursor: "packages-next" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/packages?limit=1&sort=recommended&cursor=${encodeURIComponent(
+          fallbackCursor,
+        )}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["plugin-next"]);
+    expect(json.nextCursor).toContain('"recommendedFallback":"updated"');
+  });
+
   it("plugins list defaults to plugin package families", async () => {
     const codePlugin = {
       name: "code-plugin",
@@ -8334,7 +8373,7 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("plugin and package lists reject removed downloads sort links", async () => {
+  it("plugin and package lists reject invalid downloads sort", async () => {
     const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
@@ -8621,6 +8660,47 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["code-next"]);
+  });
+
+  it("plugins list keeps legacy updated fallback sort from recommended pagination cursors", async () => {
+    const fallbackCursor = `pkgplugins:${JSON.stringify({
+      codePlugins: { cursor: "legacy-code-next", offset: 0, pageSize: 1, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 1, done: true },
+      recommendedFallback: "updated",
+    })}`;
+    const codePlugin = makeCatalogItem("code-next", {
+      family: "code-plugin",
+      updatedAt: 100,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 1;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        throw new Error("readiness should come from the pagination cursor");
+      }
+      expect(args).toEqual(
+        expect.objectContaining({
+          family: "code-plugin",
+          sort: "updated",
+          paginationOpts: expect.objectContaining({ cursor: "legacy-code-next" }),
+        }),
+      );
+      return { page: [codePlugin], isDone: false, continueCursor: "code-next" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=1&sort=recommended&cursor=${encodeURIComponent(
+          fallbackCursor,
+        )}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["code-next"]);
+    expect(json.nextCursor).toContain('"recommendedFallback":"updated"');
   });
 
   it("plugins list keeps legacy recommended cursors on recommended sort", async () => {

@@ -24,7 +24,7 @@ const listPackageCatalogPageHandler = (
       channel?: "official" | "community" | "private";
       isOfficial?: boolean;
       topic?: string;
-      sort?: "updated" | "downloads" | "recommended" | "installs";
+      sort?: "updated" | "downloads" | "installs" | "recommended";
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
@@ -426,7 +426,7 @@ describe("skills package catalog queries", () => {
     expect(indexNames).not.toContain("by_active_topic_updated");
   });
 
-  it("falls topic recommendation sorting back to updated while scores are missing", async () => {
+  it("falls topic recommendation sorting back to installs while scores are missing", async () => {
     const indexNames: string[] = [];
     const calendarSkill = makeDigest("calendar-skill", { topics: ["calendar"] });
 
@@ -442,7 +442,7 @@ describe("skills package catalog queries", () => {
               },
             ],
             isDone: false,
-            continueCursor: "updated-next",
+            continueCursor: "installs-next",
           },
         ],
         [calendarSkill],
@@ -457,70 +457,54 @@ describe("skills package catalog queries", () => {
     );
 
     expect(result.page.map((entry) => entry.name)).toEqual(["calendar-skill"]);
-    expect(indexNames).toContain("by_active_topic_updated");
+    expect(indexNames).toContain("by_active_topic_installs");
     expect(indexNames).not.toContain("by_active_topic_recommended_score");
-    expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
+    expect(result.continueCursor).toContain('"recommendedFallback":"installs"');
   });
 
-  it("keeps topic recommendation fallback on the updated index across pages", async () => {
-    const firstSkill = makeDigest("first-calendar-skill", { topics: ["calendar"] });
-    const firstPage = await listPackageCatalogPageHandler(
+  it("keeps legacy topic recommendation fallback cursors on the updated index", async () => {
+    const indexNames: string[] = [];
+    const skills = [
+      makeDigest("already-seen-skill", { topics: ["calendar"] }),
+      makeDigest("next-updated-skill", { topics: ["calendar"] }),
+      makeDigest("later-updated-skill", { topics: ["calendar"] }),
+    ];
+    const fallbackCursor = `skillcat:${JSON.stringify({
+      cursor: null,
+      offset: 1,
+      pageSize: 3,
+      done: false,
+      recommendedFallback: "updated",
+    })}`;
+
+    const result = await listPackageCatalogPageHandler(
       makeTopicCtx(
         [
           {
-            page: [
-              {
-                skillId: firstSkill.skillId,
-                topic: "calendar",
-                updatedAt: firstSkill.updatedAt,
-              },
-            ],
-            isDone: false,
-            continueCursor: "updated-next",
+            page: skills.map((skill) => ({
+              skillId: skill.skillId,
+              topic: "calendar",
+              updatedAt: skill.updatedAt,
+            })),
+            isDone: true,
+            continueCursor: "",
           },
         ],
-        [firstSkill],
-        [],
+        skills,
+        indexNames,
         true,
       ),
       {
         topic: "calendar",
         sort: "recommended",
-        paginationOpts: { cursor: null, numItems: 1 },
-      },
-    );
-    const nextSkill = makeDigest("next-calendar-skill", { topics: ["calendar"] });
-    const nextIndexNames: string[] = [];
-
-    const nextPage = await listPackageCatalogPageHandler(
-      makeTopicCtx(
-        [
-          { page: [], isDone: false, continueCursor: "updated-next" },
-          {
-            page: [
-              {
-                skillId: nextSkill.skillId,
-                topic: "calendar",
-                updatedAt: nextSkill.updatedAt,
-              },
-            ],
-            isDone: true,
-            continueCursor: "",
-          },
-        ],
-        [nextSkill],
-        nextIndexNames,
-      ),
-      {
-        topic: "calendar",
-        sort: "recommended",
-        paginationOpts: { cursor: firstPage.continueCursor, numItems: 1 },
+        paginationOpts: { cursor: fallbackCursor, numItems: 1 },
       },
     );
 
-    expect(nextPage.page.map((entry) => entry.name)).toEqual(["next-calendar-skill"]);
-    expect(nextIndexNames).toContain("by_active_topic_updated");
-    expect(nextIndexNames).not.toContain("by_active_topic_recommended_score");
+    expect(result.page).toEqual([expect.objectContaining({ name: "next-updated-skill" })]);
+    expect(indexNames).toContain("by_active_topic_updated");
+    expect(indexNames).not.toContain("by_active_topic_installs");
+    expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
   });
 
   it("rejects invalid skill package catalog topics instead of returning an unfiltered page", async () => {
@@ -758,6 +742,41 @@ describe("skills package catalog queries", () => {
 
     expect(indexNames).toEqual(["by_active_recommended_score"]);
     expect(result.page).toEqual([expect.objectContaining({ name: "next-recommended-skill" })]);
+  });
+
+  it("keeps legacy recommendation fallback cursors on the updated index", async () => {
+    const indexNames: string[] = [];
+    const fallbackCursor = `skillcat:${JSON.stringify({
+      cursor: null,
+      offset: 1,
+      pageSize: 3,
+      done: false,
+      recommendedFallback: "updated",
+    })}`;
+    const result = await listPackageCatalogPageHandler(
+      makeCtx(
+        [
+          {
+            page: [
+              makeDigest("already-seen-skill"),
+              makeDigest("next-updated-skill"),
+              makeDigest("later-updated-skill"),
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        { indexNames, missingRecommendedScores: true },
+      ),
+      {
+        sort: "recommended",
+        paginationOpts: { cursor: fallbackCursor, numItems: 1 },
+      },
+    );
+
+    expect(indexNames).toEqual(["by_active_updated"]);
+    expect(result.page).toEqual([expect.objectContaining({ name: "next-updated-skill" })]);
+    expect(result.continueCursor).toContain('"recommendedFallback":"updated"');
   });
 
   it("searches skills with package-style lexical scoring", async () => {

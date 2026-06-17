@@ -140,6 +140,7 @@ const listPublicPageHandler = (
       category?: string;
       topic?: string;
       officialFirst?: boolean;
+      highlightedOnly?: boolean;
       sort?: "updated" | "downloads" | "recommended" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -157,6 +158,7 @@ const listPageForViewerInternalHandler = (
       category?: string;
       topic?: string;
       officialFirst?: boolean;
+      highlightedOnly?: boolean;
       sort?: "updated" | "downloads" | "recommended" | "installs";
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
@@ -1103,6 +1105,7 @@ function makeDigestCtx(options: {
   exactDigests?: Array<Record<string, unknown>>;
   publisherDocs?: Record<string, Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
+  highlightedBadges?: Array<Record<string, unknown>>;
 }) {
   const pageByTable = new Map<
     string,
@@ -1224,6 +1227,15 @@ function makeDigestCtx(options: {
           return null;
         }),
         query: vi.fn((table: string) => {
+          if (table === "packageBadges") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue(options.highlightedBadges ?? []),
+                })),
+              })),
+            };
+          }
           if (table === "packages") {
             return {
               withIndex: vi.fn(
@@ -2912,6 +2924,33 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin", "public-plugin"]);
   });
 
+  it("sorts highlighted package pages by the requested install order", async () => {
+    const lowerInstall = makeDigest("lower-install", {
+      updatedAt: 20,
+      stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
+    });
+    const higherInstall = makeDigest("higher-install", {
+      updatedAt: 10,
+      stats: { downloads: 1, installs: 50, stars: 0, versions: 1 },
+    });
+    const { ctx } = makeDigestCtx({
+      highlightedBadges: [
+        { packageId: lowerInstall.packageId },
+        { packageId: higherInstall.packageId },
+      ],
+      exactDigests: [lowerInstall, higherInstall],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      highlightedOnly: true,
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["higher-install", "lower-install"]);
+  });
+
   it("does not let stale personal ownerUserId expose private package digests", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
@@ -3518,6 +3557,62 @@ describe("packages public queries", () => {
     });
 
     expect(indexNames).toEqual(["by_active_category_installs"]);
+  });
+
+  it("uses family-aware plugin category sort indexes for plugin browse sources", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              family: "code-plugin",
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      category: "tools",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(indexNames).toEqual(["by_active_family_category_installs"]);
+  });
+
+  it("uses family-aware official category sort indexes for official-first sources", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              family: "code-plugin",
+              isOfficial: true,
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      isOfficial: true,
+      category: "tools",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(indexNames).toEqual(["by_active_family_official_category_installs"]);
   });
 
   it("resumes legacy category digest cursors on the updated index", async () => {

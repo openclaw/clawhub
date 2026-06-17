@@ -142,9 +142,9 @@ function getDefaultPluginBrowseSort(
 }
 
 function hasPersistentPluginBrowseFilter(
-  args: Pick<PluginsPageDataRequest, "category" | "official">,
+  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
 ) {
-  return Boolean(args.category || args.official);
+  return Boolean(args.category || args.featured || args.official);
 }
 function isNavigationAbortError(err: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return true;
@@ -246,7 +246,7 @@ export const Route = createFileRoute("/plugins/")({
       search.sort !== "updated" &&
       search.sort !== "installs" &&
       !(hasQuery && search.sort === "relevance");
-    const staleFeatured = Boolean(search.featured);
+    const staleFeatured = Boolean(hasQuery && search.featured);
     if (incompatibleSort || staleFeatured) {
       throw redirect({
         to: "/plugins",
@@ -397,7 +397,7 @@ function PluginsIndex() {
   const activeSort: PluginSort =
     search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
       ? "recommended"
-      : (search.sort ?? "recommended");
+      : (search.sort ?? (hasQuery ? "recommended" : getDefaultPluginBrowseSort(search)));
   const visibleItems = useMemo(() => {
     return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
   }, [activeSort, hasQuery, items]);
@@ -454,7 +454,7 @@ function PluginsIndex() {
           ...prev,
           cursor: undefined,
           family: undefined,
-          featured: undefined,
+          featured: prev.q ? undefined : prev.featured,
           sort,
         };
       },
