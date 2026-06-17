@@ -125,6 +125,19 @@ describe("user profile route", () => {
           isOfficial: true,
           updatedAt: 1,
         },
+        {
+          _id: "skills:gpu-runtime",
+          kind: "skill",
+          displayName: "GPU Runtime",
+          summary: "GPU runtime tasks",
+          topics: ["gpu-development"],
+          icon: null,
+          href: "/nvidia/gpu-runtime",
+          installs: 1,
+          stars: 0,
+          isOfficial: true,
+          updatedAt: 1,
+        },
       ],
       status: "Exhausted",
     });
@@ -134,8 +147,10 @@ describe("user profile route", () => {
     render(<Component />);
 
     expect(screen.getByRole("heading", { name: "GPU development" })).toBeTruthy();
+    expect(screen.getAllByRole("heading", { name: /gpu(?: |-)development/i })).toHaveLength(1);
     expect(screen.getByRole("heading", { name: "Travel" })).toBeTruthy();
     expect(screen.getByText("GPU Helper")).toBeTruthy();
+    expect(screen.getByText("GPU Runtime")).toBeTruthy();
     expect(screen.getByText("Travel Helper")).toBeTruthy();
   });
 });

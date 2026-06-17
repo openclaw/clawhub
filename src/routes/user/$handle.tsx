@@ -1,4 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { normalizeCatalogTopic } from "clawhub-schema";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   Building2,
@@ -441,8 +442,11 @@ function PublisherProfile() {
 export function groupPublisherCatalogItemsByTopic(items: PublicPublisherCatalogItem[]) {
   const groups = new Map<string, { title: string; items: PublicPublisherCatalogItem[] }>();
   for (const item of items) {
-    const title = item.topics?.[0]?.trim() || "Other";
-    const key = title.toLocaleLowerCase("en-US");
+    const rawTopic = item.topics?.[0]?.trim();
+    const title = rawTopic || "Other";
+    const key = rawTopic
+      ? (normalizeCatalogTopic(rawTopic) ?? rawTopic.toLocaleLowerCase("en-US"))
+      : "other";
     const group = groups.get(key) ?? { title, items: [] };
     group.items.push(item);
     groups.set(key, group);

@@ -3662,7 +3662,7 @@ async function searchPackagesImpl(
   const matches: Array<PackageSearchMatch & { package: PublicPackageListItem }> = [];
   const seen = new Set<string>();
   const directDigests =
-    category || topic ? [] : await resolveDirectPackageSearchDigests(ctx, queryText);
+    category && !topic ? [] : await resolveDirectPackageSearchDigests(ctx, queryText);
   for (const digest of directDigests) {
     if (!(await canViewPackage(digest))) continue;
     if (!digestMatchesSearchFilters(digest, { ...args, topic })) continue;

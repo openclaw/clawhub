@@ -4059,8 +4059,33 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["calendar-demo"]);
-    expect(tableNames).toEqual(["packageTopicSearchDigest"]);
-    expect(indexNames).toEqual(["by_active_topic_updated"]);
+    expect(tableNames).toContain("packageTopicSearchDigest");
+    expect(indexNames).toContain("by_active_topic_updated");
+  });
+
+  it("includes exact package-name matches in topic-filtered search", async () => {
+    const exactPkg = makePackageDoc({
+      _id: "packages:exact",
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+    });
+    const exactDigest = makeDigest("demo-plugin", {
+      packageId: "packages:exact",
+      topics: ["calendar"],
+    });
+    const { ctx } = makeDigestCtx({
+      topicPages: [{ page: [], isDone: true, continueCursor: "" }],
+      exactPackages: [exactPkg],
+      exactDigests: [exactDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo-plugin",
+      topic: "calendar",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
   });
 
   it("scans topic digest pages until a combined category search match is found", async () => {
@@ -4125,7 +4150,8 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).toHaveBeenCalledTimes(6);
-    expect(take).not.toHaveBeenCalled();
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledWith(20);
   });
 
   it("recalls exact author topics without an explicit topic filter", async () => {
