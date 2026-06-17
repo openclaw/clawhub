@@ -1051,6 +1051,12 @@ code {
   height: 16px;
 }
 
+.user-dropdown-content {
+  overflow: hidden;
+  border-radius: var(--r-md) !important;
+  background-clip: padding-box;
+}
+
 /* Remove global link underline and focus outline from user dropdown items */
 .user-dropdown-content a,
 .user-dropdown-content a:hover {
@@ -1076,6 +1082,152 @@ code {
 .user-dropdown-theme-button[data-status="active"] {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   color: var(--ink);
+}
+
+.navbar-theme-switcher {
+  --navbar-theme-ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --navbar-theme-pad: 3px;
+  --navbar-theme-gap: 2px;
+  --navbar-theme-outer-r: 10px;
+  --navbar-theme-inner-r: calc(var(--navbar-theme-outer-r) - var(--navbar-theme-pad));
+  --navbar-theme-seg: 26px;
+  --navbar-theme-collapsed-w: calc(var(--navbar-theme-seg) + var(--navbar-theme-pad) * 2);
+  --navbar-theme-expanded-w: calc(
+    var(--navbar-theme-seg) * 3 + var(--navbar-theme-gap) * 2 + var(--navbar-theme-pad) * 2
+  );
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  gap: 0;
+  width: var(--navbar-theme-collapsed-w);
+  height: var(--navbar-theme-collapsed-w);
+  padding: var(--navbar-theme-pad);
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border-radius: var(--navbar-theme-outer-r);
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
+  overflow: hidden;
+  transition:
+    width 0.22s var(--navbar-theme-ease),
+    gap 0.22s var(--navbar-theme-ease),
+    border-color 0.18s ease,
+    background 0.18s ease;
+}
+
+.navbar-theme-switcher-skeleton {
+  display: inline-flex;
+  flex: 0 0 auto;
+  width: 32px;
+  height: 32px;
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: 10px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--surface-muted) 78%, transparent),
+    color-mix(in srgb, var(--line) 64%, transparent),
+    color-mix(in srgb, var(--surface-muted) 78%, transparent)
+  );
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.15s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.navbar-theme-switcher-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: var(--navbar-theme-seg);
+  min-width: 0;
+  max-width: var(--navbar-theme-seg);
+  height: var(--navbar-theme-seg);
+  padding: 0;
+  border: none;
+  border-radius: var(--navbar-theme-inner-r);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  overflow: hidden;
+  transition:
+    max-width 0.22s var(--navbar-theme-ease),
+    opacity 0.18s var(--navbar-theme-ease),
+    color 0.15s ease,
+    background 0.15s ease;
+}
+
+.navbar-theme-switcher-btn svg {
+  flex-shrink: 0;
+}
+
+.navbar-theme-switcher-btn.is-active {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+  opacity: 1;
+}
+
+.navbar-theme-switcher:hover,
+.navbar-theme-switcher:focus-within {
+  justify-content: flex-start;
+  gap: var(--navbar-theme-gap);
+  width: var(--navbar-theme-expanded-w);
+  border-color: color-mix(in srgb, var(--ink) 16%, transparent);
+  background: var(--surface-muted);
+}
+
+.navbar-theme-switcher-btn:hover,
+.navbar-theme-switcher-btn:focus-visible {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+}
+
+.navbar-theme-switcher-btn.is-active:hover,
+.navbar-theme-switcher-btn.is-active:focus-visible {
+  background: color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.navbar-theme-switcher-btn:focus-visible {
+  outline: 2px solid var(--input-focus-border);
+  outline-offset: 1px;
+}
+
+@media (hover: hover) {
+  .navbar-theme-switcher:not(:hover):not(:focus-within) .navbar-theme-switcher-btn:not(.is-active) {
+    max-width: 0;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .navbar-theme-switcher:hover .navbar-theme-switcher-btn:not(.is-active),
+  .navbar-theme-switcher:focus-within .navbar-theme-switcher-btn:not(.is-active) {
+    max-width: var(--navbar-theme-seg);
+    opacity: 1;
+  }
+}
+
+@media (hover: none) {
+  .navbar-theme-switcher {
+    justify-content: flex-start;
+    gap: var(--navbar-theme-gap);
+    width: var(--navbar-theme-expanded-w);
+  }
+
+  .navbar-theme-switcher-btn:not(.is-active) {
+    max-width: var(--navbar-theme-seg);
+    opacity: 1;
+    pointer-events: auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .navbar-theme-switcher,
+  .navbar-theme-switcher-btn {
+    transition-duration: 0.01ms;
+  }
+
+  .navbar-theme-switcher-skeleton {
+    animation: none;
+  }
 }
 
 /* @deprecated — use <Button> from components/ui/button.tsx */
@@ -15390,6 +15542,18 @@ a[class*="rounded-full"] {
   margin-left: 0;
 }
 
+.navbar-calm .github-sign-in-button {
+  border-radius: var(--r-pill) !important;
+  border-color: color-mix(in srgb, var(--ink) 10%, transparent) !important;
+  background: color-mix(in srgb, var(--ink) 8%, var(--surface-muted)) !important;
+  font-weight: 500 !important;
+}
+
+.navbar-calm .github-sign-in-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink) 16%, transparent) !important;
+  background: color-mix(in srgb, var(--ink) 12%, var(--surface-muted)) !important;
+}
+
 [data-theme-resolved="light"] .navbar-calm .navbar-search {
   border-color: rgba(10, 10, 10, 0.14);
   background: rgba(255, 255, 255, 0.82);
@@ -15427,17 +15591,15 @@ a[class*="rounded-full"] {
 }
 
 [data-theme-resolved="light"] .navbar-calm .github-sign-in-button {
-  border-color: rgba(10, 10, 10, 0.16) !important;
-  background: rgba(255, 255, 255, 0.8) !important;
+  border-color: var(--border-ui) !important;
+  background: var(--surface) !important;
   color: #171717 !important;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.92),
-    0 1px 2px rgba(10, 10, 10, 0.05) !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06) !important;
 }
 
 [data-theme-resolved="light"] .navbar-calm .github-sign-in-button:hover:not(:disabled) {
-  border-color: rgba(10, 10, 10, 0.24) !important;
-  background: rgba(255, 255, 255, 0.96) !important;
+  border-color: var(--border-ui-hover) !important;
+  background: var(--surface-muted) !important;
 }
 
 .navbar-search-typeahead {

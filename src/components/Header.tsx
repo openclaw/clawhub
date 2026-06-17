@@ -565,6 +565,11 @@ export default function Header() {
                 <Search size={18} aria-hidden="true" />
               )}
             </button>
+            {isAuthResolving ? (
+              <div className="navbar-theme-switcher-skeleton" aria-hidden="true" />
+            ) : !isAuthenticated ? (
+              <NavbarThemeSwitcher mode={mode} onSetMode={setThemeMode} />
+            ) : null}
             {isAuthenticated && me ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
@@ -1001,4 +1006,33 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
 function getCurrentRelativeUrl() {
   if (typeof window === "undefined") return "/";
   return `${window.location.pathname}${window.location.search}${window.location.hash}`;
+}
+
+function NavbarThemeSwitcher({
+  mode,
+  onSetMode,
+}: {
+  mode: (typeof THEME_MODE_ITEMS)[number]["mode"];
+  onSetMode: (mode: (typeof THEME_MODE_ITEMS)[number]["mode"]) => void;
+}) {
+  return (
+    <div className="navbar-theme-switcher" role="group" aria-label="Theme mode">
+      {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
+        <button
+          key={themeMode}
+          type="button"
+          className={`navbar-theme-switcher-btn${mode === themeMode ? " is-active" : ""}`}
+          aria-label={label}
+          aria-pressed={mode === themeMode}
+          title={label}
+          onClick={(event) => {
+            onSetMode(themeMode);
+            event.currentTarget.blur();
+          }}
+        >
+          <Icon size={16} aria-hidden="true" />
+        </button>
+      ))}
+    </div>
+  );
 }
