@@ -15181,6 +15181,11 @@ a[class*="rounded-full"] {
   object-fit: contain;
 }
 
+.navbar-calm .nav-mobile-trigger:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .navbar-calm .navbar-search {
   height: 34px;
   gap: 8px;
