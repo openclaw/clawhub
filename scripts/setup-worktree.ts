@@ -6,16 +6,34 @@ import { basename, resolve } from "node:path";
 type Options = {
   from: string | null;
   force: boolean;
+  preferFallback?: boolean;
   quiet: boolean;
 };
 
 type Source = {
   path: string;
   env: Record<string, string>;
-  convexConfig: { deploymentName?: string; ports?: { cloud?: number; site?: number } } | null;
+  convexConfig: {
+    adminKey?: string;
+    deploymentName?: string;
+    ports?: { cloud?: number; site?: number };
+  } | null;
+};
+
+type SetupResult = {
+  convexLinked: boolean;
+  envLinked: boolean;
+  mode: "local" | "fallback";
+  sourcePath: string;
 };
 
 const LOCAL_CONVEX_CONFIG = ".convex/local/default/config.json";
+const REQUIRED_ENV_MATCH_KEYS = [
+  "CONVEX_DEPLOYMENT",
+  "VITE_CONVEX_URL",
+  "VITE_CONVEX_SITE_URL",
+  "CONVEX_SITE_URL",
+] as const;
 
 function parseArgs(argv: string[]): Options {
   const options: Options = {
@@ -33,6 +51,8 @@ function parseArgs(argv: string[]): Options {
       options.from = arg.slice("--from=".length);
     } else if (arg === "--force") {
       options.force = true;
+    } else if (arg === "--prefer-fallback") {
+      options.preferFallback = true;
     } else if (arg === "--quiet") {
       options.quiet = true;
     }
@@ -60,9 +80,9 @@ function parseEnv(text: string) {
   return env;
 }
 
-function listGitWorktrees() {
+function listGitWorktrees(cwd: string) {
   const result = spawnSync("git", ["worktree", "list", "--porcelain"], {
-    cwd: process.cwd(),
+    cwd,
     encoding: "utf8",
   });
   if (result.status !== 0 || typeof result.stdout !== "string") return [];
@@ -77,14 +97,16 @@ function readSource(path: string): Source | null {
   const envPath = resolve(path, ".env.local");
   if (!existsSync(envPath)) return null;
 
-  const configPath = resolve(path, LOCAL_CONVEX_CONFIG);
-  const convexConfig = existsSync(configPath) ? JSON.parse(readFileSync(configPath, "utf8")) : null;
-
   return {
     path,
     env: parseEnv(readFileSync(envPath, "utf8")),
-    convexConfig,
+    convexConfig: readConvexConfig(resolve(path, ".convex")),
   };
+}
+
+function readConvexConfig(convexPath: string) {
+  const configPath = resolve(convexPath, "local/default/config.json");
+  return existsSync(configPath) ? JSON.parse(readFileSync(configPath, "utf8")) : null;
 }
 
 function isLocalHost(hostname: string) {
@@ -131,6 +153,7 @@ function validateSource(source: Source) {
     }
 
     const convexUrl = source.env.VITE_CONVEX_URL;
+    if (!convexUrl) return "VITE_CONVEX_URL is required for local Convex";
     const configPort = source.convexConfig.ports?.cloud;
     if (convexUrl && configPort) {
       try {
@@ -166,14 +189,14 @@ function validateSource(source: Source) {
 
 export function findSource(options: Options, cwd = process.cwd()) {
   const currentPath = resolve(cwd);
-  if (!options.from) {
+  if (!options.from && !options.preferFallback) {
     const current = readSource(currentPath);
     if (current && !validateSource(current)) return current;
   }
 
   const candidates = options.from
     ? [resolve(options.from)]
-    : listGitWorktrees().filter((worktree) => worktree !== currentPath);
+    : listGitWorktrees(cwd).filter((worktree) => worktree !== currentPath);
 
   const rejected: string[] = [];
   for (const candidate of candidates) {
@@ -182,6 +205,11 @@ export function findSource(options: Options, cwd = process.cwd()) {
     const invalid = validateSource(source);
     if (!invalid) return source;
     rejected.push(`${candidate}: ${invalid}`);
+  }
+
+  if (!options.from && options.preferFallback) {
+    const current = readSource(currentPath);
+    if (current && !validateSource(current)) return current;
   }
 
   const suffix = rejected.length ? `\nRejected sources:\n- ${rejected.join("\n- ")}` : "";
@@ -195,10 +223,48 @@ function replaceableLocal(path: string) {
   return lstatSync(path).isSymbolicLink();
 }
 
-function linkFromSource(name: string, sourcePath: string, force: boolean) {
-  const target = resolve(process.cwd(), name);
+function existingEnvMatchesSource(target: string, source: Source) {
+  if (!existsSync(target)) return false;
+  const targetEnv = parseEnv(readFileSync(target, "utf8"));
+  for (const key of REQUIRED_ENV_MATCH_KEYS) {
+    if (targetEnv[key] !== source.env[key]) return false;
+  }
+  return (
+    validateSource({
+      path: resolve(target, ".."),
+      env: targetEnv,
+      convexConfig: source.convexConfig,
+    }) === null
+  );
+}
+
+function existingConvexMatchesSource(target: string, source: Source) {
+  if (!existsSync(target)) return false;
+  const targetConfig = readConvexConfig(target);
+  if (!source.convexConfig) return targetConfig === null;
+  if (!targetConfig) return false;
+  return (
+    targetConfig.deploymentName === source.convexConfig.deploymentName &&
+    targetConfig.adminKey === source.convexConfig.adminKey &&
+    targetConfig.ports?.cloud === source.convexConfig.ports?.cloud &&
+    targetConfig.ports?.site === source.convexConfig.ports?.site
+  );
+}
+
+function linkFromSource(
+  name: string,
+  source: Source,
+  sourcePath: string,
+  force: boolean,
+  cwd: string,
+) {
+  const target = resolve(cwd, name);
   if (resolve(sourcePath) === target) return false;
   if (existsSync(target)) {
+    if (!force && !lstatSync(target).isSymbolicLink()) {
+      if (name === ".env.local" && existingEnvMatchesSource(target, source)) return false;
+      if (name === ".convex" && existingConvexMatchesSource(target, source)) return false;
+    }
     if (!force && !replaceableLocal(target)) {
       throw new Error(
         `${name} already exists as a regular local path. Move it aside or rerun setup with --force.`,
@@ -210,15 +276,50 @@ function linkFromSource(name: string, sourcePath: string, force: boolean) {
   return true;
 }
 
+export function setupWorktree({ cwd, options }: { cwd: string; options: Options }): SetupResult {
+  const current = readSource(cwd);
+  const source = findSource(options, cwd);
+  const mode = current && source.path === current.path ? "local" : "fallback";
+
+  const envLinked = linkFromSource(
+    ".env.local",
+    source,
+    resolve(source.path, ".env.local"),
+    options.force,
+    cwd,
+  );
+  const convexLinked = linkFromSource(
+    ".convex",
+    source,
+    resolve(source.path, ".convex"),
+    options.force,
+    cwd,
+  );
+
+  return {
+    convexLinked,
+    envLinked,
+    mode,
+    sourcePath: source.path,
+  };
+}
+
+export function describeSetupResult(result: SetupResult) {
+  if (result.mode === "local") {
+    return "validated copied local .env.local and .convex";
+  }
+
+  const envState = result.envLinked ? "linked" : "existing";
+  const convexState = result.convexLinked ? "linked" : "existing";
+  return `fallback source ${result.sourcePath} (env: ${envState}, convex: ${convexState})`;
+}
+
 function main() {
   const options = parseArgs(process.argv.slice(2));
-  const source = findSource(options);
-
-  linkFromSource(".env.local", resolve(source.path, ".env.local"), options.force);
-  linkFromSource(".convex", resolve(source.path, ".convex"), options.force);
+  const result = setupWorktree({ cwd: process.cwd(), options });
 
   if (!options.quiet) {
-    console.log(`Worktree env setup complete using ${source.path}`);
+    console.log(`Worktree env setup complete: ${describeSetupResult(result)}`);
   }
 }
 
