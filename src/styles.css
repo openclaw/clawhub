@@ -1191,7 +1191,7 @@ code {
 
 .user-dropdown-current-trigger:focus,
 .user-dropdown-current-trigger[data-highlighted] {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
+  background: var(--surface-muted);
 }
 
 .user-dropdown-submenu-chevron {
