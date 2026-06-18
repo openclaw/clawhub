@@ -242,6 +242,10 @@ describe("Upload route", () => {
 
   it("sends explicit empty metadata arrays when categories and topics are cleared on republish", async () => {
     useSearchMock.mockReturnValue({ updateSlug: "categorized-skill" });
+    mockActivePublisher({
+      activeOwnerHandle: "local",
+      memberships: [personalMembership, aliceMembership],
+    });
     useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
