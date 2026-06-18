@@ -447,6 +447,42 @@ describe("Dashboard rows", () => {
     expect(screen.getByText("ClawKit for Lovable")).toBeTruthy();
   });
 
+  it("loads personal dashboards through the user owner even with a publisher context", async () => {
+    const syntheticPersonalPublisher = {
+      publisher: {
+        _id: "publishers:synthetic-local" as Id<"publishers">,
+        handle: "local",
+        displayName: "Local",
+        kind: "user" as const,
+      },
+      role: "owner" as const,
+    };
+    mockActivePublisher(syntheticPersonalPublisher, {
+      memberships: [syntheticPersonalPublisher],
+      personalPublisher: syntheticPersonalPublisher,
+    });
+    arrangeDashboard({ skills: [createSkill()], packages: [createPackage()] });
+
+    renderDashboard();
+
+    await waitFor(() =>
+      expect(mocks.usePaginatedQuery).toHaveBeenCalledWith(
+        expect.anything(),
+        { ownerUserId: me._id },
+        { initialNumItems: 50 },
+      ),
+    );
+    expect(mocks.useQuery).toHaveBeenCalledWith(expect.anything(), {
+      ownerUserId: me._id,
+      limit: 100,
+    });
+    expect(mocks.usePaginatedQuery).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ ownerPublisherId: "publishers:synthetic-local" }),
+      expect.anything(),
+    );
+  });
+
   it("passes the active publisher into skill publishing links", async () => {
     const orgPublisher = {
       publisher: {

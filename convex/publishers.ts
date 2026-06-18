@@ -108,6 +108,14 @@ type PublisherListItem = NonNullable<ReturnType<typeof toPublicPublisher>> & {
   }>;
 };
 
+type PublisherMembershipListItem = {
+  publisher: Pick<
+    Doc<"publishers">,
+    "_id" | "handle" | "displayName" | "kind" | "image" | "linkedUserId"
+  >;
+  role: Doc<"publisherMembers">["role"];
+};
+
 type PublisherListSummary = {
   publisher: Doc<"publishers">;
   item: PublisherListItem;
@@ -1833,6 +1841,64 @@ export const listMine = query({
     ) {
       visiblePublishers.unshift({
         publisher: personalPublisher,
+        role: "owner",
+      });
+    }
+    return visiblePublishers;
+  },
+});
+
+export const listMineMemberships = query({
+  args: {},
+  handler: async (ctx): Promise<PublisherMembershipListItem[]> => {
+    const userId = await getOptionalActiveAuthUserId(ctx);
+    if (!userId) return [];
+    const user = await ctx.db.get(userId);
+    if (!user || user.deletedAt || user.deactivatedAt) return [];
+    const memberships = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+    const publishers = await Promise.all(
+      memberships.map(async (membership) => {
+        const publisher = await ctx.db.get(membership.publisherId);
+        if (!publisher || !isPublisherActive(publisher)) return null;
+        if (publisher.kind === "user") {
+          const isLinkedPersonal = publisher.linkedUserId === userId;
+          const isLegacyPersonal =
+            !publisher.linkedUserId && user.personalPublisherId === publisher._id;
+          if (!isLinkedPersonal && !isLegacyPersonal) return null;
+        }
+        return {
+          publisher: {
+            _id: publisher._id,
+            handle: publisher.handle,
+            displayName: publisher.displayName,
+            kind: publisher.kind,
+            image: publisher.image,
+            linkedUserId: publisher.linkedUserId,
+          },
+          role: publisher.kind === "user" ? "owner" : membership.role,
+        };
+      }),
+    );
+    const visiblePublishers = publishers.filter(
+      (item): item is NonNullable<(typeof publishers)[number]> => Boolean(item),
+    );
+    const personalPublisher = await getPersonalPublisherForUserOrFallback(ctx, user);
+    if (
+      personalPublisher &&
+      !visiblePublishers.some((entry) => entry.publisher._id === personalPublisher._id)
+    ) {
+      visiblePublishers.unshift({
+        publisher: {
+          _id: personalPublisher._id,
+          handle: personalPublisher.handle,
+          displayName: personalPublisher.displayName,
+          kind: personalPublisher.kind,
+          image: personalPublisher.image,
+          linkedUserId: personalPublisher.linkedUserId,
+        },
         role: "owner",
       });
     }

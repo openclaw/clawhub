@@ -99,17 +99,20 @@ export const Route = createFileRoute("/dashboard")({
 export function Dashboard() {
   const { isAuthenticated, isLoading: isAuthLoading, me } = useAuthStatus();
   const {
+    activePublisher,
     activePublisherId,
     activeOwnerHandle,
     canManageActivePublisher,
     isLoading: isPublisherLoading,
   } = useActivePublisher();
 
-  const skillsQueryArgs = activePublisherId
-    ? { ownerPublisherId: activePublisherId }
-    : me?._id
-      ? { ownerUserId: me._id }
-      : "skip";
+  const activePublisherKind = activePublisher?.publisher.kind;
+  const skillsQueryArgs =
+    activePublisherKind === "org" && activePublisherId
+      ? { ownerPublisherId: activePublisherId }
+      : me?._id
+        ? { ownerUserId: me._id }
+        : "skip";
   const {
     results: paginatedSkills,
     status: skillsStatus,
@@ -120,7 +123,7 @@ export function Dashboard() {
   const mySkills = paginatedSkills as DashboardSkill[] | undefined;
   const myPackages = useQuery(
     api.packages.list,
-    activePublisherId
+    activePublisherKind === "org" && activePublisherId
       ? { ownerPublisherId: activePublisherId, limit: 100 }
       : me?._id
         ? { ownerUserId: me._id, limit: 100 }

@@ -79,7 +79,7 @@ describe("ActivePublisherProvider", () => {
       me,
     });
     useQueryMock.mockImplementation((query, args) => {
-      expect(getFunctionName(query)).toBe(getFunctionName(api.publishers.listMine));
+      expect(getFunctionName(query)).toBe(getFunctionName(api.publishers.listMineMemberships));
       if (args === "skip") return undefined;
       return memberships;
     });
@@ -97,7 +97,7 @@ describe("ActivePublisherProvider", () => {
       </ProviderHarness>,
     );
 
-    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMine, "skip");
+    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMineMemberships, "skip");
     expect(screen.getByTestId("active-handle").textContent).toBe("none");
   });
 

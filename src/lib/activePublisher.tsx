@@ -95,7 +95,7 @@ function clearStoredPublisherId(userId: string) {
 
 export function ActivePublisherProvider({ children }: { children: ReactNode }) {
   const { isLoading: isAuthLoading, me } = useAuthStatus();
-  const memberships = useQuery(api.publishers.listMine, me ? {} : "skip") as
+  const memberships = useQuery(api.publishers.listMineMemberships, me ? {} : "skip") as
     | ActivePublisherMembership[]
     | undefined;
   const [selectedPublisherId, setSelectedPublisherIdState] = useState<string | null>(null);
