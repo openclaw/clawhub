@@ -98,7 +98,7 @@ export function PublisherOwnerDisplay({
   if (selected && compact) {
     const { publisher } = selected;
     return (
-      <span className="flex min-w-0 items-center gap-2 leading-none">
+      <span className="flex min-w-0 items-center gap-2 leading-snug">
         <span className="inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full">
           <MarketplaceIcon
             kind={publisher.kind}
