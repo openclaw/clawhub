@@ -206,6 +206,16 @@ describe("registry artifact backup settings", () => {
     );
   });
 
+  it("uses strict AWS URI encoding for object keys before signing R2 requests", () => {
+    expect(
+      __registryArtifactBackupTestInternals.encodeObjectKey(
+        "skills/smartpeopleconnected/token-optimizer/1%2E0%2E0/infomaterial/4_github_publish_Alles ist fertig!.txt",
+      ),
+    ).toBe(
+      "skills/smartpeopleconnected/token-optimizer/1%252E0%252E0/infomaterial/4_github_publish_Alles%20ist%20fertig%21.txt",
+    );
+  });
+
   it("preserves valid owner handle punctuation in backup paths", () => {
     const dotted = buildSkillVersionBackupManifest({
       root: "skills",

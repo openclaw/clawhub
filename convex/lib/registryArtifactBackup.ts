@@ -284,6 +284,7 @@ export function buildPackageReleaseBackupManifest(params: PackageBackupParams & 
 
 export const __registryArtifactBackupTestInternals = {
   encodeBackupPathSegment,
+  encodeObjectKey,
   getSkillFileUploadConcurrency,
 };
 
@@ -483,7 +484,10 @@ function encodeObjectKey(key: string) {
 }
 
 function encodePathSegment(value: string) {
-  return encodeURIComponent(value);
+  return encodeURIComponent(value).replace(
+    /[!'()*]/g,
+    (char) => `%${char.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
 }
 
 function amzDate(date: Date) {
