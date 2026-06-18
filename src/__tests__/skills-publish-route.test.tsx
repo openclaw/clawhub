@@ -172,6 +172,7 @@ describe("Upload route", () => {
     const publishingAs = screen.getByRole("group", { name: "Publishing as" });
     const uploadPrompt = screen.getByText("Drop a skill folder");
 
+    expect(publishingAs.parentElement?.contains(uploadPrompt)).toBe(true);
     expect(
       publishingAs.compareDocumentPosition(uploadPrompt) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);

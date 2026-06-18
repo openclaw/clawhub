@@ -851,20 +851,6 @@ export function Upload() {
         </header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
-          {!updateSlug ? (
-            <div className="flex flex-col gap-2">
-              <Label>Publishing as</Label>
-              <div
-                role="group"
-                aria-label="Publishing as"
-                className="flex min-h-[44px] w-full items-center rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)]"
-              >
-                <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
-              </div>
-              <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
-            </div>
-          ) : null}
-
           {/* File upload panel */}
           <input
             ref={setFileInputRef}
@@ -879,8 +865,24 @@ export function Upload() {
             }}
           />
 
-          {files.length > 0 ? (
-            <div
+          <Card className="gap-0 overflow-hidden p-0">
+            {!updateSlug ? (
+              <div
+                role="group"
+                aria-label="Publishing as"
+                className="flex min-h-[52px] flex-wrap items-center gap-x-4 gap-y-2 bg-[color:var(--surface-muted)] px-space-5 py-space-3 text-sm text-[color:var(--ink)]"
+              >
+                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--ink-soft)]">
+                  Publishing as
+                </span>
+                <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
+                <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
+              </div>
+            ) : null}
+
+            <CardContent className="border-t border-[color:var(--line)] p-space-5">
+              {files.length > 0 ? (
+                <div
               className={`overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
                 isDragging
                   ? "border-[color:var(--accent)] bg-[color:var(--accent)]/5"
@@ -1042,10 +1044,8 @@ export function Upload() {
                   </div>
                 ) : null}
               </div>
-            </div>
-          ) : (
-            <Card>
-              <CardContent>
+                </div>
+              ) : (
                 <div
                   className={`relative flex flex-col items-center gap-3 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 transition-colors ${
                     isDragging
@@ -1078,9 +1078,9 @@ export function Upload() {
                     </Button>
                   </div>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+              )}
+            </CardContent>
+          </Card>
 
           {/* Metadata panel */}
           <Card>
