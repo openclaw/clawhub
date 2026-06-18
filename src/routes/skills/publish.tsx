@@ -908,7 +908,7 @@ export function Upload() {
                         type="button"
                         variant="ghost"
                         size="xs"
-                        className="ml-auto"
+                        className="ml-auto focus-visible:ring-0 focus-visible:ring-offset-0"
                         aria-label="Switch publisher"
                       >
                         Switch publisher
