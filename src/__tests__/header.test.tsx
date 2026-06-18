@@ -442,11 +442,13 @@ describe("Header", () => {
     expect(screen.getByText("Personal")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(within(activePublisher).getByText("OpenClaw")).toBeTruthy();
-    expect(within(activePublisher).getByText("connected as")).toBeTruthy();
-    expect(within(activePublisher).getByText("@patrick")).toBeTruthy();
-    expect(within(activePublisher).queryByText("Org · Admin")).toBeNull();
+    expect(within(activePublisher).getByText("Org · Admin")).toBeTruthy();
+    const managingRow = document.querySelector(".user-dropdown-managing-row");
+    expect(managingRow).toBeTruthy();
+    expect(within(managingRow as HTMLElement).getByText("Managing as")).toBeTruthy();
+    expect(within(managingRow as HTMLElement).getByText("@patrick")).toBeTruthy();
     expect(
-      activePublisher.querySelector(".user-dropdown-via-avatar-fallback .lucide-user-round"),
+      managingRow?.querySelector(".user-dropdown-managing-avatar-fallback .lucide-user-round"),
     ).toBeTruthy();
     expect(screen.getByLabelText("Publisher actions for @openclaw")).toBeTruthy();
     expect(within(publisherActions).queryByText("Stars")).toBeNull();

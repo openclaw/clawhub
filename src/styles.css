@@ -1212,39 +1212,50 @@ code {
   font-size: 0.76rem;
 }
 
-.user-dropdown-publisher-via {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  gap: 5px;
+.user-dropdown-publisher-check {
+  flex-shrink: 0;
+  color: var(--accent);
 }
 
-.user-dropdown-via-avatar {
-  width: 14px;
-  height: 14px;
+.user-dropdown-managing-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+  margin: 2px 0;
+  padding: 8px 10px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 76%, var(--surface));
+  color: var(--ink-soft);
+  font-size: 0.76rem;
+}
+
+.user-dropdown-managing-label {
+  flex-shrink: 0;
+}
+
+.user-dropdown-managing-avatar {
+  width: 15px;
+  height: 15px;
   flex-shrink: 0;
   border-radius: 50%;
   object-fit: cover;
 }
 
-.user-dropdown-via-avatar-fallback {
+.user-dropdown-managing-avatar-fallback {
   display: inline-grid;
   place-items: center;
-  background: var(--surface-muted);
+  background: var(--surface);
   color: var(--ink-soft);
-  font-size: 0.58rem;
-  font-weight: 700;
 }
 
-.user-dropdown-via-handle {
+.user-dropdown-managing-handle {
   min-width: 0;
   overflow: hidden;
+  color: var(--ink);
+  font-weight: 600;
   text-overflow: ellipsis;
-}
-
-.user-dropdown-publisher-check {
-  flex-shrink: 0;
-  color: var(--accent);
+  white-space: nowrap;
 }
 
 .user-dropdown-create-org-action {

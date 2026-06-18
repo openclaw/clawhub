@@ -171,21 +171,21 @@ export default function Header() {
     return role ? `Org · ${role}` : "Org";
   };
   const activePublisherMeta =
+    triggerPublisher?.kind === "org" ? formatPublisherMeta(activePublisher) : "Personal";
+  const activePublisherManagingRow =
     triggerPublisher?.kind === "org" ? (
-      <span className="user-dropdown-publisher-via">
-        <span>connected as</span>
+      <div className="user-dropdown-managing-row">
+        <span className="user-dropdown-managing-label">Managing as</span>
         {avatar ? (
-          <img className="user-dropdown-via-avatar" src={avatar} alt="" />
+          <img className="user-dropdown-managing-avatar" src={avatar} alt="" />
         ) : (
-          <span className="user-dropdown-via-avatar user-dropdown-via-avatar-fallback">
+          <span className="user-dropdown-managing-avatar user-dropdown-managing-avatar-fallback">
             <UserRound size={9} aria-hidden="true" />
           </span>
         )}
-        <span className="user-dropdown-via-handle">@{accountHandle}</span>
-      </span>
-    ) : (
-      "Personal"
-    );
+        <span className="user-dropdown-managing-handle">@{accountHandle}</span>
+      </div>
+    ) : null;
   const otherPublisherMemberships =
     publisherMemberships?.filter((entry) => entry.publisher._id !== activePublisherId) ?? [];
   const goToOrganizationCreation = () => {
@@ -789,6 +789,12 @@ export default function Header() {
                       </span>
                     </div>
                   )}
+                  {activePublisherManagingRow ? (
+                    <>
+                      <DropdownMenuSeparator />
+                      {activePublisherManagingRow}
+                    </>
+                  ) : null}
                   <DropdownMenuSeparator />
                   <div
                     aria-label={`Publisher actions for @${triggerHandle}`}
