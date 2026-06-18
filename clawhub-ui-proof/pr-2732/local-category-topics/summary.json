@@ -1,0 +1,39 @@
+{
+  "status": "pass",
+  "mode": "feature",
+  "scenario": ".artifacts/proof-scenarios/category-topics.mjs",
+  "candidate": "worktree",
+  "provider": "local disposable Convex",
+  "lanes": [
+    {
+      "name": "candidate",
+      "localOutputDir": "/Users/jason/workspace/clawhub-search-category-topics/.artifacts/clawhub-ui-proof/local-category-topics/candidate",
+      "steps": [
+        {
+          "name": "Skills selected category shows top topics",
+          "slug": "01-skills-selected-category-topics",
+          "status": "pass",
+          "screenshot": "screenshots/01-skills-selected-category-topics.png"
+        },
+        {
+          "name": "Skills topic chip filters and becomes active",
+          "slug": "02-skills-active-topic",
+          "status": "pass",
+          "screenshot": "screenshots/02-skills-active-topic.png"
+        },
+        {
+          "name": "Skills mobile selected category topics",
+          "slug": "03-skills-mobile-selected-category-topics",
+          "status": "pass",
+          "screenshot": "screenshots/03-skills-mobile-selected-category-topics.png"
+        },
+        {
+          "name": "Plugins selected category shows top topics",
+          "slug": "04-plugins-selected-category-topics",
+          "status": "pass",
+          "screenshot": "screenshots/04-plugins-selected-category-topics.png"
+        }
+      ]
+    }
+  ]
+}
