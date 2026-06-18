@@ -165,6 +165,39 @@ describe("search helpers", () => {
     );
   });
 
+  it("uses stored categories as skill search evidence", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const fallback = [
+      {
+        skill: makePublicSkill({
+          id: "skills:category-match",
+          slug: "focused-helper",
+          displayName: "Focused Helper",
+          summary: "Keeps projects tidy.",
+          categories: ["development"],
+        }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+    ];
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([]) // directPrefixSkillMatches
+      .mockResolvedValueOnce(fallback); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn(),
+        runQuery,
+      },
+      { query: "dev", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["focused-helper"]);
+  });
+
   it("uses normalized prefix matches so lowercase name queries do not depend on vector recall", async () => {
     const scienceClawSkills = [
       "ScienceClaw: Query (Dry Run)",
@@ -263,6 +296,49 @@ describe("search helpers", () => {
     expect(ctx.usedIndexes).toEqual(
       expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
     );
+  });
+
+  it("recalls author topics by normalized prefix through the indexed topic digest", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:gpu-helper",
+      slug: "accelerated-helper",
+      displayName: "Accelerated Helper",
+      topics: ["GPU development"],
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "gpu",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["accelerated-helper"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
+    );
+  });
+
+  it("prioritizes exact author-topic recall ahead of prefix expansion", async () => {
+    const prefixSkill = makeSkillDoc({
+      id: "skills:react-native-helper",
+      slug: "mobile-helper",
+      displayName: "Mobile Helper",
+      topics: ["React Native"],
+    });
+    const exactSkill = makeSkillDoc({
+      id: "skills:react-helper",
+      slug: "web-helper",
+      displayName: "Web Helper",
+      topics: ["React"],
+    });
+    const ctx = makeDirectPrefixCtx([prefixSkill, exactSkill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "react",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["web-helper", "mobile-helper"]);
   });
 
   it("recalls text matches from the selected topic digest", async () => {
@@ -1771,6 +1847,7 @@ function makePublicSkill(params: {
   ownerPublisherId?: string;
   installsAllTime?: number;
   stars?: number;
+  categories?: string[];
   topics?: string[];
 }) {
   return {
@@ -1785,6 +1862,7 @@ function makePublicSkill(params: {
     forkOf: undefined,
     latestVersionId: "skillVersions:1",
     tags: {},
+    categories: params.categories,
     topics: params.topics,
     badges: {},
     stats: {
@@ -1809,6 +1887,7 @@ function makeSkillDoc(params: {
   moderationFlags?: string[];
   moderationReason?: string;
   softDeletedAt?: number;
+  categories?: string[];
   topics?: string[];
 }) {
   return {
@@ -1951,15 +2030,25 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
           return {
             withIndex: (
               index: string,
-              builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              builder: (q: {
+                eq: (field: string, value: unknown) => unknown;
+                gte: (field: string, value: unknown) => unknown;
+                lt: (field: string, value: unknown) => unknown;
+              }) => unknown,
             ) => {
               usedIndexes.push(index);
               let topic = "";
+              let topicPrefix = "";
               const q = {
                 eq: (field: string, value: unknown) => {
                   if (field === "topic") topic = String(value);
                   return q;
                 },
+                gte: (field: string, value: unknown) => {
+                  if (field === "topic") topicPrefix = String(value);
+                  return q;
+                },
+                lt: () => q,
               };
               builder(q);
               return {
@@ -1967,9 +2056,15 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                   take: vi.fn(async () =>
                     digestRows
                       .filter((digest) =>
-                        digest.topics?.some((value) => tokenize(value).join("-") === topic),
+                        digest.topics?.some((value) => {
+                          const topicSlug = tokenize(value).join("-");
+                          return topic ? topicSlug === topic : topicSlug.startsWith(topicPrefix);
+                        }),
                       )
-                      .map((digest) => ({ skillId: digest.skillId, topic })),
+                      .map((digest) => ({
+                        skillId: digest.skillId,
+                        topic: topic || topicPrefix,
+                      })),
                   ),
                 }),
               };

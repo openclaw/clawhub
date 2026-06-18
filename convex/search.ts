@@ -1,4 +1,8 @@
-import { getCatalogTopicSlugs, normalizeCatalogTopic } from "clawhub-schema";
+import {
+  getCatalogTopicSlugs,
+  INTERNAL_UNCATEGORIZED_CATEGORY,
+  normalizeCatalogTopic,
+} from "clawhub-schema";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -146,7 +150,7 @@ function scoreSkillResult(
 function classifySkillMatch(
   query: string,
   queryTokens: string[],
-  skill: Pick<HydratableSkill, "displayName" | "slug" | "summary" | "topics">,
+  skill: Pick<HydratableSkill, "displayName" | "slug" | "summary" | "categories" | "topics">,
 ): SearchMatch | null {
   const needle = query.toLowerCase();
   const normalizedSlugQuery = queryTokens.join("-");
@@ -170,8 +174,21 @@ function classifySkillMatch(
   if (matchesAllTokens(queryTokens, [...slugTokens, ...displayTokens], (a, b) => a.startsWith(b))) {
     return { rankTier: 1 };
   }
-  const topicQuery = normalizeCatalogTopic(query);
-  if (topicQuery && getCatalogTopicSlugs(skill.topics).includes(topicQuery)) {
+  const taxonomyQuery = normalizeCatalogTopic(query);
+  const categories = (skill.categories ?? []).filter(
+    (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+  );
+  const topicSlugs = getCatalogTopicSlugs(skill.topics);
+  if (taxonomyQuery && (categories.includes(taxonomyQuery) || topicSlugs.includes(taxonomyQuery))) {
+    return { rankTier: 2 };
+  }
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      [...categories, ...(skill.topics ?? [])],
+      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
     return { rankTier: 2 };
   }
   if (
@@ -321,6 +338,7 @@ export const searchSkills: ReturnType<typeof action> = action({
             entry.skill.displayName,
             entry.skill.slug,
             entry.skill.summary,
+            ...(entry.skill.categories ?? []),
             ...(entry.skill.topics ?? []),
           ]),
         );
@@ -449,25 +467,39 @@ export const directPrefixSkillMatches = internalQuery({
     const firstToken = getFirstSearchToken(args.query);
     const queryTokens = tokenize(args.query);
     const topicQuery = normalizeCatalogTopic(args.query);
-    const recallTopics = [
+    const exactRecallTopics = [
       ...new Set([topicQuery, topic].filter((value): value is string => !!value)),
     ];
-    const loadTopicRows = (recallTopic: string) =>
+    const loadTopicRows = (recallTopic: string, usePrefix: boolean, limit: number) =>
       args.nonSuspiciousOnly
         ? ctx.db
             .query("skillTopicSearchDigest")
             .withIndex("by_nonsuspicious_topic_updated", (q) =>
-              q.eq("softDeletedAt", undefined).eq("isSuspicious", false).eq("topic", recallTopic),
+              usePrefix
+                ? q
+                    .eq("softDeletedAt", undefined)
+                    .eq("isSuspicious", false)
+                    .gte("topic", recallTopic)
+                    .lt("topic", prefixUpperBound(recallTopic))
+                : q
+                    .eq("softDeletedAt", undefined)
+                    .eq("isSuspicious", false)
+                    .eq("topic", recallTopic),
             )
             .order("desc")
-            .take(MAX_DIRECT_SKILL_TOPIC_CANDIDATES)
+            .take(limit)
         : ctx.db
             .query("skillTopicSearchDigest")
             .withIndex("by_active_topic_updated", (q) =>
-              q.eq("softDeletedAt", undefined).eq("topic", recallTopic),
+              usePrefix
+                ? q
+                    .eq("softDeletedAt", undefined)
+                    .gte("topic", recallTopic)
+                    .lt("topic", prefixUpperBound(recallTopic))
+                : q.eq("softDeletedAt", undefined).eq("topic", recallTopic),
             )
             .order("desc")
-            .take(MAX_DIRECT_SKILL_TOPIC_CANDIDATES);
+            .take(limit);
 
     const upperBound = prefixUpperBound(normalizedQuery);
     const firstTokenUpperBound = firstToken ? prefixUpperBound(firstToken) : null;
@@ -478,7 +510,7 @@ export const directPrefixSkillMatches = internalQuery({
       displayNameFirstTokenDigests,
       ftDisplayNameDigests,
       ftSlugDigests,
-      topicRowPages,
+      exactTopicRowPages,
     ] = await Promise.all([
       args.nonSuspiciousOnly
         ? ctx.db
@@ -598,9 +630,29 @@ export const directPrefixSkillMatches = internalQuery({
               q.search("slug", args.query).eq("softDeletedAt", undefined),
             )
             .take(MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES),
-      Promise.all(recallTopics.map(loadTopicRows)),
+      Promise.all(
+        exactRecallTopics.map((recallTopic) =>
+          loadTopicRows(recallTopic, false, MAX_DIRECT_SKILL_TOPIC_CANDIDATES),
+        ),
+      ),
     ]);
-    const topicRows = topicRowPages.flat();
+    const queryExactTopicRows = topicQuery
+      ? (exactTopicRowPages[exactRecallTopics.indexOf(topicQuery)] ?? [])
+      : [];
+    const prefixTopicRows =
+      topicQuery && queryExactTopicRows.length < MAX_DIRECT_SKILL_TOPIC_CANDIDATES
+        ? await loadTopicRows(
+            topicQuery,
+            true,
+            MAX_DIRECT_SKILL_TOPIC_CANDIDATES - queryExactTopicRows.length,
+          )
+        : [];
+    const topicRows = [...exactTopicRowPages.flat(), ...prefixTopicRows]
+      .flat()
+      .filter(
+        (row, index, all) =>
+          all.findIndex((candidate) => candidate.skillId === row.skillId) === index,
+      );
     const topicDigests = (
       await Promise.all(
         topicRows.map((row) =>
@@ -622,6 +674,7 @@ export const directPrefixSkillMatches = internalQuery({
         digest.displayName,
         digest.slug,
         digest.summary,
+        ...(digest.categories ?? []),
         ...(digest.topics ?? []),
       ]);
 
@@ -818,6 +871,7 @@ export const lexicalFallbackSkills = internalQuery({
         skill.displayName,
         skill.slug,
         skill.summary,
+        ...(skill.categories ?? []),
         ...(skill.topics ?? []),
       ]),
     );

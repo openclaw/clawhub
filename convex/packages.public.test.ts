@@ -1425,7 +1425,57 @@ function makeDigestCtx(options: {
           }
           tableNames.push(table);
           return {
-            withIndex: (indexName: string) => withIndex(table, indexName),
+            withIndex: (
+              indexName: string,
+              builder?: (q: {
+                eq: (field: string, value: unknown) => unknown;
+                gte: (field: string, value: string) => unknown;
+                lt: (field: string, value: string) => unknown;
+              }) => unknown,
+            ) => {
+              if (table !== "packageTopicSearchDigest" || indexName !== "by_active_topic_updated") {
+                return withIndex(table, indexName);
+              }
+              let exactTopic = "";
+              let lowerBound = "";
+              let upperBound = "";
+              const queryBuilder = {
+                eq: (field: string, value: unknown) => {
+                  if (field === "topic" && typeof value === "string") exactTopic = value;
+                  return queryBuilder;
+                },
+                gte: (field: string, value: string) => {
+                  if (field === "topic") lowerBound = value;
+                  return queryBuilder;
+                },
+                lt: (field: string, value: string) => {
+                  if (field === "topic") upperBound = value;
+                  return queryBuilder;
+                },
+              };
+              builder?.(queryBuilder);
+              const baseQuery = withIndex(table, indexName);
+              return {
+                ...baseQuery,
+                order: () => {
+                  const ordered = baseQuery.order();
+                  return {
+                    ...ordered,
+                    take: async (limit: number) => {
+                      take(limit);
+                      const rows = rowsByTable.get(table) ?? [];
+                      return rows
+                        .filter((row) => {
+                          const rowTopic = typeof row.topic === "string" ? row.topic : "";
+                          if (exactTopic) return rowTopic === exactTopic;
+                          return rowTopic >= lowerBound && rowTopic < upperBound;
+                        })
+                        .slice(0, limit);
+                    },
+                  };
+                },
+              };
+            },
           };
         }),
       },
@@ -3283,9 +3333,122 @@ describe("packages public queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["needle-plugin"]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
+  });
+
+  it("recalls plugins whose category matches the query", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              pluginCategory: "runtime",
+              pluginCategoryTags: ["runtime"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "runtime",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["focused-helper"]);
+    expect(tableNames).toContain("packagePluginCategorySearchDigest");
+  });
+
+  it("does not use the fallback other category as search evidence", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              pluginCategory: "other",
+              pluginCategoryTags: ["other"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "other",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+    expect(tableNames).not.toContain("packagePluginCategorySearchDigest");
+  });
+
+  it("uses partial author topics as plugin search evidence", async () => {
+    const { ctx } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              topic: "gpu-development",
+              topics: ["GPU development"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "gpu",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["focused-helper"]);
+  });
+
+  it("prioritizes exact plugin topics ahead of bounded prefix recall", async () => {
+    const prefixTopics = Array.from({ length: 100 }, (_, index) =>
+      makeDigest(`react-prefix-${index}`, {
+        topic: `react-${index}`,
+        topics: [`React ${index}`],
+      }),
+    );
+    const exactTopic = makeDigest("react-exact", {
+      topic: "react",
+      topics: ["React"],
+    });
+    const { ctx } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [...prefixTopics, exactTopic],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "react",
+      family: "code-plugin",
+      limit: 1,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["react-exact"]);
   });
 
   it("does not let official status make unrelated packages eligible for search", async () => {
@@ -3496,9 +3659,15 @@ describe("packages public queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
     expect(new Set(tableNames)).toEqual(
-      new Set(["packageSearchDigest", "packageTopicSearchDigest"]),
+      new Set([
+        "packageSearchDigest",
+        "packageTopicSearchDigest",
+        "packagePluginCategorySearchDigest",
+      ]),
     );
-    expect(new Set(indexNames)).toEqual(new Set(["by_active_topic_updated", "by_active_updated"]));
+    expect(new Set(indexNames)).toEqual(
+      new Set(["by_active_topic_updated", "by_active_category_updated", "by_active_updated"]),
+    );
   });
 
   it("uses plugin category digests for category-filtered listings", async () => {
@@ -4234,7 +4403,7 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
@@ -4260,7 +4429,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -4287,7 +4456,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["runtime-demo"]);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -4312,7 +4481,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-prefix"]);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -4367,7 +4536,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-alpha", "demo-beta"]);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
@@ -4465,7 +4634,7 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(200);
   });
@@ -4488,7 +4657,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["official-demo"]);
-    expect(indexNames).toEqual(["by_active_topic_updated", "by_active_official_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_official_updated",
+    ]);
   });
 
   it("uses the channel index for no-family channel search filters", async () => {
@@ -4509,7 +4682,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["community-demo"]);
-    expect(indexNames).toEqual(["by_active_topic_updated", "by_active_channel_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_channel_updated",
+    ]);
   });
 
   it("uses the combined channel and official index when both filters are set", async () => {
@@ -4536,7 +4713,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["official-community-demo"]);
-    expect(indexNames).toEqual(["by_active_topic_updated", "by_active_channel_official_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_channel_official_updated",
+    ]);
   });
 
   it("blocks anonymous reads of private packages", async () => {

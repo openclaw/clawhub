@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   getCatalogTopicSlugs,
+  INTERNAL_UNCATEGORIZED_CATEGORY,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
@@ -6363,9 +6364,22 @@ function skillCatalogSearchMatch(
     setMatch(1, 35);
   }
 
-  const topicQuery = normalizeCatalogTopic(queryText);
-  if (topicQuery && getCatalogTopicSlugs(digest.topics).includes(topicQuery)) {
+  const taxonomyQuery = normalizeCatalogTopic(queryText);
+  const categories = (digest.categories ?? []).filter(
+    (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+  );
+  const topicSlugs = getCatalogTopicSlugs(digest.topics);
+  if (taxonomyQuery && (categories.includes(taxonomyQuery) || topicSlugs.includes(taxonomyQuery))) {
     setMatch(2, 25);
+  }
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      [...categories, ...(digest.topics ?? [])],
+      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(2, 20);
   }
 
   if (
@@ -6538,6 +6552,10 @@ export const hasMissingPackageCatalogRecommendationScoresInternal = internalQuer
 
 const EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH = 3;
 
+function skillCatalogPrefixUpperBound(value: string) {
+  return `${value}\uffff`;
+}
+
 type SkillPackageCatalogSearchArgs = {
   query: string;
   limit?: number;
@@ -6580,13 +6598,30 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
   if (!topic && matches.length < targetCount) {
     const directTopic = normalizeCatalogTopic(queryText);
     if (directTopic) {
-      const topicDigests = await ctx.db
+      const exactTopicDigests = await ctx.db
         .query("skillTopicSearchDigest")
         .withIndex("by_active_topic_updated", (q) =>
           q.eq("softDeletedAt", undefined).eq("topic", directTopic),
         )
         .order("desc")
         .take(MAX_DIRECT_SKILL_CATALOG_SEARCH_CANDIDATES);
+      const prefixTopicDigests =
+        exactTopicDigests.length < MAX_DIRECT_SKILL_CATALOG_SEARCH_CANDIDATES
+          ? await ctx.db
+              .query("skillTopicSearchDigest")
+              .withIndex("by_active_topic_updated", (q) =>
+                q
+                  .eq("softDeletedAt", undefined)
+                  .gte("topic", directTopic)
+                  .lt("topic", skillCatalogPrefixUpperBound(directTopic)),
+              )
+              .order("desc")
+              .take(MAX_DIRECT_SKILL_CATALOG_SEARCH_CANDIDATES - exactTopicDigests.length)
+          : [];
+      const topicDigests = [...exactTopicDigests, ...prefixTopicDigests].filter(
+        (digest, index, all) =>
+          all.findIndex((candidate) => candidate.skillId === digest.skillId) === index,
+      );
       for (const topicDigest of topicDigests) {
         const digest = await ctx.db
           .query("skillSearchDigest")

@@ -3,6 +3,7 @@ import {
   derivePluginCategoryTags,
   getCatalogTopicSlugs,
   getPackageScopeOwnerMismatch,
+  INTERNAL_UNCATEGORIZED_CATEGORY,
   isPluginCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
@@ -1536,9 +1537,22 @@ function packageSearchMatch(
     setMatch(1, 35);
   }
 
-  const topicQuery = normalizeCatalogTopic(queryText);
-  if (topicQuery && getCatalogTopicSlugs(digest.topics).includes(topicQuery)) {
+  const taxonomyQuery = normalizeCatalogTopic(queryText);
+  const categories = (digest.pluginCategoryTags ?? []).filter(
+    (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+  );
+  const topicSlugs = getCatalogTopicSlugs(digest.topics);
+  if (taxonomyQuery && (categories.includes(taxonomyQuery) || topicSlugs.includes(taxonomyQuery))) {
     setMatch(2, 25);
+  }
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      [...categories, ...(digest.topics ?? [])],
+      EXPLORATORY_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(2, 20);
   }
 
   if (
@@ -1594,9 +1608,13 @@ async function resolveDirectPackageSearchDigests(
 ): Promise<PackageDigestLike[]> {
   const normalizedQuery = maybeNormalizePackageQuery(queryText);
   const topicQuery = normalizeCatalogTopic(queryText);
+  const categoryQuery =
+    topicQuery !== INTERNAL_UNCATEGORIZED_CATEGORY && isPluginCategorySlug(topicQuery)
+      ? topicQuery
+      : undefined;
   const queryTokens = tokenize(queryText).filter((token) => token.length > 1);
   const runtimePrefix = queryTokens.length === 1 ? queryTokens[0] : queryText;
-  const [nameDigests, runtimeDigests, topicDigests] = await Promise.all([
+  const [nameDigests, runtimeDigests, exactTopicDigests, categoryDigests] = await Promise.all([
     normalizedQuery
       ? ctx.db
           .query("packageSearchDigest")
@@ -1628,8 +1646,36 @@ async function resolveDirectPackageSearchDigests(
           .order("desc")
           .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
       : Promise.resolve([]),
+    categoryQuery
+      ? ctx.db
+          .query("packagePluginCategorySearchDigest")
+          .withIndex("by_active_category_updated", (q) =>
+            q.eq("softDeletedAt", undefined).eq("pluginCategory", categoryQuery),
+          )
+          .order("desc")
+          .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+      : Promise.resolve([]),
   ]);
-  return [...nameDigests, ...runtimeDigests, ...topicDigests].filter(
+  const prefixTopicDigests =
+    topicQuery && exactTopicDigests.length < MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES
+      ? await ctx.db
+          .query("packageTopicSearchDigest")
+          .withIndex("by_active_topic_updated", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .gte("topic", topicQuery)
+              .lt("topic", prefixUpperBound(topicQuery)),
+          )
+          .order("desc")
+          .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES - exactTopicDigests.length)
+      : [];
+  return [
+    ...nameDigests,
+    ...runtimeDigests,
+    ...exactTopicDigests,
+    ...prefixTopicDigests,
+    ...categoryDigests,
+  ].filter(
     (digest, index, all) =>
       all.findIndex((candidate) => candidate?.packageId === digest?.packageId) === index,
   ) as PackageDigestLike[];
