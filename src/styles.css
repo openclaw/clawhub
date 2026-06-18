@@ -1089,9 +1089,16 @@ code {
 }
 
 .user-dropdown-content {
+  --user-dropdown-gutter: 8px;
+  --user-dropdown-identity-surface: color-mix(
+    in srgb,
+    var(--surface-muted) 68%,
+    var(--surface)
+  );
   width: min(300px, calc(100vw - 24px));
   overflow: hidden;
   border-radius: var(--r-md) !important;
+  background: var(--surface);
   background-clip: padding-box;
 }
 
@@ -1118,11 +1125,13 @@ code {
 
 .user-dropdown-current-trigger {
   display: flex;
-  width: 100%;
+  width: calc(100% + var(--user-dropdown-gutter) * 2);
   align-items: center;
   gap: 9px;
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
+  margin-inline: calc(var(--user-dropdown-gutter) * -1);
+  border-radius: 0;
+  background: var(--user-dropdown-identity-surface);
+  padding: 8px calc(10px + var(--user-dropdown-gutter));
   outline: none;
   cursor: pointer;
 }
@@ -1148,7 +1157,7 @@ code {
 
 .user-dropdown-current-trigger:focus,
 .user-dropdown-current-trigger[data-highlighted] {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
+  background: color-mix(in srgb, var(--accent) 7%, var(--user-dropdown-identity-surface));
 }
 
 .user-dropdown-submenu-chevron {
@@ -1223,16 +1232,21 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 14px;
-  margin: 0;
-  padding: 9px 10px;
+  margin: 0 calc(var(--user-dropdown-gutter) * -1);
+  padding: 9px calc(10px + var(--user-dropdown-gutter));
   border-radius: 0;
-  background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
+  background: var(--user-dropdown-identity-surface);
   color: var(--ink-soft);
   font-size: 0.76rem;
 }
 
 .user-dropdown-content .user-dropdown-managing-separator {
+  margin-inline: calc(var(--user-dropdown-gutter) * -1);
   margin-block: 0;
+}
+
+.user-dropdown-content .user-dropdown-full-bleed-separator {
+  margin-inline: calc(var(--user-dropdown-gutter) * -1);
 }
 
 .user-dropdown-managing-label {
@@ -1314,7 +1328,9 @@ code {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
-  padding: 2px 4px 2px 10px;
+  margin-inline: calc(var(--user-dropdown-gutter) * -1);
+  padding: 2px calc(4px + var(--user-dropdown-gutter)) 2px
+    calc(10px + var(--user-dropdown-gutter));
 }
 
 .user-dropdown-appearance-label {

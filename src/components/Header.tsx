@@ -836,7 +836,7 @@ export default function Header() {
                       </Link>
                     </DropdownMenuItem>
                   </div>
-                  <DropdownMenuSeparator />
+                  <DropdownMenuSeparator className="user-dropdown-full-bleed-separator" />
                   <div className="user-dropdown-appearance-row">
                     <span className="user-dropdown-appearance-label">
                       <Palette size={14} aria-hidden="true" />
@@ -859,7 +859,7 @@ export default function Header() {
                       ))}
                     </div>
                   </div>
-                  <DropdownMenuSeparator />
+                  <DropdownMenuSeparator className="user-dropdown-full-bleed-separator" />
                   <DropdownMenuItem
                     className="user-dropdown-account-action"
                     onClick={() => void signOut()}
