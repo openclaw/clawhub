@@ -973,7 +973,7 @@ export function Upload() {
               </div>
             ) : null}
 
-            <CardContent className="relative z-[1] -mt-1 rounded-t-[var(--radius-md)] border-t border-[color:var(--line)] bg-[color:var(--surface)] p-space-5">
+            <CardContent className="border-t border-[color:var(--line)] p-space-5">
               {files.length > 0 ? (
                 <div
               className={`overflow-hidden rounded-[var(--radius-md)] border transition-colors ${
