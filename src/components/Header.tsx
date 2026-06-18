@@ -176,14 +176,16 @@ export default function Header() {
     triggerPublisher?.kind === "org" ? (
       <div className="user-dropdown-managing-row">
         <span className="user-dropdown-managing-label">Managing as</span>
-        {avatar ? (
-          <img className="user-dropdown-managing-avatar" src={avatar} alt="" />
-        ) : (
-          <span className="user-dropdown-managing-avatar user-dropdown-managing-avatar-fallback">
-            <UserRound size={9} aria-hidden="true" />
-          </span>
-        )}
-        <span className="user-dropdown-managing-handle">@{accountHandle}</span>
+        <span className="user-dropdown-managing-account">
+          {avatar ? (
+            <img className="user-dropdown-managing-avatar" src={avatar} alt="" />
+          ) : (
+            <span className="user-dropdown-managing-avatar user-dropdown-managing-avatar-fallback">
+              <UserRound size={9} aria-hidden="true" />
+            </span>
+          )}
+          <span className="user-dropdown-managing-handle">@{accountHandle}</span>
+        </span>
       </div>
     ) : null;
   const otherPublisherMemberships =

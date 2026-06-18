@@ -1221,17 +1221,26 @@ code {
   display: flex;
   min-width: 0;
   align-items: center;
-  gap: 7px;
-  margin: 2px 0;
+  justify-content: space-between;
+  gap: 14px;
+  margin: 0;
   padding: 8px 10px;
-  border-radius: 12px;
-  background: color-mix(in srgb, var(--surface-muted) 76%, var(--surface));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
   color: var(--ink-soft);
   font-size: 0.76rem;
 }
 
 .user-dropdown-managing-label {
   flex-shrink: 0;
+}
+
+.user-dropdown-managing-account {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 7px;
 }
 
 .user-dropdown-managing-avatar {
