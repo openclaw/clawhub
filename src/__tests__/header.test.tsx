@@ -367,7 +367,6 @@ describe("Header", () => {
     expect(screen.queryByText("Theme")).toBeNull();
 
     const activePublisher = screen.getByLabelText("Current publisher @patrick");
-    const account = screen.getByLabelText("Account @patrick");
     const publisherActions = screen.getByLabelText("Publisher actions for @patrick");
     const themeRow = document.querySelector(".user-dropdown-theme-row");
     const settings = within(publisherActions).getByText("Settings");
@@ -376,10 +375,7 @@ describe("Header", () => {
     const signOut = screen.getByText("Sign out");
 
     expect(within(activePublisher).queryByText("Stars")).toBeNull();
-    expect(within(account).queryByText("Stars")).toBeNull();
-    expect(within(account).queryByText("Sign out")).toBeNull();
-    expect(within(account).queryByText("Settings")).toBeNull();
-    expect(within(account).getByText("Account")).toBeTruthy();
+    expect(screen.queryByLabelText("Account @patrick")).toBeNull();
     expect(screen.queryByText("Switch publisher")).toBeNull();
     expect(themeRow).toBeTruthy();
     expect(themeRow?.children).toHaveLength(3);
@@ -427,11 +423,10 @@ describe("Header", () => {
 
     expect(screen.getByRole("button", { name: "Open account menu for @openclaw" })).toBeTruthy();
     const activePublisher = screen.getByLabelText("Current publisher @openclaw");
-    const account = screen.getByLabelText("Account @patrick");
     const publisherActions = screen.getByLabelText("Publisher actions for @openclaw");
     const profile = within(publisherActions).getByText("Profile");
 
-    expect(within(account).getByText("@patrick")).toBeTruthy();
+    expect(screen.queryByLabelText("Account @patrick")).toBeNull();
     expect(screen.getByText("Switch publisher")).toBeTruthy();
     expect(screen.getByLabelText("Switch to @patrick")).toBeTruthy();
     expect(screen.getByText("Create organization")).toBeTruthy();
@@ -460,6 +455,7 @@ describe("Header", () => {
 
     expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
     expect(screen.getByText("Stars")).toBeTruthy();
+    expect(screen.getByText("Appearance")).toBeTruthy();
     expect(screen.getByText("Sign out")).toBeTruthy();
     expect(screen.getByText("Settings")).toBeTruthy();
   });

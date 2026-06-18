@@ -1147,9 +1147,7 @@ code {
 }
 
 .user-dropdown-current-trigger:focus,
-.user-dropdown-current-trigger[data-highlighted],
-.user-dropdown-account-trigger:focus,
-.user-dropdown-account-trigger[data-highlighted] {
+.user-dropdown-current-trigger[data-highlighted] {
   background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
 }
 
@@ -1226,39 +1224,6 @@ code {
 .user-dropdown-create-org-action:focus,
 .user-dropdown-create-org-action[data-highlighted] {
   background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
-}
-
-.user-dropdown-account-identity {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 9px;
-  padding: 5px 10px 7px;
-}
-
-.user-dropdown-account-trigger {
-  display: grid;
-  width: 100%;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 1px 8px;
-  align-items: center;
-  border-radius: var(--r-sm);
-  padding: 8px 10px;
-  outline: none;
-  cursor: pointer;
-}
-
-.user-dropdown-account-trigger .user-dropdown-submenu-chevron {
-  grid-column: 2;
-  grid-row: 1 / span 2;
-}
-
-.user-dropdown-account-label {
-  overflow: hidden;
-  font-size: var(--fs-sm);
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .user-dropdown-account-avatar {

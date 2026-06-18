@@ -812,66 +812,36 @@ export default function Header() {
                     ) : null}
                   </div>
                   <DropdownMenuSeparator />
-                  <DropdownMenuSub>
-                    <DropdownMenuSubTrigger
-                      aria-label={`Account @${rawHandle}`}
-                      className="user-dropdown-account-trigger"
-                    >
-                      <span className="user-dropdown-account-label">Account</span>
-                      <span className="user-dropdown-account-handle">@{rawHandle}</span>
-                      <ChevronRight className="user-dropdown-submenu-chevron" size={16} />
-                    </DropdownMenuSubTrigger>
-                    <DropdownMenuSubContent className="user-dropdown-subcontent user-dropdown-account-subcontent">
-                      <div
-                        aria-label={`Signed-in account @${rawHandle}`}
-                        className="user-dropdown-account-identity"
-                      >
-                        {avatar ? (
-                          <img
-                            className="user-dropdown-account-avatar"
-                            src={avatar}
-                            alt={me.displayName ?? me.name ?? "User avatar"}
-                          />
-                        ) : (
-                          <span className="user-dropdown-account-avatar user-dropdown-account-fallback">
-                            {initial}
-                          </span>
-                        )}
-                        <span className="user-dropdown-account-handle">@{rawHandle}</span>
-                      </div>
-                      <DropdownMenuSeparator />
-                      {!isPersonalPublisher ? (
-                        <DropdownMenuItem asChild className="user-dropdown-account-action">
-                          <Link to="/stars" className="flex items-center gap-2">
-                            <Star size={14} aria-hidden="true" />
-                            Stars
-                          </Link>
+                  {!isPersonalPublisher ? (
+                    <DropdownMenuItem asChild className="user-dropdown-account-action">
+                      <Link to="/stars" className="flex items-center gap-2">
+                        <Star size={14} aria-hidden="true" />
+                        Stars
+                      </Link>
+                    </DropdownMenuItem>
+                  ) : null}
+                  <div className="user-dropdown-appearance-row">
+                    <span className="user-dropdown-appearance-label">
+                      <Palette size={14} aria-hidden="true" />
+                      Appearance
+                    </span>
+                    <div className="user-dropdown-theme-row" role="group" aria-label="Theme">
+                      {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
+                        <DropdownMenuItem
+                          key={themeMode}
+                          aria-label={label}
+                          aria-current={mode === themeMode ? "true" : undefined}
+                          className="user-dropdown-theme-button"
+                          data-status={mode === themeMode ? "active" : undefined}
+                          title={label}
+                          onClick={() => setThemeMode(themeMode)}
+                        >
+                          <Icon size={15} aria-hidden="true" />
+                          <span className="sr-only">{label}</span>
                         </DropdownMenuItem>
-                      ) : null}
-                      <div className="user-dropdown-appearance-row">
-                        <span className="user-dropdown-appearance-label">
-                          <Palette size={14} aria-hidden="true" />
-                          Appearance
-                        </span>
-                        <div className="user-dropdown-theme-row" role="group" aria-label="Theme">
-                          {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
-                            <DropdownMenuItem
-                              key={themeMode}
-                              aria-label={label}
-                              aria-current={mode === themeMode ? "true" : undefined}
-                              className="user-dropdown-theme-button"
-                              data-status={mode === themeMode ? "active" : undefined}
-                              title={label}
-                              onClick={() => setThemeMode(themeMode)}
-                            >
-                              <Icon size={15} aria-hidden="true" />
-                              <span className="sr-only">{label}</span>
-                            </DropdownMenuItem>
-                          ))}
-                        </div>
-                      </div>
-                    </DropdownMenuSubContent>
-                  </DropdownMenuSub>
+                      ))}
+                    </div>
+                  </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="user-dropdown-account-action"
