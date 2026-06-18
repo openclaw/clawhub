@@ -71,8 +71,9 @@ not control.
 If you are the rightful owner of an org, brand, package scope, owner handle, or
 namespace that is already claimed or reserved on ClawHub, open an
 [Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
-with public, non-sensitive proof. Do not use the account appeal form for
-namespace claims.
+with public, non-sensitive proof. See
+[Org and Namespace Claims](./namespace-claims.md) for what to include and what
+to keep out of public issues.
 
 ### Before Publishing a Plugin
 
@@ -160,7 +161,8 @@ publish into a scope you cannot manage.
 If you do not have access to the current owner but believe your org, project, or
 brand is the rightful namespace owner, open an
 [Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
-with public, non-sensitive proof for staff review.
+with public, non-sensitive proof for staff review. See
+[Org and Namespace Claims](./namespace-claims.md) before filing.
 
 This protects org namespaces. A package named `@openclaw/dronzer` claims the
 `@openclaw` namespace, so only publishers with access to the `@openclaw` owner
