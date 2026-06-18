@@ -318,10 +318,25 @@ export function normalizeInferredCatalogTopics(values) {
     }
 }
 export function getCatalogTopicSlugs(values) {
-    return normalizeCatalogTopics(values).flatMap((value) => {
-        const slug = normalizeCatalogTopic(value);
-        return slug ? [slug] : [];
-    });
+    const slugs = [];
+    const seenSlugs = new Set();
+    for (const value of values ?? []) {
+        let normalized;
+        try {
+            normalized = normalizeCatalogTopics([value]);
+        }
+        catch {
+            continue;
+        }
+        const slug = normalizeCatalogTopic(normalized[0] ?? "");
+        if (!slug || seenSlugs.has(slug))
+            continue;
+        seenSlugs.add(slug);
+        slugs.push(slug);
+        if (slugs.length >= CATALOG_TOPIC_LIMIT)
+            break;
+    }
+    return slugs;
 }
 export function resolveStoredSkillCategories(skill) {
     let declared;

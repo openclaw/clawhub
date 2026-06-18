@@ -186,7 +186,7 @@ describe("packageSearchDigest", () => {
     expect(deleteDoc).toHaveBeenCalledWith("packageSearchDigest:demo");
   });
 
-  it("syncs one topic digest row per stored topic", async () => {
+  it("syncs one topic digest row per valid stored topic", async () => {
     const insert = vi.fn();
     const ctx = {
       db: {
@@ -228,7 +228,7 @@ describe("packageSearchDigest", () => {
         channel: "community",
         isOfficial: false,
         ownerUserId: "users:owner",
-        topics: ["calendar", "scheduling"],
+        topics: ["calendar", "Official", "scheduling"],
         capabilityTags: [],
         pluginCategoryTags: ["data"],
         scanStatus: "clean",

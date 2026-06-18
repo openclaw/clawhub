@@ -130,6 +130,25 @@ describe("catalog metadata", () => {
     expect(getCatalogTopicSlugs(topics)).toEqual(["gpu-development", "travel-planning"]);
   });
 
+  it("drops invalid stored topics while deriving bounded lookup slugs", () => {
+    expect(
+      getCatalogTopicSlugs([
+        "Calendar",
+        "Official",
+        "offi\u200bcial",
+        "x".repeat(200),
+        "Travel Planning",
+        "calendar",
+        "one",
+        "two",
+        "three",
+        "four",
+        "five",
+        "six",
+      ]),
+    ).toEqual(["calendar", "travel-planning", "one", "two", "three"]);
+  });
+
   it("caps author topics at five values", () => {
     expect(CATALOG_TOPIC_LIMIT).toBe(5);
     expect(() => normalizeCatalogTopics(["one", "two", "three", "four", "five", "six"])).toThrow(

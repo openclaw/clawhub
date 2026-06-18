@@ -563,7 +563,7 @@ describe("search helpers", () => {
           slug: "demo",
           displayName: "Alice Demo",
           ownerPublisherId: "publishers:alice",
-          topics: ["scheduling"],
+          topics: ["scheduling", "Official"],
         }),
         makeSkillDoc({
           id: "skills:org-demo",
