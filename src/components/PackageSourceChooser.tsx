@@ -119,6 +119,7 @@ export function PackageSourceChooser(props: {
   codePluginFieldIssues: string[];
   onPickFiles: (selected: File[], sourceKind: PackagePickSource) => Promise<void>;
   onClearFiles: () => void;
+  embedded?: boolean;
 }) {
   const [isDragging, setIsDragging] = useState(false);
   const archiveInputRef = useRef<HTMLInputElement | null>(null);
@@ -193,7 +194,7 @@ export function PackageSourceChooser(props: {
       />
       {hasSelectedPackage ? (
         <div
-          className={`mb-5 overflow-hidden rounded-[var(--radius-md)] border transition-colors ${selectedPackagePanelToneClass}`}
+          className={`${props.embedded ? "" : "mb-5"} overflow-hidden rounded-[var(--radius-md)] border transition-colors ${selectedPackagePanelToneClass}`}
           onDragOver={(event) => {
             event.preventDefault();
             setIsDragging(true);
@@ -290,7 +291,7 @@ export function PackageSourceChooser(props: {
           </div>
         </div>
       ) : (
-        <Card className="mb-5">
+        <Card className={props.embedded ? "gap-0 border-0 bg-transparent !p-0" : "mb-5"}>
           <div
             className={`relative flex flex-col items-center gap-4 overflow-hidden rounded-[var(--radius-md)] border-2 border-dashed p-8 text-center transition-colors ${
               isDragging

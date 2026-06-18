@@ -15,6 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     __path: path,
   }),
+  useNavigate: () => navigateMock,
   useSearch: () => useSearchMock(),
 }));
 
@@ -35,6 +36,7 @@ const useAuthStatusMock = vi.fn();
 const useQueryMock = vi.fn();
 const useSearchMock = vi.fn();
 const useActivePublisherMock = vi.fn();
+const navigateMock = vi.fn();
 const originalFetch = globalThis.fetch;
 
 vi.mock("convex/react", () => ({
@@ -81,9 +83,11 @@ type PublisherMembership = typeof vintageAyuMembership | typeof openClawMembersh
 function mockActivePublisher({
   memberships = [vintageAyuMembership],
   activeOwnerHandle = memberships[0]?.publisher.handle ?? null,
+  setActivePublisherId = vi.fn(),
 }: {
   memberships?: PublisherMembership[];
   activeOwnerHandle?: string | null;
+  setActivePublisherId?: ReturnType<typeof vi.fn>;
 } = {}) {
   const activePublisher =
     memberships.find((membership) => membership.publisher.handle === activeOwnerHandle) ??
@@ -100,7 +104,7 @@ function mockActivePublisher({
     isLoading: false,
     memberships,
     personalPublisher: memberships.find((entry) => entry.publisher.kind === "user") ?? null,
-    setActivePublisherId: vi.fn(),
+    setActivePublisherId,
   });
 }
 
@@ -159,6 +163,7 @@ describe("plugins publish route", () => {
     useQueryMock.mockReset();
     useSearchMock.mockReset();
     useActivePublisherMock.mockReset();
+    navigateMock.mockReset();
     toastErrorMock.mockReset();
 
     useSearchMock.mockReturnValue({
@@ -236,18 +241,74 @@ describe("plugins publish route", () => {
   it("keeps metadata inputs locked until plugin code is uploaded", () => {
     renderPublishRoute();
 
+    const publishingAs = screen.getByRole("group", { name: "Publishing as" });
+    const uploadPrompt = screen.getByText("Upload plugin code first");
+
+    expect(publishingAs.parentElement?.contains(uploadPrompt)).toBe(true);
+    expect(
+      publishingAs.compareDocumentPosition(uploadPrompt) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
     expect(screen.getByText(/Upload plugin code first/i)).toBeTruthy();
     expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).not.toBeNull();
     expect(screen.getByPlaceholderText("Display name").getAttribute("disabled")).not.toBeNull();
     expect(screen.getByPlaceholderText("Version").getAttribute("disabled")).not.toBeNull();
     expect(screen.queryByPlaceholderText("Describe what changed in this release...")).toBeNull();
     expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
-      "@vintageayu · VintageAyu",
+      "VintageAyu / @vintageayu",
     );
     expect(document.querySelector('img[src="/clawd-logo.png"]')).toBeTruthy();
     expect(
       screen.getByRole("button", { name: "Publish plugin" }).getAttribute("disabled"),
     ).not.toBeNull();
+  });
+
+  it("switches publisher from the plugin upload card", async () => {
+    const setActivePublisherId = vi.fn();
+    mockActivePublisher({
+      memberships: [vintageAyuMembership, openClawMembership],
+      setActivePublisherId,
+    });
+
+    renderPublishRoute();
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Switch publisher" }), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Switch to @openclaw" }));
+
+    expect(setActivePublisherId).toHaveBeenCalledWith("publishers:openclaw");
+  });
+
+  it("replaces a stale ownerHandle in the new plugin publish URL", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: undefined,
+      displayName: undefined,
+      family: undefined,
+      nextVersion: undefined,
+      sourceRepo: undefined,
+    });
+    mockActivePublisher({
+      memberships: [vintageAyuMembership, openClawMembership],
+      activeOwnerHandle: "openclaw",
+    });
+
+    renderPublishRoute();
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: "/plugins/publish",
+        search: {
+          ownerHandle: "openclaw",
+          name: undefined,
+          displayName: undefined,
+          family: undefined,
+          nextVersion: undefined,
+          sourceRepo: undefined,
+        },
+        replace: true,
+      });
+    });
   });
 
   it("opens only the directory picker when clicking Choose folder", () => {
@@ -687,7 +748,7 @@ describe("plugins publish route", () => {
     await waitFor(() => {
       expect(screen.getByDisplayValue("@openclaw/dronzer")).toBeTruthy();
       expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
-        "@openclaw · OpenClaw",
+        "OpenClaw / @openclaw",
       );
     });
     expect(screen.queryByText(/Package scope "@openclaw" must match selected owner/i)).toBeNull();

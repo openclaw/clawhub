@@ -1,4 +1,4 @@
-import { createFileRoute, useSearch } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { DocsLinks, getPackageScopeOwnerMismatch, isPluginCategorySlug } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
@@ -18,7 +18,7 @@ import {
   PackageSourceChooser,
   type PackagePickSource,
 } from "../../components/PackageSourceChooser";
-import { PublisherOwnerDisplay } from "../../components/PublisherOwnerSelect";
+import { PublisherContextStrip } from "../../components/PublisherOwnerSelect";
 import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
 import { Badge } from "../../components/ui/badge";
@@ -189,7 +189,9 @@ export function PublishPluginRoute() {
     activeOwnerHandle,
     memberships: publisherMemberships,
     isLoading: isActivePublisherLoading,
+    setActivePublisherId,
   } = useActivePublisher();
+  const navigate = useNavigate();
   const existing = useQuery(
     api.packages.getManageContext,
     me && search.name ? { name: search.name } : "skip",
@@ -384,8 +386,7 @@ export function PublishPluginRoute() {
   };
 
   useEffect(() => {
-    if (search.ownerHandle) return;
-    if (activeOwnerHandle) {
+    if (!search.name && activeOwnerHandle) {
       if (ownerHandle !== activeOwnerHandle) setOwnerHandle(activeOwnerHandle);
       return;
     }
@@ -396,7 +397,23 @@ export function PublishPluginRoute() {
     if (personal?.publisher.handle) {
       setOwnerHandle(personal.publisher.handle);
     }
-  }, [activeOwnerHandle, ownerHandle, publisherMemberships, search.ownerHandle]);
+  }, [
+    activeOwnerHandle,
+    ownerHandle,
+    publisherMemberships,
+    search.name,
+    search.ownerHandle,
+  ]);
+
+  useEffect(() => {
+    if (search.name || !ownerHandle || search.ownerHandle === ownerHandle) return;
+
+    void navigate({
+      to: "/plugins/publish",
+      search: { ...search, ownerHandle },
+      replace: true,
+    });
+  }, [navigate, ownerHandle, search]);
 
   useEffect(() => {
     if (!existing?.package) return;
@@ -474,20 +491,30 @@ export function PublishPluginRoute() {
           </Card>
         ) : null}
 
-        <PackageSourceChooser
-          files={files}
-          totalBytes={totalBytes}
-          normalizedPaths={normalizedPaths}
-          normalizedPathSet={normalizedPathSet}
-          selectedSourceKind={packageSourceKind}
-          ignoredPaths={ignoredPaths}
-          detectedPrefillFields={detectedPrefillFields}
-          family={family}
-          validationError={validationError}
-          codePluginFieldIssues={codePluginFieldIssues}
-          onPickFiles={onPickFiles}
-          onClearFiles={clearSelectedFiles}
-        />
+        <Card className="mb-5 gap-0 overflow-hidden !p-0">
+          <PublisherContextStrip
+            ownerHandle={ownerHandle}
+            memberships={publisherMemberships}
+            onSwitchPublisher={setActivePublisherId}
+          />
+          <div className="border-t border-[color:var(--line)] p-space-5">
+            <PackageSourceChooser
+              files={files}
+              totalBytes={totalBytes}
+              normalizedPaths={normalizedPaths}
+              normalizedPathSet={normalizedPathSet}
+              selectedSourceKind={packageSourceKind}
+              ignoredPaths={ignoredPaths}
+              detectedPrefillFields={detectedPrefillFields}
+              family={family}
+              validationError={validationError}
+              codePluginFieldIssues={codePluginFieldIssues}
+              onPickFiles={onPickFiles}
+              onClearFiles={clearSelectedFiles}
+              embedded
+            />
+          </div>
+        </Card>
 
         <div
           className={
@@ -542,16 +569,6 @@ export function PublishPluginRoute() {
                     className="min-h-[44px] w-full rounded-[var(--radius-sm)] border border-[rgba(29,59,78,0.22)] bg-[rgba(255,255,255,0.94)] px-3.5 py-[13px] text-sm text-[color:var(--ink)] dark:border-[rgba(255,255,255,0.12)] dark:bg-[rgba(14,28,37,0.84)]"
                   >
                     {family === "code-plugin" ? "Code plugin" : "Bundle plugin"}
-                  </div>
-                </div>
-                <div className="flex flex-col gap-2">
-                  <Label>Publishing as</Label>
-                  <div
-                    role="group"
-                    aria-label="Publishing as"
-                    className="flex min-h-[44px] w-full items-center rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)]"
-                  >
-                    <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
                   </div>
                 </div>
                 <div className="flex flex-col gap-2">

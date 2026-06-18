@@ -29,20 +29,16 @@ import {
 } from "../../components/CatalogMetadataFields";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
-import { MarketplaceIcon } from "../../components/MarketplaceIcon";
-import { PublisherOwnerDisplay, PublisherOwnerSelect } from "../../components/PublisherOwnerSelect";
+import {
+  PublisherContextStrip,
+  PublisherOwnerSelect,
+} from "../../components/PublisherOwnerSelect";
 import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
 import { SkillIconPicker } from "../../components/SkillIconPicker";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardTitle } from "../../components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "../../components/ui/dropdown-menu";
 import { Input } from "../../components/ui/input";
 import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
@@ -885,92 +881,14 @@ export function Upload() {
 
           <Card className="gap-0 overflow-hidden !p-0">
             {!updateSlug ? (
-              <div
-                role="group"
-                aria-label="Publishing as"
-                className="flex min-h-[52px] flex-wrap items-center gap-x-2 gap-y-2 bg-[color:var(--surface-muted)] px-space-5 py-space-3 text-sm text-[color:var(--ink)]"
-              >
-                <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-                  Publishing as
-                </span>
-                <span className="publishing-context-owner">
-                  <PublisherOwnerDisplay
-                    value={ownerHandle}
-                    memberships={publisherMemberships}
-                    compact
-                  />
-                </span>
-                <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
-                {(publisherMemberships?.length ?? 0) > 1 ? (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="xs"
-                        className="ml-auto focus-visible:ring-0 focus-visible:ring-offset-0"
-                        aria-label="Switch publisher"
-                      >
-                        Switch publisher
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent
-                      align="end"
-                      className="publishing-context-switcher user-dropdown-subcontent user-dropdown-switcher-subcontent"
-                    >
-                      <div className="user-dropdown-section-label">Switch publisher</div>
-                      <div className="user-dropdown-publisher-list" aria-label="Switch publisher">
-                        {publisherMemberships?.map((entry) => {
-                          const publisherIdentity = (
-                            <>
-                              <span className="user-dropdown-publisher-icon" aria-hidden="true">
-                                <MarketplaceIcon
-                                  kind={entry.publisher.kind}
-                                  label={entry.publisher.displayName || entry.publisher.handle}
-                                  imageUrl={entry.publisher.image}
-                                  size="xs"
-                                />
-                              </span>
-                              <span className="user-dropdown-publisher-copy">
-                                <span className="user-dropdown-publisher-title">
-                                  @{entry.publisher.handle}
-                                </span>
-                                <span className="user-dropdown-publisher-meta">
-                                  {entry.publisher.kind === "org" ? "Organization" : "Personal"}
-                                </span>
-                              </span>
-                            </>
-                          );
-
-                          return entry.publisher.handle === ownerHandle ? (
-                            <div
-                              key={entry.publisher._id}
-                              aria-label={`Selected publisher @${entry.publisher.handle}`}
-                              className="user-dropdown-publisher-item user-dropdown-publisher-item-current"
-                            >
-                              {publisherIdentity}
-                              <Check
-                                className="user-dropdown-publisher-check"
-                                size={16}
-                                aria-label="Selected publisher"
-                              />
-                            </div>
-                          ) : (
-                            <DropdownMenuItem
-                              key={entry.publisher._id}
-                              aria-label={`Switch to @${entry.publisher.handle}`}
-                              className="user-dropdown-publisher-item"
-                              onSelect={() => setActivePublisherId(entry.publisher._id)}
-                            >
-                              {publisherIdentity}
-                            </DropdownMenuItem>
-                          );
-                        })}
-                      </div>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                ) : null}
-              </div>
+              <PublisherContextStrip
+                ownerHandle={ownerHandle}
+                memberships={publisherMemberships}
+                onSwitchPublisher={setActivePublisherId}
+                validation={
+                  <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
+                }
+              />
             ) : null}
 
             <CardContent className="border-t border-[color:var(--line)] p-space-5">
