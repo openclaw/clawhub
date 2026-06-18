@@ -881,7 +881,7 @@ export function Settings() {
                 </div>
 
                 {orgs.length ? (
-                  <div className="grid gap-3">
+                  <div className="grid gap-3 md:grid-cols-2">
                     {orgs.map((entry) => (
                       <SettingsBlock key={entry.publisher._id} className="gap-3">
                         <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
