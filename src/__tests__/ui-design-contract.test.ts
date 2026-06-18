@@ -65,6 +65,7 @@ describe("restored UI design contract", () => {
   const footer = () => read("src/components/Footer.tsx");
   const home = () => read("src/routes/index.tsx");
   const navItems = () => read("src/lib/nav-items.ts");
+  const publicRegistry = () => read("src/lib/publicRegistry.ts");
   const settings = () => read("src/routes/settings.tsx");
   const styles = () => read("src/styles.css");
   const theme = () => read("src/lib/theme.ts");
@@ -83,6 +84,7 @@ describe("restored UI design contract", () => {
   it("requires the responsive header rail, search overlay, and theme controls", () => {
     const headerSource = header();
     const navSource = navItems();
+    const publicRegistrySource = publicRegistry();
     const css = styles();
 
     expect(headerSource).toContain('className="navbar-top"');
@@ -112,7 +114,10 @@ describe("restored UI design contract", () => {
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
     expect(navSource).toContain('label: "Publishers"');
     expect(navSource).toContain('label: "Docs"');
-    expect(navSource).toContain('href: "https://docs.openclaw.ai/clawhub/"');
+    expect(navSource).toContain("href: CLAWHUB_DOCS_URL");
+    expect(publicRegistrySource).toContain(
+      'export const CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/"',
+    );
     expect(navSource).not.toContain('icon: "wrench"');
     expect(navSource).not.toContain('icon: "plug"');
     expect(navSource).not.toContain('label: "About"');
