@@ -181,6 +181,205 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
   });
 
+  it("loads skill activity graphs separately from loader-backed page content", async () => {
+    const activityTrend = {
+      installs: {
+        range: "daily" as const,
+        days: 30,
+        total: 5,
+        points: [
+          { day: 20_451, value: 1 },
+          { day: 20_452, value: 0 },
+          { day: 20_453, value: 2 },
+          { day: 20_454, value: 1 },
+          { day: 20_455, value: 1 },
+        ],
+      },
+      downloads: {
+        range: "daily" as const,
+        days: 30,
+        total: 12,
+        points: [
+          { day: 20_451, value: 1 },
+          { day: 20_452, value: 0 },
+          { day: 20_453, value: 4 },
+          { day: 20_454, value: 3 },
+          { day: 20_455, value: 4 },
+        ],
+      },
+    };
+    const initialData = {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          badges: {},
+          stats: {
+            stars: 12,
+            downloads: 34,
+            installsCurrent: 5,
+            installsAllTime: 8,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: {
+          _id: ownerPublisherId,
+          _creationTime: 0,
+          kind: "user" as const,
+          handle: "steipete",
+          displayName: "Peter",
+          linkedUserId: ownerId,
+        },
+        latestVersion: {
+          _id: versionId,
+          _creationTime: 0,
+          skillId,
+          version: "1.0.0",
+          fingerprint: "abc",
+          changelog: "Initial release",
+          parsed: { license: "MIT-0" as const, frontmatter: {} },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 10,
+              storageId,
+              sha256: "abc",
+              contentType: "text/markdown",
+            },
+          ],
+          createdBy: ownerId,
+          createdAt: 0,
+        },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: "# Weather",
+      readmeError: null,
+    };
+    useQueryMock.mockImplementation(() => undefined);
+
+    const { container, rerender } = render(
+      <SkillDetailPage slug="weather" initialData={initialData} />,
+    );
+
+    expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(screen.getByText("30-day Installs")).toBeTruthy();
+    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(2);
+    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
+
+    useQueryMock.mockImplementation((query: unknown) => {
+      const name = getFunctionName(query as never);
+      if (name === "skills:getActivityTrendForSlug") return activityTrend;
+      return undefined;
+    });
+    rerender(<SkillDetailPage slug="weather" initialData={initialData} />);
+
+    expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
+    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
+    expect(
+      useQueryMock.mock.calls.some((call) => {
+        const query = call[0];
+        const args = call[1];
+        return (
+          getFunctionName(query as never) === "skills:getActivityTrendForSlug" &&
+          typeof args === "object" &&
+          args !== null &&
+          "slug" in args &&
+          args.slug === "weather" &&
+          "endDay" in args &&
+          typeof args.endDay === "number" &&
+          "ownerHandle" in args &&
+          args.ownerHandle === "steipete"
+        );
+      }),
+    ).toBe(true);
+  });
+
+  it("passes the loader owner id to activity trends when no public owner handle is available", () => {
+    const initialData = {
+      result: {
+        skill: {
+          _id: skillId,
+          _creationTime: 0,
+          slug: "weather",
+          displayName: "Weather",
+          summary: "Get current weather.",
+          ownerUserId: ownerId,
+          ownerPublisherId,
+          tags: {},
+          badges: {},
+          stats: {
+            stars: 12,
+            downloads: 34,
+            installsCurrent: 5,
+            installsAllTime: 8,
+            versions: 1,
+            comments: 0,
+          },
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        owner: null,
+        latestVersion: {
+          _id: versionId,
+          _creationTime: 0,
+          skillId,
+          version: "1.0.0",
+          fingerprint: "abc",
+          changelog: "Initial release",
+          parsed: { license: "MIT-0" as const, frontmatter: {} },
+          files: [
+            {
+              path: "SKILL.md",
+              size: 10,
+              storageId,
+              sha256: "abc",
+              contentType: "text/markdown",
+            },
+          ],
+          createdBy: ownerId,
+          createdAt: 0,
+        },
+        forkOf: null,
+        canonical: null,
+      },
+      readme: "# Weather",
+      readmeError: null,
+      lookupOwnerHandle: "users:1",
+    };
+
+    render(<SkillDetailPage slug="weather" canonicalOwner="users:1" initialData={initialData} />);
+
+    expect(
+      useQueryMock.mock.calls.some((call) => {
+        const query = call[0];
+        const args = call[1];
+        return (
+          getFunctionName(query as never) === "skills:getActivityTrendForSlug" &&
+          typeof args === "object" &&
+          args !== null &&
+          "slug" in args &&
+          args.slug === "weather" &&
+          "endDay" in args &&
+          typeof args.endDay === "number" &&
+          "ownerHandle" in args &&
+          args.ownerHandle === "users:1"
+        );
+      }),
+    ).toBe(true);
+  });
+
   it("does not spin forever when a source-backed skill has no stored version", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;

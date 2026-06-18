@@ -31,3 +31,16 @@ downloads
 ```
 
 Existing historical counts are not estimated or rewritten in this phase.
+
+## Daily Package Graph Rollout
+
+Package daily rows start when the backend that writes `packageDailyStats` is
+deployed. Production deploys are manual, so package graphs must not assume the
+PR merge date is the first trustworthy daily-stat day.
+
+Operators set the Convex env var `PACKAGE_DAILY_STATS_ROLLOUT_AT` to the actual
+production backend rollout time, as an ISO timestamp or Unix epoch
+milliseconds. Existing packages with all-time downloads or installs keep using
+all-time metadata until the visible 30-day graph window starts on or after that
+rollout time. If the env var is missing or invalid, those package daily graphs
+stay hidden rather than showing an undercount.

@@ -43,6 +43,12 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
+import {
+  ACTIVITY_TREND_DAYS,
+  buildDailyMetricTrends,
+  clampActivityTrendEndDay,
+  getActivityTrendRangeForEndDay,
+} from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
@@ -2262,6 +2268,23 @@ function toPublicSkillListVersionFromSummary(
   };
 }
 
+async function buildSkillActivityTrend(
+  ctx: Pick<QueryCtx, "db">,
+  skill: Doc<"skills">,
+  endDay: number,
+) {
+  const safeEndDay = clampActivityTrendEndDay(endDay, Date.now());
+  const { startDay, endDay: normalizedEndDay } = getActivityTrendRangeForEndDay(safeEndDay);
+  const rows = await ctx.db
+    .query("skillDailyStats")
+    .withIndex("by_skill_day", (q) =>
+      q.eq("skillId", skill._id).gte("day", startDay).lte("day", normalizedEndDay),
+    )
+    .take(ACTIVITY_TREND_DAYS);
+
+  return buildDailyMetricTrends(rows, normalizedEndDay);
+}
+
 async function buildManagementSkillEntries(ctx: QueryCtx, skills: Doc<"skills">[]) {
   const ownerCache = new Map<Id<"users">, Promise<Doc<"users"> | null>>();
   const badgeMapBySkillId = await getSkillBadgeMaps(
@@ -3113,6 +3136,22 @@ export const getSkillBySlugInternal = internalQuery({
   handler: async (ctx, args) => {
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     return resolved.skill;
+  },
+});
+
+export const getActivityTrendForSlug = query({
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()), endDay: v.number() },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
+    const skill = resolved.skill;
+    if (!skill || !isPublicSkillDoc(skill)) return null;
+    const ownerPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    if (!toPublicPublisher(ownerPublisher)) return null;
+
+    return await buildSkillActivityTrend(ctx, skill, args.endDay);
   },
 });
 

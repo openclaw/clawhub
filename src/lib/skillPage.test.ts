@@ -64,6 +64,7 @@ describe("fetchSkillPageData", () => {
       },
     });
     expect(queryMock).toHaveBeenCalledWith("skills:getBySlug", { slug: "weather" });
+    expect(queryMock).toHaveBeenCalledTimes(1);
     expect(actionMock).toHaveBeenCalledWith("skills:getReadme", { versionId: "skillVersions:1" });
   });
 

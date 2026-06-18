@@ -5009,6 +5009,159 @@ code {
   gap: 8px;
 }
 
+.activity-metric-label {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.activity-metric-info {
+  display: inline-flex;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  align-items: center;
+  justify-content: center;
+  margin: -12px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: help;
+}
+
+.activity-metric-info::before {
+  position: absolute;
+  inset: 12px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  content: "";
+}
+
+.activity-metric-info svg {
+  position: relative;
+  z-index: 1;
+}
+
+.activity-metric-info:hover,
+.activity-metric-info:focus-visible {
+  color: var(--accent);
+}
+
+.activity-metric-info:hover::before,
+.activity-metric-info:focus-visible::before {
+  border-color: var(--accent);
+}
+
+.activity-metric-info:focus-visible {
+  outline: 2px solid var(--input-focus-border);
+  outline-offset: 2px;
+}
+
+.activity-metric-tooltip {
+  max-width: 260px;
+  line-height: 1.4;
+}
+
+.metric-trend-card {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
+.metric-trend-card-skeleton {
+  height: 58px;
+}
+
+.metric-trend-value-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.metric-trend-value-row strong {
+  color: var(--ink);
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1;
+}
+
+.metric-trend-point-label {
+  color: var(--ink-muted);
+  font-size: 0.8125rem;
+  font-weight: 500;
+  line-height: 1.2;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.metric-trend-chart {
+  display: block;
+  width: 100%;
+  height: 34px;
+  color: var(--accent);
+  outline: none;
+  touch-action: pan-y;
+}
+
+.metric-trend-chart:focus-visible {
+  outline: 2px solid var(--input-focus-border);
+  outline-offset: 3px;
+}
+
+.metric-trend-area {
+  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+}
+
+.metric-trend-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+
+.metric-trend-marker-line {
+  stroke: color-mix(in srgb, var(--accent) 70%, transparent);
+  stroke-width: 1.5;
+}
+
+.metric-trend-skeleton-total,
+.metric-trend-skeleton-label,
+.metric-trend-skeleton-chart {
+  display: block;
+  border-radius: 999px;
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ink) 8%, transparent),
+    color-mix(in srgb, var(--ink) 14%, transparent),
+    color-mix(in srgb, var(--ink) 8%, transparent)
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.15s ease-in-out infinite;
+}
+
+.metric-trend-skeleton-total {
+  width: 54px;
+  height: 18px;
+}
+
+.metric-trend-skeleton-label {
+  width: 112px;
+  height: 14px;
+}
+
+.metric-trend-skeleton-chart {
+  width: 100%;
+  height: 34px;
+  border-radius: 6px;
+}
+
 .security-audit-version-stack {
   display: grid;
   justify-items: start;

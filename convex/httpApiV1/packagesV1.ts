@@ -3468,11 +3468,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
       );
     }
+    const tags = await resolvePackageTags(ctx, publicPackage!.tags);
+
     return json(
       {
         package: {
           ...toPackageDetailResponsePackage(publicPackage!),
-          tags: await resolvePackageTags(ctx, publicPackage!.tags),
+          tags,
         },
         owner: packageOwner
           ? {

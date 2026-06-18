@@ -51,10 +51,18 @@ import {
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
 import { sha256Hex } from "./lib/clawpack";
+import {
+  ACTIVITY_TREND_DAYS,
+  ACTIVITY_TREND_DAY_MS,
+  buildDailyMetricTrends,
+  clampActivityTrendEndDay,
+  getActivityTrendRangeForEndDay,
+} from "./lib/downloadTrend";
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import { toDayKey } from "./lib/leaderboards";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
@@ -296,6 +304,17 @@ const skillSpectorAnalysisValidator = v.object({
   error: v.optional(v.string()),
   checkedAt: v.number(),
 });
+
+const PACKAGE_DAILY_STATS_ROLLOUT_AT_ENV = "PACKAGE_DAILY_STATS_ROLLOUT_AT";
+
+function getPackageDailyStatsRolloutTime() {
+  const raw = process.env[PACKAGE_DAILY_STATS_ROLLOUT_AT_ENV]?.trim();
+  if (!raw) return null;
+
+  const numeric = Number(raw);
+  const parsed = Number.isFinite(numeric) ? numeric : Date.parse(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 function inferOwnerHandleFromScopedPackageName(name: string) {
   const match = /^@([^/]+)\//.exec(name);
@@ -3733,6 +3752,43 @@ export const getPackageByNameInternal = internalQuery({
   },
 });
 
+async function buildPackageActivityTrend(ctx: DbReaderCtx, pkg: Doc<"packages">, endDay: number) {
+  const safeEndDay = clampActivityTrendEndDay(endDay, Date.now());
+  const { startDay, endDay: normalizedEndDay } = getActivityTrendRangeForEndDay(safeEndDay);
+  const rows = await ctx.db
+    .query("packageDailyStats")
+    .withIndex("by_package_day", (q) =>
+      q.eq("packageId", pkg._id).gte("day", startDay).lte("day", normalizedEndDay),
+    )
+    .take(ACTIVITY_TREND_DAYS);
+
+  const packageDailyStatsRolloutTime = getPackageDailyStatsRolloutTime();
+  const hasAllTimeActivity = (pkg.stats?.downloads ?? 0) > 0 || (pkg.stats?.installs ?? 0) > 0;
+  const packageCreatedAt = pkg.createdAt ?? pkg._creationTime;
+  const hasUntrustedHistoricalActivity =
+    hasAllTimeActivity &&
+    (packageDailyStatsRolloutTime === null || packageCreatedAt < packageDailyStatsRolloutTime);
+  const hasCompleteDailyWindow =
+    packageDailyStatsRolloutTime !== null &&
+    startDay * ACTIVITY_TREND_DAY_MS >= packageDailyStatsRolloutTime;
+  if (hasUntrustedHistoricalActivity && !hasCompleteDailyWindow) {
+    return null;
+  }
+
+  return buildDailyMetricTrends(rows, normalizedEndDay);
+}
+
+export const getActivityTrendForName = query({
+  args: { name: v.string(), endDay: v.number() },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalViewerUserId(ctx);
+    const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
+    if (!pkg) return null;
+
+    return await buildPackageActivityTrend(ctx, pkg, args.endDay);
+  },
+});
+
 export const recordPackageDownloadInternal = internalMutation({
   args: { packageId: v.id("packages") },
   handler: async (ctx, args) => {
@@ -3792,6 +3848,48 @@ export const recordPackageInstallInternal = internalMutation({
   },
 });
 
+async function bumpDailyPackageStats(
+  ctx: MutationCtx,
+  params: {
+    packageId: Id<"packages">;
+    day: number;
+    downloads: number;
+    installs: number;
+    now: number;
+  },
+) {
+  if (params.downloads === 0 && params.installs === 0) return;
+
+  const existing = await ctx.db
+    .query("packageDailyStats")
+    .withIndex("by_package_day", (q) => q.eq("packageId", params.packageId).eq("day", params.day))
+    .unique();
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      downloads: Math.max(0, existing.downloads + params.downloads),
+      installs: Math.max(0, existing.installs + params.installs),
+      updatedAt: params.now,
+    });
+    return;
+  }
+
+  await ctx.db.insert("packageDailyStats", {
+    packageId: params.packageId,
+    day: params.day,
+    downloads: Math.max(0, params.downloads),
+    installs: Math.max(0, params.installs),
+    updatedAt: params.now,
+  });
+}
+
+type PackageDailyStatsDelta = {
+  packageId: Id<"packages">;
+  day: number;
+  downloads: number;
+  installs: number;
+};
+
 export const processPackageStatEventsInternal = internalMutation({
   args: { batchSize: v.optional(v.number()) },
   handler: async (ctx, args) => {
@@ -3805,12 +3903,34 @@ export const processPackageStatEventsInternal = internalMutation({
     if (events.length === 0) return { processed: 0, packagesUpdated: 0 };
 
     const statsByPackage = new Map<Id<"packages">, { downloads: number; installs: number }>();
+    const dailyStatsByPackageDay = new Map<string, PackageDailyStatsDelta>();
+    const dailyStatsByPackage = new Map<Id<"packages">, PackageDailyStatsDelta[]>();
     for (const event of events) {
       const stats = statsByPackage.get(event.packageId) ?? { downloads: 0, installs: 0 };
+      const day = toDayKey(event.occurredAt);
+      const dailyKey = `${event.packageId}:${day}`;
+      let dailyStats = dailyStatsByPackageDay.get(dailyKey);
+      if (!dailyStats) {
+        dailyStats = {
+          packageId: event.packageId,
+          day,
+          downloads: 0,
+          installs: 0,
+        };
+        dailyStatsByPackageDay.set(dailyKey, dailyStats);
+        const packageDailyStats = dailyStatsByPackage.get(event.packageId);
+        if (packageDailyStats) {
+          packageDailyStats.push(dailyStats);
+        } else {
+          dailyStatsByPackage.set(event.packageId, [dailyStats]);
+        }
+      }
       if (event.kind === "install") {
         stats.installs += 1;
+        dailyStats.installs += 1;
       } else {
         stats.downloads += 1;
+        dailyStats.downloads += 1;
       }
       statsByPackage.set(event.packageId, stats);
     }
@@ -3819,6 +3939,9 @@ export const processPackageStatEventsInternal = internalMutation({
     for (const [packageId, stats] of statsByPackage) {
       const pkg = await ctx.db.get(packageId);
       if (!pkg) continue;
+      for (const dailyStats of dailyStatsByPackage.get(packageId) ?? []) {
+        await bumpDailyPackageStats(ctx, { ...dailyStats, now });
+      }
       const nextStats = {
         downloads: (pkg.stats?.downloads ?? 0) + stats.downloads,
         installs: (pkg.stats?.installs ?? 0) + stats.installs,
@@ -4165,6 +4288,12 @@ async function hardDeletePackageDoc(
     .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
     .collect();
   for (const statEvent of statEvents) await ctx.db.delete(statEvent._id);
+
+  const dailyStats = await ctx.db
+    .query("packageDailyStats")
+    .withIndex("by_package_day", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const dailyStat of dailyStats) await ctx.db.delete(dailyStat._id);
 
   for (const release of releases) await ctx.db.delete(release._id);
   await ctx.db.delete(pkg._id);

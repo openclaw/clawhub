@@ -11,6 +11,7 @@ import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { getActivityTrendEndDay, isActivityTrend } from "../lib/activityTrend";
 import {
   getUserFacingAuthError,
   isBannedAccountAuthError,
@@ -377,8 +378,23 @@ export function SkillDetailPage({
           ...(ownerHandle ? { ownerHandle } : {}),
         }).toString()}`
       : null;
+  const activityTrendOwnerHandle =
+    ownerHandle ?? liveLookupOwnerHandle ?? (owner?._id ? String(owner._id) : null);
+  const activityTrendEndDay = getActivityTrendEndDay();
   const canonicalOwnerParam =
     typeof canonicalOwner === "string" ? canonicalOwner.trim().toLowerCase() : null;
+  const queriedActivityTrend = useQuery(
+    api.skills.getActivityTrendForSlug,
+    skill
+      ? {
+          slug: skill.slug,
+          endDay: activityTrendEndDay,
+          ...(activityTrendOwnerHandle ? { ownerHandle: activityTrendOwnerHandle } : {}),
+        }
+      : "skip",
+  );
+  const activityTrend = isActivityTrend(queriedActivityTrend) ? queriedActivityTrend : null;
+  const activityTrendLoading = Boolean(skill) && queriedActivityTrend === undefined;
   const wantsCanonicalRedirect = Boolean(
     ownerParam &&
     ((result?.resolvedSlug && result.resolvedSlug !== slug) ||
@@ -897,6 +913,8 @@ export function SkillDetailPage({
           category={relatedCategory}
           priorityContent={staffVisibilityAlert}
           securityAuditSummary={securitySummary}
+          activityTrend={activityTrend}
+          activityTrendLoading={activityTrendLoading}
           newVersionHref={newVersionHref}
           settingsHref={settingsHref}
           showArchiveMetadata={!isGitHubBackedSkill}

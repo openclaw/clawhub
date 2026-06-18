@@ -670,7 +670,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
-  it("renders plugin install counts in the metadata sidebar", async () => {
+  it("renders plugin activity skeletons while graphs load", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -684,15 +684,90 @@ describe("plugin detail route", () => {
     };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
+    const { container } = render(<Component />);
+
+    expect(screen.getByText("30-day Installs")).toBeTruthy();
+    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(2);
+    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
+  });
+
+  it("renders plugin 30-day installs and downloads graphs from the activity query", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+          stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
+        },
+        owner: null,
+      },
+    };
+    useQueryMock.mockImplementation((query: unknown) => {
+      const functionName = getFunctionName(query as never);
+      if (functionName !== "packages:getActivityTrendForName") return undefined;
+      return {
+        installs: {
+          range: "daily",
+          days: 30,
+          total: 9,
+          points: [
+            { day: 20_451, value: 2 },
+            { day: 20_452, value: 1 },
+            { day: 20_453, value: 0 },
+            { day: 20_454, value: 2 },
+            { day: 20_455, value: 1 },
+            { day: 20_456, value: 0 },
+            { day: 20_457, value: 3 },
+          ],
+        },
+        downloads: {
+          range: "daily",
+          days: 30,
+          total: 14,
+          points: [
+            { day: 20_451, value: 2 },
+            { day: 20_452, value: 1 },
+            { day: 20_453, value: 0 },
+            { day: 20_454, value: 5 },
+            { day: 20_455, value: 3 },
+            { day: 20_456, value: 0 },
+            { day: 20_457, value: 3 },
+          ],
+        },
+      };
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    const installsLabel = screen.getByText("Installs");
+    const installsLabel = screen.getByText("30-day Installs");
     const currentVersionLabel = screen.getByText("Current version");
     expect(installsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+    expect(screen.getByText("30-day Installs")).toBeTruthy();
     expect(screen.getByText("9")).toBeTruthy();
+    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("14")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(2);
+    expect(
+      useQueryMock.mock.calls.some(([query, args]) => {
+        return (
+          getFunctionName(query as never) === "packages:getActivityTrendForName" &&
+          typeof args === "object" &&
+          args !== null &&
+          "name" in args &&
+          args.name === "demo-plugin" &&
+          "endDay" in args &&
+          typeof args.endDay === "number"
+        );
+      }),
+    ).toBe(true);
   });
 
   it("shows plugin settings when the viewer can manage the plugin", async () => {
@@ -1003,8 +1078,10 @@ describe("plugin detail route", () => {
     const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
       label?.startsWith("Security audit"),
     );
+    const installsLabelIndex = sidebarLabels.findIndex((label) => label?.includes("Installs"));
     expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
-    expect(securityAuditLabelIndex).toBeGreaterThan(sidebarLabels.indexOf("Installs"));
+    expect(installsLabelIndex).toBeGreaterThanOrEqual(0);
+    expect(securityAuditLabelIndex).toBeGreaterThan(installsLabelIndex);
     expect(screen.queryByRole("tab", { name: "Capabilities" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Verification" })).toBeNull();
   });

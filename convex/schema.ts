@@ -1678,6 +1678,14 @@ const packageStatEvents = defineTable({
   .index("by_unprocessed", ["processedAt"])
   .index("by_package", ["packageId"]);
 
+const packageDailyStats = defineTable({
+  packageId: v.id("packages"),
+  day: v.number(),
+  downloads: v.number(),
+  installs: v.number(),
+  updatedAt: v.number(),
+}).index("by_package_day", ["packageId", "day"]);
+
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
   provider: v.literal("github-actions"),
@@ -2692,6 +2700,7 @@ export default defineSchema({
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
+  packageDailyStats,
   packageTrustedPublishers,
   packagePublishTokens,
   packagePublishUploadTickets,

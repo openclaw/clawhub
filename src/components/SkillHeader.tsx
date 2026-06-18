@@ -4,14 +4,17 @@ import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
 import { Download, Flag, Settings, ShieldCheck, Star, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges } from "../lib/badges";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
+import { ActivityMetricLabel } from "./ActivityMetricLabel";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
+import { MetricTrendCard, MetricTrendCardSkeleton } from "./MetricTrendCard";
 import { OfficialTag } from "./OfficialBadge";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
@@ -116,6 +119,8 @@ type SkillHeaderProps = {
   priorityContent?: ReactNode;
   postInstallContent?: ReactNode;
   securityAuditSummary?: ReactNode;
+  activityTrend?: ActivityTrend | null;
+  activityTrendLoading?: boolean;
   newVersionHref?: string | null;
   settingsHref?: string | null;
   showArchiveMetadata?: boolean;
@@ -151,6 +156,8 @@ export function SkillHeader({
   priorityContent,
   postInstallContent,
   securityAuditSummary,
+  activityTrend,
+  activityTrendLoading = false,
   newVersionHref,
   settingsHref,
   showArchiveMetadata = true,
@@ -220,6 +227,8 @@ export function SkillHeader({
               latestVersion={latestVersion}
               showArchiveMetadata={showArchiveMetadata}
               securityAuditSummary={securityAuditSummary}
+              activityTrend={activityTrend}
+              activityTrendLoading={activityTrendLoading}
             />
             {hasSidebarActions ? (
               <div className="skill-sidebar-actions">
@@ -467,6 +476,8 @@ function SkillSidebarStats({
   latestVersion,
   showArchiveMetadata,
   securityAuditSummary,
+  activityTrend,
+  activityTrendLoading = false,
 }: {
   skill: Doc<"skills"> | PublicSkill;
   owner: PublicPublisher | null;
@@ -475,6 +486,8 @@ function SkillSidebarStats({
   latestVersion: SkillHeaderLatestVersion;
   showArchiveMetadata: boolean;
   securityAuditSummary?: ReactNode;
+  activityTrend?: ActivityTrend | null;
+  activityTrendLoading?: boolean;
 }) {
   const githubRepositoryLink = getGitHubRepositoryLink(skill);
 
@@ -483,7 +496,52 @@ function SkillSidebarStats({
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
-        { label: "Installs", value: formattedStats.installsAllTime, large: true },
+        activityTrendLoading
+          ? {
+              key: "install-trend-loading",
+              label: <ActivityMetricLabel label="30-day Installs" />,
+              value: <MetricTrendCardSkeleton />,
+              large: true,
+            }
+          : activityTrend
+            ? {
+                key: "install-trend",
+                label: <ActivityMetricLabel label="30-day Installs" />,
+                value: (
+                  <MetricTrendCard
+                    trend={activityTrend.installs}
+                    ariaLabel="Daily installs over the last 30 days"
+                    unitLabel="install"
+                  />
+                ),
+                large: true,
+              }
+            : { label: "Installs", value: formattedStats.installsAllTime, large: true },
+        activityTrendLoading
+          ? {
+              key: "download-trend-loading",
+              label: <ActivityMetricLabel label="30-day Downloads" />,
+              value: <MetricTrendCardSkeleton />,
+              large: true,
+            }
+          : activityTrend
+            ? {
+                key: "download-trend",
+                label: <ActivityMetricLabel label="30-day Downloads" />,
+                value: (
+                  <MetricTrendCard
+                    trend={activityTrend.downloads}
+                    ariaLabel="Daily downloads over the last 30 days"
+                    unitLabel="download"
+                  />
+                ),
+                large: true,
+              }
+            : {
+                label: <ActivityMetricLabel label="Downloads" />,
+                value: formattedStats.downloads,
+                large: true,
+              },
         { label: "Repository", value: githubRepositoryLink },
         {
           label: "Owner",

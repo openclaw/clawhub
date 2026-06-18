@@ -128,6 +128,105 @@ describe("SkillHeader", () => {
     ).toBeTruthy();
   });
 
+  it("shows 30-day installs and downloads with matching graph metadata", () => {
+    renderHeader({
+      activityTrend: {
+        installs: {
+          range: "daily",
+          days: 30,
+          total: 5,
+          points: [
+            { day: 20_451, value: 1 },
+            { day: 20_452, value: 0 },
+            { day: 20_453, value: 2 },
+            { day: 20_454, value: 1 },
+            { day: 20_455, value: 0 },
+            { day: 20_456, value: 1 },
+            { day: 20_457, value: 0 },
+          ],
+        },
+        downloads: {
+          range: "daily",
+          days: 30,
+          total: 12,
+          points: [
+            { day: 20_451, value: 1 },
+            { day: 20_452, value: 0 },
+            { day: 20_453, value: 4 },
+            { day: 20_454, value: 2 },
+            { day: 20_455, value: 0 },
+            { day: 20_456, value: 3 },
+            { day: 20_457, value: 2 },
+          ],
+        },
+      },
+    });
+
+    expect(screen.getByText("30-day Installs")).toBeTruthy();
+    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("5")).toBeTruthy();
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
+    expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
+    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(2);
+  });
+
+  it("reserves graph space while activity metrics are loading", () => {
+    const { container } = renderHeader({ activityTrendLoading: true });
+
+    expect(screen.getByText("30-day Installs")).toBeTruthy();
+    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(2);
+    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
+  });
+
+  it("shows the nearest daily graph point and line marker on hover", () => {
+    const { container } = renderHeader({
+      activityTrend: {
+        installs: {
+          range: "daily",
+          days: 30,
+          total: 5,
+          points: [
+            { day: 20_451, value: 1 },
+            { day: 20_452, value: 0 },
+            { day: 20_453, value: 2 },
+          ],
+        },
+        downloads: {
+          range: "daily",
+          days: 30,
+          total: 12,
+          points: [
+            { day: 20_451, value: 1 },
+            { day: 20_452, value: 0 },
+            { day: 20_453, value: 11 },
+          ],
+        },
+      },
+    });
+
+    const chart = screen.getByRole("img", { name: "Daily installs over the last 30 days" });
+    chart.getBoundingClientRect = () =>
+      ({
+        x: 0,
+        y: 0,
+        left: 0,
+        top: 0,
+        right: 100,
+        bottom: 34,
+        width: 100,
+        height: 34,
+        toJSON: () => ({}),
+      }) satisfies DOMRect;
+
+    fireEvent.pointerMove(chart, { clientX: 100 });
+
+    expect(screen.getByText(/2 installs$/)).toBeTruthy();
+    expect(container.querySelectorAll(".metric-trend-marker-line")).toHaveLength(1);
+    expect(container.querySelectorAll(".metric-trend-chart circle")).toHaveLength(0);
+  });
+
   it("shows the Official tag in the title for official owner skills", () => {
     const { container } = renderHeader({
       owner: {
