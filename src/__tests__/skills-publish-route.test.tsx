@@ -105,6 +105,7 @@ function mockActivePublisher(
   overrides: Partial<{
     activeOwnerHandle: string | null;
     memberships: TestPublisherMembership[];
+    setActivePublisherId: ReturnType<typeof vi.fn>;
   }> = {},
 ) {
   const memberships = overrides.memberships ?? [personalMembership];
@@ -122,7 +123,7 @@ function mockActivePublisher(
     isLoading: false,
     memberships,
     personalPublisher: memberships.find((entry) => entry.publisher.kind === "user") ?? null,
-    setActivePublisherId: vi.fn(),
+    setActivePublisherId: overrides.setActivePublisherId ?? vi.fn(),
   });
 }
 
@@ -176,6 +177,24 @@ describe("Upload route", () => {
     expect(
       publishingAs.compareDocumentPosition(uploadPrompt) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);
+    expect(screen.queryByRole("button", { name: "Change publisher" })).toBeNull();
+  });
+
+  it("changes the active publisher from the upload card", async () => {
+    const setActivePublisherId = vi.fn();
+    mockActivePublisher({
+      memberships: [personalMembership, orgMembership],
+      setActivePublisherId,
+    });
+
+    render(<Upload />);
+
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Change publisher" }), {
+      button: 0,
+    });
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Switch to @clawkit" }));
+
+    expect(setActivePublisherId).toHaveBeenCalledWith("publishers:clawkit");
   });
 
   it("drops invalid legacy category metadata and offers explicit generation on republish", async () => {
