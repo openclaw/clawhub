@@ -90,7 +90,6 @@ const MAX_DIRECT_SKILL_SEARCH_CANDIDATES = 100;
 const MAX_DIRECT_SKILL_FULL_TEXT_CANDIDATES = 40;
 const MAX_DIRECT_SKILL_TOPIC_CANDIDATES = 100;
 const MAX_FILTERED_DIRECT_SKILL_SCAN_CANDIDATES = 2000;
-const FILTERED_SKILL_SCAN_PAGE_SIZE = 100;
 const MIN_VECTOR_SEARCH_CANDIDATES = 50;
 const MAX_VECTOR_SEARCH_CANDIDATES = 128;
 const MAX_EXACT_SLUG_MATCHES = 25;
@@ -254,11 +253,6 @@ function toPublicSearchSkill(skill: HydratableSkill) {
 
 type SkillDigestCandidateQuery = {
   take: (limit: number) => Promise<Doc<"skillSearchDigest">[]>;
-  paginate: (opts: { cursor: string | null; numItems: number }) => Promise<{
-    page: Doc<"skillSearchDigest">[];
-    isDone: boolean;
-    continueCursor: string;
-  }>;
 };
 type SkillDigestCandidateQueryFactory = () => SkillDigestCandidateQuery;
 
@@ -270,27 +264,8 @@ async function collectFilteredSkillDigestCandidates(
     matches: (digest: Doc<"skillSearchDigest">) => boolean;
   },
 ) {
-  if (opts.scanLimit <= opts.limit) {
-    return (await createQuery().take(opts.limit)).filter(opts.matches);
-  }
-
-  const matches: Doc<"skillSearchDigest">[] = [];
-  let cursor: string | null = null;
-  let scanned = 0;
-  while (matches.length < opts.limit && scanned < opts.scanLimit) {
-    const page = await createQuery().paginate({
-      cursor,
-      numItems: Math.min(FILTERED_SKILL_SCAN_PAGE_SIZE, opts.scanLimit - scanned),
-    });
-    scanned += page.page.length;
-    for (const digest of page.page) {
-      if (opts.matches(digest)) matches.push(digest);
-      if (matches.length >= opts.limit) break;
-    }
-    if (page.isDone || page.page.length === 0) break;
-    cursor = page.continueCursor;
-  }
-  return matches;
+  // These scans fan out inside one Convex query, which cannot run multiple paginated queries.
+  return (await createQuery().take(opts.scanLimit)).filter(opts.matches).slice(0, opts.limit);
 }
 
 function isSlugLikeQuery(query: string) {
@@ -601,39 +576,22 @@ export const directPrefixSkillMatches = internalQuery({
               )
               .order("desc");
       const scanLimit = needsExpandedRecall ? MAX_FILTERED_DIRECT_SKILL_SCAN_CANDIDATES : limit;
-      const matches: Doc<"skillSearchDigest">[] = [];
-      let cursor: string | null = null;
-      let scanned = 0;
-      while (matches.length < limit && scanned < scanLimit) {
-        const page: {
-          page: Doc<"skillTopicSearchDigest">[];
-          isDone: boolean;
-          continueCursor: string;
-        } | null =
-          scanLimit <= limit
-            ? null
-            : await createQuery().paginate({
-                cursor,
-                numItems: Math.min(FILTERED_SKILL_SCAN_PAGE_SIZE, scanLimit - scanned),
-              });
-        const rows = page ? page.page : await createQuery().take(limit);
-        scanned += rows.length;
-        const digests = await Promise.all(
-          rows.map((row) =>
-            ctx.db
-              .query("skillSearchDigest")
-              .withIndex("by_skill", (q) => q.eq("skillId", row.skillId))
-              .unique(),
-          ),
-        );
-        for (const digest of digests) {
-          if (digest && matchesDirectRecallFilters(digest)) matches.push(digest);
-          if (matches.length >= limit) break;
-        }
-        if (!page || page.isDone || rows.length === 0) break;
-        cursor = page.continueCursor;
-      }
-      return matches;
+      // Topic recall runs alongside the direct scans, so it must also avoid pagination.
+      const rows = await createQuery().take(scanLimit);
+      const digests = await Promise.all(
+        rows.map((row) =>
+          ctx.db
+            .query("skillSearchDigest")
+            .withIndex("by_skill", (q) => q.eq("skillId", row.skillId))
+            .unique(),
+        ),
+      );
+      return digests
+        .filter(
+          (digest): digest is Doc<"skillSearchDigest"> =>
+            digest !== null && matchesDirectRecallFilters(digest),
+        )
+        .slice(0, limit);
     };
 
     const upperBound = prefixUpperBound(normalizedQuery);

@@ -2245,16 +2245,9 @@ function makeSkillDoc(params: {
   };
 }
 
-function makePaginatedRows<T>(rows: T[]) {
-  return vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
-    const start = cursor ? Number(cursor) : 0;
-    const page = rows.slice(start, start + numItems);
-    const next = start + page.length;
-    return {
-      page,
-      isDone: next >= rows.length,
-      continueCursor: String(next),
-    };
+function rejectPaginatedQuery() {
+  return vi.fn(async () => {
+    throw new Error("fan-out search queries must use bounded take calls");
   });
 }
 
@@ -2280,9 +2273,11 @@ function makeLexicalCtx(params: {
   const digestByCreated = toDigestRows(params.recentByCreated ?? []);
   const usedIndexes: string[] = [];
   const takeLimits: number[] = [];
+  const paginate = rejectPaginatedQuery();
   return {
     usedIndexes,
     takeLimits,
+    paginate,
     db: {
       query: vi.fn((table: string) => {
         if (table === "skills") {
@@ -2313,9 +2308,9 @@ function makeLexicalCtx(params: {
                   order: () => ({
                     take: vi.fn((limit: number) => {
                       takeLimits.push(limit);
-                      return Promise.resolve(digestByUpdated);
+                      return Promise.resolve(digestByUpdated.slice(0, limit));
                     }),
-                    paginate: makePaginatedRows(digestByUpdated),
+                    paginate,
                   }),
                 };
               }
@@ -2324,9 +2319,9 @@ function makeLexicalCtx(params: {
                   order: () => ({
                     take: vi.fn((limit: number) => {
                       takeLimits.push(limit);
-                      return Promise.resolve(digestByCreated);
+                      return Promise.resolve(digestByCreated.slice(0, limit));
                     }),
-                    paginate: makePaginatedRows(digestByCreated),
+                    paginate,
                   }),
                 };
               }
@@ -2381,9 +2376,11 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
   }));
   const usedIndexes: string[] = [];
   const usedSearchIndexes: string[] = [];
+  const paginate = rejectPaginatedQuery();
   return {
     usedIndexes,
     usedSearchIndexes,
+    paginate,
     db: {
       query: vi.fn((table: string) => {
         if (table === "skillTopicSearchDigest") {
@@ -2425,7 +2422,7 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
               return {
                 order: () => ({
                   take: vi.fn(async (limit: number) => rows.slice(0, limit)),
-                  paginate: makePaginatedRows(rows),
+                  paginate,
                 }),
               };
             },
@@ -2469,8 +2466,8 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
               return (digest[field] ?? "").startsWith(prefix);
             });
             return {
-              take: vi.fn(async () => rows),
-              paginate: makePaginatedRows(rows),
+              take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+              paginate,
             };
           },
           // Mock for the new `searchIndex`-backed full-text queries added to
@@ -2521,8 +2518,8 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                     return false;
                   });
             return {
-              take: vi.fn(async () => rows),
-              paginate: makePaginatedRows(rows),
+              take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+              paginate,
             };
           },
         };
