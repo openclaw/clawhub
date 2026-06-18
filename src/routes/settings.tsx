@@ -11,6 +11,7 @@ import {
   KeyRound,
   Monitor,
   Moon,
+  Package,
   Palette,
   Plus,
   Save,

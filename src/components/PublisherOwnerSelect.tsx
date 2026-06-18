@@ -1,5 +1,6 @@
 import { Check } from "lucide-react";
 import type { ReactNode } from "react";
+import type { Id } from "../../convex/_generated/dataModel";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Button } from "./ui/button";
 import {
@@ -12,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from ".
 
 type PublisherOwnerMembership = {
   publisher: {
-    _id: string;
+    _id: Id<"publishers">;
     handle: string;
     displayName: string;
     kind: "user" | "org";
@@ -29,7 +30,7 @@ export function PublisherContextStrip({
 }: {
   ownerHandle: string;
   memberships: PublisherOwnerMembership[] | undefined;
-  onSwitchPublisher: (publisherId: string) => void;
+  onSwitchPublisher: (publisherId: Id<"publishers">) => void;
   validation?: ReactNode;
 }) {
   return (

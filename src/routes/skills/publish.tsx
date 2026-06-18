@@ -419,7 +419,7 @@ export function Upload() {
 
     void navigate({
       to: "/skills/publish",
-      search: { ownerHandle },
+      search: { ownerHandle, updateSlug: undefined },
       replace: true,
     });
   }, [navigate, ownerHandle, searchOwnerHandle, updateSlug]);
