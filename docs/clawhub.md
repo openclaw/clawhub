@@ -56,7 +56,8 @@ pnpm add -g clawhub
 ClawHub tracks semver versions, tags such as `latest`, changelogs, files,
 downloads, installs, stars, and security scan summaries. Public pages show
 current registry state so users can inspect a skill or plugin before installing
-it.
+it. Downloads include archive fetches and may include automated traffic, while
+installs are the primary adoption signal.
 
 ## Native OpenClaw flows
 

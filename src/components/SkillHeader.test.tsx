@@ -154,6 +154,11 @@ describe("SkillHeader", () => {
 
     expect(labels.slice(0, 2)).toEqual(["Installs", "Downloads"]);
     expect(values.slice(0, 2)).toEqual(["1", "803"]);
+    expect(
+      screen.getByRole("button", {
+        name: "Downloads include archive fetches and may include automated traffic.",
+      }),
+    ).toBeTruthy();
   });
 
   it("shows the Official tag in the title for official owner skills", () => {

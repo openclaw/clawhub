@@ -1,7 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Download, Flag, Settings, ShieldCheck, Star, Upload } from "lucide-react";
+import { Download, Flag, Info, Settings, ShieldCheck, Star, Upload } from "lucide-react";
 import type { ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
@@ -486,7 +486,12 @@ function SkillSidebarStats({
         {
           grid: [
             { label: "Installs", value: formattedStats.installsAllTime, large: true },
-            { label: "Downloads", value: formattedStats.downloads, large: true },
+            {
+              key: "Downloads",
+              label: <DownloadsMetadataLabel />,
+              value: formattedStats.downloads,
+              large: true,
+            },
           ],
         },
         { label: "Repository", value: githubRepositoryLink },
@@ -527,5 +532,25 @@ function SkillSidebarStats({
           : []),
       ]}
     />
+  );
+}
+
+function DownloadsMetadataLabel() {
+  const description = "Downloads include archive fetches and may include automated traffic.";
+
+  return (
+    <span className="security-audit-sidebar-label">
+      <span>Downloads</span>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button type="button" className="security-audit-sidebar-info" aria-label={description}>
+            <Info size={13} aria-hidden="true" />
+          </button>
+        </TooltipTrigger>
+        <TooltipContent side="top" align="start" className="security-report-title-tooltip">
+          {description}
+        </TooltipContent>
+      </Tooltip>
+    </span>
   );
 }
