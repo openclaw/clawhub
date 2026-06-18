@@ -122,6 +122,31 @@ describe("buildSkillInstallBackfillPatch", () => {
     ).toBeNull();
   });
 
+  it("compensates for pending counted install events before the doc sync drains", () => {
+    const pendingSkillDocInstallsAllTime = 3;
+    const expected = estimateSkillInstallBackfill({
+      totalDownloads: 180_000,
+      currentInstallsAllTime: 17 + pendingSkillDocInstallsAllTime,
+      cleanStats: { downloads: 245, installs: 4 },
+    });
+
+    const patch = buildSkillInstallBackfillPatch({
+      skill: makeSkill({ downloads: 180_000, installsAllTime: 17 }),
+      cleanStats: { downloads: 245, installs: 4 },
+      pendingSkillDocInstallsAllTime,
+      now: 2_000,
+    });
+
+    expect(patch?.statsInstallsAllTime).toBe(
+      expected.targetInstallsAllTime - pendingSkillDocInstallsAllTime,
+    );
+    expect(patch?.installBackfill).toMatchObject({
+      previousInstallsAllTime: 20,
+      targetInstallsAllTime: expected.targetInstallsAllTime,
+      pendingSkillDocInstallsAllTime,
+    });
+  });
+
   it("skips skills whose existing all-time installs already exceed the estimate", () => {
     expect(
       buildSkillInstallBackfillPatch({

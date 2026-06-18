@@ -37,6 +37,7 @@ export type SkillInstallBackfillEstimate = {
   minimumCleanDownloads: number;
   maxSmoothedRate: number;
   smoothedRate: number;
+  pendingSkillDocInstallsAllTime: number;
 };
 
 export type SkillInstallBackfillOptions = typeof INSTALL_BACKFILL_DEFAULTS;
@@ -97,6 +98,7 @@ export function estimateSkillInstallBackfill(input: {
     minimumCleanDownloads,
     maxSmoothedRate,
     smoothedRate,
+    pendingSkillDocInstallsAllTime: 0,
   };
 }
 
@@ -104,32 +106,46 @@ export function buildSkillInstallBackfillPatch(input: {
   skill: SkillInstallBackfillReadable;
   cleanStats: SkillInstallBackfillCleanStats;
   now: number;
+  pendingSkillDocInstallsAllTime?: number;
   options?: Partial<SkillInstallBackfillOptions>;
 }): SkillInstallBackfillPatch | null {
+  const currentInstallsAllTime = readCanonicalStat(input.skill, "installsAllTime");
+  const pendingSkillDocInstallsAllTime = finiteInteger(
+    input.pendingSkillDocInstallsAllTime ?? 0,
+  );
+  const stableInstallsAllTime = Math.max(
+    0,
+    currentInstallsAllTime + pendingSkillDocInstallsAllTime,
+  );
   const estimate = estimateSkillInstallBackfill({
     totalDownloads: readCanonicalStat(input.skill, "downloads"),
-    currentInstallsAllTime: readCanonicalStat(input.skill, "installsAllTime"),
+    currentInstallsAllTime: stableInstallsAllTime,
     cleanStats: input.cleanStats,
     options: input.options,
   });
+  const targetStoredInstallsAllTime = Math.max(
+    0,
+    estimate.targetInstallsAllTime - pendingSkillDocInstallsAllTime,
+  );
 
   if (
     estimate.estimatedBackfilledInstalls === 0 ||
     (input.skill.installBackfill?.modelVersion === INSTALL_BACKFILL_MODEL_VERSION &&
       input.skill.installBackfill.targetInstallsAllTime === estimate.targetInstallsAllTime &&
-      readCanonicalStat(input.skill, "installsAllTime") === estimate.targetInstallsAllTime)
+      stableInstallsAllTime === estimate.targetInstallsAllTime)
   ) {
     return null;
   }
 
   return {
-    statsInstallsAllTime: estimate.targetInstallsAllTime,
+    statsInstallsAllTime: targetStoredInstallsAllTime,
     stats: {
       ...input.skill.stats,
-      installsAllTime: estimate.targetInstallsAllTime,
+      installsAllTime: targetStoredInstallsAllTime,
     },
     installBackfill: {
       ...estimate,
+      pendingSkillDocInstallsAllTime,
       cleanWindowStartDay: INSTALL_BACKFILL_CLEAN_WINDOW.startDay,
       cleanWindowEndDay: INSTALL_BACKFILL_CLEAN_WINDOW.endDay,
       appliedAt: input.now,
@@ -140,6 +156,11 @@ export function buildSkillInstallBackfillPatch(input: {
 function nonNegativeInteger(value: number) {
   if (!Number.isFinite(value) || value <= 0) return 0;
   return Math.floor(value);
+}
+
+function finiteInteger(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.trunc(value);
 }
 
 function safeRatio(numerator: number, denominator: number) {

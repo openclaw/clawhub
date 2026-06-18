@@ -210,6 +210,26 @@ describe("catalog taxonomy migrations", () => {
           updatedAt: 100,
         },
       ],
+      [
+        "skillStatUpdateCursors:1",
+        {
+          _id: "skillStatUpdateCursors:1",
+          _creationTime: 5,
+          key: "skill_stat_events",
+          cursorCreationTime: 50,
+        },
+      ],
+      [
+        "skillStatEvents:1",
+        {
+          _id: "skillStatEvents:1",
+          _creationTime: 40,
+          skillId,
+          kind: "install_new",
+          occurredAt: 900,
+          processedAt: undefined,
+        },
+      ],
     ]);
     const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
       const existing = docs.get(id);
@@ -265,9 +285,28 @@ describe("catalog taxonomy migrations", () => {
                     ) ?? null
                   );
                 }
+                if (tableName === "skillStatUpdateCursors" && indexName === "by_key") {
+                  return (
+                    [...docs.values()].find(
+                      (doc) =>
+                        doc._id === "skillStatUpdateCursors:1" && doc.key === filters.key,
+                    ) ?? null
+                  );
+                }
                 return null;
               }),
               collect: vi.fn(async () => []),
+              take: vi.fn(async () => {
+                if (tableName === "skillStatEvents" && indexName === "by_skill_processed") {
+                  return [...docs.values()].filter(
+                    (doc) =>
+                      doc._id === "skillStatEvents:1" &&
+                      doc.skillId === filters.skillId &&
+                      doc.processedAt === filters.processedAt,
+                  );
+                }
+                return [];
+              }),
             };
           },
         ),
@@ -290,6 +329,15 @@ describe("catalog taxonomy migrations", () => {
     );
     expect(publisher?.totalInstalls).toBe(skill?.statsInstallsAllTime);
     expect(publisher?.skillTotalInstalls).toBe(skill?.statsInstallsAllTime);
+    expect(isRecord(skill?.installBackfill) ? skill.installBackfill.previousInstallsAllTime : 0).toBe(
+      18,
+    );
+    expect(
+      isRecord(skill?.installBackfill) ? skill.installBackfill.pendingSkillDocInstallsAllTime : 0,
+    ).toBe(1);
+    expect(
+      isRecord(skill?.installBackfill) ? skill.installBackfill.targetInstallsAllTime : 0,
+    ).toBe(Number(skill?.statsInstallsAllTime) + 1);
     expect(digest).toEqual(
       expect.objectContaining({
         statsInstallsAllTime: skill?.statsInstallsAllTime,

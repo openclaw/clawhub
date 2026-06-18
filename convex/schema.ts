@@ -783,6 +783,7 @@ const skills = defineTable({
       minimumCleanDownloads: v.number(),
       maxSmoothedRate: v.number(),
       smoothedRate: v.number(),
+      pendingSkillDocInstallsAllTime: v.number(),
       appliedAt: v.number(),
     }),
   ),
@@ -2110,7 +2111,8 @@ const skillStatEvents = defineTable({
   processedAt: v.optional(v.number()),
 })
   .index("by_unprocessed", ["processedAt"])
-  .index("by_skill", ["skillId"]);
+  .index("by_skill", ["skillId"])
+  .index("by_skill_processed", ["skillId", "processedAt"]);
 
 const skillStatUpdateCursors = defineTable({
   key: v.string(),
