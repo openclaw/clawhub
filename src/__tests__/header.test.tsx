@@ -442,7 +442,7 @@ describe("Header", () => {
     expect(screen.getByText("Personal")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(within(activePublisher).getByText("OpenClaw")).toBeTruthy();
-    expect(within(activePublisher).getByText("via")).toBeTruthy();
+    expect(within(activePublisher).getByText("connected as")).toBeTruthy();
     expect(within(activePublisher).getByText("@patrick")).toBeTruthy();
     expect(within(activePublisher).queryByText("Org · Admin")).toBeNull();
     expect(

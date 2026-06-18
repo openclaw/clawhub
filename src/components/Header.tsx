@@ -173,7 +173,7 @@ export default function Header() {
   const activePublisherMeta =
     triggerPublisher?.kind === "org" ? (
       <span className="user-dropdown-publisher-via">
-        <span>via</span>
+        <span>connected as</span>
         {avatar ? (
           <img className="user-dropdown-via-avatar" src={avatar} alt="" />
         ) : (
