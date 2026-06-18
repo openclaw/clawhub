@@ -69,6 +69,13 @@ const orgMembership = {
     image: null,
     bio: "OpenClaw publisher",
     official: true,
+    stats: {
+      skills: 4,
+      packages: 2,
+      installs: 120,
+      downloads: 500,
+      stars: 24,
+    },
   },
   role: "owner",
 };
@@ -364,7 +371,11 @@ describe("Settings", () => {
       "true",
     );
     expect(await screen.findByText("OpenClaw Team")).toBeTruthy();
-    expect(screen.getByText("@openclaw · owner")).toBeTruthy();
+    expect(screen.getByText("@openclaw")).toBeTruthy();
+    expect(screen.getByText("Owner")).toBeTruthy();
+    expect(screen.getByText("Official")).toBeTruthy();
+    expect(screen.getByText("4 skills")).toBeTruthy();
+    expect(screen.getByText("2 packages")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Members" })).toBeNull();
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, "skip");
     fireEvent.click(screen.getByRole("button", { name: "Manage" }));

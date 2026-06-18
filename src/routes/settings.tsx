@@ -882,39 +882,86 @@ export function Settings() {
 
                 {orgs.length ? (
                   <div className="grid gap-3 md:grid-cols-2">
-                    {orgs.map((entry) => (
-                      <SettingsBlock key={entry.publisher._id} className="gap-3">
-                        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="flex min-w-0 items-center gap-3">
-                            <OrgLogoSmall
-                              image={entry.publisher.image}
-                              name={entry.publisher.displayName}
-                              handle={entry.publisher.handle}
-                              className="h-10 w-10"
-                            />
+                    {orgs.map((entry) => {
+                      const skillCount = entry.publisher.stats?.skills ?? 0;
+                      const packageCount = entry.publisher.stats?.packages ?? 0;
+                      const roleLabel =
+                        entry.role.charAt(0).toUpperCase() + entry.role.slice(1);
+
+                      return (
+                        <SettingsBlock
+                          key={entry.publisher._id}
+                          className="min-h-[220px] justify-between gap-6 md:only:col-span-full"
+                        >
+                          <div className="flex min-w-0 items-start justify-between gap-5">
+                            <div className="flex min-w-0 items-start gap-4">
+                              <OrgLogoSmall
+                                image={entry.publisher.image}
+                                name={entry.publisher.displayName}
+                                handle={entry.publisher.handle}
+                                className="h-12 w-12"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                  <h3 className="truncate text-base font-bold text-[color:var(--ink)]">
+                                    {entry.publisher.displayName || entry.publisher.handle}
+                                  </h3>
+                                  {entry.publisher.official ? (
+                                    <Badge variant="official" size="sm">
+                                      Official
+                                    </Badge>
+                                  ) : null}
+                                </div>
+                                <p className="mt-1 truncate text-sm text-[color:var(--ink-soft)]">
+                                  @{entry.publisher.handle}
+                                </p>
+                              </div>
+                            </div>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              className="shrink-0 sm:w-auto"
+                              onClick={() => {
+                                setActivePublisherId(entry.publisher._id);
+                                navigateToView("profile");
+                              }}
+                            >
+                              Manage
+                            </Button>
+                          </div>
+
+                          <div className="grid gap-5 border-t border-[color:var(--line)] pt-4 sm:grid-cols-[minmax(120px,0.35fr)_1fr]">
                             <div className="min-w-0">
-                              <h3 className="truncate text-sm font-bold text-[color:var(--ink)]">
-                                {entry.publisher.displayName || entry.publisher.handle}
-                              </h3>
-                              <p className="truncate text-sm text-[color:var(--ink-soft)]">
-                                @{entry.publisher.handle} · {entry.role}
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--ink-soft)]">
+                                Your role
+                              </p>
+                              <p className="mt-1 text-sm font-semibold text-[color:var(--ink)]">
+                                {roleLabel}
                               </p>
                             </div>
+                            <div className="min-w-0">
+                              <p className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--ink-soft)]">
+                                Published
+                              </p>
+                              <div className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[color:var(--ink-soft)]">
+                                <span className="inline-flex items-center gap-1.5">
+                                  <Code size={14} aria-hidden="true" />
+                                  <span>
+                                    {skillCount} {skillCount === 1 ? "skill" : "skills"}
+                                  </span>
+                                </span>
+                                <span className="inline-flex items-center gap-1.5">
+                                  <Package size={14} aria-hidden="true" />
+                                  <span>
+                                    {packageCount} {packageCount === 1 ? "package" : "packages"}
+                                  </span>
+                                </span>
+                              </div>
+                            </div>
                           </div>
-                          <Button
-                            type="button"
-                            variant="outline"
-                            className="sm:w-auto"
-                            onClick={() => {
-                              setActivePublisherId(entry.publisher._id);
-                              navigateToView("profile");
-                            }}
-                          >
-                            Manage
-                          </Button>
-                        </div>
-                      </SettingsBlock>
-                    ))}
+                        </SettingsBlock>
+                      );
+                    })}
                   </div>
                 ) : (
                   <SettingsBlock>
