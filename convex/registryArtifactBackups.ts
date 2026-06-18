@@ -20,6 +20,8 @@ const MAX_BACKUP_JOB_LIMIT = 500;
 const DEFAULT_BACKUP_JOB_REPAIR_ATTEMPTS = 16;
 const DEFAULT_RETRY_LEASE_TTL_MS = 20 * 60 * 1000;
 const MAX_RETRY_LEASE_TTL_MS = 60 * 60 * 1000;
+const DEFAULT_BACKUP_JOB_LEASE_TTL_MS = 20 * 60 * 1000;
+const MAX_BACKUP_JOB_LEASE_TTL_MS = 60 * 60 * 1000;
 
 type BackupPageItem =
   | {
@@ -99,6 +101,8 @@ export type SeedRegistryArtifactBackupsResult = {
     packagesMissingArtifact: number;
     packagesMissingPackage: number;
     packagesMissingOwner: number;
+    skillsEnqueued: number;
+    packagesEnqueued: number;
     retryJobsProcessed: number;
     retryJobsSucceeded: number;
     retryJobsFailed: number;
@@ -418,6 +422,13 @@ const registryArtifactBackupReasonValidator = v.union(
   v.literal("retry"),
   v.literal("sync"),
 );
+const registryArtifactBackupStatusValidator = v.union(
+  v.literal("pending"),
+  v.literal("running"),
+  v.literal("succeeded"),
+  v.literal("exhausted"),
+  v.literal("missingArtifact"),
+);
 
 export const enqueueRegistryArtifactBackupJobInternal = internalMutation({
   args: {
@@ -425,32 +436,128 @@ export const enqueueRegistryArtifactBackupJobInternal = internalMutation({
     skillVersionId: v.optional(v.id("skillVersions")),
     packageReleaseId: v.optional(v.id("packageReleases")),
     reason: registryArtifactBackupReasonValidator,
+    status: v.optional(registryArtifactBackupStatusValidator),
+    preserveTerminal: v.optional(v.boolean()),
     error: v.optional(v.string()),
     now: v.optional(v.number()),
   },
   handler: enqueueRegistryArtifactBackupJobHandler,
 });
 
+export async function claimRegistryArtifactBackupJobsHandler(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    now?: number;
+    limit?: number;
+    leaseToken: string;
+    leaseTtlMs?: number;
+    forceDue?: boolean;
+    includeExhaustedRepair?: boolean;
+    maxRepairAttempts?: number;
+  },
+) {
+  const now = args.now ?? Date.now();
+  const limit = clampInt(args.limit ?? DEFAULT_BACKUP_JOB_LIMIT, 1, MAX_BACKUP_JOB_LIMIT);
+  const leaseTtlMs = clampInt(
+    args.leaseTtlMs ?? DEFAULT_BACKUP_JOB_LEASE_TTL_MS,
+    1_000,
+    MAX_BACKUP_JOB_LEASE_TTL_MS,
+  );
+  const pending = await ctx.db
+    .query("registryArtifactBackupJobs")
+    .withIndex("by_status_nextRunAt", (q) => {
+      const byStatus = q.eq("status", "pending");
+      return args.forceDue ? byStatus : byStatus.lte("nextRunAt", now);
+    })
+    .take(limit);
+
+  let claimed = pending;
+  if (claimed.length < limit) {
+    const expiredRunning = await ctx.db
+      .query("registryArtifactBackupJobs")
+      .withIndex("by_status_leaseExpiresAt", (q) =>
+        q.eq("status", "running").lte("leaseExpiresAt", now),
+      )
+      .take(limit - claimed.length);
+    claimed = [...claimed, ...expiredRunning];
+  }
+  if (args.includeExhaustedRepair && claimed.length < limit) {
+    const maxRepairAttempts = Math.max(
+      1,
+      Math.floor(args.maxRepairAttempts ?? DEFAULT_BACKUP_JOB_REPAIR_ATTEMPTS),
+    );
+    const exhausted = await ctx.db
+      .query("registryArtifactBackupJobs")
+      .withIndex("by_status_attempts", (q) =>
+        q.eq("status", "exhausted").lt("attempts", maxRepairAttempts),
+      )
+      .take(limit - claimed.length);
+    claimed = [...claimed, ...exhausted];
+  }
+
+  const leaseExpiresAt = now + leaseTtlMs;
+  for (const job of claimed) {
+    await ctx.db.patch(job._id, {
+      status: "running",
+      leaseToken: args.leaseToken,
+      leaseExpiresAt,
+      claimedAt: now,
+      lastAttemptAt: now,
+      updatedAt: now,
+    });
+  }
+  return claimed;
+}
+
+export const claimRegistryArtifactBackupJobsInternal = internalMutation({
+  args: {
+    now: v.optional(v.number()),
+    limit: v.optional(v.number()),
+    leaseToken: v.string(),
+    leaseTtlMs: v.optional(v.number()),
+    forceDue: v.optional(v.boolean()),
+    includeExhaustedRepair: v.optional(v.boolean()),
+    maxRepairAttempts: v.optional(v.number()),
+  },
+  handler: claimRegistryArtifactBackupJobsHandler,
+});
+
+export async function markRegistryArtifactBackupJobSucceededHandler(
+  ctx: Pick<MutationCtx, "db">,
+  args: { jobId: Id<"registryArtifactBackupJobs">; leaseToken?: string; now?: number },
+) {
+  const now = args.now ?? Date.now();
+  const job = await ctx.db.get(args.jobId);
+  if (!job) return { missing: true as const, stale: false as const };
+  if (args.leaseToken && (job.status !== "running" || job.leaseToken !== args.leaseToken)) {
+    return { missing: false as const, stale: true as const };
+  }
+  await ctx.db.patch(args.jobId, {
+    status: "succeeded",
+    completedAt: now,
+    lastError: undefined,
+    leaseToken: undefined,
+    leaseExpiresAt: undefined,
+    claimedAt: undefined,
+    updatedAt: now,
+  });
+  return { missing: false as const, stale: false as const };
+}
+
 export const markRegistryArtifactBackupJobSucceededInternal = internalMutation({
   args: {
     jobId: v.id("registryArtifactBackupJobs"),
+    leaseToken: v.optional(v.string()),
     now: v.optional(v.number()),
   },
-  handler: async (ctx, args) => {
-    const now = args.now ?? Date.now();
-    await ctx.db.patch(args.jobId, {
-      status: "succeeded",
-      completedAt: now,
-      lastError: undefined,
-      updatedAt: now,
-    });
-  },
+  handler: markRegistryArtifactBackupJobSucceededHandler,
 });
 
 export const markRegistryArtifactBackupJobFailedInternal = internalMutation({
   args: {
     jobId: v.id("registryArtifactBackupJobs"),
     error: v.string(),
+    leaseToken: v.optional(v.string()),
     now: v.optional(v.number()),
     maxAttempts: v.optional(v.number()),
   },
@@ -459,6 +566,9 @@ export const markRegistryArtifactBackupJobFailedInternal = internalMutation({
     const maxAttempts = Math.max(1, Math.floor(args.maxAttempts ?? 8));
     const job = await ctx.db.get(args.jobId);
     if (!job) return { missing: true as const };
+    if (args.leaseToken && (job.status !== "running" || job.leaseToken !== args.leaseToken)) {
+      return { missing: false as const, stale: true as const };
+    }
     const attempts = job.attempts + 1;
     const exhausted = attempts >= maxAttempts;
     await ctx.db.patch(args.jobId, {
@@ -468,9 +578,12 @@ export const markRegistryArtifactBackupJobFailedInternal = internalMutation({
       lastError: truncateBackupJobError(args.error),
       nextRunAt: exhausted ? now : now + retryDelayMs(attempts),
       exhaustedAt: exhausted ? now : undefined,
+      leaseToken: undefined,
+      leaseExpiresAt: undefined,
+      claimedAt: undefined,
       updatedAt: now,
     });
-    return { missing: false as const, exhausted, attempts };
+    return { missing: false as const, stale: false as const, exhausted, attempts };
   },
 });
 
@@ -524,6 +637,7 @@ export const seedRegistryArtifactBackups: ReturnType<typeof action> = action({
     dryRun: v.optional(v.boolean()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
+    queueOnly: v.optional(v.boolean()),
     resetCursor: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SeedRegistryArtifactBackupsResult> => {
@@ -549,6 +663,7 @@ export const seedRegistryArtifactBackups: ReturnType<typeof action> = action({
       dryRun: args.dryRun,
       batchSize: args.batchSize,
       maxBatches: args.maxBatches,
+      queueOnly: args.queueOnly,
     }) as Promise<SeedRegistryArtifactBackupsResult>;
   },
 });
@@ -564,11 +679,14 @@ export async function enqueueRegistryArtifactBackupJobHandler(
     skillVersionId?: Id<"skillVersions">;
     packageReleaseId?: Id<"packageReleases">;
     reason: "publish" | "seed" | "retry" | "sync";
+    status?: "pending" | "running" | "succeeded" | "exhausted" | "missingArtifact";
+    preserveTerminal?: boolean;
     error?: string;
     now?: number;
   },
 ) {
   const now = args.now ?? Date.now();
+  const status = args.status ?? "pending";
   const existing =
     args.targetKind === "skillVersion" && args.skillVersionId
       ? await ctx.db
@@ -584,16 +702,25 @@ export async function enqueueRegistryArtifactBackupJobHandler(
 
   const lastError = truncateBackupJobError(args.error);
   if (existing) {
+    if (
+      args.preserveTerminal &&
+      (existing.status === "succeeded" || existing.status === "missingArtifact")
+    ) {
+      return { jobId: existing._id, created: false as const, preserved: true as const };
+    }
     await ctx.db.patch(existing._id, {
-      status: "pending",
+      status,
       reason: args.reason,
       attempts: 0,
       lastError,
       nextRunAt: now,
+      leaseToken: undefined,
+      leaseExpiresAt: undefined,
+      claimedAt: undefined,
       createdAt: now,
       updatedAt: now,
       exhaustedAt: undefined,
-      completedAt: undefined,
+      completedAt: status === "missingArtifact" || status === "succeeded" ? now : undefined,
     });
     return { jobId: existing._id, created: false as const };
   }
@@ -602,11 +729,12 @@ export async function enqueueRegistryArtifactBackupJobHandler(
     targetKind: args.targetKind,
     skillVersionId: args.skillVersionId,
     packageReleaseId: args.packageReleaseId,
-    status: "pending",
+    status,
     reason: args.reason,
     attempts: 0,
     nextRunAt: now,
     lastError,
+    completedAt: status === "missingArtifact" || status === "succeeded" ? now : undefined,
     createdAt: now,
     updatedAt: now,
   });
@@ -632,21 +760,38 @@ export async function getRegistryArtifactBackupHealthHandler(
     .query("registryArtifactBackupJobs")
     .withIndex("by_status_nextRunAt", (q) => q.eq("status", "exhausted"))
     .take(sampleLimit + 1);
+  const running = await ctx.db
+    .query("registryArtifactBackupJobs")
+    .withIndex("by_status_leaseExpiresAt", (q) => q.eq("status", "running"))
+    .take(sampleLimit + 1);
+  const expiredRunning = await ctx.db
+    .query("registryArtifactBackupJobs")
+    .withIndex("by_status_leaseExpiresAt", (q) =>
+      q.eq("status", "running").lte("leaseExpiresAt", now),
+    )
+    .take(sampleLimit + 1);
   const pendingSample = pending.slice(0, sampleLimit);
   const exhaustedSample = exhausted.slice(0, sampleLimit);
+  const runningSample = running.slice(0, sampleLimit);
+  const expiredRunningSample = expiredRunning.slice(0, sampleLimit);
   const oldestPendingAgeMs = pendingSample.reduce(
     (max: number, job: { createdAt: number }) => Math.max(max, now - job.createdAt),
     0,
   );
-  const stale = pendingSample.filter(
+  const stalePending = pendingSample.filter(
     (job: { createdAt: number }) => now - job.createdAt >= staleAfterMs,
   ).length;
+  const stale = stalePending + expiredRunningSample.length;
   return {
     pending: pendingSample.length,
+    running: runningSample.length,
+    expiredRunning: expiredRunningSample.length,
     stale,
     exhausted: exhaustedSample.length,
     oldestPendingAgeMs,
     pendingCapped: pending.length > sampleLimit,
+    runningCapped: running.length > sampleLimit,
+    expiredRunningCapped: expiredRunning.length > sampleLimit,
     exhaustedCapped: exhausted.length > sampleLimit,
   };
 }

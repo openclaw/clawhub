@@ -1,17 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import {
+  claimRegistryArtifactBackupJobsHandler,
   enqueueRegistryArtifactBackupJobHandler,
   getDueRegistryArtifactBackupJobsInternal,
   getRegistryArtifactBackupHealthHandler,
   getRegistryArtifactBackupPageInternal,
   getPackageRegistryArtifactBackupPageInternal,
+  markRegistryArtifactBackupJobSucceededHandler,
   releaseRegistryArtifactBackupRetryLeaseHandler,
   tryAcquireRegistryArtifactBackupRetryLeaseHandler,
 } from "./registryArtifactBackups";
 import {
   backupPackageForPublishInternal,
   backupSkillForPublishInternal,
+  processRegistryArtifactBackupQueueInternalHandler,
   processRegistryArtifactBackupRetriesInternalHandler,
   seedRegistryArtifactBackupsInternalHandler,
 } from "./registryArtifactBackupsNode";
@@ -61,10 +64,16 @@ beforeEach(() => {
   registryBackupMocks.backupPackageReleaseToObjectStorage.mockResolvedValue(undefined);
 });
 
-function retryLeaseRunMutation() {
+function retryLeaseRunMutation(claimedJobs: Array<unknown> = []) {
   return vi.fn(async (_ref, args) => {
     if (args && typeof args === "object" && "token" in args) {
       return { acquired: true, released: true };
+    }
+    if (args && typeof args === "object" && "leaseToken" in args && "limit" in args) {
+      return claimedJobs;
+    }
+    if (args && typeof args === "object" && "jobId" in args) {
+      return { missing: false, stale: false, exhausted: false, attempts: 1 };
     }
     return undefined;
   });
@@ -547,6 +556,88 @@ describe("package registry artifact backup page filtering", () => {
 });
 
 describe("seedRegistryArtifactBackupsInternalHandler", () => {
+  it("can seed the backup ledger without uploading artifacts inline", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ cursor: null })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            kind: "ok",
+            skillId: "skills:demo",
+            versionId: "skillVersions:demo-1",
+            slug: "demo-skill",
+            displayName: "Demo Skill",
+            version: "1.0.0",
+            isLatest: true,
+            ownerHandle: "alice",
+            publishedAt: 1,
+          },
+        ],
+        cursor: null,
+        isDone: true,
+      })
+      .mockResolvedValueOnce({ cursor: null })
+      .mockResolvedValueOnce({
+        items: [
+          {
+            kind: "ok",
+            packageId: "packages:demo",
+            releaseId: "packageReleases:demo-1",
+            ownerHandle: "alice",
+            packageName: "@openclaw/demo",
+            normalizedName: "@openclaw/demo",
+            displayName: "Demo",
+            family: "code-plugin",
+            version: "1.0.0",
+            isLatest: true,
+            publishedAt: 1,
+            artifactStorageId: "storage:artifact",
+            files: [],
+          },
+          {
+            kind: "missingArtifact",
+            releaseId: "packageReleases:missing",
+            packageId: "packages:missing",
+          },
+        ],
+        cursor: null,
+        isDone: true,
+      })
+      .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
+    const runMutation = retryLeaseRunMutation();
+
+    const result = await seedRegistryArtifactBackupsInternalHandler(
+      { runQuery, runMutation } as never,
+      { queueOnly: true, batchSize: 2, maxBatches: 1 },
+    );
+
+    expect(result.stats.skillsEnqueued).toBe(1);
+    expect(result.stats.packagesEnqueued).toBe(1);
+    expect(result.stats.packagesMissingArtifact).toBe(1);
+    expect(registryBackupMocks.fetchSkillVersionBackupMeta).not.toHaveBeenCalled();
+    expect(registryBackupMocks.backupSkillVersionToObjectStorage).not.toHaveBeenCalled();
+    expect(registryBackupMocks.backupPackageReleaseToObjectStorage).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        targetKind: "skillVersion",
+        skillVersionId: "skillVersions:demo-1",
+        reason: "seed",
+        preserveTerminal: true,
+      }),
+    );
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        targetKind: "packageRelease",
+        packageReleaseId: "packageReleases:demo-1",
+        reason: "seed",
+        preserveTerminal: true,
+      }),
+    );
+  });
+
   it("reports package cursor progress when skills are done but package releases remain", async () => {
     const runQuery = vi
       .fn()
@@ -575,7 +666,6 @@ describe("seedRegistryArtifactBackupsInternalHandler", () => {
     registryBackupMocks.fetchSkillVersionBackupMeta.mockRejectedValueOnce(new Error("R2 500"));
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce([])
       .mockResolvedValueOnce({ cursor: null })
       .mockResolvedValueOnce({
         items: [
@@ -596,7 +686,7 @@ describe("seedRegistryArtifactBackupsInternalHandler", () => {
       .mockResolvedValueOnce({ cursor: null })
       .mockResolvedValueOnce({ items: [], cursor: null, isDone: true })
       .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
-    const runMutation = vi.fn();
+    const runMutation = retryLeaseRunMutation();
 
     const result = await seedRegistryArtifactBackupsInternalHandler(
       { runQuery, runMutation } as never,
@@ -659,7 +749,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       forceDue: true,
     });
 
-    expect(runQuery.mock.calls[0]?.[1]).toMatchObject({ ignoreNextRunAt: true });
+    expect(runMutation.mock.calls[1]?.[1]).toMatchObject({ forceDue: true });
   });
 
   it("backs up retry artifacts without acquiring per-index leases", async () => {
@@ -682,7 +772,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
       throw new Error(`unexpected query ${JSON.stringify(args)}`);
     });
-    const runMutation = retryLeaseRunMutation();
+    const runMutation = retryLeaseRunMutation(jobs);
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
@@ -708,7 +798,6 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     };
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce([dueJob])
       .mockResolvedValueOnce({
         _id: "packageReleases:demo",
         packageId: "packages:demo",
@@ -735,7 +824,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
         deactivatedAt: undefined,
       })
       .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
-    const runMutation = retryLeaseRunMutation();
+    const runMutation = retryLeaseRunMutation([dueJob]);
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
       { runQuery, runMutation } as never,
@@ -770,11 +859,25 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       {},
     );
 
-    expect(runQuery.mock.calls[0]?.[1]).toMatchObject({
+    expect(runMutation.mock.calls[1]?.[1]).toMatchObject({
       includeExhaustedRepair: true,
       limit: 500,
       maxRepairAttempts: 16,
     });
+  });
+
+  it("uses a unique queue lease token even with a stable worker id", async () => {
+    const runMutation = vi.fn().mockResolvedValueOnce([]);
+    const runQuery = vi.fn().mockResolvedValueOnce({ stale: 0, exhausted: 0 });
+
+    await processRegistryArtifactBackupQueueInternalHandler({ runQuery, runMutation } as never, {
+      workerId: "worker-a",
+      limit: 1,
+    });
+
+    const leaseToken = runMutation.mock.calls[0]?.[1]?.leaseToken;
+    expect(leaseToken).not.toBe("worker-a");
+    expect(leaseToken).toEqual(expect.stringMatching(/^worker-a-\d+-[a-z0-9]+$/));
   });
 
   it("gives repaired exhausted jobs a finite second retry budget", async () => {
@@ -820,11 +923,11 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
       throw new Error(`unexpected query ${JSON.stringify(args)}`);
     });
-    const runMutation = retryLeaseRunMutation();
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
     registryBackupMocks.backupSkillVersionToObjectStorage.mockRejectedValueOnce(
       new Error("R2 still down"),
     );
+    const runMutation = retryLeaseRunMutation([dueJob]);
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
       { runQuery, runMutation } as never,
@@ -887,11 +990,11 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
       throw new Error(`unexpected query ${JSON.stringify(args)}`);
     });
-    const runMutation = retryLeaseRunMutation();
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValueOnce({
       version: "1.0.0",
       restore: { versionId: "skillVersions:demo" },
     });
+    const runMutation = retryLeaseRunMutation([dueJob]);
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
       { runQuery, runMutation } as never,
@@ -945,7 +1048,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     );
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      { runQuery, runMutation: retryLeaseRunMutation(jobs) } as never,
       {},
     );
 
@@ -1001,7 +1104,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     );
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      { runQuery, runMutation: retryLeaseRunMutation(jobs) } as never,
       {},
     );
 
@@ -1060,7 +1163,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     });
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      { runQuery, runMutation: retryLeaseRunMutation(jobs) } as never,
       {},
     );
 
@@ -1111,7 +1214,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     });
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
-      { runQuery, runMutation: retryLeaseRunMutation() } as never,
+      { runQuery, runMutation: retryLeaseRunMutation(jobs) } as never,
       {},
     );
 
@@ -1141,7 +1244,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
       if ("staleAfterMs" in args) return { stale: 0, exhausted: 0 };
       throw new Error(`unexpected query ${JSON.stringify(args)}`);
     });
-    const runMutation = retryLeaseRunMutation();
+    const runMutation = retryLeaseRunMutation(jobs);
     registryBackupMocks.fetchSkillVersionBackupMeta.mockResolvedValue(null);
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
@@ -1175,7 +1278,6 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
     };
     const runQuery = vi
       .fn()
-      .mockResolvedValueOnce([dueJob])
       .mockResolvedValueOnce({
         _id: "skillVersions:hidden",
         skillId: "skills:hidden",
@@ -1195,7 +1297,7 @@ describe("processRegistryArtifactBackupRetriesInternalHandler", () => {
         moderationStatus: "hidden",
       })
       .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
-    const runMutation = retryLeaseRunMutation();
+    const runMutation = retryLeaseRunMutation([dueJob]);
 
     const result = await processRegistryArtifactBackupRetriesInternalHandler(
       { runQuery, runMutation } as never,
@@ -1292,6 +1394,108 @@ function makePackage(id: string, name: string) {
 }
 
 describe("registry artifact backup jobs", () => {
+  it("ignores stale worker completion after a job lease is reclaimed", async () => {
+    const now = 1_700_000_000_000;
+    const job = {
+      _id: "registryArtifactBackupJobs:demo",
+      status: "running",
+      leaseToken: "worker-b",
+    };
+    const ctx = {
+      db: {
+        get: vi.fn().mockResolvedValue(job),
+        patch: vi.fn(),
+      },
+    };
+
+    const result = await markRegistryArtifactBackupJobSucceededHandler(ctx as never, {
+      jobId: "registryArtifactBackupJobs:demo" as Id<"registryArtifactBackupJobs">,
+      leaseToken: "worker-a",
+      now,
+    });
+
+    expect(result).toEqual({ missing: false, stale: true });
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
+  it("ignores worker completion after a leased job is requeued", async () => {
+    const now = 1_700_000_000_000;
+    const job = {
+      _id: "registryArtifactBackupJobs:demo",
+      status: "pending",
+      leaseToken: "worker-a",
+    };
+    const ctx = {
+      db: {
+        get: vi.fn().mockResolvedValue(job),
+        patch: vi.fn(),
+      },
+    };
+
+    const result = await markRegistryArtifactBackupJobSucceededHandler(ctx as never, {
+      jobId: "registryArtifactBackupJobs:demo" as Id<"registryArtifactBackupJobs">,
+      leaseToken: "worker-a",
+      now,
+    });
+
+    expect(result).toEqual({ missing: false, stale: true });
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
+  it("claims pending and expired running jobs with a lease for parallel workers", async () => {
+    const now = 1_700_000_000_000;
+    const pendingJob = {
+      _id: "registryArtifactBackupJobs:pending",
+      status: "pending",
+      nextRunAt: now - 1,
+    };
+    const expiredRunningJob = {
+      _id: "registryArtifactBackupJobs:expired",
+      status: "running",
+      leaseExpiresAt: now - 1,
+    };
+    const pendingTake = vi.fn().mockResolvedValue([pendingJob]);
+    const runningTake = vi.fn().mockResolvedValue([expiredRunningJob]);
+    const patch = vi.fn();
+    const withIndex = vi.fn((indexName: string) => ({
+      take: indexName === "by_status_leaseExpiresAt" ? runningTake : pendingTake,
+    }));
+    const ctx = {
+      db: {
+        query: vi.fn(() => ({ withIndex })),
+        patch,
+      },
+    };
+
+    const result = await claimRegistryArtifactBackupJobsHandler(ctx as never, {
+      now,
+      limit: 2,
+      leaseToken: "worker-1",
+      leaseTtlMs: 60_000,
+    });
+
+    expect(result.map((job: { _id: string }) => job._id)).toEqual([
+      "registryArtifactBackupJobs:pending",
+      "registryArtifactBackupJobs:expired",
+    ]);
+    expect(patch).toHaveBeenCalledWith(
+      "registryArtifactBackupJobs:pending",
+      expect.objectContaining({
+        status: "running",
+        leaseToken: "worker-1",
+        leaseExpiresAt: now + 60_000,
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "registryArtifactBackupJobs:expired",
+      expect.objectContaining({
+        status: "running",
+        leaseToken: "worker-1",
+        leaseExpiresAt: now + 60_000,
+      }),
+    );
+  });
+
   it("can force pending jobs without waiting for nextRunAt", async () => {
     const now = 1_700_000_000_000;
     const pendingJobs = [
@@ -1599,20 +1803,26 @@ describe("registry artifact backup jobs", () => {
     });
 
     expect(ctx.db.insert).not.toHaveBeenCalled();
-    expect(patch).toHaveBeenCalledWith("registryArtifactBackupJobs:existing", {
-      status: "pending",
-      reason: "publish",
-      attempts: 0,
-      lastError: "R2 500",
-      nextRunAt: now,
-      createdAt: now,
-      updatedAt: now,
-      exhaustedAt: undefined,
-      completedAt: undefined,
-    });
+    expect(patch).toHaveBeenCalledWith(
+      "registryArtifactBackupJobs:existing",
+      expect.objectContaining({
+        status: "pending",
+        reason: "publish",
+        attempts: 0,
+        lastError: "R2 500",
+        nextRunAt: now,
+        createdAt: now,
+        updatedAt: now,
+        exhaustedAt: undefined,
+        completedAt: undefined,
+        leaseToken: undefined,
+        leaseExpiresAt: undefined,
+        claimedAt: undefined,
+      }),
+    );
   });
 
-  it("reports stale and exhausted backup jobs for alerting", async () => {
+  it("reports stale, expired running, and exhausted backup jobs for alerting", async () => {
     const now = 1_700_000_000_000;
     const pendingJobs = [
       {
@@ -1648,16 +1858,55 @@ describe("registry artifact backup jobs", () => {
         nextRunAt: now - 1000,
       },
     ];
-    const take = vi.fn((limit: number) => {
-      if (take.mock.calls.length === 1) return Promise.resolve(pendingJobs.slice(0, limit));
-      return Promise.resolve(exhaustedJobs.slice(0, limit));
-    });
+    const runningJobs = [
+      {
+        _id: "registryArtifactBackupJobs:running",
+        targetKind: "skillVersion",
+        skillVersionId: "skillVersions:running",
+        status: "running",
+        attempts: 1,
+        createdAt: now - 60 * 60 * 1000,
+        updatedAt: now - 1000,
+        nextRunAt: now - 1000,
+        leaseExpiresAt: now + 60 * 1000,
+      },
+      {
+        _id: "registryArtifactBackupJobs:running-extra",
+        targetKind: "skillVersion",
+        skillVersionId: "skillVersions:running-extra",
+        status: "running",
+        attempts: 1,
+        createdAt: now - 60 * 60 * 1000,
+        updatedAt: now - 1000,
+        nextRunAt: now - 1000,
+        leaseExpiresAt: now + 60 * 1000,
+      },
+    ];
+    const expiredRunningJobs = [
+      {
+        _id: "registryArtifactBackupJobs:expired-running",
+        targetKind: "skillVersion",
+        skillVersionId: "skillVersions:expired-running",
+        status: "running",
+        attempts: 1,
+        createdAt: now - 60 * 60 * 1000,
+        updatedAt: now - 1000,
+        nextRunAt: now - 1000,
+        leaseExpiresAt: now - 1000,
+      },
+    ];
+    const pendingTake = vi.fn((limit: number) => Promise.resolve(pendingJobs.slice(0, limit)));
+    const exhaustedTake = vi.fn((limit: number) => Promise.resolve(exhaustedJobs.slice(0, limit)));
+    const runningTake = vi.fn((limit: number) => Promise.resolve(runningJobs.slice(0, limit)));
+    const expiredRunningTake = vi.fn((limit: number) =>
+      Promise.resolve(expiredRunningJobs.slice(0, limit)),
+    );
+    const takeByCall = [pendingTake, exhaustedTake, runningTake, expiredRunningTake];
+    const withIndex = vi.fn(() => ({ take: takeByCall[withIndex.mock.calls.length - 1] }));
     const ctx = {
       db: {
         query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            take,
-          })),
+          withIndex,
         })),
       },
     };
@@ -1668,14 +1917,20 @@ describe("registry artifact backup jobs", () => {
       sampleLimit: 1,
     });
 
-    expect(take).toHaveBeenNthCalledWith(1, 2);
-    expect(take).toHaveBeenNthCalledWith(2, 2);
+    expect(pendingTake).toHaveBeenCalledWith(2);
+    expect(exhaustedTake).toHaveBeenCalledWith(2);
+    expect(runningTake).toHaveBeenCalledWith(2);
+    expect(expiredRunningTake).toHaveBeenCalledWith(2);
     expect(result).toMatchObject({
       pending: 1,
-      stale: 1,
+      running: 1,
+      expiredRunning: 1,
+      stale: 2,
       exhausted: 1,
       oldestPendingAgeMs: 49 * 60 * 60 * 1000,
       pendingCapped: true,
+      runningCapped: true,
+      expiredRunningCapped: false,
       exhaustedCapped: false,
     });
   });

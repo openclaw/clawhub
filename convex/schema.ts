@@ -2607,10 +2607,19 @@ const registryArtifactBackupJobs = defineTable({
   targetKind: v.union(v.literal("skillVersion"), v.literal("packageRelease")),
   skillVersionId: v.optional(v.id("skillVersions")),
   packageReleaseId: v.optional(v.id("packageReleases")),
-  status: v.union(v.literal("pending"), v.literal("succeeded"), v.literal("exhausted")),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("running"),
+    v.literal("succeeded"),
+    v.literal("exhausted"),
+    v.literal("missingArtifact"),
+  ),
   reason: v.union(v.literal("publish"), v.literal("seed"), v.literal("retry"), v.literal("sync")),
   attempts: v.number(),
   nextRunAt: v.number(),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  claimedAt: v.optional(v.number()),
   lastAttemptAt: v.optional(v.number()),
   lastError: v.optional(v.string()),
   completedAt: v.optional(v.number()),
@@ -2619,6 +2628,7 @@ const registryArtifactBackupJobs = defineTable({
   updatedAt: v.number(),
 })
   .index("by_status_nextRunAt", ["status", "nextRunAt"])
+  .index("by_status_leaseExpiresAt", ["status", "leaseExpiresAt"])
   .index("by_status_attempts", ["status", "attempts"])
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"])
