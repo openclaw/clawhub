@@ -36,7 +36,7 @@ export function PublisherContextStrip({
     <div
       role="group"
       aria-label="Publishing as"
-      className="flex min-h-[52px] flex-wrap items-center bg-[color:var(--surface-muted)] px-4 py-space-3 text-sm text-[color:var(--ink)] sm:px-space-5"
+      className="flex min-h-[42px] flex-wrap items-center bg-[color:var(--surface-muted)] px-4 py-2 text-sm text-[color:var(--ink)] sm:px-space-5"
     >
       <div className="flex w-full min-w-0 items-center gap-2">
         <span className="hidden shrink-0 text-xs font-medium text-[color:var(--ink-soft)] sm:inline">
