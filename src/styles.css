@@ -1113,12 +1113,24 @@ code {
 }
 
 .user-dropdown-active-card {
+  position: relative;
   overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
-  border-left: 2px solid var(--accent);
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line));
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--accent) 5%, var(--surface));
-  padding: 4px;
+  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
+  padding: 5px;
+}
+
+.user-dropdown-active-card::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 52%, transparent);
+  content: "";
+  pointer-events: none;
 }
 
 .user-dropdown-active-header {
@@ -1157,6 +1169,11 @@ code {
 
 .user-dropdown-scoped-action {
   padding-inline: 10px;
+}
+
+.user-dropdown-scoped-action:focus,
+.user-dropdown-scoped-action[data-highlighted] {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
 }
 
 .user-dropdown-publisher-list {
