@@ -2522,15 +2522,6 @@ const rateLimitCounters = defineTable({
   .index("by_key_window_shard", ["key", "windowStart", "shard"])
   .index("by_expires_at", ["expiresAt"]);
 
-const downloadDedupes = defineTable({
-  skillId: v.id("skills"),
-  identityHash: v.string(),
-  hourStart: v.number(),
-  createdAt: v.number(),
-})
-  .index("by_skill_identity_hour", ["skillId", "identityHash", "hourStart"])
-  .index("by_hour", ["hourStart"]);
-
 const downloadMetricTargetKind = v.union(v.literal("skill"), v.literal("package"));
 const downloadMetricIdentityKind = v.union(v.literal("user"), v.literal("ip"));
 
@@ -2742,7 +2733,6 @@ export default defineSchema({
   cliDeviceCodes,
   rateLimits,
   rateLimitCounters,
-  downloadDedupes,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
   installTelemetryDedupes,

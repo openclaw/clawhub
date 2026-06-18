@@ -109,13 +109,6 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
-    "download-dedupe-prune",
-    { hours: 24 },
-    internal.downloads.pruneDownloadDedupesInternal,
-    {},
-  );
-
-  crons.interval(
     "download-metric-dedupe-prune",
     { hours: 24 },
     internal.downloadMetrics.pruneDownloadMetricDedupesInternal,
