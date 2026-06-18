@@ -241,9 +241,140 @@ describe("catalog taxonomy migrations", () => {
     };
 
     await expect(
-      backfillOneSkillInstallEstimate({ db } as unknown as Pick<MutationCtx, "db">, makeSkillDoc()),
+      backfillOneSkillInstallEstimate(
+        { db } as unknown as Pick<MutationCtx, "db">,
+        makeSkillDoc(),
+        INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME - 1,
+      ),
     ).rejects.toThrow("requires skill stat daily aggregation through the clean window");
     expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("allows install backfill after the clean window when stat events are exhausted", async () => {
+    const docs = new Map<string, Record<string, unknown>>([
+      [skillId, makeSkillDoc()],
+      [publisherId, makePublisherDoc()],
+      [digestId, makeSkillSearchDigestDoc()],
+      [
+        "skillDailyStats:1",
+        {
+          _id: "skillDailyStats:1",
+          _creationTime: 4,
+          skillId,
+          day: 20616,
+          downloads: 245,
+          installs: 4,
+          updatedAt: 100,
+        },
+      ],
+      [
+        "skillStatUpdateCursors:1",
+        {
+          _id: "skillStatUpdateCursors:1",
+          _creationTime: 5,
+          key: "skill_stat_events",
+          cursorCreationTime: INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME - 1,
+        },
+      ],
+    ]);
+    const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      const existing = docs.get(id);
+      if (!existing) throw new Error(`Missing test doc ${id}`);
+      docs.set(id, { ...existing, ...value });
+    });
+    const db = {
+      get: vi.fn(async (id: string) => docs.get(id) ?? null),
+      patch,
+      insert: vi.fn(async (tableName: string, value: Record<string, unknown>) => {
+        const id = `${tableName}:inserted`;
+        docs.set(id, { ...value, _id: id, _creationTime: 0 });
+        return id;
+      }),
+      delete: vi.fn(async (id: string) => {
+        docs.delete(id);
+      }),
+      query: vi.fn((tableName: string) => ({
+        withIndex: vi.fn(
+          (
+            indexName: string,
+            queryBuilder: (q: {
+              eq: (
+                field: string,
+                value: unknown,
+              ) => {
+                eq: (field: string, value: unknown) => unknown;
+              };
+              gt: (field: string, value: unknown) => unknown;
+            }) => unknown,
+          ) => {
+            const filters: Record<string, unknown> = {};
+            const builder = {
+              eq: (field: string, value: unknown) => {
+                filters[field] = value;
+                return builder;
+              },
+              gt: (field: string, value: unknown) => {
+                filters[`${field}:gt`] = value;
+                return builder;
+              },
+            };
+            queryBuilder(builder);
+            return {
+              unique: vi.fn(async () => {
+                if (tableName === "skillDailyStats" && indexName === "by_skill_day") {
+                  return (
+                    [...docs.values()].find(
+                      (doc) =>
+                        doc.skillId === filters.skillId &&
+                        doc.day === filters.day &&
+                        typeof doc.downloads === "number" &&
+                        typeof doc.installs === "number",
+                    ) ?? null
+                  );
+                }
+                if (tableName === "skillSearchDigest" && indexName === "by_skill") {
+                  return (
+                    [...docs.values()].find(
+                      (doc) => doc.skillId === filters.skillId && doc._id === digestId,
+                    ) ?? null
+                  );
+                }
+                if (tableName === "skillStatUpdateCursors" && indexName === "by_key") {
+                  return (
+                    [...docs.values()].find(
+                      (doc) => doc._id === "skillStatUpdateCursors:1" && doc.key === filters.key,
+                    ) ?? null
+                  );
+                }
+                return null;
+              }),
+              collect: vi.fn(async () => []),
+              take: vi.fn(async () => {
+                if (tableName === "skillStatEvents" && indexName === "by_creation_time") {
+                  return [];
+                }
+                if (tableName === "skillStatEvents" && indexName === "by_skill_processed") {
+                  return [];
+                }
+                return [];
+              }),
+            };
+          },
+        ),
+      })),
+    };
+
+    const changed = await backfillOneSkillInstallEstimate(
+      { db } as unknown as Pick<MutationCtx, "db">,
+      makeSkillDoc(),
+      INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME,
+    );
+
+    expect(changed).toBe(true);
+    expect(patch).toHaveBeenCalledWith(
+      skillId,
+      expect.objectContaining({ statsInstallsAllTime: expect.any(Number) }),
+    );
   });
 
   it("backfills a skill and keeps publisher stats plus search digest in sync", async () => {
