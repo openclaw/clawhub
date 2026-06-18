@@ -1053,33 +1053,6 @@ code {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
 }
 
-.account-trigger {
-  display: inline-grid;
-  width: 32px;
-  height: 32px;
-  flex-shrink: 0;
-  place-items: center;
-  border: 1px solid var(--line);
-  border-radius: var(--r-btn);
-  background: var(--surface);
-  cursor: pointer;
-  transition:
-    border-color 0.15s ease,
-    box-shadow 0.15s ease;
-}
-
-.account-trigger:hover {
-  border-color: color-mix(in srgb, var(--ink) 20%, var(--line));
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-}
-
-.account-trigger img,
-.account-trigger .user-menu-fallback {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-}
-
 .user-trigger img,
 .user-menu-publisher-icon,
 .user-menu-fallback {
@@ -1122,14 +1095,6 @@ code {
   background-clip: padding-box;
 }
 
-.publisher-dropdown-content {
-  width: min(292px, calc(100vw - 24px));
-}
-
-.account-dropdown-content {
-  width: min(284px, calc(100vw - 24px));
-}
-
 /* Remove global link underline and focus outline from user dropdown items */
 .user-dropdown-content a,
 .user-dropdown-content a:hover {
@@ -1147,28 +1112,67 @@ code {
   font-weight: 650;
 }
 
-.publisher-current-section {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+.user-dropdown-active-card {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--accent) 12%, var(--line));
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--accent) 3%, var(--surface));
+  padding: 5px;
 }
 
-.publisher-current-row {
+.user-dropdown-active-card::before {
+  position: absolute;
+  top: 10px;
+  bottom: 10px;
+  left: 0;
+  width: 2px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 52%, transparent);
+  content: "";
+  pointer-events: none;
+}
+
+.user-dropdown-active-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 6px 8px 7px;
+  padding: 8px 8px 7px;
 }
 
-.publisher-manage-action,
-.publisher-create-action {
+.user-dropdown-active-icon {
+  display: inline-flex;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+.user-dropdown-active-icon > img {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-dropdown-active-icon .user-menu-fallback {
+  width: 30px;
+  height: 30px;
+}
+
+.user-dropdown-active-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.user-dropdown-scoped-action {
   padding-inline: 10px;
 }
 
-.publisher-manage-action:focus,
-.publisher-manage-action[data-highlighted],
-.publisher-create-action:focus,
-.publisher-create-action[data-highlighted] {
+.user-dropdown-scoped-action:focus,
+.user-dropdown-scoped-action[data-highlighted] {
   background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
 }
 
@@ -1235,14 +1239,6 @@ code {
   gap: 1px;
 }
 
-.user-dropdown-account-copy {
-  display: flex;
-  min-width: 0;
-  flex: 1;
-  flex-direction: column;
-  gap: 1px;
-}
-
 .user-dropdown-account-avatar {
   width: 26px;
   height: 26px;
@@ -1260,22 +1256,12 @@ code {
   font-weight: 700;
 }
 
-.user-dropdown-account-name,
 .user-dropdown-account-handle {
   overflow: hidden;
+  font-size: var(--fs-sm);
+  font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.user-dropdown-account-name {
-  font-size: var(--fs-sm);
-  font-weight: 700;
-}
-
-.user-dropdown-account-handle {
-  color: var(--ink-soft);
-  font-size: 0.76rem;
-  font-weight: 600;
 }
 
 .user-dropdown-account-action {
