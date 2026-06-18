@@ -216,9 +216,9 @@ export function PublisherOwnerDisplay({
             size="xs"
           />
         </span>
-        <span className="min-w-0 truncate text-sm font-medium text-[color:var(--ink)]">
+        <span className="min-w-0 truncate text-xs font-normal text-[color:var(--ink)]">
           {publisher.displayName || publisher.handle}
-          <span className="hidden text-[13px] font-normal text-[color:var(--ink-soft)] sm:inline">
+          <span className="hidden font-normal text-[color:var(--ink-soft)] sm:inline">
             {" "}
             / @{publisher.handle}
           </span>
