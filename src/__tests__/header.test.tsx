@@ -349,6 +349,7 @@ describe("Header", () => {
   });
 
   it("separates active publisher actions from personal account controls", () => {
+    profileHandleMock.mockReturnValue("patrick-profile");
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -369,6 +370,8 @@ describe("Header", () => {
     const activePublisher = screen.getByLabelText("Current publisher @patrick");
     const publisherActions = screen.getByLabelText("Publisher actions for @patrick");
     const themeRow = document.querySelector(".user-dropdown-theme-row");
+    const dashboard = within(publisherActions).getByText("Dashboard");
+    const profile = within(publisherActions).getByText("Profile");
     const settings = within(publisherActions).getByText("Settings");
     const stars = within(publisherActions).getByText("Stars");
     const appearance = screen.getByText("Appearance");
@@ -379,10 +382,16 @@ describe("Header", () => {
     expect(screen.queryByText("Switch publisher")).toBeNull();
     expect(themeRow).toBeTruthy();
     expect(themeRow?.children).toHaveLength(3);
-    expect(settings.compareDocumentPosition(stars) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(dashboard.compareDocumentPosition(profile) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(stars.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(profile.compareDocumentPosition(stars) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(stars.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(settings.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(themeRow!.compareDocumentPosition(signOut) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
@@ -727,7 +736,7 @@ describe("Header", () => {
     const dashboard = screen.getAllByText("Dashboard").at(-1)!;
 
     expect(profile.closest("a")?.getAttribute("href")).toBe("/user/patrick-profile");
-    expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(dashboard.compareDocumentPosition(profile) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");

@@ -775,6 +775,12 @@ export default function Header() {
                     aria-label={`Publisher actions for @${triggerHandle}`}
                     className="user-dropdown-active-actions"
                   >
+                    <DropdownMenuItem asChild className="user-dropdown-scoped-action">
+                      <Link to="/dashboard" className="flex items-center gap-2">
+                        <LayoutDashboard size={14} aria-hidden="true" />
+                        Dashboard
+                      </Link>
+                    </DropdownMenuItem>
                     {menuProfileHandle ? (
                       <DropdownMenuItem asChild className="user-dropdown-scoped-action">
                         <Link
@@ -791,18 +797,6 @@ export default function Header() {
                         </Link>
                       </DropdownMenuItem>
                     ) : null}
-                    <DropdownMenuItem asChild className="user-dropdown-scoped-action">
-                      <Link to="/dashboard" className="flex items-center gap-2">
-                        <LayoutDashboard size={14} aria-hidden="true" />
-                        Dashboard
-                      </Link>
-                    </DropdownMenuItem>
-                    <DropdownMenuItem asChild className="user-dropdown-scoped-action">
-                      <Link to="/settings" className="flex items-center gap-2">
-                        <Settings size={14} aria-hidden="true" />
-                        Settings
-                      </Link>
-                    </DropdownMenuItem>
                     {isPersonalPublisher ? (
                       <DropdownMenuItem asChild className="user-dropdown-scoped-action">
                         <Link to="/stars" className="flex items-center gap-2">
@@ -811,6 +805,12 @@ export default function Header() {
                         </Link>
                       </DropdownMenuItem>
                     ) : null}
+                    <DropdownMenuItem asChild className="user-dropdown-scoped-action">
+                      <Link to="/settings" className="flex items-center gap-2">
+                        <Settings size={14} aria-hidden="true" />
+                        Settings
+                      </Link>
+                    </DropdownMenuItem>
                   </div>
                   <DropdownMenuSeparator />
                   <div className="user-dropdown-appearance-row">
