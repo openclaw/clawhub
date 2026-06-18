@@ -911,16 +911,17 @@ export function Settings() {
                                     Official
                                   </Badge>
                                 ) : null}
+                                <Badge
+                                  variant="compact"
+                                  size="sm"
+                                  aria-label={`Your role: ${roleLabel}`}
+                                >
+                                  {roleLabel}
+                                </Badge>
                               </div>
                               <p className="mt-1 truncate text-sm text-[color:var(--ink-soft)]">
                                 @{entry.publisher.handle}
                               </p>
-                              <dl className="mt-2 flex items-center gap-2 text-xs">
-                                <dt className="text-[color:var(--ink-soft)]">Role</dt>
-                                <dd className="font-semibold text-[color:var(--ink)]">
-                                  {roleLabel}
-                                </dd>
-                              </dl>
                             </div>
                           </div>
 
