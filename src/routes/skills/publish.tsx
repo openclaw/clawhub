@@ -895,14 +895,14 @@ export function Upload() {
                         variant="ghost"
                         size="xs"
                         className="ml-auto"
-                        aria-label="Change publisher"
+                        aria-label="Switch publisher"
                       >
-                        Change
+                        Switch
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
                       align="end"
-                      className="user-dropdown-subcontent user-dropdown-switcher-subcontent"
+                      className="publishing-context-switcher user-dropdown-subcontent user-dropdown-switcher-subcontent"
                     >
                       <div className="user-dropdown-section-label">Switch publisher</div>
                       <div className="user-dropdown-publisher-list" aria-label="Switch publisher">

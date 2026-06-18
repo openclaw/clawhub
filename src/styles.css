@@ -3533,6 +3533,27 @@ code {
   box-shadow: none;
 }
 
+.publishing-context-switcher {
+  overflow: hidden;
+  border-radius: var(--radius-md) !important;
+}
+
+.publishing-context-switcher .user-dropdown-publisher-item {
+  margin-inline: 2px;
+  border-radius: var(--radius-sm);
+}
+
+.publishing-context-switcher .user-dropdown-publisher-item-current {
+  background: var(--surface-muted);
+}
+
+.publishing-context-switcher
+  [data-slot="dropdown-menu-item"].user-dropdown-publisher-item:focus,
+.publishing-context-switcher
+  [data-slot="dropdown-menu-item"].user-dropdown-publisher-item[data-highlighted] {
+  background: var(--surface-muted);
+}
+
 .marketplace-icon-xs {
   width: 26px;
   height: 26px;

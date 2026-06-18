@@ -177,7 +177,7 @@ describe("Upload route", () => {
     expect(
       publishingAs.compareDocumentPosition(uploadPrompt) & Node.DOCUMENT_POSITION_FOLLOWING,
     ).not.toBe(0);
-    expect(screen.queryByRole("button", { name: "Change publisher" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Switch publisher" })).toBeNull();
   });
 
   it("changes the active publisher from the upload card", async () => {
@@ -189,7 +189,7 @@ describe("Upload route", () => {
 
     render(<Upload />);
 
-    fireEvent.pointerDown(screen.getByRole("button", { name: "Change publisher" }), {
+    fireEvent.pointerDown(screen.getByRole("button", { name: "Switch publisher" }), {
       button: 0,
     });
     fireEvent.click(await screen.findByRole("menuitem", { name: "Switch to @clawkit" }));
