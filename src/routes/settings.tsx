@@ -297,8 +297,8 @@ export function Settings() {
           ? [
               {
                 view: "danger" as const,
-                label: "Delete organization",
-                mobileLabel: "Delete",
+                label: "Danger zone",
+                mobileLabel: "Danger zone",
                 icon: ShieldAlert,
               },
             ]
@@ -326,8 +326,8 @@ export function Settings() {
         { view: "tokens", label: "API tokens", mobileLabel: "Tokens", icon: KeyRound },
         {
           view: "danger",
-          label: "Account deletion",
-          mobileLabel: "Deletion",
+          label: "Danger zone",
+          mobileLabel: "Danger zone",
           icon: ShieldAlert,
         },
       ];

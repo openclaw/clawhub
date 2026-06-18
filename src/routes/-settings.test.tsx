@@ -456,7 +456,7 @@ describe("Settings", () => {
       "true",
     );
     expect(screen.queryByRole("button", { name: "Members" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Delete organization" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Danger zone" })).toBeNull();
     expect(screen.queryByRole("button", { name: "GitHub Skill Sync" })).toBeNull();
     expect((screen.getByLabelText("Display name") as HTMLInputElement).disabled).toBe(true);
     expect(screen.queryByLabelText("Avatar URL")).toBeNull();
