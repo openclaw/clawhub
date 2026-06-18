@@ -3550,8 +3550,12 @@ code {
 .publishing-context-switcher
   [data-slot="dropdown-menu-item"].user-dropdown-publisher-item:focus,
 .publishing-context-switcher
+  [data-slot="dropdown-menu-item"].user-dropdown-publisher-item:focus-visible,
+.publishing-context-switcher
   [data-slot="dropdown-menu-item"].user-dropdown-publisher-item[data-highlighted] {
   background: var(--surface-muted);
+  outline: none;
+  box-shadow: none;
 }
 
 .marketplace-icon-xs {
