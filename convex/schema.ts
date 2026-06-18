@@ -927,14 +927,6 @@ const skillVersions = defineTable({
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
-const depRegistryCache = defineTable({
-  registry: depRegistryValidator,
-  name: v.string(),
-  exists: v.boolean(),
-  httpStatus: v.number(),
-  checkedAt: v.number(),
-}).index("by_registry_name", ["registry", "name"]);
-
 const skillVersionFingerprints = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
@@ -2588,15 +2580,6 @@ const reservedHandles = defineTable({
   .index("by_handle_active_updatedAt", ["handle", "releasedAt", "updatedAt"])
   .index("by_owner", ["rightfulOwnerUserId"]);
 
-// Deprecated GitHub backup state retained so existing production rows keep
-// validating until a separate cleanup migration removes them.
-const githubBackupSyncState = defineTable({
-  key: v.string(),
-  cursor: v.optional(v.string()),
-  pruneCursor: v.optional(v.string()),
-  updatedAt: v.number(),
-}).index("by_key", ["key"]);
-
 const registryArtifactBackupSyncState = defineTable({
   key: v.string(),
   cursor: v.optional(v.string()),
@@ -2689,7 +2672,6 @@ export default defineSchema({
   packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
-  depRegistryCache,
   skillVersionFingerprints,
   skillBadges,
   skillEmbeddings,
@@ -2726,7 +2708,6 @@ export default defineSchema({
   installTelemetryDedupes,
   reservedSlugs,
   reservedHandles,
-  githubBackupSyncState,
   registryArtifactBackupSyncState,
   registryArtifactBackupJobs,
   userSkillInstalls,
