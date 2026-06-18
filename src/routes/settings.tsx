@@ -941,8 +941,8 @@ export function Settings() {
                                 </span>
                               </span>
                             </div>
-                            <div className="flex shrink-0 flex-wrap items-center gap-2">
-                              <Button asChild variant="ghost" className="sm:w-auto">
+                            <div className="settings-organization-actions">
+                              <Button asChild variant="ghost">
                                 <Link
                                   to="/user/$handle"
                                   params={{ handle: entry.publisher.handle }}
@@ -953,7 +953,6 @@ export function Settings() {
                               <Button
                                 type="button"
                                 variant="outline"
-                                className="sm:w-auto"
                                 onClick={() => {
                                   setActivePublisherId(entry.publisher._id);
                                   if (canManageOrg) {
