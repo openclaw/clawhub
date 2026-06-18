@@ -112,6 +112,7 @@
 /docs/api.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/auth.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/http-api.md @openclaw/openclaw-secops @Patrick-Erichsen
+/docs/namespace-claims.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/security.md @openclaw/openclaw-secops @Patrick-Erichsen
 /docs/webhook.md @openclaw/openclaw-secops @Patrick-Erichsen
 /specs/deploy.md @openclaw/openclaw-secops @Patrick-Erichsen

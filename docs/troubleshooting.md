@@ -98,8 +98,9 @@ matching `example-org` owner.
 If you believe your org, project, or brand is the rightful namespace owner but
 you cannot manage the current ClawHub owner, open an
 [Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
-with public, non-sensitive proof. Do not include secrets, private documents,
-DNS challenge tokens, or private legal files in the public issue.
+with public, non-sensitive proof. See
+[Org and Namespace Claims](./namespace-claims.md) for evidence guidance and what
+to keep out of public issues.
 
 ## `sync` says no skills were found
 
