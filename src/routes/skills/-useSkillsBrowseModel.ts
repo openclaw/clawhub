@@ -90,7 +90,7 @@ export function useSkillsBrowseModel({
   const listSort = toListSort(sort);
   const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
   const searchKey = hasQuery
-    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${activeTopic ?? ""}`
+    ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${activeCategory?.slug ?? ""}::${activeTopic ?? ""}`
     : "";
 
   // One-shot paginated fetches (no reactive subscription)
@@ -215,6 +215,7 @@ export function useSkillsBrowseModel({
           const data = (await searchSkills({
             query: trimmedQuery,
             highlightedOnly: featuredOnly,
+            categorySlug: activeCategory?.slug,
             topic: activeTopic,
             limit: searchLimit,
           })) as Array<SkillSearchEntry>;
@@ -229,7 +230,15 @@ export function useSkillsBrowseModel({
       })();
     }, 220);
     return () => window.clearTimeout(handle);
-  }, [activeTopic, hasQuery, featuredOnly, searchLimit, searchSkills, trimmedQuery]);
+  }, [
+    activeCategory?.slug,
+    activeTopic,
+    hasQuery,
+    featuredOnly,
+    searchLimit,
+    searchSkills,
+    trimmedQuery,
+  ]);
 
   const baseItems = useMemo(() => {
     if (hasQuery) {

@@ -309,6 +309,25 @@ describe("SkillsIndex", () => {
     });
   });
 
+  it("passes the selected category to backend skill search", async () => {
+    searchMock = { q: "helper", category: "development" };
+    const actionFn = vi.fn().mockResolvedValue([]);
+    convexReactMocks.useAction.mockReturnValue(actionFn);
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(actionFn).toHaveBeenCalledWith({
+      query: "helper",
+      highlightedOnly: false,
+      categorySlug: "development",
+      limit: 25,
+    });
+  });
+
   it("keeps recommended as the visible default search sort", async () => {
     searchMock = { q: "notion" };
     const actionFn = vi.fn().mockResolvedValue([]);

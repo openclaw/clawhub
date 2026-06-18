@@ -21,4 +21,9 @@ Numeric scores, trust state, popularity, and recency may order results inside th
 
 The same contract applies across `/search`, the header typeahead, package/plugin catalog search, and skill-as-package catalog search.
 
+Explicit browse filters such as category and topic must be applied during backend recall before
+result limits. Client-side filtering may remain as a defensive display check, but it must not be the
+only category or topic filter because limited global results can under-fill scoped search. Recall may
+stop at an explicit safety scan budget, but the result limit applies after scoped matches are found.
+
 Search result counts in the web UI should describe what is known from the current request. Do not label a page-size-limited result length as a total corpus count. Prefer `N+`, "shown", or no count unless an indexed/materialized total is available.

@@ -165,6 +165,56 @@ describe("search helpers", () => {
     );
   });
 
+  it("passes normalized selected categories through every skill recall path", async () => {
+    generateEmbeddingMock.mockResolvedValueOnce([0, 1, 2]);
+    const development = {
+      embeddingId: "skillEmbeddings:development",
+      skill: makePublicSkill({
+        id: "skills:development",
+        slug: "development-helper",
+        displayName: "Development Helper",
+        categories: ["development"],
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const automation = {
+      embeddingId: "skillEmbeddings:automation",
+      skill: makePublicSkill({
+        id: "skills:automation",
+        slug: "automation-helper",
+        displayName: "Automation Helper",
+        categories: ["automation"],
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce(null) // getExactSkillSlugMatch
+      .mockResolvedValueOnce([development, automation]) // directPrefixSkillMatches
+      .mockResolvedValueOnce([development, automation]) // hydrateResults
+      .mockResolvedValueOnce([development, automation]); // lexicalFallbackSkills
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn().mockResolvedValue([
+          { _id: "skillEmbeddings:development", _score: 0.8 },
+          { _id: "skillEmbeddings:automation", _score: 0.9 },
+        ]),
+        runQuery,
+      },
+      { query: "helper", categorySlug: "Development", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-helper"]);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(expect.objectContaining({ categorySlug: "development" }));
+    }
+  });
+
   it("uses stored categories as skill search evidence", async () => {
     generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
     const fallback = [
@@ -361,6 +411,117 @@ describe("search helpers", () => {
     expect(ctx.usedIndexes).toEqual(
       expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
     );
+  });
+
+  it("continues topic recall past globally capped rows before category filtering", async () => {
+    const distractors = Array.from({ length: 100 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:scheduling-${index}`,
+        slug: `temporal-${index}`,
+        displayName: `Temporal ${index}`,
+        summary: "Coordinates events.",
+        categories: ["automation"],
+        topics: ["scheduling"],
+      }),
+    );
+    const development = makeSkillDoc({
+      id: "skills:calendar-helper",
+      slug: "temporal-helper",
+      displayName: "Temporal Helper",
+      summary: "Coordinates calendar events.",
+      categories: ["development"],
+      topics: ["scheduling"],
+    });
+    const ctx = makeDirectPrefixCtx([...distractors, development]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "calendar",
+      categorySlug: "development",
+      topic: "scheduling",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["temporal-helper"]);
+  });
+
+  it("filters direct prefix matches by the selected category", async () => {
+    const development = makeSkillDoc({
+      id: "skills:development-helper",
+      slug: "development-helper",
+      displayName: "Development Helper",
+      categories: ["development"],
+    });
+    const automation = makeSkillDoc({
+      id: "skills:automation-helper",
+      slug: "automation-helper",
+      displayName: "Automation Helper",
+      categories: ["automation"],
+    });
+    const ctx = makeDirectPrefixCtx([development, automation]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "helper",
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-helper"]);
+  });
+
+  it("continues direct recall past globally capped matches for the selected category", async () => {
+    const distractors = Array.from({ length: 150 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:automation-${index}`,
+        slug: `helper-automation-${index}`,
+        displayName: `Helper Automation ${index}`,
+        categories: ["automation"],
+      }),
+    );
+    const development = makeSkillDoc({
+      id: "skills:development-helper",
+      slug: "helper-development",
+      displayName: "Helper Development",
+      categories: ["development"],
+    });
+    const ctx = makeDirectPrefixCtx([...distractors, development]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "helper",
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-development"]);
+  });
+
+  it("does not let unhighlighted scoped matches consume featured recall", async () => {
+    const distractors = Array.from({ length: 150 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:development-${index}`,
+        slug: `helper-development-${index}`,
+        displayName: `Helper Development ${index}`,
+        categories: ["development"],
+      }),
+    );
+    const highlighted = {
+      ...makeSkillDoc({
+        id: "skills:highlighted-development",
+        slug: "helper-highlighted-development",
+        displayName: "Helper Highlighted Development",
+        categories: ["development"],
+      }),
+      badges: { highlighted: { byUserId: "users:mod", at: 1 } },
+    };
+    const ctx = makeDirectPrefixCtx([...distractors, highlighted]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "helper",
+      categorySlug: "development",
+      highlightedOnly: true,
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-highlighted-development"]);
   });
 
   it("does not return suspicious skills via full-text search when nonSuspiciousOnly is set", async () => {
@@ -660,6 +821,59 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.skill._id)).toEqual(["skills:alice-demo"]);
   });
 
+  it("filters duplicate exact slug matches by category", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:development-demo",
+          slug: "demo",
+          displayName: "Development Demo",
+          ownerPublisherId: "publishers:development",
+          categories: ["development"],
+        }),
+        makeSkillDoc({
+          id: "skills:automation-demo",
+          slug: "demo",
+          displayName: "Automation Demo",
+          ownerPublisherId: "publishers:automation",
+          categories: ["automation"],
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "demo",
+      categorySlug: "development",
+    });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual(["skills:development-demo"]);
+  });
+
+  it("preserves resolved inferred categories on exact slug results", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:development-demo",
+          slug: "demo",
+          displayName: "Development Demo",
+          inferredCategories: ["development"],
+          inferredFromVersionId: "skillVersions:1",
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "demo",
+      categorySlug: "development",
+    });
+
+    const [entry] = result;
+    if (!entry) throw new Error("Expected an exact slug result");
+    expect((entry.skill as { categories?: string[] }).categories).toEqual(["development"]);
+  });
+
   it("includes duplicate exact slug matches from by_slug when recent scan is empty", async () => {
     const ctx = makeLexicalCtx({
       exactSlugSkills: [
@@ -720,6 +934,99 @@ describe("search helpers", () => {
     });
 
     expect(result.map((entry) => entry.skill._id)).toEqual(["skills:alice-demo"]);
+  });
+
+  it("filters lexical fallback matches by the selected category", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [
+        makeSkillDoc({
+          id: "skills:development",
+          slug: "development-helper",
+          displayName: "Development Helper",
+          categories: ["development"],
+        }),
+        makeSkillDoc({
+          id: "skills:automation",
+          slug: "automation-helper",
+          displayName: "Automation Helper",
+          categories: ["automation"],
+        }),
+      ],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "helper",
+      queryTokens: ["helper"],
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-helper"]);
+  });
+
+  it("continues fallback recall past global rows for the selected category", async () => {
+    const distractors = Array.from({ length: 25 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:automation-${index}`,
+        slug: `automation-${index}`,
+        displayName: `Automation ${index}`,
+        summary: "Helper workflow",
+        categories: ["automation"],
+      }),
+    );
+    const development = makeSkillDoc({
+      id: "skills:development",
+      slug: "development-tool",
+      displayName: "Development Tool",
+      summary: "Helper workflow",
+      categories: ["development"],
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [...distractors, development],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "helper",
+      queryTokens: ["helper"],
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-tool"]);
+  });
+
+  it("does not let unrelated scoped rows consume fallback recall", async () => {
+    const distractors = Array.from({ length: 25 }, (_, index) =>
+      makeSkillDoc({
+        id: `skills:development-${index}`,
+        slug: `development-${index}`,
+        displayName: `Development ${index}`,
+        summary: "Unrelated workflow",
+        categories: ["development"],
+      }),
+    );
+    const target = makeSkillDoc({
+      id: "skills:development-target",
+      slug: "development-target",
+      displayName: "Development Target",
+      summary: "Helper workflow",
+      categories: ["development"],
+    });
+    const ctx = makeLexicalCtx({
+      exactSlugSkill: null,
+      recentSkills: [...distractors, target],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "helper",
+      queryTokens: ["helper"],
+      categorySlug: "development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["development-target"]);
   });
 
   it("dedupes overlap and enforces rank + limit across vector and fallback", async () => {
@@ -1208,6 +1515,40 @@ describe("search helpers", () => {
         },
       },
       { embeddingIds: ["skillEmbeddings:1"], nonSuspiciousOnly: true },
+    );
+
+    expect(result).toHaveLength(0);
+  });
+
+  it("filters vector results by the selected category", async () => {
+    const result = await hydrateResultsHandler(
+      {
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "skillEmbeddings:1") {
+              return {
+                _id: "skillEmbeddings:1",
+                skillId: "skills:1",
+                versionId: "skillVersions:1",
+              };
+            }
+            if (id === "skills:1") {
+              return makeSkillDoc({
+                id: "skills:1",
+                slug: "automation-helper",
+                displayName: "Automation Helper",
+                categories: ["automation"],
+              });
+            }
+            if (id === "users:owner") return { _id: "users:owner", handle: "owner" };
+            return null;
+          }),
+          query: vi.fn(() => ({
+            withIndex: () => ({ unique: vi.fn().mockResolvedValue(null) }),
+          })),
+        },
+      },
+      { embeddingIds: ["skillEmbeddings:1"], categorySlug: "development" },
     );
 
     expect(result).toHaveLength(0);
@@ -1889,6 +2230,8 @@ function makeSkillDoc(params: {
   softDeletedAt?: number;
   categories?: string[];
   topics?: string[];
+  inferredCategories?: string[];
+  inferredFromVersionId?: string;
 }) {
   return {
     ...makePublicSkill(params),
@@ -1897,7 +2240,22 @@ function makeSkillDoc(params: {
     moderationFlags: params.moderationFlags ?? [],
     moderationReason: params.moderationReason,
     softDeletedAt: params.softDeletedAt as number | undefined,
+    inferredCategories: params.inferredCategories,
+    inferredFromVersionId: params.inferredFromVersionId,
   };
+}
+
+function makePaginatedRows<T>(rows: T[]) {
+  return vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+    const start = cursor ? Number(cursor) : 0;
+    const page = rows.slice(start, start + numItems);
+    const next = start + page.length;
+    return {
+      page,
+      isDone: next >= rows.length,
+      continueCursor: String(next),
+    };
+  });
 }
 
 function makeLexicalCtx(params: {
@@ -1957,6 +2315,7 @@ function makeLexicalCtx(params: {
                       takeLimits.push(limit);
                       return Promise.resolve(digestByUpdated);
                     }),
+                    paginate: makePaginatedRows(digestByUpdated),
                   }),
                 };
               }
@@ -1967,6 +2326,7 @@ function makeLexicalCtx(params: {
                       takeLimits.push(limit);
                       return Promise.resolve(digestByCreated);
                     }),
+                    paginate: makePaginatedRows(digestByCreated),
                   }),
                 };
               }
@@ -2051,21 +2411,21 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                 lt: () => q,
               };
               builder(q);
+              const rows = digestRows
+                .filter((digest) =>
+                  digest.topics?.some((value) => {
+                    const topicSlug = tokenize(value).join("-");
+                    return topic ? topicSlug === topic : topicSlug.startsWith(topicPrefix);
+                  }),
+                )
+                .map((digest) => ({
+                  skillId: digest.skillId,
+                  topic: topic || topicPrefix,
+                }));
               return {
                 order: () => ({
-                  take: vi.fn(async () =>
-                    digestRows
-                      .filter((digest) =>
-                        digest.topics?.some((value) => {
-                          const topicSlug = tokenize(value).join("-");
-                          return topic ? topicSlug === topic : topicSlug.startsWith(topicPrefix);
-                        }),
-                      )
-                      .map((digest) => ({
-                        skillId: digest.skillId,
-                        topic: topic || topicPrefix,
-                      })),
-                  ),
+                  take: vi.fn(async (limit: number) => rows.slice(0, limit)),
+                  paginate: makePaginatedRows(rows),
                 }),
               };
             },
@@ -2097,18 +2457,20 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                 ),
               };
             }
+            const rows = digestRows.filter((digest) => {
+              const field = index.includes("first_token")
+                ? index.includes("slug")
+                  ? "normalizedSlugFirstToken"
+                  : "normalizedDisplayNameFirstToken"
+                : index.includes("slug")
+                  ? "normalizedSlug"
+                  : "normalizedDisplayName";
+              const prefix = range[field] ?? "";
+              return (digest[field] ?? "").startsWith(prefix);
+            });
             return {
-              take: vi.fn(async () => {
-                const field = index.includes("first_token")
-                  ? index.includes("slug")
-                    ? "normalizedSlugFirstToken"
-                    : "normalizedDisplayNameFirstToken"
-                  : index.includes("slug")
-                    ? "normalizedSlug"
-                    : "normalizedDisplayName";
-                const prefix = range[field] ?? "";
-                return digestRows.filter((digest) => (digest[field] ?? "").startsWith(prefix));
-              }),
+              take: vi.fn(async () => rows),
+              paginate: makePaginatedRows(rows),
             };
           },
           // Mock for the new `searchIndex`-backed full-text queries added to
@@ -2140,25 +2502,27 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
               },
             };
             builder(q);
-            return {
-              take: vi.fn(async () => {
-                const queryTokens = new Set(tokensOf(searchQuery));
-                if (queryTokens.size === 0) return [];
-                return digestRows.filter((digest) => {
-                  for (const filter of filters) {
-                    if ((digest as Record<string, unknown>)[filter.field] !== filter.value) {
-                      return false;
+            const queryTokens = new Set(tokensOf(searchQuery));
+            const rows =
+              queryTokens.size === 0
+                ? []
+                : digestRows.filter((digest) => {
+                    for (const filter of filters) {
+                      if ((digest as Record<string, unknown>)[filter.field] !== filter.value) {
+                        return false;
+                      }
                     }
-                  }
-                  const fieldValue =
-                    (digest as unknown as Record<string, string | undefined>)[searchField] ?? "";
-                  const fieldTokens = new Set(tokensOf(fieldValue));
-                  for (const token of queryTokens) {
-                    if (fieldTokens.has(token)) return true;
-                  }
-                  return false;
-                });
-              }),
+                    const fieldValue =
+                      (digest as unknown as Record<string, string | undefined>)[searchField] ?? "";
+                    const fieldTokens = new Set(tokensOf(fieldValue));
+                    for (const token of queryTokens) {
+                      if (fieldTokens.has(token)) return true;
+                    }
+                    return false;
+                  });
+            return {
+              take: vi.fn(async () => rows),
+              paginate: makePaginatedRows(rows),
             };
           },
         };
