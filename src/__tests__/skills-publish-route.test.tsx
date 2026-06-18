@@ -199,7 +199,7 @@ describe("Upload route", () => {
     expect(setActivePublisherId).toHaveBeenCalledWith("publishers:clawkit");
   });
 
-  it("replaces a stale ownerHandle in the new publish URL", async () => {
+  it("preserves an explicit ownerHandle in the new publish URL", async () => {
     useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: "local" });
     mockActivePublisher({
       activeOwnerHandle: "clawkit",
@@ -209,12 +209,34 @@ describe("Upload route", () => {
     render(<Upload />);
 
     await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: "/skills/publish",
-        search: { ownerHandle: "clawkit" },
-        replace: true,
-      });
+      expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
+        "Local / @local",
+      );
     });
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves an explicit ownerHandle change while the publish route stays mounted", async () => {
+    let search = { updateSlug: undefined, ownerHandle: "local" as string | undefined };
+    useSearchMock.mockImplementation(() => search);
+    mockActivePublisher({
+      activeOwnerHandle: "local",
+      memberships: [personalMembership, orgMembership],
+    });
+
+    const { rerender } = render(<Upload />);
+    await screen.findByText(/Local/);
+    navigateMock.mockClear();
+
+    search = { updateSlug: undefined, ownerHandle: "clawkit" };
+    rerender(<Upload />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
+        "ClawKit / @clawkit",
+      );
+    });
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("drops invalid legacy category metadata and offers explicit generation on republish", async () => {
@@ -781,7 +803,7 @@ describe("Upload route", () => {
   });
 
   it("keeps new publishing synced with the active publisher", async () => {
-    useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: "local" });
+    useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: undefined });
     const memberships = [personalMembership, orgMembership];
     mockActivePublisher({ activeOwnerHandle: "local", memberships });
 

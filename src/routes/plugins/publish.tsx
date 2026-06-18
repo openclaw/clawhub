@@ -204,6 +204,8 @@ export function PublishPluginRoute() {
   const [name, setName] = useState(search.name ?? "");
   const [displayName, setDisplayName] = useState(search.displayName ?? "");
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
+  const observedActiveOwnerHandleRef = useRef<string | undefined>(undefined);
+  const autoSelectedOwnerHandleRef = useRef<string | undefined>(undefined);
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
   const [categories, setCategories] = useState<string[]>([]);
@@ -386,7 +388,35 @@ export function PublishPluginRoute() {
   };
 
   useEffect(() => {
-    if (!search.name && activeOwnerHandle) {
+    if (search.name || !search.ownerHandle || search.ownerHandle === ownerHandle) return;
+
+    autoSelectedOwnerHandleRef.current = undefined;
+    setOwnerHandle(search.ownerHandle);
+  }, [ownerHandle, search.name, search.ownerHandle]);
+
+  useEffect(() => {
+    const searchOwnerWasAutoSelected =
+      search.ownerHandle && search.ownerHandle === autoSelectedOwnerHandleRef.current;
+    if (search.name || (search.ownerHandle && !searchOwnerWasAutoSelected) || !activeOwnerHandle)
+      return;
+    if (observedActiveOwnerHandleRef.current === undefined) {
+      observedActiveOwnerHandleRef.current = activeOwnerHandle;
+      return;
+    }
+    if (observedActiveOwnerHandleRef.current === activeOwnerHandle) return;
+
+    observedActiveOwnerHandleRef.current = activeOwnerHandle;
+    autoSelectedOwnerHandleRef.current = activeOwnerHandle;
+    setOwnerHandle(activeOwnerHandle);
+    void navigate({
+      to: "/plugins/publish",
+      search: { ...search, ownerHandle: activeOwnerHandle },
+      replace: true,
+    });
+  }, [activeOwnerHandle, navigate, search]);
+
+  useEffect(() => {
+    if (!search.name && activeOwnerHandle && !search.ownerHandle && !ownerHandle) {
       if (ownerHandle !== activeOwnerHandle) setOwnerHandle(activeOwnerHandle);
       return;
     }
@@ -401,7 +431,9 @@ export function PublishPluginRoute() {
 
   useEffect(() => {
     if (search.name || !ownerHandle || search.ownerHandle === ownerHandle) return;
+    if (search.ownerHandle && search.ownerHandle !== autoSelectedOwnerHandleRef.current) return;
 
+    autoSelectedOwnerHandleRef.current = ownerHandle;
     void navigate({
       to: "/plugins/publish",
       search: { ...search, ownerHandle },
@@ -489,7 +521,17 @@ export function PublishPluginRoute() {
           <PublisherContextStrip
             ownerHandle={ownerHandle}
             memberships={publisherMemberships}
-            onSwitchPublisher={setActivePublisherId}
+            onSwitchPublisher={(publisher) => {
+              observedActiveOwnerHandleRef.current = publisher.handle;
+              autoSelectedOwnerHandleRef.current = publisher.handle;
+              setOwnerHandle(publisher.handle);
+              setActivePublisherId(publisher._id);
+              void navigate({
+                to: "/plugins/publish",
+                search: { ...search, ownerHandle: publisher.handle },
+                replace: true,
+              });
+            }}
           />
           <div className="border-t border-[color:var(--line)] p-space-5">
             <PackageSourceChooser

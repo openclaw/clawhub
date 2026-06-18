@@ -169,6 +169,8 @@ export function Upload() {
   const [error, setError] = useState<string | null>(null);
   const [ownerHandle, setOwnerHandle] = useState(searchOwnerHandle ?? "");
   const ownerTouchedRef = useRef(false);
+  const observedActiveOwnerHandleRef = useRef<string | undefined>(undefined);
+  const autoSelectedOwnerHandleRef = useRef<string | undefined>(undefined);
   // Owner migration opt-in: when updating an existing skill under a different
   // publisher than its current owner, the backend requires an explicit
   // `migrateOwner: true` signal. We only send it when the user ticks this box,
@@ -301,6 +303,36 @@ export function Upload() {
   );
 
   useEffect(() => {
+    if (updateSlug || !searchOwnerHandle || searchOwnerHandle === ownerHandle) return;
+
+    autoSelectedOwnerHandleRef.current = undefined;
+    setOwnerHandle(searchOwnerHandle);
+    setConfirmMigrateOwner(false);
+  }, [ownerHandle, searchOwnerHandle, updateSlug]);
+
+  useEffect(() => {
+    const searchOwnerWasAutoSelected =
+      searchOwnerHandle && searchOwnerHandle === autoSelectedOwnerHandleRef.current;
+    if (updateSlug || (searchOwnerHandle && !searchOwnerWasAutoSelected) || !activeOwnerHandle)
+      return;
+    if (observedActiveOwnerHandleRef.current === undefined) {
+      observedActiveOwnerHandleRef.current = activeOwnerHandle;
+      return;
+    }
+    if (observedActiveOwnerHandleRef.current === activeOwnerHandle) return;
+
+    observedActiveOwnerHandleRef.current = activeOwnerHandle;
+    autoSelectedOwnerHandleRef.current = activeOwnerHandle;
+    setOwnerHandle(activeOwnerHandle);
+    setConfirmMigrateOwner(false);
+    void navigate({
+      to: "/skills/publish",
+      search: { ownerHandle: activeOwnerHandle, updateSlug: undefined },
+      replace: true,
+    });
+  }, [activeOwnerHandle, navigate, searchOwnerHandle, updateSlug]);
+
+  useEffect(() => {
     let cancelled = false;
     const requiredIndex = normalizedPaths.findIndex((path) => isRequiredSkillFile(path));
     const requiredFile = requiredIndex >= 0 ? files[requiredIndex] : undefined;
@@ -388,6 +420,7 @@ export function Upload() {
       !ownerTouchedRef.current &&
       !updateSlug &&
       activeOwner &&
+      !searchOwnerHandle &&
       ownerHandle !== activeOwner.publisher.handle,
     );
     if (currentOwnerExists && !shouldPreferExistingOwner && !shouldPreferActiveOwner) return;
@@ -416,7 +449,9 @@ export function Upload() {
 
   useEffect(() => {
     if (updateSlug || !ownerHandle || searchOwnerHandle === ownerHandle) return;
+    if (searchOwnerHandle && searchOwnerHandle !== autoSelectedOwnerHandleRef.current) return;
 
+    autoSelectedOwnerHandleRef.current = ownerHandle;
     void navigate({
       to: "/skills/publish",
       search: { ownerHandle, updateSlug: undefined },
@@ -881,7 +916,19 @@ export function Upload() {
               <PublisherContextStrip
                 ownerHandle={ownerHandle}
                 memberships={publisherMemberships}
-                onSwitchPublisher={setActivePublisherId}
+                onSwitchPublisher={(publisher) => {
+                  ownerTouchedRef.current = true;
+                  observedActiveOwnerHandleRef.current = publisher.handle;
+                  autoSelectedOwnerHandleRef.current = publisher.handle;
+                  setOwnerHandle(publisher.handle);
+                  setConfirmMigrateOwner(false);
+                  setActivePublisherId(publisher._id);
+                  void navigate({
+                    to: "/skills/publish",
+                    search: { ownerHandle: publisher.handle, updateSlug: undefined },
+                    replace: true,
+                  });
+                }}
                 validation={
                   ownerIssue ? (
                     <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />

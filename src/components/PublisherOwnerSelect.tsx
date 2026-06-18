@@ -30,7 +30,7 @@ export function PublisherContextStrip({
 }: {
   ownerHandle: string;
   memberships: PublisherOwnerMembership[] | undefined;
-  onSwitchPublisher: (publisherId: Id<"publishers">) => void;
+  onSwitchPublisher: (publisher: PublisherOwnerMembership["publisher"]) => void;
   validation?: ReactNode;
 }) {
   return (
@@ -76,10 +76,10 @@ export function PublisherContextStrip({
                       </span>
                       <span className="user-dropdown-publisher-copy">
                         <span className="user-dropdown-publisher-title">
-                          @{entry.publisher.handle}
+                          {entry.publisher.displayName?.trim() || entry.publisher.handle}
                         </span>
                         <span className="user-dropdown-publisher-meta">
-                          {entry.publisher.kind === "org" ? "Organization" : "Personal"}
+                          @{entry.publisher.handle}
                         </span>
                       </span>
                     </>
@@ -103,7 +103,7 @@ export function PublisherContextStrip({
                       key={entry.publisher._id}
                       aria-label={`Switch to @${entry.publisher.handle}`}
                       className="user-dropdown-publisher-item"
-                      onSelect={() => onSwitchPublisher(entry.publisher._id)}
+                      onSelect={() => onSwitchPublisher(entry.publisher)}
                     >
                       {publisherIdentity}
                     </DropdownMenuItem>

@@ -109,7 +109,7 @@ function mockActivePublisher({
 }
 
 function renderPublishRoute() {
-  render(createElement(PublishPluginRoute as never));
+  return render(createElement(PublishPluginRoute as never));
 }
 
 function withRelativePath(file: File, path: string) {
@@ -279,7 +279,7 @@ describe("plugins publish route", () => {
     expect(setActivePublisherId).toHaveBeenCalledWith("publishers:openclaw");
   });
 
-  it("replaces a stale ownerHandle in the new plugin publish URL", async () => {
+  it("preserves an explicit ownerHandle in the new plugin publish URL", async () => {
     useSearchMock.mockReturnValue({
       ownerHandle: "vintageayu",
       name: undefined,
@@ -295,20 +295,38 @@ describe("plugins publish route", () => {
 
     renderPublishRoute();
 
-    await waitFor(() => {
-      expect(navigateMock).toHaveBeenCalledWith({
-        to: "/plugins/publish",
-        search: {
-          ownerHandle: "openclaw",
-          name: undefined,
-          displayName: undefined,
-          family: undefined,
-          nextVersion: undefined,
-          sourceRepo: undefined,
-        },
-        replace: true,
-      });
+    await screen.findByText(/VintageAyu/);
+    expect(navigateMock).not.toHaveBeenCalled();
+  });
+
+  it("preserves an explicit ownerHandle change while the plugin route stays mounted", async () => {
+    let search = {
+      ownerHandle: "vintageayu",
+      name: undefined,
+      displayName: undefined,
+      family: undefined,
+      nextVersion: undefined,
+      sourceRepo: undefined,
+    };
+    useSearchMock.mockImplementation(() => search);
+    mockActivePublisher({
+      memberships: [vintageAyuMembership, openClawMembership],
+      activeOwnerHandle: "vintageayu",
     });
+
+    const { rerender } = renderPublishRoute();
+    await screen.findByText(/VintageAyu/);
+    navigateMock.mockClear();
+
+    search = { ...search, ownerHandle: "openclaw" };
+    rerender(createElement(PublishPluginRoute as never));
+
+    await waitFor(() => {
+      expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
+        "OpenClaw / @openclaw",
+      );
+    });
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("opens only the directory picker when clicking Choose folder", () => {
