@@ -3547,6 +3547,18 @@ code {
   box-shadow: none;
 }
 
+.publishing-context-owner .marketplace-icon-xs {
+  width: 22px;
+  height: 22px;
+}
+
+@media (min-width: 640px) {
+  .publishing-context-owner .marketplace-icon-xs {
+    width: 26px;
+    height: 26px;
+  }
+}
+
 .publishing-context-switcher {
   overflow: hidden;
   border-radius: var(--radius-md) !important;
