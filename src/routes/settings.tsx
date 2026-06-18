@@ -926,7 +926,7 @@ export function Settings() {
                             </div>
                           </div>
 
-                          <div className="flex flex-col gap-4 border-t border-[color:var(--line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="flex flex-col gap-4 border-t border-[color:var(--line)] pt-4 min-[480px]:flex-row min-[480px]:items-center min-[480px]:justify-between">
                             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[color:var(--ink-soft)]">
                               <span className="inline-flex items-center gap-1.5">
                                 <SKILL_NAV_ICON size={14} aria-hidden="true" />
