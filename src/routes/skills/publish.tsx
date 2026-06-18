@@ -878,12 +878,14 @@ export function Upload() {
               <div
                 role="group"
                 aria-label="Publishing as"
-                className="flex min-h-[52px] flex-wrap items-center gap-x-4 gap-y-2 bg-[color:var(--surface-muted)] px-space-5 py-space-3 text-sm text-[color:var(--ink)]"
+                className="flex min-h-[52px] flex-wrap items-center gap-x-2 gap-y-2 bg-[color:var(--surface-muted)] px-space-5 py-space-3 text-sm text-[color:var(--ink)]"
               >
                 <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--ink-soft)]">
                   Publishing as
                 </span>
-                <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
+                <span className="publishing-context-owner">
+                  <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
+                </span>
                 <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
                 {(publisherMemberships?.length ?? 0) > 1 ? (
                   <DropdownMenu>

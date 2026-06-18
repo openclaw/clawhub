@@ -3528,6 +3528,11 @@ code {
   box-shadow: 0 4px 12px color-mix(in srgb, var(--marketplace-icon-accent) 20%, transparent);
 }
 
+.publishing-context-owner .marketplace-icon:hover {
+  transform: none;
+  box-shadow: none;
+}
+
 .marketplace-icon-xs {
   width: 26px;
   height: 26px;
