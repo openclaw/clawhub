@@ -465,6 +465,7 @@ export function useSkillsBrowseModel({
   return {
     activeFilters,
     activeCategory: activeCategory?.slug,
+    activeTopic,
     canAutoLoad,
     canLoadMore,
     dir,

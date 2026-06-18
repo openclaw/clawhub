@@ -77,6 +77,15 @@ export function SkillsIndex() {
       : model.sort;
   const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly;
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
+  const categoryTopics = useQuery(
+    api.catalogTopics.listTopByCategory,
+    model.activeCategory
+      ? {
+          kind: "skill",
+          category: model.activeCategory,
+        }
+      : "skip",
+  );
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
 
   const handleSortChange = useCallback(
@@ -124,6 +133,21 @@ export function SkillsIndex() {
           ...prev,
           category,
           topic: undefined,
+          featured: undefined,
+          highlighted: undefined,
+        }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  const handleTopicChange = useCallback(
+    (topic: string | undefined) => {
+      void navigate({
+        search: (prev: SkillsSearchState) => ({
+          ...prev,
+          topic,
           featured: undefined,
           highlighted: undefined,
         }),
@@ -196,6 +220,9 @@ export function SkillsIndex() {
           categories={SKILL_CATEGORIES}
           activeCategory={model.activeCategory}
           onCategoryChange={handleCategoryChange}
+          categoryTopics={categoryTopics ?? []}
+          activeTopic={model.activeTopic}
+          onTopicChange={handleTopicChange}
           sortOptions={SKILLS_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}

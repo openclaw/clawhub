@@ -12,6 +12,7 @@ import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
 import type * as catalogClassification from "../catalogClassification.js";
 import type * as catalogClassificationNode from "../catalogClassificationNode.js";
+import type * as catalogTopics from "../catalogTopics.js";
 import type * as cliDeviceAuth from "../cliDeviceAuth.js";
 import type * as crons from "../crons.js";
 import type * as depRegistryScan from "../depRegistryScan.js";
@@ -161,6 +162,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   catalogClassification: typeof catalogClassification;
   catalogClassificationNode: typeof catalogClassificationNode;
+  catalogTopics: typeof catalogTopics;
   cliDeviceAuth: typeof cliDeviceAuth;
   crons: typeof crons;
   depRegistryScan: typeof depRegistryScan;

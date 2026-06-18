@@ -393,6 +393,15 @@ function PluginsIndex() {
   ]);
 
   const activeCategory = search.category;
+  const categoryTopics = useQuery(
+    api.catalogTopics.listTopByCategory,
+    activeCategory
+      ? {
+          kind: "plugin",
+          category: activeCategory,
+        }
+      : "skip",
+  );
 
   const activeSort: PluginSort =
     search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
@@ -449,6 +458,18 @@ function PluginsIndex() {
         topic: undefined,
         featured: undefined,
         sort: undefined,
+      }),
+      replace: true,
+    });
+  };
+
+  const handleTopicChange = (topic: string | undefined) => {
+    void navigate({
+      search: (prev: PluginSearchState) => ({
+        ...prev,
+        cursor: undefined,
+        family: undefined,
+        topic,
       }),
       replace: true,
     });
@@ -582,6 +603,9 @@ function PluginsIndex() {
           categories={PLUGIN_CATEGORIES}
           activeCategory={activeCategory}
           onCategoryChange={handleCategoryChange}
+          categoryTopics={categoryTopics ?? []}
+          activeTopic={search.topic}
+          onTopicChange={handleTopicChange}
           sortOptions={PLUGIN_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}

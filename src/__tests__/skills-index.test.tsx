@@ -638,6 +638,77 @@ describe("SkillsIndex", () => {
     expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
+  it("shows the top five topics beneath the selected category and filters by chip", async () => {
+    searchMock = { category: "development" };
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: string }).kind === "skill"
+      ) {
+        return ["typescript", "docker", "github", "debugging", "coding"];
+      }
+      return null;
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const category = screen.getByRole("radio", { name: "Development" });
+    const firstTopic = screen.getByRole("button", { name: "#typescript" });
+    expect(
+      Boolean(category.compareDocumentPosition(firstTopic) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+    expect(screen.getAllByRole("button", { name: /^#/ })).toHaveLength(5);
+
+    fireEvent.click(screen.getByRole("button", { name: "#docker" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+      replace?: boolean;
+    };
+    expect(lastCall.search({ category: "development" })).toEqual({
+      category: "development",
+      topic: "docker",
+      featured: undefined,
+      highlighted: undefined,
+    });
+    expect(lastCall.replace).toBe(true);
+  });
+
+  it("clears the active category topic when its chip is selected again", async () => {
+    searchMock = { category: "development", topic: "docker" };
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: string }).kind === "skill"
+      ) {
+        return ["docker"];
+      }
+      return null;
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const topic = screen.getByRole("button", { name: "#docker" });
+    expect(topic.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(topic);
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({ category: "development", topic: "docker" })).toEqual({
+      category: "development",
+      topic: undefined,
+      featured: undefined,
+      highlighted: undefined,
+    });
+  });
+
   it("does not render an active topic in the sidebar when it has no results", async () => {
     searchMock = { topic: "google-calendar" };
     convexHttpMock.query.mockResolvedValue({

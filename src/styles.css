@@ -11956,6 +11956,48 @@ a.agentic-risk-finding-title:focus-visible {
   opacity: 1;
 }
 
+.sidebar-category {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sidebar-category-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 1px 0 8px 23px;
+}
+
+.sidebar-topic-chip {
+  all: unset;
+  box-sizing: border-box;
+  max-width: 100%;
+  padding: 3px 6px;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--surface-muted) 72%, transparent);
+  color: var(--ink-soft);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  font-weight: 550;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-topic-chip:hover {
+  border-color: color-mix(in srgb, var(--ink-soft) 40%, var(--line));
+  color: var(--ink);
+}
+
+.sidebar-topic-chip.is-active {
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-weight: 650;
+}
+
 .sidebar-checkbox {
   display: flex;
   align-items: center;
