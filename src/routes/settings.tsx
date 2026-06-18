@@ -882,7 +882,7 @@ export function Settings() {
                 </div>
 
                 {orgs.length ? (
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="settings-organizations-grid">
                     {orgs.map((entry) => {
                       const skillCount = entry.publisher.stats?.skills ?? 0;
                       const pluginCount = entry.publisher.stats?.packages ?? 0;
