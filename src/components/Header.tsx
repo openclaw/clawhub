@@ -15,6 +15,7 @@ import {
   Moon,
   MoreHorizontal,
   Palette,
+  Plus,
   Search,
   Settings,
   Star,
@@ -133,6 +134,7 @@ export default function Header() {
     activePublisherId,
     hasMultiplePublishers,
     memberships: publisherMemberships,
+    personalPublisher,
     setActivePublisherId,
   } = useActivePublisher();
   const { signIn, signOut } = useAuthActions();
@@ -154,6 +156,7 @@ export default function Header() {
   const activeOrgProfileHandle =
     triggerPublisher?.kind === "org" ? triggerPublisher.handle : null;
   const menuProfileHandle = activeOrgProfileHandle ?? profileHandle;
+  const isPersonalPublisher = triggerPublisher?.kind !== "org";
   const formatPublisherRole = (role: string | undefined) =>
     role ? `${role.charAt(0).toUpperCase()}${role.slice(1)}` : "";
   const formatPublisherMeta = (entry: typeof activePublisher) => {
@@ -165,6 +168,15 @@ export default function Header() {
     triggerPublisher?.kind === "org" ? formatPublisherMeta(activePublisher) : "Personal";
   const otherPublisherMemberships =
     publisherMemberships?.filter((entry) => entry.publisher._id !== activePublisherId) ?? [];
+  const goToOrganizationCreation = () => {
+    if (personalPublisher) {
+      setActivePublisherId(personalPublisher.publisher._id);
+    }
+    void navigate({
+      to: "/settings",
+      search: { view: "organizations" },
+    });
+  };
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const [typeaheadOpen, setTypeaheadOpen] = useState(false);
   const [typeaheadTab, setTypeaheadTab] = useState<TypeaheadTab>("skills");
@@ -716,6 +728,14 @@ export default function Header() {
                             </DropdownMenuItem>
                           ))}
                         </div>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          className="user-dropdown-create-org-action"
+                          onClick={goToOrganizationCreation}
+                        >
+                          <Plus size={14} aria-hidden="true" />
+                          Create organization
+                        </DropdownMenuItem>
                       </DropdownMenuSubContent>
                     </DropdownMenuSub>
                   ) : (
@@ -782,6 +802,14 @@ export default function Header() {
                         Settings
                       </Link>
                     </DropdownMenuItem>
+                    {isPersonalPublisher ? (
+                      <DropdownMenuItem asChild className="user-dropdown-scoped-action">
+                        <Link to="/stars" className="flex items-center gap-2">
+                          <Star size={14} aria-hidden="true" />
+                          Stars
+                        </Link>
+                      </DropdownMenuItem>
+                    ) : null}
                   </div>
                   <DropdownMenuSeparator />
                   <DropdownMenuSub>
@@ -812,12 +840,14 @@ export default function Header() {
                         <span className="user-dropdown-account-handle">@{rawHandle}</span>
                       </div>
                       <DropdownMenuSeparator />
-                      <DropdownMenuItem asChild className="user-dropdown-account-action">
-                        <Link to="/stars" className="flex items-center gap-2">
-                          <Star size={14} aria-hidden="true" />
-                          Stars
-                        </Link>
-                      </DropdownMenuItem>
+                      {!isPersonalPublisher ? (
+                        <DropdownMenuItem asChild className="user-dropdown-account-action">
+                          <Link to="/stars" className="flex items-center gap-2">
+                            <Star size={14} aria-hidden="true" />
+                            Stars
+                          </Link>
+                        </DropdownMenuItem>
+                      ) : null}
                       <div className="user-dropdown-appearance-row">
                         <span className="user-dropdown-appearance-label">
                           <Palette size={14} aria-hidden="true" />
@@ -840,15 +870,16 @@ export default function Header() {
                           ))}
                         </div>
                       </div>
-                      <DropdownMenuItem
-                        className="user-dropdown-account-action"
-                        onClick={() => void signOut()}
-                      >
-                        <LogOut size={14} aria-hidden="true" />
-                        Sign out
-                      </DropdownMenuItem>
                     </DropdownMenuSubContent>
                   </DropdownMenuSub>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="user-dropdown-account-action"
+                    onClick={() => void signOut()}
+                  >
+                    <LogOut size={14} aria-hidden="true" />
+                    Sign out
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : isAuthResolving ? (

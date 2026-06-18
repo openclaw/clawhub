@@ -1219,6 +1219,15 @@ code {
   color: var(--accent);
 }
 
+.user-dropdown-create-org-action {
+  padding-inline: 10px;
+}
+
+.user-dropdown-create-org-action:focus,
+.user-dropdown-create-org-action[data-highlighted] {
+  background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
+}
+
 .user-dropdown-account-identity {
   display: flex;
   min-width: 0;

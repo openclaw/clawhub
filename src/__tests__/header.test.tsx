@@ -371,12 +371,13 @@ describe("Header", () => {
     const publisherActions = screen.getByLabelText("Publisher actions for @patrick");
     const themeRow = document.querySelector(".user-dropdown-theme-row");
     const settings = within(publisherActions).getByText("Settings");
-    const stars = screen.getByText("Stars");
+    const stars = within(publisherActions).getByText("Stars");
     const appearance = screen.getByText("Appearance");
     const signOut = screen.getByText("Sign out");
 
     expect(within(activePublisher).queryByText("Stars")).toBeNull();
     expect(within(account).queryByText("Stars")).toBeNull();
+    expect(within(account).queryByText("Sign out")).toBeNull();
     expect(within(account).queryByText("Settings")).toBeNull();
     expect(within(account).getByText("Account")).toBeTruthy();
     expect(screen.queryByText("Switch publisher")).toBeNull();
@@ -433,21 +434,33 @@ describe("Header", () => {
     expect(within(account).getByText("@patrick")).toBeTruthy();
     expect(screen.getByText("Switch publisher")).toBeTruthy();
     expect(screen.getByLabelText("Switch to @patrick")).toBeTruthy();
+    expect(screen.getByText("Create organization")).toBeTruthy();
     expect(screen.getByText("Personal")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(within(activePublisher).getByText("@openclaw")).toBeTruthy();
     expect(within(activePublisher).getByText("Org · Admin")).toBeTruthy();
     expect(screen.getByLabelText("Publisher actions for @openclaw")).toBeTruthy();
+    expect(within(publisherActions).queryByText("Stars")).toBeNull();
     expect(profile.closest("a")?.getAttribute("href")).toBe("/user/openclaw");
     expect(profile.closest("a")?.querySelector(".lucide-building-2")).toBeTruthy();
     expect(screen.getByLabelText("Selected publisher @openclaw")).toBeTruthy();
     expect(screen.queryByText("Signed in as @patrick")).toBeNull();
     expect(screen.queryByText(/For @openclaw/)).toBeNull();
 
+    fireEvent.click(screen.getByText("Create organization"));
+
+    expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/settings",
+      search: { view: "organizations" },
+    });
+
+    setActivePublisherIdMock.mockClear();
     fireEvent.click(screen.getByLabelText("Switch to @patrick"));
 
     expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
     expect(screen.getByText("Stars")).toBeTruthy();
+    expect(screen.getByText("Sign out")).toBeTruthy();
     expect(screen.getByText("Settings")).toBeTruthy();
   });
 
