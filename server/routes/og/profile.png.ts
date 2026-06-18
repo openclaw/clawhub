@@ -18,7 +18,7 @@ type OgQuery = {
   handle?: string;
   title?: string;
   description?: string;
-  downloads?: string;
+  installs?: string;
   kind?: string;
   avatar?: string;
   v?: string;
@@ -43,11 +43,11 @@ export default defineEventHandler(async (event) => {
 
   const titleFromQuery = cleanString(query.title);
   const descriptionFromQuery = cleanString(query.description);
-  const downloadsFromQuery = cleanString(query.downloads);
+  const installsFromQuery = cleanString(query.installs);
   const kindFromQuery = cleanString(query.kind);
   const avatarFromQuery = cleanString(query.avatar);
   const convexUrl = getConvexUrl();
-  const needFetch = !titleFromQuery || !descriptionFromQuery || !downloadsFromQuery;
+  const needFetch = !titleFromQuery || !descriptionFromQuery || !installsFromQuery;
   const meta = needFetch && convexUrl ? await fetchPublisherOgMeta(handle, convexUrl) : null;
   const handleLabel = `@${meta?.handle || handle}`;
   const title = titleFromQuery || meta?.displayName || handleLabel;
@@ -70,8 +70,8 @@ export default defineEventHandler(async (event) => {
     handleLabel,
     stats: [
       {
-        value: downloadsFromQuery || formatOgStat(meta?.stats.downloads),
-        label: "Downloads",
+        value: installsFromQuery || formatOgStat(meta?.stats.installs),
+        label: "Installs",
       },
     ],
   });

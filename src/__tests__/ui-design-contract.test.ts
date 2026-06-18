@@ -68,17 +68,27 @@ describe("restored UI design contract", () => {
   const styles = () => read("src/styles.css");
   const theme = () => read("src/lib/theme.ts");
 
-  it("requires the single-row header, full-width search, public nav, and profile theme control", () => {
+  it("requires the responsive header rail, search overlay, and theme controls", () => {
     const headerSource = header();
     const navSource = navItems();
     const css = styles();
 
-    expect(headerSource).toContain("Row 1: Brand + Search + Actions");
     expect(headerSource).toContain('className="navbar-top"');
-    expect(headerSource).toContain('className="navbar-top-links"');
+    expect(headerSource).toContain('className="navbar-calm-start"');
+    expect(headerSource).toContain('className="navbar-calm-center"');
+    expect(headerSource).toContain('className="navbar-calm-actions nav-actions"');
+    expect(headerSource).toContain('className="navbar-calm-rail"');
+    expect(headerSource).toContain('className="navbar-calm-more-trigger"');
     expect(headerSource).toContain('className="navbar-search-wrap"');
+    expect(headerSource).toContain('className="navbar-search-mobile-trigger"');
+    expect(headerSource).toContain('className="navbar-search-mobile-overlay"');
+    expect(headerSource).toContain('className="navbar-search-mobile-wrap"');
+    expect(headerSource).toContain('className="navbar-search-mobile-clear"');
+    expect(headerSource).toContain('className="mobile-nav-section mobile-nav-appearance-section"');
     expect(headerSource).toContain('className="user-dropdown-theme-row"');
     expect(headerSource).toContain('className="user-dropdown-theme-button"');
+    expect(headerSource).toContain('className="navbar-theme-switcher"');
+    expect(headerSource).toContain('className="navbar-theme-switcher-skeleton"');
     expect(headerSource).not.toContain('className="theme-mode-toggle"');
     expect(headerSource).toContain('className="github-sign-in-button"');
     expect(headerSource).toContain('className="sign-in-full-copy"');
@@ -88,7 +98,7 @@ describe("restored UI design contract", () => {
     expect(headerSource).not.toContain('className="navbar-tabs-secondary"');
 
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
-    expect(navSource).not.toContain('label: "Publishers"');
+    expect(navSource).toContain('label: "Publishers"');
     expect(navSource).toContain('label: "Docs"');
     expect(navSource).toContain('href: "https://docs.openclaw.ai/clawhub/"');
     expect(navSource).not.toContain('icon: "wrench"');
@@ -101,24 +111,53 @@ describe("restored UI design contract", () => {
     expect(headerShell).toContain("max-width: var(--page-max)");
     expect(headerShell).toContain("padding: 0 var(--space-5)");
 
-    const topLinks = cssRule(css, ".navbar-top-links");
-    expect(topLinks).toContain("display: inline-flex");
-    const topRow = cssRule(css, ".navbar-top");
+    const topRow = cssRule(css, ".navbar-calm .navbar-top");
     expect(topRow).toContain(
-      "grid-template-columns: max-content max-content minmax(220px, 1fr) auto",
+      "grid-template-columns: minmax(0, 1fr) minmax(240px, 360px) minmax(0, 1fr)",
     );
+    const rail = cssRule(css, ".navbar-calm .navbar-calm-rail");
+    expect(rail).toContain("display: flex");
+    const moreTrigger = cssRule(css, ".navbar-calm-more-trigger");
+    expect(moreTrigger).toContain("cursor: pointer");
+    expect(moreTrigger).toContain("border: 0");
+    const moreMenu = cssRule(css, ".navbar-calm-more-menu");
+    expect(moreMenu).toContain("border-radius: var(--r-md)");
+    expect(css).toContain(".navbar-theme-switcher {\n  --navbar-theme-ease");
+    expect(css).toContain("--navbar-theme-pad: 3px");
+    expect(css).toContain("--navbar-theme-seg: 26px");
+    expect(css).toContain("height: var(--navbar-theme-collapsed-w)");
+    const mobileDrawerTheme = cssRule(css, ".mobile-nav-appearance-section .navbar-theme-switcher");
+    expect(mobileDrawerTheme).toContain("width: var(--navbar-theme-expanded-w)");
+    const userDropdown = cssRule(css, ".user-dropdown-content");
+    expect(userDropdown).toContain("border-radius: var(--r-md)");
+    expect(userDropdown).toContain("overflow: hidden");
     const themeRow = cssRule(css, ".user-dropdown-theme-row");
     expect(themeRow).toContain("grid-template-columns: repeat(3, minmax(0, 1fr))");
     const themeButton = cssRule(css, ".user-dropdown-theme-button");
     expect(themeButton).toContain("justify-content: center");
     expect(css).toContain("--r-btn: var(--r-sm)");
 
-    const compact = cssMediaContaining(css, "(max-width: 760px)", [
-      "grid-template-columns: 40px minmax(0, 1fr) 40px",
-      ".navbar-search {\n    display: flex;",
-      ".navbar-top-links {\n    display: none;",
-      ".nav-mobile {\n    display: inline-flex;",
+    cssMediaContaining(css, "(max-width: 1100px)", [
+      ".navbar-calm-rail-link-secondary {\n    display: none;",
+      ".navbar-calm-more-trigger {\n    display: inline-flex;",
     ]);
+    cssMediaContaining(css, "(max-width: 920px)", [
+      ".navbar-calm .navbar-calm-rail {\n    display: none;",
+      ".navbar-calm-center .navbar-search-wrap {\n    position: static;",
+      ".navbar-calm-center .navbar-search-typeahead {\n    top: calc(100% + 4px);",
+      "width: auto;",
+    ]);
+    cssMediaContaining(css, "(max-width: 760px)", [
+      "grid-template-columns: minmax(0, 1fr) auto",
+      ".navbar-calm-center {\n    display: none;",
+      ".navbar-calm .navbar-search-mobile-wrap {\n    display: block;",
+      ".navbar-calm .navbar-search-mobile-overlay {\n    all: unset;",
+      ".navbar-search-mobile-wrap .navbar-search-typeahead {\n    right: 0;",
+      ".navbar-calm-actions > .navbar-theme-switcher,\n  .navbar-calm-actions > .navbar-theme-switcher-skeleton {\n    display: none;",
+    ]);
+    const compactMobileTrigger = cssRule(css, ".navbar-calm .nav-mobile");
+    expect(compactMobileTrigger).toContain("display: inline-flex");
+    const compact = css.slice(css.lastIndexOf("@media (max-width: 760px)"));
     expect(compact).not.toContain(".navbar-search {\n    display: none;");
   });
 

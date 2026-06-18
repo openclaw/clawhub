@@ -39,9 +39,9 @@ type BasicMeta = {
   url: string;
 };
 
-const OG_SKILL_IMAGE_LAYOUT_VERSION = "7";
-const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "2";
-const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "2";
+const OG_SKILL_IMAGE_LAYOUT_VERSION = "8";
+const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "3";
+const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "3";
 
 function getSiteUrl() {
   return getClawHubSiteUrl();

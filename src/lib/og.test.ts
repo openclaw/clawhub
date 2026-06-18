@@ -19,7 +19,7 @@ describe("og helpers", () => {
     expect(meta.url).toContain("/steipete/weather");
     expect(meta.owner).toBe("steipete");
     expect(meta.image).toContain("/og/skill?");
-    expect(meta.image).toContain("v=7");
+    expect(meta.image).toContain("v=8");
     expect(meta.image).toContain("slug=weather");
     expect(meta.image).toContain("owner=steipete");
     expect(meta.image).toContain("version=1.2.3");
@@ -39,7 +39,7 @@ describe("og helpers", () => {
     expect(meta.description).toBe("OpenClaw Codex harness.");
     expect(meta.url).toBe("https://clawhub.ai/plugins/@openclaw/codex");
     expect(meta.image).toContain("/og/plugin?");
-    expect(meta.image).toContain("v=2");
+    expect(meta.image).toContain("v=3");
     expect(meta.image).toContain("name=%40openclaw%2Fcodex");
     expect(meta.image).toContain("version=1.0.0");
   });
@@ -54,7 +54,7 @@ describe("og helpers", () => {
     expect(meta.description).toBe("maton.ai");
     expect(meta.url).toBe("https://clawhub.ai/user/byungkyu");
     expect(meta.image).toContain("/og/profile?");
-    expect(meta.image).toContain("v=2");
+    expect(meta.image).toContain("v=3");
     expect(meta.image).toContain("handle=byungkyu");
   });
 

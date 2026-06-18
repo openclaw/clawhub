@@ -108,6 +108,7 @@ describe("skill og route", () => {
       version: "1.0.1",
       title: "Gifgrep",
       description: "Search GIFs fast",
+      installs: "0",
     });
 
     const handler = (await import("./skill.png")).default;
@@ -131,7 +132,7 @@ describe("skill og route", () => {
         target: "gifgrep",
       },
       stats: [
-        { value: "0", label: "Downloads" },
+        { value: "0", label: "Installs" },
         { value: "PASS", label: "Audit" },
       ],
     });
@@ -156,14 +157,18 @@ describe("skill og route", () => {
       displayName: "Gifgrep",
       summary: "Search GIFs fast",
       ownerImage: null,
-      stats: { downloads: 1200 },
+      stats: { installsAllTime: 1200 },
       moderation: { verdict: "clean", isSuspicious: false, isMalwareBlocked: false },
     });
 
     const handler = (await import("./skill.png")).default;
     const response = (await handler({} as never)) as Response;
 
-    expect(fetchSkillOgMetaMock).toHaveBeenCalledWith("gifgrep", "https://preview.clawhub.ai");
+    expect(fetchSkillOgMetaMock).toHaveBeenCalledWith(
+      "gifgrep",
+      "https://preview.clawhub.ai",
+      undefined,
+    );
     expect(response.headers.get("Cache-Control")).toBe("public, max-age=3600");
     expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -172,7 +177,32 @@ describe("skill og route", () => {
         ownerLabel: "@steipete",
         versionLabel: "latest",
         stats: [
-          { value: "1.2k", label: "Downloads" },
+          { value: "1.2k", label: "Installs" },
+          { value: "PASS", label: "Audit" },
+        ],
+      }),
+    );
+  });
+
+  it("uses explicit installs over legacy downloads query params", async () => {
+    getQueryMock.mockReturnValue({
+      slug: "gifgrep",
+      owner: "steipete",
+      version: "1.0.1",
+      title: "Gifgrep",
+      description: "Search GIFs fast",
+      installs: "0",
+      downloads: "9.9k",
+    });
+
+    const handler = (await import("./skill.png")).default;
+    await handler({} as never);
+
+    expect(fetchSkillOgMetaMock).not.toHaveBeenCalled();
+    expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stats: [
+          { value: "0", label: "Installs" },
           { value: "PASS", label: "Audit" },
         ],
       }),
