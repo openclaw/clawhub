@@ -885,7 +885,7 @@ export function Settings() {
                   <div className="grid gap-3 md:grid-cols-2">
                     {orgs.map((entry) => {
                       const skillCount = entry.publisher.stats?.skills ?? 0;
-                      const packageCount = entry.publisher.stats?.packages ?? 0;
+                      const pluginCount = entry.publisher.stats?.packages ?? 0;
                       const roleLabel =
                         entry.role.charAt(0).toUpperCase() + entry.role.slice(1);
 
@@ -938,7 +938,7 @@ export function Settings() {
                               <span className="inline-flex items-center gap-1.5">
                                 <Package size={14} aria-hidden="true" />
                                 <span>
-                                  {packageCount} {packageCount === 1 ? "package" : "packages"}
+                                  {pluginCount} {pluginCount === 1 ? "plugin" : "plugins"}
                                 </span>
                               </span>
                             </div>

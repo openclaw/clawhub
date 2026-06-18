@@ -375,7 +375,7 @@ describe("Settings", () => {
     expect(screen.getByText("Owner")).toBeTruthy();
     expect(screen.getByText("Official")).toBeTruthy();
     expect(screen.getByText("4 skills")).toBeTruthy();
-    expect(screen.getByText("2 packages")).toBeTruthy();
+    expect(screen.getByText("2 plugins")).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Members" })).toBeNull();
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, "skip");
     fireEvent.click(screen.getByRole("button", { name: "Manage" }));
