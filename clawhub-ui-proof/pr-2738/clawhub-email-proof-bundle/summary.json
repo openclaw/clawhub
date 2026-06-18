@@ -1,0 +1,20 @@
+{
+  "status": "pass",
+  "mode": "feature",
+  "scenario": "Admin one-off email renders raw authored body without an automatic greeting",
+  "provider": "Playwright screenshot of React Email renderer output",
+  "candidate": "pe/raw-staff-email-body",
+  "lanes": [
+    {
+      "name": "email",
+      "steps": [
+        {
+          "name": "Rendered admin one-off email",
+          "slug": "admin-one-off",
+          "status": "pass",
+          "screenshot": "admin-one-off.png"
+        }
+      ]
+    }
+  ]
+}
