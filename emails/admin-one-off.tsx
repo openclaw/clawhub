@@ -19,7 +19,6 @@ export type AdminOneOffEmailProps = {
 };
 
 export default function AdminOneOffEmail({
-  recipientHandle = "there",
   subject,
   title,
   body,
@@ -63,7 +62,6 @@ export default function AdminOneOffEmail({
                         >
                           {title}
                         </h1>
-                        <Paragraph>Hi {recipientHandle},</Paragraph>
                         <Paragraph>
                           <MultilineText value={body} />
                         </Paragraph>
