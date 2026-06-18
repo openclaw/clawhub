@@ -37,6 +37,10 @@ Production deploy notes:
   `bunx convex run migrations:runCatalogTaxonomyPrerequisites --prod` after Convex deploy and verify
   completion before considering the deployment complete. The migration is idempotent, resumable,
   and a no-op after it completes.
+- Catalog classification/backfill is also operator-run. Generate skill and plugin preview rows with
+  `catalogClassificationNode:classifyCatalogInternal`, review the resulting confidence lanes, then
+  dry-run and explicitly confirm `migrations:runCatalogClassificationApply`. See
+  `specs/catalog-taxonomy.md` for the exact commands and confidence-specific confirmation strings.
 - Deploy targets:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production

@@ -598,6 +598,44 @@ const packageFilesValidator = v.array(
   }),
 );
 
+const catalogClassificationConfidenceValidator = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+);
+
+const catalogClassificationApplyStatusValidator = v.union(
+  v.literal("preview"),
+  v.literal("applied"),
+  v.literal("stale"),
+  v.literal("skipped-author"),
+  v.literal("error"),
+);
+
+const catalogCategoryCandidateValidator = v.object({
+  category: v.string(),
+  score: v.number(),
+  sources: v.array(v.string()),
+  evidence: v.array(v.string()),
+  strongEvidence: v.optional(v.boolean()),
+  primaryEvidence: v.optional(v.boolean()),
+  strongPrimaryEvidence: v.optional(v.boolean()),
+  primaryEvidenceCount: v.optional(v.number()),
+});
+
+const catalogTopicCandidateValidator = v.object({
+  topic: v.string(),
+  slug: v.string(),
+  score: v.number(),
+  sources: v.array(v.string()),
+  evidence: v.array(v.string()),
+  primaryEvidence: v.boolean(),
+  primarySourceCount: v.number(),
+  strongEvidence: v.boolean(),
+  confidence: catalogClassificationConfidenceValidator,
+  suppressedBy: v.optional(v.string()),
+});
+
 const skillScanRequestSourceKindValidator = v.union(
   v.literal("upload"),
   v.literal("published"),
@@ -638,6 +676,16 @@ const skills = defineTable({
   tags: v.record(v.string(), v.id("skillVersions")),
   categories: v.optional(v.array(v.string())),
   topics: v.optional(v.array(v.string())),
+  inferredCategories: v.optional(v.array(v.string())),
+  inferredTopics: v.optional(v.array(v.string())),
+  inferredFromVersionId: v.optional(v.id("skillVersions")),
+  inferredCategoryConfidence: v.optional(catalogClassificationConfidenceValidator),
+  inferredTopicConfidence: v.optional(catalogClassificationConfidenceValidator),
+  inferredClassifierVersion: v.optional(v.string()),
+  inferredTopicClassifierVersion: v.optional(v.string()),
+  inferredInputHash: v.optional(v.string()),
+  inferredTopicInputHash: v.optional(v.string()),
+  inferredAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
   badges: badgesValidator,
   moderationStatus: moderationStatusValidator,
@@ -1247,6 +1295,16 @@ const packages = defineTable({
   tags: v.record(v.string(), v.id("packageReleases")),
   categories: v.optional(v.array(v.string())),
   topics: v.optional(v.array(v.string())),
+  inferredCategories: v.optional(v.array(v.string())),
+  inferredTopics: v.optional(v.array(v.string())),
+  inferredFromReleaseId: v.optional(v.id("packageReleases")),
+  inferredCategoryConfidence: v.optional(catalogClassificationConfidenceValidator),
+  inferredTopicConfidence: v.optional(catalogClassificationConfidenceValidator),
+  inferredClassifierVersion: v.optional(v.string()),
+  inferredTopicClassifierVersion: v.optional(v.string()),
+  inferredInputHash: v.optional(v.string()),
+  inferredTopicInputHash: v.optional(v.string()),
+  inferredAt: v.optional(v.number()),
   compatibility: packageCompatibilityValidator,
   verification: packageVerificationValidator,
   scanStatus: packageScanStatusValidator,
@@ -1416,6 +1474,38 @@ const packageReleases = defineTable({
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
+
+const catalogClassificationResults = defineTable({
+  targetKind: v.union(v.literal("skill"), v.literal("plugin")),
+  skillId: v.optional(v.id("skills")),
+  packageId: v.optional(v.id("packages")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  categories: v.array(v.string()),
+  topics: v.array(v.string()),
+  categoryCandidates: v.array(catalogCategoryCandidateValidator),
+  topicCandidates: v.array(catalogTopicCandidateValidator),
+  categoryCandidateCount: v.number(),
+  topicCandidateCount: v.number(),
+  categoryConfidence: catalogClassificationConfidenceValidator,
+  topicConfidence: catalogClassificationConfidenceValidator,
+  categoryNeedsReview: v.boolean(),
+  topicNeedsReview: v.boolean(),
+  unknownSignals: v.array(v.string()),
+  classifierVersion: v.string(),
+  topicClassifierVersion: v.string(),
+  inputHash: v.string(),
+  topicInputHash: v.string(),
+  applyStatus: catalogClassificationApplyStatusValidator,
+  error: v.optional(v.string()),
+  classifiedAt: v.number(),
+  appliedAt: v.optional(v.number()),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_package", ["packageId"])
+  .index("by_apply_status", ["applyStatus", "classifiedAt"])
+  .index("by_category_confidence", ["categoryConfidence", "classifiedAt"])
+  .index("by_topic_confidence", ["topicConfidence", "classifiedAt"]);
 
 const packageInspectorWarnings = defineTable({
   packageId: v.id("packages"),
@@ -2613,6 +2703,7 @@ export default defineSchema({
   skillSlugAliases,
   packages,
   packageReleases,
+  catalogClassificationResults,
   packageInspectorWarnings,
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,

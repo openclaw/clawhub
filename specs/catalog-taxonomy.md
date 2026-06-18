@@ -54,7 +54,32 @@
 
 ## Follow-Up
 
-Corpus classification and resumable LLM suggestion tooling are separate follow-up work. Suggestions
-must require an explicit author or operator acceptance step before they are persisted. The
-operator-run digest rebuild in this PR only reprojects current stored package data into the
-controlled taxonomy; it does not classify the corpus.
+Corpus classification is a separate operator-run phase from digest projection:
+
+- `taxonomy-prototype-v9` classifies categories and `topic-prototype-v1` classifies zero to five
+  topics from bounded static artifact evidence. The plugin lane covers code and bundle plugins only;
+  runtime plugin code is never imported or executed.
+- Classification writes bounded preview rows to `catalogClassificationResults`. Preview generation
+  never changes skill/package taxonomy or search digests.
+- Explicit author categories/topics always win. Explicit empty arrays remain authoritative.
+- Applied inferred values remain separate in `inferredCategories` and `inferredTopics`. They are
+  eligible for discovery only while their recorded source version/release is still latest.
+- The preview runner is cursor-batched and resumable. It uses an action instead of
+  `@convex-dev/migrations` because it must read immutable storage blobs; the source-changing apply
+  phase uses the migrations component.
+- Apply defaults to a dry run and requires a confidence-specific confirmation string. High
+  confidence is the default production lane. Medium confidence requires an explicit operator
+  decision after reviewing the generated corpus report.
+
+Operator sequence:
+
+```bash
+bunx convex run catalogClassificationNode:classifyCatalogInternal \
+  '{"targetKind":"skill","maxBatches":20,"continueOnIncomplete":true}' --prod
+bunx convex run catalogClassificationNode:classifyCatalogInternal \
+  '{"targetKind":"plugin","maxBatches":20,"continueOnIncomplete":true}' --prod
+bunx convex run migrations:runCatalogClassificationApply \
+  '{"minimumConfidence":"high","dryRun":true}' --prod
+bunx convex run migrations:runCatalogClassificationApply \
+  '{"minimumConfidence":"high","dryRun":false,"confirm":"apply-high-confidence-catalog-classifications"}' --prod
+```

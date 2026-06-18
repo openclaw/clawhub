@@ -134,6 +134,37 @@ describe("extractDigestFields", () => {
     expect(digest.recommendedScoreVersion).toBe(RECOMMENDATION_SCORE_VERSION);
   });
 
+  it("projects current inferred catalog metadata when author metadata is omitted", () => {
+    const digest = extractDigestFields(
+      makeSkillDoc({
+        categories: undefined,
+        topics: undefined,
+        inferredCategories: ["development"],
+        inferredTopics: ["TypeScript", "Code Review"],
+        inferredFromVersionId: "skillVersions:v1",
+      }) as never,
+    );
+
+    expect(digest.categories).toEqual(["development"]);
+    expect(digest.topics).toEqual(["TypeScript", "Code Review"]);
+  });
+
+  it("does not project stale inferred catalog metadata", () => {
+    const digest = extractDigestFields(
+      makeSkillDoc({
+        latestVersionId: "skillVersions:v2",
+        categories: undefined,
+        topics: undefined,
+        inferredCategories: ["development"],
+        inferredTopics: ["TypeScript"],
+        inferredFromVersionId: "skillVersions:v1",
+      }) as never,
+    );
+
+    expect(digest.categories).toEqual(["other"]);
+    expect(digest.topics).toEqual([]);
+  });
+
   it("omits large fields not needed for search", () => {
     const skill = makeSkillDoc({
       moderationEvidence: [

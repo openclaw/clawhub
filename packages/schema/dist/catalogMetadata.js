@@ -317,6 +317,13 @@ export function normalizeInferredCatalogTopics(values) {
         return [];
     }
 }
+export function resolveCatalogTopics(input) {
+    if (input.declared !== undefined)
+        return input.declared ? [...input.declared] : [];
+    if (!input.inferenceCurrent)
+        return [];
+    return normalizeInferredCatalogTopics(input.inferred);
+}
 export function getCatalogTopicSlugs(values) {
     return normalizeCatalogTopics(values).flatMap((value) => {
         const slug = normalizeCatalogTopic(value);
@@ -332,6 +339,10 @@ export function resolveStoredSkillCategories(skill) {
     catch {
         declared = undefined;
     }
-    return resolveSkillCategories({ declared });
+    const inferenceCurrent = Boolean(skill.latestVersionId) && skill.latestVersionId === skill.inferredFromVersionId;
+    return resolveSkillCategories({
+        declared,
+        inferred: inferenceCurrent ? skill.inferredCategories : undefined,
+    });
 }
 //# sourceMappingURL=catalogMetadata.js.map

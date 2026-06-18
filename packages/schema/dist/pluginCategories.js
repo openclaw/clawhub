@@ -69,7 +69,11 @@ export function resolveStoredPluginCategories(input) {
     if (input.family === "skill")
         return [];
     try {
-        return resolvePluginCategories({ declared: input.categories });
+        const inferenceCurrent = Boolean(input.latestReleaseId) && input.latestReleaseId === input.inferredFromReleaseId;
+        return resolvePluginCategories({
+            declared: input.categories,
+            inferred: inferenceCurrent ? input.inferredCategories : undefined,
+        });
     }
     catch {
         return resolvePluginCategories({});

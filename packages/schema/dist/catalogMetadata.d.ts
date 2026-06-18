@@ -173,9 +173,17 @@ export declare function inferSkillCategories(input: {
 export declare function normalizeCatalogTopic(value: string): string | undefined;
 export declare function normalizeCatalogTopics(values: readonly string[] | null | undefined): string[];
 export declare function normalizeInferredCatalogTopics(values: readonly string[] | null | undefined): string[];
+export declare function resolveCatalogTopics(input: {
+    declared?: readonly string[] | null;
+    inferred?: readonly string[] | null;
+    inferenceCurrent?: boolean;
+}): string[];
 export declare function getCatalogTopicSlugs(values: readonly string[] | null | undefined): string[];
 type SkillCategoryCandidate = {
     categories?: readonly string[] | null;
+    inferredCategories?: readonly string[] | null;
+    latestVersionId?: string | null;
+    inferredFromVersionId?: string | null;
     slug: string;
     displayName: string;
     summary?: string | null;

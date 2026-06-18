@@ -121,6 +121,34 @@ describe("plugin categories", () => {
     ).toEqual(["other"]);
   });
 
+  it("uses current inferred plugin categories only when author categories are omitted", () => {
+    expect(
+      resolveStoredPluginCategories({
+        family: "code-plugin",
+        inferredCategories: ["models", "voice"],
+        latestReleaseId: "release:current",
+        inferredFromReleaseId: "release:current",
+      }),
+    ).toEqual(["models", "voice"]);
+    expect(
+      resolveStoredPluginCategories({
+        family: "code-plugin",
+        categories: ["other"],
+        inferredCategories: ["models"],
+        latestReleaseId: "release:current",
+        inferredFromReleaseId: "release:current",
+      }),
+    ).toEqual(["other"]);
+    expect(
+      resolveStoredPluginCategories({
+        family: "code-plugin",
+        inferredCategories: ["models"],
+        latestReleaseId: "release:new",
+        inferredFromReleaseId: "release:old",
+      }),
+    ).toEqual(["other"]);
+  });
+
   it("validates public category slugs", () => {
     expect(isPluginCategorySlug("security")).toBe(true);
     expect(isPluginCategorySlug("other")).toBe(true);

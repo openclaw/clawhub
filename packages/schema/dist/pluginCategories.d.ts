@@ -10,5 +10,7 @@ export declare function derivePluginCategoryTags(input: {
     displayName?: string;
     runtimeId?: string;
     summary?: string;
+    latestReleaseId?: string | null;
+    inferredFromReleaseId?: string | null;
 }): PluginCategorySlug[];
 export declare function resolveStoredPluginCategories(input: Parameters<typeof derivePluginCategoryTags>[0]): PluginCategorySlug[];

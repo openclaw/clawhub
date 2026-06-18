@@ -63,6 +63,34 @@ describe("packageSearchDigest", () => {
     expect(digest.pluginCategoryTags).toEqual(["other"]);
   });
 
+  it("projects current inferred plugin metadata when author metadata is omitted", () => {
+    const digest = extractPackageDigestFields({
+      _id: "packages:inferred",
+      latestReleaseId: "packageReleases:v1",
+      inferredFromReleaseId: "packageReleases:v1",
+      inferredCategories: ["models", "voice"],
+      inferredTopics: ["OpenAI", "Speech-to-Text"],
+      family: "code-plugin",
+      name: "@openclaw/inferred",
+      normalizedName: "@openclaw/inferred",
+      displayName: "Inferred",
+      channel: "community",
+      isOfficial: false,
+      ownerUserId: "users:owner",
+      compatibility: {},
+      verification: {},
+      scanStatus: "clean",
+      stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
+      tags: {},
+      createdAt: 1,
+      updatedAt: 2,
+    } as never);
+
+    expect(digest.categories).toEqual(["models", "voice"]);
+    expect(digest.pluginCategoryTags).toEqual(["models", "voice"]);
+    expect(digest.topics).toEqual(["OpenAI", "Speech-to-Text"]);
+  });
+
   it("decrements the public plugin count when deleting a public plugin digest", async () => {
     const patch = vi.fn();
     const deleteDoc = vi.fn();

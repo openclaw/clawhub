@@ -10,6 +10,8 @@
 
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
+import type * as catalogClassification from "../catalogClassification.js";
+import type * as catalogClassificationNode from "../catalogClassificationNode.js";
 import type * as cliDeviceAuth from "../cliDeviceAuth.js";
 import type * as crons from "../crons.js";
 import type * as depRegistryScan from "../depRegistryScan.js";
@@ -45,6 +47,8 @@ import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
 import type * as lib_artifactModeration from "../lib/artifactModeration.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_batching from "../lib/batching.js";
+import type * as lib_catalogClassification from "../lib/catalogClassification.js";
+import type * as lib_catalogClassifier from "../lib/catalogClassifier.js";
 import type * as lib_changelog from "../lib/changelog.js";
 import type * as lib_clawpack from "../lib/clawpack.js";
 import type * as lib_contentTypes from "../lib/contentTypes.js";
@@ -155,6 +159,8 @@ import type {
 declare const fullApi: ApiFromModules<{
   appMeta: typeof appMeta;
   auth: typeof auth;
+  catalogClassification: typeof catalogClassification;
+  catalogClassificationNode: typeof catalogClassificationNode;
   cliDeviceAuth: typeof cliDeviceAuth;
   crons: typeof crons;
   depRegistryScan: typeof depRegistryScan;
@@ -190,6 +196,8 @@ declare const fullApi: ApiFromModules<{
   "lib/artifactModeration": typeof lib_artifactModeration;
   "lib/badges": typeof lib_badges;
   "lib/batching": typeof lib_batching;
+  "lib/catalogClassification": typeof lib_catalogClassification;
+  "lib/catalogClassifier": typeof lib_catalogClassifier;
   "lib/changelog": typeof lib_changelog;
   "lib/clawpack": typeof lib_clawpack;
   "lib/contentTypes": typeof lib_contentTypes;

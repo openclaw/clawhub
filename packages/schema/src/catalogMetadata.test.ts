@@ -8,6 +8,7 @@ import {
   normalizePluginCategories,
   normalizeSkillCategories,
   PLUGIN_CATEGORY_DEFINITIONS,
+  resolveCatalogTopics,
   resolvePluginCategories,
   resolveSkillCategories,
   resolveStoredSkillCategories,
@@ -119,6 +120,39 @@ describe("catalog metadata", () => {
     ).toEqual(["other"]);
   });
 
+  it("uses current inferred skill categories only when author categories are omitted", () => {
+    expect(
+      resolveStoredSkillCategories({
+        slug: "todoist-workflows",
+        displayName: "Todoist Workflows",
+        categories: undefined,
+        inferredCategories: ["automation", "productivity"],
+        latestVersionId: "version:current",
+        inferredFromVersionId: "version:current",
+      }),
+    ).toEqual(["automation", "productivity"]);
+    expect(
+      resolveStoredSkillCategories({
+        slug: "todoist-workflows",
+        displayName: "Todoist Workflows",
+        categories: ["other"],
+        inferredCategories: ["automation"],
+        latestVersionId: "version:current",
+        inferredFromVersionId: "version:current",
+      }),
+    ).toEqual(["other"]);
+    expect(
+      resolveStoredSkillCategories({
+        slug: "todoist-workflows",
+        displayName: "Todoist Workflows",
+        categories: undefined,
+        inferredCategories: ["automation"],
+        latestVersionId: "version:new",
+        inferredFromVersionId: "version:old",
+      }),
+    ).toEqual(["other"]);
+  });
+
   it("preserves topic display values while deriving normalized lookup slugs", () => {
     const topics = normalizeCatalogTopics([
       " GPU Development ",
@@ -128,6 +162,35 @@ describe("catalog metadata", () => {
 
     expect(topics).toEqual(["GPU Development", "Travel Planning"]);
     expect(getCatalogTopicSlugs(topics)).toEqual(["gpu-development", "travel-planning"]);
+  });
+
+  it("resolves current inferred topics only when author topics are omitted", () => {
+    expect(
+      resolveCatalogTopics({
+        inferred: ["Docker", "Kubernetes"],
+        inferenceCurrent: true,
+      }),
+    ).toEqual(["Docker", "Kubernetes"]);
+    expect(
+      resolveCatalogTopics({
+        declared: ["Calendar", "Official"],
+        inferred: ["Docker"],
+        inferenceCurrent: true,
+      }),
+    ).toEqual(["Calendar", "Official"]);
+    expect(
+      resolveCatalogTopics({
+        declared: [],
+        inferred: ["Docker"],
+        inferenceCurrent: true,
+      }),
+    ).toEqual([]);
+    expect(
+      resolveCatalogTopics({
+        inferred: ["Docker"],
+        inferenceCurrent: false,
+      }),
+    ).toEqual([]);
   });
 
   it("caps author topics at five values", () => {

@@ -1,4 +1,8 @@
-import { getCatalogTopicSlugs, resolveStoredPluginCategories } from "clawhub-schema";
+import {
+  getCatalogTopicSlugs,
+  resolveCatalogTopics,
+  resolveStoredPluginCategories,
+} from "clawhub-schema";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { adjustGlobalPublicPluginsCount, getPublicPluginVisibilityDelta } from "./globalStats";
@@ -111,15 +115,21 @@ type PackageTopicSearchDigestFields = Pick<
 };
 
 export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchDigestFields {
+  const categories = resolveStoredPluginCategories(pkg);
+  const inferenceCurrent =
+    Boolean(pkg.latestReleaseId) && pkg.latestReleaseId === pkg.inferredFromReleaseId;
   return {
     ...pick(pkg, [...SHARED_KEYS]),
+    categories,
+    topics: resolveCatalogTopics({
+      declared: pkg.topics,
+      inferred: pkg.inferredTopics,
+      inferenceCurrent,
+    }),
     packageId: pkg._id,
     latestVersion: pkg.latestVersionSummary?.version,
     verificationTier: pkg.verification?.tier,
-    pluginCategoryTags: resolveStoredPluginCategories({
-      family: pkg.family,
-      categories: pkg.categories,
-    }),
+    pluginCategoryTags: categories,
   };
 }
 

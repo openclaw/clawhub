@@ -83,6 +83,8 @@ export function derivePluginCategoryTags(input: {
   displayName?: string;
   runtimeId?: string;
   summary?: string;
+  latestReleaseId?: string | null;
+  inferredFromReleaseId?: string | null;
 }): PluginCategorySlug[] {
   if (input.family === "skill") return [];
   return resolvePluginCategories({
@@ -96,7 +98,12 @@ export function resolveStoredPluginCategories(
 ): PluginCategorySlug[] {
   if (input.family === "skill") return [];
   try {
-    return resolvePluginCategories({ declared: input.categories });
+    const inferenceCurrent =
+      Boolean(input.latestReleaseId) && input.latestReleaseId === input.inferredFromReleaseId;
+    return resolvePluginCategories({
+      declared: input.categories,
+      inferred: inferenceCurrent ? input.inferredCategories : undefined,
+    });
   } catch {
     return resolvePluginCategories({});
   }

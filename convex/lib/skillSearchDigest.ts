@@ -1,4 +1,8 @@
-import { getCatalogTopicSlugs } from "clawhub-schema";
+import {
+  getCatalogTopicSlugs,
+  resolveCatalogTopics,
+  resolveStoredSkillCategories,
+} from "clawhub-schema";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import type { HydratableSkill, PublicPublisher } from "./public";
@@ -75,8 +79,16 @@ export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFiel
   const statsStars = readCanonicalStat(skill, "stars");
   const statsInstallsCurrent = readCanonicalStat(skill, "installsCurrent");
   const statsInstallsAllTime = readCanonicalStat(skill, "installsAllTime");
+  const inferenceCurrent =
+    Boolean(skill.latestVersionId) && skill.latestVersionId === skill.inferredFromVersionId;
   return {
     ...pick(skill, [...SHARED_KEYS]),
+    categories: resolveStoredSkillCategories(skill),
+    topics: resolveCatalogTopics({
+      declared: skill.topics,
+      inferred: skill.inferredTopics,
+      inferenceCurrent,
+    }),
     statsDownloads,
     statsStars,
     statsInstallsCurrent,
