@@ -108,10 +108,13 @@ function mockActivePublisher(
   }> = {},
 ) {
   const memberships = overrides.memberships ?? [personalMembership];
+  const activeOwnerHandle = Object.hasOwn(overrides, "activeOwnerHandle")
+    ? (overrides.activeOwnerHandle ?? null)
+    : (memberships[0]?.publisher.handle ?? null);
   useActivePublisherMock.mockReturnValue({
     activePublisher: memberships[0] ?? null,
     activePublisherId: memberships[0]?.publisher._id ?? null,
-    activeOwnerHandle: overrides.activeOwnerHandle ?? memberships[0]?.publisher.handle ?? null,
+    activeOwnerHandle,
     canManageActivePublisher: true,
     canPublishAsActivePublisher: true,
     canViewActivePublisherScope: true,
@@ -683,10 +686,10 @@ describe("Upload route", () => {
     ).not.toBeNull();
   });
 
-  it("uses the ownerHandle search param as a local publishing override", async () => {
+  it("uses the ownerHandle search param when no active publisher is selected", async () => {
     useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: "clawkit" });
     mockActivePublisher({
-      activeOwnerHandle: "local",
+      activeOwnerHandle: null,
       memberships: [personalMembership, orgMembership],
     });
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
@@ -721,6 +724,35 @@ describe("Upload route", () => {
     await waitFor(() => {
       expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
         slug: "org-skill",
+        ownerHandle: "clawkit",
+      });
+    });
+  });
+
+  it("keeps new publishing synced with the active publisher", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: "local" });
+    const memberships = [personalMembership, orgMembership];
+    mockActivePublisher({ activeOwnerHandle: "local", memberships });
+
+    const { rerender } = render(<Upload />);
+
+    expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain("@local");
+
+    mockActivePublisher({ activeOwnerHandle: "clawkit", memberships });
+    rerender(<Upload />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
+        "@clawkit · ClawKit · admin",
+      );
+    });
+
+    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+      target: { value: "context-skill" },
+    });
+    await waitFor(() => {
+      expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
+        slug: "context-skill",
         ownerHandle: "clawkit",
       });
     });

@@ -386,7 +386,6 @@ export function Upload() {
     const shouldPreferActiveOwner = Boolean(
       !ownerTouchedRef.current &&
       !updateSlug &&
-      !searchOwnerHandle &&
       activeOwner &&
       ownerHandle !== activeOwner.publisher.handle,
     );
