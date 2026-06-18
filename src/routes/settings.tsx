@@ -2,6 +2,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
 import {
+  ArrowRight,
   Building2,
   CircleX,
   Code,
@@ -891,7 +892,7 @@ export function Settings() {
                       return (
                         <SettingsBlock
                           key={entry.publisher._id}
-                          className="min-h-[220px] justify-between gap-6 md:only:col-span-full"
+                          className="gap-5 md:only:col-span-full"
                         >
                           <div className="flex min-w-0 items-start justify-between gap-5">
                             <div className="flex min-w-0 items-start gap-4">
@@ -917,6 +918,30 @@ export function Settings() {
                                 </p>
                               </div>
                             </div>
+                            <Badge
+                              variant="compact"
+                              aria-label={`Your role: ${roleLabel}`}
+                              className="shrink-0"
+                            >
+                              {roleLabel}
+                            </Badge>
+                          </div>
+
+                          <div className="flex flex-col gap-4 border-t border-[color:var(--line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
+                            <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[color:var(--ink-soft)]">
+                              <span className="inline-flex items-center gap-1.5">
+                                <Code size={14} aria-hidden="true" />
+                                <span>
+                                  {skillCount} {skillCount === 1 ? "skill" : "skills"}
+                                </span>
+                              </span>
+                              <span className="inline-flex items-center gap-1.5">
+                                <Package size={14} aria-hidden="true" />
+                                <span>
+                                  {packageCount} {packageCount === 1 ? "package" : "packages"}
+                                </span>
+                              </span>
+                            </div>
                             <Button
                               type="button"
                               variant="outline"
@@ -927,37 +952,8 @@ export function Settings() {
                               }}
                             >
                               Manage
+                              <ArrowRight size={14} aria-hidden="true" />
                             </Button>
-                          </div>
-
-                          <div className="grid gap-5 border-t border-[color:var(--line)] pt-4 sm:grid-cols-[minmax(120px,0.35fr)_1fr]">
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--ink-soft)]">
-                                Your role
-                              </p>
-                              <p className="mt-1 text-sm font-semibold text-[color:var(--ink)]">
-                                {roleLabel}
-                              </p>
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--ink-soft)]">
-                                Published
-                              </p>
-                              <div className="mt-1 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[color:var(--ink-soft)]">
-                                <span className="inline-flex items-center gap-1.5">
-                                  <Code size={14} aria-hidden="true" />
-                                  <span>
-                                    {skillCount} {skillCount === 1 ? "skill" : "skills"}
-                                  </span>
-                                </span>
-                                <span className="inline-flex items-center gap-1.5">
-                                  <Package size={14} aria-hidden="true" />
-                                  <span>
-                                    {packageCount} {packageCount === 1 ? "package" : "packages"}
-                                  </span>
-                                </span>
-                              </div>
-                            </div>
                           </div>
                         </SettingsBlock>
                       );
