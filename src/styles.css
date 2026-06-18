@@ -1218,6 +1218,7 @@ code {
 }
 
 .user-dropdown-create-org-action {
+  border-radius: var(--r-sm);
   padding-inline: 10px;
 }
 
