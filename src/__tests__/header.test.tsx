@@ -327,7 +327,7 @@ describe("Header", () => {
     expect(screen.queryByText("About")).toBeNull();
   });
 
-  it("renders theme mode controls as a compact row between Settings and Sign out", () => {
+  it("separates active publisher actions from personal account controls", () => {
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -347,17 +347,20 @@ describe("Header", () => {
 
     const themeRow = document.querySelector(".user-dropdown-theme-row");
     const settings = screen.getByText("Settings");
+    const stars = screen.getByText("Stars");
     const signOut = screen.getByText("Sign out");
 
     expect(themeRow).toBeTruthy();
     expect(themeRow?.children).toHaveLength(3);
-    expect(settings.compareDocumentPosition(themeRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(settings.compareDocumentPosition(stars) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+      Node.DOCUMENT_POSITION_FOLLOWING,
+    );
+    expect(stars.compareDocumentPosition(themeRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(themeRow!.compareDocumentPosition(signOut) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(themeRow?.previousElementSibling?.tagName).toBe("HR");
     expect(signOut.previousElementSibling?.tagName).toBe("HR");
 
     expect(screen.getByLabelText("System theme").getAttribute("aria-current")).toBe("true");
@@ -394,9 +397,12 @@ describe("Header", () => {
 
     expect(screen.getByRole("button", { name: "Open account menu for @openclaw" })).toBeTruthy();
     expect(screen.getByText("@patrick")).toBeTruthy();
-    expect(screen.getByText("Personal · owner")).toBeTruthy();
+    expect(screen.getByText("Personal")).toBeTruthy();
+    expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(screen.getAllByText("@openclaw").length).toBeGreaterThan(1);
     expect(screen.getByText("Org · admin")).toBeTruthy();
+    expect(screen.getByLabelText("Actions for @openclaw")).toBeTruthy();
+    expect(screen.getByText("Profile").closest("a")?.getAttribute("href")).toBe("/user/openclaw");
     expect(screen.queryByText("Signed in as @patrick")).toBeNull();
 
     fireEvent.click(screen.getByText("@patrick"));

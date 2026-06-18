@@ -144,6 +144,9 @@ export default function Header() {
     api.publishers.getMyProfileHandle,
     isAuthenticated && me ? {} : "skip",
   );
+  const activeOrgProfileHandle =
+    triggerPublisher?.kind === "org" ? triggerPublisher.handle : null;
+  const menuProfileHandle = activeOrgProfileHandle ?? profileHandle;
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const [typeaheadOpen, setTypeaheadOpen] = useState(false);
   const [typeaheadTab, setTypeaheadTab] = useState<TypeaheadTab>("skills");
@@ -627,8 +630,7 @@ export default function Header() {
                                   @{entry.publisher.handle}
                                 </span>
                                 <span className="user-dropdown-publisher-meta">
-                                  {entry.publisher.kind === "org" ? "Org" : "Personal"} ·{" "}
-                                  {entry.role}
+                                  {entry.publisher.kind === "org" ? `Org · ${entry.role}` : "Personal"}
                                 </span>
                               </span>
                               {active ? (
@@ -645,11 +647,17 @@ export default function Header() {
                       <DropdownMenuSeparator />
                     </>
                   ) : null}
-                  {profileHandle ? (
+                  <div
+                    aria-label={`Actions for @${triggerHandle}`}
+                    className="user-dropdown-context-label"
+                  >
+                    For <span className="mono">@{triggerHandle}</span>
+                  </div>
+                  {menuProfileHandle ? (
                     <DropdownMenuItem asChild>
                       <Link
                         to="/user/$handle"
-                        params={{ handle: profileHandle }}
+                        params={{ handle: menuProfileHandle }}
                         className="flex items-center gap-2"
                       >
                         <UserRound size={14} aria-hidden="true" />
@@ -664,18 +672,18 @@ export default function Header() {
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>
-                    <Link to="/stars" className="flex items-center gap-2">
-                      <Star size={14} aria-hidden="true" />
-                      Stars
-                    </Link>
-                  </DropdownMenuItem>
-                  <DropdownMenuItem asChild>
                     <Link to="/settings" className="flex items-center gap-2">
                       <Settings size={14} aria-hidden="true" />
                       Settings
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild>
+                    <Link to="/stars" className="flex items-center gap-2">
+                      <Star size={14} aria-hidden="true" />
+                      Stars
+                    </Link>
+                  </DropdownMenuItem>
                   <div className="user-dropdown-theme-row" role="group" aria-label="Theme">
                     {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
                       <DropdownMenuItem

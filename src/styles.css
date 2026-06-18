@@ -1159,6 +1159,16 @@ code {
   font-size: 0.76rem;
 }
 
+.user-dropdown-context-label {
+  overflow: hidden;
+  padding: 4px 8px 6px;
+  color: var(--ink-soft);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .user-dropdown-publisher-check {
   flex-shrink: 0;
   color: var(--accent);
