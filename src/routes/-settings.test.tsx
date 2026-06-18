@@ -38,7 +38,21 @@ vi.mock("../lib/activePublisher", () => ({
 
 vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: unknown) => config,
-  Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
+  Link: ({
+    children,
+    params,
+    to,
+  }: {
+    children: ReactNode;
+    params?: Record<string, string>;
+    to: string;
+  }) => {
+    const href = Object.entries(params ?? {}).reduce(
+      (path, [key, value]) => path.replace(`$${key}`, value),
+      to,
+    );
+    return <a href={href}>{children}</a>;
+  },
   useNavigate: () => navigateMock,
   useSearch: () => searchMock(),
 }));
@@ -376,12 +390,37 @@ describe("Settings", () => {
     expect(screen.getByText("Official")).toBeTruthy();
     expect(screen.getByText("4 skills")).toBeTruthy();
     expect(screen.getByText("2 plugins")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View profile" }).getAttribute("href")).toBe(
+      "/user/openclaw",
+    );
     expect(screen.queryByRole("heading", { name: "Members" })).toBeNull();
     expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMembers, "skip");
     fireEvent.click(screen.getByRole("button", { name: "Manage" }));
 
     expect(setActivePublisherId).toHaveBeenCalledWith("publisher_openclaw");
     expect(navigateMock).toHaveBeenCalledWith({ search: { view: "profile" } });
+  });
+
+  it("lets publisher-only members view or switch to an organization", async () => {
+    const setActivePublisherId = vi.fn();
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [personalMembership, publisherOnlyOrgMembership],
+      setActivePublisherId,
+    });
+
+    render(<Settings />);
+
+    expect(await screen.findByText("Readonly Org")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View profile" }).getAttribute("href")).toBe(
+      "/user/readonly-org",
+    );
+    expect(screen.queryByRole("button", { name: "Manage" })).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Switch" }));
+
+    expect(setActivePublisherId).toHaveBeenCalledWith("publisher_readonly");
+    expect(navigateMock).toHaveBeenCalledWith({ to: "/dashboard" });
   });
 
   it("uses the active org as the members settings scope", async () => {

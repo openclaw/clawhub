@@ -888,6 +888,7 @@ export function Settings() {
                       const pluginCount = entry.publisher.stats?.packages ?? 0;
                       const roleLabel =
                         entry.role.charAt(0).toUpperCase() + entry.role.slice(1);
+                      const canManageOrg = entry.role === "owner" || entry.role === "admin";
 
                       return (
                         <SettingsBlock
@@ -940,18 +941,32 @@ export function Settings() {
                                 </span>
                               </span>
                             </div>
-                            <Button
-                              type="button"
-                              variant="outline"
-                              className="shrink-0 sm:w-auto"
-                              onClick={() => {
-                                setActivePublisherId(entry.publisher._id);
-                                navigateToView("profile");
-                              }}
-                            >
-                              Manage
-                              <ArrowRight size={14} aria-hidden="true" />
-                            </Button>
+                            <div className="flex shrink-0 flex-wrap items-center gap-2">
+                              <Button asChild variant="ghost" className="sm:w-auto">
+                                <Link
+                                  to="/user/$handle"
+                                  params={{ handle: entry.publisher.handle }}
+                                >
+                                  View profile
+                                </Link>
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="outline"
+                                className="sm:w-auto"
+                                onClick={() => {
+                                  setActivePublisherId(entry.publisher._id);
+                                  if (canManageOrg) {
+                                    navigateToView("profile");
+                                    return;
+                                  }
+                                  void navigate({ to: "/dashboard" });
+                                }}
+                              >
+                                {canManageOrg ? "Manage" : "Switch"}
+                                <ArrowRight size={14} aria-hidden="true" />
+                              </Button>
+                            </div>
                           </div>
                         </SettingsBlock>
                       );
