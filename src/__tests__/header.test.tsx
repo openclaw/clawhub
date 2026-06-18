@@ -454,7 +454,7 @@ describe("Header", () => {
     fireEvent.click(screen.getByLabelText("Switch to @patrick"));
 
     expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
-    expect(screen.getByText("Stars")).toBeTruthy();
+    expect(screen.queryByText("Stars")).toBeNull();
     expect(screen.getByText("Appearance")).toBeTruthy();
     expect(screen.getByText("Sign out")).toBeTruthy();
     expect(screen.getByText("Settings")).toBeTruthy();

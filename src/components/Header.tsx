@@ -813,14 +813,6 @@ export default function Header() {
                     ) : null}
                   </div>
                   <DropdownMenuSeparator />
-                  {!isPersonalPublisher ? (
-                    <DropdownMenuItem asChild className="user-dropdown-account-action">
-                      <Link to="/stars" className="flex items-center gap-2">
-                        <Star size={14} aria-hidden="true" />
-                        Stars
-                      </Link>
-                    </DropdownMenuItem>
-                  ) : null}
                   <div className="user-dropdown-appearance-row">
                     <span className="user-dropdown-appearance-label">
                       <Palette size={14} aria-hidden="true" />
