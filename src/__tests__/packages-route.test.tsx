@@ -666,7 +666,7 @@ describe("plugins route", () => {
     expect(screen.queryByText("321")).toBeNull();
   });
 
-  it("keeps an active topic facet visible when it has no results", async () => {
+  it("does not render an active topic in the sidebar when it has no results", async () => {
     searchMock = { topic: "postgres" };
     loaderDataMock = {
       items: [],
@@ -679,10 +679,8 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("radio", { name: "postgres" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
-    expect(screen.getByRole("radio", { name: "All topics" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "postgres" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
   it("renders a label-only title without positive count data and switches to grid view", async () => {

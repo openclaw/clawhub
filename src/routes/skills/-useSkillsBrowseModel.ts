@@ -296,29 +296,6 @@ export function useSkillsBrowseModel({
     return results;
   }, [activeCategory, activeTopic, baseItems, dir, hasQuery, sort]);
 
-  const availableTopics = useMemo(() => {
-    const topics = new Map<string, { label: string; count: number }>();
-    for (const entry of baseItems) {
-      for (const label of entry.skill.topics ?? []) {
-        const slug = normalizeCatalogTopic(label);
-        if (!slug) continue;
-        const current = topics.get(slug);
-        topics.set(slug, { label: current?.label ?? label, count: (current?.count ?? 0) + 1 });
-      }
-    }
-    const visibleTopics = [...topics.entries()]
-      .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
-      .slice(0, 8)
-      .map(([slug, value]) => ({ slug, label: value.label }));
-    if (!activeTopic || visibleTopics.some((topic) => topic.slug === activeTopic)) {
-      return visibleTopics;
-    }
-    return [
-      { slug: activeTopic, label: topics.get(activeTopic)?.label ?? activeTopic },
-      ...visibleTopics,
-    ].slice(0, 8);
-  }, [activeTopic, baseItems]);
-
   const isLoadingSkills = hasQuery ? isSearching && searchResults.length === 0 : isLoadingList;
   const canLoadMore = hasQuery
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
@@ -485,24 +462,9 @@ export function useSkillsBrowseModel({
   const activeFilters: string[] = [];
   if (featuredOnly) activeFilters.push("featured");
 
-  const onTopicChange = useCallback(
-    (value: string | undefined) => {
-      void navigate({
-        search: (prev) => ({
-          ...prev,
-          topic: value,
-        }),
-        replace: true,
-      });
-    },
-    [navigate],
-  );
-
   return {
     activeFilters,
     activeCategory: activeCategory?.slug,
-    activeTopic,
-    availableTopics,
     canAutoLoad,
     canLoadMore,
     dir,
@@ -519,7 +481,6 @@ export function useSkillsBrowseModel({
     onToggleDir,
     onToggleFeatured,
     onToggleView,
-    onTopicChange,
     query,
     sort,
     sorted,

@@ -31,7 +31,9 @@
 - Authors may supply up to five topics through CLI or UI publish and edit surfaces.
 - Stored topics preserve author-facing labels. Lookup uses normalized topic slugs.
 - Reserved platform trust labels such as `official`, `featured`, and `verified` are rejected.
-- Topics are separate from release tags and are available to browse and exact-topic global search.
+- Topics are separate from release tags and remain available to search.
+- Browse sidebars do not enumerate topics because the topic space is open-ended and author-facing
+  labels may use different casing. Exact normalized topic browse links remain supported.
 - Authors can edit categories and topics from skill and plugin settings.
 - Settings expose Generate as an explicit category action. Clearing categories saves `other`.
 - Backports and non-latest plugin releases do not replace current topics.

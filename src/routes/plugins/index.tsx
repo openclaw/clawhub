@@ -401,30 +401,6 @@ function PluginsIndex() {
   const visibleItems = useMemo(() => {
     return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
   }, [activeSort, hasQuery, items]);
-  const availableTopics = useMemo(() => {
-    const topics = new Map<string, { label: string; count: number }>();
-    for (const item of items) {
-      for (const label of item.topics ?? []) {
-        const slug = normalizeCatalogTopic(label);
-        if (!slug) continue;
-        const current = topics.get(slug);
-        topics.set(slug, { label: current?.label ?? label, count: (current?.count ?? 0) + 1 });
-      }
-    }
-    const visibleTopics = [...topics.entries()]
-      .sort((a, b) => b[1].count - a[1].count || a[1].label.localeCompare(b[1].label))
-      .slice(0, 8)
-      .map(([slug, value]) => ({ slug, label: value.label }));
-    const activeTopic = search.topic ? normalizeCatalogTopic(search.topic) : undefined;
-    if (!activeTopic || visibleTopics.some((topic) => topic.slug === activeTopic)) {
-      return visibleTopics;
-    }
-    return [
-      { slug: activeTopic, label: topics.get(activeTopic)?.label ?? activeTopic },
-      ...visibleTopics,
-    ].slice(0, 8);
-  }, [items, search.topic]);
-
   const handleFilterToggle = (key: string) => {
     if (key === "official") {
       void navigate({
@@ -473,17 +449,6 @@ function PluginsIndex() {
         topic: undefined,
         featured: undefined,
         sort: undefined,
-      }),
-      replace: true,
-    });
-  };
-
-  const handleTopicChange = (topic: string | undefined) => {
-    void navigate({
-      search: (prev: PluginSearchState) => ({
-        ...prev,
-        cursor: undefined,
-        topic,
       }),
       replace: true,
     });
@@ -622,25 +587,6 @@ function PluginsIndex() {
           onSortChange={handleSortChange}
           filters={[{ key: "official", label: "Official only", active: search.official ?? false }]}
           onFilterToggle={handleFilterToggle}
-          radioGroups={
-            availableTopics.length
-              ? [
-                  {
-                    title: "Topics",
-                    ariaLabel: "Topic filter",
-                    activeValue: search.topic,
-                    onChange: handleTopicChange,
-                    options: [
-                      { value: undefined, label: "All topics" },
-                      ...availableTopics.map((topic) => ({
-                        value: topic.slug,
-                        label: topic.label,
-                      })),
-                    ],
-                  },
-                ]
-              : []
-          }
         />
         <div className="browse-results">
           {isLoading ? (

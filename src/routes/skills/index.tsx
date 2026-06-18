@@ -199,25 +199,6 @@ export function SkillsIndex() {
           sortOptions={SKILLS_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}
-          radioGroups={
-            model.availableTopics.length
-              ? [
-                  {
-                    title: "Topics",
-                    ariaLabel: "Topic filter",
-                    activeValue: model.activeTopic,
-                    onChange: model.onTopicChange,
-                    options: [
-                      { value: undefined, label: "All topics" },
-                      ...model.availableTopics.map((topic) => ({
-                        value: topic.slug,
-                        label: topic.label,
-                      })),
-                    ],
-                  },
-                ]
-              : []
-          }
         />
         <div className="browse-results">
           <SkillsResults

@@ -614,7 +614,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
-  it("passes author topics to browse filtering and renders the active topic facet", async () => {
+  it("passes author topics to browse filtering without rendering topic navigation", async () => {
     searchMock = { topic: "google-calendar" };
     convexHttpMock.query.mockResolvedValue({
       page: [
@@ -634,13 +634,11 @@ describe("SkillsIndex", () => {
         topic: "google-calendar",
       }),
     );
-    expect(
-      screen.getByRole("radio", { name: "google-calendar" }).getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(screen.getAllByText("google-calendar")).toHaveLength(2);
+    expect(screen.queryByRole("radio", { name: "google-calendar" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
-  it("keeps an active topic facet visible when it has no results", async () => {
+  it("does not render an active topic in the sidebar when it has no results", async () => {
     searchMock = { topic: "google-calendar" };
     convexHttpMock.query.mockResolvedValue({
       page: [],
@@ -651,10 +649,8 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(
-      screen.getByRole("radio", { name: "google-calendar" }).getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(screen.getByRole("radio", { name: "All topics" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "google-calendar" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
   it("preserves backend official-first ordering on category pages", async () => {
