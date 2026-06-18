@@ -155,8 +155,7 @@ export default function Header() {
     api.publishers.getMyProfileHandle,
     isAuthenticated && me ? {} : "skip",
   );
-  const activeOrgProfileHandle =
-    triggerPublisher?.kind === "org" ? triggerPublisher.handle : null;
+  const activeOrgProfileHandle = triggerPublisher?.kind === "org" ? triggerPublisher.handle : null;
   const menuProfileHandle = activeOrgProfileHandle ?? profileHandle;
   const isPersonalPublisher = triggerPublisher?.kind !== "org";
   const profileMenuLabel = isPersonalPublisher ? "Profile" : "Org profile";

@@ -10,7 +10,7 @@ import {
 } from "./ui/dropdown-menu";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "./ui/select";
 
-export type PublisherOwnerMembership = {
+type PublisherOwnerMembership = {
   publisher: {
     _id: string;
     handle: string;
@@ -191,7 +191,7 @@ function PublisherOwnerOption({ membership }: { membership: PublisherOwnerMember
   );
 }
 
-export function PublisherOwnerDisplay({
+function PublisherOwnerDisplay({
   value,
   memberships,
   compact = false,

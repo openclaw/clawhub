@@ -3641,8 +3641,7 @@ code {
   background: var(--surface-muted);
 }
 
-.publishing-context-switcher
-  [data-slot="dropdown-menu-item"].user-dropdown-publisher-item:focus,
+.publishing-context-switcher [data-slot="dropdown-menu-item"].user-dropdown-publisher-item:focus,
 .publishing-context-switcher
   [data-slot="dropdown-menu-item"].user-dropdown-publisher-item:focus-visible,
 .publishing-context-switcher

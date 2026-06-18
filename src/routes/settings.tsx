@@ -257,14 +257,12 @@ export function Settings() {
     activePublisherMembership ?? personalPublisher ?? memberships[0] ?? null;
   const isOrgSettings = settingsPublisher?.publisher.kind === "org";
   const settingsPublisherRole = settingsPublisher?.role ?? "owner";
-  const canManageSettingsPublisher = Boolean(
-    settingsPublisher &&
-    (!isOrgSettings || settingsPublisherRole === "owner" || settingsPublisherRole === "admin"),
-  );
-  const canDeleteSettingsPublisher = Boolean(isOrgSettings && settingsPublisherRole === "owner");
-  const canConfigureActiveGitHubSources = Boolean(
-    settingsPublisher?.publisher.official === true && canManageSettingsPublisher,
-  );
+  const canManageSettingsPublisher =
+    settingsPublisher != null &&
+    (!isOrgSettings || settingsPublisherRole === "owner" || settingsPublisherRole === "admin");
+  const canDeleteSettingsPublisher = isOrgSettings && settingsPublisherRole === "owner";
+  const canConfigureActiveGitHubSources =
+    settingsPublisher?.publisher.official === true && canManageSettingsPublisher;
   const settingsNavigationItems: SettingsNavigationItem[] = isOrgSettings
     ? [
         {
@@ -334,7 +332,7 @@ export function Settings() {
   const availableSettingsViews = settingsNavigationItems.map((item) => item.view);
   const { activeView, navigateToView } = useActiveSettingsView(
     availableSettingsViews,
-    Boolean(isOrgSettings),
+    isOrgSettings,
   );
   const publisherMembershipsLoaded = publisherMemberships !== undefined;
   const effectiveActiveView = activeView;
@@ -886,8 +884,7 @@ export function Settings() {
                     {orgs.map((entry) => {
                       const skillCount = entry.publisher.stats?.skills ?? 0;
                       const pluginCount = entry.publisher.stats?.packages ?? 0;
-                      const roleLabel =
-                        entry.role.charAt(0).toUpperCase() + entry.role.slice(1);
+                      const roleLabel = entry.role.charAt(0).toUpperCase() + entry.role.slice(1);
                       const canManageOrg = entry.role === "owner" || entry.role === "admin";
 
                       return (

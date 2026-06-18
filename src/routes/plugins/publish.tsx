@@ -397,13 +397,7 @@ export function PublishPluginRoute() {
     if (personal?.publisher.handle) {
       setOwnerHandle(personal.publisher.handle);
     }
-  }, [
-    activeOwnerHandle,
-    ownerHandle,
-    publisherMemberships,
-    search.name,
-    search.ownerHandle,
-  ]);
+  }, [activeOwnerHandle, ownerHandle, publisherMemberships, search.name, search.ownerHandle]);
 
   useEffect(() => {
     if (search.name || !ownerHandle || search.ownerHandle === ownerHandle) return;
