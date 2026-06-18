@@ -99,10 +99,12 @@ export function ActivePublisherProvider({ children }: { children: ReactNode }) {
     | ActivePublisherMembership[]
     | undefined;
   const [selectedPublisherId, setSelectedPublisherIdState] = useState<string | null>(null);
+  const [pendingPublisherId, setPendingPublisherId] = useState<string | null>(null);
   const userId = me?._id ? String(me._id) : null;
 
   useEffect(() => {
     setSelectedPublisherIdState(userId ? readStoredPublisherId(userId) : null);
+    setPendingPublisherId(null);
   }, [userId]);
 
   useEffect(() => {
@@ -110,10 +112,14 @@ export function ActivePublisherProvider({ children }: { children: ReactNode }) {
     const selectedStillExists = memberships.some(
       (entry) => entry.publisher._id === selectedPublisherId,
     );
-    if (selectedStillExists) return;
+    if (selectedStillExists) {
+      if (pendingPublisherId === selectedPublisherId) setPendingPublisherId(null);
+      return;
+    }
+    if (pendingPublisherId === selectedPublisherId) return;
     clearStoredPublisherId(userId);
     setSelectedPublisherIdState(null);
-  }, [memberships, selectedPublisherId, userId]);
+  }, [memberships, pendingPublisherId, selectedPublisherId, userId]);
 
   useEffect(() => {
     if (!userId || typeof window === "undefined") return undefined;
@@ -130,7 +136,7 @@ export function ActivePublisherProvider({ children }: { children: ReactNode }) {
     (publisherId: Id<"publishers">) => {
       if (!userId) return;
       const hasPublisher = memberships?.some((entry) => entry.publisher._id === publisherId);
-      if (!hasPublisher) return;
+      setPendingPublisherId(hasPublisher ? null : publisherId);
       setSelectedPublisherIdState(publisherId);
       writeStoredPublisherId(userId, publisherId);
     },

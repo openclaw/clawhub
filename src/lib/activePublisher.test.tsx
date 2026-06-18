@@ -46,6 +46,7 @@ const orgPublisher = {
 };
 
 const publisherStorageKey = "clawhub-active-publisher:users:local";
+let memberships = [personalPublisher, orgPublisher];
 
 function ProviderHarness({ children }: { children: ReactNode }) {
   return <ActivePublisherProvider>{children}</ActivePublisherProvider>;
@@ -80,7 +81,7 @@ describe("ActivePublisherProvider", () => {
     useQueryMock.mockImplementation((query, args) => {
       expect(getFunctionName(query)).toBe(getFunctionName(api.publishers.listMine));
       if (args === "skip") return undefined;
-      return [personalPublisher, orgPublisher];
+      return memberships;
     });
   });
 
@@ -131,6 +132,34 @@ describe("ActivePublisherProvider", () => {
       expect(window.localStorage.getItem(publisherStorageKey)).toBeNull();
     });
     expect(screen.getByTestId("active-handle").textContent).toBe("local");
+  });
+
+  it("keeps a pending publisher selected until memberships include it", async () => {
+    memberships = [personalPublisher];
+
+    const { rerender } = render(
+      <ProviderHarness>
+        <Probe />
+      </ProviderHarness>,
+    );
+
+    expect(screen.getByTestId("active-handle").textContent).toBe("local");
+
+    screen.getByRole("button", { name: "Switch org" }).click();
+
+    expect(window.localStorage.getItem(publisherStorageKey)).toBe("publishers:openclaw");
+    expect(screen.getByTestId("active-handle").textContent).toBe("local");
+
+    memberships = [personalPublisher, orgPublisher];
+    rerender(
+      <ProviderHarness>
+        <Probe />
+      </ProviderHarness>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByTestId("active-handle").textContent).toBe("openclaw");
+    });
   });
 
   it("syncs active publisher changes from another tab", async () => {
