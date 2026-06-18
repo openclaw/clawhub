@@ -1224,11 +1224,15 @@ code {
   justify-content: space-between;
   gap: 14px;
   margin: 0;
-  padding: 8px 10px;
-  border-radius: 6px;
+  padding: 9px 10px;
+  border-radius: 0;
   background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
   color: var(--ink-soft);
   font-size: 0.76rem;
+}
+
+.user-dropdown-content .user-dropdown-managing-separator {
+  margin-block: 0;
 }
 
 .user-dropdown-managing-label {
@@ -1244,8 +1248,8 @@ code {
 }
 
 .user-dropdown-managing-avatar {
-  width: 15px;
-  height: 15px;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
   border-radius: 50%;
   object-fit: cover;

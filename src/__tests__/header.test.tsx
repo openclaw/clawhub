@@ -442,7 +442,8 @@ describe("Header", () => {
     expect(screen.getByText("Personal")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(within(activePublisher).getByText("OpenClaw")).toBeTruthy();
-    expect(within(activePublisher).getByText("Org · Admin")).toBeTruthy();
+    expect(within(activePublisher).getByText("Organization")).toBeTruthy();
+    expect(screen.queryByText("Org · Admin")).toBeNull();
     const managingRow = document.querySelector(".user-dropdown-managing-row");
     expect(managingRow).toBeTruthy();
     expect(within(managingRow as HTMLElement).getByText("Managing as")).toBeTruthy();

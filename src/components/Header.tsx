@@ -163,12 +163,9 @@ export default function Header() {
   const menuProfileHandle = activeOrgProfileHandle ?? profileHandle;
   const isPersonalPublisher = triggerPublisher?.kind !== "org";
   const profileMenuLabel = isPersonalPublisher ? "Profile" : "Org profile";
-  const formatPublisherRole = (role: string | undefined) =>
-    role ? `${role.charAt(0).toUpperCase()}${role.slice(1)}` : "";
   const formatPublisherMeta = (entry: typeof activePublisher) => {
     if (!entry || entry.publisher.kind !== "org") return "Personal";
-    const role = formatPublisherRole(entry.role);
-    return role ? `Org · ${role}` : "Org";
+    return "Organization";
   };
   const activePublisherMeta =
     triggerPublisher?.kind === "org" ? formatPublisherMeta(activePublisher) : "Personal";
@@ -793,11 +790,11 @@ export default function Header() {
                   )}
                   {activePublisherManagingRow ? (
                     <>
-                      <DropdownMenuSeparator />
+                      <DropdownMenuSeparator className="user-dropdown-managing-separator" />
                       {activePublisherManagingRow}
                     </>
                   ) : null}
-                  <DropdownMenuSeparator />
+                  <DropdownMenuSeparator className="user-dropdown-managing-separator" />
                   <div
                     aria-label={`Publisher actions for @${triggerHandle}`}
                     className="user-dropdown-active-actions"
