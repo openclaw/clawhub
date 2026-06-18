@@ -492,6 +492,9 @@ describe("search helpers", () => {
     });
 
     expect(result.map((entry) => entry.skill.slug)).toEqual(["helper-development"]);
+    expect(ctx.paginateCalls).toBe(0);
+    expect(Math.max(...ctx.takeLimits)).toBeLessThanOrEqual(250);
+    expect(ctx.takeLimits.reduce((total, limit) => total + limit, 0)).toBeLessThanOrEqual(2_500);
   });
 
   it("does not let unhighlighted scoped matches consume featured recall", async () => {
@@ -995,6 +998,7 @@ describe("search helpers", () => {
     });
 
     expect(result.map((entry) => entry.skill.slug)).toEqual(["development-tool"]);
+    expect(ctx.paginateCalls).toBe(0);
   });
 
   it("does not let unrelated scoped rows consume fallback recall", async () => {
@@ -2245,8 +2249,9 @@ function makeSkillDoc(params: {
   };
 }
 
-function makePaginatedRows<T>(rows: T[]) {
+function makePaginatedRows<T>(rows: T[], onPaginate?: () => void) {
   return vi.fn(async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+    onPaginate?.();
     const start = cursor ? Number(cursor) : 0;
     const page = rows.slice(start, start + numItems);
     const next = start + page.length;
@@ -2280,9 +2285,13 @@ function makeLexicalCtx(params: {
   const digestByCreated = toDigestRows(params.recentByCreated ?? []);
   const usedIndexes: string[] = [];
   const takeLimits: number[] = [];
+  let paginateCalls = 0;
   return {
     usedIndexes,
     takeLimits,
+    get paginateCalls() {
+      return paginateCalls;
+    },
     db: {
       query: vi.fn((table: string) => {
         if (table === "skills") {
@@ -2315,7 +2324,9 @@ function makeLexicalCtx(params: {
                       takeLimits.push(limit);
                       return Promise.resolve(digestByUpdated);
                     }),
-                    paginate: makePaginatedRows(digestByUpdated),
+                    paginate: makePaginatedRows(digestByUpdated, () => {
+                      paginateCalls += 1;
+                    }),
                   }),
                 };
               }
@@ -2326,7 +2337,9 @@ function makeLexicalCtx(params: {
                       takeLimits.push(limit);
                       return Promise.resolve(digestByCreated);
                     }),
-                    paginate: makePaginatedRows(digestByCreated),
+                    paginate: makePaginatedRows(digestByCreated, () => {
+                      paginateCalls += 1;
+                    }),
                   }),
                 };
               }
@@ -2381,9 +2394,15 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
   }));
   const usedIndexes: string[] = [];
   const usedSearchIndexes: string[] = [];
+  const takeLimits: number[] = [];
+  let paginateCalls = 0;
   return {
     usedIndexes,
     usedSearchIndexes,
+    takeLimits,
+    get paginateCalls() {
+      return paginateCalls;
+    },
     db: {
       query: vi.fn((table: string) => {
         if (table === "skillTopicSearchDigest") {
@@ -2424,8 +2443,13 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                 }));
               return {
                 order: () => ({
-                  take: vi.fn(async (limit: number) => rows.slice(0, limit)),
-                  paginate: makePaginatedRows(rows),
+                  take: vi.fn(async (limit: number) => {
+                    takeLimits.push(limit);
+                    return rows.slice(0, limit);
+                  }),
+                  paginate: makePaginatedRows(rows, () => {
+                    paginateCalls += 1;
+                  }),
                 }),
               };
             },
@@ -2469,8 +2493,13 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
               return (digest[field] ?? "").startsWith(prefix);
             });
             return {
-              take: vi.fn(async () => rows),
-              paginate: makePaginatedRows(rows),
+              take: vi.fn(async (limit: number) => {
+                takeLimits.push(limit);
+                return rows.slice(0, limit);
+              }),
+              paginate: makePaginatedRows(rows, () => {
+                paginateCalls += 1;
+              }),
             };
           },
           // Mock for the new `searchIndex`-backed full-text queries added to
@@ -2521,8 +2550,13 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                     return false;
                   });
             return {
-              take: vi.fn(async () => rows),
-              paginate: makePaginatedRows(rows),
+              take: vi.fn(async (limit: number) => {
+                takeLimits.push(limit);
+                return rows.slice(0, limit);
+              }),
+              paginate: makePaginatedRows(rows, () => {
+                paginateCalls += 1;
+              }),
             };
           },
         };
