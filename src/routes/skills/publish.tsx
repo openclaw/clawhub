@@ -907,7 +907,7 @@ export function Upload() {
                         className="ml-auto"
                         aria-label="Switch publisher"
                       >
-                        Switch
+                        Switch publisher
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent
