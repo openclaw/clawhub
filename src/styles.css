@@ -1137,6 +1137,9 @@ code {
 
 .user-dropdown-subcontent {
   width: min(300px, calc(100vw - 24px));
+  overflow: hidden;
+  border-radius: calc(var(--r-md) + 4px) !important;
+  background-clip: padding-box;
 }
 
 /* Remove global link underline and focus outline from user dropdown items */
@@ -1216,7 +1219,18 @@ code {
   display: flex;
   align-items: center;
   padding: 8px 10px;
-  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  background: var(--surface-muted);
+}
+
+.user-dropdown-switcher-subcontent
+  [data-slot="dropdown-menu-item"].user-dropdown-publisher-item:focus,
+.user-dropdown-switcher-subcontent
+  [data-slot="dropdown-menu-item"].user-dropdown-publisher-item:focus-visible,
+.user-dropdown-switcher-subcontent
+  [data-slot="dropdown-menu-item"].user-dropdown-publisher-item[data-highlighted] {
+  background: var(--surface-muted);
+  outline: none;
+  box-shadow: none;
 }
 
 .user-dropdown-publisher-icon {
