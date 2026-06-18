@@ -886,7 +886,9 @@ export function Upload() {
                 memberships={publisherMemberships}
                 onSwitchPublisher={setActivePublisherId}
                 validation={
-                  <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
+                  ownerIssue ? (
+                    <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
+                  ) : undefined
                 }
               />
             ) : null}
