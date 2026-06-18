@@ -9,7 +9,7 @@ import { Upload } from "../routes/skills/publish";
 vi.mock("@tanstack/react-router", () => ({
   Link: ({ children, to }: { children: ReactNode; to: string }) => <a href={to}>{children}</a>,
   createFileRoute: () => (config: { component: unknown }) => config,
-  useNavigate: () => vi.fn(),
+  useNavigate: () => navigateMock,
   useSearch: () => useSearchMock(),
 }));
 
@@ -24,6 +24,7 @@ const fetchMock = vi.fn();
 const useQueryMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const useActivePublisherMock = vi.fn();
+const navigateMock = vi.fn();
 // Allows individual test cases to drive the value `useSearch` returns.
 // The `updateSlug` search param triggers the form's "update existing"
 // branch and is required by the F1 regression cases below.
@@ -135,6 +136,7 @@ describe("Upload route", () => {
     fetchMock.mockReset();
     useQueryMock.mockReset();
     useAuthStatusMock.mockReset();
+    navigateMock.mockReset();
     useSearchMock.mockReset();
     useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: undefined });
     useActionCallCount = 0;
@@ -195,6 +197,24 @@ describe("Upload route", () => {
     fireEvent.click(await screen.findByRole("menuitem", { name: "Switch to @clawkit" }));
 
     expect(setActivePublisherId).toHaveBeenCalledWith("publishers:clawkit");
+  });
+
+  it("replaces a stale ownerHandle in the new publish URL", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: undefined, ownerHandle: "local" });
+    mockActivePublisher({
+      activeOwnerHandle: "clawkit",
+      memberships: [personalMembership, orgMembership],
+    });
+
+    render(<Upload />);
+
+    await waitFor(() => {
+      expect(navigateMock).toHaveBeenCalledWith({
+        to: "/skills/publish",
+        search: { ownerHandle: "clawkit" },
+        replace: true,
+      });
+    });
   });
 
   it("drops invalid legacy category metadata and offers explicit generation on republish", async () => {

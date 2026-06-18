@@ -422,6 +422,16 @@ export function Upload() {
   ]);
 
   useEffect(() => {
+    if (updateSlug || !ownerHandle || searchOwnerHandle === ownerHandle) return;
+
+    void navigate({
+      to: "/skills/publish",
+      search: { ownerHandle },
+      replace: true,
+    });
+  }, [navigate, ownerHandle, searchOwnerHandle, updateSlug]);
+
+  useEffect(() => {
     if (!showChangelogField) return;
     if (changelogTouchedRef.current) return;
     if (trimmedChangelog) return;
