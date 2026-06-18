@@ -145,10 +145,15 @@ export default function Header() {
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
   const triggerPublisher = activePublisher?.publisher;
   const triggerHandle = triggerPublisher?.handle ?? rawHandle;
-  const triggerTitle =
-    triggerPublisher?.kind === "org" && triggerPublisher.displayName
-      ? triggerPublisher.displayName
-      : `@${triggerHandle}`;
+  const formatPublisherTitle = (entry: typeof activePublisher) => {
+    if (!entry) return me?.displayName?.trim() || me?.name?.trim() || rawHandle;
+    return (
+      entry.publisher.displayName?.trim() ||
+      (entry.publisher.kind === "user" ? me?.displayName?.trim() || me?.name?.trim() : undefined) ||
+      entry.publisher.handle
+    );
+  };
+  const triggerTitle = formatPublisherTitle(activePublisher);
   const triggerLabel = triggerTitle.length > 25 ? `${triggerTitle.slice(0, 25)}…` : triggerTitle;
   const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
   const profileHandle = useQuery(
@@ -159,12 +164,8 @@ export default function Header() {
   const menuProfileHandle = activeOrgProfileHandle ?? profileHandle;
   const isPersonalPublisher = triggerPublisher?.kind !== "org";
   const profileMenuLabel = isPersonalPublisher ? "Profile" : "Org profile";
-  const formatPublisherMeta = (entry: typeof activePublisher) => {
-    if (!entry || entry.publisher.kind !== "org") return "Personal";
-    return "Organization";
-  };
-  const activePublisherMeta =
-    triggerPublisher?.kind === "org" ? formatPublisherMeta(activePublisher) : "Personal";
+  const hasOrganizationPublisher =
+    publisherMemberships?.some((entry) => entry.publisher.kind === "org") ?? false;
   const otherPublisherMemberships =
     publisherMemberships?.filter((entry) => entry.publisher._id !== activePublisherId) ?? [];
   const goToOrganizationCreation = () => {
@@ -431,7 +432,7 @@ export default function Header() {
           </span>
           <span className="user-dropdown-publisher-copy">
             <span className="user-dropdown-publisher-title">{triggerTitle}</span>
-            <span className="user-dropdown-publisher-meta">{activePublisherMeta}</span>
+            <span className="user-dropdown-publisher-meta">@{triggerHandle}</span>
           </span>
           <ChevronRight className="user-dropdown-submenu-chevron" size={16} />
         </button>
@@ -458,10 +459,19 @@ export default function Header() {
           </span>
           <span className="user-dropdown-publisher-copy">
             <span className="user-dropdown-publisher-title">{triggerTitle}</span>
-            <span className="user-dropdown-publisher-meta">{activePublisherMeta}</span>
+            <span className="user-dropdown-publisher-meta">@{triggerHandle}</span>
           </span>
         </div>
       )}
+      {!hasOrganizationPublisher ? (
+        <DropdownMenuItem
+          className="user-dropdown-create-org-action"
+          onClick={goToOrganizationCreation}
+        >
+          <Plus size={15} aria-hidden="true" />
+          Create organization
+        </DropdownMenuItem>
+      ) : null}
       <DropdownMenuSeparator />
       <div
         aria-label={`Publisher actions for @${triggerHandle}`}
@@ -564,10 +574,10 @@ export default function Header() {
             </span>
             <span className="user-dropdown-publisher-copy">
               <span className="user-dropdown-publisher-title">
-                @{activePublisher.publisher.handle}
+                {formatPublisherTitle(activePublisher)}
               </span>
               <span className="user-dropdown-publisher-meta">
-                {formatPublisherMeta(activePublisher)}
+                @{activePublisher.publisher.handle}
               </span>
             </span>
             <Check
@@ -593,8 +603,8 @@ export default function Header() {
               />
             </span>
             <span className="user-dropdown-publisher-copy">
-              <span className="user-dropdown-publisher-title">@{entry.publisher.handle}</span>
-              <span className="user-dropdown-publisher-meta">{formatPublisherMeta(entry)}</span>
+              <span className="user-dropdown-publisher-title">{formatPublisherTitle(entry)}</span>
+              <span className="user-dropdown-publisher-meta">@{entry.publisher.handle}</span>
             </span>
           </DropdownMenuItem>
         ))}

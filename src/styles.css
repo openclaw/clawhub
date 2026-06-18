@@ -1248,7 +1248,14 @@ code {
 
 .user-dropdown-scoped-action:focus,
 .user-dropdown-scoped-action[data-highlighted] {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
+  background: var(--surface-muted);
+}
+
+.user-dropdown-current-trigger > .user-dropdown-publisher-icon,
+.user-dropdown-current-trigger > .user-dropdown-publisher-icon .marketplace-icon-xs,
+.user-dropdown-current-trigger > .user-dropdown-publisher-icon .user-dropdown-account-avatar {
+  width: 30px;
+  height: 30px;
 }
 
 .user-dropdown-current-trigger:focus,
@@ -1341,12 +1348,13 @@ code {
 
 .user-dropdown-create-org-action {
   border-radius: var(--r-sm);
+  color: var(--ink-soft);
   padding-inline: 10px;
 }
 
 .user-dropdown-create-org-action:focus,
 .user-dropdown-create-org-action[data-highlighted] {
-  background: color-mix(in srgb, var(--accent) 7%, var(--surface-muted));
+  background: var(--surface-muted);
 }
 
 .user-dropdown-account-avatar {

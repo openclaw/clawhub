@@ -363,6 +363,7 @@ describe("Header", () => {
     const profile = within(publisherActions).getByText("Profile");
     const settings = within(publisherActions).getByText("Settings");
     const stars = within(publisherActions).getByText("Stars");
+    const createOrganization = screen.getByText("Create organization");
     const appearance = screen.getByText("Appearance");
     const signOut = screen.getByText("Sign out");
 
@@ -380,6 +381,13 @@ describe("Header", () => {
     expect(stars.compareDocumentPosition(settings) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
+    expect(
+      activePublisher.compareDocumentPosition(createOrganization) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(
+      createOrganization.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(settings.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
@@ -427,7 +435,8 @@ describe("Header", () => {
     expect(screen.queryByLabelText("Account @patrick")).toBeNull();
     expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(within(activePublisher).getByText("OpenClaw")).toBeTruthy();
-    expect(within(activePublisher).getByText("Organization")).toBeTruthy();
+    expect(within(activePublisher).getByText("@openclaw")).toBeTruthy();
+    expect(within(activePublisher).queryByText("Organization")).toBeNull();
     expect(screen.queryByText("Org · Admin")).toBeNull();
     expect(screen.queryByText("Managing as")).toBeNull();
     expect(screen.getByLabelText("Publisher actions for @openclaw")).toBeTruthy();
@@ -439,10 +448,14 @@ describe("Header", () => {
 
     fireEvent.click(activePublisher);
 
-    expect(screen.getByLabelText("Selected publisher @openclaw")).toBeTruthy();
-    expect(screen.getByLabelText("Switch to @patrick")).toBeTruthy();
+    const selectedPublisher = screen.getByLabelText("Selected publisher @openclaw");
+    const personalPublisherOption = screen.getByLabelText("Switch to @patrick");
+    expect(within(selectedPublisher).getByText("OpenClaw")).toBeTruthy();
+    expect(within(selectedPublisher).getByText("@openclaw")).toBeTruthy();
+    expect(within(personalPublisherOption).getByText("Patrick")).toBeTruthy();
+    expect(within(personalPublisherOption).getByText("@patrick")).toBeTruthy();
     expect(screen.getByText("Create organization")).toBeTruthy();
-    expect(screen.getByText("Personal")).toBeTruthy();
+    expect(screen.queryByText("Personal")).toBeNull();
     expect(document.querySelector('[data-slot="dropdown-menu-sub-content"]')).toBeNull();
 
     fireEvent.click(screen.getByText("Create organization"));
