@@ -12,6 +12,7 @@ import { parseDir, parseSort, toListSort, type SortDir, type SortKey } from "./-
 import type { SkillListEntry, SkillSearchEntry } from "./-types";
 
 const pageSize = 25;
+const maxConsecutiveEmptyPagesPerFetch = 3;
 
 function isNavigationAbortError(err: unknown) {
   if (!(err instanceof Error)) return false;
@@ -96,35 +97,57 @@ export function useSkillsBrowseModel({
   const [listResults, setListResults] = useState<SkillListEntry[]>([]);
   const [listCursor, setListCursor] = useState<string | null>(null);
   const [listStatus, setListStatus] = useState<ListStatus>("loading");
+  const [listAutoLoadPaused, setListAutoLoadPaused] = useState(false);
   const fetchGeneration = useRef(0);
 
   const fetchPage = useCallback(
     async (cursor: string | null, generation: number) => {
+      let pageCursor = cursor;
+      let consecutiveEmptyPages = 0;
       try {
-        const result = await convexHttp.query(api.skills.listPublicPageV4, {
-          cursor: cursor ?? undefined,
-          numItems: pageSize,
-          ...(listSort ? { sort: listSort } : {}),
-          dir,
-          highlightedOnly: featuredOnly,
-          categorySlug: activeCategory?.slug,
-          topic: activeTopic,
-          ...(activeCategory ? { officialFirst: true } : {}),
-          categoryKeywords,
-          excludeCategoryKeywords,
-        });
-        if (generation !== fetchGeneration.current) return;
-        setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
-        const canAdvance = result.hasMore && result.nextCursor != null;
-        setListCursor(canAdvance ? result.nextCursor : null);
-        setListStatus(canAdvance ? "idle" : "done");
+        while (true) {
+          const result = await convexHttp.query(api.skills.listPublicPageV4, {
+            cursor: pageCursor ?? undefined,
+            numItems: pageSize,
+            ...(listSort ? { sort: listSort } : {}),
+            dir,
+            highlightedOnly: featuredOnly,
+            categorySlug: activeCategory?.slug,
+            topic: activeTopic,
+            ...(activeCategory ? { officialFirst: true } : {}),
+            categoryKeywords,
+            excludeCategoryKeywords,
+          });
+          if (generation !== fetchGeneration.current) return;
+          const nextCursor =
+            result.hasMore && result.nextCursor != null && result.nextCursor !== pageCursor
+              ? result.nextCursor
+              : null;
+
+          // Filtered scans can yield empty transport pages before reaching visible results.
+          if (result.page.length === 0 && nextCursor) {
+            consecutiveEmptyPages += 1;
+            if (consecutiveEmptyPages < maxConsecutiveEmptyPagesPerFetch) {
+              pageCursor = nextCursor;
+              continue;
+            }
+          }
+
+          setListResults((prev) => (cursor ? [...prev, ...result.page] : result.page));
+          setListCursor(nextCursor);
+          setListAutoLoadPaused(result.page.length === 0 && Boolean(nextCursor));
+          setListStatus(nextCursor ? "idle" : "done");
+          return;
+        }
       } catch (err) {
         if (generation !== fetchGeneration.current) return;
         if (!isNavigationAbortError(err)) {
           console.error("Failed to fetch skills page:", err);
         }
         // Reset to idle so the user can retry via "Load more"
-        setListStatus(cursor ? "idle" : "done");
+        setListCursor(pageCursor);
+        setListAutoLoadPaused(Boolean(pageCursor));
+        setListStatus(pageCursor ? "idle" : "done");
       }
     },
     [
@@ -147,6 +170,7 @@ export function useSkillsBrowseModel({
     const generation = fetchGeneration.current;
     setListResults([]);
     setListCursor(null);
+    setListAutoLoadPaused(false);
     setListStatus("loading");
     void fetchPage(null, generation);
     return () => {
@@ -300,11 +324,13 @@ export function useSkillsBrowseModel({
     ? !isSearching && searchResults.length === searchLimit && searchResults.length > 0
     : canLoadMoreList;
   const isLoadingMore = hasQuery ? isSearching && searchResults.length > 0 : isLoadingMoreList;
-  const canAutoLoad = typeof IntersectionObserver !== "undefined";
+  const canAutoLoad =
+    typeof IntersectionObserver !== "undefined" && (hasQuery || !listAutoLoadPaused);
 
   const loadMore = useCallback(() => {
     if (loadMoreInFlightRef.current || isLoadingMore || !canLoadMore) return;
     loadMoreInFlightRef.current = true;
+    setListAutoLoadPaused(false);
     if (hasQuery) {
       setSearchLimit((value) => value + pageSize);
     } else {
@@ -320,7 +346,7 @@ export function useSkillsBrowseModel({
   }, [isLoadingMore]);
 
   useEffect(() => {
-    if (!canLoadMore || typeof IntersectionObserver === "undefined") return () => {};
+    if (!canLoadMore || !canAutoLoad) return () => {};
     const target = loadMoreRef.current;
     if (!target) return () => {};
     const observer = new IntersectionObserver(
@@ -334,7 +360,7 @@ export function useSkillsBrowseModel({
     );
     observer.observe(target);
     return () => observer.disconnect();
-  }, [canLoadMore, loadMore]);
+  }, [canAutoLoad, canLoadMore, loadMore]);
 
   useEffect(() => {
     return () => window.clearTimeout(navigateTimer.current);

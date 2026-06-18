@@ -724,6 +724,97 @@ describe("SkillsIndex", () => {
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
   });
 
+  it("keeps loading across empty filtered pages without flashing terminal states", async () => {
+    class IntersectionObserverMock {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    }
+    vi.stubGlobal(
+      "IntersectionObserver",
+      IntersectionObserverMock as unknown as typeof IntersectionObserver,
+    );
+    searchMock = { category: "automation" };
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      })
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(2);
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ cursor: "cursor-1" }));
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Scroll to load more")).toBeNull();
+    expect(screen.queryByText("No skills found")).toBeNull();
+  });
+
+  it("bounds empty filtered page auto-advance and pauses for a manual retry", async () => {
+    class IntersectionObserverMock {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    }
+    vi.stubGlobal(
+      "IntersectionObserver",
+      IntersectionObserverMock as unknown as typeof IntersectionObserver,
+    );
+    searchMock = { category: "automation" };
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      })
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-2",
+      })
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-3",
+      })
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    expect(screen.queryByText("Scroll to load more")).toBeNull();
+    expect(screen.queryByText("No skills found")).toBeNull();
+  });
+
+  it("keeps the retry cursor when a filtered follow-up page fails", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    searchMock = { category: "automation" };
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      })
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(3);
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ cursor: "cursor-1" }));
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("No skills found")).toBeNull();
+  });
+
   it("shows skeletons during load-more", async () => {
     vi.stubGlobal("IntersectionObserver", undefined);
     convexHttpMock.query
