@@ -269,7 +269,7 @@ describe("public skill list deterministic cursors", () => {
     const digest = makeSearchDigest({
       skillId: "skills:calendar",
       slug: "calendar",
-      topics: ["Calendar"],
+      topics: ["Calendar", "Official"],
     });
     getPageMock.mockResolvedValueOnce({
       page: [

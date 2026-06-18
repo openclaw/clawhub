@@ -385,10 +385,22 @@ export function resolveCatalogTopics(input: {
 }
 
 export function getCatalogTopicSlugs(values: readonly string[] | null | undefined): string[] {
-  return normalizeCatalogTopics(values).flatMap((value) => {
-    const slug = normalizeCatalogTopic(value);
-    return slug ? [slug] : [];
-  });
+  const slugs: string[] = [];
+  const seenSlugs = new Set<string>();
+  for (const value of values ?? []) {
+    let normalized: string[];
+    try {
+      normalized = normalizeCatalogTopics([value]);
+    } catch {
+      continue;
+    }
+    const slug = normalizeCatalogTopic(normalized[0] ?? "");
+    if (!slug || seenSlugs.has(slug)) continue;
+    seenSlugs.add(slug);
+    slugs.push(slug);
+    if (slugs.length >= CATALOG_TOPIC_LIMIT) break;
+  }
+  return slugs;
 }
 
 type SkillCategoryCandidate = {

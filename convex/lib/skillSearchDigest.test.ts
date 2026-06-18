@@ -275,9 +275,11 @@ describe("extractValidatedDigestFields", () => {
 });
 
 describe("upsertSkillSearchDigest", () => {
-  it("syncs one indexed topic row per normalized author topic", async () => {
+  it("syncs one indexed topic row per valid stored topic", async () => {
     const insert = vi.fn(async (table: string) => `${table}:inserted`);
-    const fields = extractDigestFields(makeSkillDoc() as never);
+    const fields = extractDigestFields(
+      makeSkillDoc({ topics: ["supply-chain", "Official", "vetting"] }) as never,
+    );
     const query = vi.fn((_table: string) => ({
       withIndex: vi.fn(() => ({
         unique: vi.fn(async () => null),

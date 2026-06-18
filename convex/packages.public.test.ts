@@ -3695,7 +3695,12 @@ describe("packages public queries", () => {
       ],
       topicPages: [
         {
-          page: [makeDigest("calendar-demo", { topic: "calendar", topics: ["calendar"] })],
+          page: [
+            makeDigest("calendar-demo", {
+              topic: "calendar",
+              topics: ["calendar", "Official"],
+            }),
+          ],
           isDone: true,
           continueCursor: "",
         },
