@@ -192,6 +192,27 @@ vi.mock("../components/ui/dropdown-menu", () => ({
   DropdownMenuContent: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
   ),
+  DropdownMenuSub: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  DropdownMenuSubContent: ({
+    children,
+    className,
+  }: {
+    children: ReactNode;
+    className?: string;
+  }) => <div className={className}>{children}</div>,
+  DropdownMenuSubTrigger: ({
+    children,
+    className,
+    ...props
+  }: {
+    children: ReactNode;
+    className?: string;
+    "aria-label"?: string;
+  }) => (
+    <div aria-label={props["aria-label"]} className={className}>
+      {children}
+    </div>
+  ),
   DropdownMenuItem: ({
     children,
     className,
@@ -347,14 +368,17 @@ describe("Header", () => {
 
     const activePublisher = screen.getByLabelText("Current publisher @patrick");
     const account = screen.getByLabelText("Account @patrick");
+    const publisherActions = screen.getByLabelText("Publisher actions for @patrick");
     const themeRow = document.querySelector(".user-dropdown-theme-row");
-    const settings = within(activePublisher).getByText("Settings");
-    const stars = within(account).getByText("Stars");
-    const appearance = within(account).getByText("Appearance");
-    const signOut = within(account).getByText("Sign out");
+    const settings = within(publisherActions).getByText("Settings");
+    const stars = screen.getByText("Stars");
+    const appearance = screen.getByText("Appearance");
+    const signOut = screen.getByText("Sign out");
 
     expect(within(activePublisher).queryByText("Stars")).toBeNull();
+    expect(within(account).queryByText("Stars")).toBeNull();
     expect(within(account).queryByText("Settings")).toBeNull();
+    expect(within(account).getByText("Account")).toBeTruthy();
     expect(screen.queryByText("Switch publisher")).toBeNull();
     expect(themeRow).toBeTruthy();
     expect(themeRow?.children).toHaveLength(3);
@@ -403,7 +427,8 @@ describe("Header", () => {
     expect(screen.getByRole("button", { name: "Open account menu for @openclaw" })).toBeTruthy();
     const activePublisher = screen.getByLabelText("Current publisher @openclaw");
     const account = screen.getByLabelText("Account @patrick");
-    const profile = within(activePublisher).getByText("Profile");
+    const publisherActions = screen.getByLabelText("Publisher actions for @openclaw");
+    const profile = within(publisherActions).getByText("Profile");
 
     expect(within(account).getByText("@patrick")).toBeTruthy();
     expect(screen.getByText("Switch publisher")).toBeTruthy();
@@ -411,10 +436,11 @@ describe("Header", () => {
     expect(screen.getByText("Personal")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(within(activePublisher).getByText("@openclaw")).toBeTruthy();
-    expect(within(activePublisher).getByText("Org · admin")).toBeTruthy();
+    expect(within(activePublisher).getByText("Org · Admin")).toBeTruthy();
     expect(screen.getByLabelText("Publisher actions for @openclaw")).toBeTruthy();
     expect(profile.closest("a")?.getAttribute("href")).toBe("/user/openclaw");
     expect(profile.closest("a")?.querySelector(".lucide-building-2")).toBeTruthy();
+    expect(screen.getByLabelText("Selected publisher @openclaw")).toBeTruthy();
     expect(screen.queryByText("Signed in as @patrick")).toBeNull();
     expect(screen.queryByText(/For @openclaw/)).toBeNull();
 

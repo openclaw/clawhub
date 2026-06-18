@@ -6,6 +6,7 @@ import {
   Building2,
   Check,
   ChevronDown,
+  ChevronRight,
   Command,
   LayoutDashboard,
   LogOut,
@@ -47,6 +48,9 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubContent,
+  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import {
@@ -150,10 +154,15 @@ export default function Header() {
   const activeOrgProfileHandle =
     triggerPublisher?.kind === "org" ? triggerPublisher.handle : null;
   const menuProfileHandle = activeOrgProfileHandle ?? profileHandle;
+  const formatPublisherRole = (role: string | undefined) =>
+    role ? `${role.charAt(0).toUpperCase()}${role.slice(1)}` : "";
+  const formatPublisherMeta = (entry: typeof activePublisher) => {
+    if (!entry || entry.publisher.kind !== "org") return "Personal";
+    const role = formatPublisherRole(entry.role);
+    return role ? `Org · ${role}` : "Org";
+  };
   const activePublisherMeta =
-    triggerPublisher?.kind === "org"
-      ? `Org${activePublisher?.role ? ` · ${activePublisher.role}` : ""}`
-      : "Personal";
+    triggerPublisher?.kind === "org" ? formatPublisherMeta(activePublisher) : "Personal";
   const otherPublisherMemberships =
     publisherMemberships?.filter((entry) => entry.publisher._id !== activePublisherId) ?? [];
   const [navSearchQuery, setNavSearchQuery] = useState("");
@@ -613,13 +622,108 @@ export default function Header() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="user-dropdown-content">
-                  <div className="user-dropdown-section-label">Publisher</div>
-                  <section
-                    aria-label={`Current publisher @${triggerHandle}`}
-                    className="user-dropdown-active-card"
-                  >
-                    <div className="user-dropdown-active-header">
-                      <span className="user-dropdown-active-icon" aria-hidden="true">
+                  {hasMultiplePublishers && otherPublisherMemberships.length > 0 ? (
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger
+                        aria-label={`Current publisher @${triggerHandle}`}
+                        className="user-dropdown-current-trigger"
+                      >
+                        <span className="user-dropdown-publisher-icon" aria-hidden="true">
+                          {triggerPublisher ? (
+                            <MarketplaceIcon
+                              kind={triggerPublisher.kind}
+                              label={triggerPublisher.displayName || triggerPublisher.handle}
+                              imageUrl={triggerPublisher.image}
+                              size="xs"
+                            />
+                          ) : avatar ? (
+                            <img
+                              className="user-dropdown-account-avatar"
+                              src={avatar}
+                              alt=""
+                            />
+                          ) : (
+                            <span className="user-dropdown-account-avatar user-dropdown-account-fallback">
+                              {initial}
+                            </span>
+                          )}
+                        </span>
+                        <span className="user-dropdown-publisher-copy">
+                          <span className="user-dropdown-publisher-title">@{triggerHandle}</span>
+                          <span className="user-dropdown-publisher-meta">
+                            {activePublisherMeta}
+                          </span>
+                        </span>
+                        <ChevronRight className="user-dropdown-submenu-chevron" size={16} />
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent className="user-dropdown-subcontent user-dropdown-switcher-subcontent">
+                        <div className="user-dropdown-section-label">Switch publisher</div>
+                        <div className="user-dropdown-publisher-list" aria-label="Switch publisher">
+                          {activePublisher ? (
+                            <div
+                              aria-label={`Selected publisher @${activePublisher.publisher.handle}`}
+                              className="user-dropdown-publisher-item user-dropdown-publisher-item-current"
+                            >
+                              <span className="user-dropdown-publisher-icon" aria-hidden="true">
+                                <MarketplaceIcon
+                                  kind={activePublisher.publisher.kind}
+                                  label={
+                                    activePublisher.publisher.displayName ||
+                                    activePublisher.publisher.handle
+                                  }
+                                  imageUrl={activePublisher.publisher.image}
+                                  size="xs"
+                                />
+                              </span>
+                              <span className="user-dropdown-publisher-copy">
+                                <span className="user-dropdown-publisher-title">
+                                  @{activePublisher.publisher.handle}
+                                </span>
+                                <span className="user-dropdown-publisher-meta">
+                                  {formatPublisherMeta(activePublisher)}
+                                </span>
+                              </span>
+                              <Check
+                                className="user-dropdown-publisher-check"
+                                size={16}
+                                aria-label="Selected publisher"
+                              />
+                            </div>
+                          ) : null}
+                          {otherPublisherMemberships.map((entry) => (
+                            <DropdownMenuItem
+                              key={entry.publisher._id}
+                              aria-label={`Switch to @${entry.publisher.handle}`}
+                              className="user-dropdown-publisher-item"
+                              onClick={() => setActivePublisherId(entry.publisher._id)}
+                            >
+                              <span className="user-dropdown-publisher-icon" aria-hidden="true">
+                                <MarketplaceIcon
+                                  kind={entry.publisher.kind}
+                                  label={entry.publisher.displayName || entry.publisher.handle}
+                                  imageUrl={entry.publisher.image}
+                                  size="xs"
+                                />
+                              </span>
+                              <span className="user-dropdown-publisher-copy">
+                                <span className="user-dropdown-publisher-title">
+                                  @{entry.publisher.handle}
+                                </span>
+                                <span className="user-dropdown-publisher-meta">
+                                  {formatPublisherMeta(entry)}
+                                </span>
+                              </span>
+                            </DropdownMenuItem>
+                          ))}
+                        </div>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                  ) : (
+                    <div
+                      aria-label={`Current publisher @${triggerHandle}`}
+                      className="user-dropdown-current-trigger user-dropdown-current-static"
+                    >
+                      <span className="user-dropdown-publisher-icon" aria-hidden="true">
                         {triggerPublisher ? (
                           <MarketplaceIcon
                             kind={triggerPublisher.kind}
@@ -628,147 +732,123 @@ export default function Header() {
                             size="xs"
                           />
                         ) : avatar ? (
-                          <img src={avatar} alt="" />
+                          <img
+                            className="user-dropdown-account-avatar"
+                            src={avatar}
+                            alt=""
+                          />
                         ) : (
-                          <span className="user-menu-fallback">{initial}</span>
+                          <span className="user-dropdown-account-avatar user-dropdown-account-fallback">
+                            {initial}
+                          </span>
                         )}
                       </span>
                       <span className="user-dropdown-publisher-copy">
                         <span className="user-dropdown-publisher-title">@{triggerHandle}</span>
                         <span className="user-dropdown-publisher-meta">{activePublisherMeta}</span>
                       </span>
-                      <Check
-                        className="user-dropdown-publisher-check"
-                        size={16}
-                        aria-label="Selected publisher"
-                      />
                     </div>
-                    <div
-                      aria-label={`Publisher actions for @${triggerHandle}`}
-                      className="user-dropdown-active-actions"
-                    >
-                      {menuProfileHandle ? (
-                        <DropdownMenuItem asChild className="user-dropdown-scoped-action">
-                          <Link
-                            to="/user/$handle"
-                            params={{ handle: menuProfileHandle }}
-                            className="flex items-center gap-2"
-                          >
-                            {triggerPublisher?.kind === "org" ? (
-                              <Building2 size={14} aria-hidden="true" />
-                            ) : (
-                              <UserRound size={14} aria-hidden="true" />
-                            )}
-                            Profile
-                          </Link>
-                        </DropdownMenuItem>
-                      ) : null}
-                      <DropdownMenuItem asChild className="user-dropdown-scoped-action">
-                        <Link to="/dashboard" className="flex items-center gap-2">
-                          <LayoutDashboard size={14} aria-hidden="true" />
-                          Dashboard
-                        </Link>
-                      </DropdownMenuItem>
-                      <DropdownMenuItem asChild className="user-dropdown-scoped-action">
-                        <Link to="/settings" className="flex items-center gap-2">
-                          <Settings size={14} aria-hidden="true" />
-                          Settings
-                        </Link>
-                      </DropdownMenuItem>
-                    </div>
-                  </section>
-                  {hasMultiplePublishers && otherPublisherMemberships.length > 0 ? (
-                    <>
-                      <DropdownMenuSeparator />
-                      <div className="user-dropdown-section-label">Switch publisher</div>
-                      <div className="user-dropdown-publisher-list" aria-label="Switch publisher">
-                        {otherPublisherMemberships.map((entry) => (
-                          <DropdownMenuItem
-                            key={entry.publisher._id}
-                            aria-label={`Switch to @${entry.publisher.handle}`}
-                            className="user-dropdown-publisher-item"
-                            onClick={() => setActivePublisherId(entry.publisher._id)}
-                          >
-                            <span className="user-dropdown-publisher-icon" aria-hidden="true">
-                              <MarketplaceIcon
-                                kind={entry.publisher.kind}
-                                label={entry.publisher.displayName || entry.publisher.handle}
-                                imageUrl={entry.publisher.image}
-                                size="xs"
-                              />
-                            </span>
-                            <span className="user-dropdown-publisher-copy">
-                              <span className="user-dropdown-publisher-title">
-                                @{entry.publisher.handle}
-                              </span>
-                              <span className="user-dropdown-publisher-meta">
-                                {entry.publisher.kind === "org" ? `Org · ${entry.role}` : "Personal"}
-                              </span>
-                            </span>
-                          </DropdownMenuItem>
-                        ))}
-                      </div>
-                    </>
-                  ) : null}
+                  )}
                   <DropdownMenuSeparator />
-                  <div className="user-dropdown-section-label">Account</div>
-                  <section
-                    aria-label={`Account @${rawHandle}`}
-                    className="user-dropdown-account-section"
+                  <div
+                    aria-label={`Publisher actions for @${triggerHandle}`}
+                    className="user-dropdown-active-actions"
                   >
-                    <div
-                      aria-label={`Signed-in account @${rawHandle}`}
-                      className="user-dropdown-account-identity"
-                    >
-                      {avatar ? (
-                        <img
-                          className="user-dropdown-account-avatar"
-                          src={avatar}
-                          alt={me.displayName ?? me.name ?? "User avatar"}
-                        />
-                      ) : (
-                        <span className="user-dropdown-account-avatar user-dropdown-account-fallback">
-                          {initial}
-                        </span>
-                      )}
-                      <span className="user-dropdown-account-handle">@{rawHandle}</span>
-                    </div>
-                    <DropdownMenuItem asChild className="user-dropdown-account-action">
-                      <Link to="/stars" className="flex items-center gap-2">
-                        <Star size={14} aria-hidden="true" />
-                        Stars
+                    {menuProfileHandle ? (
+                      <DropdownMenuItem asChild className="user-dropdown-scoped-action">
+                        <Link
+                          to="/user/$handle"
+                          params={{ handle: menuProfileHandle }}
+                          className="flex items-center gap-2"
+                        >
+                          {triggerPublisher?.kind === "org" ? (
+                            <Building2 size={14} aria-hidden="true" />
+                          ) : (
+                            <UserRound size={14} aria-hidden="true" />
+                          )}
+                          Profile
+                        </Link>
+                      </DropdownMenuItem>
+                    ) : null}
+                    <DropdownMenuItem asChild className="user-dropdown-scoped-action">
+                      <Link to="/dashboard" className="flex items-center gap-2">
+                        <LayoutDashboard size={14} aria-hidden="true" />
+                        Dashboard
                       </Link>
                     </DropdownMenuItem>
-                    <div className="user-dropdown-appearance-row">
-                      <span className="user-dropdown-appearance-label">
-                        <Palette size={14} aria-hidden="true" />
-                        Appearance
-                      </span>
-                      <div className="user-dropdown-theme-row" role="group" aria-label="Theme">
-                        {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
-                          <DropdownMenuItem
-                            key={themeMode}
-                            aria-label={label}
-                            aria-current={mode === themeMode ? "true" : undefined}
-                            className="user-dropdown-theme-button"
-                            data-status={mode === themeMode ? "active" : undefined}
-                            title={label}
-                            onClick={() => setThemeMode(themeMode)}
-                          >
-                            <Icon size={15} aria-hidden="true" />
-                            <span className="sr-only">{label}</span>
-                          </DropdownMenuItem>
-                        ))}
-                      </div>
-                    </div>
-                    <DropdownMenuItem
-                      className="user-dropdown-account-action"
-                      onClick={() => void signOut()}
-                    >
-                      <LogOut size={14} aria-hidden="true" />
-                      Sign out
+                    <DropdownMenuItem asChild className="user-dropdown-scoped-action">
+                      <Link to="/settings" className="flex items-center gap-2">
+                        <Settings size={14} aria-hidden="true" />
+                        Settings
+                      </Link>
                     </DropdownMenuItem>
-                  </section>
+                  </div>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger
+                      aria-label={`Account @${rawHandle}`}
+                      className="user-dropdown-account-trigger"
+                    >
+                      <span className="user-dropdown-account-label">Account</span>
+                      <span className="user-dropdown-account-handle">@{rawHandle}</span>
+                      <ChevronRight className="user-dropdown-submenu-chevron" size={16} />
+                    </DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent className="user-dropdown-subcontent user-dropdown-account-subcontent">
+                      <div
+                        aria-label={`Signed-in account @${rawHandle}`}
+                        className="user-dropdown-account-identity"
+                      >
+                        {avatar ? (
+                          <img
+                            className="user-dropdown-account-avatar"
+                            src={avatar}
+                            alt={me.displayName ?? me.name ?? "User avatar"}
+                          />
+                        ) : (
+                          <span className="user-dropdown-account-avatar user-dropdown-account-fallback">
+                            {initial}
+                          </span>
+                        )}
+                        <span className="user-dropdown-account-handle">@{rawHandle}</span>
+                      </div>
+                      <DropdownMenuSeparator />
+                      <DropdownMenuItem asChild className="user-dropdown-account-action">
+                        <Link to="/stars" className="flex items-center gap-2">
+                          <Star size={14} aria-hidden="true" />
+                          Stars
+                        </Link>
+                      </DropdownMenuItem>
+                      <div className="user-dropdown-appearance-row">
+                        <span className="user-dropdown-appearance-label">
+                          <Palette size={14} aria-hidden="true" />
+                          Appearance
+                        </span>
+                        <div className="user-dropdown-theme-row" role="group" aria-label="Theme">
+                          {THEME_MODE_ITEMS.map(({ mode: themeMode, label, Icon }) => (
+                            <DropdownMenuItem
+                              key={themeMode}
+                              aria-label={label}
+                              aria-current={mode === themeMode ? "true" : undefined}
+                              className="user-dropdown-theme-button"
+                              data-status={mode === themeMode ? "active" : undefined}
+                              title={label}
+                              onClick={() => setThemeMode(themeMode)}
+                            >
+                              <Icon size={15} aria-hidden="true" />
+                              <span className="sr-only">{label}</span>
+                            </DropdownMenuItem>
+                          ))}
+                        </div>
+                      </div>
+                      <DropdownMenuItem
+                        className="user-dropdown-account-action"
+                        onClick={() => void signOut()}
+                      >
+                        <LogOut size={14} aria-hidden="true" />
+                        Sign out
+                      </DropdownMenuItem>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : isAuthResolving ? (
