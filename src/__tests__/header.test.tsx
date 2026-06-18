@@ -424,7 +424,7 @@ describe("Header", () => {
     expect(screen.getByRole("button", { name: "Open account menu for @openclaw" })).toBeTruthy();
     const activePublisher = screen.getByLabelText("Current publisher @openclaw");
     const publisherActions = screen.getByLabelText("Publisher actions for @openclaw");
-    const profile = within(publisherActions).getByText("Profile");
+    const profile = within(publisherActions).getByText("Org profile");
 
     expect(screen.queryByLabelText("Account @patrick")).toBeNull();
     expect(screen.getByText("Switch publisher")).toBeTruthy();

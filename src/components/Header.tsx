@@ -157,6 +157,7 @@ export default function Header() {
     triggerPublisher?.kind === "org" ? triggerPublisher.handle : null;
   const menuProfileHandle = activeOrgProfileHandle ?? profileHandle;
   const isPersonalPublisher = triggerPublisher?.kind !== "org";
+  const profileMenuLabel = isPersonalPublisher ? "Profile" : "Org profile";
   const formatPublisherRole = (role: string | undefined) =>
     role ? `${role.charAt(0).toUpperCase()}${role.slice(1)}` : "";
   const formatPublisherMeta = (entry: typeof activePublisher) => {
@@ -786,7 +787,7 @@ export default function Header() {
                           ) : (
                             <UserRound size={14} aria-hidden="true" />
                           )}
-                          Profile
+                          {profileMenuLabel}
                         </Link>
                       </DropdownMenuItem>
                     ) : null}
