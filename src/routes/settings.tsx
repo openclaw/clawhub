@@ -894,37 +894,34 @@ export function Settings() {
                           key={entry.publisher._id}
                           className="gap-5 md:only:col-span-full"
                         >
-                          <div className="flex min-w-0 items-start justify-between gap-5">
-                            <div className="flex min-w-0 items-start gap-4">
-                              <OrgLogoSmall
-                                image={entry.publisher.image}
-                                name={entry.publisher.displayName}
-                                handle={entry.publisher.handle}
-                                className="h-12 w-12"
-                              />
-                              <div className="min-w-0">
-                                <div className="flex min-w-0 flex-wrap items-center gap-2">
-                                  <h3 className="truncate text-base font-bold text-[color:var(--ink)]">
-                                    {entry.publisher.displayName || entry.publisher.handle}
-                                  </h3>
-                                  {entry.publisher.official ? (
-                                    <Badge variant="official" size="sm">
-                                      Official
-                                    </Badge>
-                                  ) : null}
-                                </div>
-                                <p className="mt-1 truncate text-sm text-[color:var(--ink-soft)]">
-                                  @{entry.publisher.handle}
-                                </p>
+                          <div className="flex min-w-0 items-start gap-4">
+                            <OrgLogoSmall
+                              image={entry.publisher.image}
+                              name={entry.publisher.displayName}
+                              handle={entry.publisher.handle}
+                              className="h-12 w-12"
+                            />
+                            <div className="min-w-0">
+                              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                                <h3 className="truncate text-base font-bold text-[color:var(--ink)]">
+                                  {entry.publisher.displayName || entry.publisher.handle}
+                                </h3>
+                                {entry.publisher.official ? (
+                                  <Badge variant="official" size="sm">
+                                    Official
+                                  </Badge>
+                                ) : null}
                               </div>
+                              <p className="mt-1 truncate text-sm text-[color:var(--ink-soft)]">
+                                @{entry.publisher.handle}
+                              </p>
+                              <dl className="mt-2 flex items-center gap-2 text-xs">
+                                <dt className="text-[color:var(--ink-soft)]">Role</dt>
+                                <dd className="font-semibold text-[color:var(--ink)]">
+                                  {roleLabel}
+                                </dd>
+                              </dl>
                             </div>
-                            <Badge
-                              variant="compact"
-                              aria-label={`Your role: ${roleLabel}`}
-                              className="shrink-0"
-                            >
-                              {roleLabel}
-                            </Badge>
                           </div>
 
                           <div className="flex flex-col gap-4 border-t border-[color:var(--line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
