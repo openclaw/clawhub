@@ -133,8 +133,6 @@ export default function Header() {
     api.publishers.getMyProfileHandle,
     isAuthenticated && me ? {} : "skip",
   );
-  const signInRedirectTo = getCurrentRelativeUrl();
-
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const [typeaheadOpen, setTypeaheadOpen] = useState(false);
   const [typeaheadTab, setTypeaheadTab] = useState<TypeaheadTab>("skills");
@@ -643,10 +641,7 @@ export default function Header() {
                   disabled={isLoading}
                   onClick={() => {
                     clearAuthError();
-                    void signIn(
-                      "github",
-                      signInRedirectTo ? { redirectTo: signInRedirectTo } : undefined,
-                    )
+                    void signIn("github", { redirectTo: "/dashboard" })
                       .then((result) => {
                         if (result?.signingIn === false && !result.redirect) {
                           setAuthError("Sign in failed. Please try again.");
@@ -1013,12 +1008,6 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
     meta: null,
   };
 }
-
-function getCurrentRelativeUrl() {
-  if (typeof window === "undefined") return "/";
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
-
 function NavbarThemeSwitcher({
   mode,
   onSetMode,

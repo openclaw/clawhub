@@ -342,7 +342,7 @@ describe("Header", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sign in with GitHub" }));
 
-    expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/" });
+    expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/dashboard" });
     await waitFor(() => {
       expect(setAuthError).toHaveBeenCalledWith("Sign in failed. Please try again.");
     });
@@ -359,7 +359,7 @@ describe("Header", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Sign in with GitHub" }));
 
-    expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/" });
+    expect(signInMock).toHaveBeenCalledWith("github", { redirectTo: "/dashboard" });
     await Promise.resolve();
     expect(setAuthError).not.toHaveBeenCalled();
   });
