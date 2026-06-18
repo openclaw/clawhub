@@ -152,7 +152,6 @@ export default function Header() {
       ? triggerPublisher.displayName
       : `@${triggerHandle}`;
   const triggerLabel = triggerTitle.length > 25 ? `${triggerTitle.slice(0, 25)}…` : triggerTitle;
-  const accountHandle = me?.handle ?? rawHandle;
   const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
   const profileHandle = useQuery(
     api.publishers.getMyProfileHandle,
@@ -169,22 +168,6 @@ export default function Header() {
   };
   const activePublisherMeta =
     triggerPublisher?.kind === "org" ? formatPublisherMeta(activePublisher) : "Personal";
-  const activePublisherManagingRow =
-    triggerPublisher?.kind === "org" ? (
-      <div className="user-dropdown-managing-row">
-        <span className="user-dropdown-managing-label">Managing as</span>
-        <span className="user-dropdown-managing-account">
-          {avatar ? (
-            <img className="user-dropdown-managing-avatar" src={avatar} alt="" />
-          ) : (
-            <span className="user-dropdown-managing-avatar user-dropdown-managing-avatar-fallback">
-              <UserRound size={9} aria-hidden="true" />
-            </span>
-          )}
-          <span className="user-dropdown-managing-handle">@{accountHandle}</span>
-        </span>
-      </div>
-    ) : null;
   const otherPublisherMemberships =
     publisherMemberships?.filter((entry) => entry.publisher._id !== activePublisherId) ?? [];
   const goToOrganizationCreation = () => {
@@ -788,13 +771,7 @@ export default function Header() {
                       </span>
                     </div>
                   )}
-                  {activePublisherManagingRow ? (
-                    <>
-                      <DropdownMenuSeparator className="user-dropdown-managing-separator" />
-                      {activePublisherManagingRow}
-                    </>
-                  ) : null}
-                  <DropdownMenuSeparator className="user-dropdown-managing-separator" />
+                  <DropdownMenuSeparator />
                   <div
                     aria-label={`Publisher actions for @${triggerHandle}`}
                     className="user-dropdown-active-actions"
@@ -836,7 +813,7 @@ export default function Header() {
                       </Link>
                     </DropdownMenuItem>
                   </div>
-                  <DropdownMenuSeparator className="user-dropdown-full-bleed-separator" />
+                  <DropdownMenuSeparator />
                   <div className="user-dropdown-appearance-row">
                     <span className="user-dropdown-appearance-label">
                       <Palette size={14} aria-hidden="true" />
@@ -859,7 +836,7 @@ export default function Header() {
                       ))}
                     </div>
                   </div>
-                  <DropdownMenuSeparator className="user-dropdown-full-bleed-separator" />
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     className="user-dropdown-account-action"
                     onClick={() => void signOut()}

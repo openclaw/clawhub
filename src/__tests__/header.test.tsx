@@ -444,13 +444,7 @@ describe("Header", () => {
     expect(within(activePublisher).getByText("OpenClaw")).toBeTruthy();
     expect(within(activePublisher).getByText("Organization")).toBeTruthy();
     expect(screen.queryByText("Org · Admin")).toBeNull();
-    const managingRow = document.querySelector(".user-dropdown-managing-row");
-    expect(managingRow).toBeTruthy();
-    expect(within(managingRow as HTMLElement).getByText("Managing as")).toBeTruthy();
-    expect(within(managingRow as HTMLElement).getByText("@patrick")).toBeTruthy();
-    expect(
-      managingRow?.querySelector(".user-dropdown-managing-avatar-fallback .lucide-user-round"),
-    ).toBeTruthy();
+    expect(screen.queryByText("Managing as")).toBeNull();
     expect(screen.getByLabelText("Publisher actions for @openclaw")).toBeTruthy();
     expect(within(publisherActions).queryByText("Stars")).toBeNull();
     expect(profile.closest("a")?.getAttribute("href")).toBe("/user/openclaw");
