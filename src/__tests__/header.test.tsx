@@ -327,7 +327,7 @@ describe("Header", () => {
     expect(screen.queryByText("About")).toBeNull();
   });
 
-  it("separates active publisher actions from personal account controls", () => {
+  it("separates the publisher switcher from personal account controls", () => {
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -345,20 +345,26 @@ describe("Header", () => {
     expect(document.querySelector(".theme-mode-toggle")).toBeNull();
     expect(screen.queryByText("Theme")).toBeNull();
 
+    expect(screen.getByRole("button", { name: "Open publisher switcher for @patrick" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open account menu for @patrick" })).toBeTruthy();
+
     const activePublisher = screen.getByLabelText("Current publisher @patrick");
     const account = screen.getByLabelText("Account @patrick");
+    const appActions = screen.getByLabelText("App actions");
     const themeRow = document.querySelector(".user-dropdown-theme-row");
-    const settings = within(activePublisher).getByText("Settings");
-    const stars = within(account).getByText("Stars");
-    const appearance = within(account).getByText("Appearance");
-    const signOut = within(account).getByText("Sign out");
+    const managePublisher = within(activePublisher).getByText("Manage publisher…");
+    const stars = within(appActions).getByText("Stars");
+    const appearance = within(appActions).getByText("Appearance");
+    const signOut = screen.getByText("Sign out");
 
     expect(within(activePublisher).queryByText("Stars")).toBeNull();
-    expect(within(account).queryByText("Settings")).toBeNull();
+    expect(within(activePublisher).queryByText("Appearance")).toBeNull();
+    expect(within(account).queryByText("Stars")).toBeNull();
+    expect(within(account).queryByText("Manage publisher…")).toBeNull();
     expect(screen.queryByText("Switch publisher")).toBeNull();
     expect(themeRow).toBeTruthy();
     expect(themeRow?.children).toHaveLength(3);
-    expect(settings.compareDocumentPosition(stars) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(managePublisher.compareDocumentPosition(stars) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(stars.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
@@ -377,7 +383,7 @@ describe("Header", () => {
     expect(setModeMock).toHaveBeenCalledWith("dark");
   });
 
-  it("renders a global publisher switcher in the account menu", () => {
+  it("renders a compact publisher switcher separate from the account menu", () => {
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -400,21 +406,24 @@ describe("Header", () => {
 
     render(<Header />);
 
-    expect(screen.getByRole("button", { name: "Open account menu for @openclaw" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open publisher switcher for @openclaw" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open account menu for @patrick" })).toBeTruthy();
     const activePublisher = screen.getByLabelText("Current publisher @openclaw");
     const account = screen.getByLabelText("Account @patrick");
-    const profile = within(activePublisher).getByText("Profile");
+    const managePublisher = within(activePublisher).getByText("Manage publisher…");
 
     expect(within(account).getByText("@patrick")).toBeTruthy();
+    expect(within(account).getByText("Account settings")).toBeTruthy();
+    expect(within(account).queryByText("Switch publisher")).toBeNull();
     expect(screen.getByText("Switch publisher")).toBeTruthy();
     expect(screen.getByLabelText("Switch to @patrick")).toBeTruthy();
-    expect(screen.getByText("Personal")).toBeTruthy();
+    expect(screen.getByText("Personal publisher")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(within(activePublisher).getByText("@openclaw")).toBeTruthy();
-    expect(within(activePublisher).getByText("Org · admin")).toBeTruthy();
-    expect(screen.getByLabelText("Publisher actions for @openclaw")).toBeTruthy();
-    expect(profile.closest("a")?.getAttribute("href")).toBe("/user/openclaw");
-    expect(profile.closest("a")?.querySelector(".lucide-building-2")).toBeTruthy();
+    expect(within(activePublisher).getByText("Organization · Admin")).toBeTruthy();
+    expect(managePublisher.closest("a")?.getAttribute("href")).toBe("/settings");
+    expect(screen.queryByText("Profile")).toBeNull();
+    expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Signed in as @patrick")).toBeNull();
     expect(screen.queryByText(/For @openclaw/)).toBeNull();
 
@@ -422,7 +431,7 @@ describe("Header", () => {
 
     expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
     expect(screen.getByText("Stars")).toBeTruthy();
-    expect(screen.getByText("Settings")).toBeTruthy();
+    expect(screen.getByText("Account settings")).toBeTruthy();
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {
@@ -672,8 +681,7 @@ describe("Header", () => {
     ).toBeTruthy();
   });
 
-  it("links profile and starred skills from the signed-in avatar menu", () => {
-    profileHandleMock.mockReturnValue("patrick-profile");
+  it("links publisher management and account actions from separate menus", () => {
     authStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -688,15 +696,17 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const profile = screen.getByText("Profile");
-    const dashboard = screen.getAllByText("Dashboard").at(-1)!;
-
-    expect(profile.closest("a")?.getAttribute("href")).toBe("/user/patrick-profile");
-    expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
-      Node.DOCUMENT_POSITION_FOLLOWING,
+    expect(screen.getByText("Manage publisher…").closest("a")?.getAttribute("href")).toBe(
+      "/settings",
     );
     expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
-    expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
-    expect(screen.getByText("Settings")).toBeTruthy();
+
+    fireEvent.click(screen.getByText("Account settings"));
+
+    expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/settings",
+      search: { view: "profile" },
+    });
   });
 });
