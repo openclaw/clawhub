@@ -1268,8 +1268,9 @@ code {
   min-width: 0;
   align-items: center;
   gap: 8px;
-  font-size: var(--fs-sm);
-  font-weight: 650;
+  color: var(--ink-soft);
+  font-size: 0.78rem;
+  font-weight: 600;
 }
 
 .user-dropdown-theme-row {
