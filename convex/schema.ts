@@ -2498,17 +2498,6 @@ const cliDeviceCodes = defineTable({
   .index("by_user_code_hash", ["userCodeHash"])
   .index("by_status_expires", ["status", "expiresAt"]);
 
-const rateLimits = defineTable({
-  key: v.string(),
-  windowStart: v.number(),
-  shard: v.optional(v.number()),
-  count: v.number(),
-  limit: v.number(),
-  updatedAt: v.number(),
-})
-  .index("by_key_window", ["key", "windowStart"])
-  .index("by_key", ["key"]);
-
 const rateLimitCounters = defineTable({
   key: v.string(),
   windowStart: v.number(),
@@ -2731,7 +2720,6 @@ export default defineSchema({
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,
-  rateLimits,
   rateLimitCounters,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
