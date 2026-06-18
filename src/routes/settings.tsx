@@ -11,7 +11,6 @@ import {
   KeyRound,
   Monitor,
   Moon,
-  Package,
   Palette,
   Plus,
   Save,
@@ -65,6 +64,7 @@ import { Textarea } from "../components/ui/textarea";
 import { ToggleGroup, ToggleGroupItem } from "../components/ui/toggle-group";
 import { useActivePublisher } from "../lib/activePublisher";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { PLUGIN_NAV_ICON, SKILL_NAV_ICON } from "../lib/marketplaceIcons";
 import { useThemeMode } from "../lib/theme";
 import { timeAgo } from "../lib/timeAgo";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -930,13 +930,13 @@ export function Settings() {
                           <div className="flex flex-col gap-4 border-t border-[color:var(--line)] pt-4 sm:flex-row sm:items-center sm:justify-between">
                             <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm text-[color:var(--ink-soft)]">
                               <span className="inline-flex items-center gap-1.5">
-                                <Code size={14} aria-hidden="true" />
+                                <SKILL_NAV_ICON size={14} aria-hidden="true" />
                                 <span>
                                   {skillCount} {skillCount === 1 ? "skill" : "skills"}
                                 </span>
                               </span>
                               <span className="inline-flex items-center gap-1.5">
-                                <Package size={14} aria-hidden="true" />
+                                <PLUGIN_NAV_ICON size={14} aria-hidden="true" />
                                 <span>
                                   {pluginCount} {pluginCount === 1 ? "plugin" : "plugins"}
                                 </span>
