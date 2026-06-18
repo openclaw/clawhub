@@ -7,12 +7,14 @@ const mocks = vi.hoisted(() => {
   const registryArtifactBackupRetryRef = Symbol("registry-artifact-backup-retry");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
+  const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
   return {
     interval,
     githubSkillSyncRef,
     registryArtifactBackupRetryRef,
     installTelemetryDedupePruneRef,
     rateLimitCountersPruneRef,
+    skillStatEventPruneRef,
   };
 });
 
@@ -33,7 +35,11 @@ vi.mock("./_generated/api", () => ({
       runSkillStatBackfillInternal: Symbol("skill-stats-backfill"),
       updateGlobalStatsAction: Symbol("global-stats-update"),
     },
-    skillStatEvents: { processSkillStatEventsAction: Symbol("skill-stat-events") },
+    skillStatEvents: {
+      processSkillStatEventsAction: Symbol("skill-stat-events"),
+      processSkillStatEventsInternal: Symbol("skill-doc-stat-sync"),
+      pruneProcessedSkillStatEventsInternal: mocks.skillStatEventPruneRef,
+    },
     packages: {
       processPackageStatEventsInternal: Symbol("package-stat-events"),
       backfillPackageReleaseScansInternal: Symbol("package-scan-backfill"),
@@ -131,6 +137,22 @@ describe("crons", () => {
       { minutes: 15 },
       mocks.rateLimitCountersPruneRef,
       { batchSize: 500 },
+    );
+  });
+
+  it("prunes processed skill stat events daily with a seven-day retention window", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-stat-events-prune",
+      { hours: 24 },
+      mocks.skillStatEventPruneRef,
+      {
+        retentionDays: 7,
+        batchSize: 1000,
+        maxBatches: 20,
+        confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+      },
     );
   });
 });

@@ -59,6 +59,18 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
+    "skill-stat-events-prune",
+    { hours: 24 },
+    internal.skillStatEvents.pruneProcessedSkillStatEventsInternal,
+    {
+      retentionDays: 7,
+      batchSize: 1000,
+      maxBatches: 20,
+      confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+    },
+  );
+
+  crons.interval(
     "global-stats-update",
     { hours: 24 },
     internal.statsMaintenance.updateGlobalStatsAction,

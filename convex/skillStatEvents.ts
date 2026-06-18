@@ -182,6 +182,15 @@ const DEFAULT_DOC_SYNC_BATCH_SIZE = 100;
 const MAX_DOC_SYNC_BATCH_SIZE = 100;
 const DEFAULT_DOC_SYNC_MAX_BATCHES = 5;
 const MAX_DOC_SYNC_MAX_BATCHES = 5;
+export const PROCESSED_SKILL_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN =
+  "PRUNE_PROCESSED_SKILL_STAT_EVENTS";
+const DEFAULT_PROCESSED_EVENT_RETENTION_DAYS = 7;
+const MIN_PROCESSED_EVENT_RETENTION_DAYS = 1;
+const MAX_PROCESSED_EVENT_RETENTION_DAYS = 90;
+const DEFAULT_PROCESSED_EVENT_PRUNE_BATCH_SIZE = 1_000;
+const MAX_PROCESSED_EVENT_PRUNE_BATCH_SIZE = 5_000;
+const DEFAULT_PROCESSED_EVENT_PRUNE_MAX_BATCHES = 20;
+const MAX_PROCESSED_EVENT_PRUNE_MAX_BATCHES = 100;
 
 type ClaimSkillStatDocSyncLeaseResult =
   | {
@@ -222,6 +231,27 @@ type SkillStatDocSyncActionResult =
       scheduledContinuation: boolean;
     };
 
+type ProcessedSkillStatEventPruneBatchResult = {
+  cutoffProcessedAt: number;
+  dryRun: boolean;
+  matched: number;
+  deleted: number;
+  hasMore: boolean;
+};
+
+type ProcessedSkillStatEventPruneResult = {
+  cutoffProcessedAt: number;
+  retentionCutoffProcessedAt: number;
+  dailyStatsCursorCreationTime: number | null;
+  retentionDays: number;
+  dryRun: boolean;
+  batches: number;
+  matched: number;
+  deleted: number;
+  stoppedReason: "empty" | "max_batches" | "cursor_not_ready";
+  scheduledContinuation: boolean;
+};
+
 function clampInt(value: number, min: number, max: number) {
   if (!Number.isFinite(value)) return min;
   return Math.max(min, Math.min(Math.floor(value), max));
@@ -241,6 +271,30 @@ function normalizeDocSyncDrainBatchSize(batchSize: number | undefined) {
 
 function normalizeDocSyncMaxBatches(maxBatches: number | undefined) {
   return clampInt(maxBatches ?? DEFAULT_DOC_SYNC_MAX_BATCHES, 1, MAX_DOC_SYNC_MAX_BATCHES);
+}
+
+function normalizeProcessedEventRetentionDays(retentionDays: number | undefined) {
+  return clampInt(
+    retentionDays ?? DEFAULT_PROCESSED_EVENT_RETENTION_DAYS,
+    MIN_PROCESSED_EVENT_RETENTION_DAYS,
+    MAX_PROCESSED_EVENT_RETENTION_DAYS,
+  );
+}
+
+function normalizeProcessedEventPruneBatchSize(batchSize: number | undefined) {
+  return clampInt(
+    batchSize ?? DEFAULT_PROCESSED_EVENT_PRUNE_BATCH_SIZE,
+    1,
+    MAX_PROCESSED_EVENT_PRUNE_BATCH_SIZE,
+  );
+}
+
+function normalizeProcessedEventPruneMaxBatches(maxBatches: number | undefined) {
+  return clampInt(
+    maxBatches ?? DEFAULT_PROCESSED_EVENT_PRUNE_MAX_BATCHES,
+    1,
+    MAX_PROCESSED_EVENT_PRUNE_MAX_BATCHES,
+  );
 }
 
 export const claimSkillStatDocSyncLeaseInternal = internalMutation({
@@ -579,6 +633,179 @@ export const getSkillStatDocSyncStatusInternal = internalQuery({
         : null,
       now,
     };
+  },
+});
+
+export const pruneProcessedSkillStatEventBatchInternal = internalMutation({
+  args: {
+    cutoffProcessedAt: v.number(),
+    dryRun: v.boolean(),
+    batchSize: v.optional(v.number()),
+    confirmationToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ProcessedSkillStatEventPruneBatchResult> => {
+    if (
+      !args.dryRun &&
+      args.confirmationToken !== PROCESSED_SKILL_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN
+    ) {
+      throw new Error(
+        `Apply requires confirmationToken=${PROCESSED_SKILL_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN}`,
+      );
+    }
+
+    const batchSize = normalizeProcessedEventPruneBatchSize(args.batchSize);
+    const events = await ctx.db
+      .query("skillStatEvents")
+      .withIndex("by_unprocessed", (q) =>
+        q.gt("processedAt", 0).lt("processedAt", args.cutoffProcessedAt),
+      )
+      .take(batchSize);
+
+    if (!args.dryRun) {
+      for (const event of events) {
+        await ctx.db.delete(event._id);
+      }
+    }
+
+    return {
+      cutoffProcessedAt: args.cutoffProcessedAt,
+      dryRun: args.dryRun,
+      matched: events.length,
+      deleted: args.dryRun ? 0 : events.length,
+      hasMore: events.length === batchSize,
+    };
+  },
+});
+
+export const pruneProcessedSkillStatEventsInternal: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      dryRun: v.optional(v.boolean()),
+      retentionDays: v.optional(v.number()),
+      batchSize: v.optional(v.number()),
+      maxBatches: v.optional(v.number()),
+      confirmationToken: v.optional(v.string()),
+    },
+    handler: async (ctx, args): Promise<ProcessedSkillStatEventPruneResult> => {
+      const dryRun = args.dryRun ?? false;
+      const retentionDays = normalizeProcessedEventRetentionDays(args.retentionDays);
+      const batchSize = normalizeProcessedEventPruneBatchSize(args.batchSize);
+      const maxBatches = normalizeProcessedEventPruneMaxBatches(args.maxBatches);
+      const retentionCutoffProcessedAt = Date.now() - retentionDays * 24 * 60 * 60 * 1_000;
+      const dailyStatsCursorCreationTime = (await ctx.runQuery(
+        internal.skillStatEvents.getStatEventCursor,
+      )) as number | undefined;
+      const cutoffProcessedAt = Math.min(
+        retentionCutoffProcessedAt,
+        dailyStatsCursorCreationTime ?? 0,
+      );
+
+      if (cutoffProcessedAt <= 0) {
+        return {
+          cutoffProcessedAt,
+          retentionCutoffProcessedAt,
+          dailyStatsCursorCreationTime: dailyStatsCursorCreationTime ?? null,
+          retentionDays,
+          dryRun,
+          batches: 0,
+          matched: 0,
+          deleted: 0,
+          stoppedReason: "cursor_not_ready",
+          scheduledContinuation: false,
+        };
+      }
+
+      let batches = 0;
+      let matched = 0;
+      let deleted = 0;
+      let hasMore = false;
+      let stoppedReason: "empty" | "max_batches" | "cursor_not_ready" = "empty";
+      const batchLimit = dryRun ? 1 : maxBatches;
+
+      for (let index = 0; index < batchLimit; index += 1) {
+        const batch = (await ctx.runMutation(
+          internal.skillStatEvents.pruneProcessedSkillStatEventBatchInternal,
+          {
+            cutoffProcessedAt,
+            dryRun,
+            batchSize,
+            confirmationToken: args.confirmationToken,
+          },
+        )) as ProcessedSkillStatEventPruneBatchResult;
+
+        batches += 1;
+        matched += batch.matched;
+        deleted += batch.deleted;
+        hasMore = batch.hasMore;
+
+        if (!batch.hasMore) {
+          stoppedReason = "empty";
+          break;
+        }
+
+        stoppedReason = "max_batches";
+      }
+
+      if (!dryRun && hasMore && stoppedReason === "max_batches") {
+        await ctx.scheduler.runAfter(
+          0,
+          internal.skillStatEvents.pruneProcessedSkillStatEventsInternal,
+          {
+            dryRun,
+            retentionDays,
+            batchSize,
+            maxBatches,
+            confirmationToken: args.confirmationToken,
+          },
+        );
+      }
+
+      return {
+        cutoffProcessedAt,
+        retentionCutoffProcessedAt,
+        dailyStatsCursorCreationTime: dailyStatsCursorCreationTime ?? null,
+        retentionDays,
+        dryRun,
+        batches,
+        matched,
+        deleted,
+        stoppedReason,
+        scheduledContinuation: !dryRun && hasMore && stoppedReason === "max_batches",
+      };
+    },
+  });
+
+export const kickProcessedSkillStatEventPruneInternal = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    retentionDays: v.optional(v.number()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+    confirmationToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun ?? true;
+    if (!dryRun && args.confirmationToken !== PROCESSED_SKILL_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN) {
+      throw new Error(
+        `Apply requires confirmationToken=${PROCESSED_SKILL_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN}`,
+      );
+    }
+
+    const retentionDays = normalizeProcessedEventRetentionDays(args.retentionDays);
+    const batchSize = normalizeProcessedEventPruneBatchSize(args.batchSize);
+    const maxBatches = normalizeProcessedEventPruneMaxBatches(args.maxBatches);
+    await ctx.scheduler.runAfter(
+      0,
+      internal.skillStatEvents.pruneProcessedSkillStatEventsInternal,
+      {
+        dryRun,
+        retentionDays,
+        batchSize,
+        maxBatches,
+        confirmationToken: args.confirmationToken,
+      },
+    );
+    return { ok: true as const, dryRun, retentionDays, batchSize, maxBatches };
   },
 });
 

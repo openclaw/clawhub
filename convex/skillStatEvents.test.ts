@@ -6,9 +6,12 @@ const apiRefs = vi.hoisted(() => ({
   claimSkillStatDocSyncLeaseInternal: Symbol("claimSkillStatDocSyncLeaseInternal"),
   getStatEventCursor: Symbol("getStatEventCursor"),
   getUnprocessedEventBatch: Symbol("getUnprocessedEventBatch"),
+  kickProcessedSkillStatEventPruneInternal: Symbol("kickProcessedSkillStatEventPruneInternal"),
   processSkillStatEventBatchInternal: Symbol("processSkillStatEventBatchInternal"),
   processSkillStatEventsAction: Symbol("processSkillStatEventsAction"),
   processSkillStatEventsInternal: Symbol("processSkillStatEventsInternal"),
+  pruneProcessedSkillStatEventsInternal: Symbol("pruneProcessedSkillStatEventsInternal"),
+  pruneProcessedSkillStatEventBatchInternal: Symbol("pruneProcessedSkillStatEventBatchInternal"),
   releaseSkillStatDocSyncLeaseInternal: Symbol("releaseSkillStatDocSyncLeaseInternal"),
 }));
 
@@ -25,9 +28,12 @@ vi.mock("./_generated/api", () => ({
       claimSkillStatDocSyncLeaseInternal: apiRefs.claimSkillStatDocSyncLeaseInternal,
       getStatEventCursor: apiRefs.getStatEventCursor,
       getUnprocessedEventBatch: apiRefs.getUnprocessedEventBatch,
+      kickProcessedSkillStatEventPruneInternal: apiRefs.kickProcessedSkillStatEventPruneInternal,
       processSkillStatEventBatchInternal: apiRefs.processSkillStatEventBatchInternal,
       processSkillStatEventsAction: apiRefs.processSkillStatEventsAction,
       processSkillStatEventsInternal: apiRefs.processSkillStatEventsInternal,
+      pruneProcessedSkillStatEventsInternal: apiRefs.pruneProcessedSkillStatEventsInternal,
+      pruneProcessedSkillStatEventBatchInternal: apiRefs.pruneProcessedSkillStatEventBatchInternal,
       releaseSkillStatDocSyncLeaseInternal: apiRefs.releaseSkillStatDocSyncLeaseInternal,
     },
   },
@@ -37,6 +43,9 @@ const {
   processSkillStatEventBatchInternal,
   processSkillStatEventsAction,
   processSkillStatEventsInternal,
+  kickProcessedSkillStatEventPruneInternal,
+  pruneProcessedSkillStatEventBatchInternal,
+  pruneProcessedSkillStatEventsInternal,
 } = await import("./skillStatEvents");
 
 const processSkillStatEventBatchInternalHandler = (
@@ -63,6 +72,56 @@ const processSkillStatEventsInternalHandler = (
       ctx: unknown,
       args: { batchSize?: number; maxBatches?: number },
     ) => Promise<{ processed: number; scheduledContinuation: boolean }>;
+  }
+)._handler;
+
+const pruneProcessedSkillStatEventBatchInternalHandler = (
+  pruneProcessedSkillStatEventBatchInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: {
+        cutoffProcessedAt: number;
+        dryRun: boolean;
+        batchSize?: number;
+        confirmationToken?: string;
+      },
+    ) => Promise<{ matched: number; deleted: number; hasMore: boolean }>;
+  }
+)._handler;
+
+const pruneProcessedSkillStatEventsInternalHandler = (
+  pruneProcessedSkillStatEventsInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: {
+        dryRun?: boolean;
+        retentionDays?: number;
+        batchSize?: number;
+        maxBatches?: number;
+        confirmationToken?: string;
+      },
+    ) => Promise<{ matched: number; deleted: number; scheduledContinuation: boolean }>;
+  }
+)._handler;
+
+const kickProcessedSkillStatEventPruneInternalHandler = (
+  kickProcessedSkillStatEventPruneInternal as unknown as {
+    _handler: (
+      ctx: unknown,
+      args: {
+        dryRun?: boolean;
+        retentionDays?: number;
+        batchSize?: number;
+        maxBatches?: number;
+        confirmationToken?: string;
+      },
+    ) => Promise<{
+      ok: true;
+      dryRun: boolean;
+      retentionDays: number;
+      batchSize: number;
+      maxBatches: number;
+    }>;
   }
 )._handler;
 
@@ -317,5 +376,236 @@ describe("skill stat events", () => {
       "skillStatEvents:install",
       expect.objectContaining({ processedAt: expect.any(Number) }),
     );
+  });
+
+  it("dry-runs processed event pruning through a bounded processedAt range", async () => {
+    const oldProcessedEvent = {
+      _id: "skillStatEvents:old",
+      skillId: "skills:1",
+      kind: "download",
+      occurredAt: 1000,
+      processedAt: 2000,
+    };
+    const deleteDoc = vi.fn();
+    const gt = vi.fn(function (this: unknown) {
+      return this;
+    });
+    const lt = vi.fn(function (this: unknown) {
+      return this;
+    });
+    const take = vi.fn(async () => [oldProcessedEvent]);
+    const ctx = {
+      db: {
+        delete: deleteDoc,
+        query: vi.fn((table: string) => {
+          if (table !== "skillStatEvents") throw new Error(`unexpected table ${table}`);
+          return {
+            withIndex: vi.fn((indexName: string, range: (q: unknown) => unknown) => {
+              expect(indexName).toBe("by_unprocessed");
+              range({ gt, lt });
+              return { take };
+            }),
+          };
+        }),
+      },
+    };
+
+    await expect(
+      pruneProcessedSkillStatEventBatchInternalHandler(ctx, {
+        cutoffProcessedAt: 10_000,
+        dryRun: true,
+        batchSize: 5000,
+      }),
+    ).resolves.toMatchObject({ matched: 1, deleted: 0, hasMore: false });
+
+    expect(gt).toHaveBeenCalledWith("processedAt", 0);
+    expect(lt).toHaveBeenCalledWith("processedAt", 10_000);
+    expect(take).toHaveBeenCalledWith(5000);
+    expect(deleteDoc).not.toHaveBeenCalled();
+  });
+
+  it("requires confirmation before deleting old processed stat events", async () => {
+    const ctx = { db: { delete: vi.fn(), query: vi.fn() } };
+
+    await expect(
+      pruneProcessedSkillStatEventBatchInternalHandler(ctx, {
+        cutoffProcessedAt: 10_000,
+        dryRun: false,
+      }),
+    ).rejects.toThrow("confirmationToken=PRUNE_PROCESSED_SKILL_STAT_EVENTS");
+  });
+
+  it("continues processed event pruning when the manual kick hits its batch cap", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(20 * 24 * 60 * 60 * 1000);
+    const runQuery = vi.fn().mockResolvedValue(15 * 24 * 60 * 60 * 1000);
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ matched: 1000, deleted: 1000, hasMore: true })
+      .mockResolvedValueOnce({ matched: 1000, deleted: 1000, hasMore: true });
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      pruneProcessedSkillStatEventsInternalHandler(
+        { runQuery, runMutation, scheduler },
+        {
+          dryRun: false,
+          retentionDays: 7,
+          batchSize: 1000,
+          maxBatches: 2,
+          confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+        },
+      ),
+    ).resolves.toMatchObject({
+      matched: 2000,
+      deleted: 2000,
+      scheduledContinuation: true,
+    });
+
+    expect(runQuery).toHaveBeenCalledWith(apiRefs.getStatEventCursor);
+    expect(runMutation).toHaveBeenCalledTimes(2);
+    expect(runMutation.mock.calls[0]?.[0]).toBe(apiRefs.pruneProcessedSkillStatEventBatchInternal);
+    expect(runMutation.mock.calls[0]?.[1]).toMatchObject({
+      cutoffProcessedAt: 13 * 24 * 60 * 60 * 1000,
+      batchSize: 1000,
+      dryRun: false,
+      confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+    });
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      apiRefs.pruneProcessedSkillStatEventsInternal,
+      expect.objectContaining({
+        dryRun: false,
+        retentionDays: 7,
+        batchSize: 1000,
+        maxBatches: 2,
+        confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+      }),
+    );
+  });
+
+  it("caps processed event pruning at the daily stats cursor", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(20 * 24 * 60 * 60 * 1000);
+    const dailyCursor = 11 * 24 * 60 * 60 * 1000;
+    const runQuery = vi.fn().mockResolvedValue(dailyCursor);
+    const runMutation = vi.fn().mockResolvedValue({ matched: 0, deleted: 0, hasMore: false });
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      pruneProcessedSkillStatEventsInternalHandler(
+        { runQuery, runMutation, scheduler },
+        {
+          dryRun: false,
+          retentionDays: 7,
+          batchSize: 1000,
+          maxBatches: 2,
+          confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+        },
+      ),
+    ).resolves.toMatchObject({
+      cutoffProcessedAt: dailyCursor,
+      retentionCutoffProcessedAt: 13 * 24 * 60 * 60 * 1000,
+      dailyStatsCursorCreationTime: dailyCursor,
+      matched: 0,
+      deleted: 0,
+      scheduledContinuation: false,
+    });
+
+    expect(runMutation.mock.calls[0]?.[1]).toMatchObject({
+      cutoffProcessedAt: dailyCursor,
+    });
+  });
+
+  it("does not prune processed events before the daily stats cursor exists", async () => {
+    const runQuery = vi.fn().mockResolvedValue(undefined);
+    const runMutation = vi.fn();
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      pruneProcessedSkillStatEventsInternalHandler(
+        { runQuery, runMutation, scheduler },
+        {
+          dryRun: false,
+          confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+        },
+      ),
+    ).resolves.toMatchObject({
+      batches: 0,
+      matched: 0,
+      deleted: 0,
+      stoppedReason: "cursor_not_ready",
+      scheduledContinuation: false,
+    });
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("samples only one processed event batch during dry-run", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(20 * 24 * 60 * 60 * 1000);
+    const runQuery = vi.fn().mockResolvedValue(15 * 24 * 60 * 60 * 1000);
+    const runMutation = vi.fn().mockResolvedValue({ matched: 1000, deleted: 0, hasMore: true });
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      pruneProcessedSkillStatEventsInternalHandler(
+        { runQuery, runMutation, scheduler },
+        {
+          dryRun: true,
+          retentionDays: 7,
+          batchSize: 1000,
+          maxBatches: 20,
+        },
+      ),
+    ).resolves.toMatchObject({
+      batches: 1,
+      matched: 1000,
+      deleted: 0,
+      stoppedReason: "max_batches",
+      scheduledContinuation: false,
+    });
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
+  it("manual prune kick defaults to dry-run and schedules the bounded prune action", async () => {
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      kickProcessedSkillStatEventPruneInternalHandler({ scheduler }, {}),
+    ).resolves.toEqual({
+      ok: true,
+      dryRun: true,
+      retentionDays: 7,
+      batchSize: 1000,
+      maxBatches: 20,
+    });
+
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      apiRefs.pruneProcessedSkillStatEventsInternal,
+      {
+        dryRun: true,
+        retentionDays: 7,
+        batchSize: 1000,
+        maxBatches: 20,
+        confirmationToken: undefined,
+      },
+    );
+  });
+
+  it("manual prune kick requires confirmation before scheduling destructive apply", async () => {
+    const scheduler = { runAfter: vi.fn() };
+
+    await expect(
+      kickProcessedSkillStatEventPruneInternalHandler(
+        { scheduler },
+        {
+          dryRun: false,
+        },
+      ),
+    ).rejects.toThrow("confirmationToken=PRUNE_PROCESSED_SKILL_STAT_EVENTS");
+
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
   });
 });
