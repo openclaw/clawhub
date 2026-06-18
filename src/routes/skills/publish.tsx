@@ -890,7 +890,7 @@ export function Upload() {
                 aria-label="Publishing as"
                 className="flex min-h-[52px] flex-wrap items-center gap-x-2 gap-y-2 bg-[color:var(--surface-muted)] px-space-5 py-space-3 text-sm text-[color:var(--ink)]"
               >
-                <span className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--ink-soft)]">
+                <span className="text-xs font-medium text-[color:var(--ink-soft)]">
                   Publishing as
                 </span>
                 <span className="publishing-context-owner">
