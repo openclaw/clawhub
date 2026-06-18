@@ -8121,6 +8121,7 @@ describe("httpApiV1 handlers", () => {
     const resendBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(resendBody.from).toBe("ClawHub <noreply@notifications.openclaw.ai>");
     expect(resendBody.from).not.toBe("Legacy <legacy@example.com>");
+    expect(resendBody).not.toHaveProperty("replyTo");
   });
 
   it("staff email ignores legacy noreply sender env names", async () => {
@@ -8169,6 +8170,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const resendBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(resendBody.from).toBe("ClawHub <noreply@notifications.openclaw.ai>");
+    expect(resendBody).not.toHaveProperty("replyTo");
   });
 
   it("set role requires auth", async () => {

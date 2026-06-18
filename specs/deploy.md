@@ -112,8 +112,6 @@ Ensure Convex env is set (auth + embeddings):
 - `JWKS`
 - `OPENAI_API_KEY`
 - `RESEND_API_KEY` for account-ban notification email
-- `CLAWHUB_SECURITY_EMAIL` for account-action replies, defaulting to
-  `security@notifications.openclaw.ai`
 - `CLAWHUB_SECURITY_EMAIL_FROM` for the outbound From header, defaulting to
   `ClawHub Security <noreply@notifications.openclaw.ai>` on the verified Resend
   domain

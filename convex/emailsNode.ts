@@ -13,7 +13,6 @@ import {
 } from "./lib/emails";
 
 const DEFAULT_FROM = "ClawHub Security <noreply@notifications.openclaw.ai>";
-const DEFAULT_REPLY_TO = "security@notifications.openclaw.ai";
 
 const notificationArtifactValidator = v.object({
   kind: v.union(v.literal("skill"), v.literal("plugin")),
@@ -32,7 +31,6 @@ function getEmailConfig() {
   return {
     apiKey: process.env.RESEND_API_KEY,
     from: process.env.CLAWHUB_SECURITY_EMAIL_FROM || DEFAULT_FROM,
-    replyTo: process.env.CLAWHUB_SECURITY_EMAIL || DEFAULT_REPLY_TO,
   };
 }
 
@@ -60,7 +58,6 @@ async function sendTransactionalEmail(args: SendEmailArgs) {
       {
         from: config.from,
         to: args.to,
-        replyTo: config.replyTo,
         subject: args.subject,
         text: args.text,
         html: args.html,
