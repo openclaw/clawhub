@@ -15,10 +15,6 @@ vi.mock("./_generated/api", () => ({
       getUserOwnedSkillsBackfillPageInternal: Symbol("getUserOwnedSkillsBackfillPageInternal"),
       applyUserStatsBackfillPatchInternal: Symbol("applyUserStatsBackfillPatchInternal"),
       backfillUserStatsInternal: Symbol("backfillUserStatsInternal"),
-      cleanupDeprecatedRateLimitShardsInternal: Symbol("cleanupDeprecatedRateLimitShardsInternal"),
-      deleteDeprecatedRateLimitShardsBatchInternal: Symbol(
-        "deleteDeprecatedRateLimitShardsBatchInternal",
-      ),
       getPublisherStatsBackfillPageInternal: Symbol("getPublisherStatsBackfillPageInternal"),
       recomputePublisherStatsInternal: Symbol("recomputePublisherStatsInternal"),
       backfillPublisherStatsInternal: Symbol("backfillPublisherStatsInternal"),
@@ -68,9 +64,7 @@ const {
   backfillSkillFingerprintsInternalHandler,
   backfillSkillSummariesInternalHandler,
   backfillUserStatsInternalHandler,
-  cleanupDeprecatedRateLimitShardsInternalHandler,
   cleanupEmptySkillsInternalHandler,
-  deleteDeprecatedRateLimitShardsBatchInternalHandler,
   cleanupDeprecatedDownloadDedupesInternalHandler,
   deleteDeprecatedDownloadDedupesBatchInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
@@ -1748,179 +1742,6 @@ describe("maintenance empty skill cleanup", () => {
         sampleSlugs: ["spam-a", "spam-b"],
       },
     ]);
-  });
-});
-
-describe("maintenance deprecated rate limit shard cleanup", () => {
-  it("dry-runs one bounded default-order batch without deleting rows", async () => {
-    const rows = [
-      { _id: "rateLimitShards:1", key: "ip:a", windowStart: 100, shard: 0 },
-      { _id: "rateLimitShards:2", key: "ip:b", windowStart: 200, shard: 1 },
-    ];
-    const take = vi.fn(async (limit: number) => rows.slice(0, limit));
-    const order = vi.fn(() => ({ take }));
-    const query = vi.fn(() => ({ order }));
-    const deleteRow = vi.fn();
-
-    const result = await deleteDeprecatedRateLimitShardsBatchInternalHandler(
-      {
-        db: {
-          query,
-          delete: deleteRow,
-        },
-      } as never,
-      {
-        dryRun: true,
-        batchSize: 10,
-      },
-    );
-
-    expect(result).toEqual({
-      ok: true,
-      dryRun: true,
-      scanned: 2,
-      deleted: 0,
-      isDone: true,
-      firstWindowStart: 100,
-      lastWindowStart: 200,
-    });
-    expect(query).toHaveBeenCalledWith("rateLimitShards");
-    expect(order).toHaveBeenCalledWith("asc");
-    expect(take).toHaveBeenCalledWith(10);
-    expect(deleteRow).not.toHaveBeenCalled();
-  });
-
-  it("requires explicit table confirmation before deleting old shard rows", async () => {
-    await expect(
-      deleteDeprecatedRateLimitShardsBatchInternalHandler(
-        {
-          db: {
-            query: vi.fn(),
-            delete: vi.fn(),
-          },
-        } as never,
-        {
-          dryRun: false,
-          batchSize: 10,
-        },
-      ),
-    ).rejects.toThrow('confirmTable="rateLimitShards"');
-  });
-
-  it("deletes a confirmed bounded batch from the old shard table", async () => {
-    const rows = [
-      { _id: "rateLimitShards:1", key: "ip:a", windowStart: 100, shard: 0 },
-      { _id: "rateLimitShards:2", key: "ip:b", windowStart: 100, shard: 1 },
-    ];
-    const take = vi.fn(async (limit: number) => rows.slice(0, limit));
-    const order = vi.fn(() => ({ take }));
-    const query = vi.fn(() => ({ order }));
-    const deleteRow = vi.fn();
-
-    const result = await deleteDeprecatedRateLimitShardsBatchInternalHandler(
-      {
-        db: {
-          query,
-          delete: deleteRow,
-        },
-      } as never,
-      {
-        dryRun: false,
-        batchSize: 2,
-        confirmTable: "rateLimitShards",
-      },
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      dryRun: false,
-      scanned: 2,
-      deleted: 2,
-      isDone: false,
-      firstWindowStart: 100,
-      lastWindowStart: 100,
-    });
-    expect(deleteRow).toHaveBeenCalledTimes(2);
-    expect(deleteRow).toHaveBeenNthCalledWith(1, "rateLimitShards:1");
-    expect(deleteRow).toHaveBeenNthCalledWith(2, "rateLimitShards:2");
-  });
-
-  it("runs exactly one dry-run batch even when maxBatches is larger", async () => {
-    const runMutation = vi.fn(async () => ({
-      ok: true,
-      dryRun: true,
-      scanned: 1_000,
-      deleted: 0,
-      isDone: false,
-      firstWindowStart: 100,
-      lastWindowStart: 200,
-    }));
-
-    const result = await cleanupDeprecatedRateLimitShardsInternalHandler(
-      { runMutation, scheduler: { runAfter: vi.fn() } } as never,
-      { dryRun: true, batchSize: 1_000, maxBatches: 50 },
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      dryRun: true,
-      batchSize: 1_000,
-      maxBatches: 1,
-      batches: 1,
-      scanned: 1_000,
-      deleted: 0,
-      isDone: false,
-      scheduledNext: false,
-    });
-    expect(runMutation).toHaveBeenCalledTimes(1);
-  });
-
-  it("schedules a continuation when requested and old shard cleanup is incomplete", async () => {
-    const runMutation = vi.fn(async () => ({
-      ok: true,
-      dryRun: false,
-      scanned: 500,
-      deleted: 500,
-      isDone: false,
-      firstWindowStart: 100,
-      lastWindowStart: 200,
-    }));
-    const runAfter = vi.fn();
-
-    const result = await cleanupDeprecatedRateLimitShardsInternalHandler(
-      { runMutation, scheduler: { runAfter } } as never,
-      {
-        dryRun: false,
-        batchSize: 500,
-        maxBatches: 2,
-        continueOnIncomplete: true,
-        confirmTable: "rateLimitShards",
-      },
-    );
-
-    expect(result).toMatchObject({
-      ok: true,
-      dryRun: false,
-      batchSize: 500,
-      maxBatches: 2,
-      batches: 2,
-      scanned: 1_000,
-      deleted: 1_000,
-      isDone: false,
-      scheduledNext: true,
-    });
-    expect(runMutation).toHaveBeenCalledTimes(2);
-    expect(runAfter).toHaveBeenCalledWith(
-      0,
-      internal.maintenance.cleanupDeprecatedRateLimitShardsInternal,
-      {
-        dryRun: false,
-        batchSize: 500,
-        maxBatches: 2,
-        continueOnIncomplete: true,
-        confirmTable: "rateLimitShards",
-      },
-    );
   });
 });
 

@@ -54,7 +54,6 @@ describe("rate limit sharding", () => {
     expect(result.remaining).toBe(11);
     expect(ctx.db.query).toHaveBeenCalledTimes(1);
     expect(ctx.db.query).toHaveBeenCalledWith("rateLimitCounters");
-    expect(ctx.db.query).not.toHaveBeenCalledWith("rateLimitShards");
     expect(ctx.db.query).not.toHaveBeenCalledWith("rateLimits");
   });
 
@@ -103,7 +102,6 @@ describe("rate limit sharding", () => {
         expiresAt: expect.any(Number),
       }),
     );
-    expect(insert).not.toHaveBeenCalledWith("rateLimitShards", expect.anything());
   });
 
   it("clamps out-of-range shard inputs to the active counter shard range", async () => {

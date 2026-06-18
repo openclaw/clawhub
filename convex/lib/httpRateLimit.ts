@@ -254,9 +254,7 @@ function shouldTrustForwardedIps() {
 function isRateLimitWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    (error.message.includes("rateLimitCounters") ||
-      error.message.includes("rateLimits") ||
-      error.message.includes("rateLimitShards")) &&
+    (error.message.includes("rateLimitCounters") || error.message.includes("rateLimits")) &&
     error.message.includes("changed while this mutation was being run")
   );
 }

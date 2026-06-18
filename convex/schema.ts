@@ -2419,17 +2419,6 @@ const rateLimits = defineTable({
   .index("by_key_window", ["key", "windowStart"])
   .index("by_key", ["key"]);
 
-const rateLimitShards = defineTable({
-  key: v.string(),
-  windowStart: v.number(),
-  shard: v.number(),
-  count: v.number(),
-  limit: v.number(),
-  updatedAt: v.number(),
-})
-  .index("by_key_window", ["key", "windowStart"])
-  .index("by_key_window_shard", ["key", "windowStart", "shard"]);
-
 const rateLimitCounters = defineTable({
   key: v.string(),
   windowStart: v.number(),
@@ -2661,7 +2650,6 @@ export default defineSchema({
   apiTokens,
   cliDeviceCodes,
   rateLimits,
-  rateLimitShards,
   rateLimitCounters,
   downloadDedupes,
   downloadMetricDedupes,
