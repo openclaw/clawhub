@@ -39,9 +39,6 @@ export function PublisherContextStrip({
       className="flex min-h-[42px] flex-wrap items-center bg-[color:var(--surface-muted)] px-4 py-2 text-sm text-[color:var(--ink)] sm:px-space-5"
     >
       <div className="flex w-full min-w-0 items-center gap-2">
-        <span className="hidden shrink-0 text-xs font-medium text-[color:var(--ink-soft)] sm:inline">
-          Publishing as
-        </span>
         <span className="publishing-context-owner min-w-0 flex-1">
           <PublisherOwnerDisplay value={ownerHandle} memberships={memberships} compact />
         </span>
