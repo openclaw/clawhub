@@ -107,9 +107,12 @@ export function PublisherOwnerDisplay({
             size="xs"
           />
         </span>
-        <span className="min-w-0 truncate font-medium text-[color:var(--ink)]">
+        <span className="min-w-0 truncate text-sm font-medium text-[color:var(--ink)]">
           {publisher.displayName || publisher.handle}
-          <span className="font-normal text-[color:var(--ink-soft)]"> / @{publisher.handle}</span>
+          <span className="text-[13px] font-normal text-[color:var(--ink-soft)]">
+            {" "}
+            / @{publisher.handle}
+          </span>
         </span>
       </span>
     );
