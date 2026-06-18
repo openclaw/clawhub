@@ -192,27 +192,6 @@ vi.mock("../components/ui/dropdown-menu", () => ({
   DropdownMenuContent: ({ children, className }: { children: ReactNode; className?: string }) => (
     <div className={className}>{children}</div>
   ),
-  DropdownMenuSub: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  DropdownMenuSubContent: ({
-    children,
-    className,
-  }: {
-    children: ReactNode;
-    className?: string;
-  }) => <div className={className}>{children}</div>,
-  DropdownMenuSubTrigger: ({
-    children,
-    className,
-    ...props
-  }: {
-    children: ReactNode;
-    className?: string;
-    "aria-label"?: string;
-  }) => (
-    <div aria-label={props["aria-label"]} className={className}>
-      {children}
-    </div>
-  ),
   DropdownMenuItem: ({
     children,
     className,
@@ -294,6 +273,16 @@ function compactHeaderCss() {
 describe("Header", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: false,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
     authStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -436,10 +425,6 @@ describe("Header", () => {
     const profile = within(publisherActions).getByText("Org profile");
 
     expect(screen.queryByLabelText("Account @patrick")).toBeNull();
-    expect(screen.getByText("Switch publisher")).toBeTruthy();
-    expect(screen.getByLabelText("Switch to @patrick")).toBeTruthy();
-    expect(screen.getByText("Create organization")).toBeTruthy();
-    expect(screen.getByText("Personal")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
     expect(within(activePublisher).getByText("OpenClaw")).toBeTruthy();
     expect(within(activePublisher).getByText("Organization")).toBeTruthy();
@@ -449,9 +434,16 @@ describe("Header", () => {
     expect(within(publisherActions).queryByText("Stars")).toBeNull();
     expect(profile.closest("a")?.getAttribute("href")).toBe("/user/openclaw");
     expect(profile.closest("a")?.querySelector(".lucide-building-2")).toBeTruthy();
-    expect(screen.getByLabelText("Selected publisher @openclaw")).toBeTruthy();
     expect(screen.queryByText("Signed in as @patrick")).toBeNull();
     expect(screen.queryByText(/For @openclaw/)).toBeNull();
+
+    fireEvent.click(activePublisher);
+
+    expect(screen.getByLabelText("Selected publisher @openclaw")).toBeTruthy();
+    expect(screen.getByLabelText("Switch to @patrick")).toBeTruthy();
+    expect(screen.getByText("Create organization")).toBeTruthy();
+    expect(screen.getByText("Personal")).toBeTruthy();
+    expect(document.querySelector('[data-slot="dropdown-menu-sub-content"]')).toBeNull();
 
     fireEvent.click(screen.getByText("Create organization"));
 
@@ -465,10 +457,53 @@ describe("Header", () => {
     fireEvent.click(screen.getByLabelText("Switch to @patrick"));
 
     expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
+    fireEvent.click(screen.getByText("Back"));
     expect(screen.queryByText("Stars")).toBeNull();
     expect(screen.getByText("Appearance")).toBeTruthy();
     expect(screen.getByText("Sign out")).toBeTruthy();
     expect(screen.getByText("Settings")).toBeTruthy();
+  });
+
+  it("opens the publisher switcher inside the account menu on mobile", async () => {
+    Object.defineProperty(window, "matchMedia", {
+      configurable: true,
+      value: vi.fn().mockImplementation((query: string) => ({
+        matches: query === "(max-width: 639px)",
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+      })),
+    });
+    authStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: {
+        displayName: "Patrick",
+        email: "patrick@example.com",
+        handle: "patrick",
+        image: null,
+        name: "Patrick",
+      },
+    });
+    activePublisherMock.mockReturnValue({
+      ...defaultActivePublisherState,
+      activePublisher: orgPublisher,
+      activePublisherId: orgPublisher.publisher._id,
+      activeOwnerHandle: orgPublisher.publisher.handle,
+      hasMultiplePublishers: true,
+      memberships: [personalPublisher, orgPublisher],
+    });
+
+    render(<Header />);
+
+    const currentPublisher = await screen.findByLabelText("Current publisher @openclaw");
+    fireEvent.click(currentPublisher);
+
+    expect(await screen.findByLabelText("Switch publisher")).toBeTruthy();
+    expect(screen.getByText("Back")).toBeTruthy();
+    expect(document.querySelector('[data-slot="dropdown-menu-sub-content"]')).toBeNull();
+    expect(screen.queryByLabelText("Publisher actions for @openclaw")).toBeNull();
   });
 
   it("renders the GitHub sign-in button with desktop and compact labels", () => {

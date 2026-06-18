@@ -6,6 +6,7 @@ import {
   Building2,
   Check,
   ChevronDown,
+  ChevronLeft,
   ChevronRight,
   Command,
   LayoutDashboard,
@@ -49,9 +50,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuSub,
-  DropdownMenuSubContent,
-  DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
 import {
@@ -185,6 +183,7 @@ export default function Header() {
   const [typeaheadActiveIndex, setTypeaheadActiveIndex] = useState(0);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [publisherSwitcherOpen, setPublisherSwitcherOpen] = useState(false);
   const [headerScrolled, setHeaderScrolled] = useState(false);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const mobileSearchWrapRef = useRef<HTMLDivElement | null>(null);
@@ -400,6 +399,78 @@ export default function Header() {
     }
   };
 
+  const publisherSwitcherContent = (
+    <>
+      <button
+        type="button"
+        className="user-dropdown-switcher-back"
+        onClick={() => setPublisherSwitcherOpen(false)}
+      >
+        <ChevronLeft size={14} aria-hidden="true" />
+        Back
+      </button>
+      <div className="user-dropdown-publisher-list" aria-label="Switch publisher">
+        {activePublisher ? (
+          <div
+            aria-label={`Selected publisher @${activePublisher.publisher.handle}`}
+            className="user-dropdown-publisher-item user-dropdown-publisher-item-current"
+          >
+            <span className="user-dropdown-publisher-icon" aria-hidden="true">
+              <MarketplaceIcon
+                kind={activePublisher.publisher.kind}
+                label={activePublisher.publisher.displayName || activePublisher.publisher.handle}
+                imageUrl={activePublisher.publisher.image}
+                size="xs"
+              />
+            </span>
+            <span className="user-dropdown-publisher-copy">
+              <span className="user-dropdown-publisher-title">
+                @{activePublisher.publisher.handle}
+              </span>
+              <span className="user-dropdown-publisher-meta">
+                {formatPublisherMeta(activePublisher)}
+              </span>
+            </span>
+            <Check
+              className="user-dropdown-publisher-check"
+              size={16}
+              aria-label="Selected publisher"
+            />
+          </div>
+        ) : null}
+        {otherPublisherMemberships.map((entry) => (
+          <DropdownMenuItem
+            key={entry.publisher._id}
+            aria-label={`Switch to @${entry.publisher.handle}`}
+            className="user-dropdown-publisher-item"
+            onClick={() => setActivePublisherId(entry.publisher._id)}
+          >
+            <span className="user-dropdown-publisher-icon" aria-hidden="true">
+              <MarketplaceIcon
+                kind={entry.publisher.kind}
+                label={entry.publisher.displayName || entry.publisher.handle}
+                imageUrl={entry.publisher.image}
+                size="xs"
+              />
+            </span>
+            <span className="user-dropdown-publisher-copy">
+              <span className="user-dropdown-publisher-title">@{entry.publisher.handle}</span>
+              <span className="user-dropdown-publisher-meta">{formatPublisherMeta(entry)}</span>
+            </span>
+          </DropdownMenuItem>
+        ))}
+      </div>
+      <DropdownMenuSeparator />
+      <DropdownMenuItem
+        className="user-dropdown-create-org-action"
+        onClick={goToOrganizationCreation}
+      >
+        <Plus size={14} aria-hidden="true" />
+        Create organization
+      </DropdownMenuItem>
+    </>
+  );
+
   return (
     <header className={`navbar navbar-calm${headerScrolled ? " navbar-calm-scrolled" : ""}`}>
       <div className="navbar-inner">
@@ -610,7 +681,11 @@ export default function Header() {
               <NavbarThemeSwitcher mode={mode} onSetMode={setThemeMode} />
             ) : null}
             {isAuthenticated && me ? (
-              <DropdownMenu>
+              <DropdownMenu
+                onOpenChange={(open) => {
+                  if (!open) setPublisherSwitcherOpen(false);
+                }}
+              >
                 <DropdownMenuTrigger asChild>
                   <button
                     className="user-trigger"
@@ -636,11 +711,16 @@ export default function Header() {
                   </button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="user-dropdown-content">
-                  {hasMultiplePublishers && otherPublisherMemberships.length > 0 ? (
-                    <DropdownMenuSub>
-                      <DropdownMenuSubTrigger
+                  {publisherSwitcherOpen ? (
+                    publisherSwitcherContent
+                  ) : (
+                    <>
+                      {hasMultiplePublishers && otherPublisherMemberships.length > 0 ? (
+                      <button
+                        type="button"
                         aria-label={`Current publisher @${triggerHandle}`}
                         className="user-dropdown-current-trigger"
+                        onClick={() => setPublisherSwitcherOpen(true)}
                       >
                         <span className="user-dropdown-publisher-icon" aria-hidden="true">
                           {triggerPublisher ? (
@@ -651,11 +731,7 @@ export default function Header() {
                               size="xs"
                             />
                           ) : avatar ? (
-                            <img
-                              className="user-dropdown-account-avatar"
-                              src={avatar}
-                              alt=""
-                            />
+                            <img className="user-dropdown-account-avatar" src={avatar} alt="" />
                           ) : (
                             <span className="user-dropdown-account-avatar user-dropdown-account-fallback">
                               {initial}
@@ -669,79 +745,9 @@ export default function Header() {
                           </span>
                         </span>
                         <ChevronRight className="user-dropdown-submenu-chevron" size={16} />
-                      </DropdownMenuSubTrigger>
-                      <DropdownMenuSubContent className="user-dropdown-subcontent user-dropdown-switcher-subcontent">
-                        <div className="user-dropdown-section-label">Switch publisher</div>
-                        <div className="user-dropdown-publisher-list" aria-label="Switch publisher">
-                          {activePublisher ? (
-                            <div
-                              aria-label={`Selected publisher @${activePublisher.publisher.handle}`}
-                              className="user-dropdown-publisher-item user-dropdown-publisher-item-current"
-                            >
-                              <span className="user-dropdown-publisher-icon" aria-hidden="true">
-                                <MarketplaceIcon
-                                  kind={activePublisher.publisher.kind}
-                                  label={
-                                    activePublisher.publisher.displayName ||
-                                    activePublisher.publisher.handle
-                                  }
-                                  imageUrl={activePublisher.publisher.image}
-                                  size="xs"
-                                />
-                              </span>
-                              <span className="user-dropdown-publisher-copy">
-                                <span className="user-dropdown-publisher-title">
-                                  @{activePublisher.publisher.handle}
-                                </span>
-                                <span className="user-dropdown-publisher-meta">
-                                  {formatPublisherMeta(activePublisher)}
-                                </span>
-                              </span>
-                              <Check
-                                className="user-dropdown-publisher-check"
-                                size={16}
-                                aria-label="Selected publisher"
-                              />
-                            </div>
-                          ) : null}
-                          {otherPublisherMemberships.map((entry) => (
-                            <DropdownMenuItem
-                              key={entry.publisher._id}
-                              aria-label={`Switch to @${entry.publisher.handle}`}
-                              className="user-dropdown-publisher-item"
-                              onClick={() => setActivePublisherId(entry.publisher._id)}
-                            >
-                              <span className="user-dropdown-publisher-icon" aria-hidden="true">
-                                <MarketplaceIcon
-                                  kind={entry.publisher.kind}
-                                  label={entry.publisher.displayName || entry.publisher.handle}
-                                  imageUrl={entry.publisher.image}
-                                  size="xs"
-                                />
-                              </span>
-                              <span className="user-dropdown-publisher-copy">
-                                <span className="user-dropdown-publisher-title">
-                                  @{entry.publisher.handle}
-                                </span>
-                                <span className="user-dropdown-publisher-meta">
-                                  {formatPublisherMeta(entry)}
-                                </span>
-                              </span>
-                            </DropdownMenuItem>
-                          ))}
-                        </div>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="user-dropdown-create-org-action"
-                          onClick={goToOrganizationCreation}
-                        >
-                          <Plus size={14} aria-hidden="true" />
-                          Create organization
-                        </DropdownMenuItem>
-                      </DropdownMenuSubContent>
-                    </DropdownMenuSub>
-                  ) : (
-                    <div
+                      </button>
+                      ) : (
+                        <div
                       aria-label={`Current publisher @${triggerHandle}`}
                       className="user-dropdown-current-trigger user-dropdown-current-static"
                     >
@@ -770,7 +776,7 @@ export default function Header() {
                         <span className="user-dropdown-publisher-meta">{activePublisherMeta}</span>
                       </span>
                     </div>
-                  )}
+                      )}
                   <DropdownMenuSeparator />
                   <div
                     aria-label={`Publisher actions for @${triggerHandle}`}
@@ -844,6 +850,8 @@ export default function Header() {
                     <LogOut size={14} aria-hidden="true" />
                     Sign out
                   </DropdownMenuItem>
+                    </>
+                  )}
                 </DropdownMenuContent>
               </DropdownMenu>
             ) : isAuthResolving ? (

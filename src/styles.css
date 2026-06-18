@@ -1159,12 +1159,39 @@ code {
   font-weight: 650;
 }
 
+.user-dropdown-switcher-back {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+  border: 0;
+  border-radius: var(--r-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  text-align: left;
+  padding: 8px 10px;
+  cursor: pointer;
+}
+
+.user-dropdown-switcher-back:focus,
+.user-dropdown-switcher-back:hover {
+  background: var(--surface-muted);
+  outline: none;
+}
+
 .user-dropdown-current-trigger {
   display: flex;
   width: 100%;
   align-items: center;
   gap: 9px;
+  border: 0;
   border-radius: var(--r-sm);
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
   padding: 8px 10px;
   outline: none;
   cursor: pointer;
@@ -1240,6 +1267,11 @@ code {
   flex-shrink: 0;
   align-items: center;
   justify-content: center;
+}
+
+.user-dropdown-publisher-icon .marketplace-icon-xs {
+  width: 26px;
+  height: 26px;
 }
 
 .user-dropdown-publisher-copy {
