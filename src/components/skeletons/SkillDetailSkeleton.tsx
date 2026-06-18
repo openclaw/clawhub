@@ -95,9 +95,15 @@ export function SkillDetailSkeleton({ kind = "skill" }: SkillDetailSkeletonProps
                 <aside className="skill-hero-sidebar">
                   <div className="skill-hero-sidebar-stack">
                     <div className="sidebar-metadata sidebar-metadata-compact">
-                      <div className="sidebar-metadata-row sidebar-metadata-row-large">
-                        <Skeleton className="h-3 w-16" />
-                        <Skeleton className="h-8 w-24" />
+                      <div className="sidebar-metadata-grid">
+                        <div className="sidebar-metadata-row sidebar-metadata-row-large">
+                          <Skeleton className="h-3 w-16" />
+                          <Skeleton className="h-8 w-24" />
+                        </div>
+                        <div className="sidebar-metadata-row sidebar-metadata-row-large">
+                          <Skeleton className="h-3 w-20" />
+                          <Skeleton className="h-8 w-24" />
+                        </div>
                       </div>
                       <div className="sidebar-metadata-row">
                         <Skeleton className="h-3 w-14" />

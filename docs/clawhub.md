@@ -54,8 +54,9 @@ pnpm add -g clawhub
 | Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`           |
 
 ClawHub tracks semver versions, tags such as `latest`, changelogs, files,
-installs, stars, and security scan summaries. Public pages show current registry
-state so users can inspect a skill or plugin before installing it.
+downloads, installs, stars, and security scan summaries. Public pages show
+current registry state so users can inspect a skill or plugin before installing
+it.
 
 ## Native OpenClaw flows
 

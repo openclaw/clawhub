@@ -121,11 +121,39 @@ describe("SkillHeader", () => {
     expect(onOpenReport).not.toHaveBeenCalled();
     expect(screen.getByText("Owner")).toBeTruthy();
     expect(screen.getByText("Installs")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("2")).toBeTruthy();
     expect(container.querySelector('a[href="/user/local"]')).toBeTruthy();
     expect(
       container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/user/local"]'),
     ).toBeTruthy();
+  });
+
+  it("shows downloads alongside install counts in skill metadata", () => {
+    const { container } = renderHeader({
+      skill: {
+        ...skill,
+        stats: {
+          ...skill.stats,
+          downloads: 803,
+          installsAllTime: 1,
+        },
+      },
+    });
+
+    const metadata = container.querySelector('dl[aria-label="Skill metadata"]');
+    const labels = Array.from(
+      metadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
+      (label) => label.textContent?.trim(),
+    );
+    const values = Array.from(
+      metadata?.querySelectorAll(".sidebar-metadata-value") ?? [],
+      (value) => value.textContent?.trim(),
+    );
+
+    expect(labels.slice(0, 2)).toEqual(["Installs", "Downloads"]);
+    expect(values.slice(0, 2)).toEqual(["1", "803"]);
   });
 
   it("shows the Official tag in the title for official owner skills", () => {
@@ -174,6 +202,7 @@ describe("SkillHeader", () => {
     renderHeader({ showArchiveMetadata: false });
 
     expect(screen.getByText("Installs")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("Owner")).toBeTruthy();
     expect(screen.getByText("Last updated")).toBeTruthy();
     expect(screen.queryByText("Current version")).toBeNull();
