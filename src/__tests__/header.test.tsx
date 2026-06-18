@@ -250,9 +250,7 @@ describe("Header", () => {
     expect(document.querySelector(".navbar-top-links")).toBeNull();
     expect(document.querySelector(".navbar-tabs")).toBeNull();
     expect(document.querySelector(".theme-mode-toggle")).toBeNull();
-    expect(
-      document.querySelector('.brand-mark-image[src="/logo-transparent.png"]'),
-    ).toBeTruthy();
+    expect(document.querySelector('.brand-mark-image[src="/logo-transparent.png"]')).toBeTruthy();
     expect(within(topNav).getByText("Skills").closest("a")?.querySelector("svg")).toBeNull();
     expect(within(topNav).getByText("Plugins").closest("a")?.querySelector("svg")).toBeNull();
     expect(
@@ -425,6 +423,26 @@ describe("Header", () => {
       "all",
       expect.objectContaining({ enabled: false }),
     );
+  });
+
+  it("preserves caret navigation in the search input and switches focused tabs with arrows", () => {
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather plugin" } });
+
+    const skillsTab = screen.getByRole("tab", { name: "Skills" });
+    const pluginsTab = screen.getByRole("tab", { name: "Plugins" });
+
+    expect(fireEvent.keyDown(input, { key: "ArrowLeft" })).toBe(true);
+    expect(skillsTab.getAttribute("aria-selected")).toBe("true");
+
+    skillsTab.focus();
+    fireEvent.keyDown(skillsTab, { key: "ArrowRight" });
+
+    expect(pluginsTab.getAttribute("aria-selected")).toBe("true");
+    expect(document.activeElement).toBe(pluginsTab);
   });
 
   it("shows tabbed skills and plugins typeahead without users", () => {

@@ -329,13 +329,7 @@ export default function Header() {
       setMobileSearchOpen(false);
       return;
     }
-    if (
-      event.key !== "ArrowDown" &&
-      event.key !== "ArrowUp" &&
-      event.key !== "ArrowLeft" &&
-      event.key !== "ArrowRight" &&
-      event.key !== "Enter"
-    ) {
+    if (event.key !== "ArrowDown" && event.key !== "ArrowUp" && event.key !== "Enter") {
       return;
     }
     if (!showTypeahead) {
@@ -343,11 +337,6 @@ export default function Header() {
         setTypeaheadOpen(true);
         event.preventDefault();
       }
-      return;
-    }
-    if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
-      event.preventDefault();
-      setTypeaheadTab((tab) => (tab === "skills" ? "plugins" : "skills"));
       return;
     }
     if (typeaheadItems.length === 0) return;
@@ -830,6 +819,16 @@ function SearchTypeahead({
   const hasMatches = hasSkillMatches || hasPluginMatches;
   const activeTabHasItems = items.length > 0;
   const emptyTabLabel = activeTab === "skills" ? "skills" : "plugins";
+  const skillsTabRef = useRef<HTMLButtonElement | null>(null);
+  const pluginsTabRef = useRef<HTMLButtonElement | null>(null);
+
+  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const nextTab = activeTab === "skills" ? "plugins" : "skills";
+    onTabChange(nextTab);
+    (nextTab === "skills" ? skillsTabRef : pluginsTabRef).current?.focus();
+  };
 
   return (
     <div className="navbar-search-typeahead" id="navbar-search-typeahead">
@@ -840,26 +839,32 @@ function SearchTypeahead({
           aria-label="Result type"
         >
           <button
+            ref={skillsTabRef}
             type="button"
             role="tab"
             id="navbar-search-typeahead-tab-skills"
             aria-selected={activeTab === "skills"}
             aria-controls="navbar-search-typeahead-panel"
+            tabIndex={activeTab === "skills" ? 0 : -1}
             className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "skills" ? " is-active" : ""}`}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onTabChange("skills")}
+            onKeyDown={handleTabKeyDown}
           >
             Skills
           </button>
           <button
+            ref={pluginsTabRef}
             type="button"
             role="tab"
             id="navbar-search-typeahead-tab-plugins"
             aria-selected={activeTab === "plugins"}
             aria-controls="navbar-search-typeahead-panel"
+            tabIndex={activeTab === "plugins" ? 0 : -1}
             className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "plugins" ? " is-active" : ""}`}
             onMouseDown={(event) => event.preventDefault()}
             onClick={() => onTabChange("plugins")}
+            onKeyDown={handleTabKeyDown}
           >
             Plugins
           </button>
