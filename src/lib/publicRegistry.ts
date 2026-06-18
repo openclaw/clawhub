@@ -1,5 +1,8 @@
 export const CLAWHUB_SITE_URL = "https://clawhub.ai";
 export const CLAWHUB_REPOSITORY_URL = "https://github.com/openclaw/clawhub";
+export const CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/";
+export const OPENCLAW_DOCS_LLMS_URL = "https://docs.openclaw.ai/llms.txt";
+export const CLAWHUB_OPENAPI_URL = `${CLAWHUB_SITE_URL}/api/v1/openapi.json`;
 
 export const PublicRegistryPaths = {
   home: "/",
@@ -52,4 +55,8 @@ export const PUBLIC_REGISTRY_SURFACES = [
 
 export function publicRegistryUrl(path: string) {
   return new URL(path, CLAWHUB_SITE_URL).href;
+}
+
+export function clawhubDocsUrl(slug?: string) {
+  return new URL(slug ?? "", CLAWHUB_DOCS_URL).href;
 }

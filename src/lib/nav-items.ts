@@ -1,4 +1,4 @@
-import { PublicRegistryPaths } from "./publicRegistry";
+import { CLAWHUB_DOCS_URL, CLAWHUB_REPOSITORY_URL, PublicRegistryPaths } from "./publicRegistry";
 
 /**
  * Shared navigation configuration used by Header and Footer to eliminate
@@ -73,7 +73,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 export const SECONDARY_NAV_ITEMS: NavItem[] = [
   {
     label: "Docs",
-    href: "https://docs.openclaw.ai/clawhub/",
+    href: CLAWHUB_DOCS_URL,
     activePathPrefixes: ["/docs"],
   },
 ];
@@ -85,7 +85,7 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
 export const OPENCLAW_SITE_URL = "https://openclaw.ai";
 export const OPENCLAW_ECOSYSTEM_URL = `${OPENCLAW_SITE_URL}/ecosystem`;
 const OPENCLAW_BLOG_CLAWHUB_URL = `${OPENCLAW_SITE_URL}/blog#clawhub`;
-export const OPENCLAW_CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/";
+export const OPENCLAW_CLAWHUB_DOCS_URL = CLAWHUB_DOCS_URL;
 /** Compact mark for stack avatars (not the full wordmark). */
 export const OPENCLAW_LOGO_URL = `${OPENCLAW_SITE_URL}/favicon.svg`;
 
@@ -171,7 +171,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
       {
         kind: "external",
         label: "GitHub",
-        href: "https://github.com/openclaw/clawhub",
+        href: CLAWHUB_REPOSITORY_URL,
         icon: "github",
       },
       {
