@@ -263,7 +263,10 @@ describe("catalog taxonomy migrations", () => {
           (
             indexName: string,
             queryBuilder: (q: {
-              eq: (field: string, value: unknown) => {
+              eq: (
+                field: string,
+                value: unknown,
+              ) => {
                 eq: (field: string, value: unknown) => unknown;
               };
             }) => unknown,
@@ -299,8 +302,7 @@ describe("catalog taxonomy migrations", () => {
                 if (tableName === "skillStatUpdateCursors" && indexName === "by_key") {
                   return (
                     [...docs.values()].find(
-                      (doc) =>
-                        doc._id === "skillStatUpdateCursors:1" && doc.key === filters.key,
+                      (doc) => doc._id === "skillStatUpdateCursors:1" && doc.key === filters.key,
                     ) ?? null
                   );
                 }
@@ -343,18 +345,18 @@ describe("catalog taxonomy migrations", () => {
     expect(isRecord(skill?.installBackfill) ? skill.installBackfill.totalDownloads : 0).toBe(
       180_001,
     );
-    expect(isRecord(skill?.installBackfill) ? skill.installBackfill.pendingSkillDocDownloads : 0).toBe(
-      1,
-    );
-    expect(isRecord(skill?.installBackfill) ? skill.installBackfill.previousInstallsAllTime : 0).toBe(
-      18,
-    );
+    expect(
+      isRecord(skill?.installBackfill) ? skill.installBackfill.pendingSkillDocDownloads : 0,
+    ).toBe(1);
+    expect(
+      isRecord(skill?.installBackfill) ? skill.installBackfill.previousInstallsAllTime : 0,
+    ).toBe(18);
     expect(
       isRecord(skill?.installBackfill) ? skill.installBackfill.pendingSkillDocInstallsAllTime : 0,
     ).toBe(1);
-    expect(
-      isRecord(skill?.installBackfill) ? skill.installBackfill.targetInstallsAllTime : 0,
-    ).toBe(Number(skill?.statsInstallsAllTime) + 1);
+    expect(isRecord(skill?.installBackfill) ? skill.installBackfill.targetInstallsAllTime : 0).toBe(
+      Number(skill?.statsInstallsAllTime) + 1,
+    );
     expect(digest).toEqual(
       expect.objectContaining({
         statsInstallsAllTime: skill?.statsInstallsAllTime,

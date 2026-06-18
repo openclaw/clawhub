@@ -116,9 +116,7 @@ export function buildSkillInstallBackfillPatch(input: {
   const pendingSkillDocDownloads = Math.max(0, finiteInteger(input.pendingSkillDocDownloads ?? 0));
   const stableDownloads = currentDownloads + pendingSkillDocDownloads;
   const currentInstallsAllTime = readCanonicalStat(input.skill, "installsAllTime");
-  const pendingSkillDocInstallsAllTime = finiteInteger(
-    input.pendingSkillDocInstallsAllTime ?? 0,
-  );
+  const pendingSkillDocInstallsAllTime = finiteInteger(input.pendingSkillDocInstallsAllTime ?? 0);
   const stableInstallsAllTime = Math.max(
     0,
     currentInstallsAllTime + pendingSkillDocInstallsAllTime,
