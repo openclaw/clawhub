@@ -2,11 +2,14 @@ import type { Doc } from "../_generated/dataModel";
 import { readCanonicalStat } from "./skillStats";
 
 export const INSTALL_BACKFILL_MODEL_VERSION = "skill-install-backfill-smoothed-v1";
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const INSTALL_BACKFILL_CLEAN_WINDOW = {
   startDay: 20616, // 2026-06-12 UTC, first full day after install telemetry shipped.
   endDay: 20622, // 2026-06-18 UTC.
 };
+export const INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME =
+  (INSTALL_BACKFILL_CLEAN_WINDOW.endDay + 1) * DAY_MS;
 
 // Aggregate clean-window totals from skillDailyStats. The model only uses
 // per-skill daily totals and all-time download counts; it does not read

@@ -5,6 +5,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { computeRecommendationScore } from "./lib/recommendationScore";
+import { INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME } from "./lib/skillInstallBackfill";
 import {
   backfillOneSkillInstallEstimate,
   runCatalogClassificationApply,
@@ -193,6 +194,58 @@ describe("catalog taxonomy migrations", () => {
     );
   });
 
+  it("refuses install backfill before clean-window daily stats are caught up", async () => {
+    const patch = vi.fn();
+    const db = {
+      patch,
+      query: vi.fn((tableName: string) => ({
+        withIndex: vi.fn(
+          (
+            indexName: string,
+            queryBuilder: (q: {
+              eq: (
+                field: string,
+                value: unknown,
+              ) => {
+                eq: (field: string, value: unknown) => unknown;
+              };
+            }) => unknown,
+          ) => {
+            const filters: Record<string, unknown> = {};
+            const builder = {
+              eq: (field: string, value: unknown) => {
+                filters[field] = value;
+                return builder;
+              },
+            };
+            queryBuilder(builder);
+            return {
+              unique: vi.fn(async () => {
+                if (tableName === "skillDailyStats" && indexName === "by_skill_day") {
+                  return null;
+                }
+                if (tableName === "skillStatUpdateCursors" && indexName === "by_key") {
+                  return {
+                    _id: "skillStatUpdateCursors:1",
+                    key: filters.key,
+                    cursorCreationTime:
+                      INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME - 1,
+                  };
+                }
+                return null;
+              }),
+            };
+          },
+        ),
+      })),
+    };
+
+    await expect(
+      backfillOneSkillInstallEstimate({ db } as unknown as Pick<MutationCtx, "db">, makeSkillDoc()),
+    ).rejects.toThrow("requires skill stat daily aggregation through the clean window");
+    expect(patch).not.toHaveBeenCalled();
+  });
+
   it("backfills a skill and keeps publisher stats plus search digest in sync", async () => {
     const docs = new Map<string, Record<string, unknown>>([
       [skillId, makeSkillDoc()],
@@ -216,7 +269,7 @@ describe("catalog taxonomy migrations", () => {
           _id: "skillStatUpdateCursors:1",
           _creationTime: 5,
           key: "skill_stat_events",
-          cursorCreationTime: 50,
+          cursorCreationTime: INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME,
         },
       ],
       [
