@@ -430,7 +430,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    expect(screen.getByRole("button", { name: "Open account menu for @openclaw" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Open account menu for OpenClaw" })).toBeTruthy();
     const activePublisher = screen.getByLabelText("Current publisher @openclaw");
     const publisherActions = screen.getByLabelText("Publisher actions for @openclaw");
     const profile = within(publisherActions).getByText("Org profile");
@@ -441,8 +441,13 @@ describe("Header", () => {
     expect(screen.getByText("Create organization")).toBeTruthy();
     expect(screen.getByText("Personal")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
-    expect(within(activePublisher).getByText("@openclaw")).toBeTruthy();
-    expect(within(activePublisher).getByText("Org · Admin")).toBeTruthy();
+    expect(within(activePublisher).getByText("OpenClaw")).toBeTruthy();
+    expect(within(activePublisher).getByText("via")).toBeTruthy();
+    expect(within(activePublisher).getByText("@patrick")).toBeTruthy();
+    expect(within(activePublisher).queryByText("Org · Admin")).toBeNull();
+    expect(
+      activePublisher.querySelector(".user-dropdown-via-avatar-fallback .lucide-user-round"),
+    ).toBeTruthy();
     expect(screen.getByLabelText("Publisher actions for @openclaw")).toBeTruthy();
     expect(within(publisherActions).queryByText("Stars")).toBeNull();
     expect(profile.closest("a")?.getAttribute("href")).toBe("/user/openclaw");

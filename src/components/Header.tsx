@@ -147,7 +147,12 @@ export default function Header() {
   const initial = (me?.displayName ?? me?.name ?? rawHandle).charAt(0).toUpperCase();
   const triggerPublisher = activePublisher?.publisher;
   const triggerHandle = triggerPublisher?.handle ?? rawHandle;
-  const triggerLabel = triggerHandle.length > 25 ? `${triggerHandle.slice(0, 25)}…` : triggerHandle;
+  const triggerTitle =
+    triggerPublisher?.kind === "org" && triggerPublisher.displayName
+      ? triggerPublisher.displayName
+      : `@${triggerHandle}`;
+  const triggerLabel = triggerTitle.length > 25 ? `${triggerTitle.slice(0, 25)}…` : triggerTitle;
+  const accountHandle = me?.handle ?? rawHandle;
   const isAuthResolving = isLoading || (isAuthenticated && me === undefined);
   const profileHandle = useQuery(
     api.publishers.getMyProfileHandle,
@@ -166,7 +171,21 @@ export default function Header() {
     return role ? `Org · ${role}` : "Org";
   };
   const activePublisherMeta =
-    triggerPublisher?.kind === "org" ? formatPublisherMeta(activePublisher) : "Personal";
+    triggerPublisher?.kind === "org" ? (
+      <span className="user-dropdown-publisher-via">
+        <span>via</span>
+        {avatar ? (
+          <img className="user-dropdown-via-avatar" src={avatar} alt="" />
+        ) : (
+          <span className="user-dropdown-via-avatar user-dropdown-via-avatar-fallback">
+            <UserRound size={9} aria-hidden="true" />
+          </span>
+        )}
+        <span className="user-dropdown-via-handle">@{accountHandle}</span>
+      </span>
+    ) : (
+      "Personal"
+    );
   const otherPublisherMemberships =
     publisherMemberships?.filter((entry) => entry.publisher._id !== activePublisherId) ?? [];
   const goToOrganizationCreation = () => {
@@ -614,7 +633,7 @@ export default function Header() {
                   <button
                     className="user-trigger"
                     type="button"
-                    aria-label={`Open account menu for @${triggerHandle}`}
+                    aria-label={`Open account menu for ${triggerTitle}`}
                   >
                     {triggerPublisher ? (
                       <span className="user-menu-publisher-icon" aria-hidden="true">
@@ -630,7 +649,7 @@ export default function Header() {
                     ) : (
                       <span className="user-menu-fallback">{initial}</span>
                     )}
-                    <span className="user-trigger-handle truncate">@{triggerLabel}</span>
+                    <span className="user-trigger-handle truncate">{triggerLabel}</span>
                     <ChevronDown className="user-menu-chevron" size={16} />
                   </button>
                 </DropdownMenuTrigger>
@@ -662,7 +681,7 @@ export default function Header() {
                           )}
                         </span>
                         <span className="user-dropdown-publisher-copy">
-                          <span className="user-dropdown-publisher-title">@{triggerHandle}</span>
+                          <span className="user-dropdown-publisher-title">{triggerTitle}</span>
                           <span className="user-dropdown-publisher-meta">
                             {activePublisherMeta}
                           </span>
@@ -765,7 +784,7 @@ export default function Header() {
                         )}
                       </span>
                       <span className="user-dropdown-publisher-copy">
-                        <span className="user-dropdown-publisher-title">@{triggerHandle}</span>
+                        <span className="user-dropdown-publisher-title">{triggerTitle}</span>
                         <span className="user-dropdown-publisher-meta">{activePublisherMeta}</span>
                       </span>
                     </div>

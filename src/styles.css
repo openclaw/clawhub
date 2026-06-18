@@ -1212,6 +1212,36 @@ code {
   font-size: 0.76rem;
 }
 
+.user-dropdown-publisher-via {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.user-dropdown-via-avatar {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.user-dropdown-via-avatar-fallback {
+  display: inline-grid;
+  place-items: center;
+  background: var(--surface-muted);
+  color: var(--ink-soft);
+  font-size: 0.58rem;
+  font-weight: 700;
+}
+
+.user-dropdown-via-handle {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .user-dropdown-publisher-check {
   flex-shrink: 0;
   color: var(--accent);
