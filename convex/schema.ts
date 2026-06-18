@@ -771,6 +771,7 @@ const skills = defineTable({
     v.object({
       modelVersion: v.string(),
       totalDownloads: v.number(),
+      pendingSkillDocDownloads: v.number(),
       previousInstallsAllTime: v.number(),
       targetInstallsAllTime: v.number(),
       estimatedBackfilledInstalls: v.number(),

@@ -220,6 +220,17 @@ describe("catalog taxonomy migrations", () => {
         },
       ],
       [
+        "skillStatEvents:download",
+        {
+          _id: "skillStatEvents:download",
+          _creationTime: 39,
+          skillId,
+          kind: "download",
+          occurredAt: 800,
+          processedAt: undefined,
+        },
+      ],
+      [
         "skillStatEvents:1",
         {
           _id: "skillStatEvents:1",
@@ -300,9 +311,9 @@ describe("catalog taxonomy migrations", () => {
                 if (tableName === "skillStatEvents" && indexName === "by_skill_processed") {
                   return [...docs.values()].filter(
                     (doc) =>
-                      doc._id === "skillStatEvents:1" &&
                       doc.skillId === filters.skillId &&
-                      doc.processedAt === filters.processedAt,
+                      doc.processedAt === filters.processedAt &&
+                      String(doc._id).startsWith("skillStatEvents:"),
                   );
                 }
                 return [];
@@ -329,6 +340,12 @@ describe("catalog taxonomy migrations", () => {
     );
     expect(publisher?.totalInstalls).toBe(skill?.statsInstallsAllTime);
     expect(publisher?.skillTotalInstalls).toBe(skill?.statsInstallsAllTime);
+    expect(isRecord(skill?.installBackfill) ? skill.installBackfill.totalDownloads : 0).toBe(
+      180_001,
+    );
+    expect(isRecord(skill?.installBackfill) ? skill.installBackfill.pendingSkillDocDownloads : 0).toBe(
+      1,
+    );
     expect(isRecord(skill?.installBackfill) ? skill.installBackfill.previousInstallsAllTime : 0).toBe(
       18,
     );

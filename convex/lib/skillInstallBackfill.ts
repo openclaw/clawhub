@@ -27,6 +27,7 @@ export type SkillInstallBackfillCleanStats = {
 export type SkillInstallBackfillEstimate = {
   modelVersion: string;
   totalDownloads: number;
+  pendingSkillDocDownloads: number;
   previousInstallsAllTime: number;
   targetInstallsAllTime: number;
   estimatedBackfilledInstalls: number;
@@ -88,6 +89,7 @@ export function estimateSkillInstallBackfill(input: {
   return {
     modelVersion: INSTALL_BACKFILL_MODEL_VERSION,
     totalDownloads,
+    pendingSkillDocDownloads: 0,
     previousInstallsAllTime,
     targetInstallsAllTime,
     estimatedBackfilledInstalls: targetInstallsAllTime - previousInstallsAllTime,
@@ -106,9 +108,13 @@ export function buildSkillInstallBackfillPatch(input: {
   skill: SkillInstallBackfillReadable;
   cleanStats: SkillInstallBackfillCleanStats;
   now: number;
+  pendingSkillDocDownloads?: number;
   pendingSkillDocInstallsAllTime?: number;
   options?: Partial<SkillInstallBackfillOptions>;
 }): SkillInstallBackfillPatch | null {
+  const currentDownloads = readCanonicalStat(input.skill, "downloads");
+  const pendingSkillDocDownloads = Math.max(0, finiteInteger(input.pendingSkillDocDownloads ?? 0));
+  const stableDownloads = currentDownloads + pendingSkillDocDownloads;
   const currentInstallsAllTime = readCanonicalStat(input.skill, "installsAllTime");
   const pendingSkillDocInstallsAllTime = finiteInteger(
     input.pendingSkillDocInstallsAllTime ?? 0,
@@ -118,7 +124,7 @@ export function buildSkillInstallBackfillPatch(input: {
     currentInstallsAllTime + pendingSkillDocInstallsAllTime,
   );
   const estimate = estimateSkillInstallBackfill({
-    totalDownloads: readCanonicalStat(input.skill, "downloads"),
+    totalDownloads: stableDownloads,
     currentInstallsAllTime: stableInstallsAllTime,
     cleanStats: input.cleanStats,
     options: input.options,
@@ -145,6 +151,7 @@ export function buildSkillInstallBackfillPatch(input: {
     },
     installBackfill: {
       ...estimate,
+      pendingSkillDocDownloads,
       pendingSkillDocInstallsAllTime,
       cleanWindowStartDay: INSTALL_BACKFILL_CLEAN_WINDOW.startDay,
       cleanWindowEndDay: INSTALL_BACKFILL_CLEAN_WINDOW.endDay,

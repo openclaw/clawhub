@@ -123,9 +123,10 @@ describe("buildSkillInstallBackfillPatch", () => {
   });
 
   it("compensates for pending counted install events before the doc sync drains", () => {
+    const pendingSkillDocDownloads = 100;
     const pendingSkillDocInstallsAllTime = 3;
     const expected = estimateSkillInstallBackfill({
-      totalDownloads: 180_000,
+      totalDownloads: 180_000 + pendingSkillDocDownloads,
       currentInstallsAllTime: 17 + pendingSkillDocInstallsAllTime,
       cleanStats: { downloads: 245, installs: 4 },
     });
@@ -133,6 +134,7 @@ describe("buildSkillInstallBackfillPatch", () => {
     const patch = buildSkillInstallBackfillPatch({
       skill: makeSkill({ downloads: 180_000, installsAllTime: 17 }),
       cleanStats: { downloads: 245, installs: 4 },
+      pendingSkillDocDownloads,
       pendingSkillDocInstallsAllTime,
       now: 2_000,
     });
@@ -141,6 +143,8 @@ describe("buildSkillInstallBackfillPatch", () => {
       expected.targetInstallsAllTime - pendingSkillDocInstallsAllTime,
     );
     expect(patch?.installBackfill).toMatchObject({
+      totalDownloads: 180_100,
+      pendingSkillDocDownloads,
       previousInstallsAllTime: 20,
       targetInstallsAllTime: expected.targetInstallsAllTime,
       pendingSkillDocInstallsAllTime,
