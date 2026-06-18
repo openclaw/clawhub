@@ -166,6 +166,17 @@ describe("Upload route", () => {
     expect(guideLink.getAttribute("target")).toBe("_blank");
   });
 
+  it("shows the publishing context before file selection", () => {
+    render(<Upload />);
+
+    const publishingAs = screen.getByRole("group", { name: "Publishing as" });
+    const uploadPrompt = screen.getByText("Drop a skill folder");
+
+    expect(
+      publishingAs.compareDocumentPosition(uploadPrompt) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+  });
+
   it("drops invalid legacy category metadata and offers explicit generation on republish", async () => {
     useSearchMock.mockReturnValue({ updateSlug: "uncategorized-skill" });
     useQueryMock.mockImplementation((fn: unknown, args: unknown) => {

@@ -851,6 +851,20 @@ export function Upload() {
         </header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
+          {!updateSlug ? (
+            <div className="flex flex-col gap-2">
+              <Label>Publishing as</Label>
+              <div
+                role="group"
+                aria-label="Publishing as"
+                className="flex min-h-[44px] w-full items-center rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)]"
+              >
+                <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
+              </div>
+              <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
+            </div>
+          ) : null}
+
           {/* File upload panel */}
           <input
             ref={setFileInputRef}
@@ -1181,58 +1195,42 @@ export function Upload() {
                 />
               </div>
 
-              <div className="flex flex-col gap-2">
-                {updateSlug ? (
-                  <>
-                    <Label htmlFor="ownerHandle">Owner</Label>
-                    <PublisherOwnerSelect
-                      id="ownerHandle"
-                      value={ownerHandle}
-                      memberships={publisherMemberships}
-                      onValueChange={(nextOwnerHandle) => {
-                        ownerTouchedRef.current = true;
-                        setOwnerHandle(nextOwnerHandle);
-                        // Reset the migration confirmation any time the Owner
-                        // selector changes; the user must re-acknowledge the move
-                        // after picking a different target to avoid a stale tick
-                        // turning into a silent transfer.
-                        setConfirmMigrateOwner(false);
-                      }}
-                    />
-                  </>
-                ) : (
-                  <>
-                    <Label>Publishing as</Label>
-                    <div
-                      role="group"
-                      aria-label="Publishing as"
-                      className="flex min-h-[44px] w-full items-center rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)]"
-                    >
-                      <PublisherOwnerDisplay
-                        value={ownerHandle}
-                        memberships={publisherMemberships}
+              {updateSlug ? (
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="ownerHandle">Owner</Label>
+                  <PublisherOwnerSelect
+                    id="ownerHandle"
+                    value={ownerHandle}
+                    memberships={publisherMemberships}
+                    onValueChange={(nextOwnerHandle) => {
+                      ownerTouchedRef.current = true;
+                      setOwnerHandle(nextOwnerHandle);
+                      // Reset the migration confirmation any time the Owner
+                      // selector changes; the user must re-acknowledge the move
+                      // after picking a different target to avoid a stale tick
+                      // turning into a silent transfer.
+                      setConfirmMigrateOwner(false);
+                    }}
+                  />
+                  {isOwnerMigration ? (
+                    <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={confirmMigrateOwner}
+                        onChange={(event) => setConfirmMigrateOwner(event.target.checked)}
                       />
-                    </div>
-                  </>
-                )}
-                {isOwnerMigration ? (
-                  <label className="flex items-start gap-2 text-sm cursor-pointer mt-2">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      checked={confirmMigrateOwner}
-                      onChange={(event) => setConfirmMigrateOwner(event.target.checked)}
-                    />
-                    <span>
-                      Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
-                      <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
-                      Versions, tags, stats and stars are preserved; the old URL redirects to the
-                      new one.
-                    </span>
-                  </label>
-                ) : null}
-                <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
-              </div>
+                      <span>
+                        Move ownership of <strong>{trimmedSlug || "this skill"}</strong> from{" "}
+                        <strong>@{existingOwnerHandle}</strong> to <strong>@{ownerHandle}</strong>.
+                        Versions, tags, stats and stars are preserved; the old URL redirects to the
+                        new one.
+                      </span>
+                    </label>
+                  ) : null}
+                  <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
+                </div>
+              ) : null}
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="version">Version</Label>
