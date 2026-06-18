@@ -13963,6 +13963,139 @@ describe("httpApiV1 handlers", () => {
     vi.useRealTimers();
   });
 
+  it("dry-runs package runtime id repair without mutating packages", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin", handle: "patrick" },
+    } as never);
+    const sourcePackage = {
+      _id: "packages:stepfun",
+      name: "@hengm3467/stepfun-openclaw-plugin",
+      normalizedName: "@hengm3467/stepfun-openclaw-plugin",
+      runtimeId: "stepfun",
+      ownerUserId: "users:hengm",
+      ownerPublisherId: "publishers:hengm",
+      channel: "community",
+      softDeletedAt: undefined,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      if (args.name === "@hengm3467/stepfun-openclaw-plugin") return sourcePackage;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40hengm3467%2Fstepfun-openclaw-plugin/repair-runtime-id",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            nextRuntimeId: "stepfun-2",
+            reason: "Release official StepFun runtime id claim",
+            dryRun: true,
+          }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      dryRun: true,
+      source: {
+        packageId: "packages:stepfun",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        runtimeId: "stepfun",
+      },
+      operations: [
+        {
+          action: "repair-runtime-id",
+          packageId: "packages:stepfun",
+          from: "stepfun",
+          to: "stepfun-2",
+        },
+      ],
+    });
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        nextRuntimeId: "stepfun-2",
+      }),
+    );
+  });
+
+  it("applies package runtime id repair through the admin repair mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin", handle: "patrick" },
+    } as never);
+    const sourcePackage = {
+      _id: "packages:stepfun",
+      name: "@hengm3467/stepfun-openclaw-plugin",
+      normalizedName: "@hengm3467/stepfun-openclaw-plugin",
+      runtimeId: "stepfun",
+      ownerUserId: "users:hengm",
+      ownerPublisherId: "publishers:hengm",
+      channel: "community",
+      softDeletedAt: undefined,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        packageId: "packages:stepfun",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        runtimeId: "stepfun-2",
+      };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      if (args.name === "@hengm3467/stepfun-openclaw-plugin") return sourcePackage;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40hengm3467%2Fstepfun-openclaw-plugin/repair-runtime-id",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            nextRuntimeId: "stepfun-2",
+            reason: "Release official StepFun runtime id claim",
+            dryRun: false,
+          }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        nextRuntimeId: "stepfun-2",
+        reason: "Release official StepFun runtime id claim",
+      }),
+    );
+  });
+
   it("package transfer maps ownership denials to 403", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:stranger",

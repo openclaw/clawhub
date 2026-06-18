@@ -705,6 +705,31 @@ export const ApiV1PackageRepairNameResponseSchema = type({
 export type ApiV1PackageRepairNameResponse =
   (typeof ApiV1PackageRepairNameResponseSchema)[inferred];
 
+export const PackageRepairRuntimeIdRequestSchema = type({
+  nextRuntimeId: "string",
+  reason: "string",
+  dryRun: "boolean?",
+});
+export type PackageRepairRuntimeIdRequest = (typeof PackageRepairRuntimeIdRequestSchema)[inferred];
+
+export const PackageRepairRuntimeIdOperationSchema = type({
+  action: '"repair-runtime-id"',
+  packageId: "string?",
+  from: "string|null?",
+  to: "string?",
+});
+export type PackageRepairRuntimeIdOperation =
+  (typeof PackageRepairRuntimeIdOperationSchema)[inferred];
+
+export const ApiV1PackageRepairRuntimeIdResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  source: PackageRepairNamePackageSchema,
+  operations: PackageRepairRuntimeIdOperationSchema.array(),
+});
+export type ApiV1PackageRepairRuntimeIdResponse =
+  (typeof ApiV1PackageRepairRuntimeIdResponseSchema)[inferred];
+
 export const PackageOfficialMigrationUpsertRequestSchema = type({
   bundledPluginId: "string",
   packageName: "string",

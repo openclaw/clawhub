@@ -8,6 +8,7 @@ import {
   PackageAppealRequestSchema,
   PackageOfficialMigrationUpsertRequestSchema,
   PackageRepairNameRequestSchema,
+  PackageRepairRuntimeIdRequestSchema,
   PackageReportRequestSchema,
   PackageReportTriageRequestSchema,
   PackageReleaseModerationRequestSchema,
@@ -2626,6 +2627,74 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
       );
     } catch (error) {
       return packageOperationErrorToResponse(error, rate.headers, "Package name repair failed");
+    }
+  }
+
+  if (packageSegments[0] === "repair-runtime-id" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+
+    try {
+      const body = parseArk(
+        PackageRepairRuntimeIdRequestSchema,
+        await request.json(),
+        "Package runtime id repair payload",
+      ) as {
+        nextRuntimeId: string;
+        reason: string;
+        dryRun?: boolean;
+      };
+      const nextRuntimeId = body.nextRuntimeId.trim();
+      if (!nextRuntimeId) return text("Runtime id required", 400, rate.headers);
+      const reason = body.reason.trim();
+      if (!reason) return text("Repair reason required", 400, rate.headers);
+      const dryRun = body.dryRun !== false;
+
+      const source = await runQueryRef<AdminRepairPackageLike | null>(
+        ctx,
+        internalRefs.packages.getPackageByNameInternal,
+        { name: packageName },
+      );
+      if (!source || source.softDeletedAt) return text("Package not found", 404, rate.headers);
+
+      const operations = [
+        {
+          action: "repair-runtime-id",
+          packageId: String(source._id),
+          from: source.runtimeId ?? null,
+          to: nextRuntimeId,
+        },
+      ];
+
+      if (!dryRun) {
+        await runMutationRef(ctx, internalRefs.packages.repairPackageIdentityInternal, {
+          actorUserId: auth.userId,
+          name: packageName,
+          nextRuntimeId,
+          reason,
+        });
+      }
+
+      return json(
+        {
+          ok: true,
+          dryRun,
+          source: toRepairPackageSnapshot(source),
+          operations,
+        },
+        200,
+        rate.headers,
+      );
+    } catch (error) {
+      return packageOperationErrorToResponse(
+        error,
+        rate.headers,
+        "Package runtime id repair failed",
+      );
     }
   }
 

@@ -858,6 +858,39 @@ export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/inter
     retiredName?: string | null | undefined;
 }, {}>;
 export type ApiV1PackageRepairNameResponse = (typeof ApiV1PackageRepairNameResponseSchema)[inferred];
+export declare const PackageRepairRuntimeIdRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    nextRuntimeId: string;
+    reason: string;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type PackageRepairRuntimeIdRequest = (typeof PackageRepairRuntimeIdRequestSchema)[inferred];
+export declare const PackageRepairRuntimeIdOperationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    action: "repair-runtime-id";
+    packageId?: string | undefined;
+    from?: string | null | undefined;
+    to?: string | undefined;
+}, {}>;
+export type PackageRepairRuntimeIdOperation = (typeof PackageRepairRuntimeIdOperationSchema)[inferred];
+export declare const ApiV1PackageRepairRuntimeIdResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    source: {
+        packageId: string;
+        name: string;
+        ownerUserId: string;
+        channel: "official" | "community" | "private";
+        runtimeId?: string | null | undefined;
+        ownerPublisherId?: string | null | undefined;
+        softDeletedAt?: number | null | undefined;
+    };
+    operations: {
+        action: "repair-runtime-id";
+        packageId?: string | undefined;
+        from?: string | null | undefined;
+        to?: string | undefined;
+    }[];
+}, {}>;
+export type ApiV1PackageRepairRuntimeIdResponse = (typeof ApiV1PackageRepairRuntimeIdResponseSchema)[inferred];
 export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     bundledPluginId: string;
     packageName: string;

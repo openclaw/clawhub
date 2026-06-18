@@ -53,6 +53,7 @@ import {
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
   cmdRepairPackageName,
+  cmdRepairPackageRuntimeId,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdTransferPackageOwner,
@@ -529,6 +530,19 @@ function registerPluginGovernanceCommands(command: Command) {
     .action(async (name, options) => {
       const opts = await resolveGlobalOpts();
       await cmdRepairPackageName(opts, name, options);
+    });
+
+  command
+    .command("repair-runtime-id")
+    .description("Admin repair for plugin package runtime ids")
+    .argument("<name>", "Current plugin package name")
+    .requiredOption("--next-runtime-id <id>", "Target plugin runtime id")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRepairPackageRuntimeId(opts, name, options);
     });
 
   command

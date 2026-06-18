@@ -577,6 +577,23 @@ export const ApiV1PackageRepairNameResponseSchema = type({
     retiredName: "string|null?",
     operations: PackageRepairNameOperationSchema.array(),
 });
+export const PackageRepairRuntimeIdRequestSchema = type({
+    nextRuntimeId: "string",
+    reason: "string",
+    dryRun: "boolean?",
+});
+export const PackageRepairRuntimeIdOperationSchema = type({
+    action: '"repair-runtime-id"',
+    packageId: "string?",
+    from: "string|null?",
+    to: "string?",
+});
+export const ApiV1PackageRepairRuntimeIdResponseSchema = type({
+    ok: "true",
+    dryRun: "boolean",
+    source: PackageRepairNamePackageSchema,
+    operations: PackageRepairRuntimeIdOperationSchema.array(),
+});
 export const PackageOfficialMigrationUpsertRequestSchema = type({
     bundledPluginId: "string",
     packageName: "string",
