@@ -1213,6 +1213,8 @@ describe("package commands", () => {
         sourceRepo: "openclaw/demo-plugin",
         sourceCommit: "abc123",
         sourceRef: "refs/tags/v1.0.0",
+        categories: "tools, runtime",
+        topics: "GitHub Actions, CI",
       } as Parameters<typeof cmdPublishPackage>[2];
 
       await cmdPublishPackage(makeOpts(workdir), "demo-plugin", options);
@@ -1225,6 +1227,8 @@ describe("package commands", () => {
         version: "1.0.0",
         changelog: "",
         tags: ["latest"],
+        categories: ["tools", "runtime"],
+        topics: ["GitHub Actions", "CI"],
         source: {
           kind: "github",
           url: "https://github.com/openclaw/demo-plugin",
@@ -1255,6 +1259,45 @@ describe("package commands", () => {
       expect(mockLog).not.toHaveBeenCalled();
       expect(mockWrite).not.toHaveBeenCalled();
       dateSpy.mockRestore();
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends explicit empty catalog metadata to clear existing package values", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "clear-topics-plugin");
+      await mkdir(join(folder, "dist"), { recursive: true });
+      await writeFile(
+        join(folder, "package.json"),
+        makeCodePluginPackageJson({
+          name: "@scope/clear-topics-plugin",
+          version: "1.0.0",
+          files: ["dist", "openclaw.plugin.json"],
+        }),
+        "utf8",
+      );
+      await writeFile(
+        join(folder, "openclaw.plugin.json"),
+        JSON.stringify({ id: "clear.topics.plugin" }),
+        "utf8",
+      );
+      await writeFile(join(folder, "dist", "index.js"), "export const demo = true;\n", "utf8");
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        packageId: "pkg_1",
+        releaseId: "rel_1",
+      });
+
+      await cmdPublishPackage(makeOpts(workdir), "clear-topics-plugin", {
+        sourceRepo: "openclaw/clear-topics-plugin",
+        sourceCommit: "abc123",
+        categories: "",
+        topics: "",
+      });
+
+      expect(getPublishPayload()).toMatchObject({ categories: [], topics: [] });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

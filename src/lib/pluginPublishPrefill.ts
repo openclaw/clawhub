@@ -1,5 +1,6 @@
 import type { PackageCompatibility } from "clawhub-schema";
 import {
+  derivePluginCategoryTags,
   normalizeOpenClawExternalPluginCompatibility,
   validateOpenClawExternalCodePluginPackageJson,
 } from "clawhub-schema";
@@ -15,6 +16,7 @@ type PluginPublishPrefill = {
   bundleFormat?: string;
   hostTargets?: string;
   compatibility?: PackageCompatibility;
+  suggestedCategories?: string[];
   missingRequiredFields?: string[];
 };
 
@@ -135,6 +137,12 @@ export async function derivePluginPrefill(
     hostTargets: hostTargets.length > 0 ? hostTargets.join(", ") : undefined,
     compatibility: pluginManifest
       ? normalizeOpenClawExternalPluginCompatibility(packageJson)
+      : undefined,
+    suggestedCategories: pluginManifest
+      ? derivePluginCategoryTags({
+          family: bundleManifest ? "bundle-plugin" : "code-plugin",
+          pluginManifest,
+        })
       : undefined,
     missingRequiredFields: pluginManifest
       ? validateOpenClawExternalCodePluginPackageJson(packageJson).issues.map(

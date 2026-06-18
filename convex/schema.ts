@@ -636,6 +636,8 @@ const skills = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   softDeletedAt: v.optional(v.number()),
   badges: badgesValidator,
   moderationStatus: moderationStatusValidator,
@@ -991,6 +993,8 @@ const skillSearchDigest = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   badges: badgesValidator,
   stats: statsValidator,
   statsDownloads: v.optional(v.number()),
@@ -1095,6 +1099,128 @@ const skillSearchDigest = defineTable({
     filterFields: ["softDeletedAt", "isSuspicious"],
   });
 
+const curatedSkillSearchDigest = defineTable({
+  skillId: v.id("skills"),
+  slug: v.string(),
+  displayName: v.string(),
+  summary: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
+  statsDownloads: v.optional(v.number()),
+  statsStars: v.optional(v.number()),
+  statsInstallsAllTime: v.optional(v.number()),
+  recommendedScore: v.optional(v.number()),
+  softDeletedAt: v.optional(v.number()),
+  isSuspicious: v.optional(v.boolean()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"])
+  .index("by_active_created", ["softDeletedAt", "createdAt"])
+  .index("by_active_name", ["softDeletedAt", "displayName"])
+  .index("by_active_downloads", ["softDeletedAt", "statsDownloads", "updatedAt"])
+  .index("by_active_stars", ["softDeletedAt", "statsStars", "updatedAt"])
+  .index("by_active_installs", ["softDeletedAt", "statsInstallsAllTime", "updatedAt"])
+  .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
+  .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
+  .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
+  .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
+  .index("by_nonsuspicious_downloads", [
+    "softDeletedAt",
+    "isSuspicious",
+    "statsDownloads",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_stars", ["softDeletedAt", "isSuspicious", "statsStars", "updatedAt"])
+  .index("by_nonsuspicious_installs", [
+    "softDeletedAt",
+    "isSuspicious",
+    "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_recommended_score", [
+    "softDeletedAt",
+    "isSuspicious",
+    "recommendedScore",
+    "updatedAt",
+  ]);
+
+const skillTopicSearchDigest = defineTable({
+  skillId: v.id("skills"),
+  topic: v.string(),
+  softDeletedAt: v.optional(v.number()),
+  isSuspicious: v.optional(v.boolean()),
+  normalizedDisplayName: v.optional(v.string()),
+  statsDownloads: v.optional(v.number()),
+  statsStars: v.optional(v.number()),
+  statsInstallsAllTime: v.optional(v.number()),
+  recommendedScore: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId", "topic"])
+  .index("by_active_topic_updated", ["softDeletedAt", "topic", "updatedAt"])
+  .index("by_active_topic_created", ["softDeletedAt", "topic", "createdAt", "updatedAt"])
+  .index("by_active_topic_name", ["softDeletedAt", "topic", "normalizedDisplayName", "updatedAt"])
+  .index("by_active_topic_downloads", ["softDeletedAt", "topic", "statsDownloads", "updatedAt"])
+  .index("by_active_topic_stars", ["softDeletedAt", "topic", "statsStars", "updatedAt"])
+  .index("by_active_topic_installs", [
+    "softDeletedAt",
+    "topic",
+    "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_active_topic_recommended_score", [
+    "softDeletedAt",
+    "topic",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_updated", ["softDeletedAt", "isSuspicious", "topic", "updatedAt"])
+  .index("by_nonsuspicious_topic_created", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "createdAt",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_name", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "normalizedDisplayName",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_downloads", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "statsDownloads",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_stars", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "statsStars",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_installs", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_recommended_score", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "recommendedScore",
+    "updatedAt",
+  ]);
+
 const packages = defineTable({
   name: v.string(),
   normalizedName: v.string(),
@@ -1119,6 +1245,8 @@ const packages = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("packageReleases")),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   compatibility: packageCompatibilityValidator,
   verification: packageVerificationValidator,
   scanStatus: packageScanStatusValidator,
@@ -1530,9 +1658,13 @@ const packageSearchDigest = defineTable({
   summary: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
+  recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
   scanStatus: packageScanStatusValidator,
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -1560,6 +1692,90 @@ const packageSearchDigest = defineTable({
   .index("by_active_runtime_id", ["softDeletedAt", "runtimeId", "updatedAt"])
   .index("by_active_name", ["softDeletedAt", "displayName"]);
 
+const packageTopicSearchDigest = defineTable({
+  packageId: v.id("packages"),
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+  summary: v.optional(v.string()),
+  latestVersion: v.optional(v.string()),
+  runtimeId: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
+  topic: v.string(),
+  verificationTier: v.optional(packageVerificationTierValidator),
+  stats: v.optional(packageStatsValidator),
+  recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
+  scanStatus: packageScanStatusValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId", "topic"])
+  .index("by_active_topic_updated", ["softDeletedAt", "topic", "updatedAt"])
+  .index("by_active_topic_downloads", ["softDeletedAt", "topic", "stats.downloads", "updatedAt"])
+  .index("by_active_topic_installs", ["softDeletedAt", "topic", "stats.installs", "updatedAt"])
+  .index("by_active_topic_recommended_score", [
+    "softDeletedAt",
+    "topic",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_official_topic_downloads", [
+    "softDeletedAt",
+    "isOfficial",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_official_topic_installs", [
+    "softDeletedAt",
+    "isOfficial",
+    "topic",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_official_topic_recommended_score", [
+    "softDeletedAt",
+    "isOfficial",
+    "topic",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_family_topic_updated", ["softDeletedAt", "family", "topic", "updatedAt"])
+  .index("by_active_channel_topic_updated", ["softDeletedAt", "channel", "topic", "updatedAt"])
+  .index("by_active_official_topic_updated", ["softDeletedAt", "isOfficial", "topic", "updatedAt"])
+  .index("by_active_family_channel_topic_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "topic",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_topic_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "topic",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_topic_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "topic",
+    "updatedAt",
+  ]);
+
 const packagePluginCategorySearchDigest = defineTable({
   packageId: v.id("packages"),
   name: v.string(),
@@ -1575,10 +1791,14 @@ const packagePluginCategorySearchDigest = defineTable({
   summary: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
   pluginCategory: v.string(),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
+  recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
   scanStatus: packageScanStatusValidator,
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -1586,6 +1806,90 @@ const packagePluginCategorySearchDigest = defineTable({
 })
   .index("by_package", ["packageId", "pluginCategory"])
   .index("by_active_category_updated", ["softDeletedAt", "pluginCategory", "updatedAt"])
+  .index("by_active_category_downloads", [
+    "softDeletedAt",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_category_installs", [
+    "softDeletedAt",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_category_recommended_score", [
+    "softDeletedAt",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_installs", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_recommended_score", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_downloads", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_installs", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_recommended_score", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_installs", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_recommended_score", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
   .index("by_active_family_category_updated", [
     "softDeletedAt",
     "family",
@@ -2322,6 +2626,7 @@ export default defineSchema({
   packagePublishUploadTickets,
   packageBadges,
   packageSearchDigest,
+  packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
   depRegistryCache,
@@ -2330,6 +2635,8 @@ export default defineSchema({
   skillEmbeddings,
   embeddingSkillMap,
   skillSearchDigest,
+  curatedSkillSearchDigest,
+  skillTopicSearchDigest,
   skillDailyStats,
   skillLeaderboards,
   skillStatBackfillState,

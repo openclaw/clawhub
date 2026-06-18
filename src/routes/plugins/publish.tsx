@@ -1,12 +1,17 @@
 import { createFileRoute, useSearch } from "@tanstack/react-router";
-import { DocsLinks, getPackageScopeOwnerMismatch } from "clawhub-schema";
+import { DocsLinks, getPackageScopeOwnerMismatch, isPluginCategorySlug } from "clawhub-schema";
 import { useAction, useMutation, useQuery } from "convex/react";
 import { ExternalLink, Info, Lock } from "lucide-react";
-import { type ReactNode, startTransition, useEffect, useMemo, useState } from "react";
+import { type ReactNode, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
+import {
+  CatalogMetadataFields,
+  formatCatalogTopicsInput,
+  parseCatalogTopicsInput,
+} from "../../components/CatalogMetadataFields";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import {
@@ -185,6 +190,10 @@ export function PublishPluginRoute() {
   const publishers = useQuery(api.publishers.listMine, me ? {} : "skip") as
     | Array<PublisherOwnerMembership>
     | undefined;
+  const existing = useQuery(
+    api.packages.getManageContext,
+    me && search.name ? { name: search.name } : "skip",
+  );
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
   const publishRelease = useAction(apiRefs.packages.publishRelease as never) as unknown as (args: {
     payload: unknown;
@@ -195,6 +204,11 @@ export function PublishPluginRoute() {
   const [ownerHandle, setOwnerHandle] = useState(search.ownerHandle ?? "");
   const [version, setVersion] = useState(search.nextVersion ?? "0.1.0");
   const [changelog, setChangelog] = useState("");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [suggestedCategories, setSuggestedCategories] = useState<string[]>();
+  const [topics, setTopics] = useState("");
+  const categoriesTouchedRef = useRef(false);
+  const topicsTouchedRef = useRef(false);
   const [sourceRepo, setSourceRepo] = useState(search.sourceRepo ?? "");
   const [sourceCommit, setSourceCommit] = useState("");
   const [sourceRef, setSourceRef] = useState("");
@@ -342,6 +356,7 @@ export function PublishPluginRoute() {
     const prefill = await derivePluginPrefill(normalized);
     setDetectedPrefillFields(listPrefilledFields(prefill));
     setCodePluginFieldIssues(prefill.missingRequiredFields ?? []);
+    setSuggestedCategories(prefill.suggestedCategories);
     if (prefill.family === "code-plugin") setFamily(prefill.family);
     if (prefill.name) setName(prefill.name);
     if (prefill.displayName) setDisplayName(prefill.displayName);
@@ -357,6 +372,7 @@ export function PublishPluginRoute() {
     setIgnoredPaths([]);
     setDetectedPrefillFields([]);
     setCodePluginFieldIssues([]);
+    setSuggestedCategories(undefined);
     // Without this reset the README warning Badge keeps showing the previous
     // package's relative-asset findings until the next pick's async scan
     // finishes — which is misleading both while no package is selected and
@@ -375,6 +391,23 @@ export function PublishPluginRoute() {
       setOwnerHandle(personal.publisher.handle);
     }
   }, [ownerHandle, publishers]);
+
+  useEffect(() => {
+    if (!existing?.package) return;
+    if (!categoriesTouchedRef.current) {
+      const nextCategories = (existing.package.categories ?? []).filter(isPluginCategorySlug);
+      setCategories((current) =>
+        current.length === nextCategories.length &&
+        current.every((category, index) => category === nextCategories[index])
+          ? current
+          : nextCategories,
+      );
+    }
+    if (!topicsTouchedRef.current) {
+      const nextTopics = formatCatalogTopicsInput(existing.package.topics ?? []);
+      setTopics((current) => (current === nextTopics ? current : nextTopics));
+    }
+  }, [existing]);
 
   if (isAuthLoading) {
     return <PublishFormSkeleton />;
@@ -525,6 +558,21 @@ export function PublishPluginRoute() {
                     onValueChange={setVersion}
                   />
                 </div>
+                <CatalogMetadataFields
+                  kind="plugin"
+                  categories={categories}
+                  suggestedCategories={suggestedCategories}
+                  topics={topics}
+                  disabled={metadataDisabled}
+                  onCategoriesChange={(nextCategories) => {
+                    categoriesTouchedRef.current = true;
+                    setCategories(nextCategories);
+                  }}
+                  onTopicsChange={(nextTopics) => {
+                    topicsTouchedRef.current = true;
+                    setTopics(nextTopics);
+                  }}
+                />
                 {family === "bundle-plugin" ? (
                   <>
                     <div className="flex flex-col gap-2">
@@ -764,6 +812,12 @@ export function PublishPluginRoute() {
                           family,
                           version: version.trim(),
                           changelog: changelog.trim(),
+                          ...(categories.length || categoriesTouchedRef.current
+                            ? { categories }
+                            : {}),
+                          ...(topics.trim() || topicsTouchedRef.current
+                            ? { topics: parseCatalogTopicsInput(topics) }
+                            : {}),
                           ...(sourceRepo.trim() && sourceCommit.trim()
                             ? {
                                 source: {

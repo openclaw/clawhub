@@ -23,6 +23,7 @@ into `docs/` and leave only the design record here.
 - `github-backed-skills.md`: source-backed GitHub skills catalog and install invariants.
 - `diffing.md`: skill version diffing UI/API design.
 - `slug-routing.md`: internal web route precedence and plugin alias contract.
+- `catalog-taxonomy.md`: stored category, author topic, browse ordering, and correction contract.
 - `ci.md`: PR check and production deploy audit-tag policy.
 - `manual-testing.md`: maintainer CLI smoke checklist.
 - `dev-worktrees.md`: disposable Worktrunk/Codex worktree lifecycle contract.

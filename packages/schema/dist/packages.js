@@ -232,6 +232,8 @@ const PackagePublishMetadataFields = {
     manualOverrideReason: "string?",
     channel: PackageChannelSchema.optional(),
     tags: "string[]?",
+    categories: "string[]?",
+    topics: "string[]?",
     source: PublishSourceSchema.optional(),
     bundle: BundlePublishMetadataSchema.optional(),
 };
@@ -257,6 +259,8 @@ export const PackageListItemSchema = type({
     createdAt: "number",
     updatedAt: "number",
     latestVersion: "string|null?",
+    categories: "string[]?",
+    topics: "string[]?",
     verificationTier: PackageVerificationTierSchema.or("null").optional(),
     stats: PackageStatsSchema.optional(),
 });
@@ -283,6 +287,8 @@ export const ApiV1PackageResponseSchema = type({
         createdAt: "number",
         updatedAt: "number",
         latestVersion: "string|null?",
+        categories: "string[]?",
+        topics: "string[]?",
         tags: "unknown",
         compatibility: PackageCompatibilitySchema.or("null").optional(),
         verification: PackageVerificationSummarySchema.or("null").optional(),

@@ -88,6 +88,8 @@ export declare const CliPublishRequestSchema: import("arktype/internal/variants/
     migrateOwner?: boolean | undefined;
     acceptLicenseTerms?: boolean | undefined;
     tags?: string[] | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
     source?: {
         kind: "github";
         url: string;
@@ -822,7 +824,7 @@ export declare const EnvVarDeclarationSchema: import("arktype/internal/variants/
 export type EnvVarDeclaration = (typeof EnvVarDeclarationSchema)[inferred];
 export declare const DependencyDeclarationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     name: string;
-    type: "brew" | "go" | "pip" | "npm" | "cargo" | "apt" | "other";
+    type: "other" | "brew" | "go" | "pip" | "npm" | "cargo" | "apt";
     version?: string | undefined;
     url?: string | undefined;
     repository?: string | undefined;
@@ -875,7 +877,7 @@ export declare const ClawdisSkillMetadataSchema: import("arktype/internal/varian
     }[] | undefined;
     dependencies?: {
         name: string;
-        type: "brew" | "go" | "pip" | "npm" | "cargo" | "apt" | "other";
+        type: "other" | "brew" | "go" | "pip" | "npm" | "cargo" | "apt";
         version?: string | undefined;
         url?: string | undefined;
         repository?: string | undefined;

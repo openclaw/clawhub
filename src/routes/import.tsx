@@ -1,4 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -29,6 +30,10 @@ import {
 } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
+import {
+  CatalogMetadataFields,
+  parseCatalogTopicsInput,
+} from "../components/CatalogMetadataFields";
 import { copyText } from "../components/InstallCopyButton";
 import { Container } from "../components/layout/Container";
 import { SignInPrompt } from "../components/SignInPrompt";
@@ -138,6 +143,8 @@ type ReviewDraft = {
   displayName: string;
   version: string;
   tags: string;
+  categories: string[];
+  topics: string;
   iconName: string | null;
 };
 
@@ -535,6 +542,8 @@ export function ImportGitHub() {
           displayName: result.defaults.displayName,
           version: result.defaults.version,
           tags: (result.defaults.tags ?? ["latest"]).join(","),
+          categories: [],
+          topics: "",
           iconName: pickDefaultIconName(`${repo.fullName}:${repo.skillPath}`),
         };
       }
@@ -583,6 +592,8 @@ export function ImportGitHub() {
       displayName: draft.displayName.trim(),
       version: draft.version.trim(),
       tags: tagList,
+      ...(draft.categories.length ? { categories: draft.categories } : {}),
+      ...(draft.topics.trim() ? { topics: parseCatalogTopicsInput(draft.topics) } : {}),
       ...(icon ? { icon } : {}),
       acceptLicenseTerms: acceptedLicenseTerms,
     });
@@ -1274,6 +1285,17 @@ function ReviewSkillCard({
     draft.iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, draft.iconName)
       ? ALLOWED_LUCIDE_ICONS[draft.iconName]
       : null;
+  const suggestedCategories = useMemo(
+    () =>
+      resolveSkillCategories({
+        inferred: inferSkillCategories({
+          slug: draft.slug,
+          displayName: draft.displayName,
+          summary: draft.preview.candidate.description,
+        }),
+      }),
+    [draft.displayName, draft.preview.candidate.description, draft.slug],
+  );
   const fileSelectionMode = getFileSelectionMode(draft);
   const hasOptionalFiles = draft.preview.files.some(
     (file) => file.path !== draft.preview.candidate.readmePath,
@@ -1427,6 +1449,19 @@ function ReviewSkillCard({
               </DropdownMenuContent>
             </DropdownMenu>
           </div>
+        </div>
+
+        <div className="grid gap-3 md:grid-cols-2">
+          <CatalogMetadataFields
+            kind="skill"
+            idPrefix={fieldIdPrefix}
+            categories={draft.categories}
+            suggestedCategories={suggestedCategories}
+            topics={draft.topics}
+            disabled={isBusy}
+            onCategoriesChange={(categories) => onChangeDraft({ categories })}
+            onTopicsChange={(topics) => onChangeDraft({ topics })}
+          />
         </div>
 
         {issues.length > 0 ? (

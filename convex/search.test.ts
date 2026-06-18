@@ -122,6 +122,49 @@ describe("search helpers", () => {
     );
   });
 
+  it("applies normalized author topics before slicing search results", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("API unavailable"));
+    const directMatches = [
+      {
+        skill: makePublicSkill({
+          id: "skills:calendar",
+          slug: "calendar-workflow",
+          displayName: "Calendar Workflow",
+          topics: ["google-calendar"],
+        }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+      {
+        skill: makePublicSkill({
+          id: "skills:legacy",
+          slug: "calendar-workflow-legacy",
+          displayName: "Calendar Workflow Legacy",
+          topics: ["legacy"],
+        }),
+        version: null,
+        ownerHandle: "steipete",
+        owner: null,
+      },
+    ];
+    const runQuery = vi.fn().mockResolvedValueOnce(directMatches).mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      {
+        vectorSearch: vi.fn(),
+        runQuery,
+      },
+      { query: "calendar workflow", topic: "Google Calendar", limit: 10 },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["calendar-workflow"]);
+    expect(runQuery).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ topic: "google-calendar" }),
+    );
+  });
+
   it("uses normalized prefix matches so lowercase name queries do not depend on vector recall", async () => {
     const scienceClawSkills = [
       "ScienceClaw: Query (Dry Run)",
@@ -200,6 +243,48 @@ describe("search helpers", () => {
     });
 
     expect(result.map((entry) => entry.skill.slug)).toEqual(["baidu-yijian-vision"]);
+  });
+
+  it("recalls exact author topics through the indexed topic digest", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:gpu-helper",
+      slug: "accelerated-helper",
+      displayName: "Accelerated Helper",
+      topics: ["GPU development"],
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "gpu development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["accelerated-helper"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
+    );
+  });
+
+  it("recalls text matches from the selected topic digest", async () => {
+    const skill = makeSkillDoc({
+      id: "skills:calendar-helper",
+      slug: "temporal-helper",
+      displayName: "Temporal Helper",
+      summary: "Coordinates calendar events.",
+      topics: ["Scheduling"],
+    });
+    const ctx = makeDirectPrefixCtx([skill]);
+
+    const result = await directPrefixSkillMatchesHandler(ctx, {
+      query: "calendar",
+      topic: "scheduling",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["temporal-helper"]);
+    expect(ctx.usedIndexes).toEqual(
+      expect.arrayContaining(["by_active_topic_updated", "by_skill"]),
+    );
   });
 
   it("does not return suspicious skills via full-text search when nonSuspiciousOnly is set", async () => {
@@ -470,6 +555,35 @@ describe("search helpers", () => {
     expect(result.map((entry) => entry.ownerHandle)).toEqual(["alice", "org"]);
   });
 
+  it("filters duplicate exact slug matches by topic", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:alice-demo",
+          slug: "demo",
+          displayName: "Alice Demo",
+          ownerPublisherId: "publishers:alice",
+          topics: ["scheduling"],
+        }),
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+          topics: ["monitoring"],
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, {
+      slug: "demo",
+      topic: "Scheduling",
+    });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual(["skills:alice-demo"]);
+  });
+
   it("includes duplicate exact slug matches from by_slug when recent scan is empty", async () => {
     const ctx = makeLexicalCtx({
       exactSlugSkills: [
@@ -499,6 +613,37 @@ describe("search helpers", () => {
       "skills:alice-demo",
       "skills:org-demo",
     ]);
+  });
+
+  it("filters duplicate exact slug fallback matches by topic", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:alice-demo",
+          slug: "demo",
+          displayName: "Alice Demo",
+          ownerPublisherId: "publishers:alice",
+          topics: ["scheduling"],
+        }),
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+          topics: ["monitoring"],
+        }),
+      ],
+      recentSkills: [],
+    });
+
+    const result = await lexicalFallbackSkillsHandler(ctx, {
+      query: "demo",
+      queryTokens: ["demo"],
+      limit: 10,
+      topic: "Scheduling",
+    });
+
+    expect(result.map((entry) => entry.skill._id)).toEqual(["skills:alice-demo"]);
   });
 
   it("dedupes overlap and enforces rank + limit across vector and fallback", async () => {
@@ -1621,23 +1766,26 @@ function makePublicSkill(params: {
   id: string;
   slug: string;
   displayName: string;
+  summary?: string;
   downloads?: number;
   ownerPublisherId?: string;
   installsAllTime?: number;
   stars?: number;
+  topics?: string[];
 }) {
   return {
     _id: params.id,
     _creationTime: 1,
     slug: params.slug,
     displayName: params.displayName,
-    summary: `${params.displayName} summary`,
+    summary: params.summary ?? `${params.displayName} summary`,
     ownerUserId: "users:owner",
     ownerPublisherId: params.ownerPublisherId,
     canonicalSkillId: undefined,
     forkOf: undefined,
     latestVersionId: "skillVersions:1",
     tags: {},
+    topics: params.topics,
     badges: {},
     stats: {
       downloads: params.downloads ?? 0,
@@ -1656,10 +1804,12 @@ function makeSkillDoc(params: {
   id: string;
   slug: string;
   displayName: string;
+  summary?: string;
   ownerPublisherId?: string;
   moderationFlags?: string[];
   moderationReason?: string;
   softDeletedAt?: number;
+  topics?: string[];
 }) {
   return {
     ...makePublicSkill(params),
@@ -1797,13 +1947,46 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
     usedSearchIndexes,
     db: {
       query: vi.fn((table: string) => {
+        if (table === "skillTopicSearchDigest") {
+          return {
+            withIndex: (
+              index: string,
+              builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              usedIndexes.push(index);
+              let topic = "";
+              const q = {
+                eq: (field: string, value: unknown) => {
+                  if (field === "topic") topic = String(value);
+                  return q;
+                },
+              };
+              builder(q);
+              return {
+                order: () => ({
+                  take: vi.fn(async () =>
+                    digestRows
+                      .filter((digest) =>
+                        digest.topics?.some((value) => tokenize(value).join("-") === topic),
+                      )
+                      .map((digest) => ({ skillId: digest.skillId, topic })),
+                  ),
+                }),
+              };
+            },
+          };
+        }
         if (table !== "skillSearchDigest") throw new Error(`Unexpected table ${table}`);
         return {
           withIndex: (index: string, builder: (q: unknown) => unknown) => {
             usedIndexes.push(index);
             const range: Record<string, string> = {};
+            const equality: Record<string, unknown> = {};
             const q = {
-              eq: () => q,
+              eq: (field: string, value: unknown) => {
+                equality[field] = value;
+                return q;
+              },
               gte: (field: string, value: string) => {
                 range[field] = value;
                 return q;
@@ -1811,6 +1994,14 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
               lt: () => q,
             };
             builder(q);
+            if (index === "by_skill") {
+              return {
+                unique: vi.fn(
+                  async () =>
+                    digestRows.find((digest) => digest.skillId === equality.skillId) ?? null,
+                ),
+              };
+            }
             return {
               take: vi.fn(async () => {
                 const field = index.includes("first_token")

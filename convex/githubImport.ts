@@ -233,6 +233,8 @@ export const importGitHubSkill = action({
     displayName: v.optional(v.string()),
     version: v.optional(v.string()),
     tags: v.optional(v.array(v.string())),
+    categories: v.optional(v.array(v.string())),
+    topics: v.optional(v.array(v.string())),
     icon: v.optional(v.string()),
     acceptLicenseTerms: v.boolean(),
   },
@@ -255,6 +257,8 @@ async function importGitHubSkillForUser(
     displayName?: string;
     version?: string;
     tags?: string[];
+    categories?: string[];
+    topics?: string[];
     icon?: string;
     acceptLicenseTerms: boolean;
   },
@@ -379,6 +383,8 @@ async function importGitHubSkillForUser(
         version,
         changelog: "",
         tags,
+        categories: args.categories,
+        topics: args.topics,
         icon: args.icon?.trim() || undefined,
         files: storedFiles,
         source: sourceProvenance,

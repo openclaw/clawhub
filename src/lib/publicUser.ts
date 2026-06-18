@@ -40,6 +40,7 @@ export type PublicPublisherCatalogItem = {
   kind: "skill" | "plugin";
   displayName: string;
   summary: string | null;
+  topics?: string[];
   /**
    * Skill custom-icon protocol string (e.g. `lucide:Plug`) mirrored from
    * `skills.icon`. Always `null` for `kind: "plugin"` items in Phase 1.
@@ -95,6 +96,8 @@ export type PublicSkill = Pick<
   | "githubScanStatus"
   | "githubHasSkillCard"
   | "tags"
+  | "categories"
+  | "topics"
   | "badges"
   | "stats"
   | "isSuspicious"

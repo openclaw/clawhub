@@ -2,6 +2,7 @@
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { DocsLinks } from "clawhub-schema";
+import { getFunctionName } from "convex/server";
 import { createElement } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -14,14 +15,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     __path: path,
   }),
-  useSearch: () => ({
-    ownerHandle: undefined,
-    name: undefined,
-    displayName: undefined,
-    family: undefined,
-    nextVersion: undefined,
-    sourceRepo: undefined,
-  }),
+  useSearch: () => useSearchMock(),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -39,13 +33,14 @@ const publishRelease = vi.fn();
 const fetchMock = vi.fn();
 const useAuthStatusMock = vi.fn();
 const useQueryMock = vi.fn();
+const useSearchMock = vi.fn();
 const originalFetch = globalThis.fetch;
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useMutation: () => generateUploadUrl,
   useAction: () => publishRelease,
-  useQuery: () => useQueryMock(),
+  useQuery: (...args: unknown[]) => useQueryMock(...args),
 }));
 
 vi.mock("../lib/useAuthStatus", () => ({
@@ -91,6 +86,15 @@ function getFileInputs() {
   return Array.from(document.querySelectorAll('input[type="file"]')) as HTMLInputElement[];
 }
 
+function selectCategory(name: string) {
+  const trigger = screen.getByRole("button", { name: "Categories" });
+  if (trigger.getAttribute("aria-expanded") !== "true") {
+    fireEvent.pointerDown(trigger, { button: 0 });
+  }
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name }));
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+}
+
 describe("plugins publish route", () => {
   beforeEach(() => {
     generateUploadUrl.mockReset();
@@ -98,25 +102,39 @@ describe("plugins publish route", () => {
     fetchMock.mockReset();
     useAuthStatusMock.mockReset();
     useQueryMock.mockReset();
+    useSearchMock.mockReset();
     toastErrorMock.mockReset();
 
+    useSearchMock.mockReturnValue({
+      ownerHandle: undefined,
+      name: undefined,
+      displayName: undefined,
+      family: undefined,
+      nextVersion: undefined,
+      sourceRepo: undefined,
+    });
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
       me: { _id: "users:1" },
     });
-    useQueryMock.mockReturnValue([
-      {
-        publisher: {
-          _id: "publishers:vintageayu",
-          handle: "vintageayu",
-          displayName: "VintageAyu",
-          kind: "user",
-          image: "/clawd-logo.png",
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name !== "publishers:listMine") return null;
+      return [
+        {
+          publisher: {
+            _id: "publishers:vintageayu",
+            handle: "vintageayu",
+            displayName: "VintageAyu",
+            kind: "user",
+            image: "/clawd-logo.png",
+          },
+          role: "owner",
         },
-        role: "owner",
-      },
-    ]);
+      ];
+    });
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishRelease.mockResolvedValue({ ok: true, packageId: "pkg:1", releaseId: "rel:1" });
     fetchMock.mockImplementation(async (_url: string, init?: RequestInit) => ({
@@ -289,6 +307,154 @@ describe("plugins publish route", () => {
           expect.objectContaining({ path: "openclaw.plugin.json" }),
           expect.objectContaining({ path: "dist/index.js" }),
         ]),
+      }),
+    });
+  });
+
+  it("prefills and preserves catalog metadata when publishing a new plugin version", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "packages:getManageContext") {
+        return {
+          package: {
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            categories: ["tools"],
+            topics: ["GPU development"],
+          },
+          latestRelease: { version: "1.2.3" },
+          suggestedCategories: [],
+        };
+      }
+      if (name === "publishers:listMine") return [];
+      return null;
+    });
+
+    renderPublishRoute();
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Tools");
+      expect(screen.getByRole("button", { name: "Remove GPU development topic" })).toBeTruthy();
+    });
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.4",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
+
+    await waitFor(() => {
+      expect(screen.getByPlaceholderText("Plugin name").getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    await waitFor(() => {
+      expect(publishRelease).toHaveBeenCalledTimes(1);
+    });
+    expect(publishRelease).toHaveBeenCalledWith({
+      payload: expect.objectContaining({
+        categories: ["tools"],
+        topics: ["GPU development"],
+      }),
+    });
+  });
+
+  it("sends explicit empty catalog metadata when it is cleared on a plugin version publish", async () => {
+    useSearchMock.mockReturnValue({
+      ownerHandle: "vintageayu",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      nextVersion: "1.2.4",
+      sourceRepo: "openclaw/demo-plugin",
+    });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "packages:getManageContext") {
+        return {
+          package: {
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            categories: ["tools"],
+            topics: ["GPU development"],
+          },
+          latestRelease: { version: "1.2.3" },
+          suggestedCategories: [],
+        };
+      }
+      if (name === "publishers:listMine") return [];
+      return null;
+    });
+
+    renderPublishRoute();
+
+    const packageJson = withRelativePath(
+      new File(
+        [
+          makeCodePluginPackageJson({
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "1.2.4",
+            repository: "https://github.com/openclaw/demo-plugin.git",
+          }),
+        ],
+        "package.json",
+        { type: "application/json" },
+      ),
+      "demo-plugin/package.json",
+    );
+    const manifest = withRelativePath(
+      new File(['{"id":"demo.plugin"}'], "openclaw.plugin.json", { type: "application/json" }),
+      "demo-plugin/openclaw.plugin.json",
+    );
+    fireEvent.change(getFileInput(), { target: { files: [packageJson, manifest] } });
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Tools");
+      expect(screen.getByRole("button", { name: "Remove GPU development topic" })).toBeTruthy();
+    });
+    selectCategory("Tools");
+    fireEvent.click(screen.getByRole("button", { name: "Remove GPU development topic" }));
+    fireEvent.change(screen.getByPlaceholderText("Full commit SHA"), {
+      target: { value: "abc123" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish plugin" }));
+
+    await waitFor(() => {
+      expect(publishRelease).toHaveBeenCalledTimes(1);
+    });
+    expect(publishRelease).toHaveBeenCalledWith({
+      payload: expect.objectContaining({
+        categories: [],
+        topics: [],
       }),
     });
   });

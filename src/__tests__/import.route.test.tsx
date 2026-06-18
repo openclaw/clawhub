@@ -483,7 +483,7 @@ describe("Import route", () => {
     expect(await screen.findByText("later-skill")).toBeTruthy();
   });
 
-  it("preserves backend default file selection when publishing", async () => {
+  it("preserves backend default file selection and omits blank catalog metadata", async () => {
     useQueriesMock.mockImplementation((queries: Record<string, { args: { slug: string } }>) => {
       return Object.fromEntries(
         Object.entries(queries).map(([key]) => [
@@ -536,6 +536,9 @@ describe("Import route", () => {
         }),
       );
     });
+    const args = importSkill.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(Object.hasOwn(args, "categories")).toBe(false);
+    expect(Object.hasOwn(args, "topics")).toBe(false);
   });
 
   it("surfaces preview errors instead of staying in the loading state", async () => {

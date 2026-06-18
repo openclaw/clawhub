@@ -1,175 +1,103 @@
-export const PLUGIN_CATEGORY_DEFINITIONS = [
-  {
-    slug: "channels",
-    label: "Channels & Communication",
-    icon: "message-circle",
-    signals: [
-      "channel",
-      "chat",
-      "message",
-      "messaging",
-      "communication",
-      "voice",
-      "call",
-      "discord",
-      "slack",
-      "teams",
-      "telegram",
-      "whatsapp",
-      "wechat",
-      "wecom",
-      "qq",
-      "sms",
-      "email",
-    ],
-  },
-  {
-    slug: "mcp-tooling",
-    label: "MCP & Tooling",
-    icon: "plug",
-    signals: ["mcp", "server", "protocol", "provider", "harness", "adapter"],
-  },
-  {
-    slug: "data",
-    label: "Data & APIs",
-    icon: "database",
-    signals: [
-      "api",
-      "data",
-      "database",
-      "db",
-      "fetch",
-      "http",
-      "rest",
-      "graphql",
-      "source",
-      "memory",
-      "storage",
-      "cache",
-      "vector",
-    ],
-  },
-  {
-    slug: "security",
-    label: "Security",
-    icon: "shield",
-    signals: [
-      "security",
-      "scan",
-      "auth",
-      "oauth",
-      "encrypt",
-      "guardrail",
-      "policy",
-      "secret",
-      "permission",
-      "credential",
-    ],
-  },
-  {
-    slug: "observability",
-    label: "Observability",
-    icon: "activity",
-    signals: [
-      "observability",
-      "log",
-      "trace",
-      "monitor",
-      "metric",
-      "telemetry",
-      "diagnostic",
-      "exporter",
-      "prometheus",
-      "otel",
-    ],
-  },
-  {
-    slug: "automation",
-    label: "Automation",
-    icon: "zap",
-    signals: ["auto", "automation", "cron", "schedule", "bot", "workflow", "pipeline", "approval"],
-  },
-  {
-    slug: "deployment",
-    label: "Deployment",
-    icon: "rocket",
-    signals: [
-      "deploy",
-      "deployment",
-      "release",
-      "publish",
-      "ci",
-      "cd",
-      "infrastructure",
-      "gateway",
-      "load-balanced",
-      "hosting",
-    ],
-  },
-  {
-    slug: "dev-tools",
-    label: "Developer Tools",
-    icon: "wrench",
-    signals: [
-      "dev",
-      "debug",
-      "lint",
-      "test",
-      "build",
-      "tool",
-      "tools",
-      "browser",
-      "terminal",
-      "git",
-      "repo",
-      "code",
-      "sdk",
-    ],
-  },
-] as const;
+import { resolvePluginCategories, type PluginCategorySlug } from "./catalogMetadata.js";
 
-export type PluginCategorySlug = (typeof PLUGIN_CATEGORY_DEFINITIONS)[number]["slug"];
+export {
+  isPluginCategorySlug,
+  PLUGIN_CATEGORY_DEFINITIONS,
+  PLUGIN_CATEGORY_SLUGS,
+  type PluginCategorySlug,
+} from "./catalogMetadata.js";
 
-export const PLUGIN_CATEGORY_SLUGS = PLUGIN_CATEGORY_DEFINITIONS.map((category) => category.slug);
+type JsonRecord = Record<string, unknown>;
 
-export const PLUGIN_CATEGORY_SLUG_SET = new Set<string>(PLUGIN_CATEGORY_SLUGS);
-
-export function isPluginCategorySlug(
-  value: string | null | undefined,
-): value is PluginCategorySlug {
-  return Boolean(value && PLUGIN_CATEGORY_SLUG_SET.has(value));
+function isRecord(value: unknown): value is JsonRecord {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
 }
 
-function normalizeCategoryText(value: string | null | undefined) {
-  return value?.trim().toLowerCase() ?? "";
+function hasValues(value: unknown): boolean {
+  return Array.isArray(value) && value.length > 0;
 }
 
-function signalMatches(text: string, signal: string) {
-  const normalizedText = ` ${text.replace(/[^a-z0-9]+/g, " ")} `;
-  const normalizedSignal = ` ${signal
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")} `;
-  return normalizedText.includes(normalizedSignal);
+function hasProperties(value: unknown): boolean {
+  return isRecord(value) && Object.keys(value).length > 0;
+}
+
+export function inferPluginCategoriesFromManifest(manifest: unknown): PluginCategorySlug[] {
+  if (!isRecord(manifest)) return [];
+
+  const categories: PluginCategorySlug[] = [];
+  const add = (category: PluginCategorySlug) => {
+    if (!categories.includes(category)) categories.push(category);
+  };
+  const kinds = Array.isArray(manifest.kind) ? manifest.kind : [manifest.kind];
+  const contracts = isRecord(manifest.contracts) ? manifest.contracts : {};
+
+  if (hasValues(manifest.channels)) add("channels");
+  if (hasValues(manifest.providers) || hasValues(manifest.cliBackends)) add("models");
+  if (kinds.includes("memory") || hasValues(contracts.embeddingProviders)) add("memory");
+  if (kinds.includes("context-engine") || hasValues(contracts.memoryEmbeddingProviders)) {
+    add("context");
+  }
+  if (
+    hasValues(contracts.speechProviders) ||
+    hasValues(contracts.realtimeTranscriptionProviders) ||
+    hasValues(contracts.realtimeVoiceProviders) ||
+    hasValues(contracts.transcriptSourceProviders)
+  ) {
+    add("voice");
+  }
+  if (
+    hasValues(contracts.mediaUnderstandingProviders) ||
+    hasValues(contracts.imageGenerationProviders) ||
+    hasValues(contracts.musicGenerationProviders) ||
+    hasValues(contracts.videoGenerationProviders)
+  ) {
+    add("media");
+  }
+  if (hasValues(contracts.webFetchProviders) || hasValues(contracts.webSearchProviders)) {
+    add("web");
+  }
+  if (hasValues(contracts.tools) || hasValues(manifest.commandAliases)) add("tools");
+  if (
+    hasValues(contracts.embeddedExtensionFactories) ||
+    hasValues(contracts.agentToolResultMiddleware)
+  ) {
+    add("runtime");
+  }
+  if (hasValues(contracts.gatewayMethodDispatch)) add("gateway");
+  if (
+    hasValues(contracts.externalAuthProviders) ||
+    hasProperties(manifest.secretProviderIntegrations)
+  ) {
+    add("security");
+  }
+
+  return categories.slice(0, 3);
 }
 
 export function derivePluginCategoryTags(input: {
   family?: string;
+  categories?: readonly string[] | null;
+  inferredCategories?: readonly string[] | null;
+  pluginManifest?: unknown;
   name?: string;
   displayName?: string;
   runtimeId?: string;
   summary?: string;
 }): PluginCategorySlug[] {
   if (input.family === "skill") return [];
+  return resolvePluginCategories({
+    declared: input.categories,
+    inferred: input.inferredCategories ?? inferPluginCategoriesFromManifest(input.pluginManifest),
+  });
+}
 
-  const text = [input.name, input.displayName, input.runtimeId, input.summary]
-    .map(normalizeCategoryText)
-    .filter(Boolean)
-    .join(" ");
-
-  if (!text) return [];
-
-  return PLUGIN_CATEGORY_DEFINITIONS.filter((category) =>
-    category.signals.some((signal) => signalMatches(text, signal)),
-  ).map((category) => category.slug);
+export function resolveStoredPluginCategories(
+  input: Parameters<typeof derivePluginCategoryTags>[0],
+): PluginCategorySlug[] {
+  if (input.family === "skill") return [];
+  try {
+    return resolvePluginCategories({ declared: input.categories });
+  } catch {
+    return resolvePluginCategories({});
+  }
 }

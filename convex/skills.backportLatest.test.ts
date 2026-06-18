@@ -79,6 +79,8 @@ function buildExistingSkill(overrides: Partial<SkillDoc> = {}): SkillDoc {
     },
     tags: { latest: PREV_LATEST_VERSION_ID },
     capabilityTags: ["cap-v2"],
+    categories: ["development"],
+    topics: ["typescript"],
     stats: {
       downloads: 0,
       installsCurrent: 0,
@@ -115,6 +117,8 @@ function buildPublishArgs(overrides?: Partial<Record<string, unknown>>) {
     changelogSource: "user",
     tags: [] as string[],
     capabilityTags: ["cap-v1-backport"],
+    categories: ["operations"],
+    topics: ["backport-only"],
     summary: "Summary of v1.0.1 backport",
     fingerprint: "f".repeat(64),
     files: [
@@ -321,6 +325,13 @@ function buildDb(
           }),
         };
       }
+      if (table === "skillTopicSearchDigest") {
+        return {
+          withIndex: () => ({
+            collect: async () => [],
+          }),
+        };
+      }
       if (table === "reservedSlugs") {
         return {
           withIndex: (name: string) => {
@@ -373,7 +384,7 @@ function buildDb(
       }
       // Trigger side-effect / digest tables: accept silently so the async
       // digest plumbing invoked by the skills trigger doesn't fail the test.
-      if (table === "skillSearchDigest") {
+      if (table === "skillSearchDigest" || table === "skillTopicSearchDigest") {
         return `${table}:mock`;
       }
       // Intentionally throw for publishers / publisherMembers so

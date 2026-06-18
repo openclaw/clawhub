@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SkillsIndex } from "../routes/skills/index";
+import { Route as SkillsRoute, SkillsIndex } from "../routes/skills/index";
 import {
   convexHttpMock,
   convexReactMocks,
@@ -14,7 +14,8 @@ const navigateMock = vi.fn();
 let searchMock: Record<string, unknown> = {};
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (_config: { component: unknown; validateSearch: unknown }) => ({
+  createFileRoute: () => (config: { component: unknown; validateSearch: unknown }) => ({
+    __config: config,
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
@@ -47,6 +48,26 @@ describe("SkillsIndex", () => {
     vi.unstubAllGlobals();
   });
 
+  it("maps legacy category URLs before browsing", () => {
+    const validateSearch = (
+      SkillsRoute as unknown as {
+        __config: {
+          validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
+        };
+      }
+    ).__config.validateSearch;
+
+    expect(validateSearch({ category: "workflows" })).toEqual(
+      expect.objectContaining({ category: "automation" }),
+    );
+    expect(validateSearch({ category: "mcp-tools" })).toEqual(
+      expect.objectContaining({ category: "integrations" }),
+    );
+    expect(validateSearch({ category: "unknown" })).toEqual(
+      expect.objectContaining({ category: undefined }),
+    );
+  });
+
   it("requests the first skills page", async () => {
     render(<SkillsIndex />);
     await act(async () => {});
@@ -61,6 +82,7 @@ describe("SkillsIndex", () => {
       }),
     );
     expect(args).not.toHaveProperty("sort");
+    expect(args).not.toHaveProperty("officialFirst");
     expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
       "true",
     );
@@ -95,7 +117,7 @@ describe("SkillsIndex", () => {
   });
 
   it("hides the total skills count when filters are active", async () => {
-    searchMock = { category: "dev-tools" };
+    searchMock = { category: "development" };
     convexReactMocks.useQuery.mockReturnValue(70_300);
 
     render(<SkillsIndex />);
@@ -106,7 +128,7 @@ describe("SkillsIndex", () => {
   });
 
   it("clears the skill search from the search field", async () => {
-    searchMock = { q: "agent", sort: "relevance", category: "dev-tools" };
+    searchMock = { q: "agent", sort: "relevance", category: "development" };
 
     render(<SkillsIndex />);
     await act(async () => {});
@@ -122,12 +144,12 @@ describe("SkillsIndex", () => {
       lastCall.search({
         q: "agent",
         sort: "relevance",
-        category: "dev-tools",
+        category: "development",
       }),
     ).toEqual({
       q: undefined,
       sort: undefined,
-      category: "dev-tools",
+      category: "development",
     });
     expect(lastCall.replace).toBe(true);
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
@@ -351,7 +373,7 @@ describe("SkillsIndex", () => {
     });
 
     expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Dev Tools" }).getAttribute("aria-checked")).toBe(
+    expect(screen.getByRole("radio", { name: "Development" }).getAttribute("aria-checked")).toBe(
       "false",
     );
     expect(actionFn).toHaveBeenCalledWith(
@@ -556,15 +578,17 @@ describe("SkillsIndex", () => {
     expect(titles[1]).toBe("Newer Low Score");
   });
 
-  it("filters category browse results to the inferred skill category", async () => {
-    searchMock = { category: "dev-tools" };
+  it("includes results explicitly assigned to the selected category", async () => {
+    searchMock = { category: "development" };
     convexHttpMock.query.mockResolvedValue({
       page: [
         makeListResult("web3-dev", "Blockscout for Web3 Dev", {
+          categories: ["development"],
           summary:
             "Build web3 applications that need blockchain data via the Blockscout PRO API over HTTP.",
         }),
         makeListResult("developer-utils", "Developer Utils", {
+          categories: ["development"],
           summary: "Utilities for build and debug workflows.",
         }),
       ],
@@ -578,15 +602,85 @@ describe("SkillsIndex", () => {
     const args = getLastListPageArgs();
     expect(args).toEqual(
       expect.objectContaining({
-        categorySlug: "dev-tools",
-        categoryKeywords: expect.arrayContaining(["dev"]),
+        categorySlug: "development",
+        officialFirst: true,
+        categoryKeywords: expect.arrayContaining(["developer"]),
         excludeCategoryKeywords: undefined,
       }),
     );
-    expect(screen.queryByText("Blockscout for Web3 Dev")).toBeNull();
+    expect(screen.getByText("Blockscout for Web3 Dev")).toBeTruthy();
     expect(screen.getByText("Developer Utils")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+  });
+
+  it("passes author topics to browse filtering and renders the active topic facet", async () => {
+    searchMock = { topic: "google-calendar" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("calendar-helper", "Calendar Helper", {
+          topics: ["google-calendar", "productivity"],
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(getLastListPageArgs()).toEqual(
+      expect.objectContaining({
+        topic: "google-calendar",
+      }),
+    );
+    expect(
+      screen.getByRole("radio", { name: "google-calendar" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getAllByText("google-calendar")).toHaveLength(2);
+  });
+
+  it("keeps an active topic facet visible when it has no results", async () => {
+    searchMock = { topic: "google-calendar" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(
+      screen.getByRole("radio", { name: "google-calendar" }).getAttribute("aria-checked"),
+    ).toBe("true");
+    expect(screen.getByRole("radio", { name: "All topics" })).toBeTruthy();
+  });
+
+  it("preserves backend official-first ordering on category pages", async () => {
+    searchMock = { category: "development" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("official-dev", "Official Dev", {
+          categories: ["development"],
+          official: true,
+        }),
+        makeListResult("community-dev", "Community Dev", {
+          categories: ["development"],
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const titles = Array.from(document.querySelectorAll(".skill-list-item-name")).map(
+      (node) => node.textContent,
+    );
+    expect(titles).toEqual(["Official Dev", "Community Dev"]);
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ officialFirst: true }));
   });
 
   it("does not render the warning filter", async () => {
@@ -699,7 +793,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function makeListResult(
   slug: string,
   displayName: string,
-  options: { isSuspicious?: boolean; summary?: string } = {},
+  options: {
+    isSuspicious?: boolean;
+    summary?: string;
+    topics?: string[];
+    categories?: string[];
+    official?: boolean;
+  } = {},
 ) {
   return {
     skill: {
@@ -707,6 +807,9 @@ function makeListResult(
       slug,
       displayName,
       summary: options.summary ?? `${displayName} summary`,
+      topics: options.topics,
+      categories: options.categories,
+      badges: options.official ? { official: { byUserId: "users:admin", at: 1 } } : {},
       tags: {},
       stats: {
         downloads: 0,

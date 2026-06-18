@@ -116,6 +116,7 @@ import type * as lib_userSkillStats from "../lib/userSkillStats.js";
 import type * as lib_webhooks from "../lib/webhooks.js";
 import type * as maintenance from "../maintenance.js";
 import type * as managementDevSeed from "../managementDevSeed.js";
+import type * as migrations from "../migrations.js";
 import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageInspectorNode from "../packageInspectorNode.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
@@ -260,6 +261,7 @@ declare const fullApi: ApiFromModules<{
   "lib/webhooks": typeof lib_webhooks;
   maintenance: typeof maintenance;
   managementDevSeed: typeof managementDevSeed;
+  migrations: typeof migrations;
   packageInspectorHttp: typeof packageInspectorHttp;
   packageInspectorNode: typeof packageInspectorNode;
   packagePublishTokens: typeof packagePublishTokens;
@@ -316,4 +318,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;
+};

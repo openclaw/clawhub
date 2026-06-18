@@ -1,4 +1,5 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { normalizeCatalogTopic } from "clawhub-schema";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import {
   Building2,
@@ -9,7 +10,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
@@ -183,6 +184,10 @@ function PublisherProfile() {
   const memberCount = members?.members.length ?? 0;
   const activeCatalogTab = catalogTab;
   const activeItems = activeCatalogTab === "stars" ? starredItems : publishedItems;
+  const topicGroups = useMemo(
+    () => (activeCatalogTab === "stars" ? [] : groupPublisherCatalogItemsByTopic(activeItems)),
+    [activeCatalogTab, activeItems],
+  );
   const activeStatus = activeCatalogTab === "stars" ? starredStatus : publishedStatus;
   const activeLoadMore = activeCatalogTab === "stars" ? loadMoreStarred : loadMore;
   const activePublishedDisplay = activeCatalogTab === "skills" ? publishedDisplay : null;
@@ -395,6 +400,8 @@ function PublisherProfile() {
                 <BrowseResultsSkeleton count={6} variant="list" />
               ) : activePublishedDisplay ? (
                 <PublishedCatalogSections display={activePublishedDisplay} view="list" />
+              ) : topicGroups.length > 1 ? (
+                <TopicGroupedCatalogSections groups={topicGroups} view="list" />
               ) : activeItems.length > 0 ? (
                 <>
                   <div className="results-list">
@@ -429,6 +436,46 @@ function PublisherProfile() {
         </div>
       </Container>
     </main>
+  );
+}
+
+export function groupPublisherCatalogItemsByTopic(items: PublicPublisherCatalogItem[]) {
+  const groups = new Map<string, { title: string; items: PublicPublisherCatalogItem[] }>();
+  for (const item of items) {
+    const rawTopic = item.topics?.[0]?.trim();
+    const title = rawTopic || "Other";
+    const key = rawTopic
+      ? (normalizeCatalogTopic(rawTopic) ?? rawTopic.toLocaleLowerCase("en-US"))
+      : "other";
+    const group = groups.get(key) ?? { title, items: [] };
+    group.items.push(item);
+    groups.set(key, group);
+  }
+  return [...groups.entries()].map(([key, value]) => ({ key, ...value }));
+}
+
+function TopicGroupedCatalogSections({
+  groups,
+  view,
+}: {
+  groups: ReturnType<typeof groupPublisherCatalogItemsByTopic>;
+  view: PublishedView;
+}) {
+  return (
+    <div className="publisher-profile-source-catalog">
+      {groups.map((group) => (
+        <section key={group.key} className="publisher-profile-manifest-section">
+          <div className="publisher-profile-manifest-heading">
+            <h3>{group.title}</h3>
+          </div>
+          <div className={view === "list" ? "results-list" : "grid publisher-published-grid"}>
+            {group.items.map((item) => (
+              <PublishedItemCard key={`${item.kind}:${item._id}`} item={item} view={view} />
+            ))}
+          </div>
+        </section>
+      ))}
+    </div>
   );
 }
 

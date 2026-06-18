@@ -22,6 +22,7 @@ import {
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageReportListStatus,
+  type PluginCategorySlug,
   type ServerPackagePublishRequest,
 } from "clawhub-schema";
 import { api, internal } from "../_generated/api";
@@ -308,10 +309,27 @@ const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "installs"] as const;
+const LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES = {
+  "mcp-tooling": "tools",
+  data: "tools",
+  observability: "gateway",
+  automation: "tools",
+  deployment: "gateway",
+  "dev-tools": "runtime",
+} as const satisfies Record<string, PluginCategorySlug>;
 const MAX_PLUGIN_EXPORT_FILE_COUNT = 10_000;
 const MAX_PLUGIN_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT = 250;
 const MAX_PLUGIN_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
+
+function resolvePluginCategoryFilter(value: string | undefined): PluginCategorySlug | undefined {
+  if (!value) return undefined;
+  if (isPluginCategorySlug(value)) return value;
+  if (!Object.hasOwn(LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES, value)) return undefined;
+  return LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES[
+    value as keyof typeof LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES
+  ];
+}
 
 function invalidQueryParamMessage(name: string) {
   return `Invalid ${name} query parameter`;
@@ -409,6 +427,8 @@ type PackageListQueryArgs = {
   isOfficial?: boolean;
   highlightedOnly?: boolean;
   category?: string;
+  topic?: string;
+  officialFirst?: boolean;
   sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
@@ -793,14 +813,16 @@ type CatalogSourceCursorState = {
 type UnifiedCatalogCursorState = {
   packages: CatalogSourceCursorState;
   skills: CatalogSourceCursorState;
-  recommendedFallback?: "installs";
+  recommendedFallback?: RecommendedFallbackSort;
 };
 
 type PluginCatalogCursorState = {
   codePlugins: CatalogSourceCursorState;
   bundlePlugins: CatalogSourceCursorState;
-  recommendedFallback?: "installs";
+  recommendedFallback?: RecommendedFallbackSort;
 };
+
+type RecommendedFallbackSort = "updated" | "installs";
 
 type CatalogPageResult<T> = {
   page: T[];
@@ -828,6 +850,10 @@ const CATALOG_CURSOR_PREFIXES = [
   SKILL_CATALOG_CURSOR_PREFIX,
   PACKAGE_PAGE_CURSOR_PREFIX,
 ];
+
+function normalizeRecommendedFallbackSort(value: unknown): RecommendedFallbackSort | undefined {
+  return value === "updated" || value === RECOMMENDED_FALLBACK_SORT ? value : undefined;
+}
 
 function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
   return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -866,10 +892,7 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
     return {
       packages: normalize(parsed.packages),
       skills: normalize(parsed.skills),
-      recommendedFallback:
-        parsed.recommendedFallback === RECOMMENDED_FALLBACK_SORT
-          ? RECOMMENDED_FALLBACK_SORT
-          : undefined,
+      recommendedFallback: normalizeRecommendedFallbackSort(parsed.recommendedFallback),
     };
   } catch {
     return {
@@ -910,10 +933,7 @@ function decodeMultiPluginCursor(
     return {
       codePlugins: normalize(parsed.codePlugins),
       bundlePlugins: normalize(parsed.bundlePlugins),
-      recommendedFallback:
-        parsed.recommendedFallback === RECOMMENDED_FALLBACK_SORT
-          ? RECOMMENDED_FALLBACK_SORT
-          : undefined,
+      recommendedFallback: normalizeRecommendedFallbackSort(parsed.recommendedFallback),
     };
   } catch {
     return {
@@ -1044,6 +1064,7 @@ async function searchPackageCatalog(
     isOfficial?: boolean;
     highlightedOnly?: boolean;
     category?: string;
+    topic?: string;
     viewerUserId?: Id<"users">;
   },
 ): Promise<CatalogSearchEntry[]> {
@@ -1058,6 +1079,7 @@ async function searchPackageCatalog(
       isOfficial: args.isOfficial,
       highlightedOnly: args.highlightedOnly,
       category: args.category,
+      topic: args.topic,
       viewerUserId: args.viewerUserId,
     },
   );
@@ -1441,8 +1463,12 @@ async function listPackages(
   const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
   if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
   const cursor = rawCursor;
-  const category = url.searchParams.get("category")?.trim() || undefined;
-  if (category && !isPluginCategorySlug(category)) {
+  const rawCategory = url.searchParams.get("category")?.trim() || undefined;
+  const category = resolvePluginCategoryFilter(rawCategory);
+  const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
+  const officialFirst = parseBooleanQueryParam(url.searchParams, "officialFirst");
+  if (!officialFirst.ok) return text(officialFirst.message, 400, rate.headers);
+  if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
   const effectiveFamily = family ?? familyParam.value;
@@ -1473,6 +1499,7 @@ async function listPackages(
       channel: channelParam.value,
       isOfficial: isOfficial.value,
       highlightedOnly: highlightedOnly || undefined,
+      topic,
       sort: effectiveSort,
       paginationOpts: { cursor, numItems: limit },
     });
@@ -1501,12 +1528,15 @@ async function listPackages(
             ),
           ])
         : [false, false];
-    const useRecommendationFallback =
-      effectiveSort === "recommended" &&
-      (decodedCursor.recommendedFallback === RECOMMENDED_FALLBACK_SORT ||
-        (isFreshRecommendedRequest &&
-          (hasMissingPackageRecommendationScores || hasMissingSkillRecommendationScores)));
-    const unifiedListSort = useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : effectiveSort;
+    const recommendedFallback =
+      effectiveSort === "recommended"
+        ? (decodedCursor.recommendedFallback ??
+          (isFreshRecommendedRequest &&
+          (hasMissingPackageRecommendationScores || hasMissingSkillRecommendationScores)
+            ? RECOMMENDED_FALLBACK_SORT
+            : undefined))
+        : undefined;
+    const unifiedListSort = recommendedFallback ?? effectiveSort;
     const packageSource = initCatalogSource<CatalogListItem>(decodedCursor.packages);
     const skillSource = initCatalogSource<CatalogListItem>(decodedCursor.skills);
     const pageSize = limit;
@@ -1524,6 +1554,8 @@ async function listPackages(
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
             category,
+            topic,
+            officialFirst: officialFirst.value,
             sort: unifiedListSort,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
@@ -1543,6 +1575,7 @@ async function listPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
+            topic,
             sort: unifiedListSort,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1571,7 +1604,7 @@ async function listPackages(
     const nextState = {
       packages: finalizeCatalogSource(packageSource),
       skills: finalizeCatalogSource(skillSource),
-      recommendedFallback: useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : undefined,
+      recommendedFallback,
     };
     const isDoneAll =
       nextState.packages.done &&
@@ -1592,6 +1625,7 @@ async function listPackages(
     const includeTotalCount =
       !includeSkills &&
       !category &&
+      !topic &&
       !channelParam.value &&
       typeof isOfficial.value !== "boolean" &&
       !highlightedOnly;
@@ -1611,11 +1645,14 @@ async function listPackages(
           },
         )
       : false;
-    const useRecommendationFallback =
-      effectiveSort === "recommended" &&
-      (decodedCursor.recommendedFallback === RECOMMENDED_FALLBACK_SORT ||
-        (isFreshRecommendedRequest && hasMissingRecommendationScores));
-    const pluginListSort = useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : effectiveSort;
+    const recommendedFallback =
+      effectiveSort === "recommended"
+        ? (decodedCursor.recommendedFallback ??
+          (isFreshRecommendedRequest && hasMissingRecommendationScores
+            ? RECOMMENDED_FALLBACK_SORT
+            : undefined))
+        : undefined;
+    const pluginListSort = recommendedFallback ?? effectiveSort;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1633,6 +1670,8 @@ async function listPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
+        officialFirst: officialFirst.value,
         sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
@@ -1662,8 +1701,14 @@ async function listPackages(
       if (
         !bundlePluginCandidate ||
         (codePluginCandidate &&
-          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, pluginListSort) <=
-            0)
+          ((officialFirst.value
+            ? Number(bundlePluginCandidate.isOfficial) - Number(codePluginCandidate.isOfficial)
+            : 0) ||
+            compareCatalogItemsForSort(
+              codePluginCandidate,
+              bundlePluginCandidate,
+              pluginListSort,
+            )) <= 0)
       ) {
         items.push(codePluginCandidate!);
         codePluginSource.index += 1;
@@ -1676,7 +1721,7 @@ async function listPackages(
     const nextState = {
       codePlugins: finalizeCatalogSource(codePluginSource),
       bundlePlugins: finalizeCatalogSource(bundlePluginSource),
-      recommendedFallback: useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : undefined,
+      recommendedFallback,
     };
     const isDoneAll =
       nextState.codePlugins.done &&
@@ -1704,6 +1749,8 @@ async function listPackages(
     isOfficial: isOfficial.value,
     highlightedOnly: highlightedOnly || undefined,
     category,
+    topic,
+    officialFirst: officialFirst.value,
     sort: effectiveSort,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
@@ -3082,8 +3129,10 @@ async function searchPackages(
   const highlightedOnlyParam = parseBooleanQueryParam(url.searchParams, "highlightedOnly");
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
   const highlightedOnly = featured.value === true || highlightedOnlyParam.value === true;
-  const category = url.searchParams.get("category")?.trim() || undefined;
-  if (category && !isPluginCategorySlug(category)) {
+  const rawCategory = url.searchParams.get("category")?.trim() || undefined;
+  const category = resolvePluginCategoryFilter(rawCategory);
+  const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
+  if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
   const family = familyParam.value;
@@ -3107,6 +3156,7 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
+        topic,
       },
     );
   } else if (family || !includeSkills) {
@@ -3121,6 +3171,7 @@ async function searchPackages(
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
             category,
+            topic,
             viewerUserId: viewerUserId ?? undefined,
           }),
         ),
@@ -3145,6 +3196,7 @@ async function searchPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
         viewerUserId: viewerUserId ?? undefined,
       });
     }
@@ -3157,6 +3209,7 @@ async function searchPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
         viewerUserId: viewerUserId ?? undefined,
       }),
       runQueryRef<CatalogSearchEntry[]>(
@@ -3168,6 +3221,7 @@ async function searchPackages(
           channel: channelParam.value,
           isOfficial: isOfficial.value,
           highlightedOnly: highlightedOnly || undefined,
+          topic,
         },
       ),
     ]);

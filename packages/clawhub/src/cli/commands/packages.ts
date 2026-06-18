@@ -141,6 +141,8 @@ type PackagePublishOptions = {
   changelog?: string;
   manualOverrideReason?: string;
   tags?: string;
+  categories?: string;
+  topics?: string;
   bundleFormat?: string;
   hostTargets?: string;
   sourceRepo?: string;
@@ -253,6 +255,8 @@ type PackagePublishPayload = {
   changelog: string;
   manualOverrideReason?: string;
   tags: string[];
+  categories?: string[];
+  topics?: string[];
   source?: NonNullable<PackagePublishSource>;
   bundle?: {
     format?: string;
@@ -2337,6 +2341,8 @@ async function preparePackagePublishPlan(
   const totalBytes = clawpackOnDisk
     ? clawpackOnDisk.bytes.byteLength
     : filesOnDisk.reduce((sum, file) => sum + file.bytes.byteLength, 0);
+  const categories = parseCsv(options.categories);
+  const topics = parseCsv(options.topics);
   const payload: PackagePublishPayload = {
     name,
     displayName,
@@ -2348,6 +2354,8 @@ async function preparePackagePublishPlan(
       ? { manualOverrideReason: options.manualOverrideReason.trim() }
       : {}),
     tags,
+    ...(options.categories !== undefined ? { categories } : {}),
+    ...(options.topics !== undefined ? { topics } : {}),
     ...(source ? { source } : {}),
     ...(family === "bundle-plugin"
       ? {

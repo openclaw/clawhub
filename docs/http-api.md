@@ -543,7 +543,8 @@ Query params:
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages (`/api/v1/plugins`,
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
-  `family=code-plugin`/`family=bundle-plugin`).
+  `family=code-plugin`/`family=bundle-plugin`). Controlled categories and
+  legacy v1 filter aliases are documented under `GET /api/v1/plugins`.
 
 Notes:
 
@@ -568,7 +569,8 @@ Query params:
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
 - `category` (optional): plugin category filter. Supported only when the
-  request is scoped to plugin packages.
+  request is scoped to plugin packages. Controlled categories and legacy v1
+  filter aliases are documented under `GET /api/v1/plugins`.
 
 Notes:
 
@@ -589,8 +591,16 @@ Query params:
 - `isOfficial` (optional): `true` or `false`
 - `sort` (optional): `recommended` (default), `installs`, `updated`
 - `category` (optional): plugin category filter. Current values:
-  `channels`, `mcp-tooling`, `data`, `security`, `observability`,
-  `automation`, `deployment`, `dev-tools`.
+  `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
+  `tools`, `runtime`, `gateway`, `security`, `other`.
+
+Legacy v1 filter aliases remain accepted on read endpoints:
+
+- `mcp-tooling`, `data`, and `automation` resolve to `tools`.
+- `observability` and `deployment` resolve to `gateway`.
+- `dev-tools` resolves to `runtime`.
+
+Legacy aliases are not accepted as stored or author-declared category values.
 
 ### `GET /api/v1/plugins/export`
 
@@ -638,11 +648,13 @@ Query params:
 - `limit` (optional): integer (1-100)
 - `isOfficial` (optional): `true` or `false`
 - `category` (optional): plugin category filter. Current values:
-  `channels`, `mcp-tooling`, `data`, `security`, `observability`,
-  `automation`, `deployment`, `dev-tools`.
+  `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
+  `tools`, `runtime`, `gateway`, `security`, `other`.
 
 Notes:
 
+- The legacy v1 filter aliases documented under `GET /api/v1/plugins` are also
+  accepted.
 - Category filtering is a real API filter backed by plugin category digest
   rows, not a search-query rewrite.
 - Results are returned in relevance order and do not currently paginate.

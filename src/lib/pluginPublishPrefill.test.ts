@@ -26,4 +26,19 @@ describe("derivePluginPrefill", () => {
 
     expect(prefill.displayName).toBe("Manifest Display Name");
   });
+
+  it("returns manifest-derived category suggestions without selecting them", async () => {
+    const prefill = await derivePluginPrefill([
+      jsonFile("package.json", {
+        name: "@scope/demo-plugin",
+        version: "1.0.0",
+      }),
+      jsonFile("openclaw.plugin.json", {
+        id: "demo.plugin",
+        contracts: { webSearchProviders: ["demo"] },
+      }),
+    ]);
+
+    expect(prefill.suggestedCategories).toEqual(["web"]);
+  });
 });

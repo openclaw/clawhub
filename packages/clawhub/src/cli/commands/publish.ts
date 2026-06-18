@@ -40,6 +40,8 @@ export async function cmdPublish(
     version?: string;
     changelog?: string;
     tags?: string;
+    categories?: string;
+    topics?: string;
     forkOf?: string;
     migrateOwner?: boolean;
     sourceRepo?: string;
@@ -71,6 +73,8 @@ export async function cmdPublish(
     .split(",")
     .map((tag) => tag.trim())
     .filter(Boolean);
+  const categories = parseCsv(options.categories);
+  const topics = parseCsv(options.topics);
 
   const forkOfRaw = options.forkOf?.trim();
   const forkOf = forkOfRaw ? parseForkOf(forkOfRaw) : undefined;
@@ -171,6 +175,8 @@ export async function cmdPublish(
         changelog,
         acceptLicenseTerms: true,
         tags,
+        ...(options.categories !== undefined ? { categories } : {}),
+        ...(options.topics !== undefined ? { topics } : {}),
         ...(source ? { source } : {}),
         ...(forkOf ? { forkOf } : {}),
       }),
@@ -209,6 +215,13 @@ export async function cmdPublish(
     spinner?.fail(formatError(error));
     throw error;
   }
+}
+
+function parseCsv(value: string | undefined) {
+  return (value ?? "")
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter(Boolean);
 }
 
 async function resolveDefaultOwnerHandle(registry: string, token: string) {

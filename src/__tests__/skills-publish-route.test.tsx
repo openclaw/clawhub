@@ -29,6 +29,15 @@ const useAuthStatusMock = vi.fn();
 const useSearchMock = vi.fn();
 let useActionCallCount = 0;
 
+function selectCategory(name: string) {
+  const trigger = screen.getByRole("button", { name: "Categories" });
+  if (trigger.getAttribute("aria-expanded") !== "true") {
+    fireEvent.pointerDown(trigger, { button: 0 });
+  }
+  fireEvent.click(screen.getByRole("menuitemcheckbox", { name }));
+  fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
+}
+
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
   useQuery: (...args: unknown[]) => useQueryMock(...args),
@@ -94,6 +103,145 @@ describe("Upload route", () => {
     const guideLink = screen.getByRole("link", { name: /Skill publishing guide/i });
     expect(guideLink.getAttribute("href")).toBe("https://docs.openclaw.ai/clawhub/skill-format");
     expect(guideLink.getAttribute("target")).toBe("_blank");
+  });
+
+  it("drops invalid legacy category metadata and offers explicit generation on republish", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "uncategorized-skill" });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: {
+            slug: "uncategorized-skill",
+            displayName: "Uncategorized Skill",
+            categories: ["uncategorized"],
+          },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      if (name === "publishers:listMine") return [];
+      return null;
+    });
+
+    render(<Upload />);
+
+    await waitFor(() => {
+      expect(screen.getByText("0/3")).toBeTruthy();
+      expect(screen.getByRole("button", { name: "Generate categories" })).toBeTruthy();
+    });
+  });
+
+  it("uses the existing summary for explicit category generation on republish", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "summary-only-signal" });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: {
+            slug: "summary-only-signal",
+            displayName: "Summary Only Signal",
+            summary: "Automate recurring workflows.",
+          },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      return null;
+    });
+
+    render(<Upload />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Generate categories" }));
+    expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain("Automation");
+  });
+
+  it("uses the uploaded SKILL.md description for explicit category generation", async () => {
+    render(<Upload />);
+
+    fireEvent.change(screen.getByPlaceholderText("My skill"), {
+      target: { value: "Plain Skill" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
+      target: { value: "plain-skill" },
+    });
+    const file = new File(
+      ["---\nname: plain-skill\ndescription: Automate recurring workflows.\n---\n# Plain Skill"],
+      "SKILL.md",
+      { type: "text/markdown" },
+    );
+    fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
+
+    await waitFor(() => {
+      fireEvent.click(screen.getByRole("button", { name: "Generate categories" }));
+      expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain(
+        "Automation",
+      );
+    });
+  });
+
+  it("sends explicit empty metadata arrays when categories and topics are cleared on republish", async () => {
+    useSearchMock.mockReturnValue({ updateSlug: "categorized-skill" });
+    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
+      if (name === "skills:getBySlug") {
+        return {
+          skill: {
+            slug: "categorized-skill",
+            displayName: "Categorized Skill",
+            categories: ["development"],
+            topics: ["GPU development"],
+          },
+          latestVersion: { version: "1.0.0" },
+          owner: { handle: "alice", displayName: "Alice" },
+        };
+      }
+      return null;
+    });
+    generateUploadUrl.mockResolvedValue("https://upload.local");
+    publishVersion.mockResolvedValue(undefined);
+
+    render(<Upload />);
+
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "Categories" }).textContent).toContain(
+        "Development",
+      );
+    });
+    selectCategory("Development");
+    fireEvent.click(screen.getByRole("button", { name: "Remove GPU development topic" }));
+
+    fireEvent.change(screen.getByPlaceholderText("Describe what changed in this skill..."), {
+      target: { value: "Clear category override." },
+    });
+    const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
+    fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
+    fireEvent.click(
+      screen.getByRole("checkbox", {
+        name: /i have the rights to publish this skill under mit-0/i,
+      }),
+    );
+
+    const publishButton = screen.getByRole("button", { name: /publish skill/i });
+    await waitFor(() => {
+      expect(publishButton.getAttribute("disabled")).toBeNull();
+    });
+    fireEvent.click(publishButton);
+
+    await waitFor(() => {
+      expect(
+        publishVersion.mock.calls.some((call) =>
+          Array.isArray((call[0] as { files?: unknown }).files),
+        ),
+      ).toBe(true);
+    });
+    const args = publishVersion.mock.calls
+      .map((call) => call[0] as Record<string, unknown>)
+      .find((call) => Array.isArray(call.files));
+    expect(args).toMatchObject({ categories: [], topics: [] });
   });
 
   it("keeps required validation quiet before submit", async () => {
@@ -249,9 +397,11 @@ describe("Upload route", () => {
       ).toBe(true);
     });
     const args = publishVersion.mock.calls
-      .map((call) => call[0] as { files?: Array<{ path: string }> })
+      .map((call) => call[0] as Record<string, unknown> & { files?: Array<{ path: string }> })
       .find((call) => Array.isArray(call.files));
     expect(args?.files?.[0]?.path).toBe("SKILL.md");
+    expect(Object.hasOwn(args ?? {}, "categories")).toBe(false);
+    expect(Object.hasOwn(args ?? {}, "topics")).toBe(false);
   });
 
   it("blocks non-text folder uploads (png)", async () => {

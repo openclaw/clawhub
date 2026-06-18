@@ -203,6 +203,8 @@ describe("cmdPublish", () => {
         version: "1.0.0",
         changelog: "",
         tags: "latest",
+        categories: "automation, development",
+        topics: "React, GPU development",
       } as Parameters<typeof cmdPublish>[2];
 
       await cmdPublish(makeOpts(workdir), "my-skill", options);
@@ -223,8 +225,31 @@ describe("cmdPublish", () => {
       expect(payload.changelog).toBe("");
       expect(payload.acceptLicenseTerms).toBe(true);
       expect(payload.tags).toEqual(["latest"]);
+      expect(payload.categories).toEqual(["automation", "development"]);
+      expect(payload.topics).toEqual(["React", "GPU development"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
       expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends explicit empty catalog metadata to clear existing skill values", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "clear-topics");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Clear topics\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "clear-topics", { categories: "", topics: "" });
+
+      expect(publishPayload()).toMatchObject({ categories: [], topics: [] });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }

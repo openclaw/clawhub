@@ -1,4 +1,9 @@
-import { normalizeTextContentType } from "clawhub-schema";
+import {
+  normalizeCatalogTopics,
+  normalizeSkillCategories,
+  normalizeTextContentType,
+  resolveSkillCategories,
+} from "clawhub-schema";
 import { ConvexError } from "convex/values";
 import semver from "semver";
 import { api, internal } from "../_generated/api";
@@ -48,6 +53,15 @@ type FingerprintFile = { path: string; sha256: string };
 type SafePublishFile = PublishVersionArgs["files"][number] & { path: string };
 type PublishFileBlob = { file: SafePublishFile; blob: Blob };
 
+function normalizeStoredSkillCategoryOverride(categories: readonly string[] | undefined) {
+  if (categories === undefined) return undefined;
+  try {
+    return normalizeSkillCategories(categories);
+  } catch {
+    return undefined;
+  }
+}
+
 export type PublishResult = {
   skillId: Id<"skills">;
   versionId: Id<"skillVersions">;
@@ -62,6 +76,8 @@ export type PublishVersionArgs = {
   version: string;
   changelog: string;
   tags?: string[];
+  categories?: string[];
+  topics?: string[];
   forkOf?: { slug: string; ownerHandle?: string; version?: string };
   source?: {
     kind: "github";
@@ -261,6 +277,16 @@ export async function publishVersionForUser(
   const otherFiles = fileContents
     .filter((file) => !file.path.toLowerCase().endsWith(".md"))
     .slice(0, MAX_FILES_FOR_EMBEDDING);
+  let categories: string[];
+  let topics: string[];
+  try {
+    categories = resolveSkillCategories({
+      declared: args.categories ?? normalizeStoredSkillCategoryOverride(existingSkill?.categories),
+    });
+    topics = normalizeCatalogTopics(args.topics ?? existingSkill?.topics);
+  } catch (error) {
+    throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
+  }
 
   const staticScan = await runStaticPublishScan(ctx, {
     slug,
@@ -313,6 +339,8 @@ export async function publishVersionForUser(
     changelogSource,
     sourceProvenance: options.sourceProvenance,
     tags: args.tags?.map((tag) => tag.trim()).filter(Boolean),
+    categories,
+    topics: topics.length ? topics : undefined,
     fingerprint,
     forkOf: args.forkOf
       ? {
