@@ -345,23 +345,28 @@ describe("Header", () => {
     expect(document.querySelector(".theme-mode-toggle")).toBeNull();
     expect(screen.queryByText("Theme")).toBeNull();
 
+    const activePublisher = screen.getByLabelText("Current publisher @patrick");
+    const account = screen.getByLabelText("Account @patrick");
     const themeRow = document.querySelector(".user-dropdown-theme-row");
-    const settings = screen.getByText("Settings");
-    const stars = screen.getByText("Stars");
-    const signOut = screen.getByText("Sign out");
+    const settings = within(activePublisher).getByText("Settings");
+    const stars = within(account).getByText("Stars");
+    const appearance = within(account).getByText("Appearance");
+    const signOut = within(account).getByText("Sign out");
 
+    expect(within(activePublisher).queryByText("Stars")).toBeNull();
+    expect(within(account).queryByText("Settings")).toBeNull();
+    expect(screen.queryByText("Switch publisher")).toBeNull();
     expect(themeRow).toBeTruthy();
     expect(themeRow?.children).toHaveLength(3);
     expect(settings.compareDocumentPosition(stars) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(stars.compareDocumentPosition(themeRow!) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
+    expect(stars.compareDocumentPosition(appearance) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
     expect(themeRow!.compareDocumentPosition(signOut) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(signOut.previousElementSibling?.tagName).toBe("HR");
 
     expect(screen.getByLabelText("System theme").getAttribute("aria-current")).toBe("true");
     expect(screen.getByLabelText("System theme").getAttribute("data-status")).toBe("active");
@@ -396,16 +401,24 @@ describe("Header", () => {
     render(<Header />);
 
     expect(screen.getByRole("button", { name: "Open account menu for @openclaw" })).toBeTruthy();
-    expect(screen.getByText("@patrick")).toBeTruthy();
+    const activePublisher = screen.getByLabelText("Current publisher @openclaw");
+    const account = screen.getByLabelText("Account @patrick");
+    const profile = within(activePublisher).getByText("Profile");
+
+    expect(within(account).getByText("@patrick")).toBeTruthy();
+    expect(screen.getByText("Switch publisher")).toBeTruthy();
+    expect(screen.getByLabelText("Switch to @patrick")).toBeTruthy();
     expect(screen.getByText("Personal")).toBeTruthy();
     expect(screen.queryByText("Personal · owner")).toBeNull();
-    expect(screen.getAllByText("@openclaw").length).toBeGreaterThan(1);
-    expect(screen.getByText("Org · admin")).toBeTruthy();
-    expect(screen.getByLabelText("Actions for @openclaw")).toBeTruthy();
-    expect(screen.getByText("Profile").closest("a")?.getAttribute("href")).toBe("/user/openclaw");
+    expect(within(activePublisher).getByText("@openclaw")).toBeTruthy();
+    expect(within(activePublisher).getByText("Org · admin")).toBeTruthy();
+    expect(screen.getByLabelText("Publisher actions for @openclaw")).toBeTruthy();
+    expect(profile.closest("a")?.getAttribute("href")).toBe("/user/openclaw");
+    expect(profile.closest("a")?.querySelector(".lucide-building-2")).toBeTruthy();
     expect(screen.queryByText("Signed in as @patrick")).toBeNull();
+    expect(screen.queryByText(/For @openclaw/)).toBeNull();
 
-    fireEvent.click(screen.getByText("@patrick"));
+    fireEvent.click(screen.getByLabelText("Switch to @patrick"));
 
     expect(setActivePublisherIdMock).toHaveBeenCalledWith("publishers:patrick");
     expect(screen.getByText("Stars")).toBeTruthy();
