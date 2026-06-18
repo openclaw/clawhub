@@ -307,19 +307,6 @@ export const classifyCatalog: ReturnType<typeof action> = action({
   },
 });
 
-export const applyCatalogClassifications: ReturnType<typeof action> = action({
-  args: {
-    dryRun: v.optional(v.boolean()),
-    minimumConfidence: v.union(v.literal("high"), v.literal("medium")),
-    confirm: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { user } = await requireUserFromAction(ctx);
-    assertRole(user, ["admin"]);
-    return ctx.runAction(internal.migrations.runCatalogClassificationApply, args);
-  },
-});
-
 export type StoredCatalogClassificationInput = ReturnType<
   typeof import("./lib/catalogClassification").prepareCatalogClassificationResult
 > & {

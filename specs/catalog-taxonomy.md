@@ -22,9 +22,8 @@
 - Capability tags are not taxonomy inputs.
 - Existing items without valid stored categories remain in `other` until an author or operator
   explicitly accepts generated or manually selected categories.
-- Operators run the tracked package and skill catalog digest migrations after backend deployment
-  and verify completion before considering the taxonomy rollout complete. The deploy workflow does
-  not invoke them automatically.
+- The one-time package and skill catalog digest migrations completed during the production rollout.
+  No catalog taxonomy migration remains in the backend deploy checklist.
 
 ## Topics
 
@@ -67,19 +66,5 @@ Corpus classification is a separate operator-run phase from digest projection:
 - The preview runner is cursor-batched and resumable. It uses an action instead of
   `@convex-dev/migrations` because it must read immutable storage blobs; the source-changing apply
   phase uses the migrations component.
-- Apply defaults to a dry run and requires a confidence-specific confirmation string. High
-  confidence is the default production lane. Medium confidence requires an explicit operator
-  decision after reviewing the generated corpus report.
-
-Operator sequence:
-
-```bash
-bunx convex run catalogClassificationNode:classifyCatalogInternal \
-  '{"targetKind":"skill","maxBatches":20,"continueOnIncomplete":true}' --prod
-bunx convex run catalogClassificationNode:classifyCatalogInternal \
-  '{"targetKind":"plugin","maxBatches":20,"continueOnIncomplete":true}' --prod
-bunx convex run migrations:runCatalogClassificationApply \
-  '{"minimumConfidence":"high","dryRun":true}' --prod
-bunx convex run migrations:runCatalogClassificationApply \
-  '{"minimumConfidence":"high","dryRun":false,"confirm":"apply-high-confidence-catalog-classifications"}' --prod
-```
+- High- and medium-confidence rollout apply was a one-time production migration. The temporary
+  apply migrations and operator wrappers were removed after the verified rollout completed.

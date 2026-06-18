@@ -32,15 +32,8 @@ Production deploy notes:
 
 - `deploy.yml` is manual-only (`workflow_dispatch`). Merging to `main` does not deploy.
 - The workflow must be started from `main`.
-- Backend deploys do not run the tracked catalog-taxonomy digest migrations automatically. For the
-  taxonomy rollout, an operator must run
-  `bunx convex run migrations:runCatalogTaxonomyPrerequisites --prod` after Convex deploy and verify
-  completion before considering the deployment complete. The migration is idempotent, resumable,
-  and a no-op after it completes.
-- Catalog classification/backfill is also operator-run. Generate skill and plugin preview rows with
-  `catalogClassificationNode:classifyCatalogInternal`, review the resulting confidence lanes, then
-  dry-run and explicitly confirm `migrations:runCatalogClassificationApply`. See
-  `specs/catalog-taxonomy.md` for the exact commands and confidence-specific confirmation strings.
+- The catalog-taxonomy digest and high-/medium-confidence classification rollout migrations were
+  one-time production operations and are no longer part of the deploy checklist.
 - Deploy targets:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production
