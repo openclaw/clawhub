@@ -767,7 +767,7 @@ describe("Upload route", () => {
     });
 
     expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
-      "@clawkit · ClawKit · admin",
+      "ClawKit / @clawkit",
     );
     expect(document.querySelector('img[src="https://example.com/clawkit.png"]')).toBeTruthy();
     expect(screen.queryByText("Available")).toBeNull();
@@ -794,7 +794,7 @@ describe("Upload route", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("group", { name: "Publishing as" }).textContent).toContain(
-        "@clawkit · ClawKit · admin",
+        "ClawKit / @clawkit",
       );
     });
 

@@ -894,7 +894,11 @@ export function Upload() {
                   Publishing as
                 </span>
                 <span className="publishing-context-owner">
-                  <PublisherOwnerDisplay value={ownerHandle} memberships={publisherMemberships} />
+                  <PublisherOwnerDisplay
+                    value={ownerHandle}
+                    memberships={publisherMemberships}
+                    compact
+                  />
                 </span>
                 <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
                 {(publisherMemberships?.length ?? 0) > 1 ? (

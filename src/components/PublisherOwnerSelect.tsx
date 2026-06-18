@@ -88,11 +88,33 @@ function PublisherOwnerOption({ membership }: { membership: PublisherOwnerMember
 export function PublisherOwnerDisplay({
   value,
   memberships,
+  compact = false,
 }: {
   value: string;
   memberships: PublisherOwnerMembership[] | undefined;
+  compact?: boolean;
 }) {
   const selected = (memberships ?? []).find((entry) => entry.publisher.handle === value) ?? null;
+  if (selected && compact) {
+    const { publisher } = selected;
+    return (
+      <span className="flex min-w-0 items-center gap-2 leading-none">
+        <span className="inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full">
+          <MarketplaceIcon
+            kind={publisher.kind}
+            label={publisher.displayName || publisher.handle}
+            imageUrl={publisher.image}
+            size="xs"
+          />
+        </span>
+        <span className="min-w-0 truncate font-medium text-[color:var(--ink)]">
+          {publisher.displayName || publisher.handle}
+          <span className="font-normal text-[color:var(--ink-soft)]"> / @{publisher.handle}</span>
+        </span>
+      </span>
+    );
+  }
+
   return selected ? (
     <PublisherOwnerOption membership={selected} />
   ) : (
