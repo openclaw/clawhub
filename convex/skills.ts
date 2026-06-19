@@ -1838,6 +1838,10 @@ type PublicSkillEntry = {
   latestVersion: PublicSkillListVersion | null;
   ownerHandle: string | null;
   owner: PublicPublisher | null;
+  trending?: {
+    installs: number;
+    downloads: number;
+  };
 };
 
 type StaffSkillAuditLogEntry = Doc<"auditLogs"> & {
@@ -5810,7 +5814,13 @@ export const listPublicTrendingPage = query({
       if (args.nonSuspiciousOnly && digest.isSuspicious) continue;
       const item = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!item) continue;
-      items.push(item);
+      items.push({
+        ...item,
+        trending: {
+          installs: entry.installs,
+          downloads: entry.downloads,
+        },
+      });
       if (items.length >= limit) break;
     }
 
