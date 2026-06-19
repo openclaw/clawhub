@@ -14892,6 +14892,12 @@ a.publisher-profile-detail:hover {
   color: var(--hv2-text);
 }
 
+.home-v2-listing-search-input::-webkit-search-cancel-button,
+.home-v2-listing-search-input::-webkit-search-decoration {
+  display: none;
+  -webkit-appearance: none;
+}
+
 .home-v2-listing-search-input::placeholder {
   color: var(--hv2-text-tertiary);
 }
