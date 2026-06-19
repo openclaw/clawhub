@@ -19675,8 +19675,8 @@ a.publisher-profile-detail:hover {
 }
 
 .home-v2-popular-publisher-copy {
-  display: grid;
-  align-content: start;
+  display: flex;
+  flex-direction: column;
   gap: 10px;
   min-width: 0;
   padding: 10px 14px 14px;
@@ -19697,6 +19697,7 @@ a.publisher-profile-detail:hover {
   display: flex;
   align-items: center;
   gap: 12px;
+  margin-top: auto;
   color: var(--hv2-text-tertiary);
   font-size: 11px;
   font-weight: 600;
