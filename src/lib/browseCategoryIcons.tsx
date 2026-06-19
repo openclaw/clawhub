@@ -18,7 +18,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { SKILL_CATEGORIES } from "./categories";
+import { PLUGIN_CATEGORIES, SKILL_CATEGORIES } from "./categories";
 
 const ICON_COMPONENTS: Record<string, LucideIcon> = {
   activity: Activity,
@@ -49,7 +49,9 @@ export function BrowseCategoryIcon({ slug, size = 16, className }: BrowseCategor
   if (!slug) {
     return <Layers size={size} className={className} aria-hidden="true" />;
   }
-  const iconKey = SKILL_CATEGORIES.find((category) => category.slug === slug)?.icon ?? "package";
+  const iconKey =
+    [...SKILL_CATEGORIES, ...PLUGIN_CATEGORIES].find((category) => category.slug === slug)?.icon ??
+    "package";
   const Icon = ICON_COMPONENTS[iconKey] ?? Package;
   return <Icon size={size} className={className} aria-hidden="true" />;
 }

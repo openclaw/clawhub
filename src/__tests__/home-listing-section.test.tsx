@@ -103,6 +103,7 @@ describe("HomeListingSection", () => {
     render(<HomeListingSection />);
 
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Most popular" }));
 
     await waitFor(() => {
       expect(screen.getByText("Demo Plugin")).toBeTruthy();
@@ -151,32 +152,51 @@ describe("HomeListingSection", () => {
     });
   });
 
-  it("renders browse taxonomy category select for skills", () => {
+  it("renders the canonical skill and plugin category definitions", async () => {
     render(<HomeListingSection />);
 
+    await waitFor(() => {
+      expect(screen.getByText("Demo Skill").textContent).toBe("Demo Skill");
+    });
+
     const categorySelect = screen.getByRole("combobox", { name: "Category" });
-    expect(categorySelect).toBeTruthy();
+    expect(categorySelect.getAttribute("aria-expanded")).toBe("false");
     expect(categorySelect.textContent).toContain("All categories");
 
     fireEvent.click(categorySelect);
-    expect(screen.getByRole("option", { name: "All categories" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Data, APIs & Integrations" })).toBeTruthy();
-    expect(screen.getByRole("option", { name: "Security, Vetting & Trust" })).toBeTruthy();
+    expect(
+      screen.getByRole("listbox", { name: "Category" }).getAttribute("aria-multiselectable"),
+    ).toBe("true");
+    expect(screen.getByRole("option", { name: "All categories" }).textContent).toContain(
+      "All categories",
+    );
+    expect(screen.getByRole("option", { name: "Integrations" }).textContent).toContain(
+      "Integrations",
+    );
+    expect(screen.getByRole("option", { name: "Security" }).textContent).toContain("Security");
+
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    expect(screen.getByRole("option", { name: "Channels" }).textContent).toContain("Channels");
+    expect(screen.getByRole("option", { name: "Runtime" }).textContent).toContain("Runtime");
   });
 
   it("expands the listing preview when see more is clicked", async () => {
-    convexQueryMock.mockResolvedValue({
-      page: Array.from({ length: 35 }, (_, index) => ({
-        skill: {
-          _id: `skills:${index}`,
-          slug: `skill-${index}`,
-          displayName: `Skill ${index}`,
-          summary: "Summary",
-          stats: { stars: 1, downloads: 1 },
-        },
-        ownerHandle: "builder",
-      })),
-    });
+    const rows = Array.from({ length: 35 }, (_, index) => ({
+      skill: {
+        _id: `skills:${index}`,
+        slug: `skill-${index}`,
+        displayName: `Skill ${index}`,
+        summary: "Summary",
+        stats: { stars: 1, downloads: 1 },
+      },
+      ownerHandle: "builder",
+    }));
+    convexQueryMock.mockImplementation((_, args: { numItems: number }) =>
+      Promise.resolve({
+        page: rows.slice(0, args.numItems),
+        hasMore: args.numItems < rows.length,
+      }),
+    );
 
     render(<HomeListingSection />);
 
@@ -207,12 +227,52 @@ describe("HomeListingSection", () => {
     await waitFor(() => {
       expect(convexQueryMock).toHaveBeenCalledWith(
         "skills:listPublicPageV4",
-        expect.objectContaining({ officialOnly: true }),
+        expect.objectContaining({ officialFirst: true }),
       );
     });
   });
 
-  it("refetches skills when a category is selected", async () => {
+  it("filters official plugins locally without using the broken official-only endpoint", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({
+      items: [
+        {
+          name: "community-plugin",
+          displayName: "Community Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 2,
+          stats: { stars: 1, downloads: 2, installs: 0, versions: 1 },
+        },
+        {
+          name: "official-plugin",
+          displayName: "Official Plugin",
+          family: "code-plugin",
+          channel: "official",
+          isOfficial: true,
+          createdAt: 1,
+          updatedAt: 2,
+          stats: { stars: 4, downloads: 8, installs: 0, versions: 1 },
+        },
+      ],
+      nextCursor: null,
+    });
+
+    render(<HomeListingSection />);
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Officials" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Official Plugin").textContent).toBe("Official Plugin");
+    });
+    expect(screen.queryByText("Community Plugin")).toBeNull();
+    const latestRequest = fetchPluginCatalogMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
+    expect(latestRequest).toEqual(expect.objectContaining({ limit: 100 }));
+    expect(latestRequest).not.toHaveProperty("isOfficial");
+  });
+
+  it("allows selecting multiple skill categories and refetches each selected category", async () => {
     render(<HomeListingSection />);
 
     await waitFor(() => {
@@ -221,14 +281,45 @@ describe("HomeListingSection", () => {
 
     convexQueryMock.mockClear();
     fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
-    fireEvent.click(screen.getByRole("option", { name: "Coding & Dev Tools" }));
+    fireEvent.click(screen.getByRole("option", { name: "Development" }));
 
     await waitFor(() => {
       expect(convexQueryMock).toHaveBeenCalledWith(
         "skills:listPublicPageV4",
-        expect.objectContaining({ categorySlug: "dev-tools" }),
+        expect.objectContaining({ categorySlug: "development" }),
+      );
+    });
+    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain("Development");
+
+    convexQueryMock.mockClear();
+    fireEvent.click(screen.getByRole("option", { name: "Security" }));
+
+    await waitFor(() => {
+      expect(convexQueryMock).toHaveBeenCalledWith(
+        "skills:listPublicPageV4",
+        expect.objectContaining({ categorySlug: "development" }),
+      );
+      expect(convexQueryMock).toHaveBeenCalledWith(
+        "skills:listPublicPageV4",
+        expect.objectContaining({ categorySlug: "security" }),
+      );
+    });
+    expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+      "2 categories",
+    );
+    expect(screen.getByRole("option", { name: "Development" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(screen.getByRole("option", { name: "Security" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+
+    fireEvent.click(screen.getByRole("option", { name: "All categories" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+        "All categories",
       );
     });
   });
-
 });

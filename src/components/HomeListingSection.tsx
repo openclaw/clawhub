@@ -1,10 +1,12 @@
 import { Link, useNavigate } from "@tanstack/react-router";
+import { isPluginCategorySlug, isSkillCategorySlug } from "clawhub-schema";
 import {
   ArrowDownToLine,
   BadgeCheck,
   Binoculars,
   CloudOff,
   LayoutGrid,
+  Loader2,
   Moon,
   Plus,
   Rows3,
@@ -16,12 +18,22 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } 
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { isSkillHighlighted, isSkillOfficial } from "../lib/badges";
+import { PLUGIN_CATEGORIES, SKILL_CATEGORIES, type BrowseCategory } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
+import { ALLOWED_LUCIDE_ICON_NAMES, makeLucideIconValue } from "../lib/skillIcon";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
+
+function variedSkillIcon(seed: string, existing?: string | null) {
+  if (existing) return existing;
+  let hash = 0;
+  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
+  const name = ALLOWED_LUCIDE_ICON_NAMES[hash % ALLOWED_LUCIDE_ICON_NAMES.length];
+  return makeLucideIconValue(name);
+}
 
 type ListingKind = "skills" | "plugins";
 type ListingTab = "popular" | "officials" | "featured";
@@ -41,6 +53,11 @@ const LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
 
 const LISTING_PAGE_SIZE = 20;
 const LISTING_SEARCH_DEBOUNCE_MS = 220;
+const PLUGIN_OFFICIAL_FETCH_BATCH = 100;
+
+const HOME_SKILL_LISTING_CATEGORIES: BrowseCategory[] = SKILL_CATEGORIES.map(
+  ({ slug, label, icon }) => ({ slug, label, icon }),
+);
 
 function isTypingTarget(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -73,6 +90,37 @@ function filterPluginsByTab(items: PackageListItem[], tab: ListingTab) {
     return items.filter((item) => item.isOfficial);
   }
   return items;
+}
+
+function itemMatchesAnyCategory(
+  item: { categories?: readonly string[] | null },
+  categorySlugs: readonly string[],
+) {
+  if (categorySlugs.length === 0) return true;
+  const categories = item.categories ?? [];
+  return categorySlugs.some((slug) => categories.includes(slug));
+}
+
+function uniqueSkillEntries(entries: SkillPageEntry[]) {
+  const byId = new Map<string, SkillPageEntry>();
+  for (const entry of entries) {
+    byId.set(String(entry.skill._id), entry);
+  }
+  return [...byId.values()];
+}
+
+function uniquePlugins(items: PackageListItem[]) {
+  const byName = new Map<string, PackageListItem>();
+  for (const item of items) {
+    byName.set(item.name, item);
+  }
+  return [...byName.values()];
+}
+
+function sortSkillEntriesByDownloads(entries: SkillPageEntry[]) {
+  return [...entries].sort(
+    (left, right) => (right.skill.stats?.downloads ?? 0) - (left.skill.stats?.downloads ?? 0),
+  );
 }
 
 function HomeListingEmptyPanel({
@@ -109,6 +157,7 @@ function HomeListingEmptyPanel({
       <p className="home-v2-listing-empty-body">{body}</p>
       {variant === "search" && onFullSearch ? (
         <button type="button" className="home-v2-listing-empty-action" onClick={onFullSearch}>
+          <Search size={15} aria-hidden="true" />
           Search the full hub
         </button>
       ) : null}
@@ -119,11 +168,13 @@ function HomeListingEmptyPanel({
 function HomeListingResults({
   view,
   showMore,
+  loadingMore,
   onSeeMore,
   children,
 }: {
   view: ListingView;
   showMore: boolean;
+  loadingMore: boolean;
   onSeeMore: () => void;
   children: ReactNode;
 }) {
@@ -135,9 +186,19 @@ function HomeListingResults({
       {showMore ? (
         <div className="home-v2-listing-more">
           <div className="home-v2-listing-more-fade" aria-hidden="true" />
-          <button type="button" className="home-v2-listing-more-btn" onClick={onSeeMore}>
-            <Plus size={14} aria-hidden="true" />
-            See more
+          <button
+            type="button"
+            className="home-v2-listing-more-btn"
+            onClick={onSeeMore}
+            disabled={loadingMore}
+            data-loading={loadingMore}
+          >
+            {loadingMore ? (
+              <Loader2 size={14} aria-hidden="true" className="home-v2-listing-more-spinner" />
+            ) : (
+              <Plus size={14} aria-hidden="true" />
+            )}
+            {loadingMore ? "Loading…" : "See more"}
           </button>
         </div>
       ) : null}
@@ -155,35 +216,73 @@ function skillLink(entry: SkillPageEntry) {
 
 async function fetchSkillListing(
   tab: ListingTab,
-  categorySlug: string | null,
+  categorySlugs: readonly string[],
   numItems: number,
 ) {
-  const result = await convexHttp.query(api.skills.listPublicPageV4, {
-    numItems,
-    sort: "downloads",
-    dir: "desc",
-    highlightedOnly: tab === "featured" ? true : undefined,
-    officialOnly: tab === "officials" ? true : undefined,
-    categorySlug: categorySlug ?? undefined,
+  const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
+  const results = await Promise.all(
+    categoriesToFetch.map((categorySlug) =>
+      convexHttp.query(api.skills.listPublicPageV4, {
+        numItems,
+        sort: "downloads",
+        dir: "desc",
+        highlightedOnly: tab === "featured" ? true : undefined,
+        officialFirst: tab === "officials" ? true : undefined,
+        categorySlug: categorySlug ?? undefined,
+      }),
+    ),
+  );
+  const pages = results.flatMap((result) => {
+    if (Array.isArray(result)) return [];
+    return ((result as { page?: SkillPageEntry[] }).page ?? []).filter((entry) =>
+      itemMatchesAnyCategory(entry.skill, categorySlugs),
+    );
   });
-  const page = Array.isArray(result)
-    ? []
-    : ((result as { page?: SkillPageEntry[] }).page ?? []);
-  return page;
+  const hasMore = results.some((result) =>
+    Array.isArray(result) ? false : ((result as { hasMore?: boolean }).hasMore ?? false),
+  );
+  const page = sortSkillEntriesByDownloads(filterSkillsByTab(uniqueSkillEntries(pages), tab)).slice(
+    0,
+    numItems,
+  );
+  return { page, hasMore };
 }
 
-async function fetchPluginListing(tab: ListingTab, limit: number, signal: AbortSignal) {
-  const result = await fetchPluginCatalog({
-    featured: tab === "featured" ? true : undefined,
-    isOfficial: tab === "officials" ? true : undefined,
-    limit,
-    signal,
-  });
-  const items = [...result.items];
-  if (tab === "popular" || tab === "officials") {
+async function fetchPluginListing(
+  tab: ListingTab,
+  categorySlugs: readonly string[],
+  limit: number,
+  signal: AbortSignal,
+) {
+  const openClawOfficials = tab === "officials";
+  const requestLimit = openClawOfficials ? Math.max(limit, PLUGIN_OFFICIAL_FETCH_BATCH) : limit;
+  const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
+  const results = await Promise.all(
+    categoriesToFetch.map((categorySlug) =>
+      fetchPluginCatalog({
+        featured: tab === "featured" ? true : undefined,
+        category: categorySlug ?? undefined,
+        limit: requestLimit,
+        signal,
+      }),
+    ),
+  );
+  let items = uniquePlugins(
+    results.flatMap((result) =>
+      result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)),
+    ),
+  );
+  items = filterPluginsByTab(items, tab);
+  if (tab === "popular" || openClawOfficials) {
     items.sort((a, b) => (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0));
   }
-  return items.slice(0, limit);
+  const page = items.slice(0, limit);
+  return {
+    items: page,
+    hasMore: openClawOfficials
+      ? items.length > limit
+      : results.some((result) => result.nextCursor != null || result.items.length > limit),
+  };
 }
 
 function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
@@ -193,7 +292,12 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
   return (
     <Link to={skillLink(entry)} className="home-v2-listing-row">
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon kind="skill" label={name} icon={entry.skill.icon} size="sm" />
+        <MarketplaceIcon
+          kind="skill"
+          label={name}
+          icon={variedSkillIcon(entry.skill.slug || name, entry.skill.icon)}
+          size="sm"
+        />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
@@ -260,7 +364,12 @@ function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
     <Link to={skillLink(entry)} className="home-v2-listing-card">
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
-          <MarketplaceIcon kind="skill" label={name} icon={entry.skill.icon} size="sm" />
+          <MarketplaceIcon
+            kind="skill"
+            label={name}
+            icon={variedSkillIcon(entry.skill.slug || name, entry.skill.icon)}
+            size="sm"
+          />
         </span>
         <div className="home-v2-listing-card-id">
           <span className="home-v2-listing-card-name">{name}</span>
@@ -288,11 +397,7 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
   const name = plugin.displayName || plugin.name;
 
   return (
-    <Link
-      to="/plugins/$name"
-      params={{ name: plugin.name }}
-      className="home-v2-listing-card"
-    >
+    <Link to="/plugins/$name" params={{ name: plugin.name }} className="home-v2-listing-card">
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
           <MarketplaceIcon kind="plugin" label={name} size="sm" />
@@ -331,20 +436,23 @@ export function HomeListingSection() {
   const [kind, setKind] = useState<ListingKind>("skills");
   const [tab, setTab] = useState<ListingTab>("popular");
   const [view, setView] = useState<ListingView>("list");
-  const [categorySlug, setCategorySlug] = useState<string | null>(null);
+  const [categorySlugs, setCategorySlugs] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(LISTING_PAGE_SIZE);
   const [fetchLimit, setFetchLimit] = useState(LISTING_PAGE_SIZE);
   const [skills, setSkills] = useState<SkillPageEntry[]>([]);
   const [plugins, setPlugins] = useState<PackageListItem[]>([]);
   const [status, setStatus] = useState<"loading" | "idle" | "error">("loading");
+  const [loadingMore, setLoadingMore] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchSkills, setSearchSkills] = useState<SkillPageEntry[]>([]);
   const [searchPlugins, setSearchPlugins] = useState<PackageListItem[]>([]);
   const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error">("idle");
+  const [listingHasMore, setListingHasMore] = useState(false);
 
   const trimmedSearch = searchQuery.trim();
   const isSearchMode = trimmedSearch.length > 0;
+  const listingCategories = kind === "skills" ? HOME_SKILL_LISTING_CATEGORIES : PLUGIN_CATEGORIES;
 
   const filteredSearchSkills = useMemo(
     () => filterSkillsByTab(searchSkills, tab),
@@ -364,7 +472,8 @@ export function HomeListingSection() {
       : plugins;
   const activeStatus = isSearchMode ? searchStatus : status;
   const isEmpty = activeStatus === "idle" && activeItems.length === 0;
-  const showListingMore = activeStatus === "idle" && activeItems.length > visibleCount;
+  const showListingMore =
+    activeStatus === "idle" && (activeItems.length > visibleCount || listingHasMore);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -397,45 +506,72 @@ export function HomeListingSection() {
   useEffect(() => {
     if (isSearchMode) return;
     const controller = new AbortController();
-    setStatus("loading");
+    // "Load more" only grows fetchLimit: keep the existing rows mounted and
+    // append, instead of swapping in the skeleton (which collapses height and
+    // throws away the scroll position).
+    const isLoadMore = fetchLimit > LISTING_PAGE_SIZE;
+    if (isLoadMore) {
+      setLoadingMore(true);
+    } else {
+      setStatus("loading");
+      setListingHasMore(false);
+    }
 
     const load =
       kind === "skills"
-        ? fetchSkillListing(tab, categorySlug, fetchLimit)
-            .then((page) => {
-              if (controller.signal.aborted) return;
-              setSkills(page);
-              setStatus("idle");
-            })
-        : fetchPluginListing(tab, fetchLimit, controller.signal)
-            .then((items) => {
-              if (controller.signal.aborted) return;
-              setPlugins(items);
-              setStatus("idle");
-            });
+        ? fetchSkillListing(tab, categorySlugs, fetchLimit).then((result) => {
+            if (controller.signal.aborted) return;
+            setSkills(result.page);
+            setListingHasMore(result.hasMore);
+            setStatus("idle");
+          })
+        : fetchPluginListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) => {
+            if (controller.signal.aborted) return;
+            setPlugins(result.items);
+            setListingHasMore(result.hasMore);
+            setStatus("idle");
+          });
 
-    load.catch(() => {
-      if (controller.signal.aborted) return;
-      if (kind === "skills") setSkills([]);
-      else setPlugins([]);
-      setStatus("error");
-    });
+    load
+      .catch(() => {
+        if (controller.signal.aborted) return;
+        // On a load-more failure keep what's already shown instead of wiping it.
+        if (isLoadMore) return;
+        if (kind === "skills") {
+          setSkills([]);
+          setStatus("error");
+          return;
+        }
+        setPlugins([]);
+        setStatus("error");
+      })
+      .finally(() => {
+        if (controller.signal.aborted) return;
+        setLoadingMore(false);
+      });
 
     return () => controller.abort();
-  }, [categorySlug, fetchLimit, isSearchMode, kind, tab]);
+  }, [categorySlugs, fetchLimit, isSearchMode, kind, tab]);
 
   useEffect(() => {
     if (!isSearchMode) {
       setSearchSkills([]);
       setSearchPlugins([]);
       setSearchStatus("idle");
+      setListingHasMore(false);
       return;
     }
 
     searchRequestRef.current += 1;
     const requestId = searchRequestRef.current;
     const controller = new AbortController();
-    setSearchStatus("loading");
+    const isLoadMore = fetchLimit > LISTING_PAGE_SIZE;
+    if (isLoadMore) {
+      setLoadingMore(true);
+    } else {
+      setSearchStatus("loading");
+      setListingHasMore(false);
+    }
 
     const handle = window.setTimeout(() => {
       const load =
@@ -448,44 +584,79 @@ export function HomeListingSection() {
               })
               .then((hits) => {
                 if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-                const rows = (hits as SkillSearchHit[]).map((hit) => ({
-                  skill: hit.skill,
-                  ownerHandle: hit.ownerHandle,
-                  owner: hit.owner,
-                }));
+                const rows = (hits as SkillSearchHit[])
+                  .map((hit) => ({
+                    skill: hit.skill,
+                    ownerHandle: hit.ownerHandle,
+                    owner: hit.owner,
+                  }))
+                  .filter((entry) => itemMatchesAnyCategory(entry.skill, categorySlugs));
                 setSearchSkills(rows);
+                setListingHasMore(rows.length >= fetchLimit);
                 setSearchStatus("idle");
               })
-          : fetchPluginCatalog({
-              q: trimmedSearch,
-              featured: tab === "featured" ? true : undefined,
-              isOfficial: tab === "officials" ? true : undefined,
-              limit: fetchLimit,
-              signal: controller.signal,
-            }).then((result) => {
+          : Promise.all(
+              (categorySlugs.length > 0 ? categorySlugs : [null]).map((categorySlug) =>
+                fetchPluginCatalog({
+                  q: trimmedSearch,
+                  featured: tab === "featured" ? true : undefined,
+                  category: categorySlug ?? undefined,
+                  limit:
+                    tab === "officials"
+                      ? Math.max(fetchLimit, PLUGIN_OFFICIAL_FETCH_BATCH)
+                      : fetchLimit,
+                  signal: controller.signal,
+                }),
+              ),
+            ).then((results) => {
               if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-              setSearchPlugins(result.items);
+              const items = uniquePlugins(
+                results.flatMap((result) =>
+                  result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)),
+                ),
+              );
+              setSearchPlugins(items);
+              setListingHasMore(
+                results.some(
+                  (result) => result.nextCursor != null || result.items.length >= fetchLimit,
+                ),
+              );
               setSearchStatus("idle");
             });
 
-      load.catch(() => {
-        if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-        if (kind === "skills") setSearchSkills([]);
-        else setSearchPlugins([]);
-        setSearchStatus("error");
-      });
+      load
+        .catch(() => {
+          if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
+          if (isLoadMore) return;
+          if (kind === "skills") setSearchSkills([]);
+          else setSearchPlugins([]);
+          setSearchStatus("error");
+        })
+        .finally(() => {
+          if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
+          setLoadingMore(false);
+        });
     }, LISTING_SEARCH_DEBOUNCE_MS);
 
     return () => {
       controller.abort();
       window.clearTimeout(handle);
     };
-  }, [fetchLimit, isSearchMode, kind, tab, trimmedSearch]);
+  }, [categorySlugs, fetchLimit, isSearchMode, kind, tab, trimmedSearch]);
+
+  useEffect(() => {
+    if (categorySlugs.length === 0) return;
+    const isValid = kind === "skills" ? isSkillCategorySlug : isPluginCategorySlug;
+    const validCategorySlugs = categorySlugs.filter((slug) => isValid(slug));
+    if (validCategorySlugs.length !== categorySlugs.length) {
+      setCategorySlugs(validCategorySlugs);
+    }
+  }, [categorySlugs, kind]);
 
   useEffect(() => {
     setVisibleCount(LISTING_PAGE_SIZE);
     setFetchLimit(LISTING_PAGE_SIZE);
-  }, [categorySlug, isSearchMode, kind, tab, trimmedSearch, view]);
+  }, [categorySlugs, isSearchMode, kind, tab, trimmedSearch, view]);
 
   const visibleSkills = (isSearchMode ? filteredSearchSkills : skills).slice(0, visibleCount);
   const visiblePlugins = (isSearchMode ? filteredSearchPlugins : plugins).slice(0, visibleCount);
@@ -521,7 +692,7 @@ export function HomeListingSection() {
   };
 
   return (
-    <section className="home-v2-listing" aria-label="Browse catalog">
+    <section id="home-v2-listing" className="home-v2-listing" aria-label="Browse catalog">
       <div className="home-v2-listing-controls">
         <div className="home-v2-listing-toolbar">
           <div className="home-v2-listing-kind" role="group" aria-label="Content type">
@@ -537,7 +708,10 @@ export function HomeListingSection() {
               type="button"
               className={`home-v2-listing-kind-btn${kind === "plugins" ? " is-active" : ""}`}
               aria-pressed={kind === "plugins"}
-              onClick={() => setKind("plugins")}
+              onClick={() => {
+                setKind("plugins");
+                setTab("officials");
+              }}
             >
               Plugins
             </button>
@@ -545,68 +719,71 @@ export function HomeListingSection() {
 
           <span className="home-v2-listing-divider" aria-hidden="true" />
 
-          <div className="home-v2-listing-sort" role="tablist" aria-label="Sort">
-            {LISTING_TABS.map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                role="tab"
-                aria-selected={tab === item.id}
-                className={`home-v2-listing-tab${tab === item.id ? " is-active" : ""}`}
-                onClick={() => setTab(item.id)}
-              >
-                {item.id === "officials" ? (
-                  <BadgeCheck
-                    size={14}
-                    strokeWidth={2.25}
-                    className="home-v2-listing-tab-icon"
-                    aria-hidden="true"
-                  />
-                ) : null}
-                {item.label}
-              </button>
-            ))}
+          <div className="home-v2-listing-sort">
+            <div className="home-v2-listing-sort-tabs" role="tablist" aria-label="Sort">
+              {LISTING_TABS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={tab === item.id}
+                  className={`home-v2-listing-tab${tab === item.id ? " is-active" : ""}`}
+                  onClick={() => setTab(item.id)}
+                >
+                  {item.id === "officials" ? (
+                    <BadgeCheck
+                      size={14}
+                      strokeWidth={2.25}
+                      className="home-v2-listing-tab-icon"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
 
           <div className="home-v2-listing-actions">
-            <button
-              type="button"
-              className={`home-v2-listing-search-trigger${searchOpen ? " is-active" : ""}`}
-              aria-label="Search catalog"
-              aria-expanded={searchOpen}
-              aria-controls="home-v2-listing-search-panel"
-              title="Search catalog (/)"
-              onClick={openListingSearch}
-            >
-              <Search size={16} aria-hidden="true" />
-            </button>
+            <div className="home-v2-listing-actions-rail has-category">
+              <button
+                type="button"
+                className={`home-v2-listing-search-trigger${searchOpen ? " is-active" : ""}`}
+                aria-label="Search catalog"
+                aria-expanded={searchOpen}
+                aria-controls="home-v2-listing-search-panel"
+                title="Search catalog (/)"
+                onClick={openListingSearch}
+              >
+                <Search size={16} aria-hidden="true" />
+              </button>
 
-            {kind === "skills" ? (
               <HomeListingCategorySelect
-                value={categorySlug}
-                onChange={setCategorySlug}
+                categories={listingCategories}
+                value={categorySlugs}
+                onChange={setCategorySlugs}
               />
-            ) : null}
 
-            <div className="home-v2-listing-view" role="group" aria-label="Layout">
-              <button
-                type="button"
-                className={`home-v2-listing-view-btn${view === "list" ? " is-active" : ""}`}
-                aria-pressed={view === "list"}
-                aria-label="List view"
-                onClick={() => setView("list")}
-              >
-                <Rows3 size={16} aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                className={`home-v2-listing-view-btn${view === "grid" ? " is-active" : ""}`}
-                aria-pressed={view === "grid"}
-                aria-label="Grid view"
-                onClick={() => setView("grid")}
-              >
-                <LayoutGrid size={16} aria-hidden="true" />
-              </button>
+              <div className="home-v2-listing-view" role="group" aria-label="Layout">
+                <button
+                  type="button"
+                  className={`home-v2-listing-view-btn${view === "list" ? " is-active" : ""}`}
+                  aria-pressed={view === "list"}
+                  aria-label="List view"
+                  onClick={() => setView("list")}
+                >
+                  <Rows3 size={16} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  className={`home-v2-listing-view-btn${view === "grid" ? " is-active" : ""}`}
+                  aria-pressed={view === "grid"}
+                  aria-label="Grid view"
+                  onClick={() => setView("grid")}
+                >
+                  <LayoutGrid size={16} aria-hidden="true" />
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -625,7 +802,9 @@ export function HomeListingSection() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={
-                kind === "skills" ? "Search skills in this catalog…" : "Search plugins in this catalog…"
+                kind === "skills"
+                  ? "Search skills in this catalog…"
+                  : "Search plugins in this catalog…"
               }
               aria-label={kind === "skills" ? "Search skills" : "Search plugins"}
               autoComplete="off"
@@ -644,6 +823,7 @@ export function HomeListingSection() {
 
       {activeStatus === "idle" && view === "list" && activeItems.length > 0 ? (
         <div className="home-v2-listing-head" aria-hidden="true">
+          <span className="home-v2-listing-head-icon-spacer" />
           <span className="home-v2-listing-head-label">
             {kind === "skills" ? "Skill" : "Plugin"}
           </span>
@@ -673,11 +853,10 @@ export function HomeListingSection() {
         <HomeListingResults
           view={view}
           showMore={showListingMore}
+          loadingMore={loadingMore}
           onSeeMore={handleSeeMore}
         >
-          <div
-            className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}
-          >
+          <div className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}>
             {visibleSkills.map((entry) =>
               view === "grid" ? (
                 <HomeListingSkillCard key={entry.skill._id} entry={entry} />
@@ -693,11 +872,10 @@ export function HomeListingSection() {
         <HomeListingResults
           view={view}
           showMore={showListingMore}
+          loadingMore={loadingMore}
           onSeeMore={handleSeeMore}
         >
-          <div
-            className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}
-          >
+          <div className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}>
             {visiblePlugins.map((plugin) =>
               view === "grid" ? (
                 <HomeListingPluginCard key={plugin.name} plugin={plugin} />

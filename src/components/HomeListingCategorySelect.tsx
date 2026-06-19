@@ -1,11 +1,12 @@
 import { Check, ChevronDown, Search } from "lucide-react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
-import { BROWSE_TAXONOMY } from "../lib/browseTaxonomy";
+import type { BrowseCategory } from "../lib/categories";
 
 type HomeListingCategorySelectProps = {
-  value: string | null;
-  onChange: (slug: string | null) => void;
+  categories: readonly BrowseCategory[];
+  value: readonly string[];
+  onChange: (slugs: string[]) => void;
 };
 
 function CategoryOption({
@@ -42,7 +43,11 @@ function CategoryOption({
   );
 }
 
-export function HomeListingCategorySelect({ value, onChange }: HomeListingCategorySelectProps) {
+export function HomeListingCategorySelect({
+  categories,
+  value,
+  onChange,
+}: HomeListingCategorySelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const rootRef = useRef<HTMLDivElement>(null);
@@ -50,19 +55,23 @@ export function HomeListingCategorySelect({ value, onChange }: HomeListingCatego
   const listboxId = useId();
 
   const selectedLabel = useMemo(() => {
-    if (!value) return "All categories";
-    return BROWSE_TAXONOMY.find((category) => category.slug === value)?.label ?? "All categories";
-  }, [value]);
+    if (value.length === 0) return "All categories";
+    if (value.length === 1) {
+      return categories.find((category) => category.slug === value[0])?.label ?? "All categories";
+    }
+    return `${value.length} categories`;
+  }, [categories, value]);
+
+  const selectedSet = useMemo(() => new Set(value), [value]);
 
   const filteredCategories = useMemo(() => {
     const normalized = query.trim().toLowerCase();
-    if (!normalized) return BROWSE_TAXONOMY;
-    return BROWSE_TAXONOMY.filter(
+    if (!normalized) return categories;
+    return categories.filter(
       (category) =>
-        category.label.toLowerCase().includes(normalized) ||
-        category.slug.includes(normalized),
+        category.label.toLowerCase().includes(normalized) || category.slug.includes(normalized),
     );
-  }, [query]);
+  }, [categories, query]);
 
   const closeMenu = () => {
     setOpen(false);
@@ -91,7 +100,15 @@ export function HomeListingCategorySelect({ value, onChange }: HomeListingCatego
   }, [open]);
 
   const pick = (slug: string | null) => {
-    onChange(slug);
+    if (slug === null) {
+      onChange([]);
+      return;
+    }
+    if (selectedSet.has(slug)) {
+      onChange(value.filter((selectedSlug) => selectedSlug !== slug));
+      return;
+    }
+    onChange([...value, slug]);
   };
 
   return (
@@ -108,7 +125,7 @@ export function HomeListingCategorySelect({ value, onChange }: HomeListingCatego
       >
         <span className="home-v2-listing-category-trigger-main">
           <BrowseCategoryIcon
-            slug={value}
+            slug={value.length === 1 ? (value[0] ?? null) : null}
             size={15}
             className="home-v2-listing-category-trigger-category-icon"
           />
@@ -140,13 +157,14 @@ export function HomeListingCategorySelect({ value, onChange }: HomeListingCatego
             id={listboxId}
             className="home-v2-listing-category-options"
             role="listbox"
+            aria-multiselectable="true"
             aria-label="Category"
           >
             {!query.trim() ? (
               <CategoryOption
                 slug={null}
                 label="All categories"
-                selected={value === null}
+                selected={value.length === 0}
                 onSelect={() => pick(null)}
               />
             ) : null}
@@ -155,7 +173,7 @@ export function HomeListingCategorySelect({ value, onChange }: HomeListingCatego
                 key={category.slug}
                 slug={category.slug}
                 label={category.label}
-                selected={value === category.slug}
+                selected={selectedSet.has(category.slug)}
                 onSelect={() => pick(category.slug)}
               />
             ))}
