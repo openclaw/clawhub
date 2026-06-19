@@ -179,8 +179,8 @@ describe("restored UI design contract", () => {
     const css = styles();
 
     expect(homeSource).toContain("BUILT BY THE COMMUNITY");
-    expect(homeSource).toContain("Discover skills and plugins from");
-    expect(homeSource).toContain("200k+ publishers");
+    expect(homeSource).toContain("Discover skills and plugins from top creators");
+    expect(homeSource).not.toContain("home-v2-sub-stat");
     expect(homeSource).toContain("HomeListingSection");
     expect(homeSource).not.toContain("What are you looking for?");
     expect(homeSource).not.toContain("Featured skills");
@@ -201,8 +201,8 @@ describe("restored UI design contract", () => {
 
     expect(navSource).toContain('title: "Browse"');
     expect(navSource).toContain('title: "Publish"');
+    expect(navSource).toContain('title: "Ecosystem"');
     expect(navSource).toContain('title: "Community"');
-    expect(navSource).toContain('title: "Platform"');
     expect(navSource).toContain('label: "Publish Skill"');
     expect(navSource).toContain('label: "Publish Plugin"');
     expect(navSource).toContain('label: "GitHub"');

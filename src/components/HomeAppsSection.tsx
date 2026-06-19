@@ -47,17 +47,17 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
   );
 }
 
-function HomeAppsCompactPlugin({ plugin }: { plugin: HomePluginShortcut }) {
+function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcut }) {
   return (
     <Link
       to="/plugins/$name"
-      params={{ name: plugin.packageName }}
+      params={{ name: shortcut.packageName }}
       className="home-v2-apps-tile"
-      title={plugin.description}
+      title={shortcut.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
         <img
-          src={homePluginShortcutIconUrl(plugin)}
+          src={homePluginShortcutIconUrl(shortcut)}
           alt=""
           width={40}
           height={40}
@@ -66,8 +66,8 @@ function HomeAppsCompactPlugin({ plugin }: { plugin: HomePluginShortcut }) {
         />
       </span>
       <span className="home-v2-apps-tile-copy">
-        <span className="home-v2-apps-tile-name">{plugin.name}</span>
-        <span className="home-v2-apps-tile-meta">{plugin.description}</span>
+        <span className="home-v2-apps-tile-name">{shortcut.name}</span>
+        <span className="home-v2-apps-tile-meta">{shortcut.description}</span>
       </span>
       <ArrowRight className="home-v2-apps-tile-arrow" size={14} aria-hidden="true" />
     </Link>
@@ -186,7 +186,7 @@ const appCategories = [
 ] as const;
 
 const slackWorkflowPlugin =
-  HOME_PLUGIN_SHORTCUTS.find((plugin) => plugin.id === "slack") ?? HOME_PLUGIN_SHORTCUTS[0];
+  HOME_PLUGIN_SHORTCUTS.find((shortcut) => shortcut.id === "slack") ?? HOME_PLUGIN_SHORTCUTS[0];
 
 const workflowHeaderTiles: ReadonlyArray<{
   label: string;

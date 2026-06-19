@@ -91,7 +91,7 @@ export function HomeListingCategorySelect({
   };
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return undefined;
     const onPointerDown = (event: MouseEvent) => {
       if (rootRef.current?.contains(event.target as Node)) return;
       closeMenu();

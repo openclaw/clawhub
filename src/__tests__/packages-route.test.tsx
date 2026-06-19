@@ -10,7 +10,6 @@ import {
 } from "./helpers/convexReactMocks";
 
 const fetchPluginCatalogMock = vi.fn();
-const fetchFeaturedPluginsMock = vi.fn();
 const isRateLimitedPackageApiErrorMock = vi.fn(
   (error: unknown) =>
     typeof error === "object" && error !== null && (error as { status?: number }).status === 429,
@@ -64,10 +63,6 @@ vi.mock("../lib/packageApi", () => ({
   isRateLimitedPackageApiError: (error: unknown) => isRateLimitedPackageApiErrorMock(error),
 }));
 
-vi.mock("../lib/featuredCatalog", () => ({
-  fetchFeaturedPlugins: (...args: unknown[]) => fetchFeaturedPluginsMock(...args),
-}));
-
 vi.mock("convex/react", () => ({
   useQuery: (...args: unknown[]) => convexReactMocks.useQuery(...args),
 }));
@@ -98,7 +93,6 @@ describe("plugins route", () => {
   beforeEach(() => {
     fetchPluginCatalogMock.mockReset();
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
-    fetchFeaturedPluginsMock.mockReset();
     isRateLimitedPackageApiErrorMock.mockClear();
     resetConvexReactMocks();
     setupDefaultConvexReactMocks();

@@ -19,6 +19,18 @@ vi.mock("../components/HomeListingSection", () => ({
   HomeListingSection: () => <section data-testid="home-listing-stub" />,
 }));
 
+vi.mock("../components/HomePopularPublishersSection", () => ({
+  HomePopularPublishersSection: () => <section data-testid="home-publishers-stub" />,
+}));
+
+vi.mock("../components/HomeAppsSection", () => ({
+  HomeAppsSection: () => <section data-testid="home-apps-stub" />,
+}));
+
+vi.mock("../components/HomeBringSkillsSection", () => ({
+  HomeBringSkillsSection: () => <section data-testid="home-bring-skills-stub" />,
+}));
+
 describe("home route", () => {
   afterEach(() => {
     vi.useRealTimers();
@@ -48,18 +60,19 @@ describe("home route", () => {
     await renderHome();
 
     expect(screen.getByText("BUILT BY THE COMMUNITY").textContent).toBe("BUILT BY THE COMMUNITY");
-    expect(screen.getByText("Discover skills and plugins from").textContent).toContain(
-      "Discover skills and plugins from",
+    expect(screen.getByText("Discover skills and plugins from top creators").textContent).toBe(
+      "Discover skills and plugins from top creators",
     );
-    expect(screen.getByRole("link", { name: "200k+ publishers" }).getAttribute("href")).toBe(
-      "/publishers",
-    );
+    expect(screen.queryByRole("link", { name: "200k+ publishers" })).toBeNull();
   });
 
-  it("renders the catalog directly below the hero without the old hero search or later sections", async () => {
+  it("renders the catalog and new homepage sections without the old hero search", async () => {
     await renderHome();
 
     expect(screen.getByTestId("home-listing-stub").tagName).toBe("SECTION");
+    expect(screen.getByTestId("home-publishers-stub").tagName).toBe("SECTION");
+    expect(screen.getByTestId("home-apps-stub").tagName).toBe("SECTION");
+    expect(screen.getByTestId("home-bring-skills-stub").tagName).toBe("SECTION");
     expect(screen.queryByPlaceholderText("What are you looking for?")).toBeNull();
     expect(screen.queryByText("Featured skills")).toBeNull();
     expect(screen.queryByText("Trending Now")).toBeNull();

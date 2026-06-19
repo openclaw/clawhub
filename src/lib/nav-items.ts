@@ -82,7 +82,7 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
 
 export const OPENCLAW_SITE_URL = "https://openclaw.ai";
 export const OPENCLAW_ECOSYSTEM_URL = `${OPENCLAW_SITE_URL}/ecosystem`;
-export const OPENCLAW_BLOG_CLAWHUB_URL = `${OPENCLAW_SITE_URL}/blog#clawhub`;
+const OPENCLAW_BLOG_CLAWHUB_URL = `${OPENCLAW_SITE_URL}/blog#clawhub`;
 export const OPENCLAW_CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/";
 /** Compact mark for stack avatars (not the full wordmark). */
 export const OPENCLAW_LOGO_URL = `${OPENCLAW_SITE_URL}/favicon.svg`;
@@ -191,11 +191,8 @@ export type FooterEcosystemProject = {
   internal?: boolean;
 };
 
-/** @deprecated Use {@link FooterEcosystemProject}. */
-export type FooterEcosystemTile = FooterEcosystemProject;
-
 /** Build a URL for logos/banners published on the OpenClaw ecosystem page. */
-export function openclawEcosystemAsset(path: string) {
+function openclawEcosystemAsset(path: string) {
   return `${OPENCLAW_SITE_URL}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
@@ -359,9 +356,3 @@ export const FOOTER_ECOSYSTEM_PROJECTS: FooterEcosystemProject[] = [
     logoUrl: openclawEcosystemAsset("/ecosystem/banners/crabpot.svg"),
   },
 ];
-
-/** @deprecated Use {@link FOOTER_ECOSYSTEM_PROJECTS}. */
-export const FOOTER_ECOSYSTEM_TILES = FOOTER_ECOSYSTEM_PROJECTS;
-
-/** @deprecated Use {@link FOOTER_ECOSYSTEM_PROJECTS}. */
-export const FOOTER_ECOSYSTEM_PILLS = FOOTER_ECOSYSTEM_PROJECTS;

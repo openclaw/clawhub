@@ -11,7 +11,7 @@ export function HomeV2FoldBottomFade({ listingId = "home-v2-listing" }: HomeV2Fo
 
   useLayoutEffect(() => {
     const listing = document.getElementById(listingId);
-    if (!listing) return;
+    if (!listing) return undefined;
 
     const update = () => {
       const { bottom } = listing.getBoundingClientRect();

@@ -299,13 +299,7 @@ async function fetchPluginListing(
   };
 }
 
-function HomeListingSkillRow({
-  entry,
-  showStats,
-}: {
-  entry: SkillPageEntry;
-  showStats: boolean;
-}) {
+function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
 
@@ -368,13 +362,7 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
   );
 }
 
-function HomeListingSkillCard({
-  entry,
-  showStats,
-}: {
-  entry: SkillPageEntry;
-  showStats: boolean;
-}) {
+function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
 
@@ -507,7 +495,7 @@ export function HomeListingSection() {
   }, []);
 
   useEffect(() => {
-    if (!searchOpen) return;
+    if (!searchOpen) return undefined;
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -523,7 +511,7 @@ export function HomeListingSection() {
   }, [searchOpen, trimmedSearch]);
 
   useEffect(() => {
-    if (isSearchMode) return;
+    if (isSearchMode) return undefined;
     const controller = new AbortController();
     // "Load more" only grows fetchLimit: keep the existing rows mounted and
     // append, instead of swapping in the skeleton (which collapses height and
@@ -578,7 +566,7 @@ export function HomeListingSection() {
       setSearchPlugins([]);
       setSearchStatus("idle");
       setListingHasMore(false);
-      return;
+      return undefined;
     }
 
     searchRequestRef.current += 1;
