@@ -7519,11 +7519,19 @@ export const setPackageCatalogMetadata = mutation({
       ...pkg,
       categories: normalizedCategories,
       topics: normalizedTopics.length ? normalizedTopics : undefined,
+      inferredTopics: undefined,
+      inferredTopicConfidence: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredTopicInputHash: undefined,
       updatedAt: now,
     };
     await ctx.db.patch(pkg._id, {
       categories: nextPackage.categories,
       topics: nextPackage.topics,
+      inferredTopics: nextPackage.inferredTopics,
+      inferredTopicConfidence: nextPackage.inferredTopicConfidence,
+      inferredTopicClassifierVersion: nextPackage.inferredTopicClassifierVersion,
+      inferredTopicInputHash: nextPackage.inferredTopicInputHash,
       updatedAt: now,
     });
     const owner = await getOwnerPublisher(ctx, {

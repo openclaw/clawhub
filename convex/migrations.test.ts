@@ -6,9 +6,18 @@ import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { computeRecommendationScore } from "./lib/recommendationScore";
 import { INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME } from "./lib/skillInstallBackfill";
-import { backfillOneSkillInstallEstimate, runSkillInstallBackfill } from "./migrations";
+import {
+  backfillOneSkillInstallEstimate,
+  buildCanonicalTopicPatch,
+  runCatalogTopicCanonicalization,
+  runSkillInstallBackfill,
+} from "./migrations";
 
 type InstallBackfillWrappedHandler = {
+  _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
+};
+
+type CatalogTopicCanonicalizationWrappedHandler = {
   _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
 };
 
@@ -109,6 +118,125 @@ function makeSkillSearchDigestDoc(): Doc<"skillSearchDigest"> {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
+
+describe("catalog topic canonicalization migration", () => {
+  it("promotes current inferred topics into the canonical topics field", () => {
+    expect(
+      buildCanonicalTopicPatch({
+        topics: undefined,
+        inferredTopics: ["TypeScript", "Code Review"],
+        currentSourceId: "skillVersions:v1",
+        inferredSourceId: "skillVersions:v1",
+        inferredTopicConfidence: "high",
+        inferredTopicClassifierVersion: "topic-prototype-v1",
+        inferredTopicInputHash: "topic-hash",
+      }),
+    ).toEqual({
+      topics: ["TypeScript", "Code Review"],
+      inferredTopics: undefined,
+      inferredTopicConfidence: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredTopicInputHash: undefined,
+    });
+  });
+
+  it("preserves explicit publisher topics while clearing inferred topic metadata", () => {
+    expect(
+      buildCanonicalTopicPatch({
+        topics: [],
+        inferredTopics: ["TypeScript"],
+        currentSourceId: "skillVersions:v1",
+        inferredSourceId: "skillVersions:v1",
+        inferredTopicConfidence: "high",
+      }),
+    ).toEqual({
+      inferredTopics: undefined,
+      inferredTopicConfidence: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredTopicInputHash: undefined,
+    });
+  });
+
+  it("does not promote stale inferred topics", () => {
+    expect(
+      buildCanonicalTopicPatch({
+        topics: undefined,
+        inferredTopics: ["TypeScript"],
+        currentSourceId: "skillVersions:v2",
+        inferredSourceId: "skillVersions:v1",
+        inferredTopicClassifierVersion: "topic-prototype-v1",
+      }),
+    ).toEqual({
+      inferredTopics: undefined,
+      inferredTopicConfidence: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredTopicInputHash: undefined,
+    });
+  });
+
+  it("does not promote inferred topics after a publisher metadata save", () => {
+    expect(
+      buildCanonicalTopicPatch({
+        topics: undefined,
+        inferredTopics: ["TypeScript"],
+        currentSourceId: "skillVersions:v1",
+        inferredSourceId: "skillVersions:v1",
+        inferredTopicConfidence: "high",
+        hasPublisherTopicIntent: true,
+      }),
+    ).toEqual({
+      inferredTopics: undefined,
+      inferredTopicConfidence: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredTopicInputHash: undefined,
+    });
+  });
+
+  it("is a no-op when no inferred topic state exists", () => {
+    expect(
+      buildCanonicalTopicPatch({
+        topics: ["Publisher Topic"],
+        currentSourceId: "skillVersions:v1",
+        inferredSourceId: "skillVersions:v1",
+      }),
+    ).toBeNull();
+  });
+
+  it("dry-runs both tracked canonicalization migrations", async () => {
+    const runMutation = vi.fn().mockResolvedValue({});
+    const handler = (
+      runCatalogTopicCanonicalization as unknown as CatalogTopicCanonicalizationWrappedHandler
+    )._handler;
+
+    const result = await handler({ runMutation }, {});
+
+    expect(runMutation).toHaveBeenNthCalledWith(1, internal.migrations.run, {
+      fn: "migrations:canonicalizeSkillTopics",
+      dryRun: true,
+      reset: true,
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(2, internal.migrations.run, {
+      fn: "migrations:canonicalizePackageTopics",
+      dryRun: true,
+      reset: true,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "canonicalize-catalog-topics",
+    });
+  });
+
+  it("requires explicit confirmation before canonicalizing topics", async () => {
+    const handler = (
+      runCatalogTopicCanonicalization as unknown as CatalogTopicCanonicalizationWrappedHandler
+    )._handler;
+
+    await expect(handler({ runMutation: vi.fn() }, { dryRun: false })).rejects.toThrow(
+      'Pass confirm="canonicalize-catalog-topics" to apply.',
+    );
+  });
+});
 
 describe("skill install backfill migration", () => {
   it("dry-runs the install backfill migration through the tracked runner", async () => {

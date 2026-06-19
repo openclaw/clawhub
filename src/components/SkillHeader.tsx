@@ -10,6 +10,7 @@ import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
+import { CatalogTopicList } from "./CatalogTopicList";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { OfficialTag } from "./OfficialBadge";
@@ -338,6 +339,7 @@ export function SkillHeader({
                     {category.label}
                   </a>
                 ) : null}
+                <CatalogTopicList topics={skill.topics} />
               </div>
               <div className="skill-summary-block">
                 <p className="section-subtitle skill-summary-line">{headerDescription}</p>

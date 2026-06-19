@@ -201,6 +201,26 @@ describe("plugin detail route", () => {
     expect(screen.queryByRole("link", { name: "Download zip" })).toBeNull();
   });
 
+  it("renders canonical topics in the detail hero", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        ...loaderDataMock.detail,
+        package: {
+          ...loaderDataMock.detail.package!,
+          topics: ["Web Search", "Research"],
+        },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByLabelText("Topics").textContent).toContain("Web Search");
+    expect(screen.getByLabelText("Topics").textContent).toContain("Research");
+  });
+
   it("renders populated active release history on the versions tab", async () => {
     const publishedAt = new Date("2026-06-01T12:00:00Z").getTime();
     loaderDataMock = {

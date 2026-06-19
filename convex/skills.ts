@@ -5954,6 +5954,7 @@ async function buildPublicSkillApiListEntryFromDigest(
       slug: publicSkill.slug,
       displayName: publicSkill.displayName,
       summary: publicSkill.summary,
+      topics: publicSkill.topics,
       tags: publicSkill.tags,
       stats: publicSkill.stats,
       createdAt: publicSkill.createdAt,
@@ -9983,11 +9984,19 @@ export const setCatalogMetadata = mutation({
       ...skill,
       categories,
       topics: topics.length ? topics : undefined,
+      inferredTopics: undefined,
+      inferredTopicConfidence: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredTopicInputHash: undefined,
       updatedAt: now,
     };
     await ctx.db.patch(skill._id, {
       categories: nextSkill.categories,
       topics: nextSkill.topics,
+      inferredTopics: nextSkill.inferredTopics,
+      inferredTopicConfidence: nextSkill.inferredTopicConfidence,
+      inferredTopicClassifierVersion: nextSkill.inferredTopicClassifierVersion,
+      inferredTopicInputHash: nextSkill.inferredTopicInputHash,
       updatedAt: now,
     });
     await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);

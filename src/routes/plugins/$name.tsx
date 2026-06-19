@@ -11,6 +11,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
+import { CatalogTopicList } from "../../components/CatalogTopicList";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
   DetailSecuritySummary,
@@ -741,6 +742,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   </div>
                 ) : null}
               </div>
+              <CatalogTopicList topics={pkg.topics} />
               <p className="section-subtitle">{pkg.summary ?? "No summary provided."}</p>
 
               {rateLimited?.scope === "metadata" ? (

@@ -112,6 +112,10 @@ describe("catalog metadata settings", () => {
       slug: "demo",
       displayName: "Demo",
       ownerUserId: user._id,
+      inferredTopics: ["Old inference"],
+      inferredTopicConfidence: "high",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredTopicInputHash: "old-hash",
       tags: {},
       stats: {
         downloads: 0,
@@ -137,6 +141,10 @@ describe("catalog metadata settings", () => {
       expect.objectContaining({
         categories: ["development"],
         topics: ["GPU development"],
+        inferredTopics: undefined,
+        inferredTopicConfidence: undefined,
+        inferredTopicClassifierVersion: undefined,
+        inferredTopicInputHash: undefined,
       }),
     );
     expect(upsertSkillSearchDigestMock).toHaveBeenCalledWith(
@@ -162,6 +170,10 @@ describe("catalog metadata settings", () => {
       channel: "community",
       isOfficial: false,
       ownerUserId: user._id,
+      inferredTopics: ["Old inference"],
+      inferredTopicConfidence: "high",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredTopicInputHash: "old-hash",
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       scanStatus: "clean",
       createdAt: 1,
@@ -180,6 +192,10 @@ describe("catalog metadata settings", () => {
       expect.objectContaining({
         categories: ["models"],
         topics: ["Local models"],
+        inferredTopics: undefined,
+        inferredTopicConfidence: undefined,
+        inferredTopicClassifierVersion: undefined,
+        inferredTopicInputHash: undefined,
       }),
     );
     expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
@@ -201,6 +217,8 @@ describe("catalog metadata settings", () => {
       slug: "demo",
       displayName: "Demo",
       categories: ["development"],
+      inferredTopics: ["Old inference"],
+      inferredTopicConfidence: "medium",
       ownerUserId: user._id,
       tags: {},
       stats: {
@@ -261,6 +279,9 @@ describe("catalog metadata settings", () => {
       skill._id,
       expect.objectContaining({
         categories: ["other"],
+        topics: undefined,
+        inferredTopics: undefined,
+        inferredTopicConfidence: undefined,
       }),
     );
     expect(upsertSkillSearchDigestMock).toHaveBeenCalledWith(
@@ -325,6 +346,8 @@ describe("catalog metadata settings", () => {
       channel: "community",
       isOfficial: false,
       categories: ["tools"],
+      inferredTopics: ["Old inference"],
+      inferredTopicConfidence: "medium",
       ownerUserId: user._id,
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       scanStatus: "clean",
@@ -343,6 +366,9 @@ describe("catalog metadata settings", () => {
       pkg._id,
       expect.objectContaining({
         categories: ["other"],
+        topics: undefined,
+        inferredTopics: undefined,
+        inferredTopicConfidence: undefined,
       }),
     );
     expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(

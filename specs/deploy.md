@@ -34,6 +34,17 @@ Production deploy notes:
 - The workflow must be started from `main`.
 - The catalog-taxonomy digest and high-/medium-confidence classification rollout migrations were
   one-time production operations and are no longer part of the deploy checklist.
+- While `migrations:runCatalogTopicCanonicalization` exists, backend deploys that include it require
+  an operator to dry-run, explicitly apply, and verify both tracked migrations before inferred-topic
+  compatibility can be removed:
+
+  ```bash
+  bunx convex run migrations:runCatalogTopicCanonicalization '{"dryRun":true}' --prod
+  bunx convex run migrations:runCatalogTopicCanonicalization \
+    '{"dryRun":false,"confirm":"canonicalize-catalog-topics"}' --prod
+  bunx convex run --component migrations lib:getStatus --watch --prod
+  ```
+
 - Deploy targets:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production

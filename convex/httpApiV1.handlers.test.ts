@@ -1890,6 +1890,7 @@ describe("httpApiV1 handlers", () => {
                 slug: "demo",
                 displayName: "Demo",
                 summary: "s",
+                topics: ["Automation", "Email"],
                 tags: { latest: "versions:1" },
                 stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
                 createdAt: 1,
@@ -1917,6 +1918,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items[0].tags.latest).toBe("1.0.0");
+    expect(json.items[0].topics).toEqual(["Automation", "Email"]);
   });
 
   it("lists skills with long description metadata and setup requirements", async () => {
@@ -2289,6 +2291,7 @@ describe("httpApiV1 handlers", () => {
             slug: "demo",
             displayName: "Demo",
             summary: "s",
+            topics: ["Automation", "Email"],
             tags: { latest: "versions:1" },
             stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
             createdAt: 1,
@@ -2326,6 +2329,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.skill.slug).toBe("demo");
+    expect(json.skill.topics).toEqual(["Automation", "Email"]);
     expect(json.latestVersion.version).toBe("1.0.0");
     expect(json.moderation).toEqual({
       isSuspicious: true,
@@ -9598,6 +9602,7 @@ describe("httpApiV1 handlers", () => {
             slug: "demo",
             displayName: "Demo Skill",
             summary: "Skill summary",
+            topics: ["Automation", "Email"],
             latestVersionId: "skillVersions:demo-1",
             tags: { latest: "skillVersions:demo-1" },
             badges: {},
@@ -9634,6 +9639,7 @@ describe("httpApiV1 handlers", () => {
         family: "skill",
         latestVersion: "1.0.0",
         channel: "community",
+        topics: ["Automation", "Email"],
       },
       owner: {
         handle: "steipete",

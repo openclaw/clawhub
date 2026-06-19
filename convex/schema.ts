@@ -2305,6 +2305,7 @@ const auditLogs = defineTable({
 })
   .index("by_actor", ["actorUserId"])
   .index("by_target", ["targetType", "targetId"])
+  .index("by_target_action", ["targetType", "targetId", "action"])
   .index("by_target_createdAt", ["targetType", "targetId", "createdAt"]);
 
 const publisherAbuseScoreRuns = defineTable({

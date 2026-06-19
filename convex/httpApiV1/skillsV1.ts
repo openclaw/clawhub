@@ -107,6 +107,7 @@ type ListSkillsResult = {
       slug: string;
       displayName: string;
       summary?: string;
+      topics?: string[];
       tags: Record<string, Id<"skillVersions">>;
       stats: unknown;
       createdAt: number;
@@ -196,6 +197,7 @@ type GetBySlugResult = {
     slug: string;
     displayName: string;
     summary?: string;
+    topics?: string[];
     tags: Record<string, Id<"skillVersions">>;
     stats: unknown;
     createdAt: number;
@@ -1518,6 +1520,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     displayName: item.skill.displayName,
     summary: item.skill.summary ?? null,
     description: item.latestVersion?.parsed?.description ?? null,
+    topics: item.skill.topics,
     tags: resolvedTagsList[idx],
     stats: item.skill.stats,
     createdAt: item.skill.createdAt,
@@ -1902,6 +1905,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           displayName: result.skill.displayName,
           summary: result.skill.summary ?? null,
           description: description ?? result.latestVersion?.parsed?.description ?? null,
+          topics: result.skill.topics,
           tags,
           stats: result.skill.stats,
           createdAt: result.skill.createdAt,

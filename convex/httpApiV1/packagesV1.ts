@@ -440,6 +440,7 @@ type SkillPackageDocLike = {
   slug: string;
   displayName: string;
   summary?: string | null;
+  topics?: string[];
   latestVersionId?: Id<"skillVersions">;
   tags: Record<string, Id<"skillVersions">>;
   stats?: unknown;
@@ -1115,6 +1116,7 @@ function toSkillPackageDetail(
       channel: isSkillOfficial(skill) ? ("official" as const) : ("community" as const),
       isOfficial: isSkillOfficial(skill),
       summary: skill.summary ?? null,
+      topics: skill.topics,
       ownerHandle: owner?.handle ?? null,
       createdAt: skill.createdAt,
       updatedAt: skill.updatedAt,

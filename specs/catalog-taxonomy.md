@@ -38,6 +38,13 @@
 - Authors can edit categories and topics from skill and plugin settings.
 - Settings expose Generate as an explicit category action. Clearing categories saves `other`.
 - Backports and non-latest plugin releases do not replace current topics.
+- `topics` is the single canonical source for detail, settings, profile, API, and discovery reads.
+- The one-time classifier backfill may seed `topics` only when a publisher has never supplied the
+  field. Once seeded, publishers own the values and may edit or explicitly clear them.
+- Saving topics clears topic-specific inference compatibility state so an old backfill cannot
+  reappear after a publisher edit or explicit clear.
+- Future generated topic suggestions must remain non-canonical until a publisher or operator
+  explicitly accepts them.
 
 ## Browse
 
@@ -57,7 +64,7 @@
 
 ## Follow-Up
 
-Corpus classification is a separate operator-run phase from digest projection:
+Corpus classification was a one-time operator-run phase:
 
 - `taxonomy-prototype-v9` classifies categories and `topic-prototype-v1` classifies zero to five
   topics from bounded static artifact evidence. The plugin lane covers code and bundle plugins only;
@@ -65,10 +72,18 @@ Corpus classification is a separate operator-run phase from digest projection:
 - Classification writes bounded preview rows to `catalogClassificationResults`. Preview generation
   never changes skill/package taxonomy or search digests.
 - Explicit author categories/topics always win. Explicit empty arrays remain authoritative.
-- Applied inferred values remain separate in `inferredCategories` and `inferredTopics`. They are
-  eligible for discovery only while their recorded source version/release is still latest.
+- Applied inferred categories remain separate in `inferredCategories` and are eligible for
+  discovery only while their recorded source version/release is still latest.
+- Inferred topics were bootstrap data only. The catalog topic canonicalization migration copies
+  current `inferredTopics` into `topics` only when `topics` is absent, clears topic-specific inferred
+  metadata, and refreshes affected search digests.
+- The migration skips promotion when a skill or package has a catalog-metadata audit record. That
+  preserves publisher topic edits and explicit clears that were historically stored as an absent
+  `topics` field.
 - The preview runner is cursor-batched and resumable. It uses an action instead of
   `@convex-dev/migrations` because it must read immutable storage blobs; the source-changing apply
   phase uses the migrations component.
 - High- and medium-confidence rollout apply was a one-time production migration. The temporary
   apply migrations and operator wrappers were removed after the verified rollout completed.
+- Remove the temporary topic canonicalization migration and the remaining inferred-topic read/schema
+  compatibility only after its production apply and migration-component status are verified.

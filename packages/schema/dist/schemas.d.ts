@@ -252,6 +252,7 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
         updatedAt: number;
         summary?: string | null | undefined;
         description?: string | null | undefined;
+        topics?: string[] | undefined;
         latestVersion?: {
             version: string;
             createdAt: number;
@@ -279,6 +280,7 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         updatedAt: number;
         summary?: string | null | undefined;
         description?: string | null | undefined;
+        topics?: string[] | undefined;
     } | null;
     latestVersion: {
         version: string;
