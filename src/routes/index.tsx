@@ -361,12 +361,7 @@ function SkillsHome() {
           </h1>
         )}
 
-        <p className="home-v2-sub">
-          Discover skills and plugins from{" "}
-          <Link to="/publishers" className="home-v2-sub-stat">
-            200k+ publishers
-          </Link>
-        </p>
+        <p className="home-v2-sub">Discover skills and plugins from top creators</p>
       </section>
 
       <HomeListingSection />
