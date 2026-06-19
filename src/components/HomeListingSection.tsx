@@ -13,7 +13,15 @@ import {
   Search,
   X,
 } from "lucide-react";
-import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type FormEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { isSkillOfficial } from "../lib/badges";
@@ -514,6 +522,11 @@ export function HomeListingSection() {
   const showListingMore =
     activeStatus === "idle" && (activeItems.length > visibleCount || listingHasMore);
 
+  const openListingSearch = useCallback(() => {
+    setSearchOpen(true);
+    window.requestAnimationFrame(() => searchInputRef.current?.focus());
+  }, []);
+
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey) return;
@@ -524,7 +537,7 @@ export function HomeListingSection() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [openListingSearch]);
 
   useEffect(() => {
     if (!searchOpen) return undefined;
@@ -702,11 +715,6 @@ export function HomeListingSection() {
   const handleSeeMore = () => {
     setVisibleCount((count) => count + LISTING_PAGE_SIZE);
     setFetchLimit((limit) => limit + LISTING_PAGE_SIZE);
-  };
-
-  const openListingSearch = () => {
-    setSearchOpen(true);
-    window.requestAnimationFrame(() => searchInputRef.current?.focus());
   };
 
   const closeListingSearch = () => {
