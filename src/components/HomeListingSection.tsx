@@ -1,13 +1,13 @@
 import { Link, useNavigate } from "@tanstack/react-router";
 import { isPluginCategorySlug, isSkillCategorySlug } from "clawhub-schema";
 import {
-  ArrowDownToLine,
   BadgeCheck,
   Binoculars,
   CloudOff,
   LayoutGrid,
   Loader2,
   Moon,
+  PackageCheck,
   Plus,
   Rows3,
   Search,
@@ -107,9 +107,10 @@ function uniquePlugins(items: PackageListItem[]) {
   return [...byName.values()];
 }
 
-function sortSkillEntriesByDownloads(entries: SkillPageEntry[]) {
+function sortSkillEntriesByInstalls(entries: SkillPageEntry[]) {
   return [...entries].sort(
-    (left, right) => (right.skill.stats?.downloads ?? 0) - (left.skill.stats?.downloads ?? 0),
+    (left, right) =>
+      (right.skill.stats?.installsAllTime ?? 0) - (left.skill.stats?.installsAllTime ?? 0),
   );
 }
 
@@ -214,7 +215,7 @@ async function fetchSkillListing(
     categoriesToFetch.map((categorySlug) =>
       convexHttp.query(api.skills.listPublicPageV4, {
         numItems,
-        sort: "downloads",
+        sort: "installs",
         dir: "desc",
         highlightedOnly: tab === "featured" ? true : undefined,
         officialFirst: tab === "officials" ? true : undefined,
@@ -231,7 +232,7 @@ async function fetchSkillListing(
   const hasMore = results.some((result) =>
     Array.isArray(result) ? false : ((result as { hasMore?: boolean }).hasMore ?? false),
   );
-  const page = sortSkillEntriesByDownloads(filterSkillsByTab(uniqueSkillEntries(pages), tab)).slice(
+  const page = sortSkillEntriesByInstalls(filterSkillsByTab(uniqueSkillEntries(pages), tab)).slice(
     0,
     numItems,
   );
@@ -252,6 +253,7 @@ async function fetchPluginListing(
       fetchPluginCatalog({
         featured: tab === "featured" ? true : undefined,
         category: categorySlug ?? undefined,
+        sort: "installs",
         limit: requestLimit,
         signal,
       }),
@@ -264,7 +266,7 @@ async function fetchPluginListing(
   );
   items = filterPluginsByTab(items, tab);
   if (tab === "popular" || openClawOfficials) {
-    items.sort((a, b) => (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0));
+    items.sort((a, b) => (b.stats?.installs ?? 0) - (a.stats?.installs ?? 0));
   }
   const page = items.slice(0, limit);
   return {
@@ -300,8 +302,8 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
-          <ArrowDownToLine size={13} aria-hidden="true" />
-          {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
+          <PackageCheck size={13} aria-hidden="true" />
+          {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
         </span>
       </div>
     </Link>
@@ -330,8 +332,8 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
-          <ArrowDownToLine size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.downloads ?? 0)}
+          <PackageCheck size={13} aria-hidden="true" />
+          {formatCompactStat(plugin.stats?.installs ?? 0)}
         </span>
       </div>
     </Link>
@@ -358,8 +360,8 @@ function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
       </p>
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
         <span>
-          <ArrowDownToLine size={13} aria-hidden="true" />
-          {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
+          <PackageCheck size={13} aria-hidden="true" />
+          {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
         </span>
       </div>
     </Link>
@@ -390,8 +392,8 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
       </p>
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
         <span>
-          <ArrowDownToLine size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.downloads ?? 0)}
+          <PackageCheck size={13} aria-hidden="true" />
+          {formatCompactStat(plugin.stats?.installs ?? 0)}
         </span>
       </div>
     </Link>
