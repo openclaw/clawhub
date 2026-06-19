@@ -2,10 +2,10 @@ import { Link } from "@tanstack/react-router";
 import {
   ArrowRight,
   Cloud,
-  Code2,
   FileText,
   Globe,
   MessagesSquare,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react";
 import { useMemo, useState } from "react";
@@ -89,22 +89,22 @@ function plugin(id: string): HomeAppsItemRef {
 
 const appCategories = [
   {
-    id: "code",
-    label: "Code",
-    icon: Code2 as LucideIcon,
+    id: "popular",
+    label: "Popular",
+    icon: Sparkles as LucideIcon,
     items: [
       skill("github"),
-      skill("vscode"),
-      skill("cursor"),
-      plugin("codex"),
-      skill("raycast"),
-      skill("aws"),
-      skill("linear"),
+      skill("obsidian"),
       skill("notion"),
-      plugin("brave"),
-      skill("chrome"),
-      skill("figma"),
-      plugin("slack"),
+      skill("slack"),
+      skill("trello"),
+      skill("discord"),
+      skill("gmail"),
+      skill("google-calendar"),
+      skill("linear"),
+      skill("google-sheets"),
+      skill("google-drive"),
+      skill("jira"),
     ],
   },
   {
@@ -112,18 +112,18 @@ const appCategories = [
     label: "Chat",
     icon: MessagesSquare as LucideIcon,
     items: [
-      plugin("slack"),
-      plugin("discord"),
+      skill("slack"),
+      skill("discord"),
+      skill("gmail"),
+      skill("telegram"),
       plugin("msteams"),
       plugin("googlechat"),
       plugin("whatsapp"),
       plugin("matrix"),
       plugin("feishu"),
-      skill("raycast"),
-      skill("github"),
       skill("notion"),
-      plugin("codex"),
-      skill("figma"),
+      skill("trello"),
+      skill("github"),
     ],
   },
   {
@@ -132,17 +132,17 @@ const appCategories = [
     icon: FileText as LucideIcon,
     items: [
       skill("notion"),
+      skill("obsidian"),
+      skill("google-drive"),
+      skill("google-sheets"),
+      skill("gmail"),
       skill("linear"),
+      skill("jira"),
+      skill("trello"),
       skill("github"),
       skill("figma"),
-      skill("cursor"),
-      skill("vscode"),
-      skill("chrome"),
-      skill("raycast"),
-      plugin("codex"),
-      plugin("slack"),
-      plugin("googlechat"),
-      plugin("discord"),
+      skill("airtable"),
+      skill("dropbox"),
     ],
   },
   {
@@ -152,16 +152,16 @@ const appCategories = [
     items: [
       skill("chrome"),
       plugin("brave"),
-      skill("raycast"),
       skill("github"),
+      skill("gmail"),
+      skill("google-drive"),
+      skill("google-sheets"),
+      skill("google-calendar"),
       skill("notion"),
       skill("figma"),
-      plugin("slack"),
-      plugin("discord"),
-      plugin("codex"),
-      plugin("googlechat"),
-      plugin("whatsapp"),
-      plugin("matrix"),
+      skill("slack"),
+      skill("discord"),
+      skill("telegram"),
     ],
   },
   {
@@ -170,17 +170,17 @@ const appCategories = [
     icon: Cloud as LucideIcon,
     items: [
       skill("aws"),
+      skill("docker"),
+      skill("kubernetes"),
       skill("github"),
-      plugin("codex"),
-      skill("vscode"),
-      skill("cursor"),
-      skill("raycast"),
-      plugin("slack"),
-      plugin("msteams"),
+      skill("gitlab"),
+      skill("google-drive"),
+      skill("dropbox"),
+      skill("salesforce"),
+      skill("hubspot"),
+      skill("airtable"),
+      skill("slack"),
       skill("linear"),
-      plugin("googlechat"),
-      plugin("discord"),
-      plugin("brave"),
     ],
   },
 ] as const;
@@ -213,20 +213,27 @@ const workflowHeaderTiles: ReadonlyArray<{
 ];
 
 export function HomeAppsSection() {
-  const [activeCategoryId, setActiveCategoryId] = useState<(typeof appCategories)[number]["id"]>(appCategories[0].id);
+  const [activeCategoryId, setActiveCategoryId] = useState<(typeof appCategories)[number]["id"]>(
+    appCategories[0].id,
+  );
   const compactItems = useMemo(() => {
-    const activeCategory = appCategories.find((category) => category.id === activeCategoryId) ?? appCategories[0];
+    const activeCategory =
+      appCategories.find((category) => category.id === activeCategoryId) ?? appCategories[0];
     return activeCategory.items
       .map((item) => {
         if (item.kind === "skill") {
           const app = HOME_SKILL_APPS.find((candidate) => candidate.id === item.id);
-          return app ? ({ kind: "skill" as const, app }) : null;
+          return app ? { kind: "skill" as const, app } : null;
         }
         const matchedPlugin = HOME_PLUGIN_SHORTCUTS.find((candidate) => candidate.id === item.id);
-        return matchedPlugin ? ({ kind: "plugin" as const, plugin: matchedPlugin }) : null;
+        return matchedPlugin ? { kind: "plugin" as const, plugin: matchedPlugin } : null;
       })
-      .filter((item): item is { kind: "skill"; app: HomeSkillApp } | { kind: "plugin"; plugin: HomePluginShortcut } =>
-        Boolean(item)
+      .filter(
+        (
+          item,
+        ): item is
+          | { kind: "skill"; app: HomeSkillApp }
+          | { kind: "plugin"; plugin: HomePluginShortcut } => Boolean(item),
       );
   }, [activeCategoryId]);
 
@@ -236,14 +243,14 @@ export function HomeAppsSection() {
         <div className="home-v2-apps-workflow-header">
           <div className="home-v2-apps-workflow-copy">
             <h2 id="home-v2-apps-title">Skills for the apps you already use</h2>
-            <p>Ready-made skills and gateway plugins that plug OpenClaw straight into your everyday tools.</p>
+            <p>
+              Ready-made skills and gateway plugins that plug OpenClaw straight into your everyday
+              tools.
+            </p>
           </div>
           <div className="home-v2-apps-workflow-tiles" aria-hidden="true">
             {workflowHeaderTiles.map((tile) => (
-              <span
-                key={tile.label}
-                className={`home-v2-apps-workflow-tile ${tile.className}`}
-              >
+              <span key={tile.label} className={`home-v2-apps-workflow-tile ${tile.className}`}>
                 {tile.badge ? <span>{tile.badge}</span> : null}
                 <img src={tile.src} alt="" width={46} height={46} loading="lazy" decoding="async" />
               </span>
@@ -276,7 +283,7 @@ export function HomeAppsSection() {
               <HomeAppsCompactSkill key={`skill-${item.app.id}`} app={item.app} />
             ) : (
               <HomeAppsCompactPlugin key={`plugin-${item.plugin.id}`} plugin={item.plugin} />
-            )
+            ),
           )}
         </div>
 

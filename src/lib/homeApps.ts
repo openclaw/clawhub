@@ -6,7 +6,6 @@ export type HomeSkillApp = {
   description: string;
   /** Skills browse search query. */
   browseQuery: string;
-  skillsLabel: string;
   /** Brand favicon via Google favicon helper (domain only). */
   iconDomain: string;
 };
@@ -28,7 +27,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Google Chrome",
     description: "Browse, scrape, and automate the web from your agent.",
     browseQuery: "chrome browser",
-    skillsLabel: "48 skills",
     iconDomain: "google.com",
   },
   {
@@ -36,7 +34,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "VS Code",
     description: "Edit repos, run tasks, and ship code from the editor.",
     browseQuery: "vscode",
-    skillsLabel: "52 skills",
     iconDomain: "code.visualstudio.com",
   },
   {
@@ -44,7 +41,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "GitHub",
     description: "Review PRs, manage issues, and automate repo workflows.",
     browseQuery: "github",
-    skillsLabel: "64 skills",
     iconDomain: "github.com",
   },
   {
@@ -52,7 +48,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Notion",
     description: "Read pages, update databases, and draft docs in Notion.",
     browseQuery: "notion",
-    skillsLabel: "31 skills",
     iconDomain: "notion.so",
   },
   {
@@ -60,7 +55,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Linear",
     description: "Create issues, sync cycles, and keep product work moving.",
     browseQuery: "linear",
-    skillsLabel: "22 skills",
     iconDomain: "linear.app",
   },
   {
@@ -68,7 +62,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Figma",
     description: "Export assets, comment on files, and sync design context.",
     browseQuery: "figma",
-    skillsLabel: "19 skills",
     iconDomain: "figma.com",
   },
   {
@@ -76,7 +69,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Cursor",
     description: "Pair with your editor and run agent workflows in Cursor.",
     browseQuery: "cursor",
-    skillsLabel: "27 skills",
     iconDomain: "cursor.com",
   },
   {
@@ -84,7 +76,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Raycast",
     description: "Launch commands, scripts, and quick actions on macOS.",
     browseQuery: "raycast",
-    skillsLabel: "15 skills",
     iconDomain: "raycast.com",
   },
   {
@@ -92,8 +83,126 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "AWS",
     description: "Operate cloud resources and deploy from agent playbooks.",
     browseQuery: "aws",
-    skillsLabel: "33 skills",
     iconDomain: "aws.amazon.com",
+  },
+  {
+    id: "slack",
+    name: "Slack",
+    description: "Send messages, search conversations, and manage channels.",
+    browseQuery: "slack",
+    iconDomain: "slack.com",
+  },
+  {
+    id: "discord",
+    name: "Discord",
+    description: "Work with messages, channels, reactions, and communities.",
+    browseQuery: "discord",
+    iconDomain: "discord.com",
+  },
+  {
+    id: "obsidian",
+    name: "Obsidian",
+    description: "Manage Markdown vaults, notes, and knowledge workflows.",
+    browseQuery: "obsidian",
+    iconDomain: "obsidian.md",
+  },
+  {
+    id: "trello",
+    name: "Trello",
+    description: "Manage boards, lists, cards, and project workflows.",
+    browseQuery: "trello",
+    iconDomain: "trello.com",
+  },
+  {
+    id: "gmail",
+    name: "Gmail",
+    description: "Read, send, search, and organize email.",
+    browseQuery: "gmail",
+    iconDomain: "mail.google.com",
+  },
+  {
+    id: "google-drive",
+    name: "Google Drive",
+    description: "Find, create, and manage files and folders.",
+    browseQuery: "google drive",
+    iconDomain: "drive.google.com",
+  },
+  {
+    id: "google-sheets",
+    name: "Google Sheets",
+    description: "Read, write, and automate spreadsheet data.",
+    browseQuery: "google sheets",
+    iconDomain: "sheets.google.com",
+  },
+  {
+    id: "google-calendar",
+    name: "Google Calendar",
+    description: "Create events, check availability, and manage calendars.",
+    browseQuery: "google calendar",
+    iconDomain: "calendar.google.com",
+  },
+  {
+    id: "jira",
+    name: "Jira",
+    description: "Search, create, update, and transition issues.",
+    browseQuery: "jira",
+    iconDomain: "atlassian.com",
+  },
+  {
+    id: "telegram",
+    name: "Telegram",
+    description: "Build bot workflows and automate conversations.",
+    browseQuery: "telegram",
+    iconDomain: "telegram.org",
+  },
+  {
+    id: "airtable",
+    name: "Airtable",
+    description: "Manage bases, tables, records, and fields.",
+    browseQuery: "airtable",
+    iconDomain: "airtable.com",
+  },
+  {
+    id: "dropbox",
+    name: "Dropbox",
+    description: "Browse, search, upload, and manage files.",
+    browseQuery: "dropbox",
+    iconDomain: "dropbox.com",
+  },
+  {
+    id: "docker",
+    name: "Docker",
+    description: "Operate containers, images, and Compose stacks.",
+    browseQuery: "docker",
+    iconDomain: "docker.com",
+  },
+  {
+    id: "kubernetes",
+    name: "Kubernetes",
+    description: "Deploy, inspect, and troubleshoot clusters.",
+    browseQuery: "kubernetes",
+    iconDomain: "kubernetes.io",
+  },
+  {
+    id: "gitlab",
+    name: "GitLab",
+    description: "Manage projects, merge requests, issues, and pipelines.",
+    browseQuery: "gitlab",
+    iconDomain: "gitlab.com",
+  },
+  {
+    id: "salesforce",
+    name: "Salesforce",
+    description: "Query CRM data and manage sales workflows.",
+    browseQuery: "salesforce",
+    iconDomain: "salesforce.com",
+  },
+  {
+    id: "hubspot",
+    name: "HubSpot",
+    description: "Work with contacts, companies, deals, and pipelines.",
+    browseQuery: "hubspot",
+    iconDomain: "hubspot.com",
   },
 ];
 
