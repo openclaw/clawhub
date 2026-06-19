@@ -60,6 +60,7 @@ function contrastRatio(foreground: string, background: string) {
 }
 
 describe("restored UI design contract", () => {
+  const rootRoute = () => read("src/routes/__root.tsx");
   const header = () => read("src/components/Header.tsx");
   const footer = () => read("src/components/Footer.tsx");
   const home = () => read("src/routes/index.tsx");
@@ -67,6 +68,17 @@ describe("restored UI design contract", () => {
   const settings = () => read("src/routes/settings.tsx");
   const styles = () => read("src/styles.css");
   const theme = () => read("src/lib/theme.ts");
+
+  it("keeps Vercel browser instrumentation mounted outside local dev", () => {
+    const rootSource = rootRoute();
+
+    expect(rootSource).toContain('import { Analytics } from "@vercel/analytics/react";');
+    expect(rootSource).toContain('import { SpeedInsights } from "@vercel/speed-insights/react";');
+    expect(rootSource).toContain('!["localhost", "127.0.0.1", "::1"].includes');
+    expect(rootSource).toContain("{showAnalytics ? (");
+    expect(rootSource).toContain("<Analytics />");
+    expect(rootSource).toContain("<SpeedInsights />");
+  });
 
   it("requires the responsive header rail, search overlay, and theme controls", () => {
     const headerSource = header();
