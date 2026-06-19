@@ -5,6 +5,7 @@ import {
   SKILL_CATEGORY_DEFINITIONS,
 } from "clawhub-schema";
 import { ChevronDown, Sparkles } from "lucide-react";
+import { getCategoryIconComponent } from "../lib/categoryIcons";
 import { CatalogTopicInput } from "./CatalogTopicInput";
 import { Button } from "./ui/button";
 import {
@@ -123,6 +124,7 @@ export function CatalogMetadataFields({
           >
             {categories.map((category) => {
               const checked = selected.has(category.slug);
+              const Icon = getCategoryIconComponent(category.icon);
               return (
                 <DropdownMenuCheckboxItem
                   key={category.slug}
@@ -137,7 +139,10 @@ export function CatalogMetadataFields({
                   onCheckedChange={() => toggleCategory(category.slug)}
                   onSelect={(event) => event.preventDefault()}
                 >
-                  {category.label}
+                  <span className="flex min-w-0 items-center gap-2">
+                    {Icon ? <Icon className="h-4 w-4 shrink-0" aria-hidden="true" /> : null}
+                    <span className="truncate">{category.label}</span>
+                  </span>
                 </DropdownMenuCheckboxItem>
               );
             })}

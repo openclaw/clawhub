@@ -281,12 +281,16 @@ function AuditTableRow({ row }: { row: AuditRow }) {
   const ownerHandle = row.kind === "plugin" ? row.package.ownerHandle : row.ownerHandle;
   const displayName = row.kind === "plugin" ? row.package.displayName : row.skill.displayName;
   const summary = row.kind === "plugin" ? row.package.summary : row.skill.summary;
-  const icon = row.kind === "skill" ? row.skill.icon : undefined;
 
   return (
     <div className="audits-table-row" role="row">
       <div role="cell" className="audits-item-cell">
-        <MarketplaceIcon kind={row.kind} label={displayName} icon={icon} />
+        <MarketplaceIcon
+          kind={row.kind}
+          label={displayName}
+          icon={row.kind === "skill" ? row.skill.icon : undefined}
+          skill={row.kind === "skill" ? row.skill : null}
+        />
         <div className="audits-item-copy">
           <Link to={itemHref(row)} className="audits-item-name">
             {ownerHandle ? <span>@{ownerHandle} / </span> : null}

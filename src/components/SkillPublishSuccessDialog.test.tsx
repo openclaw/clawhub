@@ -15,7 +15,12 @@ function renderDialog(overrides: Partial<Parameters<typeof SkillPublishSuccessDi
       isOpen
       displayName="Agent Helper"
       skillPath="/vyctor/agent-helper"
-      skillIcon="lucide:Plug"
+      skill={{
+        slug: "agent-helper",
+        displayName: "Agent Helper",
+        categories: ["development"],
+        icon: "lucide:Plug",
+      }}
       publisher={{ displayName: "Vyctor", handle: "vyctor", kind: "user" }}
       categoryLabel="Developer tools"
       onDismiss={vi.fn()}

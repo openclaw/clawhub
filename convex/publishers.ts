@@ -77,8 +77,14 @@ type PublisherCatalogItem = {
   displayName: string;
   summary: string | null;
   topics?: string[];
-  // Mirrors skill custom-icon protocol strings and public plugin manifest HTTPS
-  // icon URLs so publisher profile cards use the same icon data as browse cards.
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: Id<"skillVersions">;
+  inferredFromVersionId?: Id<"skillVersions">;
+  /**
+   * Legacy skill icon field or public plugin manifest HTTPS icon URL retained
+   * while older frontend bundles are cached.
+   */
   icon: string | null;
   href: string;
   installs: number;
@@ -378,6 +384,10 @@ function getPublisherCatalogItems(
       displayName: skill.displayName,
       summary: skill.summary ?? null,
       topics: skill.topics,
+      categories: skill.categories,
+      inferredCategories: skill.inferredCategories,
+      latestVersionId: skill.latestVersionId,
+      inferredFromVersionId: skill.inferredFromVersionId,
       icon: skill.icon ?? null,
       href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
       installs: readCanonicalStat(skill, "installsAllTime"),
@@ -430,6 +440,12 @@ function toGitHubSkillCatalogItem(
     slug: item.slug ?? null,
     displayName: item.displayName,
     summary: item.summary,
+    categories: item.categories,
+    inferredCategories: item.inferredCategories,
+    latestVersionId: item.latestVersionId ? String(item.latestVersionId) : undefined,
+    inferredFromVersionId: item.inferredFromVersionId
+      ? String(item.inferredFromVersionId)
+      : undefined,
     icon: item.icon,
     href: item.href,
     installs: item.installs,
@@ -1934,6 +1950,10 @@ export const listStarredPage = query({
             kind: "skill" as const,
             displayName: skill.displayName,
             summary: skill.summary ?? null,
+            categories: skill.categories,
+            inferredCategories: skill.inferredCategories,
+            latestVersionId: skill.latestVersionId,
+            inferredFromVersionId: skill.inferredFromVersionId,
             icon: skill.icon ?? null,
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
             installs: readCanonicalStat(skill, "installsAllTime"),

@@ -25,6 +25,10 @@ export type GitHubSkillCatalogItem = {
   sourcePath?: string | null;
   sourceVerifiedCommit?: string | null;
   summary: string | null;
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: string;
+  inferredFromVersionId?: string;
   icon: string | null;
   href: string;
   installs: number;

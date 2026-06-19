@@ -2606,6 +2606,7 @@ const reservedHandles = defineTable({
 const registryArtifactBackupSyncState = defineTable({
   key: v.string(),
   cursor: v.optional(v.string()),
+  isDone: v.optional(v.boolean()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 

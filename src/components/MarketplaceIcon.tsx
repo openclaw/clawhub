@@ -1,18 +1,23 @@
 import { useEffect, useState, type CSSProperties } from "react";
+import { getSkillIconCategoryForSkill } from "../lib/categories";
+import { getCategoryIconComponent, UNRESOLVED_SKILL_CATEGORY_ICON } from "../lib/categoryIcons";
 import { MARKETPLACE_KIND_ICONS, type MarketplaceIconKind } from "../lib/marketplaceIcons";
-import { parseSkillIcon } from "../lib/skillIcon";
 
 type MarketplaceIconProps = {
   kind: MarketplaceIconKind;
   label: string;
   imageUrl?: string | null;
-  /**
-   * Skill custom-icon protocol string (e.g. `lucide:Plug`). Only honoured
-   * when `kind === "skill"`; for other kinds the prop is ignored. Falls
-   * back to the default kind icon when the value cannot be parsed or is
-   * not in the client allow-list.
-   */
+  /** Legacy skill custom-icon value. Ignored for rendering. */
   icon?: string | null;
+  skill?: {
+    categories?: readonly string[] | null;
+    inferredCategories?: readonly string[] | null;
+    latestVersionId?: string | null;
+    inferredFromVersionId?: string | null;
+    slug?: string | null;
+    displayName: string;
+    summary?: string | null;
+  } | null;
   size?: "xs" | "sm" | "md";
 };
 
@@ -33,7 +38,7 @@ export function MarketplaceIcon({
   kind,
   label,
   imageUrl,
-  icon,
+  skill,
   size = "sm",
 }: MarketplaceIconProps) {
   const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
@@ -41,8 +46,11 @@ export function MarketplaceIcon({
     setFailedImageUrl(null);
   }, [imageUrl]);
 
-  const customIcon = kind === "skill" ? parseSkillIcon(icon) : null;
-  const Icon = MARKETPLACE_KIND_ICONS[kind];
+  const category = kind === "skill" && skill ? getSkillIconCategoryForSkill(skill) : null;
+  const Icon =
+    kind === "skill" && skill
+      ? (getCategoryIconComponent(category?.icon) ?? UNRESOLVED_SKILL_CATEGORY_ICON)
+      : MARKETPLACE_KIND_ICONS[kind];
   const tone = hashTone(label);
   const visibleImageUrl = imageUrl && failedImageUrl !== imageUrl ? imageUrl : null;
 
@@ -67,8 +75,6 @@ export function MarketplaceIcon({
           decoding="async"
           onError={() => setFailedImageUrl(visibleImageUrl)}
         />
-      ) : customIcon?.kind === "lucide" ? (
-        <customIcon.component className="marketplace-icon-glyph" strokeWidth={1.8} />
       ) : (
         <Icon className="marketplace-icon-glyph" strokeWidth={1.8} />
       )}
