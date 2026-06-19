@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
 import { PackageCheck } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
@@ -11,8 +12,24 @@ type PluginListItemProps = {
   variant?: "list" | "card";
 };
 
+const PLUGIN_CATEGORY_LABELS = new Map<string, string>(
+  PLUGIN_CATEGORY_DEFINITIONS.map(({ slug, label }) => [slug, label]),
+);
+
+function getPluginTaxonomyDisplay(item: PackageListItem) {
+  const topics = (item.topics ?? []).filter((topic) => topic.trim());
+  if (topics.length > 0) return { labels: topics, ariaLabel: "Topics" };
+
+  const categories = (item.categories ?? []).flatMap((category) => {
+    const label = PLUGIN_CATEGORY_LABELS.get(category);
+    return label ? [label] : [];
+  });
+  return { labels: categories, ariaLabel: "Categories" };
+}
+
 export function PluginListItem({ item, variant = "list" }: PluginListItemProps) {
   const installs = formatCompactStat(item.stats?.installs ?? 0);
+  const taxonomy = getPluginTaxonomyDisplay(item);
 
   if (variant === "card") {
     return (
@@ -34,7 +51,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
         <p className="skill-card-summary">
           {item.summary ?? "Plugin package for agent workflows."}
         </p>
-        <CatalogTopicList topics={item.topics} limit={3} />
+        <CatalogTopicList topics={taxonomy.labels} limit={3} ariaLabel={taxonomy.ariaLabel} />
         <div className="skill-card-footer">
           <div className="skill-list-item-meta plugin-card-meta">
             <span className="skill-list-item-meta-item">Plugin</span>
@@ -75,7 +92,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
         <p className="skill-list-item-summary">
           {item.summary ?? "Plugin package for agent workflows."}
         </p>
-        <CatalogTopicList topics={item.topics} />
+        <CatalogTopicList topics={taxonomy.labels} ariaLabel={taxonomy.ariaLabel} />
         <div className="skill-list-item-meta">
           <span className="skill-list-item-meta-item">Plugin</span>
           {item.latestVersion ? (

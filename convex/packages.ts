@@ -1248,6 +1248,10 @@ async function toPublicPackageListItemFromPackage(
   ctx: DbReaderCtx,
   pkg: Doc<"packages">,
 ): Promise<PublicPackageListItem> {
+  const catalogMetadata =
+    pkg.family === "code-plugin" || pkg.family === "bundle-plugin"
+      ? extractPackageDigestFields(pkg)
+      : pkg;
   const owner = toPublicPublisher(
     await getOwnerPublisher(ctx, {
       ownerPublisherId: pkg.ownerPublisherId,
@@ -1267,8 +1271,8 @@ async function toPublicPackageListItemFromPackage(
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
     latestVersion: pkg.latestVersionSummary?.version ?? null,
-    categories: pkg.categories,
-    topics: pkg.topics,
+    categories: catalogMetadata.categories,
+    topics: catalogMetadata.topics,
     verificationTier: pkg.verification?.tier ?? null,
     stats: pkg.stats,
   };

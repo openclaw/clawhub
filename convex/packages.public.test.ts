@@ -2558,6 +2558,66 @@ describe("packages public queries", () => {
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
   });
 
+  it("includes current inferred taxonomy on install-sorted package pages", async () => {
+    const { ctx } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              categories: undefined,
+              topics: undefined,
+              inferredCategories: ["memory", "tools"],
+              inferredTopics: ["Agent Memory", "Retrieval"],
+              inferredFromReleaseId: "packageReleases:demo-1",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page[0]).toMatchObject({
+      categories: ["memory", "tools"],
+      topics: ["Agent Memory", "Retrieval"],
+    });
+  });
+
+  it("preserves stored skill taxonomy on install-sorted package pages", async () => {
+    const { ctx } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              family: "skill",
+              categories: ["developer-tools"],
+              topics: ["Automation"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "skill",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page[0]).toMatchObject({
+      categories: ["developer-tools"],
+      topics: ["Automation"],
+    });
+  });
+
   it("uses a family-scoped weighted recommended score index after backfill", async () => {
     const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
       packagePages: [

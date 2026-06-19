@@ -28,10 +28,27 @@ describe("PluginListItem", () => {
   });
 
   it("renders author topics", () => {
-    render(<PluginListItem item={makePlugin({ topics: ["local-models", "inference"] })} />);
+    render(
+      <PluginListItem
+        item={makePlugin({
+          categories: ["models"],
+          topics: ["local-models", "inference"],
+        })}
+      />,
+    );
 
     expect(screen.getByText("local-models")).toBeTruthy();
     expect(screen.getByText("inference")).toBeTruthy();
+    expect(screen.queryByText("Models")).toBeNull();
+    expect(screen.getByLabelText("Topics")).toBeTruthy();
+  });
+
+  it("renders category labels when topics are unavailable", () => {
+    render(<PluginListItem item={makePlugin({ categories: ["memory", "tools"] })} />);
+
+    expect(screen.getByText("Memory")).toBeTruthy();
+    expect(screen.getByText("Tools")).toBeTruthy();
+    expect(screen.getByLabelText("Categories")).toBeTruthy();
   });
 
   it("renders a plugin manifest icon URL with safe image attributes", () => {
