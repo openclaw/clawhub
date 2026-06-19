@@ -41,6 +41,8 @@ const LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "featured", label: "Featured" },
 ];
 
+const SKILL_LISTING_TABS = LISTING_TABS.filter((tab) => tab.id !== "officials");
+
 const LISTING_PAGE_SIZE = 20;
 const LISTING_SEARCH_DEBOUNCE_MS = 220;
 const PLUGIN_OFFICIAL_FETCH_BATCH = 100;
@@ -440,6 +442,7 @@ export function HomeListingSection() {
     () => filterPluginsByTab(searchPlugins, tab),
     [searchPlugins, tab],
   );
+  const visibleTabs = kind === "skills" ? SKILL_LISTING_TABS : LISTING_TABS;
 
   const activeItems = isSearchMode
     ? kind === "skills"
@@ -664,6 +667,7 @@ export function HomeListingSection() {
     setKind(nextKind);
     setCategorySlugs([]);
     if (nextKind === "plugins") setTab("officials");
+    else if (tab === "officials") setTab("popular");
   };
 
   const removeCategory = (slug: string) => {
@@ -697,7 +701,7 @@ export function HomeListingSection() {
 
           <div className="home-v2-listing-sort">
             <div className="home-v2-listing-sort-tabs" role="tablist" aria-label="Sort">
-              {LISTING_TABS.map((item) => (
+              {visibleTabs.map((item) => (
                 <button
                   key={item.id}
                   type="button"
