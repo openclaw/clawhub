@@ -331,11 +331,12 @@ export function Settings() {
         },
       ];
   const availableSettingsViews = settingsNavigationItems.map((item) => item.view);
+  const publisherMembershipsLoaded = publisherMemberships !== undefined;
   const { activeView, navigateToView } = useActiveSettingsView(
     availableSettingsViews,
     isOrgSettings,
+    publisherMembershipsLoaded && !isActivePublisherLoading,
   );
-  const publisherMembershipsLoaded = publisherMemberships !== undefined;
   const effectiveActiveView = activeView;
   const hasProfileChanges =
     isOrgSettings && settingsPublisher
@@ -2309,13 +2310,20 @@ function normalizeSettingsView(
   return availableViews.includes(view) ? view : fallback;
 }
 
-function useActiveSettingsView(availableViews: SettingsView[], isOrgContext: boolean) {
+function useActiveSettingsView(
+  availableViews: SettingsView[],
+  isOrgContext: boolean,
+  canNormalizeView: boolean,
+) {
   const navigate = useNavigate({ from: "/settings" });
   const search = useSearch({ from: "/settings" });
   const [migratedHashView, setMigratedHashView] = useState<SettingsSearchView | null>(null);
   const [hasCheckedHash, setHasCheckedHash] = useState(false);
   const requestedView = isSettingsSearchView(search.view) ? search.view : migratedHashView;
-  const activeView = normalizeSettingsView(requestedView, availableViews, isOrgContext);
+  const activeView =
+    canNormalizeView || requestedView === "account" || !isSettingsSearchView(requestedView)
+      ? normalizeSettingsView(requestedView, availableViews, isOrgContext)
+      : requestedView;
 
   useEffect(() => {
     if (hasCheckedHash) return;
@@ -2323,17 +2331,19 @@ function useActiveSettingsView(availableViews: SettingsView[], isOrgContext: boo
     const hash = window.location.hash.replace("#", "");
     if (isSettingsSearchView(hash)) {
       setMigratedHashView(hash);
+      if (!canNormalizeView) return;
       void navigate({
         search: { view: normalizeSettingsView(hash, availableViews, isOrgContext) },
         replace: true,
       });
     }
-  }, [availableViews, hasCheckedHash, isOrgContext, navigate]);
+  }, [availableViews, canNormalizeView, hasCheckedHash, isOrgContext, navigate]);
 
   useEffect(() => {
+    if (!canNormalizeView) return;
     if (!search.view || search.view === activeView) return;
     void navigate({ search: { view: activeView }, replace: true });
-  }, [activeView, navigate, search.view]);
+  }, [activeView, canNormalizeView, navigate, search.view]);
 
   const navigateToView = (view: SettingsView) => {
     void navigate({ search: { view } });

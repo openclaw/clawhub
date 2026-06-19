@@ -324,6 +324,26 @@ describe("Settings", () => {
     expect(useQueryMock.mock.calls.some(([, args]) => args === "skip")).toBe(true);
   });
 
+  it("preserves org settings deep links while memberships load", () => {
+    mockSignedInSettings({
+      search: { view: "members" },
+      memberships: [personalMembership, orgMembership],
+      activePublisher: orgMembership,
+    });
+    useQueryMock.mockImplementation((query, args) => {
+      const queryName = query ? getFunctionName(query) : "";
+      if (args === "skip") return undefined;
+      if (queryName === "tokens:listMine") return [];
+      if (queryName === "publishers:listMine") return undefined;
+      return [];
+    });
+
+    render(<Settings />);
+
+    expect(screen.getByLabelText(/loading settings/i)).toBeTruthy();
+    expect(navigateMock).not.toHaveBeenCalledWith({ search: { view: "profile" }, replace: true });
+  });
+
   it("renders the personal profile as the default settings view", () => {
     mockSignedInSettings();
 
