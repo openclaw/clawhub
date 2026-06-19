@@ -2322,12 +2322,8 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
       let scannedSkills = 0;
       let totalScannedSkills = state.scannedPublishers ?? 0;
       const persistedScanLimit = mode === "current" && !dryRun ? undefined : candidateLimit;
-      while (
-        pages < maxPages &&
-        (persistedScanLimit === undefined || totalScannedSkills < persistedScanLimit) &&
-        state.status === "running" &&
-        state.phase === "collecting"
-      ) {
+      while (pages < maxPages && state.status === "running" && state.phase === "collecting") {
+        if (persistedScanLimit !== undefined && totalScannedSkills >= persistedScanLimit) break;
         const remainingScanLimit =
           persistedScanLimit === undefined ? undefined : persistedScanLimit - totalScannedSkills;
         const result: PageResult = await ctx.runMutation(
