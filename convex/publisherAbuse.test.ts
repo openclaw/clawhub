@@ -6864,7 +6864,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(ctx.runMutation).toHaveBeenCalledWith(expect.anything(), {
       runId: "publisherAbuseScoreRuns:temporal",
       batchSize: 50,
-      remainingScanLimit: 80,
+      remainingScanLimit: undefined,
       todayDay: 100,
       lookbackDays: undefined,
     });
@@ -6882,7 +6882,7 @@ describe("publisher abuse dry-run persistence", () => {
     });
   });
 
-  it("finalizes persisted current temporal scans when the scan limit is reached", async () => {
+  it("continues persisted current temporal scans past the candidate limit", async () => {
     const scheduler = { runAfter: vi.fn(async () => null) };
     const ctx = {
       scheduler,
@@ -6893,39 +6893,31 @@ describe("publisher abuse dry-run persistence", () => {
             runId: "publisherAbuseScoreRuns:temporal",
             status: "running",
             phase: "collecting",
-            scannedPublishers: 90,
-            temporalScanComplete: false,
-          };
-        }
-        if (name.includes("listTemporalPublisherAbuseScanCandidatesPageInternal")) {
-          return { candidates: [], isDone: true };
-        }
-        throw new Error(`unexpected query ${name}`);
-      }),
-      runMutation: vi.fn(async (target: symbol, args?: unknown) => {
-        const name = String(target);
-        if (name.includes("collectTemporalPublisherAbuseSkillCandidatesForRunPageInternal")) {
-          return {
-            runId: "publisherAbuseScoreRuns:temporal",
-            status: "running",
-            phase: "finalizing",
-            isDone: false,
-            scanned: 10,
             scannedPublishers: 100,
             temporalScanComplete: false,
           };
         }
-        if (name.includes("completePersistedTemporalPublisherAbuseScanInternal")) {
-          expect(args).toEqual(
-            expect.objectContaining({
-              runId: "publisherAbuseScoreRuns:temporal",
-              scanComplete: false,
-            }),
-          );
-          return { clearedNominations: 0, scannedPublishers: 100 };
-        }
-        if (name.includes("cleanupTemporalPublisherAbuseScanCandidatesPageInternal")) {
-          return { deleted: 0 };
+        throw new Error(`unexpected query ${name}`);
+      }),
+      runMutation: vi.fn(async (target: symbol, args: { remainingScanLimit?: number }) => {
+        const name = String(target);
+        if (name.includes("collectTemporalPublisherAbuseSkillCandidatesForRunPageInternal")) {
+          expect(args).toEqual({
+            runId: "publisherAbuseScoreRuns:temporal",
+            batchSize: 50,
+            remainingScanLimit: undefined,
+            todayDay: 100,
+            lookbackDays: undefined,
+          });
+          return {
+            runId: "publisherAbuseScoreRuns:temporal",
+            status: "running",
+            phase: "collecting",
+            isDone: false,
+            scanned: 50,
+            scannedPublishers: 150,
+            temporalScanComplete: false,
+          };
         }
         throw new Error(`unexpected mutation ${name}`);
       }),
@@ -6945,25 +6937,34 @@ describe("publisher abuse dry-run persistence", () => {
       ok: true,
       dryRun: false,
       mode: "current",
-      scannedSkills: 100,
+      scannedSkills: 50,
       highTemporalSkills: 0,
       flaggedPublishers: 0,
       nominations: 0,
     });
 
-    expect(ctx.runMutation).toHaveBeenCalledWith(expect.anything(), {
-      runId: "publisherAbuseScoreRuns:temporal",
-      batchSize: 10,
-      remainingScanLimit: 10,
-      todayDay: 100,
-      lookbackDays: undefined,
-    });
     expect(
       ctx.runMutation.mock.calls.some(([target]) =>
         String(target).includes("autoBanPublisherAbuseCandidatesPageInternal"),
       ),
     ).toBe(false);
-    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(
+      ctx.runMutation.mock.calls.some(([target]) =>
+        String(target).includes("completePersistedTemporalPublisherAbuseScanInternal"),
+      ),
+    ).toBe(false);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(60_000, expect.anything(), {
+      runId: "publisherAbuseScoreRuns:temporal",
+      mode: "current",
+      dryRun: false,
+      candidateLimit: 100,
+      batchSize: 50,
+      maxPages: 1,
+      todayDay: 100,
+      lookbackDays: undefined,
+      trigger: "cron",
+      actorUserId: undefined,
+    });
   });
 
   it("finalizes persisted current temporal scans through publisher aggregate pages", async () => {

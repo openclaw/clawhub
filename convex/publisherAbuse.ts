@@ -2321,18 +2321,23 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
       let pages = 0;
       let scannedSkills = 0;
       let totalScannedSkills = state.scannedPublishers ?? 0;
+      const persistedScanLimit = mode === "current" && !dryRun ? undefined : candidateLimit;
       while (
         pages < maxPages &&
-        totalScannedSkills < candidateLimit &&
+        (persistedScanLimit === undefined || totalScannedSkills < persistedScanLimit) &&
         state.status === "running" &&
         state.phase === "collecting"
       ) {
-        const remainingScanLimit = candidateLimit - totalScannedSkills;
+        const remainingScanLimit =
+          persistedScanLimit === undefined ? undefined : persistedScanLimit - totalScannedSkills;
         const result: PageResult = await ctx.runMutation(
           internal.publisherAbuse.collectTemporalPublisherAbuseSkillCandidatesForRunPageInternal,
           {
             runId: args.runId,
-            batchSize: Math.min(batchSize, Math.max(1, remainingScanLimit)),
+            batchSize:
+              remainingScanLimit === undefined
+                ? batchSize
+                : Math.min(batchSize, Math.max(1, remainingScanLimit)),
             remainingScanLimit,
             todayDay,
             lookbackDays: args.lookbackDays,
@@ -2353,9 +2358,10 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
       }
 
       if (
+        persistedScanLimit !== undefined &&
         state.status === "running" &&
         state.phase === "collecting" &&
-        totalScannedSkills >= candidateLimit
+        totalScannedSkills >= persistedScanLimit
       ) {
         const result: PageResult = await ctx.runMutation(
           internal.publisherAbuse.collectTemporalPublisherAbuseSkillCandidatesForRunPageInternal,
