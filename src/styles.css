@@ -19664,14 +19664,13 @@ a.publisher-profile-detail:hover {
 
 .home-v2-popular-publisher-name {
   min-width: 0;
-  overflow: hidden;
   color: var(--hv2-text);
   font-size: 14px;
   font-weight: 650;
   line-height: 1.25;
   letter-spacing: -0.02em;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  text-wrap: balance;
+  white-space: normal;
 }
 
 .home-v2-popular-publisher-copy {

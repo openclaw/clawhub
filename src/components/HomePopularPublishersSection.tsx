@@ -17,7 +17,12 @@ const PINNED_PUBLISHERS: PinnedPublisher[] = [
   { handle: "nvidia", name: "NVIDIA", kind: "org" },
   { handle: "steipete", name: "Peter Steinberger", kind: "user" },
   { handle: "vincentkoc", name: "Vincent Koc", kind: "user" },
-  { handle: "mattvanhorn", name: "Matt Van Horn", kind: "user" },
+  { handle: "mvanhorn", name: "Matt Van Horn", kind: "user" },
+  { handle: "ivangdavila", name: "Iván", kind: "user" },
+  { handle: "byungkyu", name: "byungkyu", kind: "user" },
+  { handle: "pskoett", name: "pskoett", kind: "user" },
+  { handle: "1kalin", name: "1kalin", kind: "user" },
+  { handle: "spclaudehome", name: "spclaudehome", kind: "user" },
 ];
 
 function PopularPublisherCard({ pinned }: { pinned: PinnedPublisher }) {
