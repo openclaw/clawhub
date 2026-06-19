@@ -28,6 +28,7 @@ function PopularPublisherCard({ pinned }: { pinned: PinnedPublisher }) {
   const name = publisher?.displayName?.trim() || pinned.name;
   const bio = publisher?.bio?.trim() || "Publisher on ClawHub.";
   const kind = publisher?.kind ?? pinned.kind;
+  const itemCount = (publisher?.stats.skills ?? 0) + (publisher?.stats.packages ?? 0);
 
   return (
     <Link
@@ -49,8 +50,8 @@ function PopularPublisherCard({ pinned }: { pinned: PinnedPublisher }) {
       <div className="home-v2-popular-publisher-copy">
         <p className="home-v2-popular-publisher-bio">{bio}</p>
         <span className="home-v2-popular-publisher-stats">
-          <span>{formatCompactStat(publisher?.stats.skills ?? 0)} skills</span>
-          <span>{formatCompactStat(publisher?.stats.packages ?? 0)} plugins</span>
+          Explore {formatCompactStat(itemCount)} {itemCount === 1 ? "item" : "items"}
+          <ArrowRight size={13} aria-hidden="true" />
         </span>
       </div>
     </Link>
