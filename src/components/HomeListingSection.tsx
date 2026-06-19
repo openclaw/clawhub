@@ -26,7 +26,7 @@ import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 
 type ListingKind = "skills" | "plugins";
-type ListingTab = "popular" | "officials" | "new";
+type ListingTab = "popular" | "trending" | "officials" | "new";
 type ListingView = "list" | "grid";
 
 type SkillPageEntry = {
@@ -35,13 +35,12 @@ type SkillPageEntry = {
   owner?: PublicUser | null;
 };
 
-const LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
+const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "popular", label: "Most popular" },
-  { id: "officials", label: "Official" },
+  { id: "trending", label: "Trending" },
   { id: "new", label: "New" },
 ];
 
-const SKILL_LISTING_TABS = LISTING_TABS.filter((tab) => tab.id !== "officials");
 const PLUGIN_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "officials", label: "Official" },
   { id: "popular", label: "Most popular" },
@@ -219,6 +218,21 @@ async function fetchSkillListing(
   categorySlugs: readonly string[],
   numItems: number,
 ) {
+  if (tab === "trending") {
+    const requestLimit = categorySlugs.length > 0 ? 200 : numItems;
+    const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
+      limit: requestLimit,
+      nonSuspiciousOnly: true,
+    });
+    const items = ((result as { items?: SkillPageEntry[] }).items ?? []).filter((entry) =>
+      itemMatchesAnyCategory(entry.skill, categorySlugs),
+    );
+    return {
+      page: uniqueSkillEntries(items).slice(0, numItems),
+      hasMore: items.length > numItems || (items.length >= numItems && numItems < 200),
+    };
+  }
+
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
   const results = await Promise.all(
     categoriesToFetch.map((categorySlug) =>

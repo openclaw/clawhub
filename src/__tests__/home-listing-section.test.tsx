@@ -37,6 +37,7 @@ vi.mock("../../convex/_generated/api", () => ({
   api: {
     skills: {
       listPublicPageV4: "skills:listPublicPageV4",
+      listPublicTrendingPage: "skills:listPublicTrendingPage",
     },
     search: {
       searchSkills: "search:searchSkills",
@@ -82,7 +83,7 @@ describe("HomeListingSection", () => {
           createdAt: 1,
           updatedAt: 2,
           latestVersion: "1.0.0",
-          stats: { stars: 8, downloads: 120, installs: 0, versions: 1 },
+          stats: { stars: 8, downloads: 120, installs: 120, versions: 1 },
         },
       ],
       nextCursor: null,
@@ -93,7 +94,7 @@ describe("HomeListingSection", () => {
     render(<HomeListingSection />);
 
     expect(screen.getByRole("group", { name: "Content type" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Officials" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Trending" })).toBeTruthy();
     await waitFor(() => {
       expect(screen.getByText("Demo Skill")).toBeTruthy();
     });
@@ -108,7 +109,6 @@ describe("HomeListingSection", () => {
     await waitFor(() => {
       expect(screen.getByText("Demo Plugin")).toBeTruthy();
       expect(screen.getByText("120")).toBeTruthy();
-      expect(screen.getByText("8")).toBeTruthy();
     });
     expect(fetchPluginCatalogMock).toHaveBeenCalled();
   });
@@ -146,7 +146,6 @@ describe("HomeListingSection", () => {
       expect(convexActionMock).toHaveBeenCalledWith("search:searchSkills", {
         query: "alpha",
         limit: 20,
-        highlightedOnly: undefined,
       });
       expect(screen.getByText("Alpha Skill")).toBeTruthy();
     });
@@ -206,15 +205,15 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("Skill 20")).toBeNull();
     expect(screen.getByText("Skill 19")).toBeTruthy();
 
-    fireEvent.click(screen.getByRole("button", { name: "See more" }));
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     await waitFor(() => {
       expect(screen.getByText("Skill 34")).toBeTruthy();
     });
-    expect(screen.queryByRole("button", { name: "See more" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
 
-  it("requests official-only skills for the Officials tab", async () => {
+  it("loads the existing trending skills leaderboard for the Trending tab", async () => {
     render(<HomeListingSection />);
 
     await waitFor(() => {
@@ -222,12 +221,12 @@ describe("HomeListingSection", () => {
     });
 
     convexQueryMock.mockClear();
-    fireEvent.click(screen.getByRole("tab", { name: "Officials" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
 
     await waitFor(() => {
       expect(convexQueryMock).toHaveBeenCalledWith(
-        "skills:listPublicPageV4",
-        expect.objectContaining({ officialFirst: true }),
+        "skills:listPublicTrendingPage",
+        expect.objectContaining({ limit: 20, nonSuspiciousOnly: true }),
       );
     });
   });
@@ -261,7 +260,7 @@ describe("HomeListingSection", () => {
 
     render(<HomeListingSection />);
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Officials" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
 
     await waitFor(() => {
       expect(screen.getByText("Official Plugin").textContent).toBe("Official Plugin");
