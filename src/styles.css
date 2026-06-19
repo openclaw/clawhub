@@ -194,11 +194,11 @@
 /* Light theme — OpenClaw black, white, red */
 [data-theme-family="claw"][data-theme-resolved="light"] {
   color-scheme: light;
-  --bg: #faf6f1;
-  --bg-soft: #f5f1ec;
-  --surface: #fffcf8;
-  --surface-muted: #f8f5f0;
-  --nav-bg: #faf6f1;
+  --bg: #f9f9f9;
+  --bg-soft: #f9f9f9;
+  --surface: #ffffff;
+  --surface-muted: #ffffff;
+  --nav-bg: #f9f9f9;
   --ink: #0a0a0a;
   --ink-soft: #525252;
   --accent: #dc2626;
@@ -223,7 +223,7 @@
 
   /* Form controls — light */
   --input-border: rgba(0, 0, 0, 0.12);
-  --input-bg: #fffcf8;
+  --input-bg: #ffffff;
   --input-placeholder: rgba(82, 82, 82, 0.6);
   --input-focus-border: rgba(220, 38, 38, 0.5);
   --input-focus-ring: rgba(220, 38, 38, 0.15);
