@@ -9,6 +9,33 @@
       "name": "feature",
       "steps": [
         {
+          "slug": "publish-category-icons-dropdown",
+          "name": "Publish category selector shows every category icon",
+          "status": "passed",
+          "screenshot": "publish-category-icons-dropdown.png",
+          "probe": {
+            "signedIn": true,
+            "categories": [
+              "Integrations",
+              "Automation",
+              "Research",
+              "Development",
+              "Productivity",
+              "Communication",
+              "Creative",
+              "Knowledge",
+              "Agents",
+              "Operations",
+              "Security",
+              "Finance",
+              "Lifestyle",
+              "Other"
+            ],
+            "hasIconPickerButton": false,
+            "hasIconLabel": false
+          }
+        },
+        {
           "slug": "publish-signed-in-no-icon-picker",
           "name": "Signed-in publish form with category controls and no icon picker",
           "status": "passed",
