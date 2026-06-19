@@ -21234,16 +21234,16 @@ a.home-v2-byos-import:focus-visible svg:last-child {
   }
   .home-v2-listing-toolbar {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     min-height: 0;
-    gap: 12px;
+    gap: 14px 12px;
   }
   .home-v2-listing-divider {
     display: none;
   }
   .home-v2-listing-kind {
-    grid-column: 1 / -1;
+    grid-column: 1;
     grid-row: 1;
     justify-self: start;
   }
@@ -21272,17 +21272,17 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     display: contents;
   }
   .home-v2-listing-search-trigger {
-    grid-column: 1;
-    grid-row: 2;
-    justify-self: start;
-    width: 48px;
-    height: 48px;
-    border: 1px solid var(--hv2-border);
-    border-radius: 14px;
-    background: color-mix(in srgb, var(--hv2-surface) 76%, transparent);
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
+    width: 44px;
+    height: 44px;
+    border: none;
+    border-radius: 10px;
+    background: transparent;
   }
   .home-v2-listing-actions-rail .home-v2-listing-category-menu {
-    grid-column: 2;
+    grid-column: 1 / -1;
     grid-row: 2;
     width: 100%;
     max-width: none;
