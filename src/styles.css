@@ -20323,7 +20323,7 @@ a.home-v2-apps-see-all:focus-visible svg {
   padding: 9px 12px;
   border: 1px solid transparent;
   border-radius: var(--hv2-radius-sm);
-  background: color-mix(in srgb, var(--hv2-surface) 30%, transparent);
+  background: transparent;
   color: inherit;
   text-decoration: none;
   overflow: hidden;
