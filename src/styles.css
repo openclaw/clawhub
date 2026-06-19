@@ -15109,7 +15109,8 @@ a.publisher-profile-detail:hover {
   padding: 0 12px;
 }
 
-.home-v2-listing-kind {
+.home-v2-listing-kind,
+.home-v2-listing-view {
   --clawhub-segmented-h: calc(var(--clawhub-segmented-seg-h) + 8px);
   padding: 3px;
 }
