@@ -1133,7 +1133,7 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
     });
   });
 
-  it("applies a trusted fetched snapshot without overwriting unrelated slug owners", async () => {
+  it("applies a trusted fetched snapshot without blocking unrelated slug owners", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",
       defaultBranch: "main",
@@ -1218,55 +1218,71 @@ describe("applyGitHubSkillSourceSyncHandler", () => {
     expect(result.stats).toMatchObject({
       discovered: 2,
       changed: 1,
-      inserted: 0,
-      conflicts: 1,
+      inserted: 1,
+      conflicts: 0,
     });
     expect(tables.githubSkillSources[0]).toMatchObject({
       ownerPublisherId: "publishers:nvidia",
       displayManifestStatus: "ok",
       displayManifestCommit: "2".repeat(40),
-      lastSyncIssues: [
-        {
-          slug: "vision-helper",
-          path: "skills/vision-helper",
-          displayName: "Vision Helper",
-          kind: "slug_conflict",
-          severity: "error",
-          message: "Slug already exists on ClawHub under @jonathanjing.",
-          existingOwnerHandle: "jonathanjing",
-        },
-      ],
+      lastSyncIssues: [],
     });
     expect(tables.skills.find((skill) => skill._id === "skills:aiq-deploy")).toMatchObject({
       githubCurrentCommit: "2".repeat(40),
       githubScanStatus: "pending",
       moderationStatus: "active",
     });
-    expect(tables.githubSkillContents).toEqual([
-      expect.objectContaining({
-        skillId: "skills:aiq-deploy",
-        githubSourceId: "githubSkillSources:nvidia",
-        githubPath: "skills/aiq-deploy",
-        skillMarkdownPath: "skills/aiq-deploy/SKILL.md",
-        skillMarkdown: "# AIQ Deploy v2\n",
-        skillCardMarkdownPath: "skills/aiq-deploy/skill-card.md",
-        skillCardMarkdown: "# AIQ Card v2\n",
-        githubCommit: "2".repeat(40),
-        githubContentHash: snapshot.skills.find((skill) => skill.slug === "aiq-deploy")
-          ?.contentHash,
-        fetchedAt: 123,
-      }),
-    ]);
+    expect(tables.githubSkillContents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          skillId: "skills:aiq-deploy",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/aiq-deploy",
+          skillMarkdownPath: "skills/aiq-deploy/SKILL.md",
+          skillMarkdown: "# AIQ Deploy v2\n",
+          skillCardMarkdownPath: "skills/aiq-deploy/skill-card.md",
+          skillCardMarkdown: "# AIQ Card v2\n",
+          githubCommit: "2".repeat(40),
+          githubContentHash: snapshot.skills.find((skill) => skill.slug === "aiq-deploy")
+            ?.contentHash,
+          fetchedAt: 123,
+        }),
+        expect.objectContaining({
+          skillId: "skills:new-1",
+          githubSourceId: "githubSkillSources:nvidia",
+          githubPath: "skills/vision-helper",
+          skillMarkdownPath: "skills/vision-helper/SKILL.md",
+          skillMarkdown: "# Vision Helper\n",
+          githubCommit: "2".repeat(40),
+          githubContentHash: snapshot.skills.find((skill) => skill.slug === "vision-helper")
+            ?.contentHash,
+          fetchedAt: 123,
+        }),
+      ]),
+    );
     expect(tables.globalStats[0]).toMatchObject({
-      activeSkillsCount: 10,
-      updatedAt: 1,
+      activeSkillsCount: 11,
+      updatedAt: 123,
     });
     const conflict = tables.skills.find((skill) => skill._id === "skills:vision-helper-conflict");
     expect(conflict).toMatchObject({
       displayName: "Existing Direct Skill",
     });
     expect(conflict).not.toHaveProperty("installKind");
-    expect(tables.skills).toHaveLength(2);
+    expect(tables.skills).toHaveLength(3);
+    expect(tables.skills.find((skill) => skill._id === "skills:new-1")).toMatchObject({
+      slug: "vision-helper",
+      displayName: "Vision Helper",
+      ownerUserId: "users:nvidia",
+      ownerPublisherId: "publishers:nvidia",
+      installKind: "github",
+      githubSourceId: "githubSkillSources:nvidia",
+      githubPath: "skills/vision-helper",
+      githubCurrentCommit: "2".repeat(40),
+      githubCurrentStatus: "present",
+      githubScanStatus: "pending",
+      moderationStatus: "active",
+    });
   });
 
   it("preserves an existing soft delete timestamp when upstream remains missing", async () => {
