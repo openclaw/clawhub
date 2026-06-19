@@ -113,8 +113,8 @@ function Terminal({ tab }: { tab: TerminalTab }) {
       <div className="home-v2-byos-term-body">
         <pre className="home-v2-byos-code" tabIndex={0}>
           <code translate="no">
-            {tab.lines.map((line) => (
-              <span className="home-v2-byos-line" key={line.text}>
+            {tab.lines.map((line, index) => (
+              <span className="home-v2-byos-line" key={`${index}-${line.text}`}>
                 {line.comment ? (
                   <span className="home-v2-byos-comment">{line.text}</span>
                 ) : (
