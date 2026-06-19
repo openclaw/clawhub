@@ -16303,7 +16303,7 @@ a.publisher-profile-detail:hover {
 }
 
 .footer-v2-easter-image--base {
-  background-image: url("/footer-openclaw-easter-egg.png");
+  background-image: url("/footer-openclaw-easter-egg.webp");
   transform: translate3d(0, calc((1 - var(--footer-easter-reveal, 0)) * 64px), 0);
   opacity: calc(0.35 + 0.65 * var(--footer-easter-reveal, 0));
 }
@@ -16354,7 +16354,7 @@ a.publisher-profile-detail:hover {
 
 .footer-v2-easter-image--top {
   z-index: 2;
-  background-image: url("/footer-openclaw-easter-egg-transparent.png");
+  background-image: url("/footer-openclaw-easter-egg-transparent.webp");
   transform: translate3d(0, calc((1 - var(--footer-easter-reveal, 0)) * 128px), 0);
 }
 
@@ -21127,7 +21127,7 @@ a.home-v2-apps-see-all:focus-visible svg {
 }
 
 .home-v2-byos-reveal-image--base {
-  background-image: url("/footer-openclaw-easter-egg.png");
+  background-image: url("/footer-openclaw-easter-egg.webp");
 }
 
 /* Legibility overlay: darken toward the center where the copy + card sit and
@@ -21190,7 +21190,7 @@ a.home-v2-apps-see-all:focus-visible svg {
 
 .home-v2-byos-reveal-image--top {
   z-index: 3;
-  background-image: url("/footer-openclaw-easter-egg-transparent.png");
+  background-image: url("/footer-openclaw-easter-egg-transparent.webp");
   opacity: 0.95;
 }
 
