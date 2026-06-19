@@ -15835,7 +15835,7 @@ a.publisher-profile-detail:hover {
 .home-v2-listing-row-title {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 6px 10px;
   min-width: 0;
 }
@@ -15855,11 +15855,15 @@ a.publisher-profile-detail:hover {
 }
 
 .home-v2-listing-row-name {
+  min-width: 0;
+  overflow: hidden;
   font-size: 15px;
   font-weight: 600;
   line-height: 1.25;
   color: var(--hv2-text);
   letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .home-v2-listing-row-by {

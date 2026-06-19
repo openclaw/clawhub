@@ -198,7 +198,7 @@ function HomeListingResults({
             ) : (
               <Plus size={14} aria-hidden="true" />
             )}
-            {loadingMore ? "Loading…" : "See more"}
+            {loadingMore ? "Loading…" : "Load more"}
           </button>
         </div>
       ) : null}
