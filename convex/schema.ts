@@ -1385,6 +1385,13 @@ const packages = defineTable({
   .index("by_active_family_downloads", ["softDeletedAt", "family", "stats.downloads", "updatedAt"])
   .index("by_active_installs", ["softDeletedAt", "stats.installs", "updatedAt"])
   .index("by_active_family_installs", ["softDeletedAt", "family", "stats.installs", "updatedAt"])
+  .index("by_active_family_official_installs", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "stats.installs",
+    "updatedAt",
+  ])
   .index("by_active_recommended_rank", [
     "softDeletedAt",
     "stats.stars",

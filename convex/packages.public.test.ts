@@ -1277,6 +1277,7 @@ function makeDigestCtx(options: {
                     indexName === "by_active_family_downloads" ||
                     indexName === "by_active_installs" ||
                     indexName === "by_active_family_installs" ||
+                    indexName === "by_active_family_official_installs" ||
                     indexName === "by_active_recommended_rank" ||
                     indexName === "by_active_family_recommended_rank" ||
                     indexName === "by_active_recommended_score" ||
@@ -2556,6 +2557,52 @@ describe("packages public queries", () => {
     ]);
     expect(paginate).toHaveBeenCalledTimes(1);
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
+  it("uses a family-and-official installs index for official plugin pages", async () => {
+    const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:official-code-plugin",
+              name: "official-code-plugin",
+              normalizedName: "official-code-plugin",
+              displayName: "Official Code Plugin",
+              family: "code-plugin",
+              isOfficial: true,
+              channel: "official",
+              stats: { downloads: 100, installs: 200, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      isOfficial: true,
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 24 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-code-plugin"]);
+    expect(result.isDone).toBe(true);
+    expect(indexNames).toEqual(["by_active_family_official_installs"]);
+    expect(indexFilters).toEqual([
+      {
+        indexName: "by_active_family_official_installs",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
+          { field: "isOfficial", value: true },
+        ],
+      },
+    ]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 120 });
   });
 
   it("includes current inferred taxonomy on install-sorted package pages", async () => {

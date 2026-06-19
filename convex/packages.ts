@@ -3324,6 +3324,13 @@ async function listPackagePageImpl(
     let done = decodedCursor.done;
     const buildSortedQuery = () => {
       if (family) {
+        if (args.sort === "installs" && typeof isOfficial === "boolean") {
+          return ctx.db
+            .query("packages")
+            .withIndex("by_active_family_official_installs", (q) =>
+              q.eq("softDeletedAt", undefined).eq("family", family).eq("isOfficial", isOfficial),
+            );
+        }
         const indexName =
           args.sort === "installs"
             ? "by_active_family_installs"

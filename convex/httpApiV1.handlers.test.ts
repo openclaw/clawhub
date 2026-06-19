@@ -8799,7 +8799,7 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("plugins list install sort forwards to both plugin families and merges by installs", async () => {
+  it("official plugins install sort forwards the filter to both families and merges by installs", async () => {
     const codePlugin = makeCatalogItem("code-installed", {
       family: "code-plugin",
       updatedAt: 100,
@@ -8813,7 +8813,7 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (Object.keys(args).length === 0) return 2;
       if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
-      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      expect(args).toEqual(expect.objectContaining({ isOfficial: true, sort: "installs" }));
       if (args.family === "code-plugin") {
         return { page: [codePlugin], isDone: true, continueCursor: "" };
       }
@@ -8826,7 +8826,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPluginsV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?limit=2&sort=installs"),
+      new Request("https://example.com/api/v1/plugins?isOfficial=true&limit=2&sort=installs"),
     );
 
     expect(response.status).toBe(200);
