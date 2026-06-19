@@ -222,7 +222,6 @@ async function fetchSkillListing(
     const requestLimit = categorySlugs.length > 0 ? 200 : numItems;
     const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
       limit: requestLimit,
-      nonSuspiciousOnly: true,
     });
     const items = ((result as { items?: SkillPageEntry[] }).items ?? []).filter((entry) =>
       itemMatchesAnyCategory(entry.skill, categorySlugs),

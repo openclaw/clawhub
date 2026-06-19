@@ -224,10 +224,7 @@ describe("HomeListingSection", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
 
     await waitFor(() => {
-      expect(convexQueryMock).toHaveBeenCalledWith(
-        "skills:listPublicTrendingPage",
-        expect.objectContaining({ limit: 20, nonSuspiciousOnly: true }),
-      );
+      expect(convexQueryMock).toHaveBeenCalledWith("skills:listPublicTrendingPage", { limit: 20 });
     });
   });
 
