@@ -20653,6 +20653,10 @@ a.home-v2-apps-see-all:focus-visible svg {
   );
 }
 
+[data-theme-resolved="light"] .home-v2-byos::before {
+  content: none;
+}
+
 /* Full-bleed reveal backdrop — mirrors the footer easter egg mechanic. */
 .home-v2-byos-reveal {
   position: absolute;
