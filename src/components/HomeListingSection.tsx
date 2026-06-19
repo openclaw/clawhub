@@ -42,6 +42,11 @@ const LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
 ];
 
 const SKILL_LISTING_TABS = LISTING_TABS.filter((tab) => tab.id !== "officials");
+const PLUGIN_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
+  { id: "officials", label: "Official" },
+  { id: "popular", label: "Most popular" },
+  { id: "new", label: "New" },
+];
 
 const LISTING_PAGE_SIZE = 20;
 const LISTING_SEARCH_DEBOUNCE_MS = 220;
@@ -439,7 +444,7 @@ export function HomeListingSection() {
     () => filterPluginsByTab(searchPlugins, tab),
     [searchPlugins, tab],
   );
-  const visibleTabs = kind === "skills" ? SKILL_LISTING_TABS : LISTING_TABS;
+  const visibleTabs = kind === "skills" ? SKILL_LISTING_TABS : PLUGIN_LISTING_TABS;
 
   const activeItems = isSearchMode
     ? kind === "skills"
