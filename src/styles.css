@@ -20742,6 +20742,10 @@ a.home-v2-apps-see-all:focus-visible svg {
     padding: 0;
   }
 
+  .home-v2-apps-workflow-header {
+    justify-items: center;
+  }
+
   .home-v2-apps-stage::before {
     inset-inline: -8px;
     height: 360px;
@@ -20864,6 +20868,8 @@ a.home-v2-apps-see-all:focus-visible svg {
   .home-v2-apps-workflow-copy {
     grid-row: 2;
     justify-items: center;
+    justify-self: center;
+    width: 100%;
     max-width: 31ch;
     text-align: center;
   }
