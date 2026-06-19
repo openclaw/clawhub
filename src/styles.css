@@ -21204,6 +21204,16 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     margin-top: 56px;
     padding: 72px 20px 80px;
   }
+
+  .home-v2-byos-title {
+    max-width: 18ch;
+    text-wrap: balance;
+  }
+
+  .home-v2-byos-lede {
+    max-width: 28ch;
+    text-wrap: balance;
+  }
 }
 
 /* ═══ RESPONSIVE ═══ */
