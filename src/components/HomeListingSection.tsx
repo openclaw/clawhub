@@ -17,7 +17,12 @@ import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } 
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
 import { isSkillOfficial } from "../lib/badges";
-import { PLUGIN_CATEGORIES, SKILL_CATEGORIES, type BrowseCategory } from "../lib/categories";
+import {
+  getSkillCategoriesForSkill,
+  PLUGIN_CATEGORIES,
+  SKILL_CATEGORIES,
+  type BrowseCategory,
+} from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
@@ -92,6 +97,12 @@ function itemMatchesAnyCategory(
   if (categorySlugs.length === 0) return true;
   const categories = item.categories ?? [];
   return categorySlugs.some((slug) => categories.includes(slug));
+}
+
+function skillMatchesAnyCategory(skill: PublicSkill, categorySlugs: readonly string[]) {
+  if (categorySlugs.length === 0) return true;
+  const categories = getSkillCategoriesForSkill(skill);
+  return categorySlugs.some((slug) => categories.some((category) => category.slug === slug));
 }
 
 function uniqueSkillEntries(entries: SkillPageEntry[]) {
@@ -224,7 +235,7 @@ async function fetchSkillListing(
       limit: requestLimit,
     });
     const items = ((result as { items?: SkillPageEntry[] }).items ?? []).filter((entry) =>
-      itemMatchesAnyCategory(entry.skill, categorySlugs),
+      skillMatchesAnyCategory(entry.skill, categorySlugs),
     );
     return {
       page: uniqueSkillEntries(items).slice(0, numItems),
@@ -251,7 +262,7 @@ async function fetchSkillListing(
         if (Array.isArray(result)) break;
 
         const resultPage = ((result as { page?: SkillPageEntry[] }).page ?? []).filter((entry) =>
-          itemMatchesAnyCategory(entry.skill, categorySlugs),
+          skillMatchesAnyCategory(entry.skill, categorySlugs),
         );
         page.push(...resultPage);
 
@@ -617,7 +628,7 @@ export function HomeListingSection() {
                     ownerHandle: hit.ownerHandle,
                     owner: hit.owner,
                   }))
-                  .filter((entry) => itemMatchesAnyCategory(entry.skill, categorySlugs));
+                  .filter((entry) => skillMatchesAnyCategory(entry.skill, categorySlugs));
                 setSearchSkills(tab === "new" ? sortSkillEntries(rows, tab) : rows);
                 setListingHasMore(rows.length >= fetchLimit);
                 setSearchStatus("idle");

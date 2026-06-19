@@ -358,10 +358,30 @@ describe("HomeListingSection", () => {
   });
 
   it("allows selecting multiple skill categories and refetches each selected category", async () => {
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          skill: {
+            _id: "skills:inferred",
+            slug: "inferred-skill",
+            displayName: "Inferred Skill",
+            summary: "Uses inferred category metadata.",
+            inferredCategories: ["development"],
+            latestVersionId: "versions:1",
+            inferredFromVersionId: "versions:1",
+            stats: { installsAllTime: 10 },
+          },
+          ownerHandle: "builder",
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
     render(<HomeListingSection />);
 
     await waitFor(() => {
-      expect(screen.getByText("Demo Skill")).toBeTruthy();
+      expect(screen.getByText("Inferred Skill")).toBeTruthy();
     });
 
     convexQueryMock.mockClear();
@@ -375,6 +395,9 @@ describe("HomeListingSection", () => {
       );
     });
     expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain("Development");
+    await waitFor(() => {
+      expect(screen.getByText("Inferred Skill")).toBeTruthy();
+    });
 
     convexQueryMock.mockClear();
     fireEvent.click(screen.getByRole("option", { name: "Security" }));
