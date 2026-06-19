@@ -49,7 +49,7 @@ const PLUGIN_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
 
 const LISTING_PAGE_SIZE = 20;
 const LISTING_SEARCH_DEBOUNCE_MS = 220;
-const PLUGIN_OFFICIAL_FETCH_BATCH = 100;
+const PLUGIN_CATALOG_PAGE_LIMIT = 100;
 
 const HOME_SKILL_LISTING_CATEGORIES: BrowseCategory[] = SKILL_CATEGORIES.map(
   ({ slug, label, icon }) => ({ slug, label, icon }),
@@ -234,25 +234,38 @@ async function fetchSkillListing(
 
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
   const results = await Promise.all(
-    categoriesToFetch.map((categorySlug) =>
-      convexHttp.query(api.skills.listPublicPageV4, {
-        numItems,
-        sort: tab === "new" ? "newest" : "installs",
-        dir: "desc",
-        officialFirst: tab === "officials" ? true : undefined,
-        categorySlug: categorySlug ?? undefined,
-      }),
-    ),
+    categoriesToFetch.map(async (categorySlug) => {
+      const page: SkillPageEntry[] = [];
+      let cursor: string | null | undefined;
+      let hasMore = false;
+
+      while (page.length < numItems) {
+        const result = await convexHttp.query(api.skills.listPublicPageV4, {
+          cursor: cursor ?? undefined,
+          numItems: numItems - page.length,
+          sort: tab === "new" ? "newest" : "installs",
+          dir: "desc",
+          officialFirst: tab === "officials" ? true : undefined,
+          categorySlug: categorySlug ?? undefined,
+        });
+        if (Array.isArray(result)) break;
+
+        const resultPage = ((result as { page?: SkillPageEntry[] }).page ?? []).filter((entry) =>
+          itemMatchesAnyCategory(entry.skill, categorySlugs),
+        );
+        page.push(...resultPage);
+
+        const nextCursor = (result as { nextCursor?: string | null }).nextCursor ?? null;
+        hasMore = Boolean((result as { hasMore?: boolean }).hasMore ?? nextCursor);
+        if (!nextCursor || nextCursor === cursor) break;
+        cursor = nextCursor;
+      }
+
+      return { page, hasMore };
+    }),
   );
-  const pages = results.flatMap((result) => {
-    if (Array.isArray(result)) return [];
-    return ((result as { page?: SkillPageEntry[] }).page ?? []).filter((entry) =>
-      itemMatchesAnyCategory(entry.skill, categorySlugs),
-    );
-  });
-  const hasMore = results.some((result) =>
-    Array.isArray(result) ? false : ((result as { hasMore?: boolean }).hasMore ?? false),
-  );
+  const pages = results.flatMap((result) => result.page);
+  const hasMore = results.some((result) => result.hasMore);
   const page = sortSkillEntries(filterSkillsByTab(uniqueSkillEntries(pages), tab), tab).slice(
     0,
     numItems,
@@ -267,23 +280,33 @@ async function fetchPluginListing(
   signal: AbortSignal,
 ) {
   const openClawOfficials = tab === "officials";
-  const requestLimit = openClawOfficials ? Math.max(limit, PLUGIN_OFFICIAL_FETCH_BATCH) : limit;
   const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
   const results = await Promise.all(
-    categoriesToFetch.map((categorySlug) =>
-      fetchPluginCatalog({
-        category: categorySlug ?? undefined,
-        sort: tab === "new" ? "updated" : "installs",
-        limit: requestLimit,
-        signal,
-      }),
-    ),
+    categoriesToFetch.map(async (categorySlug) => {
+      const items: PackageListItem[] = [];
+      let cursor: string | null | undefined;
+      let hasMore = false;
+
+      while (items.length < limit) {
+        const result = await fetchPluginCatalog({
+          category: categorySlug ?? undefined,
+          cursor: cursor ?? undefined,
+          isOfficial: openClawOfficials ? true : undefined,
+          sort: tab === "new" ? "updated" : "installs",
+          limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
+          signal,
+        });
+        items.push(...result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)));
+
+        hasMore = result.nextCursor != null;
+        if (!result.nextCursor || result.nextCursor === cursor) break;
+        cursor = result.nextCursor;
+      }
+
+      return { items, hasMore };
+    }),
   );
-  let items = uniquePlugins(
-    results.flatMap((result) =>
-      result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)),
-    ),
-  );
+  let items = uniquePlugins(results.flatMap((result) => result.items));
   items = filterPluginsByTab(items, tab);
   if (tab === "new") {
     items.sort((a, b) => b.updatedAt - a.updatedAt);
@@ -293,9 +316,7 @@ async function fetchPluginListing(
   const page = items.slice(0, limit);
   return {
     items: page,
-    hasMore: openClawOfficials
-      ? items.length > limit
-      : results.some((result) => result.nextCursor != null || result.items.length > limit),
+    hasMore: items.length > limit || results.some((result) => result.hasMore),
   };
 }
 
@@ -606,11 +627,9 @@ export function HomeListingSection() {
                 fetchPluginCatalog({
                   q: trimmedSearch,
                   category: categorySlug ?? undefined,
+                  isOfficial: tab === "officials" ? true : undefined,
                   sort: tab === "new" ? "updated" : "installs",
-                  limit:
-                    tab === "officials"
-                      ? Math.max(fetchLimit, PLUGIN_OFFICIAL_FETCH_BATCH)
-                      : fetchLimit,
+                  limit: fetchLimit,
                   signal: controller.signal,
                 }),
               ),

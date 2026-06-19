@@ -264,7 +264,7 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("999")).toBeNull();
   });
 
-  it("filters official plugins locally without using the broken official-only endpoint", async () => {
+  it("requests official plugins from the catalog API", async () => {
     fetchPluginCatalogMock.mockResolvedValue({
       items: [
         {
@@ -300,8 +300,61 @@ describe("HomeListingSection", () => {
     });
     expect(screen.queryByText("Community Plugin")).toBeNull();
     const latestRequest = fetchPluginCatalogMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
-    expect(latestRequest).toEqual(expect.objectContaining({ limit: 100 }));
-    expect(latestRequest).not.toHaveProperty("isOfficial");
+    expect(latestRequest).toEqual(expect.objectContaining({ isOfficial: true, limit: 20 }));
+  });
+
+  it("uses the skills cursor when loading beyond the first page", async () => {
+    const firstSkill = {
+      skill: {
+        _id: "skills:first",
+        slug: "first-skill",
+        displayName: "First Skill",
+        summary: "First page.",
+        stats: { installsAllTime: 100 },
+      },
+      ownerHandle: "builder",
+    };
+    const secondSkill = {
+      skill: {
+        _id: "skills:second",
+        slug: "second-skill",
+        displayName: "Second Skill",
+        summary: "Second page.",
+        stats: { installsAllTime: 90 },
+      },
+      ownerHandle: "builder",
+    };
+    convexQueryMock
+      .mockResolvedValueOnce({
+        page: [firstSkill],
+        hasMore: true,
+        nextCursor: "skills-cursor-2",
+      })
+      .mockResolvedValueOnce({
+        page: [firstSkill],
+        hasMore: true,
+        nextCursor: "skills-cursor-2",
+      })
+      .mockResolvedValueOnce({
+        page: [secondSkill],
+        hasMore: false,
+        nextCursor: null,
+      });
+
+    render(<HomeListingSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText("First Skill")).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Second Skill")).toBeTruthy();
+    });
+    expect(convexQueryMock).toHaveBeenCalledWith(
+      "skills:listPublicPageV4",
+      expect.objectContaining({ cursor: "skills-cursor-2" }),
+    );
   });
 
   it("allows selecting multiple skill categories and refetches each selected category", async () => {
