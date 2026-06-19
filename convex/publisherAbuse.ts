@@ -2684,9 +2684,6 @@ async function computePersistedTemporalPublisherAbuseBenchmark(
         spikeMultiplier: candidate.temporalScore.spikeMultiplier,
       });
     }
-    if (!page.isDone && scores.length >= MAX_TEMPORAL_CANDIDATE_LIMIT) {
-      throw new Error("Persisted temporal publisher abuse scan exceeded candidate limit");
-    }
     isDone = page.isDone;
     cursor = page.cursor;
   }
@@ -2705,7 +2702,6 @@ async function persistPersistedTemporalPublisherAbuseAggregates(
 ) {
   const aggregates = new Map<string, TemporalPublisherAggregate>();
   let highTemporalSkills = 0;
-  let candidatesRead = 0;
   let cursor: string | undefined;
   let isDone = false;
   while (!isDone) {
@@ -2721,7 +2717,6 @@ async function persistPersistedTemporalPublisherAbuseAggregates(
         batchSize: 1000,
       },
     );
-    candidatesRead += page.candidates.length;
     for (const candidate of page.candidates) {
       const classifiedCandidate = {
         ...candidate,
@@ -2736,9 +2731,6 @@ async function persistPersistedTemporalPublisherAbuseAggregates(
       }
       highTemporalSkills += 1;
       addTemporalPublisherAggregateCandidate(aggregates, classifiedCandidate);
-    }
-    if (!page.isDone && candidatesRead >= MAX_TEMPORAL_CANDIDATE_LIMIT) {
-      throw new Error("Persisted temporal publisher abuse scan exceeded candidate limit");
     }
     isDone = page.isDone;
     cursor = page.cursor;

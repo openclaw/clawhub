@@ -7061,6 +7061,100 @@ describe("publisher abuse dry-run persistence", () => {
     ).toBe(false);
   });
 
+  it("finalizes persisted current temporal scans beyond one stored candidate page", async () => {
+    const candidates = Array.from({ length: 1001 }, (_, index) => {
+      const candidate = temporalCandidate(`skills:overflow-${index}`, {
+        slug: `overflow-${index}`,
+        displayName: `Overflow ${index}`,
+      });
+      candidate.temporalScore.nearConversion = true;
+      candidate.temporalScore.installDownloadExcessZScore7 = 60;
+      return candidate;
+    });
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    let listPageCalls = 0;
+    const ctx = {
+      scheduler,
+      runQuery: vi.fn(async (target: symbol) => {
+        const name = String(target);
+        if (name.includes("getPublisherAbuseScoreRunStateInternal")) {
+          return {
+            runId: "publisherAbuseScoreRuns:temporal",
+            status: "running",
+            phase: "finalizing",
+            temporalScanComplete: true,
+            finalizedScores: 0,
+          };
+        }
+        if (name.includes("listTemporalPublisherAbuseScanCandidatesPageInternal")) {
+          listPageCalls += 1;
+          return listPageCalls % 2 === 1
+            ? { candidates: candidates.slice(0, 1000), isDone: false, cursor: "next" }
+            : { candidates: candidates.slice(1000), isDone: true };
+        }
+        if (name.includes("getPublisherAbuseAutobanEnabledInternal")) {
+          return true;
+        }
+        throw new Error(`unexpected query ${name}`);
+      }),
+      runMutation: vi.fn(async (target: symbol, args?: unknown) => {
+        const name = String(target);
+        if (name.includes("persistTemporalPublisherAbuseAggregateInternal")) {
+          expect(args).toEqual(
+            expect.objectContaining({
+              aggregate: expect.objectContaining({
+                highTemporalSkillCount: 1001,
+                evidence: expect.arrayContaining([expect.objectContaining({ slug: "overflow-0" })]),
+              }),
+            }),
+          );
+          return { nominated: true, label: "potential_ban_candidate" };
+        }
+        if (name.includes("completePersistedTemporalPublisherAbuseScanInternal")) {
+          return { clearedNominations: 0, scannedPublishers: 1001 };
+        }
+        if (name.includes("cleanupTemporalPublisherAbuseScanCandidatesPageInternal")) {
+          return { deleted: 500 };
+        }
+        if (name.includes("autoBanPublisherAbuseCandidatesPageInternal")) {
+          return {
+            ok: true,
+            processed: 0,
+            warned: 0,
+            banned: 0,
+            alreadyBanned: 0,
+            skipped: 0,
+            isDone: true,
+          };
+        }
+        throw new Error(`unexpected mutation ${name}`);
+      }),
+    };
+
+    await expect(
+      temporalRunHandler(ctx, {
+        runId: "publisherAbuseScoreRuns:temporal",
+        mode: "current",
+        dryRun: false,
+        candidateLimit: 100,
+        batchSize: 50,
+        maxPages: 1,
+        todayDay: 100,
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      dryRun: false,
+      mode: "current",
+      scannedSkills: 1001,
+      highTemporalSkills: 1001,
+      flaggedPublishers: 1,
+      nominations: 1,
+    });
+
+    expect(listPageCalls).toBe(4);
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
   it("continues persisted current temporal finalization after one aggregate page", async () => {
     const firstCandidate = temporalCandidate("skills:first", {
       slug: "first",
