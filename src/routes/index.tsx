@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { HomeAppsSection } from "../components/HomeAppsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
 
 export const Route = createFileRoute("/")({
@@ -365,6 +366,7 @@ function SkillsHome() {
       </section>
 
       <HomeListingSection />
+      <HomeAppsSection />
     </main>
   );
 }

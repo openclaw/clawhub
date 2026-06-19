@@ -80,6 +80,10 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
 // Footer sections
 // ---------------------------------------------------------------------------
 
+export const OPENCLAW_SITE_URL = "https://openclaw.ai";
+/** Compact mark for stack avatars and homepage integrations. */
+export const OPENCLAW_LOGO_URL = `${OPENCLAW_SITE_URL}/favicon.svg`;
+
 interface FooterNavSection {
   title: string;
   items: FooterNavItem[];
