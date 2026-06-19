@@ -20578,6 +20578,20 @@ a.home-v2-apps-see-all:focus-visible svg {
     padding: 16px;
   }
 
+  .home-v2-apps-workflow-copy {
+    max-width: 31ch;
+  }
+
+  .home-v2-apps-workflow-copy h2 {
+    max-width: 18ch;
+    text-wrap: balance;
+  }
+
+  .home-v2-apps-workflow-copy p {
+    max-width: 31ch;
+    text-wrap: pretty;
+  }
+
   .home-v2-apps-categories {
     flex-wrap: nowrap;
     overflow-x: auto;
