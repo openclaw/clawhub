@@ -18,7 +18,9 @@ const BYOS_ASCII_FIELD = Array.from({ length: 56 }, (_, row) => {
   const a = BYOS_ASCII[row % BYOS_ASCII.length];
   const b = BYOS_ASCII[(row + 3) % BYOS_ASCII.length];
   const c = BYOS_ASCII[(row + 5) % BYOS_ASCII.length];
-  return `${a}   ${b}   ${c}`;
+  const d = BYOS_ASCII[(row + 1) % BYOS_ASCII.length];
+  const e = BYOS_ASCII[(row + 6) % BYOS_ASCII.length];
+  return `${a}   ${b}   ${c}   ${d}   ${e}`;
 }).join("\n");
 
 // Same composition as the footer easter egg, rendered full-bleed with a static
