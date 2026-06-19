@@ -19591,9 +19591,20 @@ a.publisher-profile-detail:hover {
   min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
+  cursor: grab;
   scroll-snap-type: x proximity;
   scrollbar-width: none;
+  user-select: none;
   -webkit-overflow-scrolling: touch;
+}
+
+.home-v2-popular-publishers-viewport.is-dragging {
+  cursor: grabbing;
+  scroll-snap-type: none;
+}
+
+.home-v2-popular-publishers-viewport img {
+  pointer-events: none;
 }
 
 .home-v2-popular-publishers-viewport::-webkit-scrollbar {

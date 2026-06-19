@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { ArrowRight } from "lucide-react";
+import { type PointerEvent, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisherListItem } from "../lib/publicUser";
@@ -64,6 +65,41 @@ function PopularPublisherCard({ pinned }: { pinned: PinnedPublisher }) {
 }
 
 export function HomePopularPublishersSection() {
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const dragRef = useRef({ pointerId: -1, startX: 0, scrollLeft: 0, moved: false });
+  const [dragging, setDragging] = useState(false);
+
+  const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.pointerType !== "mouse" || event.button !== 0) return;
+    const viewport = viewportRef.current;
+    if (!viewport) return;
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      scrollLeft: viewport.scrollLeft,
+      moved: false,
+    };
+    viewport.setPointerCapture(event.pointerId);
+    setDragging(true);
+  };
+
+  const handlePointerMove = (event: PointerEvent<HTMLDivElement>) => {
+    const viewport = viewportRef.current;
+    if (!viewport || dragRef.current.pointerId !== event.pointerId) return;
+    const distance = event.clientX - dragRef.current.startX;
+    if (Math.abs(distance) > 4) dragRef.current.moved = true;
+    viewport.scrollLeft = dragRef.current.scrollLeft - distance;
+  };
+
+  const stopDragging = (event: PointerEvent<HTMLDivElement>) => {
+    const viewport = viewportRef.current;
+    if (!viewport || dragRef.current.pointerId !== event.pointerId) return;
+    if (viewport.hasPointerCapture(event.pointerId))
+      viewport.releasePointerCapture(event.pointerId);
+    dragRef.current.pointerId = -1;
+    setDragging(false);
+  };
+
   return (
     <section className="home-v2-popular-publishers" aria-labelledby="popular-publishers-title">
       <header className="home-v2-popular-publishers-header">
@@ -75,7 +111,20 @@ export function HomePopularPublishersSection() {
           Browse publishers <ArrowRight size={14} aria-hidden="true" />
         </Link>
       </header>
-      <div className="home-v2-popular-publishers-viewport">
+      <div
+        ref={viewportRef}
+        className={`home-v2-popular-publishers-viewport${dragging ? " is-dragging" : ""}`}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={stopDragging}
+        onPointerCancel={stopDragging}
+        onClickCapture={(event) => {
+          if (!dragRef.current.moved) return;
+          event.preventDefault();
+          event.stopPropagation();
+          dragRef.current.moved = false;
+        }}
+      >
         <div className="home-v2-popular-publishers-track" role="list">
           {PINNED_PUBLISHERS.map((publisher) => (
             <PopularPublisherCard key={publisher.handle} pinned={publisher} />
