@@ -1,7 +1,5 @@
 /** Curated shortcuts for the home apps constellation (design-time). */
 
-import { homePluginBrandIconUrl, type HomePluginBrand } from "./homePluginBrands";
-
 export type HomeSkillApp = {
   id: string;
   name: string;
@@ -19,9 +17,8 @@ export type HomePluginShortcut = {
   name: string;
   description: string;
   packageName: string;
-  brand: HomePluginBrand;
-  /** Fallback when Simple Icons slug is unavailable on CDN. */
-  iconDomain?: string;
+  /** Brand favicon via Google favicon helper (domain only). */
+  iconDomain: string;
 };
 
 /** Left orbit — skills for everyday tools. */
@@ -108,7 +105,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "WhatsApp",
     description: "WhatsApp Web channel plugin for agent chats.",
     packageName: "@openclaw/whatsapp",
-    brand: { slug: "whatsapp", color: "25D366" },
+    iconDomain: "whatsapp.com",
   },
   {
     id: "matrix",
@@ -116,7 +113,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Matrix",
     description: "Rooms and direct messages on Matrix.",
     packageName: "@openclaw/matrix",
-    brand: { slug: "matrix", color: "0DBD8B" },
+    iconDomain: "matrix.org",
   },
   {
     id: "codex",
@@ -124,7 +121,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Codex",
     description: "Codex app-server harness and model provider.",
     packageName: "@openclaw/codex",
-    brand: { slug: "openai", color: "412991" },
+    iconDomain: "openai.com",
   },
   {
     id: "discord",
@@ -132,7 +129,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Discord",
     description: "Channels, DMs, commands, and app events.",
     packageName: "@openclaw/discord",
-    brand: { slug: "discord", color: "5865F2" },
+    iconDomain: "discord.com",
   },
   {
     id: "feishu",
@@ -140,7 +137,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Feishu/Lark",
     description: "Workplace chats and collaboration tools.",
     packageName: "@openclaw/feishu",
-    brand: { slug: "bytedance", color: "3C8CFF" },
+    iconDomain: "feishu.cn",
   },
   {
     id: "slack",
@@ -148,7 +145,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Slack",
     description: "Channels, DMs, commands, and app events.",
     packageName: "@openclaw/slack",
-    brand: { slug: "slack", color: "4A154B" },
+    iconDomain: "slack.com",
   },
   {
     id: "msteams",
@@ -156,7 +153,6 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Microsoft Teams",
     description: "Meetings and team chat for agents.",
     packageName: "@openclaw/msteams",
-    brand: { slug: "microsoftteams", color: "6264A7" },
     iconDomain: "teams.microsoft.com",
   },
   {
@@ -165,7 +161,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Brave Search",
     description: "Brave Search provider for web lookup.",
     packageName: "@openclaw/brave",
-    brand: { slug: "brave", color: "FB542B" },
+    iconDomain: "brave.com",
   },
   {
     id: "googlechat",
@@ -173,7 +169,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Google Chat",
     description: "Spaces and direct messages on Google Chat.",
     packageName: "@openclaw/googlechat",
-    brand: { slug: "googlechat", color: "34A853" },
+    iconDomain: "chat.google.com",
   },
 ];
 
@@ -182,10 +178,7 @@ export function homeAppIconUrl(iconDomain: string) {
 }
 
 export function homePluginShortcutIconUrl(shortcut: HomePluginShortcut) {
-  if (shortcut.iconDomain) {
-    return homeAppIconUrl(shortcut.iconDomain);
-  }
-  return homePluginBrandIconUrl(shortcut.brand);
+  return homeAppIconUrl(shortcut.iconDomain);
 }
 
 export const SKILLS_BROWSE_SEARCH = {
