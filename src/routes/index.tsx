@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HomeAppsSection } from "../components/HomeAppsSection";
 import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
+import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
 
 export const Route = createFileRoute("/")({
   component: SkillsHome,
@@ -292,6 +293,7 @@ function SkillsHome() {
 
   return (
     <main className="home-v2-main">
+      <HomeV2FoldBottomFade />
       <canvas ref={confettiRef} className="home-v2-confetti" style={{ display: "none" }} />
 
       {/* ═══ HERO ═══ */}
