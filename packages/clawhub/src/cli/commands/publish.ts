@@ -73,6 +73,8 @@ export async function cmdPublish(
     .split(",")
     .map((tag) => tag.trim())
     .filter(Boolean);
+  const hasExplicitCatalogMetadata =
+    options.categories !== undefined || options.topics !== undefined;
   const categories = parseCsv(options.categories);
   const topics = parseCsv(options.topics);
 
@@ -123,7 +125,7 @@ export async function cmdPublish(
     );
     const latestVersion = resolved.latestVersion?.version ?? null;
 
-    if (!explicitVersion && resolved.match) {
+    if (!explicitVersion && resolved.match && !hasExplicitCatalogMetadata) {
       const result = buildPublishResult({
         status: "unchanged",
         slug,

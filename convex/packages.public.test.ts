@@ -5999,6 +5999,56 @@ describe("packages public queries", () => {
     );
   });
 
+  it("clears inferred catalog state when a publisher promotes a latest package release", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        inferredCategories: ["tools"],
+        inferredTopics: ["Old inference"],
+        inferredFromReleaseId: "packageReleases:demo-1",
+        inferredCategoryConfidence: "high",
+        inferredTopicConfidence: "high",
+        inferredClassifierVersion: "taxonomy-prototype-v9",
+        inferredTopicClassifierVersion: "topic-prototype-v1",
+        inferredInputHash: "category-hash",
+        inferredTopicInputHash: "topic-hash",
+        inferredAt: 123,
+      }),
+    );
+
+    await insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.0.1",
+      changelog: "replace catalog metadata",
+      tags: ["latest"],
+      summary: "demo",
+      categories: ["models"],
+      topics: ["Local models"],
+      files: [],
+      integritySha256: "abc123",
+    });
+
+    const packagePatch = ctx.patch.mock.calls.find(([id]) => id === "packages:demo")?.[1];
+    expect(packagePatch).toBeDefined();
+    for (const field of [
+      "inferredCategories",
+      "inferredTopics",
+      "inferredFromReleaseId",
+      "inferredCategoryConfidence",
+      "inferredTopicConfidence",
+      "inferredClassifierVersion",
+      "inferredTopicClassifierVersion",
+      "inferredInputHash",
+      "inferredTopicInputHash",
+      "inferredAt",
+    ]) {
+      expect(packagePatch).toHaveProperty(field, undefined);
+    }
+  });
+
   it("rejects family changes on an existing package name", async () => {
     const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "bundle-plugin" }));
 

@@ -34,14 +34,14 @@ Production deploy notes:
 - The workflow must be started from `main`.
 - The catalog-taxonomy digest and high-/medium-confidence classification rollout migrations were
   one-time production operations and are no longer part of the deploy checklist.
-- While `migrations:runCatalogTopicCanonicalization` exists, backend deploys that include it require
+- While `migrations:runCatalogMetadataCanonicalization` exists, backend deploys that include it require
   an operator to dry-run, explicitly apply, and verify both tracked migrations before inferred-topic
-  compatibility can be removed:
+  and inferred-category compatibility can be removed:
 
   ```bash
-  bunx convex run migrations:runCatalogTopicCanonicalization '{"dryRun":true}' --prod
-  bunx convex run migrations:runCatalogTopicCanonicalization \
-    '{"dryRun":false,"confirm":"canonicalize-catalog-topics"}' --prod
+  bunx convex run migrations:runCatalogMetadataCanonicalization '{"dryRun":true}' --prod
+  bunx convex run migrations:runCatalogMetadataCanonicalization \
+    '{"dryRun":false,"confirm":"canonicalize-catalog-metadata"}' --prod
   bunx convex run --component migrations lib:getStatus --watch --prod
   ```
 

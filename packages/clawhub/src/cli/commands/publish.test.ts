@@ -68,6 +68,42 @@ describe("cmdPublish", () => {
     }
   });
 
+  it("publishes explicit catalog metadata when the local skill content is unchanged", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "metadata-update");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+      httpMocks.apiRequest.mockResolvedValueOnce({
+        match: { version: "1.2.3" },
+        latestVersion: { version: "1.2.3" },
+      });
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_2",
+      });
+
+      const result = await cmdPublish(makeOpts(workdir), "metadata-update", {
+        categories: "research",
+        topics: "AI",
+      });
+
+      expect(result).toMatchObject({
+        status: "published",
+        slug: "metadata-update",
+        version: "1.2.4",
+      });
+      expect(publishPayload()).toMatchObject({
+        version: "1.2.4",
+        categories: ["research"],
+        topics: ["AI"],
+      });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
   it("defaults a new skill to version 1.0.0", async () => {
     const workdir = await makeTmpWorkdir();
     try {
