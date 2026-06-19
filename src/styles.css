@@ -15216,6 +15216,23 @@ a.publisher-profile-detail:hover {
   list-style: none;
   overflow-y: auto;
   overscroll-behavior: contain;
+  scrollbar-color: color-mix(in srgb, var(--hv2-text-tertiary) 72%, transparent) transparent;
+  scrollbar-width: thin;
+}
+
+.home-v2-listing-category-options::-webkit-scrollbar {
+  width: 8px;
+}
+
+.home-v2-listing-category-options::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.home-v2-listing-category-options::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--hv2-text-tertiary) 62%, transparent);
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: content-box;
 }
 
 .home-v2-listing-category-option-wrap {
