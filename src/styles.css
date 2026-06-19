@@ -16356,6 +16356,7 @@ a.publisher-profile-detail:hover {
   position: relative;
   z-index: 1;
   padding: 72px 48px 52px;
+  margin-inline: auto;
   max-width: 1296px;
 }
 
@@ -20605,6 +20606,10 @@ a.home-v2-apps-see-all:focus-visible svg {
 
   .home-v2-apps-tile-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .home-v2-apps-tile-grid > .home-v2-apps-tile:nth-child(n + 9) {
+    display: none;
   }
 
   .home-v2-apps-footer-row {

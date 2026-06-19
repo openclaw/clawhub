@@ -121,6 +121,9 @@ const appCategories = [
       plugin("feishu"),
       skill("raycast"),
       skill("github"),
+      skill("notion"),
+      plugin("codex"),
+      skill("figma"),
     ],
   },
   {
@@ -137,6 +140,9 @@ const appCategories = [
       skill("chrome"),
       skill("raycast"),
       plugin("codex"),
+      plugin("slack"),
+      plugin("googlechat"),
+      plugin("discord"),
     ],
   },
   {
@@ -153,6 +159,9 @@ const appCategories = [
       plugin("slack"),
       plugin("discord"),
       plugin("codex"),
+      plugin("googlechat"),
+      plugin("whatsapp"),
+      plugin("matrix"),
     ],
   },
   {
@@ -169,6 +178,9 @@ const appCategories = [
       plugin("slack"),
       plugin("msteams"),
       skill("linear"),
+      plugin("googlechat"),
+      plugin("discord"),
+      plugin("brave"),
     ],
   },
 ] as const;

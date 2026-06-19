@@ -12,12 +12,14 @@ type HomeListingCategorySelectProps = {
 function CategoryOption({
   slug,
   label,
+  icon,
   selected,
   onSelect,
   reset = false,
 }: {
   slug: string | null;
   label: string;
+  icon?: string | null;
   selected: boolean;
   onSelect: () => void;
   reset?: boolean;
@@ -39,6 +41,7 @@ function CategoryOption({
         </span>
         <BrowseCategoryIcon
           slug={slug}
+          icon={icon}
           size={16}
           className="home-v2-listing-category-option-icon"
         />
@@ -66,6 +69,10 @@ export function HomeListingCategorySelect({
     }
     return `${value.length} categories`;
   }, [categories, value]);
+  const selectedCategory = useMemo(
+    () => (value.length === 1 ? categories.find((category) => category.slug === value[0]) : null),
+    [categories, value],
+  );
 
   const selectedSet = useMemo(() => new Set(value), [value]);
 
@@ -130,7 +137,8 @@ export function HomeListingCategorySelect({
       >
         <span className="home-v2-listing-category-trigger-main">
           <BrowseCategoryIcon
-            slug={value.length === 1 ? (value[0] ?? null) : null}
+            slug={selectedCategory?.slug ?? null}
+            icon={selectedCategory?.icon}
             size={15}
             className="home-v2-listing-category-trigger-category-icon"
           />
@@ -179,6 +187,7 @@ export function HomeListingCategorySelect({
                 key={category.slug}
                 slug={category.slug}
                 label={category.label}
+                icon={category.icon}
                 selected={selectedSet.has(category.slug)}
                 onSelect={() => pick(category.slug)}
               />

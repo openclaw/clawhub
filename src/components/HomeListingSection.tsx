@@ -22,18 +22,9 @@ import { PLUGIN_CATEGORIES, SKILL_CATEGORIES, type BrowseCategory } from "../lib
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
-import { ALLOWED_LUCIDE_ICON_NAMES, makeLucideIconValue } from "../lib/skillIcon";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
-
-function variedSkillIcon(seed: string, existing?: string | null) {
-  if (existing) return existing;
-  let hash = 0;
-  for (const char of seed) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  const name = ALLOWED_LUCIDE_ICON_NAMES[hash % ALLOWED_LUCIDE_ICON_NAMES.length];
-  return makeLucideIconValue(name);
-}
 
 type ListingKind = "skills" | "plugins";
 type ListingTab = "popular" | "officials" | "featured";
@@ -295,7 +286,7 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
         <MarketplaceIcon
           kind="skill"
           label={name}
-          icon={variedSkillIcon(entry.skill.slug || name, entry.skill.icon)}
+          skill={entry.skill}
           size="sm"
         />
       </span>
@@ -364,12 +355,7 @@ function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
     <Link to={skillLink(entry)} className="home-v2-listing-card">
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
-          <MarketplaceIcon
-            kind="skill"
-            label={name}
-            icon={variedSkillIcon(entry.skill.slug || name, entry.skill.icon)}
-            size="sm"
-          />
+          <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
         </span>
         <div className="home-v2-listing-card-id">
           <span className="home-v2-listing-card-name">{name}</span>
