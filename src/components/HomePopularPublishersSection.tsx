@@ -17,7 +17,7 @@ const PINNED_PUBLISHERS: PinnedPublisher[] = [
   { handle: "openclaw", name: "OpenClaw", kind: "org" },
   { handle: "nvidia", name: "NVIDIA", kind: "org" },
   { handle: "steipete", name: "Peter Steinberger", kind: "user" },
-  { handle: "vincentkoc", name: "Vincent Koc", kind: "user" },
+  { handle: "wscats", name: "enoyao", kind: "user" },
   { handle: "mvanhorn", name: "Matt Van Horn", kind: "user" },
   { handle: "ivangdavila", name: "Iván", kind: "user" },
   { handle: "byungkyu", name: "byungkyu", kind: "user" },
