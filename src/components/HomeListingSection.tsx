@@ -37,7 +37,7 @@ type SkillPageEntry = {
 
 const LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "popular", label: "Most popular" },
-  { id: "officials", label: "Officials" },
+  { id: "officials", label: "Official" },
   { id: "new", label: "New" },
 ];
 
