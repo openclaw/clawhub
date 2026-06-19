@@ -104,7 +104,7 @@ describe("HomeListingSection", () => {
     render(<HomeListingSection />);
 
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Most popular" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Top" }));
 
     await waitFor(() => {
       expect(screen.getByText("Demo Plugin")).toBeTruthy();
@@ -220,14 +220,25 @@ describe("HomeListingSection", () => {
           items: [
             {
               skill: {
-                _id: "skills:trending",
-                slug: "trending-skill",
-                displayName: "Trending Skill",
+                _id: "skills:low",
+                slug: "low-trending-skill",
+                displayName: "Low Trending Skill",
                 summary: "Hot this week.",
                 stats: { installsAllTime: 999 },
               },
               ownerHandle: "builder",
               trending: { installs: 7, downloads: 100 },
+            },
+            {
+              skill: {
+                _id: "skills:high",
+                slug: "high-trending-skill",
+                displayName: "High Trending Skill",
+                summary: "Hotter this week.",
+                stats: { installsAllTime: 1 },
+              },
+              ownerHandle: "builder",
+              trending: { installs: 42, downloads: 0 },
             },
           ],
         });
@@ -259,7 +270,15 @@ describe("HomeListingSection", () => {
 
     await waitFor(() => {
       expect(convexQueryMock).toHaveBeenCalledWith("skills:listPublicTrendingPage", { limit: 20 });
-      expect(screen.getByText("Trending Skill")).toBeTruthy();
+      expect(screen.getByText("High Trending Skill")).toBeTruthy();
+      expect(screen.getByText("Low Trending Skill")).toBeTruthy();
+      expect(
+        screen
+          .getByText("High Trending Skill")
+          .compareDocumentPosition(screen.getByText("Low Trending Skill")) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
+      expect(screen.getByText("42")).toBeTruthy();
       expect(screen.getByText("7")).toBeTruthy();
       expect(screen.queryByText("999")).toBeNull();
     });
