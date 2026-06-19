@@ -20578,6 +20578,24 @@ a.home-v2-apps-see-all:focus-visible svg {
     padding: 16px;
   }
 
+  .home-v2-apps-categories {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scroll-snap-type: x proximity;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .home-v2-apps-categories::-webkit-scrollbar {
+    display: none;
+  }
+
+  .home-v2-apps-category-tab {
+    flex: 0 0 auto;
+    scroll-snap-align: start;
+  }
+
   .home-v2-apps-promo-icons {
     inset: 14px 16px auto;
     grid-template-columns: repeat(3, 32px);
