@@ -20862,7 +20862,49 @@ a.home-v2-apps-see-all:focus-visible svg {
   }
 
   .home-v2-apps-workflow-copy {
+    grid-row: 2;
+    justify-items: center;
     max-width: 31ch;
+    text-align: center;
+  }
+
+  .home-v2-apps-workflow-tiles {
+    display: block;
+    grid-row: 1;
+    justify-self: center;
+    width: 150px;
+    min-height: 62px;
+  }
+
+  .home-v2-apps-workflow-tile {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+  }
+
+  .home-v2-apps-workflow-tile img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .home-v2-apps-workflow-tile span {
+    top: -5px;
+    right: -7px;
+    min-height: 15px;
+    padding: 0 6px;
+    font-size: 6.5px;
+  }
+
+  .home-v2-apps-workflow-tile.is-openai {
+    right: 90px;
+  }
+
+  .home-v2-apps-workflow-tile.is-slack {
+    right: 51px;
+  }
+
+  .home-v2-apps-workflow-tile.is-openclaw {
+    right: 12px;
   }
 
   .home-v2-apps-workflow-copy h2 {
