@@ -102,6 +102,9 @@ const appCategories = [
       skill("linear"),
       skill("notion"),
       plugin("brave"),
+      skill("chrome"),
+      skill("figma"),
+      plugin("slack"),
     ],
   },
   {
