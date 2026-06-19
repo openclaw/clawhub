@@ -15459,6 +15459,10 @@ a.publisher-profile-detail:hover {
   border-bottom: 1px solid color-mix(in srgb, var(--hv2-border) 65%, transparent);
 }
 
+.home-v2-listing-head.has-no-stats {
+  grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr;
+}
+
 .home-v2-listing-head-icon-spacer {
   grid-column: 1;
   width: 34px;
@@ -15751,6 +15755,10 @@ a.publisher-profile-detail:hover {
   color: inherit;
   border-bottom: 1px solid color-mix(in srgb, var(--hv2-border) 65%, transparent);
   contain: layout style;
+}
+
+.home-v2-listing-row.has-no-stats {
+  grid-template-columns: auto minmax(0, var(--home-v2-listing-copy-max)) 1fr;
 }
 
 .home-v2-listing-row::before {

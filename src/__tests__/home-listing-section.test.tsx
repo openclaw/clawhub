@@ -104,7 +104,7 @@ describe("HomeListingSection", () => {
     render(<HomeListingSection />);
 
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Most popular" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Top" }));
 
     await waitFor(() => {
       expect(screen.getByText("Demo Plugin")).toBeTruthy();
@@ -214,6 +214,39 @@ describe("HomeListingSection", () => {
   });
 
   it("loads the existing trending skills leaderboard for the Trending tab", async () => {
+    convexQueryMock.mockImplementation((name) => {
+      if (name === "skills:listPublicTrendingPage") {
+        return Promise.resolve({
+          items: [
+            {
+              skill: {
+                _id: "skills:trending",
+                slug: "trending-skill",
+                displayName: "Trending Skill",
+                summary: "Hot this week.",
+                stats: { installsAllTime: 999 },
+              },
+              ownerHandle: "builder",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        page: [
+          {
+            skill: {
+              _id: "skills:1",
+              slug: "demo-skill",
+              displayName: "Demo Skill",
+              summary: "A helpful skill.",
+              stats: { stars: 12, downloads: 340 },
+            },
+            ownerHandle: "builder",
+          },
+        ],
+      });
+    });
+
     render(<HomeListingSection />);
 
     await waitFor(() => {
@@ -225,7 +258,10 @@ describe("HomeListingSection", () => {
 
     await waitFor(() => {
       expect(convexQueryMock).toHaveBeenCalledWith("skills:listPublicTrendingPage", { limit: 20 });
+      expect(screen.getByText("Trending Skill")).toBeTruthy();
     });
+    expect(screen.queryByText("Popularity")).toBeNull();
+    expect(screen.queryByText("999")).toBeNull();
   });
 
   it("filters official plugins locally without using the broken official-only endpoint", async () => {

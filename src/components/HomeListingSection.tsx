@@ -299,12 +299,21 @@ async function fetchPluginListing(
   };
 }
 
-function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
+function HomeListingSkillRow({
+  entry,
+  showStats,
+}: {
+  entry: SkillPageEntry;
+  showStats: boolean;
+}) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
 
   return (
-    <Link to={skillLink(entry)} className="home-v2-listing-row">
+    <Link
+      to={skillLink(entry)}
+      className={`home-v2-listing-row${showStats ? "" : " has-no-stats"}`}
+    >
       <span className="home-v2-listing-row-icon" aria-hidden="true">
         <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
       </span>
@@ -317,12 +326,14 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
           {entry.skill.summary || "Agent-ready skill pack."}
         </p>
       </div>
-      <div className="home-v2-listing-row-stats" aria-label="Popularity">
-        <span>
-          <Download size={13} aria-hidden="true" />
-          {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
-        </span>
-      </div>
+      {showStats ? (
+        <div className="home-v2-listing-row-stats" aria-label="Popularity">
+          <span>
+            <Download size={13} aria-hidden="true" />
+            {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
+          </span>
+        </div>
+      ) : null}
     </Link>
   );
 }
@@ -357,12 +368,21 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
   );
 }
 
-function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
+function HomeListingSkillCard({
+  entry,
+  showStats,
+}: {
+  entry: SkillPageEntry;
+  showStats: boolean;
+}) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
 
   return (
-    <Link to={skillLink(entry)} className="home-v2-listing-card">
+    <Link
+      to={skillLink(entry)}
+      className={`home-v2-listing-card${showStats ? "" : " has-no-stats"}`}
+    >
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
           <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
@@ -375,12 +395,14 @@ function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
       <p className="home-v2-listing-card-summary">
         {entry.skill.summary || "Agent-ready skill pack."}
       </p>
-      <div className="home-v2-listing-card-stats" aria-label="Popularity">
-        <span>
-          <Download size={13} aria-hidden="true" />
-          {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
-        </span>
-      </div>
+      {showStats ? (
+        <div className="home-v2-listing-card-stats" aria-label="Popularity">
+          <span>
+            <Download size={13} aria-hidden="true" />
+            {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
+          </span>
+        </div>
+      ) : null}
     </Link>
   );
 }
@@ -468,6 +490,7 @@ export function HomeListingSection() {
       : plugins;
   const activeStatus = isSearchMode ? searchStatus : status;
   const isEmpty = activeStatus === "idle" && activeItems.length === 0;
+  const showSkillStats = !(kind === "skills" && tab === "trending" && !isSearchMode);
   const showListingMore =
     activeStatus === "idle" && (activeItems.length > visibleCount || listingHasMore);
 
@@ -850,12 +873,15 @@ export function HomeListingSection() {
       </div>
 
       {activeStatus === "idle" && view === "list" && activeItems.length > 0 ? (
-        <div className="home-v2-listing-head" aria-hidden="true">
+        <div
+          className={`home-v2-listing-head${showSkillStats ? "" : " has-no-stats"}`}
+          aria-hidden="true"
+        >
           <span className="home-v2-listing-head-icon-spacer" />
           <span className="home-v2-listing-head-label">
             {kind === "skills" ? "Skill" : "Plugin"}
           </span>
-          <span className="home-v2-listing-head-stat">Popularity</span>
+          {showSkillStats ? <span className="home-v2-listing-head-stat">Popularity</span> : null}
         </div>
       ) : null}
 
@@ -887,9 +913,17 @@ export function HomeListingSection() {
           <div className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}>
             {visibleSkills.map((entry) =>
               view === "grid" ? (
-                <HomeListingSkillCard key={entry.skill._id} entry={entry} />
+                <HomeListingSkillCard
+                  key={entry.skill._id}
+                  entry={entry}
+                  showStats={showSkillStats}
+                />
               ) : (
-                <HomeListingSkillRow key={entry.skill._id} entry={entry} />
+                <HomeListingSkillRow
+                  key={entry.skill._id}
+                  entry={entry}
+                  showStats={showSkillStats}
+                />
               ),
             )}
           </div>
