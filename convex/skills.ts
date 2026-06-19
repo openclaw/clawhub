@@ -120,7 +120,6 @@ import {
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
-import { normalizeSkillIconValue } from "./lib/skillIcon";
 import {
   fetchText,
   type PublishResult,
@@ -9474,9 +9473,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
-    // Skill icon hint chosen by the publisher in the publish form. Stored as
-    // a protocol-prefixed string (e.g. `lucide:Plug`). Unknown values are
-    // silently dropped server-side; see lib/skillIcon.ts.
+    // Legacy cached clients may still send this; accept and ignore it.
     icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
@@ -9523,7 +9520,8 @@ export const publishVersion: ReturnType<typeof action> = action({
             minimumRole: "publisher",
           })) as { publisherId: Id<"publishers"> })
         : null;
-    return publishVersionForUser(ctx, userId, args, {
+    const { icon: _legacyIcon, ...publishArgs } = args;
+    return publishVersionForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
@@ -11573,9 +11571,6 @@ export const insertVersion = internalMutation({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
-    // Skill icon hint chosen by the publisher (e.g. `lucide:Plug`). Optional;
-    // omitted on backport publishes to preserve the existing skill icon.
-    icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
     changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
@@ -12068,7 +12063,7 @@ export const insertVersion = internalMutation({
         slug,
         displayName: args.displayName,
         summary: summaryValue,
-        icon: normalizeSkillIconValue(args.icon),
+        icon: undefined,
         ownerUserId: userId,
         ownerPublisherId,
         canonicalSkillId,
@@ -12131,7 +12126,6 @@ export const insertVersion = internalMutation({
     }
 
     if (!skill) throw new Error("Skill creation failed");
-    const versionIcon = args.icon !== undefined ? normalizeSkillIconValue(args.icon) : skill.icon;
 
     const existingVersion = await ctx.db
       .query("skillVersions")
@@ -12150,7 +12144,7 @@ export const insertVersion = internalMutation({
       sourceProvenance: args.sourceProvenance,
       changelog: args.changelog,
       changelogSource: args.changelogSource,
-      icon: versionIcon,
+      icon: undefined,
       files: args.files,
       parsed: args.parsed,
       staticScan: args.staticScan,
@@ -12204,11 +12198,6 @@ export const insertVersion = internalMutation({
     // the same values that will actually be persisted. Otherwise we would
     // persist flags derived from text the user can never see on the card.
     const nextDisplayName = isNewLatest ? args.displayName : skill.displayName;
-    // Skill icon follows the same "only update on new latest" rule as
-    // displayName / summary so backport publishes can't surprise the card.
-    // Only update when the publisher explicitly picked one this time —
-    // omitting `args.icon` keeps the previously stored value.
-    const nextIcon = isNewLatest ? versionIcon : skill.icon;
     const derivedFlags = deriveModerationFlags({
       skill: {
         slug: skill.slug,
@@ -12225,7 +12214,7 @@ export const insertVersion = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
-      icon: nextIcon,
+      icon: skill.icon,
       ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
       latestVersionId: isNewLatest ? versionId : skill.latestVersionId,
       latestVersionSummary: isNewLatest

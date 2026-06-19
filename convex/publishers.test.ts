@@ -2038,8 +2038,8 @@ describe("publishers membership controls", () => {
     const byName = Object.fromEntries(result.page.map((item) => [item.displayName, item]));
     // Skill with a stored icon must surface it on the DTO.
     expect(byName["Icon Skill"]).toMatchObject({ kind: "skill", icon: "lucide:Plug" });
-    // Skill without an icon must surface null (not undefined) so the client
-    // type is uniform and MarketplaceIcon can safely pass it to parseSkillIcon.
+    // Skill without a legacy icon must surface null (not undefined) so cached
+    // clients keep receiving a uniform response shape.
     expect(byName["Plain Skill"]).toMatchObject({ kind: "skill", icon: null });
     // Plugins always carry null in Phase 1.
     expect(byName["Example Plugin"]).toMatchObject({ kind: "plugin", icon: null });
