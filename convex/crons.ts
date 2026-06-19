@@ -1,5 +1,6 @@
 import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
+import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
 const crons = cronJobs();
 
@@ -135,10 +136,24 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
+    "auth-session-retention-prune",
+    { hours: 1 },
+    internal.retention.pruneExpiredAuthSessionsInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
+    "auth-refresh-token-retention-prune",
+    { hours: 6 },
+    internal.retention.pruneExpiredAuthRefreshTokensInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
     "rate-limit-counters-prune",
     { minutes: 15 },
     internal.rateLimits.pruneRateLimitCountersInternal,
-    { batchSize: 500 },
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
   );
 }
 

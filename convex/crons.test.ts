@@ -8,6 +8,8 @@ const mocks = vi.hoisted(() => {
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
+  const authSessionsPruneRef = Symbol("auth-sessions-prune");
+  const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   return {
     interval,
     githubSkillSyncRef,
@@ -15,6 +17,8 @@ const mocks = vi.hoisted(() => {
     installTelemetryDedupePruneRef,
     rateLimitCountersPruneRef,
     skillStatEventPruneRef,
+    authSessionsPruneRef,
+    authRefreshTokensPruneRef,
   };
 });
 
@@ -62,6 +66,10 @@ vi.mock("./_generated/api", () => ({
     },
     rateLimits: {
       pruneRateLimitCountersInternal: mocks.rateLimitCountersPruneRef,
+    },
+    retention: {
+      pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
+      pruneExpiredAuthRefreshTokensInternal: mocks.authRefreshTokensPruneRef,
     },
   },
 }));
@@ -136,6 +144,23 @@ describe("crons", () => {
       "rate-limit-counters-prune",
       { minutes: 15 },
       mocks.rateLimitCountersPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired auth sessions and refresh tokens with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "auth-session-retention-prune",
+      { hours: 1 },
+      mocks.authSessionsPruneRef,
+      { batchSize: 500 },
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "auth-refresh-token-retention-prune",
+      { hours: 6 },
+      mocks.authRefreshTokensPruneRef,
       { batchSize: 500 },
     );
   });

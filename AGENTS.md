@@ -108,6 +108,7 @@ Specialized corpus, scanner, security-worker, UI proof, proof publishing, Crabbo
 ## Convex Migrations & Backfills
 
 - Any Convex production data migration, backfill, destructive cleanup, schema narrowing, or table reshaping must start with the `convex-migration-helper` skill. Default to `@convex-dev/migrations` for production data changes because it provides batching, dry runs, resume/progress tracking, and safer operator UX. Exceptions require an explicit note explaining why the component is unnecessary, plus equivalent dry-run support, cursor batching, resume/progress behavior, confirmation for destructive writes, and real Convex runtime validation.
+- When adding or changing Convex tables, TTL fields, cleanup crons, retention policy, auth/session cleanup, metric dedupe cleanup, or deprecated table removal, use the repo-local `convex-retention` skill and update `convex/lib/retentionPolicy.ts`.
 - Use `convex/migrations.ts` for component-backed table-wide backfills; keep custom repairs, admin-gated operations, and incident-specific workflows in `convex/maintenance.ts`.
 - After a migration or cleanup is verified complete, remove temporary migration functions/code in a follow-up PR unless they are intentionally retained as ongoing maintenance tooling.
 

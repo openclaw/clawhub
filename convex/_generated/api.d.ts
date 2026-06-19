@@ -97,6 +97,7 @@ import type * as lib_registryArtifactBackup from "../lib/registryArtifactBackup.
 import type * as lib_reporting from "../lib/reporting.js";
 import type * as lib_reservedHandles from "../lib/reservedHandles.js";
 import type * as lib_reservedSlugs from "../lib/reservedSlugs.js";
+import type * as lib_retentionPolicy from "../lib/retentionPolicy.js";
 import type * as lib_searchText from "../lib/searchText.js";
 import type * as lib_securityPrompt from "../lib/securityPrompt.js";
 import type * as lib_skillBackfill from "../lib/skillBackfill.js";
@@ -134,6 +135,7 @@ import type * as registryArtifactBackups from "../registryArtifactBackups.js";
 import type * as registryArtifactBackupsNode from "../registryArtifactBackupsNode.js";
 import type * as registryArtifactRestore from "../registryArtifactRestore.js";
 import type * as registryArtifactRestoreMutations from "../registryArtifactRestoreMutations.js";
+import type * as retention from "../retention.js";
 import type * as search from "../search.js";
 import type * as securityDataset from "../securityDataset.js";
 import type * as securityDatasetNode from "../securityDatasetNode.js";
@@ -247,6 +249,7 @@ declare const fullApi: ApiFromModules<{
   "lib/reporting": typeof lib_reporting;
   "lib/reservedHandles": typeof lib_reservedHandles;
   "lib/reservedSlugs": typeof lib_reservedSlugs;
+  "lib/retentionPolicy": typeof lib_retentionPolicy;
   "lib/searchText": typeof lib_searchText;
   "lib/securityPrompt": typeof lib_securityPrompt;
   "lib/skillBackfill": typeof lib_skillBackfill;
@@ -284,6 +287,7 @@ declare const fullApi: ApiFromModules<{
   registryArtifactBackupsNode: typeof registryArtifactBackupsNode;
   registryArtifactRestore: typeof registryArtifactRestore;
   registryArtifactRestoreMutations: typeof registryArtifactRestoreMutations;
+  retention: typeof retention;
   search: typeof search;
   securityDataset: typeof securityDataset;
   securityDatasetNode: typeof securityDatasetNode;

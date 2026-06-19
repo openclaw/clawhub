@@ -194,6 +194,23 @@ const users = defineTable({
   .index("by_deactivated_purged_at", ["deactivatedAt", "purgedAt"])
   .index("by_active_handle", ["deletedAt", "deactivatedAt", "handle"]);
 
+const authSessions = defineTable({
+  userId: v.id("users"),
+  expirationTime: v.number(),
+})
+  .index("userId", ["userId"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const authRefreshTokens = defineTable({
+  sessionId: v.id("authSessions"),
+  expirationTime: v.number(),
+  firstUsedTime: v.optional(v.number()),
+  parentRefreshTokenId: v.optional(v.id("authRefreshTokens")),
+})
+  .index("sessionId", ["sessionId"])
+  .index("sessionIdAndParentRefreshTokenId", ["sessionId", "parentRefreshTokenId"])
+  .index("by_expiration_time", ["expirationTime"]);
+
 const publishers = defineTable({
   kind: v.union(v.literal("user"), v.literal("org")),
   handle: v.string(),
@@ -2654,6 +2671,8 @@ const skillOwnershipTransfers = defineTable({
 
 export default defineSchema({
   ...authTables,
+  authSessions,
+  authRefreshTokens,
   users,
   publishers,
   publisherMembers,

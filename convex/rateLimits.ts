@@ -2,9 +2,10 @@ import { v } from "convex/values";
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery } from "./functions";
 import { RATE_LIMIT_COUNTER_SHARDS } from "./lib/rateLimitConfig";
+import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
 const RATE_LIMIT_COUNTER_RETENTION_BUFFER_MS = 5 * 60_000;
-const DEFAULT_PRUNE_RATE_LIMIT_COUNTERS_BATCH_SIZE = 200;
+const DEFAULT_PRUNE_RATE_LIMIT_COUNTERS_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
 const MAX_PRUNE_RATE_LIMIT_COUNTERS_BATCH_SIZE = 1_000;
 
 /**

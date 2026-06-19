@@ -227,7 +227,7 @@ describe("download metric helpers", () => {
     expect(result).toEqual({ deleted: 2, hasMore: false });
     expect(indexCalls[0]?.table).toBe("downloadMetricDedupes");
     expect(indexCalls[0]?.indexName).toBe("by_day");
-    expect(take).toHaveBeenCalledWith(200);
+    expect(take).toHaveBeenCalledWith(500);
     expect(delete_).toHaveBeenCalledWith("downloadMetricDedupes:one");
     expect(delete_).toHaveBeenCalledWith("downloadMetricDedupes:two");
   });
@@ -258,7 +258,7 @@ describe("download metric helpers", () => {
 
   it("reschedules stale dedupe pruning when one bounded batch fills", async () => {
     vi.setSystemTime(30 * 86_400_000);
-    const rows = Array.from({ length: 200 }, (_, index) => ({
+    const rows = Array.from({ length: 500 }, (_, index) => ({
       _id: `downloadMetricDedupes:${index}`,
     }));
     const { db, delete_ } = makeDb({}, { downloadMetricDedupes: rows });
@@ -266,8 +266,8 @@ describe("download metric helpers", () => {
 
     const result = await pruneDownloadMetricDedupesHandler({ db, scheduler: { runAfter } }, {});
 
-    expect(result).toEqual({ deleted: 200, hasMore: true });
-    expect(delete_).toHaveBeenCalledTimes(200);
+    expect(result).toEqual({ deleted: 500, hasMore: true });
+    expect(delete_).toHaveBeenCalledTimes(500);
     expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {});
   });
 });
