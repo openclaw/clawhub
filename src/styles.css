@@ -19522,6 +19522,236 @@ a.publisher-profile-detail:hover {
     0 1px 2px rgba(15, 23, 42, 0.12);
 }
 
+/* ═══ HOME POPULAR PUBLISHERS ═══ */
+.home-v2-popular-publishers {
+  display: grid;
+  gap: 18px;
+  width: 100%;
+  max-width: 1296px;
+  margin: 0 auto;
+  padding: 36px 48px 64px;
+  overflow-x: clip;
+}
+
+.home-v2-popular-publishers-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 20px;
+}
+
+.home-v2-popular-publishers-heading {
+  display: grid;
+  gap: 6px;
+}
+
+.home-v2-popular-publishers-heading h2 {
+  margin: 0;
+  color: var(--hv2-text);
+  font-size: 18px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.home-v2-popular-publishers-heading p {
+  margin: 0;
+  color: var(--hv2-text-tertiary);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.home-v2-popular-publishers-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  color: var(--hv2-text-tertiary);
+  font-size: 12px;
+  font-weight: 500;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: color 150ms ease;
+}
+
+.home-v2-popular-publishers-link:hover,
+.home-v2-popular-publishers-link:focus-visible {
+  color: var(--hv2-text-secondary);
+  text-decoration: none;
+}
+
+.home-v2-popular-publishers-link svg {
+  transition: transform 160ms var(--hv2-ease-out);
+}
+
+.home-v2-popular-publishers-link:hover svg,
+.home-v2-popular-publishers-link:focus-visible svg {
+  transform: translateX(2px);
+}
+
+.home-v2-popular-publishers-viewport {
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+}
+
+.home-v2-popular-publishers-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.home-v2-popular-publishers-track {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+  min-width: 100%;
+  padding: 4px 2px 12px;
+}
+
+.home-v2-popular-publisher-card {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  flex: 0 0 calc((100% - 40px) / 5);
+  width: calc((100% - 40px) / 5);
+  min-width: 0;
+  min-height: 158px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--hv2-border-strong) 88%, transparent);
+  border-radius: 10px;
+  background: rgb(13 13 14);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--hv2-text) 4%, transparent);
+  color: inherit;
+  text-decoration: none;
+  scroll-snap-align: start;
+  transition:
+    border-color 150ms ease,
+    background 150ms ease;
+}
+
+.home-v2-popular-publisher-card:hover,
+.home-v2-popular-publisher-card:focus-visible {
+  border-color: var(--hv2-border-hover);
+  background: rgb(17 17 18);
+  text-decoration: none;
+  outline: none;
+}
+
+.home-v2-popular-publisher-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px 14px 10px;
+}
+
+.home-v2-popular-publisher-card .marketplace-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 10px;
+  background: rgb(22 22 24);
+  border-color: var(--hv2-border-strong);
+  box-shadow: none;
+}
+
+.home-v2-popular-publisher-card .marketplace-icon-user {
+  border-radius: 999px;
+}
+
+.home-v2-popular-publisher-card:hover .marketplace-icon {
+  transform: none;
+  box-shadow: none;
+}
+
+.home-v2-popular-publisher-name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--hv2-text);
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: -0.02em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-v2-popular-publisher-copy {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 14px 14px;
+}
+
+.home-v2-popular-publisher-bio {
+  display: -webkit-box;
+  margin: 0;
+  overflow: hidden;
+  color: var(--hv2-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.home-v2-popular-publisher-handle {
+  color: var(--hv2-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+@media (max-width: 1024px) {
+  .home-v2-popular-publisher-card {
+    flex-basis: min(240px, 42vw);
+    width: min(240px, 42vw);
+  }
+}
+
+@media (max-width: 760px) {
+  .home-v2-popular-publishers {
+    gap: 16px;
+    padding: 32px 20px 48px;
+  }
+
+  .home-v2-popular-publishers-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .home-v2-popular-publisher-card {
+    flex-basis: min(220px, 76vw);
+    width: min(220px, 76vw);
+  }
+}
+
+[data-theme-resolved="light"] .app-shell:has(.home-v2-main) .home-v2-popular-publisher-card {
+  border-color: var(--hv2-border-strong);
+  background: var(--hv2-surface);
+  box-shadow:
+    inset 0 1px 0 rgb(255 255 255 / 0.9),
+    0 1px 2px rgb(15 23 42 / 0.06);
+}
+
+[data-theme-resolved="light"]
+  .app-shell:has(.home-v2-main)
+  .home-v2-popular-publisher-card:hover,
+[data-theme-resolved="light"]
+  .app-shell:has(.home-v2-main)
+  .home-v2-popular-publisher-card:focus-visible {
+  border-color: var(--hv2-border-hover);
+  background: #fff;
+}
+
+[data-theme-resolved="light"]
+  .app-shell:has(.home-v2-main)
+  .home-v2-popular-publisher-card
+  .marketplace-icon {
+  border-color: var(--hv2-border-strong);
+  background: #fff;
+}
+
 /* ═══ HOME APPS (skills for everyday tools) ═══ */
 .home-v2-apps {
   padding: 24px 48px 22px;

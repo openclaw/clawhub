@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { HomeAppsSection } from "../components/HomeAppsSection";
 import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
+import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
 
 export const Route = createFileRoute("/")({
@@ -369,6 +370,7 @@ function SkillsHome() {
       </section>
 
       <HomeListingSection />
+      <HomePopularPublishersSection />
       <HomeAppsSection />
       <HomeBringSkillsSection />
     </main>
