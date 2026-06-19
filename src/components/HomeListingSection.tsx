@@ -11,7 +11,6 @@ import {
   Plus,
   Rows3,
   Search,
-  Star,
   X,
 } from "lucide-react";
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -301,10 +300,6 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
-          <Star size={13} aria-hidden="true" />
-          {formatCompactStat(entry.skill.stats?.stars ?? 0)}
-        </span>
-        <span>
           <ArrowDownToLine size={13} aria-hidden="true" />
           {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
         </span>
@@ -335,10 +330,6 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
-          <Star size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.stars ?? 0)}
-        </span>
-        <span>
           <ArrowDownToLine size={13} aria-hidden="true" />
           {formatCompactStat(plugin.stats?.downloads ?? 0)}
         </span>
@@ -366,10 +357,6 @@ function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
         {entry.skill.summary || "Agent-ready skill pack."}
       </p>
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
-        <span>
-          <Star size={13} aria-hidden="true" />
-          {formatCompactStat(entry.skill.stats?.stars ?? 0)}
-        </span>
         <span>
           <ArrowDownToLine size={13} aria-hidden="true" />
           {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
@@ -402,10 +389,6 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
         {plugin.summary || "Gateway plugin for OpenClaw workflows."}
       </p>
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
-        <span>
-          <Star size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.stars ?? 0)}
-        </span>
         <span>
           <ArrowDownToLine size={13} aria-hidden="true" />
           {formatCompactStat(plugin.stats?.downloads ?? 0)}
