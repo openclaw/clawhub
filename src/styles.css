@@ -20357,7 +20357,7 @@ a.home-v2-apps-see-all:focus-visible svg {
   width: 36px;
   height: 36px;
   border: 1px solid var(--hv2-border);
-  border-radius: 999px;
+  border-radius: 10px;
   background: color-mix(in srgb, var(--hv2-bg) 55%, transparent);
 }
 
