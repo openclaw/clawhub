@@ -14,6 +14,7 @@ describe("packageSearchDigest", () => {
       normalizedName: "@openclaw/mcp-provider",
       displayName: "MCP Provider",
       summary: "An MCP adapter",
+      icon: "https://cdn.example.test/icons/mcp.svg",
       categories: ["models"],
       topics: ["local-models", "inference"],
       channel: "community",
@@ -33,6 +34,7 @@ describe("packageSearchDigest", () => {
     } as never);
 
     expect(digest.categories).toEqual(["models"]);
+    expect(digest.icon).toBe("https://cdn.example.test/icons/mcp.svg");
     expect(digest.pluginCategoryTags).toEqual(["models"]);
     expect(digest.topics).toEqual(["local-models", "inference"]);
     expect(digest.recommendedScore).toBe(7);

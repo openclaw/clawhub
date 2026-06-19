@@ -28,7 +28,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
           </div>
         ) : null}
         <div className="skill-card-header">
-          <MarketplaceIcon kind="plugin" label={item.displayName} size="md" />
+          <MarketplaceIcon kind="plugin" label={item.displayName} imageUrl={item.icon} size="md" />
           <h3 className="skill-card-title">{item.displayName}</h3>
         </div>
         <p className="skill-card-summary">
@@ -60,7 +60,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
       className="skill-list-item"
       aria-label={`Plugin: ${item.displayName}`}
     >
-      <MarketplaceIcon kind="plugin" label={item.displayName} />
+      <MarketplaceIcon kind="plugin" label={item.displayName} imageUrl={item.icon} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           {item.ownerHandle ? (

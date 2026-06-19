@@ -16,6 +16,7 @@ export type PackageListItem = {
   channel: "official" | "community" | "private";
   isOfficial: boolean;
   summary?: string | null;
+  icon?: string | null;
   ownerHandle?: string | null;
   createdAt: number;
   updatedAt: number;

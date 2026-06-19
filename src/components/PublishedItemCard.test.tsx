@@ -95,6 +95,20 @@ describe("PublishedItemCard", () => {
       expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
     });
 
+    it("renders plugin manifest icons for publisher plugin cards", () => {
+      render(
+        <PublishedItemCard
+          item={{ ...basePlugin, icon: "https://cdn.example.test/icons/plugin.svg" }}
+          view="grid"
+        />,
+      );
+
+      const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
+      expect(image).toBeTruthy();
+      expect(image?.getAttribute("src")).toBe("https://cdn.example.test/icons/plugin.svg");
+      expect(document.querySelector(".marketplace-icon-glyph")).toBeNull();
+    });
+
     it("renders the compact official mark for official published items", () => {
       render(
         <PublishedItemCard item={{ ...baseSkill, icon: null, isOfficial: true }} view="grid" />,

@@ -64,6 +64,7 @@ import {
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
   maybeParseJson,
+  normalizePluginManifestIcon,
   normalizePackageName,
   normalizePublishFiles,
   readOptionalTextFile,
@@ -544,6 +545,7 @@ type PublicPackageListItem = {
   channel: PackageChannel;
   isOfficial: boolean;
   summary: string | null;
+  icon: string | null;
   ownerHandle: string | null;
   createdAt: number;
   updatedAt: number;
@@ -793,6 +795,7 @@ type PackageDigestLike = Pick<
   | "ownerUserId"
   | "ownerPublisherId"
   | "summary"
+  | "icon"
   | "ownerHandle"
   | "ownerKind"
   | "createdAt"
@@ -874,6 +877,7 @@ type PublicPackageDoc = {
   isOfficial: boolean;
   runtimeId?: string;
   summary?: string;
+  icon: string | null;
   tags: Record<string, Id<"packageReleases">>;
   latestReleaseId?: Id<"packageReleases">;
   latestVersion?: string | null;
@@ -1043,6 +1047,7 @@ function toPublicPackage(
     isOfficial: pkg.isOfficial,
     runtimeId: pkg.runtimeId,
     summary: pkg.summary,
+    icon: pkg.icon ?? null,
     tags: pkg.tags,
     latestReleaseId: pkg.latestReleaseId,
     latestVersion,
@@ -1227,6 +1232,7 @@ async function toPublicPackageListItem(
     channel: digest.channel,
     isOfficial: digest.isOfficial,
     summary: digest.summary ?? null,
+    icon: digest.icon ?? null,
     ownerHandle: digest.ownerHandle || null,
     createdAt: digest.createdAt,
     updatedAt: digest.updatedAt,
@@ -1256,6 +1262,7 @@ async function toPublicPackageListItemFromPackage(
     channel: pkg.channel,
     isOfficial: pkg.isOfficial,
     summary: pkg.summary ?? null,
+    icon: pkg.icon ?? null,
     ownerHandle: owner?.handle ?? null,
     createdAt: pkg.createdAt,
     updatedAt: pkg.updatedAt,
@@ -2743,6 +2750,7 @@ export const listAuditPage = query({
           channel: pkg.channel,
           isOfficial: pkg.isOfficial,
           summary: pkg.summary ?? null,
+          icon: pkg.icon ?? null,
           ownerHandle: owner?.handle ?? null,
           createdAt: pkg.createdAt,
           updatedAt: pkg.updatedAt,
@@ -4320,6 +4328,7 @@ function packageLatestSummaryFromRelease(release: Doc<"packageReleases"> | null)
         version: release.version,
         createdAt: release.createdAt,
         changelog: release.changelog,
+        icon: release.icon,
         compatibility: release.compatibility,
         verification: release.verification,
         artifact: packageArtifactSummary(release),
@@ -4420,12 +4429,14 @@ async function restorePackageDoc(
           version: nextLatest.version,
           createdAt: nextLatest.createdAt,
           changelog: nextLatest.changelog,
+          icon: nextLatest.icon,
           compatibility: nextLatest.compatibility,
           verification: nextLatest.verification,
           artifact: packageArtifactSummary(nextLatest),
         }
       : undefined,
     summary: nextLatest?.summary,
+    icon: nextLatest?.icon,
     compatibility: nextLatest?.compatibility,
     verification: nextLatest?.verification,
     scanStatus: nextLatest ? resolvePackageReleaseScanStatus(nextLatest) : pkg.scanStatus,
@@ -6730,6 +6741,7 @@ async function publishPackageImpl(
   if (!pluginManifest) {
     throw new ConvexError("openclaw.plugin.json is required for plugin packages");
   }
+  const icon = normalizePluginManifestIcon(pluginManifest);
   if (family === "code-plugin") {
     const validation = validateOpenClawExternalCodePluginPackageContents(
       packageJson,
@@ -6855,6 +6867,7 @@ async function publishPackageImpl(
     changelog: payload.changelog.trim(),
     tags: payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"],
     summary,
+    ...(icon ? { icon } : {}),
     categories,
     topics,
     sourceRepo: effectiveSource?.repo || effectiveSource?.url,
@@ -8076,6 +8089,7 @@ export const insertReleaseInternal = internalMutation({
     family: v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
     version: v.string(),
     changelog: v.string(),
+    icon: v.optional(v.string()),
     tags: v.array(v.string()),
     summary: v.string(),
     categories: v.optional(v.array(v.string())),
@@ -8235,6 +8249,7 @@ export const insertReleaseInternal = internalMutation({
         normalizedName,
         displayName: args.displayName,
         summary: args.summary,
+        icon: args.icon,
         ownerUserId: args.ownerUserId,
         ownerPublisherId: args.ownerPublisherId,
         family: args.family,
@@ -8300,6 +8315,7 @@ export const insertReleaseInternal = internalMutation({
       version: args.version,
       changelog: args.changelog,
       summary: args.summary,
+      icon: args.icon,
       distTags: effectiveTags,
       files: args.files,
       integritySha256: args.integritySha256,
@@ -8347,6 +8363,7 @@ export const insertReleaseInternal = internalMutation({
       ownerPublisherId: args.ownerPublisherId ?? pkg.ownerPublisherId,
       family: existingIsReservation ? args.family : pkg.family,
       summary: shouldPromoteLatest ? args.summary : pkg.summary,
+      icon: shouldPromoteLatest ? args.icon : pkg.icon,
       categories: shouldPromoteLatest ? args.categories : pkg.categories,
       topics: shouldPromoteLatest ? args.topics : pkg.topics,
       sourceRepo: args.sourceRepo,
@@ -8359,6 +8376,7 @@ export const insertReleaseInternal = internalMutation({
             version: args.version,
             createdAt: now,
             changelog: args.changelog,
+            icon: args.icon,
             compatibility: args.compatibility,
             verification: args.verification,
             artifact: packageArtifactSummary(args),
@@ -8498,6 +8516,7 @@ async function quarantineMaliciousLatestPackageRelease(
     latestReleaseId: nextLatest?._id,
     latestVersionSummary: packageLatestSummaryFromRelease(nextLatest),
     summary: nextLatest?.summary,
+    icon: nextLatest?.icon,
     sourceRepo: restoredSourceRepo,
     runtimeId: restoredRuntimeId,
     compatibility: nextLatest?.compatibility,

@@ -42,8 +42,8 @@ export type PublicPublisherCatalogItem = {
   summary: string | null;
   topics?: string[];
   /**
-   * Skill custom-icon protocol string (e.g. `lucide:Plug`) mirrored from
-   * `skills.icon`. Always `null` for `kind: "plugin"` items in Phase 1.
+   * Skill custom-icon protocol string (e.g. `lucide:Plug`) or plugin manifest
+   * HTTPS icon URL mirrored from the package row.
    */
   icon: string | null;
   href: string;

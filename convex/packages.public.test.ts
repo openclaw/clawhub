@@ -216,6 +216,7 @@ const insertReleaseInternalHandler = (
       family: "skill" | "code-plugin" | "bundle-plugin";
       version: string;
       changelog: string;
+      icon?: string;
       tags: string[];
       summary: string;
       categories?: string[];
@@ -7721,6 +7722,137 @@ describe("packages public queries", () => {
         ownerPublisherId: "publishers:owner",
       }),
     );
+  });
+
+  it("forwards only valid HTTPS plugin manifest icons to release insertion", async () => {
+    async function publishWithManifestIcon(icon: unknown) {
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (args.minimumRole === "publisher") {
+          return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
+        }
+        if ("name" in args && "version" in args && "files" in args) {
+          return { ok: true, packageId: "packages:demo", releaseId: "releases:demo-1" };
+        }
+        return null;
+      });
+      const storedFiles = new Map<string, string>([
+        [
+          "storage:package",
+          JSON.stringify({
+            name: "demo-plugin",
+            openclaw: {
+              extensions: ["./dist/index.js"],
+              hostTargets: ["darwin-arm64", "linux-x64"],
+              environment: {},
+              compat: { pluginApi: "^1.0.0" },
+              build: { openclawVersion: "2026.3.14" },
+              configSchema: { type: "object" },
+            },
+          }),
+        ],
+        ["storage:manifest", JSON.stringify({ id: "demo.plugin", icon })],
+        ["storage:code", "export default {};"],
+      ]);
+      const ctx = {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "publishers:owner",
+            kind: "user",
+            handle: "owner",
+            linkedUserId: "users:owner",
+          }),
+        runMutation,
+        runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+        scheduler: {
+          runAfter: vi.fn(),
+        },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content ? new Blob([content]) : null;
+          }),
+        },
+      };
+
+      await publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          source: {
+            kind: "github",
+            url: "https://github.com/openclaw/demo-plugin",
+            repo: "openclaw/demo-plugin",
+            ref: "refs/tags/v1.0.0",
+            commit: "abc123",
+            path: ".",
+            importedAt: Date.now(),
+          },
+          files: [
+            {
+              path: "package.json",
+              size: 1,
+              storageId: "storage:package",
+              sha256: "package",
+              contentType: "application/json",
+            },
+            {
+              path: "openclaw.plugin.json",
+              size: 1,
+              storageId: "storage:manifest",
+              sha256: "manifest",
+              contentType: "application/json",
+            },
+            {
+              path: "dist/index.js",
+              size: 1,
+              storageId: "storage:code",
+              sha256: "code",
+              contentType: "application/javascript",
+            },
+          ],
+        },
+      });
+
+      const insertCall = runMutation.mock.calls.find(
+        ([, args]) =>
+          typeof args === "object" &&
+          args !== null &&
+          (args as { name?: string }).name === "demo-plugin" &&
+          (args as { version?: string }).version === "1.0.0",
+      );
+      return insertCall?.[1] as Record<string, unknown>;
+    }
+
+    await expect(
+      publishWithManifestIcon("https://cdn.example.test/icons/demo.svg"),
+    ).resolves.toMatchObject({ icon: "https://cdn.example.test/icons/demo.svg" });
+
+    for (const icon of [
+      "http://cdn.example.test/icons/demo.svg",
+      "/icons/demo.svg",
+      "not a url",
+      "",
+      123,
+      { src: "https://cdn.example.test/icons/demo.svg" },
+    ]) {
+      await expect(publishWithManifestIcon(icon)).resolves.not.toHaveProperty("icon");
+    }
   });
 
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {

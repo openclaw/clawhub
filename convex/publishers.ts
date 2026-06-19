@@ -8,6 +8,7 @@ import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/acc
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
@@ -76,10 +77,8 @@ type PublisherCatalogItem = {
   displayName: string;
   summary: string | null;
   topics?: string[];
-  // Mirrors `skills.icon` for `kind: "skill"` items so the publisher
-  // profile catalog (`/p/<handle>`) can render the same custom glyph that
-  // `SkillCard` and `SkillListItem` show on `/skills` and `/search`.
-  // Always `null` for plugins in Phase 1.
+  // Mirrors skill custom-icon protocol strings and public plugin manifest HTTPS
+  // icon URLs so publisher profile cards use the same icon data as browse cards.
   icon: string | null;
   href: string;
   installs: number;
@@ -397,7 +396,10 @@ function getPublisherCatalogItems(
       displayName: pkg.displayName,
       summary: pkg.summary ?? null,
       topics: pkg.topics,
-      icon: null,
+      icon:
+        pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)
+          ? null
+          : (pkg.icon ?? null),
       href: buildPluginDetailHref(pkg.name),
       installs: pkg.stats.installs,
       downloads: pkg.stats.downloads,

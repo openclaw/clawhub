@@ -1,3 +1,4 @@
+import { useEffect, useState, type CSSProperties } from "react";
 import { MARKETPLACE_KIND_ICONS, type MarketplaceIconKind } from "../lib/marketplaceIcons";
 import { parseSkillIcon } from "../lib/skillIcon";
 
@@ -35,9 +36,15 @@ export function MarketplaceIcon({
   icon,
   size = "sm",
 }: MarketplaceIconProps) {
+  const [failedImageUrl, setFailedImageUrl] = useState<string | null>(null);
+  useEffect(() => {
+    setFailedImageUrl(null);
+  }, [imageUrl]);
+
   const customIcon = kind === "skill" ? parseSkillIcon(icon) : null;
   const Icon = MARKETPLACE_KIND_ICONS[kind];
   const tone = hashTone(label);
+  const visibleImageUrl = imageUrl && failedImageUrl !== imageUrl ? imageUrl : null;
 
   return (
     <span
@@ -46,12 +53,20 @@ export function MarketplaceIcon({
         {
           "--marketplace-icon-accent": tone.accent,
           "--marketplace-icon-wash": tone.wash,
-        } as React.CSSProperties
+        } as CSSProperties
       }
       aria-hidden="true"
     >
-      {imageUrl ? (
-        <img className="marketplace-icon-image" src={imageUrl} alt="" loading="lazy" />
+      {visibleImageUrl ? (
+        <img
+          className="marketplace-icon-image"
+          src={visibleImageUrl}
+          alt=""
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          decoding="async"
+          onError={() => setFailedImageUrl(visibleImageUrl)}
+        />
       ) : customIcon?.kind === "lucide" ? (
         <customIcon.component className="marketplace-icon-glyph" strokeWidth={1.8} />
       ) : (

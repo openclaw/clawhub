@@ -309,6 +309,7 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     updatedAt: number;
     runtimeId?: string | null | undefined;
     summary?: string | null | undefined;
+    icon?: string | null | undefined;
     ownerHandle?: string | null | undefined;
     latestVersion?: string | null | undefined;
     categories?: string[] | undefined;
@@ -333,6 +334,7 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         updatedAt: number;
         runtimeId?: string | null | undefined;
         summary?: string | null | undefined;
+        icon?: string | null | undefined;
         ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
         categories?: string[] | undefined;
@@ -361,6 +363,7 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             updatedAt: number;
             runtimeId?: string | null | undefined;
             summary?: string | null | undefined;
+            icon?: string | null | undefined;
             ownerHandle?: string | null | undefined;
             latestVersion?: string | null | undefined;
             categories?: string[] | undefined;
@@ -388,6 +391,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         tags: unknown;
         runtimeId?: string | null | undefined;
         summary?: string | null | undefined;
+        icon?: string | null | undefined;
         ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
         categories?: string[] | undefined;

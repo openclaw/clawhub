@@ -5,6 +5,7 @@ import {
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
+  normalizePluginManifestIcon,
   normalizePackageName,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
@@ -102,6 +103,31 @@ describe("packageRegistry", () => {
     expect(result.runtimeId).toBe("demo.plugin");
     expect(result.compatibility?.pluginApiRange).toBe("^1.0.0");
     expect(result).not.toHaveProperty("capabilities");
+  });
+
+  it("accepts only valid HTTPS plugin manifest icon URLs", () => {
+    expect(normalizePluginManifestIcon({ icon: "https://cdn.example.test/icons/demo.svg" })).toBe(
+      "https://cdn.example.test/icons/demo.svg",
+    );
+    expect(
+      normalizePluginManifestIcon({
+        icon: "  https://cdn.example.test/icons/demo.svg?color=111111  ",
+      }),
+    ).toBe("https://cdn.example.test/icons/demo.svg?color=111111");
+
+    for (const icon of [
+      "http://cdn.example.test/icons/demo.svg",
+      "/icons/demo.svg",
+      "icons/demo.svg",
+      "not a url",
+      "",
+      "   ",
+      123,
+      null,
+      { src: "https://cdn.example.test/icons/demo.svg" },
+    ]) {
+      expect(normalizePluginManifestIcon({ icon })).toBeUndefined();
+    }
   });
 
   it("requires source metadata for code plugins", () => {
