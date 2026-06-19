@@ -53,7 +53,13 @@ function FooterSocialIcon({ icon }: { icon: "github" | "discord" }) {
   );
 }
 
-function FooterEcoMark({ project }: { project: FooterEcosystemProject }) {
+function FooterEcoMark({
+  project,
+  decorative = false,
+}: {
+  project: FooterEcosystemProject;
+  decorative?: boolean;
+}) {
   const className = "footer-v2-eco-mark";
   const content = (
     <>
@@ -63,6 +69,10 @@ function FooterEcoMark({ project }: { project: FooterEcosystemProject }) {
       <span className="footer-v2-eco-mark-label">{project.label}</span>
     </>
   );
+
+  if (decorative) {
+    return <span className={className}>{content}</span>;
+  }
 
   if (project.internal) {
     return (
@@ -174,6 +184,9 @@ export function Footer() {
   };
 
   const year = new Date().getFullYear();
+  const ecosystemProjects = FOOTER_ECOSYSTEM_PROJECTS.filter(
+    (project) => project.label !== "ClawHub",
+  );
 
   return (
     <footer className="site-footer site-footer-v2" role="contentinfo">
@@ -274,21 +287,37 @@ export function Footer() {
               the OpenClaw ecosystem
             </span>
           </p>
-          <div className="footer-v2-eco-marks">
-            {FOOTER_ECOSYSTEM_PROJECTS.filter((project) => project.label !== "ClawHub").map((project) => (
-              <FooterEcoMark key={project.label} project={project} />
-            ))}
-            <span className="footer-v2-eco-all">
-              <a
-                className="footer-v2-eco-mark footer-v2-eco-mark-all"
-                href={OPENCLAW_ECOSYSTEM_URL}
-                target="_blank"
-                rel="noreferrer"
+          <div className="footer-v2-eco-marquee">
+            <div className="footer-v2-eco-marks">
+              <span className="footer-v2-eco-sequence">
+                {ecosystemProjects.map((project) => (
+                  <FooterEcoMark key={project.label} project={project} />
+                ))}
+                <span className="footer-v2-eco-all">
+                  <a
+                    className="footer-v2-eco-mark footer-v2-eco-mark-all"
+                    href={OPENCLAW_ECOSYSTEM_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    <span className="footer-v2-eco-mark-label">All projects</span>
+                    <ArrowUpRight size={13} aria-hidden="true" />
+                  </a>
+                </span>
+              </span>
+              <span
+                className="footer-v2-eco-sequence footer-v2-eco-sequence-clone"
+                aria-hidden="true"
               >
-                <span className="footer-v2-eco-mark-label">All projects</span>
-                <ArrowUpRight size={13} aria-hidden="true" />
-              </a>
-            </span>
+                {ecosystemProjects.map((project) => (
+                  <FooterEcoMark key={project.label} project={project} decorative />
+                ))}
+                <span className="footer-v2-eco-mark footer-v2-eco-mark-all">
+                  <span className="footer-v2-eco-mark-label">All projects</span>
+                  <ArrowUpRight size={13} aria-hidden="true" />
+                </span>
+              </span>
+            </div>
           </div>
         </div>
 

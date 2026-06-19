@@ -16503,6 +16503,14 @@ a.publisher-profile-detail:hover {
   row-gap: 12px;
 }
 
+.footer-v2-eco-sequence {
+  display: contents;
+}
+
+.footer-v2-eco-sequence-clone {
+  display: none;
+}
+
 .footer-v2-eco-mark {
   display: inline-flex;
   align-items: center;
@@ -16847,13 +16855,27 @@ a.publisher-profile-detail:hover {
 
   .footer-v2-eco-marks {
     flex-wrap: nowrap;
-    overflow-x: auto;
+    gap: 24px;
+    width: max-content;
+    max-width: none;
+    overflow: visible;
     padding-bottom: 4px;
+    animation: footer-v2-eco-marquee 34s linear infinite;
     scrollbar-width: none;
+    will-change: transform;
   }
 
-  .footer-v2-eco-marks::-webkit-scrollbar {
-    display: none;
+  .footer-v2-eco-marquee {
+    overflow: hidden;
+    mask-image: linear-gradient(to right, transparent, #000 18px, #000 calc(100% - 18px), transparent);
+  }
+
+  .footer-v2-eco-sequence,
+  .footer-v2-eco-sequence-clone {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    gap: 24px;
   }
 
   .footer-v2-eco-mark {
@@ -16899,6 +16921,33 @@ a.publisher-profile-detail:hover {
 
   .footer-col-links[data-open="true"] {
     display: flex;
+  }
+}
+
+@keyframes footer-v2-eco-marquee {
+  to {
+    transform: translateX(calc(-50% - 12px));
+  }
+}
+
+@media (max-width: 760px) and (prefers-reduced-motion: reduce) {
+  .footer-v2-eco-marquee {
+    overflow-x: auto;
+    mask-image: none;
+    scrollbar-width: none;
+  }
+
+  .footer-v2-eco-marquee::-webkit-scrollbar {
+    display: none;
+  }
+
+  .footer-v2-eco-marks {
+    animation: none;
+    will-change: auto;
+  }
+
+  .footer-v2-eco-sequence-clone {
+    display: none;
   }
 }
 
@@ -21241,7 +21290,17 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     justify-content: center;
   }
   .home-v2-cycle-wrap {
-    min-width: 200px;
+    flex: 0 0 100%;
+    width: 100%;
+    min-width: 0;
+  }
+  .home-v2-cycle-track {
+    width: 100%;
+  }
+  .home-v2-cycle-word {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
   }
   .home-v2-categories-grid {
     --home-v2-category-columns: 1;
