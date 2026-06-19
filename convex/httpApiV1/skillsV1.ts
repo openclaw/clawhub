@@ -121,10 +121,6 @@ type ListSkillsResult = {
       changelog: string;
       parsed?: PublicSkillVersionParsed;
     } | null;
-    trending?: {
-      installs: number;
-      downloads: number;
-    };
   }>;
   nextCursor: string | null;
 };
@@ -1527,7 +1523,6 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     topics: item.skill.topics,
     tags: resolvedTagsList[idx],
     stats: item.skill.stats,
-    ...(item.trending ? { trending: item.trending } : {}),
     createdAt: item.skill.createdAt,
     updatedAt: item.skill.updatedAt,
     latestVersion: item.latestVersion

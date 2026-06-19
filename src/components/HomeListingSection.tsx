@@ -126,11 +126,6 @@ function sortSkillEntries(entries: SkillPageEntry[], tab: ListingTab) {
   });
 }
 
-function skillListingInstalls(entry: SkillPageEntry, tab: ListingTab) {
-  if (tab === "trending") return entry.trending?.installs;
-  return entry.skill.stats?.installsAllTime ?? 0;
-}
-
 function HomeListingEmptyPanel({
   variant,
   query,
@@ -235,9 +230,7 @@ async function fetchSkillListing(
     const items = ((result as { items?: SkillPageEntry[] }).items ?? []).filter((entry) =>
       itemMatchesAnyCategory(entry.skill, categorySlugs),
     );
-    items.sort(
-      (left, right) => (right.trending?.installs ?? -1) - (left.trending?.installs ?? -1),
-    );
+    items.sort((left, right) => (right.trending?.installs ?? 0) - (left.trending?.installs ?? 0));
     return {
       page: uniqueSkillEntries(items).slice(0, numItems),
       hasMore: items.length > numItems || (items.length >= numItems && numItems < 200),
@@ -311,10 +304,10 @@ async function fetchPluginListing(
   };
 }
 
-function HomeListingSkillRow({ entry, tab }: { entry: SkillPageEntry; tab: ListingTab }) {
+function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
-  const installs = skillListingInstalls(entry, tab);
+  const installs = entry.trending?.installs ?? entry.skill.stats?.installsAllTime ?? 0;
 
   return (
     <Link to={skillLink(entry)} className="home-v2-listing-row">
@@ -333,7 +326,7 @@ function HomeListingSkillRow({ entry, tab }: { entry: SkillPageEntry; tab: Listi
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
           <Download size={13} aria-hidden="true" />
-          {typeof installs === "number" ? formatCompactStat(installs) : "—"}
+          {formatCompactStat(installs)}
         </span>
       </div>
     </Link>
@@ -370,10 +363,10 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
   );
 }
 
-function HomeListingSkillCard({ entry, tab }: { entry: SkillPageEntry; tab: ListingTab }) {
+function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
-  const installs = skillListingInstalls(entry, tab);
+  const installs = entry.trending?.installs ?? entry.skill.stats?.installsAllTime ?? 0;
 
   return (
     <Link to={skillLink(entry)} className="home-v2-listing-card">
@@ -392,7 +385,7 @@ function HomeListingSkillCard({ entry, tab }: { entry: SkillPageEntry; tab: List
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
         <span>
           <Download size={13} aria-hidden="true" />
-          {typeof installs === "number" ? formatCompactStat(installs) : "—"}
+          {formatCompactStat(installs)}
         </span>
       </div>
     </Link>
@@ -905,9 +898,9 @@ export function HomeListingSection() {
           <div className={view === "grid" ? "home-v2-listing-grid" : "home-v2-listing-list"}>
             {visibleSkills.map((entry) =>
               view === "grid" ? (
-                <HomeListingSkillCard key={entry.skill._id} entry={entry} tab={tab} />
+                <HomeListingSkillCard key={entry.skill._id} entry={entry} />
               ) : (
-                <HomeListingSkillRow key={entry.skill._id} entry={entry} tab={tab} />
+                <HomeListingSkillRow key={entry.skill._id} entry={entry} />
               ),
             )}
           </div>
