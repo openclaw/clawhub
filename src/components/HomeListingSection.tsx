@@ -33,10 +33,6 @@ type SkillPageEntry = {
   skill: PublicSkill;
   ownerHandle?: string | null;
   owner?: PublicUser | null;
-  trending?: {
-    installs: number;
-    downloads: number;
-  };
 };
 
 const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
@@ -230,7 +226,6 @@ async function fetchSkillListing(
     const items = ((result as { items?: SkillPageEntry[] }).items ?? []).filter((entry) =>
       itemMatchesAnyCategory(entry.skill, categorySlugs),
     );
-    items.sort((left, right) => (right.trending?.installs ?? 0) - (left.trending?.installs ?? 0));
     return {
       page: uniqueSkillEntries(items).slice(0, numItems),
       hasMore: items.length > numItems || (items.length >= numItems && numItems < 200),
@@ -307,7 +302,6 @@ async function fetchPluginListing(
 function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
-  const installs = entry.trending?.installs ?? entry.skill.stats?.installsAllTime ?? 0;
 
   return (
     <Link to={skillLink(entry)} className="home-v2-listing-row">
@@ -326,7 +320,7 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
           <Download size={13} aria-hidden="true" />
-          {formatCompactStat(installs)}
+          {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
         </span>
       </div>
     </Link>
@@ -366,7 +360,6 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
 function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
   const handle = entry.ownerHandle || entry.owner?.handle;
   const name = entry.skill.displayName || entry.skill.slug;
-  const installs = entry.trending?.installs ?? entry.skill.stats?.installsAllTime ?? 0;
 
   return (
     <Link to={skillLink(entry)} className="home-v2-listing-card">
@@ -385,7 +378,7 @@ function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
         <span>
           <Download size={13} aria-hidden="true" />
-          {formatCompactStat(installs)}
+          {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
         </span>
       </div>
     </Link>
@@ -862,11 +855,7 @@ export function HomeListingSection() {
           <span className="home-v2-listing-head-label">
             {kind === "skills" ? "Skill" : "Plugin"}
           </span>
-          <span className="home-v2-listing-head-stat">
-            {kind === "skills" && tab === "trending" && !isSearchMode
-              ? "7d installs"
-              : "Popularity"}
-          </span>
+          <span className="home-v2-listing-head-stat">Popularity</span>
         </div>
       ) : null}
 

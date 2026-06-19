@@ -214,40 +214,6 @@ describe("HomeListingSection", () => {
   });
 
   it("loads the existing trending skills leaderboard for the Trending tab", async () => {
-    convexQueryMock.mockImplementation((name) => {
-      if (name === "skills:listPublicTrendingPage") {
-        return Promise.resolve({
-          items: [
-            {
-              skill: {
-                _id: "skills:trending",
-                slug: "trending-skill",
-                displayName: "Trending Skill",
-                summary: "Hot this week.",
-                stats: { installsAllTime: 999 },
-              },
-              ownerHandle: "builder",
-              trending: { installs: 7, downloads: 100 },
-            },
-          ],
-        });
-      }
-      return Promise.resolve({
-        page: [
-          {
-            skill: {
-              _id: "skills:1",
-              slug: "demo-skill",
-              displayName: "Demo Skill",
-              summary: "A helpful skill.",
-              stats: { stars: 12, downloads: 340 },
-            },
-            ownerHandle: "builder",
-          },
-        ],
-      });
-    });
-
     render(<HomeListingSection />);
 
     await waitFor(() => {
@@ -259,9 +225,6 @@ describe("HomeListingSection", () => {
 
     await waitFor(() => {
       expect(convexQueryMock).toHaveBeenCalledWith("skills:listPublicTrendingPage", { limit: 20 });
-      expect(screen.getByText("Trending Skill")).toBeTruthy();
-      expect(screen.getByText("7")).toBeTruthy();
-      expect(screen.queryByText("999")).toBeNull();
     });
   });
 
