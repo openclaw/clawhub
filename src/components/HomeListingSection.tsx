@@ -16,7 +16,7 @@ import {
 import { type FormEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
-import { isSkillHighlighted, isSkillOfficial } from "../lib/badges";
+import { isSkillOfficial } from "../lib/badges";
 import { PLUGIN_CATEGORIES, SKILL_CATEGORIES, type BrowseCategory } from "../lib/categories";
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
@@ -26,7 +26,7 @@ import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 
 type ListingKind = "skills" | "plugins";
-type ListingTab = "popular" | "officials" | "featured";
+type ListingTab = "popular" | "officials" | "new";
 type ListingView = "list" | "grid";
 
 type SkillPageEntry = {
@@ -38,7 +38,7 @@ type SkillPageEntry = {
 const LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "popular", label: "Most popular" },
   { id: "officials", label: "Officials" },
-  { id: "featured", label: "Featured" },
+  { id: "new", label: "New" },
 ];
 
 const SKILL_LISTING_TABS = LISTING_TABS.filter((tab) => tab.id !== "officials");
@@ -70,9 +70,6 @@ type SkillSearchHit = {
 function filterSkillsByTab(entries: SkillPageEntry[], tab: ListingTab) {
   if (tab === "officials") {
     return entries.filter((entry) => isSkillOfficial(entry.skill));
-  }
-  if (tab === "featured") {
-    return entries.filter((entry) => isSkillHighlighted(entry.skill));
   }
   return entries;
 }
@@ -109,11 +106,16 @@ function uniquePlugins(items: PackageListItem[]) {
   return [...byName.values()];
 }
 
-function sortSkillEntriesByInstalls(entries: SkillPageEntry[]) {
-  return [...entries].sort(
-    (left, right) =>
-      (right.skill.stats?.installsAllTime ?? 0) - (left.skill.stats?.installsAllTime ?? 0),
-  );
+function sortSkillEntries(entries: SkillPageEntry[], tab: ListingTab) {
+  return [...entries].sort((left, right) => {
+    if (tab === "new") {
+      return (
+        (right.skill.updatedAt ?? right.skill.createdAt ?? right.skill._creationTime ?? 0) -
+        (left.skill.updatedAt ?? left.skill.createdAt ?? left.skill._creationTime ?? 0)
+      );
+    }
+    return (right.skill.stats?.installsAllTime ?? 0) - (left.skill.stats?.installsAllTime ?? 0);
+  });
 }
 
 function HomeListingEmptyPanel({
@@ -217,9 +219,8 @@ async function fetchSkillListing(
     categoriesToFetch.map((categorySlug) =>
       convexHttp.query(api.skills.listPublicPageV4, {
         numItems,
-        sort: "installs",
+        sort: tab === "new" ? "newest" : "installs",
         dir: "desc",
-        highlightedOnly: tab === "featured" ? true : undefined,
         officialFirst: tab === "officials" ? true : undefined,
         categorySlug: categorySlug ?? undefined,
       }),
@@ -234,7 +235,7 @@ async function fetchSkillListing(
   const hasMore = results.some((result) =>
     Array.isArray(result) ? false : ((result as { hasMore?: boolean }).hasMore ?? false),
   );
-  const page = sortSkillEntriesByInstalls(filterSkillsByTab(uniqueSkillEntries(pages), tab)).slice(
+  const page = sortSkillEntries(filterSkillsByTab(uniqueSkillEntries(pages), tab), tab).slice(
     0,
     numItems,
   );
@@ -253,9 +254,8 @@ async function fetchPluginListing(
   const results = await Promise.all(
     categoriesToFetch.map((categorySlug) =>
       fetchPluginCatalog({
-        featured: tab === "featured" ? true : undefined,
         category: categorySlug ?? undefined,
-        sort: "installs",
+        sort: tab === "new" ? "updated" : "installs",
         limit: requestLimit,
         signal,
       }),
@@ -267,7 +267,9 @@ async function fetchPluginListing(
     ),
   );
   items = filterPluginsByTab(items, tab);
-  if (tab === "popular" || openClawOfficials) {
+  if (tab === "new") {
+    items.sort((a, b) => b.updatedAt - a.updatedAt);
+  } else if (tab === "popular" || openClawOfficials) {
     items.sort((a, b) => (b.stats?.installs ?? 0) - (a.stats?.installs ?? 0));
   }
   const page = items.slice(0, limit);
@@ -286,12 +288,7 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
   return (
     <Link to={skillLink(entry)} className="home-v2-listing-row">
       <span className="home-v2-listing-row-icon" aria-hidden="true">
-        <MarketplaceIcon
-          kind="skill"
-          label={name}
-          skill={entry.skill}
-          size="sm"
-        />
+        <MarketplaceIcon kind="skill" label={name} skill={entry.skill} size="sm" />
       </span>
       <div className="home-v2-listing-row-body">
         <div className="home-v2-listing-row-title">
@@ -561,7 +558,6 @@ export function HomeListingSection() {
               .action(api.search.searchSkills, {
                 query: trimmedSearch,
                 limit: fetchLimit,
-                highlightedOnly: tab === "featured" ? true : undefined,
               })
               .then((hits) => {
                 if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
@@ -572,7 +568,7 @@ export function HomeListingSection() {
                     owner: hit.owner,
                   }))
                   .filter((entry) => itemMatchesAnyCategory(entry.skill, categorySlugs));
-                setSearchSkills(rows);
+                setSearchSkills(tab === "new" ? sortSkillEntries(rows, tab) : rows);
                 setListingHasMore(rows.length >= fetchLimit);
                 setSearchStatus("idle");
               })
@@ -580,8 +576,8 @@ export function HomeListingSection() {
               (categorySlugs.length > 0 ? categorySlugs : [null]).map((categorySlug) =>
                 fetchPluginCatalog({
                   q: trimmedSearch,
-                  featured: tab === "featured" ? true : undefined,
                   category: categorySlug ?? undefined,
+                  sort: tab === "new" ? "updated" : "installs",
                   limit:
                     tab === "officials"
                       ? Math.max(fetchLimit, PLUGIN_OFFICIAL_FETCH_BATCH)
@@ -596,7 +592,9 @@ export function HomeListingSection() {
                   result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)),
                 ),
               );
-              setSearchPlugins(items);
+              setSearchPlugins(
+                tab === "new" ? [...items].sort((a, b) => b.updatedAt - a.updatedAt) : items,
+              );
               setListingHasMore(
                 results.some(
                   (result) => result.nextCursor != null || result.items.length >= fetchLimit,
