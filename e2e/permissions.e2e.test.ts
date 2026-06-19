@@ -108,7 +108,6 @@ describe("permission boundary e2e", () => {
         method: "DELETE",
         path: `${ApiRoutes.packages}/e2e-nonexistent-permission/trusted-publisher`,
       },
-      { method: "POST", path: `${ApiRoutes.users}/restore`, body: { handle: "nobody" } },
       { method: "POST", path: `${ApiRoutes.users}/reclaim`, body: { handle: "nobody" } },
       { method: "POST", path: `${ApiRoutes.users}/reserve`, body: { handle: "nobody" } },
       { method: "POST", path: `${ApiRoutes.users}/publisher`, body: { handle: "nobody" } },

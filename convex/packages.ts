@@ -391,12 +391,6 @@ const internalRefs = internal as unknown as {
   packageInspectorNode: {
     runPackageInspectorForPublishInternal: unknown;
   };
-  registryArtifactBackupsNode: {
-    backupPackageForPublishInternal: unknown;
-  };
-  registryArtifactBackups: {
-    enqueueRegistryArtifactBackupJobInternal: unknown;
-  };
   packagePublishTokens: {
     createInternal: unknown;
     getByIdInternal: unknown;
@@ -6989,76 +6983,7 @@ async function publishPackageImpl(
     source: "publish",
   });
 
-  if (payload.artifact?.storageId) {
-    const backupIsLatest = (
-      payload.tags?.map((tag: string) => tag.trim()).filter(Boolean) ?? ["latest"]
-    ).includes("latest");
-    const backupOwner =
-      ownerPublisher ??
-      ((await runQueryRef<Doc<"users"> | null>(ctx, internalRefs.users.getByIdInternal, {
-        userId: ownerUserId,
-      })) as Doc<"users"> | null);
-    const ownerHandle = backupOwner?.handle ?? String(ownerPublisherId ?? ownerUserId);
-    await runAfterRef(
-      ctx,
-      0,
-      internalRefs.registryArtifactBackupsNode.backupPackageForPublishInternal,
-      {
-        ownerHandle,
-        packageId: publishResult.packageId,
-        releaseId: publishResult.releaseId,
-        packageName: name,
-        normalizedName: name,
-        displayName,
-        family,
-        version,
-        isLatest: backupIsLatest,
-        publishedAt: Date.now(),
-        artifactKind: payload.artifact.kind ?? "legacy-zip",
-        artifactStorageId: payload.artifact.storageId,
-        artifactFileName: payload.artifact.npmTarballName,
-        artifactSha256: payload.artifact.sha256,
-        artifactSize: payload.artifact.size,
-        artifactFormat: payload.artifact.format,
-        npmIntegrity: payload.artifact.npmIntegrity,
-        npmShasum: payload.artifact.npmShasum,
-        npmUnpackedSize: payload.artifact.npmUnpackedSize,
-        npmFileCount: payload.artifact.npmFileCount,
-        runtimeId: codeArtifacts?.runtimeId ?? bundleArtifacts?.runtimeId,
-        sourceRepo: effectiveSource?.repo || effectiveSource?.url,
-        compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-        extractedPackageJson: storedPackageJson,
-        extractedPluginManifest: storedPluginManifest,
-        normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
-        files: files.map((file) => ({
-          path: file.path,
-          size: file.size,
-          sha256: file.sha256,
-        })),
-      },
-    ).catch((error) => {
-      const message = errorMessage(error);
-      console.error("registry artifact package backup scheduling failed", error);
-      return runMutationRef(
-        ctx,
-        internalRefs.registryArtifactBackups.enqueueRegistryArtifactBackupJobInternal,
-        {
-          targetKind: "packageRelease",
-          packageReleaseId: publishResult.releaseId,
-          reason: "publish",
-          error: message,
-        },
-      ).catch((enqueueError) => {
-        console.error("registry artifact package backup retry enqueue failed", enqueueError);
-      });
-    });
-  }
-
   return inspectorFindings.length > 0 ? { ...publishResult, inspectorFindings } : publishResult;
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function toPackageInspectorPublishResponseFinding(

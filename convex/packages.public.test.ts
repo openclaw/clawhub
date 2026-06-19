@@ -7161,16 +7161,7 @@ describe("packages public queries", () => {
       runMutation,
       runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
       scheduler: {
-        runAfter: vi.fn(async (_delayMs: number, _ref: unknown, args: unknown) => {
-          if (
-            typeof args === "object" &&
-            args !== null &&
-            "artifactStorageId" in args &&
-            args.artifactStorageId === "storage:clawpack"
-          ) {
-            throw new Error("scheduler unavailable");
-          }
-        }),
+        runAfter: vi.fn(async () => {}),
       },
       storage: {
         get: vi.fn(async (storageId: string) => {
@@ -7274,35 +7265,6 @@ describe("packages public queries", () => {
         ]),
       }),
     );
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
-      0,
-      expect.anything(),
-      expect.objectContaining({
-        releaseId: "releases:demo-1",
-        packageName: "demo-plugin",
-        artifactStorageId: "storage:clawpack",
-        artifactSha256: "clawpack",
-        artifactFileName: "demo-plugin-1.0.0.tgz",
-      }),
-    );
-    await vi.waitFor(() => {
-      const retryArgs = runMutation.mock.calls
-        .map(([, args]) => args)
-        .find(
-          (args): args is Record<string, unknown> =>
-            typeof args === "object" &&
-            args !== null &&
-            "targetKind" in args &&
-            args.targetKind === "packageRelease",
-        );
-      expect(retryArgs).toEqual(
-        expect.objectContaining({
-          packageReleaseId: "releases:demo-1",
-          reason: "publish",
-          error: "scheduler unavailable",
-        }),
-      );
-    });
   });
 
   it("rejects trusted publish tokens after trusted publisher rotation or deletion", async () => {

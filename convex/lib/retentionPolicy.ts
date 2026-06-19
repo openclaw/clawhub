@@ -230,8 +230,8 @@ export const RETENTION_POLICIES = {
     retention: "Slug reservation cooldown.",
   }),
   reservedHandles: permanent("Reserved handles are explicit policy records until released."),
-  registryArtifactBackupSyncState: permanent("Registry artifact backup cursor state."),
-  registryArtifactBackupJobs: permanent("Registry artifact backup job history and retry state."),
+  registryArtifactBackupSyncState: permanent("Legacy registry artifact backup cursor state."),
+  registryArtifactBackupJobs: permanent("Legacy registry artifact backup job history."),
   userSkillInstalls: permanent("Current user install records."),
   skillOwnershipTransfers: ephemeral("Ownership transfer invitations expire.", {
     expirationField: "expiresAt",

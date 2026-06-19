@@ -6,13 +6,6 @@ const crons = cronJobs();
 
 if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   crons.interval(
-    "registry-artifact-backup-retries",
-    { minutes: 5 },
-    internal.registryArtifactBackupsNode.processRegistryArtifactBackupRetriesInternal,
-    {},
-  );
-
-  crons.interval(
     "github-skill-source-sync",
     { minutes: 15 },
     internal.githubSkillSyncNode.syncGitHubSkillSourcesInternal,

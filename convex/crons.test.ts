@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const interval = vi.fn();
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
-  const registryArtifactBackupRetryRef = Symbol("registry-artifact-backup-retry");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
@@ -13,7 +12,6 @@ const mocks = vi.hoisted(() => {
   return {
     interval,
     githubSkillSyncRef,
-    registryArtifactBackupRetryRef,
     installTelemetryDedupePruneRef,
     rateLimitCountersPruneRef,
     skillStatEventPruneRef,
@@ -30,9 +28,6 @@ vi.mock("convex/server", () => ({
 
 vi.mock("./_generated/api", () => ({
   internal: {
-    registryArtifactBackupsNode: {
-      processRegistryArtifactBackupRetriesInternal: mocks.registryArtifactBackupRetryRef,
-    },
     githubSkillSyncNode: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
     leaderboards: { rebuildTrendingLeaderboardAction: Symbol("trending-leaderboard") },
     statsMaintenance: {
@@ -91,17 +86,6 @@ describe("crons", () => {
     await import("./crons");
 
     expect(mocks.interval).not.toHaveBeenCalled();
-  });
-
-  it("drains registry artifact backup retries frequently enough for publish bursts", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "registry-artifact-backup-retries",
-      { minutes: 5 },
-      mocks.registryArtifactBackupRetryRef,
-      {},
-    );
   });
 
   it("runs GitHub skill source sync every 15 minutes", async () => {
