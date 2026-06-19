@@ -14,14 +14,19 @@ function CategoryOption({
   label,
   selected,
   onSelect,
+  reset = false,
 }: {
   slug: string | null;
   label: string;
   selected: boolean;
   onSelect: () => void;
+  reset?: boolean;
 }) {
   return (
-    <li className="home-v2-listing-category-option-wrap" role="presentation">
+    <li
+      className={`home-v2-listing-category-option-wrap${reset ? " is-reset" : ""}`}
+      role="presentation"
+    >
       <button
         type="button"
         role="option"
@@ -166,6 +171,7 @@ export function HomeListingCategorySelect({
                 label="All categories"
                 selected={value.length === 0}
                 onSelect={() => pick(null)}
+                reset
               />
             ) : null}
             {filteredCategories.map((category) => (

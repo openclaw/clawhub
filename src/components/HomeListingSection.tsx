@@ -453,6 +453,14 @@ export function HomeListingSection() {
   const trimmedSearch = searchQuery.trim();
   const isSearchMode = trimmedSearch.length > 0;
   const listingCategories = kind === "skills" ? HOME_SKILL_LISTING_CATEGORIES : PLUGIN_CATEGORIES;
+  const selectedCategories = useMemo(
+    () =>
+      categorySlugs.flatMap((slug) => {
+        const category = listingCategories.find((candidate) => candidate.slug === slug);
+        return category ? [category] : [];
+      }),
+    [categorySlugs, listingCategories],
+  );
 
   const filteredSearchSkills = useMemo(
     () => filterSkillsByTab(searchSkills, tab),
@@ -691,6 +699,17 @@ export function HomeListingSection() {
     goToFullSearch();
   };
 
+  const handleKindChange = (nextKind: ListingKind) => {
+    if (nextKind === kind) return;
+    setKind(nextKind);
+    setCategorySlugs([]);
+    if (nextKind === "plugins") setTab("officials");
+  };
+
+  const removeCategory = (slug: string) => {
+    setCategorySlugs((current) => current.filter((categorySlug) => categorySlug !== slug));
+  };
+
   return (
     <section id="home-v2-listing" className="home-v2-listing" aria-label="Browse catalog">
       <div className="home-v2-listing-controls">
@@ -700,7 +719,7 @@ export function HomeListingSection() {
               type="button"
               className={`home-v2-listing-kind-btn${kind === "skills" ? " is-active" : ""}`}
               aria-pressed={kind === "skills"}
-              onClick={() => setKind("skills")}
+              onClick={() => handleKindChange("skills")}
             >
               Skills
             </button>
@@ -708,10 +727,7 @@ export function HomeListingSection() {
               type="button"
               className={`home-v2-listing-kind-btn${kind === "plugins" ? " is-active" : ""}`}
               aria-pressed={kind === "plugins"}
-              onClick={() => {
-                setKind("plugins");
-                setTab("officials");
-              }}
+              onClick={() => handleKindChange("plugins")}
             >
               Plugins
             </button>
@@ -819,6 +835,38 @@ export function HomeListingSection() {
             </button>
           </form>
         </div>
+
+        {selectedCategories.length > 0 ? (
+          <div className="home-v2-listing-active-filters" aria-label="Active category filters">
+            {selectedCategories.length <= 3 ? (
+              selectedCategories.map((category) => (
+                <button
+                  key={category.slug}
+                  type="button"
+                  className="home-v2-listing-filter-chip"
+                  onClick={() => removeCategory(category.slug)}
+                  aria-label={`Remove ${category.label} category filter`}
+                >
+                  {category.label}
+                  <X size={13} aria-hidden="true" />
+                </button>
+              ))
+            ) : (
+              <>
+                <span className="home-v2-listing-filter-chip is-summary">
+                  {selectedCategories.length} categories
+                </span>
+                <button
+                  type="button"
+                  className="home-v2-listing-filter-clear"
+                  onClick={() => setCategorySlugs([])}
+                >
+                  Clear all
+                </button>
+              </>
+            )}
+          </div>
+        ) : null}
       </div>
 
       {activeStatus === "idle" && view === "list" && activeItems.length > 0 ? (
