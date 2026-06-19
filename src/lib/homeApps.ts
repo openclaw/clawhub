@@ -209,22 +209,6 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
 /** Right orbit — official @openclaw gateway plugins. */
 export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
   {
-    id: "memory-lancedb",
-    runtimeId: "memory-lancedb",
-    name: "Memory LanceDB",
-    description: "Long-term memory with recall, capture, and vector search.",
-    packageName: "@openclaw/memory-lancedb",
-    iconDomain: "lancedb.com",
-  },
-  {
-    id: "lobster",
-    runtimeId: "lobster",
-    name: "Lobster",
-    description: "Typed pipelines and resumable approvals.",
-    packageName: "@openclaw/lobster",
-    iconDomain: "openclaw.ai",
-  },
-  {
     id: "whatsapp",
     runtimeId: "whatsapp",
     name: "WhatsApp",
@@ -287,14 +271,6 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     description: "Codex app-server harness and model provider.",
     packageName: "@openclaw/codex",
     iconDomain: "openai.com",
-  },
-  {
-    id: "acpx",
-    runtimeId: "acpx",
-    name: "ACPX Runtime",
-    description: "Plugin-owned sessions and transport management.",
-    packageName: "@openclaw/acpx",
-    iconDomain: "openclaw.ai",
   },
   {
     id: "discord",
@@ -385,44 +361,12 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     iconDomain: "firecrawl.dev",
   },
   {
-    id: "web-search-plus",
-    runtimeId: "web-search-plus",
-    name: "Web Search Plus",
-    description: "Multi-provider search, extraction, and reranking.",
-    packageName: "web-search-plus-plugin-v2",
-    iconDomain: "tavily.com",
-  },
-  {
-    id: "browser-automation",
-    runtimeId: "browser-automation",
-    name: "Browser Automation",
-    description: "Control Chrome or Chromium over CDP.",
-    packageName: "openclaw-browser-automation",
-    iconDomain: "chromium.org",
-  },
-  {
-    id: "camoufox",
-    runtimeId: "camoufox-mcp",
-    name: "Camoufox MCP",
-    description: "Browser automation with Camoufox.",
-    packageName: "@whit3rabbit/camoufox-mcp",
-    iconDomain: "camoufox.com",
-  },
-  {
     id: "scraperapi",
     runtimeId: "scraperapi-skills",
     name: "ScraperAPI",
     description: "ScraperAPI skills for large-scale extraction.",
     packageName: "@scraperapitech/scraperapi-skills",
     iconDomain: "scraperapi.com",
-  },
-  {
-    id: "keenable",
-    runtimeId: "keenable-search",
-    name: "Keenable",
-    description: "Keyless web search with optional rate-limit lift.",
-    packageName: "@keenable/openclaw-search",
-    iconDomain: "keenable.com",
   },
   {
     id: "diagnostics-prometheus",

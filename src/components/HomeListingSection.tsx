@@ -1,4 +1,4 @@
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link } from "@tanstack/react-router";
 import { isPluginCategorySlug, isSkillCategorySlug } from "clawhub-schema";
 import {
   BadgeCheck,
@@ -117,11 +117,11 @@ function sortSkillEntriesByInstalls(entries: SkillPageEntry[]) {
 function HomeListingEmptyPanel({
   variant,
   query,
-  onFullSearch,
+  onClearSearch,
 }: {
   variant: "error" | "search" | "filter";
   query?: string;
-  onFullSearch?: () => void;
+  onClearSearch?: () => void;
 }) {
   const Icon = variant === "error" ? CloudOff : variant === "search" ? Binoculars : Moon;
   const title =
@@ -136,7 +136,7 @@ function HomeListingEmptyPanel({
     variant === "error"
       ? "We couldn't load this slice of the catalog. Give it another try in a moment."
       : variant === "search"
-        ? "This tab's filters might be too picky. Try another tab, or search the full hub."
+        ? "Try another query or clear the search."
         : "Nothing on this tab right now. Peek at another tab or widen the category.";
 
   return (
@@ -146,10 +146,10 @@ function HomeListingEmptyPanel({
       </div>
       <p className="home-v2-listing-empty-title">{title}</p>
       <p className="home-v2-listing-empty-body">{body}</p>
-      {variant === "search" && onFullSearch ? (
-        <button type="button" className="home-v2-listing-empty-action" onClick={onFullSearch}>
-          <Search size={15} aria-hidden="true" />
-          Search the full hub
+      {variant === "search" && onClearSearch ? (
+        <button type="button" className="home-v2-listing-empty-action" onClick={onClearSearch}>
+          <X size={15} aria-hidden="true" />
+          Clear search
         </button>
       ) : null}
     </div>
@@ -401,7 +401,6 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
 }
 
 export function HomeListingSection() {
-  const navigate = useNavigate();
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchRequestRef = useRef(0);
   const [kind, setKind] = useState<ListingKind>("skills");
@@ -656,18 +655,8 @@ export function HomeListingSection() {
     searchInputRef.current?.blur();
   };
 
-  const goToFullSearch = () => {
-    const q = trimmedSearch;
-    if (!q) return;
-    void navigate({
-      to: "/search",
-      search: { q, type: kind === "skills" ? "skills" : "plugins" },
-    });
-  };
-
   const handleListingSearchSubmit = (event: FormEvent) => {
     event.preventDefault();
-    goToFullSearch();
   };
 
   const handleKindChange = (nextKind: ListingKind) => {
@@ -864,7 +853,7 @@ export function HomeListingSection() {
         <HomeListingEmptyPanel
           variant={isSearchMode ? "search" : "filter"}
           query={isSearchMode ? trimmedSearch : undefined}
-          onFullSearch={isSearchMode ? goToFullSearch : undefined}
+          onClearSearch={isSearchMode ? closeListingSearch : undefined}
         />
       ) : null}
 
