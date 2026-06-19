@@ -43,6 +43,7 @@ function PopularPublisherCard({ pinned }: { pinned: PinnedPublisher }) {
       className="home-v2-popular-publisher-card"
       aria-label={`${name}, @${pinned.handle}`}
       role="listitem"
+      draggable={false}
     >
       <div className="home-v2-popular-publisher-head">
         <MarketplaceIcon
@@ -118,6 +119,7 @@ export function HomePopularPublishersSection() {
         onPointerMove={handlePointerMove}
         onPointerUp={stopDragging}
         onPointerCancel={stopDragging}
+        onDragStart={(event) => event.preventDefault()}
         onClickCapture={(event) => {
           if (!dragRef.current.moved) return;
           event.preventDefault();

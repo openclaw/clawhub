@@ -19634,6 +19634,7 @@ a.publisher-profile-detail:hover {
   color: inherit;
   text-decoration: none;
   scroll-snap-align: start;
+  -webkit-user-drag: none;
   transition:
     border-color 150ms ease,
     background 150ms ease;
