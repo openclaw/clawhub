@@ -120,15 +120,15 @@ describe("SkillHeader", () => {
     expect(onToggleStar).not.toHaveBeenCalled();
     expect(onOpenReport).not.toHaveBeenCalled();
     expect(screen.getByText("Owner")).toBeTruthy();
-    expect(screen.getByText("Installs")).toBeTruthy();
-    expect(screen.getByText("3")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.getByText("2")).toBeTruthy();
     expect(container.querySelector('a[href="/user/local"]')).toBeTruthy();
     expect(
       container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/user/local"]'),
     ).toBeTruthy();
   });
 
-  it("shows 30-day installs and downloads with matching graph metadata", () => {
+  it("shows the 30-day downloads graph from activity data", () => {
     renderHeader({
       activityTrend: {
         installs: {
@@ -162,25 +162,25 @@ describe("SkillHeader", () => {
       },
     });
 
-    expect(screen.getByText("30-day Installs")).toBeTruthy();
     expect(screen.getByText("30-day Downloads")).toBeTruthy();
-    expect(screen.getByText("5")).toBeTruthy();
     expect(screen.getByText("12")).toBeTruthy();
-    expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
+    expect(screen.queryByText("30-day Installs")).toBeNull();
+    expect(screen.queryByText("5")).toBeNull();
+    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
   });
 
   it("reserves graph space while activity metrics are loading", () => {
     const { container } = renderHeader({ activityTrendLoading: true });
 
-    expect(screen.getByText("30-day Installs")).toBeTruthy();
     expect(screen.getByText("30-day Downloads")).toBeTruthy();
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(2);
+    expect(screen.queryByText("30-day Installs")).toBeNull();
+    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
-  it("shows the nearest daily graph point and line marker on hover", () => {
+  it("shows the nearest daily download graph point and line marker on hover", () => {
     const { container } = renderHeader({
       activityTrend: {
         installs: {
@@ -206,7 +206,7 @@ describe("SkillHeader", () => {
       },
     });
 
-    const chart = screen.getByRole("img", { name: "Daily installs over the last 30 days" });
+    const chart = screen.getByRole("img", { name: "Daily downloads over the last 30 days" });
     chart.getBoundingClientRect = () =>
       ({
         x: 0,
@@ -222,7 +222,7 @@ describe("SkillHeader", () => {
 
     fireEvent.pointerMove(chart, { clientX: 100 });
 
-    expect(screen.getByText(/2 installs$/)).toBeTruthy();
+    expect(screen.getByText(/11 downloads$/)).toBeTruthy();
     expect(container.querySelectorAll(".metric-trend-marker-line")).toHaveLength(1);
   });
 
@@ -271,7 +271,7 @@ describe("SkillHeader", () => {
   it("hides archive-only metadata for source-backed skills", () => {
     renderHeader({ showArchiveMetadata: false });
 
-    expect(screen.getByText("Installs")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("Owner")).toBeTruthy();
     expect(screen.getByText("Last updated")).toBeTruthy();
     expect(screen.queryByText("Current version")).toBeNull();

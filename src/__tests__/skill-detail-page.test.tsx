@@ -272,9 +272,9 @@ describe("SkillDetailPage", () => {
     );
 
     expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.getByText("30-day Installs")).toBeTruthy();
     expect(screen.getByText("30-day Downloads")).toBeTruthy();
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(2);
+    expect(screen.queryByText("30-day Installs")).toBeNull();
+    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
 
     useQueryMock.mockImplementation((query: unknown) => {
@@ -284,7 +284,7 @@ describe("SkillDetailPage", () => {
     });
     rerender(<SkillDetailPage slug="weather" initialData={initialData} />);
 
-    expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
+    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
     expect(

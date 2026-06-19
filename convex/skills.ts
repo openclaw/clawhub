@@ -5865,7 +5865,7 @@ export const listAuditPage = query({
     const { numItems, cursor } = normalizePublicListPagination(args.paginationOpts);
     const result = await ctx.db
       .query("skillSearchDigest")
-      .withIndex("by_active_stats_installs_all_time", (q) => q.eq("softDeletedAt", undefined))
+      .withIndex("by_active_stats_downloads", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
       .paginate({ cursor, numItems });
 
@@ -6139,13 +6139,14 @@ type SkillCatalogCursorState = {
   recommendedFallback?: SkillCatalogRecommendedFallbackSort;
 };
 
-type SkillCatalogRecommendedFallbackSort = "updated" | "installs";
+type SkillCatalogRecommendedFallbackSort = "updated" | "downloads";
 
-const SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT = "installs" as const;
+const SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT = "downloads" as const;
 
 function normalizeSkillCatalogRecommendedFallbackSort(
   value: unknown,
 ): SkillCatalogRecommendedFallbackSort | undefined {
+  if (value === "installs") return "downloads";
   return value === "updated" || value === SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
     ? value
     : undefined;

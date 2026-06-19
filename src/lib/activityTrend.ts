@@ -14,7 +14,7 @@ export type MetricTrend = {
 
 export type ActivityTrend = {
   downloads: MetricTrend;
-  installs: MetricTrend;
+  installs?: MetricTrend;
 };
 
 export const getSkillActivityTrendForSlug = api.skills.getActivityTrendForSlug;
@@ -46,5 +46,5 @@ function isMetricTrend(value: unknown): value is MetricTrend {
 }
 
 export function isActivityTrend(value: unknown): value is ActivityTrend {
-  return isRecord(value) && isMetricTrend(value.downloads) && isMetricTrend(value.installs);
+  return isRecord(value) && isMetricTrend(value.downloads);
 }

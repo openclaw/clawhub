@@ -20,16 +20,16 @@ describe("PublisherListItem", () => {
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
-  it("renders installs instead of downloads as the adoption metric", () => {
+  it("renders downloads as the adoption metric", () => {
     render(<PublisherListItem publisher={makePublisher()} />);
 
-    expect(screen.getByText("34")).toBeTruthy();
-    expect(screen.getByText("installs")).toBeTruthy();
-    expect(screen.queryByText("downloads")).toBeNull();
-    expect(screen.queryByText("12")).toBeNull();
+    expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByText("downloads")).toBeTruthy();
+    expect(screen.queryByText("installs")).toBeNull();
+    expect(screen.queryByText("34")).toBeNull();
   });
 
-  it("renders legacy preview metrics as installs during rollout", () => {
+  it("renders legacy preview metrics as downloads", () => {
     const publisher = makePublisher();
     publisher.publishedItems = [
       { kind: "skill", displayName: "Legacy Skill", downloads: 12 } as never,
@@ -37,8 +37,8 @@ describe("PublisherListItem", () => {
 
     render(<PublisherListItem publisher={publisher} variant="highlight" />);
 
-    expect(screen.getByText("12")).toBeTruthy();
-    expect(screen.queryByText("downloads")).toBeNull();
+    expect(screen.getAllByText("12")).toHaveLength(2);
+    expect(screen.getByText("downloads")).toBeTruthy();
   });
 });
 

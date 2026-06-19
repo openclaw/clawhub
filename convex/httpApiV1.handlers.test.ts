@@ -8450,19 +8450,19 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
-  it("packages list install sort merges package and skill rows by installs", async () => {
-    const pluginPackage = makeCatalogItem("plugin-installed", {
+  it("packages list downloads sort merges package and skill rows by downloads", async () => {
+    const pluginPackage = makeCatalogItem("plugin-downloaded", {
       family: "code-plugin",
       updatedAt: 200,
       stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
     });
-    const skillPackage = makeCatalogItem("skill-installed", {
+    const skillPackage = makeCatalogItem("skill-downloaded", {
       family: "skill",
       updatedAt: 100,
-      stats: { downloads: 1, installs: 40, stars: 0, versions: 1 },
+      stats: { downloads: 1_000, installs: 40, stars: 0, versions: 1 },
     });
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
-      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
       if (Object.hasOwn(args, "viewerUserId")) {
         return { page: [pluginPackage], isDone: true, continueCursor: "" };
       }
@@ -8472,15 +8472,31 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPackagesV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages?limit=2&sort=installs"),
+      new Request("https://example.com/api/v1/packages?limit=2&sort=downloads"),
     );
 
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "skill-installed",
-      "plugin-installed",
+      "skill-downloaded",
+      "plugin-downloaded",
     ]);
+    expect(runQuery).toHaveBeenCalledTimes(2);
+  });
+
+  it("packages list maps legacy install sort to downloads", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?limit=2&sort=installs"),
+    );
+
+    expect(response.status).toBe(200);
     expect(runQuery).toHaveBeenCalledTimes(2);
   });
 
@@ -8519,13 +8535,13 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledTimes(4);
   });
 
-  it("packages list recommended fallback merges package and skill rows by installs", async () => {
-    const pluginPackage = makeCatalogItem("plugin-low-install-score", {
+  it("packages list recommended fallback merges package and skill rows by downloads", async () => {
+    const pluginPackage = makeCatalogItem("plugin-low-download-score", {
       family: "code-plugin",
       updatedAt: 300,
       stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
     });
-    const skillPackage = makeCatalogItem("skill-high-install-score", {
+    const skillPackage = makeCatalogItem("skill-high-download-score", {
       family: "skill",
       updatedAt: 200,
       stats: { downloads: 10, installs: 100, stars: 0, versions: 1 },
@@ -8533,10 +8549,10 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (Object.keys(args).length === 0) return true;
       if (Object.hasOwn(args, "viewerUserId")) {
-        expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+        expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
         return { page: [pluginPackage], isDone: false, continueCursor: "packages-next" };
       }
-      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
       return { page: [skillPackage], isDone: false, continueCursor: "skills-next" };
     });
     const runMutation = vi.fn().mockResolvedValue(okRate());
@@ -8549,9 +8565,9 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "skill-high-install-score",
+      "skill-high-download-score",
     ]);
-    expect(json.nextCursor).toContain('"recommendedFallback":"installs"');
+    expect(json.nextCursor).toContain('"recommendedFallback":"downloads"');
     expect(runQuery).toHaveBeenCalledTimes(4);
   });
 
@@ -8794,29 +8810,29 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
-  it("plugin and package lists reject invalid downloads sort", async () => {
+  it("plugin and package lists reject invalid sort values", async () => {
     const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const packageResponse = await __handlers.listPackagesV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/packages?family=code-plugin&sort=downloads&cursor=invalid-download-cursor",
+        "https://example.com/api/v1/packages?family=code-plugin&sort=popular&cursor=invalid-sort-cursor",
       ),
     );
     const pluginResponse = await __handlers.listPluginsV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        `https://example.com/api/v1/plugins?sort=downloads&cursor=${encodeURIComponent(
+        `https://example.com/api/v1/plugins?sort=popular&cursor=${encodeURIComponent(
           `pkgplugins:${JSON.stringify({
             codePlugins: {
-              cursor: "invalid-code-download-cursor",
+              cursor: "invalid-code-sort-cursor",
               offset: 0,
               pageSize: 25,
               done: false,
             },
             bundlePlugins: {
-              cursor: "invalid-bundle-download-cursor",
+              cursor: "invalid-bundle-sort-cursor",
               offset: 0,
               pageSize: 25,
               done: false,
@@ -8833,7 +8849,7 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it("plugins list defaults filtered browse to installs sort", async () => {
+  it("plugins list defaults filtered browse to downloads sort", async () => {
     const readinessCalls: unknown[] = [];
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) {
@@ -8856,14 +8872,14 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual(
         expect.objectContaining({
           category: "tools",
-          sort: "installs",
+          sort: "downloads",
           paginationOpts: { cursor: null, numItems: 7 },
         }),
       );
     }
   });
 
-  it("plugins list defaults featured browse to installs sort", async () => {
+  it("plugins list defaults featured browse to downloads sort", async () => {
     const readinessCalls: unknown[] = [];
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) {
@@ -8886,20 +8902,20 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual(
         expect.objectContaining({
           highlightedOnly: true,
-          sort: "installs",
+          sort: "downloads",
           paginationOpts: { cursor: null, numItems: 7 },
         }),
       );
     }
   });
 
-  it("plugins list install sort forwards to both plugin families and merges by installs", async () => {
-    const codePlugin = makeCatalogItem("code-installed", {
+  it("plugins list downloads sort forwards to both plugin families and merges by downloads", async () => {
+    const codePlugin = makeCatalogItem("code-low-download", {
       family: "code-plugin",
       updatedAt: 100,
       stats: { downloads: 1, installs: 50, stars: 0, versions: 1 },
     });
-    const bundlePlugin = makeCatalogItem("bundle-installed", {
+    const bundlePlugin = makeCatalogItem("bundle-downloaded", {
       family: "bundle-plugin",
       updatedAt: 200,
       stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
@@ -8907,7 +8923,7 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (Object.keys(args).length === 0) return 2;
       if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
-      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
       if (args.family === "code-plugin") {
         return { page: [codePlugin], isDone: true, continueCursor: "" };
       }
@@ -8920,14 +8936,14 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPluginsV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?limit=2&sort=installs"),
+      new Request("https://example.com/api/v1/plugins?limit=2&sort=downloads"),
     );
 
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
-      "code-installed",
-      "bundle-installed",
+      "bundle-downloaded",
+      "code-low-download",
     ]);
   });
 
@@ -9007,7 +9023,7 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
-  it("plugins list falls back to installs sort while recommendation scores backfill", async () => {
+  it("plugins list falls back to downloads sort while recommendation scores backfill", async () => {
     const codePlugin = makeCatalogItem("code-older-high-score", {
       family: "code-plugin",
       updatedAt: 100,
@@ -9021,7 +9037,7 @@ describe("httpApiV1 handlers", () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (Object.keys(args).length === 0) return 2;
       if (hasPluginRecommendedScoreReadinessArgs(args)) return true;
-      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
       if (args.family === "code-plugin") {
         return { page: [codePlugin], isDone: true, continueCursor: "" };
       }
@@ -9045,7 +9061,7 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
-  it("plugins list keeps installs fallback sort from recommended pagination cursors", async () => {
+  it("plugins list maps legacy installs fallback sort from recommended pagination cursors", async () => {
     const fallbackCursor = `pkgplugins:${JSON.stringify({
       codePlugins: { cursor: null, offset: 0, pageSize: 1, done: false },
       bundlePlugins: { cursor: null, offset: 0, pageSize: 1, done: true },
@@ -9061,7 +9077,7 @@ describe("httpApiV1 handlers", () => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) {
         throw new Error("readiness should come from the pagination cursor");
       }
-      expect(args).toEqual(expect.objectContaining({ sort: "installs" }));
+      expect(args).toEqual(expect.objectContaining({ sort: "downloads" }));
       if (args.family === "code-plugin") {
         return { page: [codePlugin], isDone: true, continueCursor: "" };
       }

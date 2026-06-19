@@ -2,7 +2,7 @@ import { Info } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 const DOWNLOAD_COUNT_HELP =
-  "Downloads and installs can be inflated by bots or spam. Use them as context only, not as a quality or trust signal.";
+  "Download counts can be inflated by bots or spam. Use them as context only, not as a quality or trust signal.";
 
 export function ActivityMetricLabel({ label }: { label: string }) {
   return (

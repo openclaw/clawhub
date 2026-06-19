@@ -186,7 +186,7 @@ describe("plugins route", () => {
     expect(redirectMock).not.toHaveBeenCalled();
   });
 
-  it("drops removed downloads sort links to the plugin browse default", async () => {
+  it("keeps downloads sort links and cursors in plugin browse", async () => {
     const route = await loadRoute();
     const validateSearch = route.__config.validateSearch as (
       search: Record<string, unknown>,
@@ -194,8 +194,8 @@ describe("plugins route", () => {
 
     expect(validateSearch({ sort: "downloads", cursor: "legacy-download-cursor" })).toEqual(
       expect.objectContaining({
-        sort: undefined,
-        cursor: undefined,
+        sort: "downloads",
+        cursor: "legacy-download-cursor",
       }),
     );
   });
@@ -230,7 +230,7 @@ describe("plugins route", () => {
     ).not.toThrow();
     expect(() =>
       beforeLoad?.({
-        search: { q: "security", sort: "installs" },
+        search: { q: "security", sort: "downloads" },
       }),
     ).not.toThrow();
     expect(() =>
@@ -405,7 +405,7 @@ describe("plugins route", () => {
 
     await loadPluginsPageData({
       q: "security",
-      sort: "installs",
+      sort: "downloads",
       cursor: "cursor:search",
     });
 
@@ -424,12 +424,12 @@ describe("plugins route", () => {
     const { loadPluginsPageData } = await import("../routes/plugins/index");
 
     await loadPluginsPageData({
-      sort: "installs",
+      sort: "downloads",
     });
 
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        sort: "installs",
+        sort: "downloads",
         limit: 25,
       }),
     );
@@ -518,7 +518,7 @@ describe("plugins route", () => {
     });
   });
 
-  it("renders plugin install counts in browse results", async () => {
+  it("renders plugin download counts in browse results", async () => {
     loaderDataMock = {
       items: [
         {
@@ -541,7 +541,7 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByText("9")).toBeTruthy();
+    expect(screen.getByText("1.2k")).toBeTruthy();
   });
 
   it("renders the browse shell immediately while catalog data loads", async () => {
@@ -825,7 +825,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         isOfficial: true,
-        sort: "installs",
+        sort: "downloads",
         limit: 25,
       }),
     );
@@ -976,7 +976,7 @@ describe("plugins route", () => {
       expect.objectContaining({ sort: "recommended" }),
     );
     expect(validateSearch({ sort: "installs" })).toEqual(
-      expect.objectContaining({ sort: "installs" }),
+      expect.objectContaining({ sort: "downloads" }),
     );
     expect(validateSearch({ sort: "relevance" })).toEqual(
       expect.objectContaining({ sort: "relevance" }),
@@ -1193,9 +1193,9 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("radio", { name: "Most installed" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByRole("radio", { name: "Most downloaded" }).getAttribute("aria-checked"),
+    ).toBe("true");
     expect(screen.getByRole("radio", { name: "Recommended" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Recently updated" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
@@ -1228,7 +1228,7 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Most installed" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Most downloaded" }));
 
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
@@ -1238,12 +1238,12 @@ describe("plugins route", () => {
       cursor: undefined,
       family: undefined,
       featured: undefined,
-      sort: "installs",
+      sort: "downloads",
     });
   });
 
   it("sorts loaded search results by the selected search sort", async () => {
-    searchMock = { q: "security", sort: "installs" };
+    searchMock = { q: "security", sort: "downloads" };
     loaderDataMock = {
       items: [
         {
@@ -1265,45 +1265,6 @@ describe("plugins route", () => {
           createdAt: 1,
           updatedAt: 10,
           stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
-        },
-      ],
-      nextCursor: null,
-      rateLimited: false,
-      retryAfterSeconds: null,
-    };
-    const route = await loadRoute();
-    const Component = route.__config.component as ComponentType;
-
-    render(<Component />);
-
-    const zulu = screen.getByText("Zulu Plugin");
-    const alpha = screen.getByText("Alpha Plugin");
-    expect(zulu.compareDocumentPosition(alpha) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-  });
-
-  it("sorts loaded search results by install count", async () => {
-    searchMock = { q: "security", sort: "installs" };
-    loaderDataMock = {
-      items: [
-        {
-          name: "zulu-plugin",
-          displayName: "Zulu Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 2,
-          updatedAt: 20,
-          stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
-        },
-        {
-          name: "alpha-plugin",
-          displayName: "Alpha Plugin",
-          family: "code-plugin",
-          channel: "community",
-          isOfficial: false,
-          createdAt: 1,
-          updatedAt: 10,
-          stats: { downloads: 1, installs: 10, stars: 0, versions: 1 },
         },
       ],
       nextCursor: null,
@@ -1318,6 +1279,45 @@ describe("plugins route", () => {
     const alpha = screen.getByText("Alpha Plugin");
     const zulu = screen.getByText("Zulu Plugin");
     expect(alpha.compareDocumentPosition(zulu) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("sorts loaded search results by download count", async () => {
+    searchMock = { q: "security", sort: "downloads" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "zulu-plugin",
+          displayName: "Zulu Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 2,
+          updatedAt: 20,
+          stats: { downloads: 10, installs: 1, stars: 0, versions: 1 },
+        },
+        {
+          name: "alpha-plugin",
+          displayName: "Alpha Plugin",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 1,
+          updatedAt: 10,
+          stats: { downloads: 1, installs: 10, stars: 0, versions: 1 },
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const zulu = screen.getByText("Zulu Plugin");
+    const alpha = screen.getByText("Alpha Plugin");
+    expect(zulu.compareDocumentPosition(alpha) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
 
   it("keeps search sort visible even if a stale featured flag is present", async () => {
@@ -1344,8 +1344,8 @@ describe("plugins route", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["Recommended", "Most installed", "Recently updated"]);
-    expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
+    expect(sortOptions).toEqual(["Recommended", "Most downloaded", "Recently updated"]);
+    expect(screen.queryByRole("radio", { name: "Most installed" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();
   });

@@ -2690,7 +2690,7 @@ export const listAuditPage = query({
     const numItems = Math.max(1, Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
     const result = await ctx.db
       .query("packages")
-      .withIndex("by_active_installs", (q) => q.eq("softDeletedAt", undefined))
+      .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
       .paginate({ cursor: args.paginationOpts.cursor, numItems });
 

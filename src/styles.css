@@ -11124,7 +11124,7 @@ a.agentic-risk-finding-title:focus-visible {
   white-space: nowrap;
 }
 
-.publisher-card-featured-installs {
+.publisher-card-featured-downloads {
   justify-self: end;
   display: inline-flex;
   align-items: center;
@@ -11136,12 +11136,12 @@ a.agentic-risk-finding-title:focus-visible {
   white-space: nowrap;
 }
 
-.publisher-card-featured-installs svg {
+.publisher-card-featured-downloads svg {
   flex: 0 0 auto;
   color: var(--ink-faint);
 }
 
-.publisher-card-featured-installs span {
+.publisher-card-featured-downloads span {
   display: block;
   font-family: var(--font-mono);
   text-align: right;
@@ -11790,8 +11790,8 @@ a.agentic-risk-finding-title:focus-visible {
   text-align: right;
 }
 
-.audits-installs-header,
-.audits-installs-cell {
+.audits-downloads-header,
+.audits-downloads-cell {
   justify-content: flex-end;
   text-align: right;
 }
@@ -11842,7 +11842,7 @@ a.agentic-risk-finding-title:focus-visible {
   min-width: 0;
 }
 
-.audits-installs-cell {
+.audits-downloads-cell {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -11933,7 +11933,7 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .audits-signal-cell::before,
-  .audits-installs-cell::before {
+  .audits-downloads-cell::before {
     min-width: 112px;
     color: var(--ink-soft);
     font-size: var(--fs-xs);
@@ -11950,13 +11950,13 @@ a.agentic-risk-finding-title:focus-visible {
     content: "VirusTotal";
   }
 
-  .audits-installs-cell {
+  .audits-downloads-cell {
     justify-content: flex-start;
     text-align: left;
   }
 
-  .audits-installs-cell::before {
-    content: "Installs";
+  .audits-downloads-cell::before {
+    content: "Downloads";
   }
 }
 

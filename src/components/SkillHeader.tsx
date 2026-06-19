@@ -498,27 +498,6 @@ function SkillSidebarStats({
       blocks={[
         activityTrendLoading
           ? {
-              key: "install-trend-loading",
-              label: <ActivityMetricLabel label="30-day Installs" />,
-              value: <MetricTrendCardSkeleton />,
-              large: true,
-            }
-          : activityTrend
-            ? {
-                key: "install-trend",
-                label: <ActivityMetricLabel label="30-day Installs" />,
-                value: (
-                  <MetricTrendCard
-                    trend={activityTrend.installs}
-                    ariaLabel="Daily installs over the last 30 days"
-                    unitLabel="install"
-                  />
-                ),
-                large: true,
-              }
-            : { label: "Installs", value: formattedStats.installsAllTime, large: true },
-        activityTrendLoading
-          ? {
               key: "download-trend-loading",
               label: <ActivityMetricLabel label="30-day Downloads" />,
               value: <MetricTrendCardSkeleton />,

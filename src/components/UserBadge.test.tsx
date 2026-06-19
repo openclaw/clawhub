@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PublicPublisher, PublicUser } from "../lib/publicUser";
 import { TooltipProvider } from "./ui/tooltip";
-import { getHoverTotalInstalls, UserBadge } from "./UserBadge";
+import { getHoverTotalDownloads, UserBadge } from "./UserBadge";
 
 describe("UserBadge", () => {
   const user: PublicUser = {
@@ -81,10 +81,10 @@ describe("UserBadge", () => {
 
   it("falls back to the legacy hover metric during rollout", () => {
     expect(
-      getHoverTotalInstalls({
+      getHoverTotalDownloads({
         publishedSkills: 1,
         totalStars: 2,
-        totalDownloads: 42,
+        totalInstalls: 42,
       }),
     ).toBe(42);
   });

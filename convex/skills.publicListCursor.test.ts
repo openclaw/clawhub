@@ -1317,10 +1317,7 @@ describe("public skill list deterministic cursors", () => {
 
     expect(result.page).toHaveLength(1);
     expect(result.page[0]).toMatchObject({ latestVersion: null });
-    expect(withIndex).toHaveBeenCalledWith(
-      "by_active_stats_installs_all_time",
-      expect.any(Function),
-    );
+    expect(withIndex).toHaveBeenCalledWith("by_active_stats_downloads", expect.any(Function));
   });
 });
 

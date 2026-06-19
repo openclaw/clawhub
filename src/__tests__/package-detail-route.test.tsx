@@ -686,13 +686,13 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
     const { container } = render(<Component />);
 
-    expect(screen.getByText("30-day Installs")).toBeTruthy();
     expect(screen.getByText("30-day Downloads")).toBeTruthy();
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(2);
+    expect(screen.queryByText("30-day Installs")).toBeNull();
+    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
-  it("renders plugin 30-day installs and downloads graphs from the activity query", async () => {
+  it("renders the plugin 30-day downloads graph from the activity query", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -743,18 +743,17 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const installsLabel = screen.getByText("30-day Installs");
+    const downloadsLabel = screen.getByText("30-day Downloads");
     const currentVersionLabel = screen.getByText("Current version");
-    expect(installsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
+    expect(downloadsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("30-day Installs")).toBeTruthy();
-    expect(screen.getByText("9")).toBeTruthy();
     expect(screen.getByText("30-day Downloads")).toBeTruthy();
     expect(screen.getByText("14")).toBeTruthy();
-    expect(screen.getByRole("img", { name: "Daily installs over the last 30 days" })).toBeTruthy();
+    expect(screen.queryByText("30-day Installs")).toBeNull();
+    expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(2);
+    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
     expect(
       useQueryMock.mock.calls.some(([query, args]) => {
         return (
@@ -791,10 +790,9 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
     const { container } = render(<Component />);
 
-    expect(screen.getByText("Installs")).toBeTruthy();
-    expect(screen.getByText("9")).toBeTruthy();
     expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("1.2k")).toBeTruthy();
+    expect(screen.queryByText("Installs")).toBeNull();
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
@@ -1108,10 +1106,10 @@ describe("plugin detail route", () => {
     const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
       label?.startsWith("Security audit"),
     );
-    const installsLabelIndex = sidebarLabels.findIndex((label) => label?.includes("Installs"));
+    const downloadsLabelIndex = sidebarLabels.findIndex((label) => label?.includes("Downloads"));
     expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
-    expect(installsLabelIndex).toBeGreaterThanOrEqual(0);
-    expect(securityAuditLabelIndex).toBeGreaterThan(installsLabelIndex);
+    expect(downloadsLabelIndex).toBeGreaterThanOrEqual(0);
+    expect(securityAuditLabelIndex).toBeGreaterThan(downloadsLabelIndex);
     expect(screen.queryByRole("tab", { name: "Capabilities" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Verification" })).toBeNull();
   });

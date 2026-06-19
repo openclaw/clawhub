@@ -49,16 +49,16 @@ const basePlugin = {
 };
 
 describe("PublishedItemCard", () => {
-  it("renders installs instead of downloads", () => {
+  it("renders downloads", () => {
     render(<PublishedItemCard item={{ ...baseSkill, icon: null }} view="list" />);
 
-    expect(screen.getByText("8")).toBeTruthy();
-    expect(screen.getByText("installs")).toBeTruthy();
-    expect(screen.queryByText("downloads")).toBeNull();
-    expect(screen.queryByText("42")).toBeNull();
+    expect(screen.getByText("42")).toBeTruthy();
+    expect(screen.getByText("downloads")).toBeTruthy();
+    expect(screen.queryByText("installs")).toBeNull();
+    expect(screen.queryByText("8")).toBeNull();
   });
 
-  it("renders the legacy backend metric as installs during rollout", () => {
+  it("renders the legacy backend metric as downloads", () => {
     render(
       <PublishedItemCard
         item={{ ...baseSkill, downloads: 42, installs: undefined, icon: null } as never}
@@ -67,8 +67,8 @@ describe("PublishedItemCard", () => {
     );
 
     expect(screen.getByText("42")).toBeTruthy();
-    expect(screen.getByText("installs")).toBeTruthy();
-    expect(screen.queryByText("downloads")).toBeNull();
+    expect(screen.getByText("downloads")).toBeTruthy();
+    expect(screen.queryByText("installs")).toBeNull();
   });
 
   describe("grid view", () => {

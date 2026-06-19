@@ -308,7 +308,7 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
-const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "installs"] as const;
+const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "downloads", "installs"] as const;
 const LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES = {
   "mcp-tooling": "tools",
   data: "tools",
@@ -822,7 +822,7 @@ type PluginCatalogCursorState = {
   recommendedFallback?: RecommendedFallbackSort;
 };
 
-type RecommendedFallbackSort = "updated" | "installs";
+type RecommendedFallbackSort = "updated" | "downloads";
 
 type CatalogPageResult<T> = {
   page: T[];
@@ -842,7 +842,7 @@ const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const PACKAGE_PAGE_CURSOR_PREFIX = "pkgpage:";
-const RECOMMENDED_FALLBACK_SORT = "installs" as const;
+const RECOMMENDED_FALLBACK_SORT = "downloads" as const;
 const CATALOG_CURSOR_PREFIXES = [
   UNIFIED_CATALOG_CURSOR_PREFIX,
   PLUGIN_CATALOG_CURSOR_PREFIX,
@@ -852,6 +852,7 @@ const CATALOG_CURSOR_PREFIXES = [
 ];
 
 function normalizeRecommendedFallbackSort(value: unknown): RecommendedFallbackSort | undefined {
+  if (value === "installs") return "downloads";
   return value === "updated" || value === RECOMMENDED_FALLBACK_SORT ? value : undefined;
 }
 
@@ -1011,6 +1012,10 @@ function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
   return a.name.localeCompare(b.name);
 }
 
+function normalizePublicPackageSort(sort: (typeof PACKAGE_LIST_SORT_VALUES)[number] | undefined) {
+  return sort === "installs" ? "downloads" : sort;
+}
+
 function compareCatalogItemsForSort(
   a: CatalogListItem,
   b: CatalogListItem,
@@ -1031,9 +1036,9 @@ function compareCatalogItemsForSort(
     );
     if (score !== 0) return score;
   }
-  if (sort === "installs") {
-    const installs = (b.stats?.installs ?? 0) - (a.stats?.installs ?? 0);
-    if (installs !== 0) return installs;
+  if (sort === "downloads" || sort === "installs") {
+    const downloads = (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0);
+    if (downloads !== 0) return downloads;
   }
   return compareCatalogItems(a, b);
 }
@@ -1481,7 +1486,7 @@ async function listPackages(
     (highlightedOnly || category)
       ? RECOMMENDED_FALLBACK_SORT
       : options?.defaultSort;
-  const effectiveSort = sortParam.value ?? pluginDefaultSort;
+  const effectiveSort = normalizePublicPackageSort(sortParam.value ?? pluginDefaultSort);
   if (category && (effectiveFamily === "skill" || (!effectiveFamily && includeSkills))) {
     return text(
       "Plugin category is only supported for plugin package endpoints",

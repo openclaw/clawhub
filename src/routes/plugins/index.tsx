@@ -16,9 +16,9 @@ import {
   type PackageListItem,
 } from "../../lib/packageApi";
 
-type VisiblePluginSort = "recommended" | "updated" | "installs";
+type VisiblePluginSort = "recommended" | "updated" | "downloads";
 type PluginSort = VisiblePluginSort | "relevance";
-type LegacyPluginSort = PluginSort | "newest" | "name";
+type LegacyPluginSort = PluginSort | "newest" | "name" | "installs";
 
 const PLUGINS_PAGE_SIZE = 25;
 
@@ -39,7 +39,7 @@ type LegacyPluginView = PluginView | "cards";
 
 const PLUGIN_SORT_OPTIONS = [
   { value: "recommended", label: "Recommended" },
-  { value: "installs", label: "Most installed" },
+  { value: "downloads", label: "Most downloaded" },
   { value: "updated", label: "Recently updated" },
 ];
 
@@ -96,11 +96,12 @@ function parsePluginSort(value: unknown): LegacyPluginSort | undefined {
     value === "recommended" ||
     value === "relevance" ||
     value === "updated" ||
+    value === "downloads" ||
     value === "installs" ||
     value === "newest" ||
     value === "name"
   ) {
-    return value;
+    return value === "installs" ? "downloads" : value;
   }
   return undefined;
 }
@@ -115,8 +116,8 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
       a.family.localeCompare(b.family) ||
       a.name.localeCompare(b.name);
 
-    if (sort === "installs") {
-      return (b.stats?.installs ?? 0) - (a.stats?.installs ?? 0) || tieBreak();
+    if (sort === "downloads") {
+      return (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0) || tieBreak();
     }
 
     return tieBreak();
@@ -125,7 +126,7 @@ function sortPluginSearchItems(items: PackageListItem[], sort: PluginSort) {
 }
 
 function normalizeActivePluginSort(sort: LegacyPluginSort | undefined): PluginSort | undefined {
-  if (sort === "newest" || sort === "name") return undefined;
+  if (sort === "newest" || sort === "name" || sort === "installs") return undefined;
   return sort;
 }
 
@@ -138,7 +139,7 @@ function hasPluginBrowseFilter(
 function getDefaultPluginBrowseSort(
   args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
 ): VisiblePluginSort {
-  return hasPluginBrowseFilter(args) ? "installs" : "recommended";
+  return hasPluginBrowseFilter(args) ? "downloads" : "recommended";
 }
 
 function hasPersistentPluginBrowseFilter(
@@ -164,7 +165,7 @@ export async function loadPluginsPageData(
       featured: args.featured,
       isOfficial: args.official,
       ...(!args.q &&
-      (args.sort === "installs" ||
+      (args.sort === "downloads" ||
         args.sort === "updated" ||
         !args.sort ||
         args.sort === "recommended")
@@ -218,10 +219,7 @@ export const Route = createFileRoute("/plugins/")({
         ? resolvePluginBrowseCategorySlug(search.category)
         : undefined,
     topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
-    cursor:
-      search.sort !== "downloads" && typeof search.cursor === "string" && search.cursor
-        ? search.cursor
-        : undefined,
+    cursor: typeof search.cursor === "string" && search.cursor ? search.cursor : undefined,
     featured:
       search.featured === true || search.featured === "true" || search.featured === "1"
         ? true
@@ -244,7 +242,7 @@ export const Route = createFileRoute("/plugins/")({
       search.sort &&
       search.sort !== "recommended" &&
       search.sort !== "updated" &&
-      search.sort !== "installs" &&
+      search.sort !== "downloads" &&
       !(hasQuery && search.sort === "relevance");
     const staleFeatured = Boolean(hasQuery && search.featured);
     if (incompatibleSort || staleFeatured) {
@@ -395,9 +393,11 @@ function PluginsIndex() {
   const activeCategory = search.category;
 
   const activeSort: PluginSort =
-    search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
-      ? "recommended"
-      : (search.sort ?? (hasQuery ? "recommended" : getDefaultPluginBrowseSort(search)));
+    search.sort === "installs"
+      ? "downloads"
+      : search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
+        ? "recommended"
+        : (search.sort ?? (hasQuery ? "recommended" : getDefaultPluginBrowseSort(search)));
   const visibleItems = useMemo(() => {
     return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
   }, [activeSort, hasQuery, items]);
@@ -445,7 +445,7 @@ function PluginsIndex() {
         const isExplicitFilteredRecommendation =
           nextSort === "recommended" && !prev.q && hasPersistentPluginBrowseFilter(prev);
         const sort =
-          isExplicitFilteredRecommendation || nextSort === "installs"
+          isExplicitFilteredRecommendation || nextSort === "downloads"
             ? nextSort
             : nextSort === "updated"
               ? "updated"
