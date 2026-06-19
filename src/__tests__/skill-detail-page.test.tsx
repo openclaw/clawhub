@@ -25,6 +25,11 @@ vi.mock("@tanstack/react-router", () => ({
   Link: ({ children }: { children: ReactNode }) => children,
   useNavigate: () => navigateMock,
   useRouter: () => ({ invalidate: routerInvalidateMock }),
+  useRouterState: ({
+    select,
+  }: {
+    select: (state: { location: { searchStr: string } }) => string;
+  }) => select({ location: { searchStr: "" } }),
 }));
 
 vi.mock("@convex-dev/auth/react", () => ({
@@ -620,7 +625,7 @@ describe("SkillDetailPage", () => {
     expect(await screen.findByText("Generated from worker.")).toBeTruthy();
   });
 
-  it("renders related skills from the inferred category with a browse link", async () => {
+  it("renders related skills from the stored category with a browse link", async () => {
     useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
       if (
@@ -674,6 +679,7 @@ describe("SkillDetailPage", () => {
               slug: "workflow-runner",
               displayName: "Workflow Runner",
               summary: "Build repeatable agent workflow pipelines.",
+              categories: ["automation"],
               ownerUserId: ownerId,
               ownerPublisherId,
               tags: {},
@@ -719,11 +725,11 @@ describe("SkillDetailPage", () => {
     );
 
     expect(await screen.findByRole("heading", { name: "Related skills" })).toBeTruthy();
-    expect(screen.getByRole("link", { name: "View Workflows skills" }).getAttribute("href")).toBe(
-      "/skills?category=workflows",
+    expect(screen.getByRole("link", { name: "View Automation skills" }).getAttribute("href")).toBe(
+      "/skills?category=automation",
     );
-    expect(screen.getByRole("link", { name: "More in Workflows" }).getAttribute("href")).toBe(
-      "/skills?category=workflows",
+    expect(screen.getByRole("link", { name: "More in Automation" }).getAttribute("href")).toBe(
+      "/skills?category=automation",
     );
     expect(screen.getByRole("link", { name: /Pipeline Builder/i })).toBeTruthy();
     expect(screen.getByText(/Compose agent workflow pipelines\./i)).toBeTruthy();
@@ -806,8 +812,10 @@ describe("SkillDetailPage", () => {
     expect(sidebarMetadata).toBeTruthy();
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("openclaw skills install weather").length).toBeGreaterThan(0);
-    expect(screen.queryByText("npx clawhub@latest install weather")).toBeNull();
+    expect(screen.getAllByText("openclaw skills install @steipete/weather").length).toBeGreaterThan(
+      0,
+    );
+    expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tab", { name: "Prompt" })).toBeTruthy();
@@ -1011,8 +1019,9 @@ describe("SkillDetailPage", () => {
     );
 
     await screen.findByText("Short summary");
-    expect(screen.queryByText("Publish a new version")).toBeNull();
-    expect(screen.queryByRole("link", { name: "New Version" })).toBeNull();
+    expect(screen.getByRole("link", { name: "New Version" }).getAttribute("href")).toBe(
+      "/publish-skill?updateSlug=weather&ownerHandle=steipete",
+    );
     expect(screen.queryByText(/request security/i)).toBeNull();
     expect(screen.queryByRole("button", { name: "Rescan" })).toBeNull();
     expect(screen.queryByText(/rescans/i)).toBeNull();
@@ -1629,9 +1638,7 @@ describe("SkillDetailPage", () => {
     await waitFor(() => {
       expect(deleteSkill).toHaveBeenCalledWith({ skillId });
     });
-    expect(toast.success).toHaveBeenCalledWith(
-      expect.stringMatching(/^Deleted weather\. Slug reserved until /),
-    );
+    expect(toast.success).toHaveBeenCalledWith("Deleted weather.");
     expect(navigateMock).toHaveBeenCalledWith({ to: "/", replace: true });
   });
 

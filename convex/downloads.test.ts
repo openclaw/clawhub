@@ -150,6 +150,56 @@ describe("downloads helpers", () => {
     });
   });
 
+  it("threads owner handle through the skill lookup", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            ownerUserId: "users:1",
+            slug: "demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          moderationInfo: null,
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          version: "1.0.0",
+          createdAt: 3,
+          files: [{ path: "SKILL.md", storageId: "_storage:1" }],
+          softDeletedAt: undefined,
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: vi.fn().mockResolvedValue(new Blob(["hello"])) },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo&ownerHandle=clawkit"),
+    );
+
+    const skillLookup = runQuery.mock.calls.find(([, args]) => {
+      const value = args as Record<string, unknown>;
+      return value.slug === "demo";
+    });
+    expect(skillLookup?.[1]).toEqual(
+      expect.objectContaining({ slug: "demo", ownerHandle: "clawkit" }),
+    );
+  });
+
   it("does not serve a tag that points at another skill's version", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if (isRateLimitArgs(args)) return okRate();
@@ -208,6 +258,34 @@ describe("downloads helpers", () => {
     expect(response.status).toBe(404);
     expect(await response.text()).toBe("Version not found");
     expect(storageGet).not.toHaveBeenCalled();
+  });
+
+  it("returns ownerHandle guidance when a slug-only download is ambiguous", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if ("slug" in args) return { skill: null, ambiguous: true };
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return null;
+    });
+
+    const response = await downloadZipHandler(
+      {
+        runQuery,
+        runMutation,
+        scheduler: { runAfter: vi.fn() },
+        storage: { get: vi.fn() },
+      } as unknown as ActionCtx,
+      new Request("https://example.com/api/v1/download?slug=demo"),
+    );
+
+    expect(response.status).toBe(409);
+    expect(response.headers.get("access-control-allow-origin")).toBe("*");
+    const body = await response.text();
+    expect(body).toContain('Ambiguous skill slug "demo"');
+    expect(body).toContain("/api/v1/download?slug=demo&ownerHandle=<owner>");
   });
 
   it("blocks the exact requested skill version when its ClawScan verdict is malicious", async () => {

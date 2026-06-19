@@ -76,6 +76,9 @@ describe("resolveVersionByHash", () => {
         if (table === "skillVersionFingerprints") {
           return chain({ take: vi.fn(async () => [fingerprintEntry]) });
         }
+        if (table === "skillSlugAliases") {
+          return chain({ take: vi.fn(async () => []) });
+        }
         throw new Error(`Unexpected table: ${table}`);
       }),
     };

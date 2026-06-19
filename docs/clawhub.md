@@ -24,7 +24,7 @@ Search and install skills with OpenClaw:
 
 ```bash
 openclaw skills search "calendar"
-openclaw skills install <skill-slug>
+openclaw skills install @openclaw/demo
 openclaw skills update --all
 ```
 
@@ -49,7 +49,7 @@ pnpm add -g clawhub
 
 | Surface        | What it stores                                               | Typical command                              |
 | -------------- | ------------------------------------------------------------ | -------------------------------------------- |
-| Skills         | Versioned text bundles with `SKILL.md` plus supporting files | `openclaw skills install <slug>`             |
+| Skills         | Versioned text bundles with `SKILL.md` plus supporting files | `openclaw skills install @openclaw/demo`     |
 | Code plugins   | OpenClaw plugin packages with compatibility metadata         | `openclaw plugins install clawhub:<package>` |
 | Bundle plugins | Packaged plugin bundles for OpenClaw distribution            | `clawhub package publish <source>`           |
 
@@ -90,8 +90,8 @@ clawhub package publish your-org/your-plugin
 The CLI also has skill install/update commands for direct registry workflows:
 
 ```bash
-clawhub install <slug>
-clawhub update <slug>
+clawhub install @openclaw/demo
+clawhub update @openclaw/demo
 clawhub update --all
 clawhub list
 ```
@@ -109,7 +109,7 @@ clawhub skill publish <path>
 
 Common publish options:
 
-- `--slug <slug>`: skill slug.
+- `--slug <slug>`: published skill URL name.
 - `--name <name>`: display name.
 - `--version <version>`: semver version.
 - `--changelog <text>`: changelog text.

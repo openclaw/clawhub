@@ -5,10 +5,12 @@ import {
   useRouter,
   useRouterState,
 } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { AlertTriangle, Download, Info, Upload } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
+import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
   DetailSecuritySummary,
@@ -396,6 +398,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
     : undefined;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
+  const setCatalogMetadata = useMutation(api.packages.setPackageCatalogMetadata);
   useEffect(() => {
     const syncTabFromHash = () => setActiveTab(pluginDetailTabFromHash(window.location.hash));
     window.addEventListener("hashchange", syncTabFromHash);
@@ -629,6 +632,29 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         </div>
       </div>
     ) : null;
+  const catalogMetadataPanel = manageContext ? (
+    <Card>
+      <CardHeader>
+        <CardTitle>Catalog metadata</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <CatalogMetadataEditor
+          kind="plugin"
+          categories={manageContext.package.categories}
+          suggestedCategories={manageContext.suggestedCategories}
+          topics={manageContext.package.topics}
+          onSave={async (value) => {
+            await setCatalogMetadata({
+              packageId: manageContext.package._id,
+              categories: value.categories,
+              topics: value.topics,
+            });
+            toast.success("Catalog metadata updated.");
+          }}
+        />
+      </CardContent>
+    </Card>
+  ) : null;
   const sourceRepoLink = verification?.sourceRepo
     ? (() => {
         const raw = verification.sourceRepo;
@@ -804,6 +830,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 </div>
               </CardContent>
             </Card>
+            {catalogMetadataPanel}
           </div>
           <PluginDetailTabs
             activeTab={activeTab}

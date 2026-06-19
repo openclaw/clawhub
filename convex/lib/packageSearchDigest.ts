@@ -1,4 +1,8 @@
-import { derivePluginCategoryTags } from "clawhub-schema";
+import {
+  getCatalogTopicSlugs,
+  resolveCatalogTopics,
+  resolveStoredPluginCategories,
+} from "clawhub-schema";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { MutationCtx } from "../_generated/server";
 import { adjustGlobalPublicPluginsCount, getPublicPluginVisibilityDelta } from "./globalStats";
@@ -19,8 +23,13 @@ const SHARED_KEYS = [
   "ownerUserId",
   "ownerPublisherId",
   "summary",
+  "icon",
   "stats",
+  "recommendedScore",
+  "recommendedScoreVersion",
   "runtimeId",
+  "categories",
+  "topics",
   "scanStatus",
   "softDeletedAt",
   "createdAt",
@@ -40,16 +49,50 @@ const PLUGIN_CATEGORY_SHARED_KEYS = [
   "ownerHandle",
   "ownerKind",
   "summary",
+  "icon",
   "latestVersion",
   "runtimeId",
+  "categories",
+  "topics",
   "pluginCategoryTags",
   "verificationTier",
   "stats",
+  "recommendedScore",
+  "recommendedScoreVersion",
   "scanStatus",
   "softDeletedAt",
   "createdAt",
   "updatedAt",
 ] as const satisfies readonly (keyof Doc<"packagePluginCategorySearchDigest">)[];
+
+const TOPIC_SHARED_KEYS = [
+  "packageId",
+  "name",
+  "normalizedName",
+  "displayName",
+  "family",
+  "channel",
+  "isOfficial",
+  "ownerUserId",
+  "ownerPublisherId",
+  "ownerHandle",
+  "ownerKind",
+  "summary",
+  "icon",
+  "latestVersion",
+  "runtimeId",
+  "categories",
+  "topics",
+  "pluginCategoryTags",
+  "verificationTier",
+  "stats",
+  "recommendedScore",
+  "recommendedScoreVersion",
+  "scanStatus",
+  "softDeletedAt",
+  "createdAt",
+  "updatedAt",
+] as const satisfies readonly (keyof Doc<"packageTopicSearchDigest">)[];
 
 export type PackageSearchDigestFields = Pick<Doc<"packages">, (typeof SHARED_KEYS)[number]> & {
   packageId: Id<"packages">;
@@ -67,19 +110,29 @@ type PackagePluginCategorySearchDigestFields = Pick<
   pluginCategory: string;
 };
 
+type PackageTopicSearchDigestFields = Pick<
+  PackageSearchDigestFields,
+  (typeof TOPIC_SHARED_KEYS)[number]
+> & {
+  topic: string;
+};
+
 export function extractPackageDigestFields(pkg: Doc<"packages">): PackageSearchDigestFields {
+  const categories = resolveStoredPluginCategories(pkg);
+  const inferenceCurrent =
+    Boolean(pkg.latestReleaseId) && pkg.latestReleaseId === pkg.inferredFromReleaseId;
   return {
     ...pick(pkg, [...SHARED_KEYS]),
+    categories,
+    topics: resolveCatalogTopics({
+      declared: pkg.topics,
+      inferred: pkg.inferredTopics,
+      inferenceCurrent,
+    }),
     packageId: pkg._id,
     latestVersion: pkg.latestVersionSummary?.version,
     verificationTier: pkg.verification?.tier,
-    pluginCategoryTags: derivePluginCategoryTags({
-      family: pkg.family,
-      name: pkg.name,
-      displayName: pkg.displayName,
-      runtimeId: pkg.runtimeId,
-      summary: pkg.summary,
-    }),
+    pluginCategoryTags: categories,
   };
 }
 
@@ -87,22 +140,25 @@ export async function upsertPackageSearchDigest(
   ctx: Pick<MutationCtx, "db">,
   fields: PackageSearchDigestFields,
 ) {
+  const nextFields = fields;
   const existing = await ctx.db
     .query("packageSearchDigest")
-    .withIndex("by_package", (q) => q.eq("packageId", fields.packageId))
+    .withIndex("by_package", (q) => q.eq("packageId", nextFields.packageId))
     .unique();
   if (existing) {
-    const visibilityDelta = getPublicPluginVisibilityDelta(existing, fields);
-    if (hasDigestChanged(existing, fields)) {
-      await ctx.db.patch(existing._id, fields);
+    const visibilityDelta = getPublicPluginVisibilityDelta(existing, nextFields);
+    if (hasDigestChanged(existing, nextFields)) {
+      await ctx.db.patch(existing._id, nextFields);
     }
-    await syncPackagePluginCategorySearchDigests(ctx, fields);
+    await syncPackagePluginCategorySearchDigests(ctx, nextFields);
+    await syncPackageTopicSearchDigests(ctx, nextFields);
     await adjustGlobalPublicPluginsCount(ctx, visibilityDelta);
     return;
   }
-  await ctx.db.insert("packageSearchDigest", fields);
-  await syncPackagePluginCategorySearchDigests(ctx, fields);
-  await adjustGlobalPublicPluginsCount(ctx, getPublicPluginVisibilityDelta(null, fields));
+  await ctx.db.insert("packageSearchDigest", nextFields);
+  await syncPackagePluginCategorySearchDigests(ctx, nextFields);
+  await syncPackageTopicSearchDigests(ctx, nextFields);
+  await adjustGlobalPublicPluginsCount(ctx, getPublicPluginVisibilityDelta(null, nextFields));
 }
 
 async function syncPackagePluginCategorySearchDigests(
@@ -139,6 +195,40 @@ async function syncPackagePluginCategorySearchDigests(
   }
 }
 
+async function syncPackageTopicSearchDigests(
+  ctx: Pick<MutationCtx, "db">,
+  fields: PackageSearchDigestFields,
+) {
+  const existing = await ctx.db
+    .query("packageTopicSearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", fields.packageId))
+    .collect();
+  const topics = getCatalogTopicSlugs(fields.topics);
+  const nextByTopic = new Map<string, PackageTopicSearchDigestFields>();
+  for (const topic of topics) {
+    nextByTopic.set(topic, {
+      ...pick(fields, [...TOPIC_SHARED_KEYS]),
+      topic,
+    });
+  }
+  for (const row of existing) {
+    const next = nextByTopic.get(row.topic);
+    if (!next) {
+      await ctx.db.delete(row._id);
+      continue;
+    }
+    if (!hasDigestChanged(row, next)) {
+      nextByTopic.delete(row.topic);
+      continue;
+    }
+    await ctx.db.patch(row._id, next);
+    nextByTopic.delete(row.topic);
+  }
+  for (const next of nextByTopic.values()) {
+    await ctx.db.insert("packageTopicSearchDigest", next);
+  }
+}
+
 export async function deletePackageSearchDigests(
   ctx: Pick<MutationCtx, "db">,
   packageId: Id<"packages">,
@@ -153,6 +243,12 @@ export async function deletePackageSearchDigests(
   }
   for (const row of await ctx.db
     .query("packagePluginCategorySearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", packageId))
+    .collect()) {
+    await ctx.db.delete(row._id);
+  }
+  for (const row of await ctx.db
+    .query("packageTopicSearchDigest")
     .withIndex("by_package", (q) => q.eq("packageId", packageId))
     .collect()) {
     await ctx.db.delete(row._id);

@@ -9,6 +9,10 @@ const mocks = vi.hoisted(() => {
   const publisherAbuseAutobanRef = Symbol("publisher-abuse-autobans");
   const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
   const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
+  const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
+  const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
+  const authSessionsPruneRef = Symbol("auth-sessions-prune");
+  const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   return {
     interval,
     githubSkillSyncRef,
@@ -17,6 +21,10 @@ const mocks = vi.hoisted(() => {
     publisherAbuseAutobanRef,
     publisherAbuseScoreRefreshRef,
     publisherTemporalAbuseScanRef,
+    rateLimitCountersPruneRef,
+    skillStatEventPruneRef,
+    authSessionsPruneRef,
+    authRefreshTokensPruneRef,
   };
 });
 
@@ -37,7 +45,11 @@ vi.mock("./_generated/api", () => ({
       runSkillStatBackfillInternal: Symbol("skill-stats-backfill"),
       updateGlobalStatsAction: Symbol("global-stats-update"),
     },
-    skillStatEvents: { processSkillStatEventsAction: Symbol("skill-stat-events") },
+    skillStatEvents: {
+      processSkillStatEventsAction: Symbol("skill-stat-events"),
+      processSkillStatEventsInternal: Symbol("skill-doc-stat-sync"),
+      pruneProcessedSkillStatEventsInternal: mocks.skillStatEventPruneRef,
+    },
     packages: {
       processPackageStatEventsInternal: Symbol("package-stat-events"),
       backfillPackageReleaseScansInternal: Symbol("package-scan-backfill"),
@@ -54,12 +66,18 @@ vi.mock("./_generated/api", () => ({
     securityScan: {
       pruneExpiredSkillScanRequestsInternal: Symbol("skill-scan-request-prune"),
     },
-    downloads: { pruneDownloadDedupesInternal: Symbol("download-dedupe-prune") },
     downloadMetrics: {
       pruneDownloadMetricDedupesInternal: Symbol("download-metric-dedupe-prune"),
     },
     telemetry: {
       pruneInstallTelemetryDedupesInternal: mocks.installTelemetryDedupePruneRef,
+    },
+    rateLimits: {
+      pruneRateLimitCountersInternal: mocks.rateLimitCountersPruneRef,
+    },
+    retention: {
+      pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
+      pruneExpiredAuthRefreshTokensInternal: mocks.authRefreshTokensPruneRef,
     },
   },
 }));
@@ -164,6 +182,50 @@ describe("crons", () => {
       { hours: 24 },
       mocks.publisherAbuseAutobanRef,
       { batchSize: 1, maxPages: 50 },
+    );
+  });
+
+  it("prunes expired rate limit counters frequently", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "rate-limit-counters-prune",
+      { minutes: 15 },
+      mocks.rateLimitCountersPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired auth sessions and refresh tokens with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "auth-session-retention-prune",
+      { hours: 1 },
+      mocks.authSessionsPruneRef,
+      { batchSize: 500 },
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "auth-refresh-token-retention-prune",
+      { hours: 6 },
+      mocks.authRefreshTokensPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes processed skill stat events daily with a seven-day retention window", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "skill-stat-events-prune",
+      { hours: 24 },
+      mocks.skillStatEventPruneRef,
+      {
+        retentionDays: 7,
+        batchSize: 1000,
+        maxBatches: 20,
+        confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+      },
     );
   });
 });

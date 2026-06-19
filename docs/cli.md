@@ -94,7 +94,7 @@ Stores your API token + cached registry URL.
 - Prints the stored API token to stdout.
 - Useful for piping a local login token into CI secret setup commands.
 
-### `star <slug>` / `unstar <slug>`
+### `star <skill>` / `unstar <skill>`
 
 - Adds/removes a skill from your highlights.
 - Calls `POST /api/v1/stars/<slug>` and `DELETE /api/v1/stars/<slug>`.
@@ -104,9 +104,9 @@ Stores your API token + cached registry URL.
 
 - Calls `/api/v1/search?q=...`.
 - Output includes the skill slug, owner handle, display name, and relevance score.
-- Search favors exact slug/name token matches before general popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
+- Search favors exact slug/name token matches before download popularity. A standalone slug token such as `map` matches `personal-map` more strongly than the substring inside `amap`.
 - Popularity is a small ranking prior, not a guarantee of top placement.
-- If a skill should appear but does not, run `clawhub inspect <slug>` while logged in to check owner-visible moderation diagnostics before renaming metadata.
+- If a skill should appear but does not, run `clawhub inspect @owner/slug` while logged in to check owner-visible moderation diagnostics before renaming metadata.
 
 ### `explore`
 
@@ -117,7 +117,7 @@ Stores your API token + cached registry URL.
   - `--json` (machine-readable output)
 - Output: `<slug>  v<version>  <age>  <summary>` (summary truncated to 50 chars).
 
-### `inspect <slug>`
+### `inspect @owner/slug`
 
 - Fetches skill metadata and version files without installing.
 - `--version <version>`: inspect a specific version (default: latest).
@@ -128,17 +128,17 @@ Stores your API token + cached registry URL.
 - `--file <path>`: fetch raw file content (text files only; 200KB limit).
 - `--json`: machine-readable output.
 
-### `install <slug>`
+### `install @owner/slug`
 
-- Resolves latest version via `/api/v1/skills/<slug>`.
+- Resolves latest version for the named owner and skill.
 - Downloads zip via `/api/v1/download`.
 - Extracts into `<workdir>/<dir>/<slug>`.
-- Refuses to overwrite pinned skills; run `clawhub unpin <slug>` first.
+- Refuses to overwrite pinned skills; run `clawhub unpin <skill>` first.
 - Writes:
   - `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`)
   - `<skill>/.clawhub/origin.json` (legacy `.clawdhub`)
 
-### `uninstall <slug>`
+### `uninstall <skill>`
 
 - Removes `<workdir>/<dir>/<slug>` and deletes the lockfile entry.
 - Sends best-effort telemetry while logged in so current install counts can be
@@ -151,18 +151,18 @@ Stores your API token + cached registry URL.
 - Reads `<workdir>/.clawhub/lock.json` (legacy `.clawdhub`).
 - Shows `pinned` next to skills frozen with `clawhub pin`, including the optional reason.
 
-### `pin <slug>`
+### `pin <skill>`
 
 - Marks an installed skill as pinned in the lockfile.
 - `--reason <text>` records why the skill is frozen.
-- Pinned skills are skipped by `update --all` and rejected by direct `update <slug>`.
+- Pinned skills are skipped by `update --all` and rejected by direct `update <skill>`.
 - Pinned skills also reject `install --force` so the local bytes cannot be replaced accidentally.
 
-### `unpin <slug>`
+### `unpin <skill>`
 
 - Removes the lockfile pin from an installed skill so future updates can modify it.
 
-### `update [slug]` / `update --all`
+### `update [@owner/slug]` / `update --all`
 
 - Computes fingerprint from local files.
 - If fingerprint matches a known version: no prompt.
@@ -170,7 +170,7 @@ Stores your API token + cached registry URL.
   - refuses by default
   - overwrites with `--force` (or prompt, if interactive)
 - Pinned skills are never updated by `--force`.
-- `update <slug>` fails fast for pinned slugs and tells you to run `clawhub unpin <slug>` first.
+- `update <skill>` fails fast for pinned skills and tells you to run `clawhub unpin <skill>` first.
 - `update --all` skips pinned slugs and prints a summary of what stayed frozen.
 
 ### `skill publish <path>`
@@ -241,7 +241,47 @@ clawhub scan download gifgrep --version 1.2.3
 clawhub scan download @scope/demo --version 2.0.0 --kind plugin --output report.zip
 ```
 
-### `delete <slug>`
+#### GitHub Actions
+
+ClawHub ships an official reusable workflow at
+[`/.github/workflows/skill-publish.yml`](../.github/workflows/skill-publish.yml)
+for skill repos and catalog repos.
+
+Typical catalog setup:
+
+```yaml
+name: Skill Publish
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  dry-run:
+    if: github.event_name == 'pull_request'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      owner: nvidia
+      dry_run: true
+
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    uses: openclaw/clawhub/.github/workflows/skill-publish.yml@v1
+    with:
+      owner: nvidia
+      dry_run: false
+    secrets:
+      clawhub_token: ${{ secrets.CLAWHUB_TOKEN }}
+```
+
+Notes:
+
+- `root` defaults to `skills` for catalog repos.
+- Pass `skill_path: skills/review-helper` to process one skill folder.
+- `owner` maps to the CLI `--owner` flag; omit it to publish as the authenticated user.
+- V1 skill publishing uses `clawhub_token`; GitHub OIDC trusted publishing is package-only for now.
+
+### `delete <skill>`
 
 - Without `--version`, soft-delete a skill (owner, moderator, or admin).
 - Calls `DELETE /api/v1/skills/{slug}`.
@@ -254,7 +294,7 @@ clawhub scan download @scope/demo --version 2.0.0 --kind plugin --output report.
 - `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
 
-### `undelete <slug>`
+### `undelete <skill>`
 
 - Restore a hidden skill (owner, moderator, or admin).
 - There is no version undelete; permanently deleted versions cannot be restored.
@@ -263,23 +303,23 @@ clawhub scan download @scope/demo --version 2.0.0 --kind plugin --output report.
 - `--note <text>` is an alias for `--reason`.
 - `--yes` skips confirmation.
 
-### `hide <slug>`
+### `hide <skill>`
 
 - Hide a skill (owner, moderator, or admin).
 - Alias for `delete`.
 
-### `unhide <slug>`
+### `unhide <skill>`
 
 - Unhide a skill (owner, moderator, or admin).
 - Alias for `undelete`.
 
-### `skill rename <slug> <new-slug>`
+### `skill rename <skill> <new-name>`
 
 - Rename an owned skill and keep the previous slug as a redirect alias.
 - Calls `POST /api/v1/skills/{slug}/rename`.
 - `--yes` skips confirmation.
 
-### `skill merge <source-slug> <target-slug>`
+### `skill merge <source> <target>`
 
 - Merge one owned skill into another owned skill.
 - The source slug stops listing publicly and becomes a redirect alias to the target.
@@ -293,11 +333,11 @@ clawhub scan download @scope/demo --version 2.0.0 --kind plugin --output report.
 - Transfers to org/publisher handles apply immediately only when the actor has
   admin access to both the current owner and destination publisher.
 - Subcommands:
-  - `transfer request <slug> <handle> [--message "..."] [--yes]`
+  - `transfer request <skill> <handle> [--message "..."] [--yes]`
   - `transfer list [--outgoing]`
-  - `transfer accept <slug> [--yes]`
-  - `transfer reject <slug> [--yes]`
-  - `transfer cancel <slug> [--yes]`
+  - `transfer accept <skill> [--yes]`
+  - `transfer reject <skill> [--yes]`
+  - `transfer cancel <skill> [--yes]`
 - Endpoints:
   - `POST /api/v1/skills/{slug}/transfer`
   - `POST /api/v1/skills/{slug}/transfer/accept`

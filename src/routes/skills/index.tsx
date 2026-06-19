@@ -1,11 +1,12 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { Search, X } from "lucide-react";
 import { useCallback, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { BrowseSidebar } from "../../components/BrowseSidebar";
 import { formatBrowseCount } from "../../lib/browseCount";
-import { SKILL_CATEGORIES } from "../../lib/categories";
+import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import {
@@ -30,10 +31,8 @@ const SKILLS_SORT_OPTIONS = [
   ...BROWSE_SORT_OPTIONS.slice(1),
 ];
 
-const SKILL_CATEGORY_SLUGS = new Set(SKILL_CATEGORIES.map((category) => category.slug));
-
 function parseSkillCategorySlug(value: unknown) {
-  return typeof value === "string" && SKILL_CATEGORY_SLUGS.has(value) ? value : undefined;
+  return typeof value === "string" ? resolveSkillBrowseCategorySlug(value) : undefined;
 }
 
 export const Route = createFileRoute("/skills/")({
@@ -51,6 +50,7 @@ export const Route = createFileRoute("/skills/")({
           ? true
           : undefined,
       category: parseSkillCategorySlug(search.category),
+      topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
       view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
     };
@@ -77,6 +77,15 @@ export function SkillsIndex() {
       : model.sort;
   const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly;
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
+  const categoryTopics = useQuery(
+    api.catalogTopics.listTopByCategory,
+    model.activeCategory
+      ? {
+          kind: "skill",
+          category: model.activeCategory,
+        }
+      : "skip",
+  );
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
 
   const handleSortChange = useCallback(
@@ -123,6 +132,22 @@ export function SkillsIndex() {
         search: (prev: SkillsSearchState) => ({
           ...prev,
           category,
+          topic: undefined,
+          featured: undefined,
+          highlighted: undefined,
+        }),
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  const handleTopicChange = useCallback(
+    (topic: string | undefined) => {
+      void navigate({
+        search: (prev: SkillsSearchState) => ({
+          ...prev,
+          topic,
           featured: undefined,
           highlighted: undefined,
         }),
@@ -195,6 +220,9 @@ export function SkillsIndex() {
           categories={SKILL_CATEGORIES}
           activeCategory={model.activeCategory}
           onCategoryChange={handleCategoryChange}
+          categoryTopics={categoryTopics ?? []}
+          activeTopic={model.activeTopic}
+          onTopicChange={handleTopicChange}
           sortOptions={SKILLS_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}

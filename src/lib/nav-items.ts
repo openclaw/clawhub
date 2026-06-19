@@ -57,6 +57,11 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     to: "/plugins",
     activePathPrefixes: ["/plugin/"],
   },
+  {
+    label: "Publishers",
+    to: "/publishers",
+    activePathPrefixes: ["/user/"],
+  },
 ];
 
 // ---------------------------------------------------------------------------

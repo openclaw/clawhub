@@ -53,6 +53,7 @@ import {
   cmdModeratePackageRelease,
   cmdPackageModerationQueue,
   cmdRepairPackageName,
+  cmdRepairPackageRuntimeId,
   cmdSetPackageTrustedPublisher,
   cmdTriagePackageReport,
   cmdTransferPackageOwner,
@@ -380,8 +381,8 @@ function registerEmailCommands(command: Command) {
     .description("Send a staff email from ClawHub noreply after explicit user sign-off")
     .option("--to <email>", "Recipient email address")
     .option("--user <handle>", "Recipient ClawHub user handle; server resolves their email")
-    .option("--username <handle>", "Recipient username for lookup or direct-email greeting")
-    .option("--recipient-handle <handle>", "Direct-email greeting handle")
+    .option("--username <handle>", "Recipient username for lookup or direct-email metadata")
+    .option("--recipient-handle <handle>", "Direct-email recipient metadata handle")
     .requiredOption("--subject <subject>", "Email subject")
     .option("--title <title>", "Visible heading in the generic ClawHub email template")
     .option("--body-file <path>", "Plain text email body file")
@@ -529,6 +530,19 @@ function registerPluginGovernanceCommands(command: Command) {
     .action(async (name, options) => {
       const opts = await resolveGlobalOpts();
       await cmdRepairPackageName(opts, name, options);
+    });
+
+  command
+    .command("repair-runtime-id")
+    .description("Admin repair for plugin package runtime ids")
+    .argument("<name>", "Current plugin package name")
+    .requiredOption("--next-runtime-id <id>", "Target plugin runtime id")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--json", "Output JSON")
+    .action(async (name, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdRepairPackageRuntimeId(opts, name, options);
     });
 
   command

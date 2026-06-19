@@ -32,6 +32,8 @@ Production deploy notes:
 
 - `deploy.yml` is manual-only (`workflow_dispatch`). Merging to `main` does not deploy.
 - The workflow must be started from `main`.
+- The catalog-taxonomy digest and high-/medium-confidence classification rollout migrations were
+  one-time production operations and are no longer part of the deploy checklist.
 - Deploy targets:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production
@@ -103,8 +105,6 @@ Ensure Convex env is set (auth + embeddings):
 - `JWKS`
 - `OPENAI_API_KEY`
 - `RESEND_API_KEY` for account-ban notification email
-- `CLAWHUB_SECURITY_EMAIL` for account-action replies, defaulting to
-  `security@notifications.openclaw.ai`
 - `CLAWHUB_SECURITY_EMAIL_FROM` for the outbound From header, defaulting to
   `ClawHub Security <noreply@notifications.openclaw.ai>` on the verified Resend
   domain

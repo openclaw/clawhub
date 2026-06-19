@@ -1,5 +1,6 @@
 import { cronJobs } from "convex/server";
 import { internal } from "./_generated/api";
+import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
 const crons = cronJobs();
 
@@ -56,6 +57,18 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     { hours: 6 },
     internal.skillStatEvents.processSkillStatEventsInternal,
     { batchSize: 100 },
+  );
+
+  crons.interval(
+    "skill-stat-events-prune",
+    { hours: 24 },
+    internal.skillStatEvents.pruneProcessedSkillStatEventsInternal,
+    {
+      retentionDays: 7,
+      batchSize: 1000,
+      maxBatches: 20,
+      confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+    },
   );
 
   crons.interval(
@@ -116,13 +129,6 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
-    "download-dedupe-prune",
-    { hours: 24 },
-    internal.downloads.pruneDownloadDedupesInternal,
-    {},
-  );
-
-  crons.interval(
     "download-metric-dedupe-prune",
     { hours: 24 },
     internal.downloadMetrics.pruneDownloadMetricDedupesInternal,
@@ -134,6 +140,27 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     { hours: 24 },
     internal.telemetry.pruneInstallTelemetryDedupesInternal,
     {},
+  );
+
+  crons.interval(
+    "auth-session-retention-prune",
+    { hours: 1 },
+    internal.retention.pruneExpiredAuthSessionsInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
+    "auth-refresh-token-retention-prune",
+    { hours: 6 },
+    internal.retention.pruneExpiredAuthRefreshTokensInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
+
+  crons.interval(
+    "rate-limit-counters-prune",
+    { minutes: 15 },
+    internal.rateLimits.pruneRateLimitCountersInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
   );
 }
 

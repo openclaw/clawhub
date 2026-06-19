@@ -30,7 +30,8 @@ Reading order:
 6. `docs/skill-format.md`: skill bundle metadata and package shape.
 7. `docs/auth.md`: GitHub OAuth, API tokens, and CLI login.
 8. `docs/telemetry.md`: install telemetry and how to opt out.
-9. `docs/troubleshooting.md`: user-facing CLI, install, publish, update, and API fixes.
+9. `docs/namespace-claims.md`: org, brand, owner-handle, package-scope, skill-slug, and namespace ownership disputes.
+10. `docs/troubleshooting.md`: user-facing CLI, install, publish, update, and API fixes.
 
 Policy, API, and trust docs:
 
@@ -40,6 +41,7 @@ Policy, API, and trust docs:
 - `docs/security.md`: reporting ClawHub security issues and vulnerability disclosure policy.
 - `docs/security-audits.md`: user-facing security audit status, risk levels, findings, and interpretation.
 - `docs/moderation.md`: reports, moderation holds, hidden listings, bans, and account standing.
+- `docs/namespace-claims.md`: org, brand, owner-handle, package-scope, skill-slug, and namespace ownership claims.
 - `docs/content-rights.md`: copyright and other content rights requests involving ClawHub listings.
 
 Maintainer records:

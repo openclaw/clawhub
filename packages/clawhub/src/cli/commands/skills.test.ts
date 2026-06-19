@@ -50,11 +50,12 @@ vi.mock("../../http.js", () => httpMocks.moduleFactory());
 vi.mock("../registry.js", () => registryMocks.moduleFactory());
 vi.mock("../authToken.js", () => authTokenMocks.moduleFactory());
 vi.mock("../ui.js", () => ({
-  createSpinner: vi.fn(() => mockSpinner),
+  createCrabLoader: vi.fn(() => mockSpinner),
   fail: (message: string) => uiMocks.fail(message),
   formatError: (error: unknown) => (error instanceof Error ? error.message : String(error)),
   isInteractive: mockIsInteractive,
   promptConfirm: mockPromptConfirm,
+  styleText: (value: string) => value,
 }));
 
 const extractZipToDirMock = vi.spyOn(skillStore, "extractZipToDir");
@@ -302,6 +303,7 @@ describe("cmdSearch", () => {
           displayName: "Demo Skill",
           version: "1.2.3",
           ownerHandle: "openclaw",
+          downloads: 1234,
           score: 0.9876,
         },
         {
@@ -309,6 +311,7 @@ describe("cmdSearch", () => {
           displayName: "Legacy Skill",
           version: null,
           owner: { displayName: "Legacy Owner" },
+          downloads: 1,
           score: 0.5,
         },
       ],
@@ -316,8 +319,10 @@ describe("cmdSearch", () => {
 
     await cmdSearch(makeOpts(), "demo");
 
-    expect(mockLog).toHaveBeenCalledWith("demo v1.2.3  @openclaw  Demo Skill  (0.988)");
-    expect(mockLog).toHaveBeenCalledWith("legacy  Legacy Owner  Legacy Skill  (0.500)");
+    expect(mockLog).toHaveBeenCalledWith(
+      "demo v1.2.3  @openclaw     Demo Skill    1,234 downloads",
+    );
+    expect(mockLog).toHaveBeenCalledWith("legacy       Legacy Owner  Legacy Skill  1 download");
   });
 });
 
@@ -590,6 +595,56 @@ describe("cmdUpdate", () => {
     expect(args?.url).toBeUndefined();
   });
 
+  it("uses stored owner handle when updating an owner-qualified install", async () => {
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "2.0.0" },
+      owner: { handle: "openclaw" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "1.0.0", installedAt: 123, ownerHandle: "openclaw" } },
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(readSkillOrigin).mockResolvedValue(null);
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdUpdate(makeOpts(), undefined, { all: true }, false);
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    expect(requestArgs?.url).toContain("/api/v1/skills/demo?");
+    expect(new URL(String(requestArgs?.url)).searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({ slug: "demo", version: "2.0.0", ownerHandle: "openclaw" }),
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith(
+      "/work/skills/demo",
+      expect.objectContaining({ slug: "demo", ownerHandle: "openclaw" }),
+    );
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        demo: { version: "2.0.0", installedAt: expect.any(Number), ownerHandle: "openclaw" },
+      },
+    });
+  });
+
   it("does not overwrite GitHub-backed local files when the origin fingerprint is missing", async () => {
     const commit = "b".repeat(40);
     mockApiRequest
@@ -842,7 +897,49 @@ describe("cmdUpdate", () => {
     expect(url.searchParams.get("hash")).toBe("bundle-fingerprint");
     expect(mockDownloadZip).not.toHaveBeenCalled();
     expect(rm).not.toHaveBeenCalled();
-    expect(mockSpinner.succeed).toHaveBeenCalledWith("demo: up to date (1.0.0)");
+    expect(mockSpinner.succeed).toHaveBeenCalledWith("demo up to date v1.0.0");
+  });
+
+  it("backfills resolved owner metadata when the installed version is unchanged", async () => {
+    mockApiRequest
+      .mockResolvedValueOnce({
+        latestVersion: { version: "1.0.0" },
+        owner: { handle: "openclaw" },
+        moderation: null,
+      })
+      .mockResolvedValueOnce({
+        match: { version: "1.0.0" },
+        latestVersion: { version: "1.0.0" },
+      });
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: { demo: { version: "1.0.0", installedAt: 123 } },
+    });
+    vi.mocked(readSkillOrigin).mockResolvedValue({
+      version: 1,
+      registry: "https://clawhub.ai",
+      slug: "demo",
+      installedVersion: "1.0.0",
+      installedAt: 123,
+      fingerprint: "hash",
+    });
+    vi.mocked(listTextFiles).mockResolvedValue([
+      { relPath: "SKILL.md", bytes: new Uint8Array([1]) },
+    ]);
+    vi.mocked(hashSkillFiles).mockReturnValue({ fingerprint: "hash", files: [] });
+    vi.mocked(stat).mockResolvedValue({} as unknown as Awaited<ReturnType<typeof stat>>);
+
+    await cmdUpdate(makeOpts(), "demo", {}, false);
+
+    const [, resolveArgs] = mockApiRequest.mock.calls[1] ?? [];
+    expect(new URL(String(resolveArgs?.url)).searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(mockDownloadZip).not.toHaveBeenCalled();
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        demo: { version: "1.0.0", installedAt: 123, ownerHandle: "openclaw" },
+      },
+    });
   });
 
   it("writes identical installedAt to origin and lockfile on update", async () => {
@@ -995,11 +1092,17 @@ describe("pin commands", () => {
     expect(mockLog).toHaveBeenCalledWith('Skill "demo" is already pinned: scanner hold');
   });
 
-  it("unpinned skills clear pin metadata and keep the installed version", async () => {
+  it("unpinned skills clear pin metadata and keep install ownership", async () => {
     vi.mocked(readLockfile).mockResolvedValue({
       version: 1,
       skills: {
-        demo: { version: "1.0.0", installedAt: 123, pinned: true, pinReason: "scanner hold" },
+        demo: {
+          version: "1.0.0",
+          installedAt: 123,
+          ownerHandle: "openclaw",
+          pinned: true,
+          pinReason: "scanner hold",
+        },
       },
     });
     vi.mocked(writeLockfile).mockResolvedValue();
@@ -1012,6 +1115,7 @@ describe("pin commands", () => {
         demo: {
           version: "1.0.0",
           installedAt: 123,
+          ownerHandle: "openclaw",
         },
       },
     });
@@ -1239,6 +1343,138 @@ describe("cmdInstall", () => {
         token: "tkn",
       }),
       expect.anything(),
+    );
+  });
+
+  it("installs owner-qualified skill refs using owner-scoped API requests", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "1.0.0" },
+      owner: { handle: "openclaw" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdInstall(makeOpts(), "@openclaw/demo");
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    expect(requestArgs?.url).toContain("/api/v1/skills/demo?");
+    expect(new URL(String(requestArgs?.url)).searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        slug: "demo",
+        version: "1.0.0",
+        ownerHandle: "openclaw",
+        token: "tkn",
+      }),
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith(
+      "/work/skills/demo",
+      expect.objectContaining({
+        slug: "demo",
+        ownerHandle: "openclaw",
+        installedVersion: "1.0.0",
+      }),
+    );
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        demo: { version: "1.0.0", installedAt: expect.any(Number), ownerHandle: "openclaw" },
+      },
+    });
+  });
+
+  it("keeps the requested owner namespace when installing through an owner alias", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "1.0.0" },
+      owner: { handle: "target" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdInstall(makeOpts(), "@source/old-demo");
+
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        slug: "old-demo",
+        ownerHandle: "source",
+      }),
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith(
+      "/work/skills/old-demo",
+      expect.objectContaining({ slug: "old-demo", ownerHandle: "source" }),
+    );
+  });
+
+  it("uses the resolved slug when an unqualified alias resolves to an owner-scoped skill", async () => {
+    mockGetOptionalAuthToken.mockResolvedValue("tkn");
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "1.0.0" },
+      owner: { handle: "target" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({ version: 1, skills: {} });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+    vi.mocked(rm).mockResolvedValue();
+
+    await cmdInstall(makeOpts(), "old-demo");
+
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        slug: "demo",
+        ownerHandle: "target",
+      }),
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith(
+      "/work/skills/old-demo",
+      expect.objectContaining({ slug: "demo", ownerHandle: "target" }),
     );
   });
 

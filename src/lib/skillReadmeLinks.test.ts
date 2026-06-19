@@ -11,6 +11,12 @@ describe("resolveSkillReadmeHref", () => {
     );
   });
 
+  it("includes owner handle when resolving relative README file links", () => {
+    expect(resolveSkillReadmeHref("docs/Usage.md", "api-gateway", "clawkit")).toBe(
+      "/api/v1/skills/api-gateway/file?path=docs%2FUsage.md&ownerHandle=clawkit",
+    );
+  });
+
   it("preserves external, root, hash, and query links", () => {
     expect(resolveSkillReadmeHref("https://example.com/docs", "api-gateway")).toBe(
       "https://example.com/docs",

@@ -10,6 +10,9 @@
 
 import type * as appMeta from "../appMeta.js";
 import type * as auth from "../auth.js";
+import type * as catalogClassification from "../catalogClassification.js";
+import type * as catalogClassificationNode from "../catalogClassificationNode.js";
+import type * as catalogTopics from "../catalogTopics.js";
 import type * as cliDeviceAuth from "../cliDeviceAuth.js";
 import type * as crons from "../crons.js";
 import type * as depRegistryScan from "../depRegistryScan.js";
@@ -45,6 +48,8 @@ import type * as lib_apiTokenAuth from "../lib/apiTokenAuth.js";
 import type * as lib_artifactModeration from "../lib/artifactModeration.js";
 import type * as lib_badges from "../lib/badges.js";
 import type * as lib_batching from "../lib/batching.js";
+import type * as lib_catalogClassification from "../lib/catalogClassification.js";
+import type * as lib_catalogClassifier from "../lib/catalogClassifier.js";
 import type * as lib_changelog from "../lib/changelog.js";
 import type * as lib_clawpack from "../lib/clawpack.js";
 import type * as lib_contentTypes from "../lib/contentTypes.js";
@@ -86,17 +91,19 @@ import type * as lib_publisherAbuseScoring from "../lib/publisherAbuseScoring.js
 import type * as lib_publisherCatalogDisplay from "../lib/publisherCatalogDisplay.js";
 import type * as lib_publisherStats from "../lib/publisherStats.js";
 import type * as lib_publishers from "../lib/publishers.js";
+import type * as lib_rateLimitConfig from "../lib/rateLimitConfig.js";
 import type * as lib_recommendationScore from "../lib/recommendationScore.js";
 import type * as lib_registryArtifactBackup from "../lib/registryArtifactBackup.js";
 import type * as lib_reporting from "../lib/reporting.js";
 import type * as lib_reservedHandles from "../lib/reservedHandles.js";
 import type * as lib_reservedSlugs from "../lib/reservedSlugs.js";
+import type * as lib_retentionPolicy from "../lib/retentionPolicy.js";
 import type * as lib_searchText from "../lib/searchText.js";
 import type * as lib_securityPrompt from "../lib/securityPrompt.js";
 import type * as lib_skillBackfill from "../lib/skillBackfill.js";
 import type * as lib_skillCards from "../lib/skillCards.js";
 import type * as lib_skillFileAccess from "../lib/skillFileAccess.js";
-import type * as lib_skillIcon from "../lib/skillIcon.js";
+import type * as lib_skillInstallBackfill from "../lib/skillInstallBackfill.js";
 import type * as lib_skillPublish from "../lib/skillPublish.js";
 import type * as lib_skillQuality from "../lib/skillQuality.js";
 import type * as lib_skillSafety from "../lib/skillSafety.js";
@@ -106,7 +113,8 @@ import type * as lib_skillSlugValidator from "../lib/skillSlugValidator.js";
 import type * as lib_skillStats from "../lib/skillStats.js";
 import type * as lib_skillSummary from "../lib/skillSummary.js";
 import type * as lib_skillZip from "../lib/skillZip.js";
-import type * as lib_skills from "../lib/skills.js";
+import type * as lib_skills_index from "../lib/skills/index.js";
+import type * as lib_skills_slugResolution from "../lib/skills/slugResolution.js";
 import type * as lib_staticPublishScan from "../lib/staticPublishScan.js";
 import type * as lib_tokens from "../lib/tokens.js";
 import type * as lib_userSearch from "../lib/userSearch.js";
@@ -114,6 +122,7 @@ import type * as lib_userSkillStats from "../lib/userSkillStats.js";
 import type * as lib_webhooks from "../lib/webhooks.js";
 import type * as maintenance from "../maintenance.js";
 import type * as managementDevSeed from "../managementDevSeed.js";
+import type * as migrations from "../migrations.js";
 import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageInspectorNode from "../packageInspectorNode.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
@@ -126,6 +135,7 @@ import type * as registryArtifactBackups from "../registryArtifactBackups.js";
 import type * as registryArtifactBackupsNode from "../registryArtifactBackupsNode.js";
 import type * as registryArtifactRestore from "../registryArtifactRestore.js";
 import type * as registryArtifactRestoreMutations from "../registryArtifactRestoreMutations.js";
+import type * as retention from "../retention.js";
 import type * as search from "../search.js";
 import type * as securityDataset from "../securityDataset.js";
 import type * as securityDatasetNode from "../securityDatasetNode.js";
@@ -152,6 +162,9 @@ import type {
 declare const fullApi: ApiFromModules<{
   appMeta: typeof appMeta;
   auth: typeof auth;
+  catalogClassification: typeof catalogClassification;
+  catalogClassificationNode: typeof catalogClassificationNode;
+  catalogTopics: typeof catalogTopics;
   cliDeviceAuth: typeof cliDeviceAuth;
   crons: typeof crons;
   depRegistryScan: typeof depRegistryScan;
@@ -187,6 +200,8 @@ declare const fullApi: ApiFromModules<{
   "lib/artifactModeration": typeof lib_artifactModeration;
   "lib/badges": typeof lib_badges;
   "lib/batching": typeof lib_batching;
+  "lib/catalogClassification": typeof lib_catalogClassification;
+  "lib/catalogClassifier": typeof lib_catalogClassifier;
   "lib/changelog": typeof lib_changelog;
   "lib/clawpack": typeof lib_clawpack;
   "lib/contentTypes": typeof lib_contentTypes;
@@ -228,17 +243,19 @@ declare const fullApi: ApiFromModules<{
   "lib/publisherCatalogDisplay": typeof lib_publisherCatalogDisplay;
   "lib/publisherStats": typeof lib_publisherStats;
   "lib/publishers": typeof lib_publishers;
+  "lib/rateLimitConfig": typeof lib_rateLimitConfig;
   "lib/recommendationScore": typeof lib_recommendationScore;
   "lib/registryArtifactBackup": typeof lib_registryArtifactBackup;
   "lib/reporting": typeof lib_reporting;
   "lib/reservedHandles": typeof lib_reservedHandles;
   "lib/reservedSlugs": typeof lib_reservedSlugs;
+  "lib/retentionPolicy": typeof lib_retentionPolicy;
   "lib/searchText": typeof lib_searchText;
   "lib/securityPrompt": typeof lib_securityPrompt;
   "lib/skillBackfill": typeof lib_skillBackfill;
   "lib/skillCards": typeof lib_skillCards;
   "lib/skillFileAccess": typeof lib_skillFileAccess;
-  "lib/skillIcon": typeof lib_skillIcon;
+  "lib/skillInstallBackfill": typeof lib_skillInstallBackfill;
   "lib/skillPublish": typeof lib_skillPublish;
   "lib/skillQuality": typeof lib_skillQuality;
   "lib/skillSafety": typeof lib_skillSafety;
@@ -248,7 +265,8 @@ declare const fullApi: ApiFromModules<{
   "lib/skillStats": typeof lib_skillStats;
   "lib/skillSummary": typeof lib_skillSummary;
   "lib/skillZip": typeof lib_skillZip;
-  "lib/skills": typeof lib_skills;
+  "lib/skills/index": typeof lib_skills_index;
+  "lib/skills/slugResolution": typeof lib_skills_slugResolution;
   "lib/staticPublishScan": typeof lib_staticPublishScan;
   "lib/tokens": typeof lib_tokens;
   "lib/userSearch": typeof lib_userSearch;
@@ -256,6 +274,7 @@ declare const fullApi: ApiFromModules<{
   "lib/webhooks": typeof lib_webhooks;
   maintenance: typeof maintenance;
   managementDevSeed: typeof managementDevSeed;
+  migrations: typeof migrations;
   packageInspectorHttp: typeof packageInspectorHttp;
   packageInspectorNode: typeof packageInspectorNode;
   packagePublishTokens: typeof packagePublishTokens;
@@ -268,6 +287,7 @@ declare const fullApi: ApiFromModules<{
   registryArtifactBackupsNode: typeof registryArtifactBackupsNode;
   registryArtifactRestore: typeof registryArtifactRestore;
   registryArtifactRestoreMutations: typeof registryArtifactRestoreMutations;
+  retention: typeof retention;
   search: typeof search;
   securityDataset: typeof securityDataset;
   securityDatasetNode: typeof securityDatasetNode;
@@ -312,4 +332,6 @@ export declare const internal: FilterApi<
   FunctionReference<any, "internal">
 >;
 
-export declare const components: {};
+export declare const components: {
+  migrations: import("@convex-dev/migrations/_generated/component.js").ComponentApi<"migrations">;
+};

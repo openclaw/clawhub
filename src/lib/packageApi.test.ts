@@ -287,7 +287,8 @@ describe("fetchPackages", () => {
       limit: 12,
       cursor: "pkgpage:test",
       isOfficial: true,
-      category: "data",
+      category: "tools",
+      officialFirst: true,
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -300,7 +301,8 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("limit")).toBe("12");
     expect(url.searchParams.get("cursor")).toBe("pkgpage:test");
     expect(url.searchParams.get("isOfficial")).toBe("true");
-    expect(url.searchParams.get("category")).toBe("data");
+    expect(url.searchParams.get("category")).toBe("tools");
+    expect(url.searchParams.get("officialFirst")).toBe("true");
   });
 
   it("uses the dedicated plugins search endpoint for mixed plugin search", async () => {
@@ -312,7 +314,7 @@ describe("fetchPackages", () => {
     await fetchPluginCatalog({
       q: "demo",
       limit: 8,
-      category: "dev-tools",
+      category: "runtime",
     });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -325,7 +327,7 @@ describe("fetchPackages", () => {
     expect(url.searchParams.get("q")).toBe("demo");
     expect(url.searchParams.get("limit")).toBe("8");
     expect(url.searchParams.has("executesCode")).toBe(false);
-    expect(url.searchParams.get("category")).toBe("dev-tools");
+    expect(url.searchParams.get("category")).toBe("runtime");
   });
 
   it("throws package detail errors for non-404 failures", async () => {

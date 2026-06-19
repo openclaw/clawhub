@@ -31,6 +31,13 @@ describe("SkillListItem", () => {
     expect(screen.queryByText("Official")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
+
+  it("renders author topics", () => {
+    render(<SkillListItem skill={makeSkill({ topics: ["discord", "community"] })} />);
+
+    expect(screen.getByText("discord")).toBeTruthy();
+    expect(screen.getByText("community")).toBeTruthy();
+  });
 });
 
 function makeSkill(overrides: Partial<PublicSkill> = {}): PublicSkill {

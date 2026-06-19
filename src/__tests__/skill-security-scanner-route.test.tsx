@@ -4,6 +4,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { ComponentType } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fetchSkillPageData } from "../lib/skillPage";
 
 const useQueryMock = vi.fn();
 const useMutationMock = vi.fn();
@@ -56,6 +57,7 @@ async function loadRoute() {
   return (await import("../routes/$owner/$slug/security-audit")).Route as unknown as {
     __config: {
       component?: ComponentType;
+      loader?: (args: { params: { owner: string; slug: string } }) => Promise<unknown>;
     };
   };
 }
@@ -134,6 +136,28 @@ describe("skill security audit route", () => {
         version: "1.0.0",
       }),
     );
+  });
+
+  it("passes the route owner into the loader skill lookup", async () => {
+    vi.mocked(fetchSkillPageData).mockResolvedValue({
+      owner: "local",
+      displayName: "Local Agentic Risk Demo",
+      summary: null,
+      version: "1.0.0",
+      initialData: {
+        result: {
+          owner: { handle: "local" },
+          resolvedSlug: "local-agentic-risk-demo",
+        },
+      },
+    } as never);
+    const route = await loadRoute();
+
+    await route.__config.loader?.({
+      params: { owner: "local", slug: "local-agentic-risk-demo" },
+    });
+
+    expect(fetchSkillPageData).toHaveBeenCalledWith("local-agentic-risk-demo", "local");
   });
 
   it("renders the durable scan for a GitHub-backed skill without a hosted skill version", async () => {

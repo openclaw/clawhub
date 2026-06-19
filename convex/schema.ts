@@ -194,6 +194,23 @@ const users = defineTable({
   .index("by_deactivated_purged_at", ["deactivatedAt", "purgedAt"])
   .index("by_active_handle", ["deletedAt", "deactivatedAt", "handle"]);
 
+const authSessions = defineTable({
+  userId: v.id("users"),
+  expirationTime: v.number(),
+})
+  .index("userId", ["userId"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const authRefreshTokens = defineTable({
+  sessionId: v.id("authSessions"),
+  expirationTime: v.number(),
+  firstUsedTime: v.optional(v.number()),
+  parentRefreshTokenId: v.optional(v.id("authRefreshTokens")),
+})
+  .index("sessionId", ["sessionId"])
+  .index("sessionIdAndParentRefreshTokenId", ["sessionId", "parentRefreshTokenId"])
+  .index("by_expiration_time", ["expirationTime"]);
+
 const publishers = defineTable({
   kind: v.union(v.literal("user"), v.literal("org")),
   handle: v.string(),
@@ -598,6 +615,44 @@ const packageFilesValidator = v.array(
   }),
 );
 
+const catalogClassificationConfidenceValidator = v.union(
+  v.literal("high"),
+  v.literal("medium"),
+  v.literal("low"),
+);
+
+const catalogClassificationApplyStatusValidator = v.union(
+  v.literal("preview"),
+  v.literal("applied"),
+  v.literal("stale"),
+  v.literal("skipped-author"),
+  v.literal("error"),
+);
+
+const catalogCategoryCandidateValidator = v.object({
+  category: v.string(),
+  score: v.number(),
+  sources: v.array(v.string()),
+  evidence: v.array(v.string()),
+  strongEvidence: v.optional(v.boolean()),
+  primaryEvidence: v.optional(v.boolean()),
+  strongPrimaryEvidence: v.optional(v.boolean()),
+  primaryEvidenceCount: v.optional(v.number()),
+});
+
+const catalogTopicCandidateValidator = v.object({
+  topic: v.string(),
+  slug: v.string(),
+  score: v.number(),
+  sources: v.array(v.string()),
+  evidence: v.array(v.string()),
+  primaryEvidence: v.boolean(),
+  primarySourceCount: v.number(),
+  strongEvidence: v.boolean(),
+  confidence: catalogClassificationConfidenceValidator,
+  suppressedBy: v.optional(v.string()),
+});
+
 const skillScanRequestSourceKindValidator = v.union(
   v.literal("upload"),
   v.literal("published"),
@@ -636,6 +691,18 @@ const skills = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
+  inferredCategories: v.optional(v.array(v.string())),
+  inferredTopics: v.optional(v.array(v.string())),
+  inferredFromVersionId: v.optional(v.id("skillVersions")),
+  inferredCategoryConfidence: v.optional(catalogClassificationConfidenceValidator),
+  inferredTopicConfidence: v.optional(catalogClassificationConfidenceValidator),
+  inferredClassifierVersion: v.optional(v.string()),
+  inferredTopicClassifierVersion: v.optional(v.string()),
+  inferredInputHash: v.optional(v.string()),
+  inferredTopicInputHash: v.optional(v.string()),
+  inferredAt: v.optional(v.number()),
   softDeletedAt: v.optional(v.number()),
   badges: badgesValidator,
   moderationStatus: moderationStatusValidator,
@@ -700,6 +767,27 @@ const skills = defineTable({
   statsStars: v.optional(v.number()),
   statsInstallsCurrent: v.optional(v.number()),
   statsInstallsAllTime: v.optional(v.number()),
+  installBackfill: v.optional(
+    v.object({
+      modelVersion: v.string(),
+      totalDownloads: v.number(),
+      pendingSkillDocDownloads: v.number(),
+      previousInstallsAllTime: v.number(),
+      targetInstallsAllTime: v.number(),
+      estimatedBackfilledInstalls: v.number(),
+      cleanWindowStartDay: v.number(),
+      cleanWindowEndDay: v.number(),
+      cleanDownloads: v.number(),
+      cleanInstalls: v.number(),
+      globalCleanRate: v.number(),
+      priorDownloads: v.number(),
+      minimumCleanDownloads: v.number(),
+      maxSmoothedRate: v.number(),
+      smoothedRate: v.number(),
+      pendingSkillDocInstallsAllTime: v.number(),
+      appliedAt: v.number(),
+    }),
+  ),
   stats: statsValidator,
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -877,14 +965,6 @@ const skillVersions = defineTable({
   .index("by_sha256hash", ["sha256hash"])
   .index("by_dep_registry_scan_status_and_created", ["depRegistryScanStatus", "createdAt"]);
 
-const depRegistryCache = defineTable({
-  registry: depRegistryValidator,
-  name: v.string(),
-  exists: v.boolean(),
-  httpStatus: v.number(),
-  checkedAt: v.number(),
-}).index("by_registry_name", ["registry", "name"]);
-
 const skillVersionFingerprints = defineTable({
   skillId: v.id("skills"),
   versionId: v.id("skillVersions"),
@@ -991,6 +1071,8 @@ const skillSearchDigest = defineTable({
     }),
   ),
   tags: v.record(v.string(), v.id("skillVersions")),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   badges: badgesValidator,
   stats: statsValidator,
   statsDownloads: v.optional(v.number()),
@@ -1095,11 +1177,134 @@ const skillSearchDigest = defineTable({
     filterFields: ["softDeletedAt", "isSuspicious"],
   });
 
+const curatedSkillSearchDigest = defineTable({
+  skillId: v.id("skills"),
+  slug: v.string(),
+  displayName: v.string(),
+  summary: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
+  statsDownloads: v.optional(v.number()),
+  statsStars: v.optional(v.number()),
+  statsInstallsAllTime: v.optional(v.number()),
+  recommendedScore: v.optional(v.number()),
+  softDeletedAt: v.optional(v.number()),
+  isSuspicious: v.optional(v.boolean()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_active_updated", ["softDeletedAt", "updatedAt"])
+  .index("by_active_created", ["softDeletedAt", "createdAt"])
+  .index("by_active_name", ["softDeletedAt", "displayName"])
+  .index("by_active_downloads", ["softDeletedAt", "statsDownloads", "updatedAt"])
+  .index("by_active_stars", ["softDeletedAt", "statsStars", "updatedAt"])
+  .index("by_active_installs", ["softDeletedAt", "statsInstallsAllTime", "updatedAt"])
+  .index("by_active_recommended_score", ["softDeletedAt", "recommendedScore", "updatedAt"])
+  .index("by_nonsuspicious_updated", ["softDeletedAt", "isSuspicious", "updatedAt"])
+  .index("by_nonsuspicious_created", ["softDeletedAt", "isSuspicious", "createdAt"])
+  .index("by_nonsuspicious_name", ["softDeletedAt", "isSuspicious", "displayName"])
+  .index("by_nonsuspicious_downloads", [
+    "softDeletedAt",
+    "isSuspicious",
+    "statsDownloads",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_stars", ["softDeletedAt", "isSuspicious", "statsStars", "updatedAt"])
+  .index("by_nonsuspicious_installs", [
+    "softDeletedAt",
+    "isSuspicious",
+    "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_recommended_score", [
+    "softDeletedAt",
+    "isSuspicious",
+    "recommendedScore",
+    "updatedAt",
+  ]);
+
+const skillTopicSearchDigest = defineTable({
+  skillId: v.id("skills"),
+  topic: v.string(),
+  softDeletedAt: v.optional(v.number()),
+  isSuspicious: v.optional(v.boolean()),
+  normalizedDisplayName: v.optional(v.string()),
+  statsDownloads: v.optional(v.number()),
+  statsStars: v.optional(v.number()),
+  statsInstallsAllTime: v.optional(v.number()),
+  recommendedScore: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_skill", ["skillId", "topic"])
+  .index("by_active_topic_updated", ["softDeletedAt", "topic", "updatedAt"])
+  .index("by_active_topic_created", ["softDeletedAt", "topic", "createdAt", "updatedAt"])
+  .index("by_active_topic_name", ["softDeletedAt", "topic", "normalizedDisplayName", "updatedAt"])
+  .index("by_active_topic_downloads", ["softDeletedAt", "topic", "statsDownloads", "updatedAt"])
+  .index("by_active_topic_stars", ["softDeletedAt", "topic", "statsStars", "updatedAt"])
+  .index("by_active_topic_installs", [
+    "softDeletedAt",
+    "topic",
+    "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_active_topic_recommended_score", [
+    "softDeletedAt",
+    "topic",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_updated", ["softDeletedAt", "isSuspicious", "topic", "updatedAt"])
+  .index("by_nonsuspicious_topic_created", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "createdAt",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_name", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "normalizedDisplayName",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_downloads", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "statsDownloads",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_stars", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "statsStars",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_installs", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "statsInstallsAllTime",
+    "updatedAt",
+  ])
+  .index("by_nonsuspicious_topic_recommended_score", [
+    "softDeletedAt",
+    "isSuspicious",
+    "topic",
+    "recommendedScore",
+    "updatedAt",
+  ]);
+
 const packages = defineTable({
   name: v.string(),
   normalizedName: v.string(),
   displayName: v.string(),
   summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
   ownerUserId: v.id("users"),
   ownerPublisherId: v.optional(v.id("publishers")),
   family: packageFamilyValidator,
@@ -1113,12 +1318,25 @@ const packages = defineTable({
       version: v.string(),
       createdAt: v.number(),
       changelog: v.string(),
+      icon: v.optional(v.string()),
       compatibility: packageCompatibilityValidator,
       verification: packageVerificationValidator,
       artifact: packageArtifactSummaryValidator,
     }),
   ),
   tags: v.record(v.string(), v.id("packageReleases")),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
+  inferredCategories: v.optional(v.array(v.string())),
+  inferredTopics: v.optional(v.array(v.string())),
+  inferredFromReleaseId: v.optional(v.id("packageReleases")),
+  inferredCategoryConfidence: v.optional(catalogClassificationConfidenceValidator),
+  inferredTopicConfidence: v.optional(catalogClassificationConfidenceValidator),
+  inferredClassifierVersion: v.optional(v.string()),
+  inferredTopicClassifierVersion: v.optional(v.string()),
+  inferredInputHash: v.optional(v.string()),
+  inferredTopicInputHash: v.optional(v.string()),
+  inferredAt: v.optional(v.number()),
   compatibility: packageCompatibilityValidator,
   verification: packageVerificationValidator,
   scanStatus: packageScanStatusValidator,
@@ -1201,6 +1419,7 @@ const packageReleases = defineTable({
   version: v.string(),
   changelog: v.string(),
   summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
   distTags: v.array(v.string()),
   files: packageFilesValidator,
   integritySha256: v.string(),
@@ -1288,6 +1507,38 @@ const packageReleases = defineTable({
   .index("by_active_created", ["softDeletedAt", "createdAt"])
   .index("by_package_version", ["packageId", "version"])
   .index("by_sha256hash", ["sha256hash"]);
+
+const catalogClassificationResults = defineTable({
+  targetKind: v.union(v.literal("skill"), v.literal("plugin")),
+  skillId: v.optional(v.id("skills")),
+  packageId: v.optional(v.id("packages")),
+  skillVersionId: v.optional(v.id("skillVersions")),
+  packageReleaseId: v.optional(v.id("packageReleases")),
+  categories: v.array(v.string()),
+  topics: v.array(v.string()),
+  categoryCandidates: v.array(catalogCategoryCandidateValidator),
+  topicCandidates: v.array(catalogTopicCandidateValidator),
+  categoryCandidateCount: v.number(),
+  topicCandidateCount: v.number(),
+  categoryConfidence: catalogClassificationConfidenceValidator,
+  topicConfidence: catalogClassificationConfidenceValidator,
+  categoryNeedsReview: v.boolean(),
+  topicNeedsReview: v.boolean(),
+  unknownSignals: v.array(v.string()),
+  classifierVersion: v.string(),
+  topicClassifierVersion: v.string(),
+  inputHash: v.string(),
+  topicInputHash: v.string(),
+  applyStatus: catalogClassificationApplyStatusValidator,
+  error: v.optional(v.string()),
+  classifiedAt: v.number(),
+  appliedAt: v.optional(v.number()),
+})
+  .index("by_skill", ["skillId"])
+  .index("by_package", ["packageId"])
+  .index("by_apply_status", ["applyStatus", "classifiedAt"])
+  .index("by_category_confidence", ["categoryConfidence", "classifiedAt"])
+  .index("by_topic_confidence", ["topicConfidence", "classifiedAt"]);
 
 const packageInspectorWarnings = defineTable({
   packageId: v.id("packages"),
@@ -1528,11 +1779,16 @@ const packageSearchDigest = defineTable({
   ownerHandle: v.optional(v.string()),
   ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
   summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
+  recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
   scanStatus: packageScanStatusValidator,
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -1560,6 +1816,91 @@ const packageSearchDigest = defineTable({
   .index("by_active_runtime_id", ["softDeletedAt", "runtimeId", "updatedAt"])
   .index("by_active_name", ["softDeletedAt", "displayName"]);
 
+const packageTopicSearchDigest = defineTable({
+  packageId: v.id("packages"),
+  name: v.string(),
+  normalizedName: v.string(),
+  displayName: v.string(),
+  family: packageFamilyValidator,
+  channel: packageChannelValidator,
+  isOfficial: v.boolean(),
+  ownerUserId: v.id("users"),
+  ownerPublisherId: v.optional(v.id("publishers")),
+  ownerHandle: v.optional(v.string()),
+  ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+  summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
+  latestVersion: v.optional(v.string()),
+  runtimeId: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
+  pluginCategoryTags: v.optional(v.array(v.string())),
+  topic: v.string(),
+  verificationTier: v.optional(packageVerificationTierValidator),
+  stats: v.optional(packageStatsValidator),
+  recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
+  scanStatus: packageScanStatusValidator,
+  softDeletedAt: v.optional(v.number()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+  .index("by_package", ["packageId", "topic"])
+  .index("by_active_topic_updated", ["softDeletedAt", "topic", "updatedAt"])
+  .index("by_active_topic_downloads", ["softDeletedAt", "topic", "stats.downloads", "updatedAt"])
+  .index("by_active_topic_installs", ["softDeletedAt", "topic", "stats.installs", "updatedAt"])
+  .index("by_active_topic_recommended_score", [
+    "softDeletedAt",
+    "topic",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_official_topic_downloads", [
+    "softDeletedAt",
+    "isOfficial",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_official_topic_installs", [
+    "softDeletedAt",
+    "isOfficial",
+    "topic",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_official_topic_recommended_score", [
+    "softDeletedAt",
+    "isOfficial",
+    "topic",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_family_topic_updated", ["softDeletedAt", "family", "topic", "updatedAt"])
+  .index("by_active_channel_topic_updated", ["softDeletedAt", "channel", "topic", "updatedAt"])
+  .index("by_active_official_topic_updated", ["softDeletedAt", "isOfficial", "topic", "updatedAt"])
+  .index("by_active_family_channel_topic_updated", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "topic",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_topic_updated", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "topic",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_topic_updated", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "topic",
+    "updatedAt",
+  ]);
+
 const packagePluginCategorySearchDigest = defineTable({
   packageId: v.id("packages"),
   name: v.string(),
@@ -1573,12 +1914,17 @@ const packagePluginCategorySearchDigest = defineTable({
   ownerHandle: v.optional(v.string()),
   ownerKind: v.optional(v.union(v.literal("user"), v.literal("org"))),
   summary: v.optional(v.string()),
+  icon: v.optional(v.string()),
   latestVersion: v.optional(v.string()),
   runtimeId: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   pluginCategoryTags: v.optional(v.array(v.string())),
   pluginCategory: v.string(),
   verificationTier: v.optional(packageVerificationTierValidator),
   stats: v.optional(packageStatsValidator),
+  recommendedScore: v.optional(v.number()),
+  recommendedScoreVersion: v.optional(v.number()),
   scanStatus: packageScanStatusValidator,
   softDeletedAt: v.optional(v.number()),
   createdAt: v.number(),
@@ -1586,6 +1932,90 @@ const packagePluginCategorySearchDigest = defineTable({
 })
   .index("by_package", ["packageId", "pluginCategory"])
   .index("by_active_category_updated", ["softDeletedAt", "pluginCategory", "updatedAt"])
+  .index("by_active_category_downloads", [
+    "softDeletedAt",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_category_installs", [
+    "softDeletedAt",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_category_recommended_score", [
+    "softDeletedAt",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_installs", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_family_category_recommended_score", [
+    "softDeletedAt",
+    "family",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_downloads", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_installs", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_official_category_recommended_score", [
+    "softDeletedAt",
+    "isOfficial",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_installs", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "stats.installs",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_category_recommended_score", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "pluginCategory",
+    "recommendedScore",
+    "updatedAt",
+  ])
   .index("by_active_family_category_updated", [
     "softDeletedAt",
     "family",
@@ -1688,7 +2118,8 @@ const skillStatEvents = defineTable({
   processedAt: v.optional(v.number()),
 })
   .index("by_unprocessed", ["processedAt"])
-  .index("by_skill", ["skillId"]);
+  .index("by_skill", ["skillId"])
+  .index("by_skill_processed", ["skillId", "processedAt"]);
 
 const skillStatUpdateCursors = defineTable({
   key: v.string(),
@@ -2175,36 +2606,18 @@ const cliDeviceCodes = defineTable({
   .index("by_user_code_hash", ["userCodeHash"])
   .index("by_status_expires", ["status", "expiresAt"]);
 
-const rateLimits = defineTable({
-  key: v.string(),
-  windowStart: v.number(),
-  shard: v.optional(v.number()),
-  count: v.number(),
-  limit: v.number(),
-  updatedAt: v.number(),
-})
-  .index("by_key_window", ["key", "windowStart"])
-  .index("by_key", ["key"]);
-
-const rateLimitShards = defineTable({
+const rateLimitCounters = defineTable({
   key: v.string(),
   windowStart: v.number(),
   shard: v.number(),
   count: v.number(),
   limit: v.number(),
   updatedAt: v.number(),
+  expiresAt: v.number(),
 })
   .index("by_key_window", ["key", "windowStart"])
-  .index("by_key_window_shard", ["key", "windowStart", "shard"]);
-
-const downloadDedupes = defineTable({
-  skillId: v.id("skills"),
-  identityHash: v.string(),
-  hourStart: v.number(),
-  createdAt: v.number(),
-})
-  .index("by_skill_identity_hour", ["skillId", "identityHash", "hourStart"])
-  .index("by_hour", ["hourStart"]);
+  .index("by_key_window_shard", ["key", "windowStart", "shard"])
+  .index("by_expires_at", ["expiresAt"]);
 
 const downloadMetricTargetKind = v.union(v.literal("skill"), v.literal("package"));
 const downloadMetricIdentityKind = v.union(v.literal("user"), v.literal("ip"));
@@ -2260,6 +2673,7 @@ const installTelemetryDedupes = defineTable({
 const reservedSlugs = defineTable({
   slug: v.string(),
   originalOwnerUserId: v.id("users"),
+  originalOwnerPublisherId: v.optional(v.id("publishers")),
   deletedAt: v.number(),
   expiresAt: v.number(),
   reason: v.optional(v.string()),
@@ -2282,18 +2696,10 @@ const reservedHandles = defineTable({
   .index("by_handle_active_updatedAt", ["handle", "releasedAt", "updatedAt"])
   .index("by_owner", ["rightfulOwnerUserId"]);
 
-// Deprecated GitHub backup state retained so existing production rows keep
-// validating until a separate cleanup migration removes them.
-const githubBackupSyncState = defineTable({
-  key: v.string(),
-  cursor: v.optional(v.string()),
-  pruneCursor: v.optional(v.string()),
-  updatedAt: v.number(),
-}).index("by_key", ["key"]);
-
 const registryArtifactBackupSyncState = defineTable({
   key: v.string(),
   cursor: v.optional(v.string()),
+  isDone: v.optional(v.boolean()),
   updatedAt: v.number(),
 }).index("by_key", ["key"]);
 
@@ -2301,10 +2707,19 @@ const registryArtifactBackupJobs = defineTable({
   targetKind: v.union(v.literal("skillVersion"), v.literal("packageRelease")),
   skillVersionId: v.optional(v.id("skillVersions")),
   packageReleaseId: v.optional(v.id("packageReleases")),
-  status: v.union(v.literal("pending"), v.literal("succeeded"), v.literal("exhausted")),
+  status: v.union(
+    v.literal("pending"),
+    v.literal("running"),
+    v.literal("succeeded"),
+    v.literal("exhausted"),
+    v.literal("missingArtifact"),
+  ),
   reason: v.union(v.literal("publish"), v.literal("seed"), v.literal("retry"), v.literal("sync")),
   attempts: v.number(),
   nextRunAt: v.number(),
+  leaseToken: v.optional(v.string()),
+  leaseExpiresAt: v.optional(v.number()),
+  claimedAt: v.optional(v.number()),
   lastAttemptAt: v.optional(v.number()),
   lastError: v.optional(v.string()),
   completedAt: v.optional(v.number()),
@@ -2313,6 +2728,7 @@ const registryArtifactBackupJobs = defineTable({
   updatedAt: v.number(),
 })
   .index("by_status_nextRunAt", ["status", "nextRunAt"])
+  .index("by_status_leaseExpiresAt", ["status", "leaseExpiresAt"])
   .index("by_status_attempts", ["status", "attempts"])
   .index("by_skill_version", ["skillVersionId"])
   .index("by_package_release", ["packageReleaseId"])
@@ -2355,6 +2771,8 @@ const skillOwnershipTransfers = defineTable({
 
 export default defineSchema({
   ...authTables,
+  authSessions,
+  authRefreshTokens,
   users,
   publishers,
   publisherMembers,
@@ -2366,6 +2784,7 @@ export default defineSchema({
   skillSlugAliases,
   packages,
   packageReleases,
+  catalogClassificationResults,
   packageInspectorWarnings,
   packageInspectorFindingNotifications,
   packageInspectorScanCursors,
@@ -2379,14 +2798,16 @@ export default defineSchema({
   packagePublishUploadTickets,
   packageBadges,
   packageSearchDigest,
+  packageTopicSearchDigest,
   packagePluginCategorySearchDigest,
   skillVersions,
-  depRegistryCache,
   skillVersionFingerprints,
   skillBadges,
   skillEmbeddings,
   embeddingSkillMap,
   skillSearchDigest,
+  curatedSkillSearchDigest,
+  skillTopicSearchDigest,
   skillDailyStats,
   skillLeaderboards,
   skillStatBackfillState,
@@ -2412,15 +2833,12 @@ export default defineSchema({
   vtScanLogs,
   apiTokens,
   cliDeviceCodes,
-  rateLimits,
-  rateLimitShards,
-  downloadDedupes,
+  rateLimitCounters,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
   installTelemetryDedupes,
   reservedSlugs,
   reservedHandles,
-  githubBackupSyncState,
   registryArtifactBackupSyncState,
   registryArtifactBackupJobs,
   userSkillInstalls,

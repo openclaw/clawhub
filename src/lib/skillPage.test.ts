@@ -67,6 +67,98 @@ describe("fetchSkillPageData", () => {
     expect(actionMock).toHaveBeenCalledWith("skills:getReadme", { versionId: "skillVersions:1" });
   });
 
+  it("threads owner handle into the skill lookup when provided", async () => {
+    queryMock.mockResolvedValue({
+      skill: {
+        _id: "skills:1",
+        slug: "weather",
+        displayName: "Weather",
+        summary: "Get current weather.",
+      },
+      latestVersion: null,
+      owner: {
+        _id: "publishers:1",
+        handle: "clawkit",
+        displayName: "Clawkit",
+      },
+      forkOf: null,
+      canonical: null,
+    });
+
+    await expect(fetchSkillPageData("weather", "clawkit")).resolves.toEqual(
+      expect.objectContaining({
+        owner: "clawkit",
+        initialData: expect.objectContaining({
+          lookupOwnerHandle: "clawkit",
+        }),
+      }),
+    );
+    expect(queryMock).toHaveBeenCalledWith("skills:getBySlug", {
+      slug: "weather",
+      ownerHandle: "clawkit",
+    });
+  });
+
+  it("falls back to slug-only lookup when an older read backend rejects owner handles", async () => {
+    queryMock.mockRejectedValueOnce(new Error("Server Error")).mockResolvedValueOnce({
+      skill: {
+        _id: "skills:1",
+        slug: "weather",
+        displayName: "Weather",
+        summary: "Get current weather.",
+      },
+      latestVersion: null,
+      owner: {
+        _id: "publishers:1",
+        handle: "clawkit",
+        displayName: "Clawkit",
+      },
+      forkOf: null,
+      canonical: null,
+    });
+
+    await expect(fetchSkillPageData("weather", "clawkit")).resolves.toEqual(
+      expect.objectContaining({
+        owner: "clawkit",
+        initialData: expect.objectContaining({
+          lookupOwnerHandle: null,
+        }),
+      }),
+    );
+    expect(queryMock).toHaveBeenNthCalledWith(1, "skills:getBySlug", {
+      slug: "weather",
+      ownerHandle: "clawkit",
+    });
+    expect(queryMock).toHaveBeenNthCalledWith(2, "skills:getBySlug", { slug: "weather" });
+  });
+
+  it("does not use slug-only fallback data when it belongs to another owner", async () => {
+    queryMock.mockRejectedValueOnce(new Error("Server Error")).mockResolvedValueOnce({
+      skill: {
+        _id: "skills:1",
+        slug: "weather",
+        displayName: "Weather",
+        summary: "Get current weather.",
+      },
+      latestVersion: null,
+      owner: {
+        _id: "publishers:2",
+        handle: "someone-else",
+        displayName: "Someone Else",
+      },
+      forkOf: null,
+      canonical: null,
+    });
+
+    await expect(fetchSkillPageData("weather", "clawkit")).resolves.toEqual({
+      owner: null,
+      displayName: null,
+      summary: null,
+      version: null,
+      initialData: null,
+    });
+  });
+
   it("keeps skill snapshot when readme fetch fails", async () => {
     queryMock.mockResolvedValue({
       skill: {

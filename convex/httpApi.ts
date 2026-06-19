@@ -10,6 +10,7 @@ import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { httpAction } from "./functions";
+import { ambiguousSkillSlugMessage } from "./httpApiV1/shared";
 import { requireApiTokenUser, requirePackagePublishAuth } from "./lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit } from "./lib/httpRateLimit";
@@ -24,6 +25,7 @@ type SearchSkillEntry = {
     summary?: string | null;
     updatedAt?: number;
   } | null;
+  ownerHandle?: string | null;
   version: { version?: string } | null;
 };
 
@@ -43,6 +45,13 @@ type GetBySlugResult = {
   } | null;
   latestVersion: { version: string; createdAt: number; changelog: string } | null;
   owner: { handle?: string; displayName?: string; image?: string } | null;
+  ambiguous?: boolean;
+} | null;
+
+type ResolveVersionResult = {
+  match: { version: string } | null;
+  latestVersion: { version: string } | null;
+  ambiguous?: boolean;
 } | null;
 
 async function searchSkillsHandler(ctx: ActionCtx, request: Request) {
@@ -70,6 +79,7 @@ async function searchSkillsHandler(ctx: ActionCtx, request: Request) {
     results: results.map((result) => ({
       score: result.score,
       slug: result.skill?.slug,
+      ownerHandle: result.ownerHandle ?? null,
       displayName: result.skill?.displayName,
       summary: result.skill?.summary ?? null,
       version: result.version?.version ?? null,
@@ -83,10 +93,27 @@ export const searchSkillsHttp = httpAction(searchSkillsHandler);
 async function getSkillHandler(ctx: ActionCtx, request: Request) {
   const url = new URL(request.url);
   const slug = url.searchParams.get("slug")?.trim().toLowerCase();
+  const ownerHandle =
+    (url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner"))
+      ?.trim()
+      .replace(/^@+/, "") || undefined;
   if (!slug) return text("Missing slug", 400);
 
-  const result = (await ctx.runQuery(api.skills.getBySlug, { slug })) as GetBySlugResult;
-  if (!result?.skill) return text("Skill not found", 404);
+  const result = (await ctx.runQuery(api.skills.getBySlug, {
+    slug,
+    ...(ownerHandle ? { ownerHandle } : {}),
+  })) as GetBySlugResult;
+  if (!result?.skill) {
+    return result?.ambiguous
+      ? text(
+          ambiguousSkillSlugMessage(
+            slug,
+            `/api/skill?slug=${encodeURIComponent(slug)}&ownerHandle=<owner>`,
+          ),
+          409,
+        )
+      : text("Skill not found", 404);
+  }
 
   return json({
     skill: {
@@ -120,12 +147,29 @@ export const getSkillHttp = httpAction(getSkillHandler);
 async function resolveSkillVersionHandler(ctx: ActionCtx, request: Request) {
   const url = new URL(request.url);
   const slug = url.searchParams.get("slug")?.trim().toLowerCase();
+  const ownerHandle =
+    (url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner"))
+      ?.trim()
+      .replace(/^@+/, "") || undefined;
   const hash = url.searchParams.get("hash")?.trim().toLowerCase();
   if (!slug || !hash) return text("Missing slug or hash", 400);
   if (!/^[a-f0-9]{64}$/.test(hash)) return text("Invalid hash", 400);
 
-  const resolved = await ctx.runQuery(api.skills.resolveVersionByHash, { slug, hash });
+  const resolved = (await ctx.runQuery(api.skills.resolveVersionByHash, {
+    slug,
+    hash,
+    ...(ownerHandle ? { ownerHandle } : {}),
+  })) as ResolveVersionResult;
   if (!resolved) return text("Skill not found", 404);
+  if (resolved.ambiguous) {
+    return text(
+      ambiguousSkillSlugMessage(
+        slug,
+        `/api/skill/resolve?slug=${encodeURIComponent(slug)}&ownerHandle=<owner>&hash=${hash}`,
+      ),
+      409,
+    );
+  }
 
   return json({ slug, match: resolved.match, latestVersion: resolved.latestVersion });
 }
@@ -182,7 +226,28 @@ async function cliPublishHandler(ctx: ActionCtx, request: Request) {
     if (!hasAcceptedLegacyLicenseTerms(args.acceptLicenseTerms)) {
       return text("MIT-0 license terms must be accepted to publish skills", 400);
     }
-    const result = await publishVersionForUser(ctx, userId, args);
+    const { ownerHandle, sourceOwnerHandle, migrateOwner, ...publishPayload } = args;
+    const target = ownerHandle
+      ? ((await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+          actorUserId: userId,
+          ownerHandle,
+          minimumRole: "publisher",
+        })) as { publisherId: Id<"publishers"> })
+      : null;
+    const source =
+      target && migrateOwner === true && sourceOwnerHandle && sourceOwnerHandle !== ownerHandle
+        ? ((await ctx.runMutation(internal.publishers.resolvePublishTargetForUserInternal, {
+            actorUserId: userId,
+            ownerHandle: sourceOwnerHandle,
+            minimumRole: "publisher",
+          })) as { publisherId: Id<"publishers"> })
+        : null;
+    const shouldMigrateOwner = Boolean(target && source);
+    const result = await publishVersionForUser(ctx, userId, publishPayload, {
+      ...(target ? { ownerPublisherId: target.publisherId } : {}),
+      ...(source ? { sourceOwnerPublisherId: source.publisherId } : {}),
+      ...(shouldMigrateOwner ? { migrateOwner: true } : {}),
+    });
     return json({ ok: true, ...result });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Publish failed";
@@ -381,6 +446,9 @@ function parsePublishBody(body: unknown) {
   return {
     slug: parsed.slug,
     displayName: parsed.displayName,
+    ownerHandle: parsed.ownerHandle?.trim().replace(/^@+/, "") || undefined,
+    sourceOwnerHandle: parsed.sourceOwnerHandle?.trim().replace(/^@+/, "") || undefined,
+    migrateOwner: parsed.migrateOwner === true ? true : undefined,
     version: parsed.version,
     changelog: parsed.changelog,
     acceptLicenseTerms: parsed.acceptLicenseTerms,
@@ -389,6 +457,7 @@ function parsePublishBody(body: unknown) {
     forkOf: parsed.forkOf
       ? {
           slug: parsed.forkOf.slug,
+          ownerHandle: parsed.forkOf.ownerHandle?.trim().replace(/^@+/, "") || undefined,
           version: parsed.forkOf.version ?? undefined,
         }
       : undefined,

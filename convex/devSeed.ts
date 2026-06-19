@@ -2397,6 +2397,7 @@ export async function seedLocalModerationFixturesHandler(
     normalizedName: normalizePackageName(scannedPluginName),
     displayName: "Local Scanned Runtime Plugin",
     summary: "Seeded public plugin with completed security scans for scanner page previews.",
+    icon: "https://cdn.simpleicons.org/github/111111",
     ownerUserId: userId,
     ownerPublisherId: publisherId,
     family: "code-plugin",
@@ -2424,6 +2425,7 @@ export async function seedLocalModerationFixturesHandler(
   });
   const scannedPackageReleaseId = await ctx.db.insert("packageReleases", {
     packageId: scannedPackageId,
+    icon: "https://cdn.simpleicons.org/github/111111",
     version: "0.1.0",
     changelog: "Seeded public scanned release for plugin scanner page previews.",
     summary: "Seeded scanned plugin release.",
@@ -2470,6 +2472,7 @@ export async function seedLocalModerationFixturesHandler(
     latestReleaseId: scannedPackageReleaseId,
     latestVersionSummary: {
       version: "0.1.0",
+      icon: "https://cdn.simpleicons.org/github/111111",
       createdAt: now,
       changelog: "Seeded public scanned release for plugin scanner page previews.",
       compatibility: { pluginApiRange: ">=0.1.0" },
@@ -4171,6 +4174,7 @@ async function upsertRoleHelpFixtureUser(ctx: MutationCtx, user: RoleHelpFixture
     handle: user.handle,
     displayName: user.displayName,
     role: user.role,
+    githubCreatedAt: Date.UTC(2015, 0, 1),
     deletedAt: undefined,
     deactivatedAt: undefined,
     updatedAt: now,

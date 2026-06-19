@@ -38,12 +38,15 @@ export type PublicPublisherListItem = PublicPublisher & {
 export type PublicPublisherCatalogItem = {
   _id: string;
   kind: "skill" | "plugin";
+  slug?: string | null;
   displayName: string;
   summary: string | null;
-  /**
-   * Skill custom-icon protocol string (e.g. `lucide:Plug`) mirrored from
-   * `skills.icon`. Always `null` for `kind: "plugin"` items in Phase 1.
-   */
+  topics?: string[];
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: string | null;
+  inferredFromVersionId?: string | null;
+  /** Legacy skill icon field or plugin manifest HTTPS icon URL retained in responses. */
   icon: string | null;
   href: string;
   installs?: number;
@@ -95,6 +98,10 @@ export type PublicSkill = Pick<
   | "githubScanStatus"
   | "githubHasSkillCard"
   | "tags"
+  | "categories"
+  | "inferredCategories"
+  | "inferredFromVersionId"
+  | "topics"
   | "badges"
   | "stats"
   | "isSuspicious"

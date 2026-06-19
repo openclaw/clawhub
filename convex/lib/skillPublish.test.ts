@@ -1,7 +1,254 @@
 import { describe, expect, it, vi } from "vitest";
+import { MAX_PUBLISH_FILE_BYTES } from "./publishLimits";
 import { publishVersionForUser, __test } from "./skillPublish";
 
+vi.mock("./embeddings", () => ({
+  generateEmbedding: vi.fn(async () => [0, 1, 2]),
+}));
+
 describe("skillPublish", () => {
+  it("ignores taxonomy declarations from metadata.openclaw.json", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Automation workflow for recurring reports.
+---
+# Automation Helper
+`,
+      ],
+      [
+        "_storage:metadata",
+        JSON.stringify({
+          categories: ["security"],
+          topics: ["Manifest Topic"],
+        }),
+      ],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "automation-helper",
+        displayName: "Automation Helper",
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 90,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+          {
+            path: "metadata.openclaw.json",
+            size: 70,
+            storageId: "_storage:metadata" as never,
+            sha256: "b".repeat(64),
+            contentType: "application/json",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipBackup: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        categories: ["other"],
+        topics: undefined,
+      }),
+    );
+  });
+
+  it("uses Other when an existing skill has a retired stored category", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Research helper for literature reviews.
+---
+# Research Helper
+`,
+      ],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "skills:demo",
+          slug: "research-helper",
+          displayName: "Research Helper",
+          summary: "Research helper",
+          ownerUserId: "users:1",
+          latestVersionSummary: { version: "0.9.0" },
+          categories: ["retired-category"],
+        })
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "research-helper",
+        displayName: "Research Helper",
+        version: "1.0.0",
+        changelog: "Update",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 90,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipBackup: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        categories: ["other"],
+      }),
+    );
+  });
+
+  it("uses Other when publish explicitly clears an existing category", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Research helper for literature reviews.
+---
+# Research Helper
+`,
+      ],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce({
+          _id: "skills:demo",
+          slug: "research-helper",
+          displayName: "Research Helper",
+          summary: "Research helper",
+          ownerUserId: "users:1",
+          latestVersionSummary: { version: "0.9.0" },
+          categories: ["development"],
+        })
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "research-helper",
+        displayName: "Research Helper",
+        version: "1.0.0",
+        changelog: "Clear categories",
+        categories: [],
+        files: [
+          {
+            path: "SKILL.md",
+            size: 90,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipBackup: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        categories: ["other"],
+      }),
+    );
+  });
+
   it("merges github source into metadata", () => {
     const merged = __test.mergeSourceIntoMetadata(
       { clawdis: { emoji: "x" } },
@@ -36,6 +283,49 @@ describe("skillPublish", () => {
     ]);
 
     expect(fingerprint).toBe(expected);
+  });
+
+  it("derives publish file metadata from stored bytes", async () => {
+    const storage = {
+      get: vi.fn(async () => new Blob(["hello"], { type: "text/markdown" })),
+    };
+
+    const files = await __test.derivePublishFilesFromStorage({ storage } as never, [
+      {
+        path: "SKILL.md",
+        size: 1,
+        storageId: "_storage:skill" as never,
+        sha256: "caller-supplied",
+        contentType: "text/plain",
+      },
+    ]);
+
+    expect(files).toEqual([
+      expect.objectContaining({
+        path: "SKILL.md",
+        storageId: "_storage:skill",
+        size: 5,
+        sha256: "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824",
+      }),
+    ]);
+  });
+
+  it("rejects oversized stored files even when caller metadata is small", async () => {
+    const storage = {
+      get: vi.fn(async () => new Blob([new Uint8Array(MAX_PUBLISH_FILE_BYTES + 1)])),
+    };
+
+    await expect(
+      __test.derivePublishFilesFromStorage({ storage } as never, [
+        {
+          path: "SKILL.md",
+          size: 1,
+          storageId: "_storage:skill" as never,
+          sha256: "caller-supplied",
+          contentType: "text/plain",
+        },
+      ]),
+    ).rejects.toThrow(/exceeds 10MB limit/i);
   });
 
   it("rejects publisher-authored skill-card.md files", async () => {

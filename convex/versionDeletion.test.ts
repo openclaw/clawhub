@@ -410,6 +410,7 @@ function makePackageDeletionCtx(options: {
         }
         if (
           table === "packageCapabilitySearchDigest" ||
+          table === "packageTopicSearchDigest" ||
           table === "packagePluginCategorySearchDigest"
         ) {
           return {
@@ -442,6 +443,7 @@ function makePackageDeletionCtx(options: {
         }
         if (
           table === "packageCapabilitySearchDigest" ||
+          table === "packageTopicSearchDigest" ||
           table === "packagePluginCategorySearchDigest"
         ) {
           return `${table}:1`;

@@ -2,86 +2,50 @@ import { describe, expect, it } from "vitest";
 import {
   buildSkillCategoryBrowseHref,
   getSkillCategoryForSkill,
+  resolvePluginBrowseCategorySlug,
+  resolveSkillBrowseCategorySlug,
   SKILL_CATEGORIES,
 } from "./categories";
 
 describe("skill category helpers", () => {
-  it("picks the strongest matching skill category from searchable skill fields", () => {
+  it("maps legacy browser category slugs without accepting unknown values", () => {
+    expect(resolveSkillBrowseCategorySlug("workflows")).toBe("automation");
+    expect(resolveSkillBrowseCategorySlug("mcp-tools")).toBe("integrations");
+    expect(resolveSkillBrowseCategorySlug("unknown")).toBeUndefined();
+
+    expect(resolvePluginBrowseCategorySlug("data")).toBe("tools");
+    expect(resolvePluginBrowseCategorySlug("dev-tools")).toBe("runtime");
+    expect(resolvePluginBrowseCategorySlug("unknown")).toBeUndefined();
+    expect(resolvePluginBrowseCategorySlug("constructor")).toBeUndefined();
+    expect(resolveSkillBrowseCategorySlug("toString")).toBeUndefined();
+  });
+
+  it("uses Other when no category has been explicitly stored", () => {
     const category = getSkillCategoryForSkill({
       slug: "workflow-runner",
       displayName: "Workflow Runner",
       summary: "Build repeatable agent pipelines.",
     });
 
-    expect(category?.slug).toBe("workflows");
-  });
-
-  it("falls back to the Other category when no keyword matches", () => {
-    const category = getSkillCategoryForSkill({
-      slug: "weather",
-      displayName: "Weather",
-      summary: "Get current forecasts.",
-    });
-
     expect(category?.slug).toBe("other");
-  });
-
-  it("does not let generated slug prefixes outweigh the skill summary", () => {
-    const category = getSkillCategoryForSkill({
-      slug: "dev-jh86ceyb-local-agentic-risk-demo",
-      displayName: "Local Agentic Risk Demo",
-      summary: "Local fixture for security bucket rendering.",
-    });
-
-    expect(category?.slug).toBe("security");
-  });
-
-  it("ignores generated dev slug prefixes when no skill content matches a category", () => {
-    const category = getSkillCategoryForSkill({
-      slug: "dev-jh86ceyb-weather-helper",
-      displayName: "Weather Helper",
-      summary: "Get current forecasts.",
-    });
-
-    expect(category?.slug).toBe("other");
-  });
-
-  it("does not classify unrelated digital device text as Dev Tools", () => {
-    const category = getSkillCategoryForSkill({
-      slug: "navigation-without-screens",
-      displayName: "Navigation Without Screens",
-      summary: "Physical navigation skills without digital devices. Use for learning maps.",
-    });
-
-    expect(category?.slug).toBe("other");
-  });
-
-  it("prefers Data & APIs when web3 developer wording is outweighed by API data terms", () => {
-    const category = getSkillCategoryForSkill({
-      slug: "web3-dev",
-      displayName: "Blockscout for Web3 Dev",
-      summary:
-        "Build web3 applications, scripts, CLIs, bots, mobile apps, and desktop apps that need blockchain data via the Blockscout PRO API over HTTP.",
-    });
-
-    expect(category?.slug).toBe("data");
-  });
-
-  it("still recognizes developer utility wording as Dev Tools", () => {
-    const category = getSkillCategoryForSkill({
-      slug: "developer-utils",
-      displayName: "Developer Utils",
-      summary: "Utilities for build and debug workflows.",
-    });
-
-    expect(category?.slug).toBe("dev-tools");
   });
 
   it("builds browse links from the category filter slug", () => {
-    const workflows = SKILL_CATEGORIES.find((category) => category.slug === "workflows");
+    const workflows = SKILL_CATEGORIES.find((category) => category.slug === "automation");
 
     expect(workflows ? buildSkillCategoryBrowseHref(workflows) : null).toBe(
-      "/skills?category=workflows",
+      "/skills?category=automation",
     );
+  });
+
+  it("prefers a stored category over inferred skill text", () => {
+    const category = getSkillCategoryForSkill({
+      categories: ["operations"],
+      slug: "todoist-cli",
+      displayName: "Todoist CLI",
+      summary: "Manage tasks, projects, and planning.",
+    });
+
+    expect(category?.slug).toBe("operations");
   });
 });

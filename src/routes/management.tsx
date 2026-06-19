@@ -719,8 +719,8 @@ export function Management() {
         {activeView === "duplicates" ? (
           <DuplicatesPage
             duplicateCandidates={duplicateCandidates}
-            onSetDuplicate={(skillId, canonicalSlug) => {
-              void setDuplicate({ skillId, canonicalSlug });
+            onSetDuplicate={(skillId, canonicalSkillId) => {
+              void setDuplicate({ skillId, canonicalSkillId });
             }}
           />
         ) : null}

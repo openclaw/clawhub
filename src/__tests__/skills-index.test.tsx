@@ -2,7 +2,7 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { SkillsIndex } from "../routes/skills/index";
+import { Route as SkillsRoute, SkillsIndex } from "../routes/skills/index";
 import {
   convexHttpMock,
   convexReactMocks,
@@ -14,7 +14,8 @@ const navigateMock = vi.fn();
 let searchMock: Record<string, unknown> = {};
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (_config: { component: unknown; validateSearch: unknown }) => ({
+  createFileRoute: () => (config: { component: unknown; validateSearch: unknown }) => ({
+    __config: config,
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
@@ -47,6 +48,26 @@ describe("SkillsIndex", () => {
     vi.unstubAllGlobals();
   });
 
+  it("maps legacy category URLs before browsing", () => {
+    const validateSearch = (
+      SkillsRoute as unknown as {
+        __config: {
+          validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
+        };
+      }
+    ).__config.validateSearch;
+
+    expect(validateSearch({ category: "workflows" })).toEqual(
+      expect.objectContaining({ category: "automation" }),
+    );
+    expect(validateSearch({ category: "mcp-tools" })).toEqual(
+      expect.objectContaining({ category: "integrations" }),
+    );
+    expect(validateSearch({ category: "unknown" })).toEqual(
+      expect.objectContaining({ category: undefined }),
+    );
+  });
+
   it("requests the first skills page", async () => {
     render(<SkillsIndex />);
     await act(async () => {});
@@ -61,6 +82,7 @@ describe("SkillsIndex", () => {
       }),
     );
     expect(args).not.toHaveProperty("sort");
+    expect(args).not.toHaveProperty("officialFirst");
     expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
       "true",
     );
@@ -95,7 +117,7 @@ describe("SkillsIndex", () => {
   });
 
   it("hides the total skills count when filters are active", async () => {
-    searchMock = { category: "dev-tools" };
+    searchMock = { category: "development" };
     convexReactMocks.useQuery.mockReturnValue(70_300);
 
     render(<SkillsIndex />);
@@ -106,7 +128,7 @@ describe("SkillsIndex", () => {
   });
 
   it("clears the skill search from the search field", async () => {
-    searchMock = { q: "agent", sort: "relevance", category: "dev-tools" };
+    searchMock = { q: "agent", sort: "relevance", category: "development" };
 
     render(<SkillsIndex />);
     await act(async () => {});
@@ -122,12 +144,12 @@ describe("SkillsIndex", () => {
       lastCall.search({
         q: "agent",
         sort: "relevance",
-        category: "dev-tools",
+        category: "development",
       }),
     ).toEqual({
       q: undefined,
       sort: undefined,
-      category: "dev-tools",
+      category: "development",
     });
     expect(lastCall.replace).toBe(true);
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
@@ -287,6 +309,25 @@ describe("SkillsIndex", () => {
     });
   });
 
+  it("passes the selected category to backend skill search", async () => {
+    searchMock = { q: "helper", category: "development" };
+    const actionFn = vi.fn().mockResolvedValue([]);
+    convexReactMocks.useAction.mockReturnValue(actionFn);
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(actionFn).toHaveBeenCalledWith({
+      query: "helper",
+      highlightedOnly: false,
+      categorySlug: "development",
+      limit: 25,
+    });
+  });
+
   it("keeps recommended as the visible default search sort", async () => {
     searchMock = { q: "notion" };
     const actionFn = vi.fn().mockResolvedValue([]);
@@ -351,7 +392,7 @@ describe("SkillsIndex", () => {
     });
 
     expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
-    expect(screen.getByRole("radio", { name: "Dev Tools" }).getAttribute("aria-checked")).toBe(
+    expect(screen.getByRole("radio", { name: "Development" }).getAttribute("aria-checked")).toBe(
       "false",
     );
     expect(actionFn).toHaveBeenCalledWith(
@@ -556,15 +597,17 @@ describe("SkillsIndex", () => {
     expect(titles[1]).toBe("Newer Low Score");
   });
 
-  it("filters category browse results to the inferred skill category", async () => {
-    searchMock = { category: "dev-tools" };
+  it("includes results explicitly assigned to the selected category", async () => {
+    searchMock = { category: "development" };
     convexHttpMock.query.mockResolvedValue({
       page: [
         makeListResult("web3-dev", "Blockscout for Web3 Dev", {
+          categories: ["development"],
           summary:
             "Build web3 applications that need blockchain data via the Blockscout PRO API over HTTP.",
         }),
         makeListResult("developer-utils", "Developer Utils", {
+          categories: ["development"],
           summary: "Utilities for build and debug workflows.",
         }),
       ],
@@ -578,15 +621,152 @@ describe("SkillsIndex", () => {
     const args = getLastListPageArgs();
     expect(args).toEqual(
       expect.objectContaining({
-        categorySlug: "dev-tools",
-        categoryKeywords: expect.arrayContaining(["dev"]),
+        categorySlug: "development",
+        officialFirst: true,
+        categoryKeywords: expect.arrayContaining(["developer"]),
         excludeCategoryKeywords: undefined,
       }),
     );
-    expect(screen.queryByText("Blockscout for Web3 Dev")).toBeNull();
+    expect(screen.getByText("Blockscout for Web3 Dev")).toBeTruthy();
     expect(screen.getByText("Developer Utils")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
+  });
+
+  it("passes author topics to browse filtering without rendering topic navigation", async () => {
+    searchMock = { topic: "google-calendar" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("calendar-helper", "Calendar Helper", {
+          topics: ["google-calendar", "productivity"],
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(getLastListPageArgs()).toEqual(
+      expect.objectContaining({
+        topic: "google-calendar",
+      }),
+    );
+    expect(screen.queryByRole("radio", { name: "google-calendar" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
+  });
+
+  it("shows the top five topics beneath the selected category and filters by chip", async () => {
+    searchMock = { category: "development" };
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: string }).kind === "skill"
+      ) {
+        return ["typescript", "docker", "github", "debugging", "coding"];
+      }
+      return null;
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const category = screen.getByRole("radio", { name: "Development" });
+    const firstTopic = screen.getByRole("button", { name: "#typescript" });
+    expect(
+      Boolean(category.compareDocumentPosition(firstTopic) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+    expect(screen.getAllByRole("button", { name: /^#/ })).toHaveLength(5);
+
+    fireEvent.click(screen.getByRole("button", { name: "#docker" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+      replace?: boolean;
+    };
+    expect(lastCall.search({ category: "development" })).toEqual({
+      category: "development",
+      topic: "docker",
+      featured: undefined,
+      highlighted: undefined,
+    });
+    expect(lastCall.replace).toBe(true);
+  });
+
+  it("clears the active category topic when its chip is selected again", async () => {
+    searchMock = { category: "development", topic: "docker" };
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: string }).kind === "skill"
+      ) {
+        return ["docker"];
+      }
+      return null;
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const topic = screen.getByRole("button", { name: "#docker" });
+    expect(topic.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(topic);
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({ category: "development", topic: "docker" })).toEqual({
+      category: "development",
+      topic: undefined,
+      featured: undefined,
+      highlighted: undefined,
+    });
+  });
+
+  it("does not render an active topic in the sidebar when it has no results", async () => {
+    searchMock = { topic: "google-calendar" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(screen.queryByRole("radio", { name: "google-calendar" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
+  });
+
+  it("preserves backend official-first ordering on category pages", async () => {
+    searchMock = { category: "development" };
+    convexHttpMock.query.mockResolvedValue({
+      page: [
+        makeListResult("official-dev", "Official Dev", {
+          categories: ["development"],
+          official: true,
+        }),
+        makeListResult("community-dev", "Community Dev", {
+          categories: ["development"],
+        }),
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const titles = Array.from(document.querySelectorAll(".skill-list-item-name")).map(
+      (node) => node.textContent,
+    );
+    expect(titles).toEqual(["Official Dev", "Community Dev"]);
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ officialFirst: true }));
   });
 
   it("does not render the warning filter", async () => {
@@ -628,6 +808,97 @@ describe("SkillsIndex", () => {
     await act(async () => {});
 
     expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+  });
+
+  it("keeps loading across empty filtered pages without flashing terminal states", async () => {
+    class IntersectionObserverMock {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    }
+    vi.stubGlobal(
+      "IntersectionObserver",
+      IntersectionObserverMock as unknown as typeof IntersectionObserver,
+    );
+    searchMock = { category: "automation" };
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      })
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(2);
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ cursor: "cursor-1" }));
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("Scroll to load more")).toBeNull();
+    expect(screen.queryByText("No skills found")).toBeNull();
+  });
+
+  it("bounds empty filtered page auto-advance and pauses for a manual retry", async () => {
+    class IntersectionObserverMock {
+      observe = vi.fn();
+      disconnect = vi.fn();
+    }
+    vi.stubGlobal(
+      "IntersectionObserver",
+      IntersectionObserverMock as unknown as typeof IntersectionObserver,
+    );
+    searchMock = { category: "automation" };
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      })
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-2",
+      })
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-3",
+      })
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(3);
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    expect(screen.queryByText("Scroll to load more")).toBeNull();
+    expect(screen.queryByText("No skills found")).toBeNull();
+  });
+
+  it("keeps the retry cursor when a filtered follow-up page fails", async () => {
+    vi.stubGlobal("IntersectionObserver", undefined);
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    searchMock = { category: "automation" };
+    convexHttpMock.query
+      .mockResolvedValueOnce({
+        page: [],
+        hasMore: true,
+        nextCursor: "cursor-1",
+      })
+      .mockRejectedValueOnce(new Error("temporary failure"))
+      .mockReturnValueOnce(new Promise(() => {}));
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+    });
+
+    expect(convexHttpMock.query).toHaveBeenCalledTimes(3);
+    expect(getLastListPageArgs()).toEqual(expect.objectContaining({ cursor: "cursor-1" }));
+    expect(screen.getByRole("status", { name: "Loading results" })).toBeTruthy();
+    expect(screen.queryByText("No skills found")).toBeNull();
   });
 
   it("shows skeletons during load-more", async () => {
@@ -699,7 +970,13 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 function makeListResult(
   slug: string,
   displayName: string,
-  options: { isSuspicious?: boolean; summary?: string } = {},
+  options: {
+    isSuspicious?: boolean;
+    summary?: string;
+    topics?: string[];
+    categories?: string[];
+    official?: boolean;
+  } = {},
 ) {
   return {
     skill: {
@@ -707,6 +984,9 @@ function makeListResult(
       slug,
       displayName,
       summary: options.summary ?? `${displayName} summary`,
+      topics: options.topics,
+      categories: options.categories,
+      badges: options.official ? { official: { byUserId: "users:admin", at: 1 } } : {},
       tags: {},
       stats: {
         downloads: 0,

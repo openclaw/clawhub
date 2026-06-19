@@ -27,6 +27,7 @@ describe("clawhub-schema", () => {
           demo: {
             version: "1.0.0",
             installedAt: 123,
+            ownerHandle: "openclaw",
             pinned: true,
             pinReason: "scanner-flagged",
           },
@@ -35,6 +36,7 @@ describe("clawhub-schema", () => {
       "Lockfile",
     );
     expect(lock.skills.demo?.version).toBe("1.0.0");
+    expect(lock.skills.demo?.ownerHandle).toBe("openclaw");
     expect(lock.skills.demo?.pinned).toBe(true);
     expect(lock.skills.demo?.pinReason).toBe("scanner-flagged");
   });
@@ -45,6 +47,7 @@ describe("clawhub-schema", () => {
       {
         slug: "demo",
         displayName: "Demo",
+        ownerHandle: "me",
         version: "1.0.0",
         changelog: "",
         files: [{ path: "SKILL.md", size: 1, storageId: "s", sha256: "x" }],
@@ -55,12 +58,30 @@ describe("clawhub-schema", () => {
     expect(payload.files[0]?.path).toBe("SKILL.md");
   });
 
+  it("allows legacy publish payloads without an owner handle", () => {
+    const payload = parseArk(
+      CliPublishRequestSchema,
+      {
+        slug: "demo",
+        displayName: "Demo",
+        version: "1.0.0",
+        changelog: "",
+        acceptLicenseTerms: true,
+        files: [{ path: "SKILL.md", size: 1, storageId: "s", sha256: "x" }],
+      },
+      "Publish payload",
+    );
+    expect(payload.ownerHandle).toBeUndefined();
+    expect(payload.acceptLicenseTerms).toBe(true);
+  });
+
   it("accepts publish payload with github source", () => {
     const payload = parseArk(
       CliPublishRequestSchema,
       {
         slug: "demo",
         displayName: "Demo",
+        ownerHandle: "me",
         version: "1.0.0",
         changelog: "",
         source: {
@@ -284,7 +305,7 @@ describe("clawhub-schema", () => {
       ApiSearchResponseSchema,
       {
         results: [
-          { slug: "a", displayName: "A", version: "1.0.0", score: 0.9 },
+          { slug: "a", ownerHandle: "openclaw", displayName: "A", version: "1.0.0", score: 0.9 },
           { slug: "b", displayName: "B", version: null, score: 0.1 },
         ],
       },
@@ -292,6 +313,7 @@ describe("clawhub-schema", () => {
     );
     expect(parsed.results).toHaveLength(2);
     expect(parsed.results[0]?.slug).toBe("a");
+    expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
   });
 
   it("parses v1 search owner metadata", () => {
@@ -305,6 +327,7 @@ describe("clawhub-schema", () => {
             summary: null,
             version: "1.0.0",
             score: 1,
+            downloads: 42,
             ownerHandle: "openclaw",
             owner: {
               handle: "openclaw",
@@ -318,6 +341,7 @@ describe("clawhub-schema", () => {
     );
 
     expect(parsed.results[0]?.ownerHandle).toBe("openclaw");
+    expect(parsed.results[0]?.downloads).toBe(42);
     expect(parsed.results[0]?.owner?.displayName).toBe("OpenClaw");
   });
 

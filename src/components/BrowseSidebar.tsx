@@ -1,14 +1,23 @@
 import {
   Activity,
+  BookOpen,
+  Brain,
   Database,
+  FolderCog,
   GitBranch,
+  Globe,
+  GraduationCap,
+  ListChecks,
   MessageCircle,
   MessageSquare,
   Package,
+  Palette,
   Plug,
   RefreshCw,
   Rocket,
+  Shapes,
   Shield,
+  WalletCards,
   Wrench,
   Zap,
 } from "lucide-react";
@@ -42,6 +51,9 @@ type BrowseSidebarProps = {
   categories?: BrowseCategory[];
   activeCategory?: string;
   onCategoryChange?: (slug: string | undefined) => void;
+  categoryTopics?: string[];
+  activeTopic?: string;
+  onTopicChange?: (topic: string | undefined) => void;
   sortOptions?: SortOption[];
   activeSort?: string;
   onSortChange?: (value: string) => void;
@@ -52,15 +64,24 @@ type BrowseSidebarProps = {
 
 const CATEGORY_ICONS: Record<string, React.ReactNode> = {
   activity: <Activity size={15} />,
+  "book-open": <BookOpen size={15} />,
+  brain: <Brain size={15} />,
   database: <Database size={15} />,
+  "folder-cog": <FolderCog size={15} />,
   "git-branch": <GitBranch size={15} />,
+  globe: <Globe size={15} />,
+  "graduation-cap": <GraduationCap size={15} />,
+  "list-checks": <ListChecks size={15} />,
   "message-circle": <MessageCircle size={15} />,
   "message-square": <MessageSquare size={15} />,
   package: <Package size={15} />,
+  palette: <Palette size={15} />,
   plug: <Plug size={15} />,
   "refresh-cw": <RefreshCw size={15} />,
   rocket: <Rocket size={15} />,
   shield: <Shield size={15} />,
+  shapes: <Shapes size={15} />,
+  "wallet-cards": <WalletCards size={15} />,
   wrench: <Wrench size={15} />,
   zap: <Zap size={15} />,
 };
@@ -73,6 +94,9 @@ export function BrowseSidebar({
   categories,
   activeCategory,
   onCategoryChange,
+  categoryTopics = [],
+  activeTopic,
+  onTopicChange,
   sortOptions,
   activeSort,
   onSortChange,
@@ -153,21 +177,43 @@ export function BrowseSidebar({
           >
             All
           </button>
-          {categories.map((cat) => (
-            <button
-              key={cat.slug}
-              className={`sidebar-option${activeCategory === cat.slug ? " is-active" : ""}`}
-              type="button"
-              role="radio"
-              aria-checked={activeCategory === cat.slug}
-              onClick={() => onCategoryChange(cat.slug)}
-            >
-              <span className="sidebar-option-icon" aria-hidden="true">
-                {getCategoryIcon(cat.icon)}
-              </span>
-              {cat.label}
-            </button>
-          ))}
+          {categories.map((cat) => {
+            const isActive = activeCategory === cat.slug;
+            return (
+              <div key={cat.slug} className="sidebar-category">
+                <button
+                  className={`sidebar-option${isActive ? " is-active" : ""}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  onClick={() => onCategoryChange(cat.slug)}
+                >
+                  <span className="sidebar-option-icon" aria-hidden="true">
+                    {getCategoryIcon(cat.icon)}
+                  </span>
+                  {cat.label}
+                </button>
+                {isActive && categoryTopics.length > 0 && onTopicChange ? (
+                  <div className="sidebar-category-topics" aria-label={`${cat.label} top topics`}>
+                    {categoryTopics.slice(0, 5).map((topic) => {
+                      const isActiveTopic = activeTopic === topic;
+                      return (
+                        <button
+                          key={topic}
+                          className={`sidebar-topic-chip${isActiveTopic ? " is-active" : ""}`}
+                          type="button"
+                          aria-pressed={isActiveTopic}
+                          onClick={() => onTopicChange(isActiveTopic ? undefined : topic)}
+                        >
+                          #{topic}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </fieldset>
       ) : null}
 

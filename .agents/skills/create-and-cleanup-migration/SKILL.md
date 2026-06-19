@@ -35,6 +35,11 @@ temporary migration code.
 
 - Never run a destructive production apply step until after presenting dry-run
   results and receiving explicit user confirmation in the current thread.
+- Before implementing anything, classify the requested "migration" as one of:
+  code deploy, existing Convex function run, operator import/export command,
+  schema narrowing, data cleanup, or cleanup-code removal. Do not invent a new
+  Convex migration function when the issue or PR specifies an operator command
+  such as `convex import --replace`.
 - Before any production migration apply, force the operator to visit
   `https://dashboard.convex.dev/`, manually click **Backup Now** on the target
   deployment, wait for completion, and explicitly confirm in the thread. Do not

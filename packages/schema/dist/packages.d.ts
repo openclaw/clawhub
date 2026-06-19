@@ -234,6 +234,8 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
     source?: {
         kind: "github";
         url: string;
@@ -279,6 +281,8 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     manualOverrideReason?: string | undefined;
     channel?: "official" | "community" | "private" | undefined;
     tags?: string[] | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
     source?: {
         kind: "github";
         url: string;
@@ -305,8 +309,11 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     updatedAt: number;
     runtimeId?: string | null | undefined;
     summary?: string | null | undefined;
+    icon?: string | null | undefined;
     ownerHandle?: string | null | undefined;
     latestVersion?: string | null | undefined;
+    categories?: string[] | undefined;
+    topics?: string[] | undefined;
     verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
     stats?: {
         downloads: number;
@@ -327,8 +334,11 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         updatedAt: number;
         runtimeId?: string | null | undefined;
         summary?: string | null | undefined;
+        icon?: string | null | undefined;
         ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
         verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
         stats?: {
             downloads: number;
@@ -353,8 +363,11 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             updatedAt: number;
             runtimeId?: string | null | undefined;
             summary?: string | null | undefined;
+            icon?: string | null | undefined;
             ownerHandle?: string | null | undefined;
             latestVersion?: string | null | undefined;
+            categories?: string[] | undefined;
+            topics?: string[] | undefined;
             verificationTier?: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified" | null | undefined;
             stats?: {
                 downloads: number;
@@ -378,8 +391,11 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         tags: unknown;
         runtimeId?: string | null | undefined;
         summary?: string | null | undefined;
+        icon?: string | null | undefined;
         ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
+        categories?: string[] | undefined;
+        topics?: string[] | undefined;
         compatibility?: {
             pluginApiRange?: string | undefined;
             builtWithOpenClawVersion?: string | undefined;
@@ -846,6 +862,39 @@ export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/inter
     retiredName?: string | null | undefined;
 }, {}>;
 export type ApiV1PackageRepairNameResponse = (typeof ApiV1PackageRepairNameResponseSchema)[inferred];
+export declare const PackageRepairRuntimeIdRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    nextRuntimeId: string;
+    reason: string;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type PackageRepairRuntimeIdRequest = (typeof PackageRepairRuntimeIdRequestSchema)[inferred];
+export declare const PackageRepairRuntimeIdOperationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    action: "repair-runtime-id";
+    packageId?: string | undefined;
+    from?: string | null | undefined;
+    to?: string | undefined;
+}, {}>;
+export type PackageRepairRuntimeIdOperation = (typeof PackageRepairRuntimeIdOperationSchema)[inferred];
+export declare const ApiV1PackageRepairRuntimeIdResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    source: {
+        packageId: string;
+        name: string;
+        ownerUserId: string;
+        channel: "official" | "community" | "private";
+        runtimeId?: string | null | undefined;
+        ownerPublisherId?: string | null | undefined;
+        softDeletedAt?: number | null | undefined;
+    };
+    operations: {
+        action: "repair-runtime-id";
+        packageId?: string | undefined;
+        from?: string | null | undefined;
+        to?: string | undefined;
+    }[];
+}, {}>;
+export type ApiV1PackageRepairRuntimeIdResponse = (typeof ApiV1PackageRepairRuntimeIdResponseSchema)[inferred];
 export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     bundledPluginId: string;
     packageName: string;

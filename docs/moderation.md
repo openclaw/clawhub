@@ -53,6 +53,18 @@ advisories for vulnerabilities in third-party skills or plugins.
 Good reports are specific and actionable. Abuse of reporting can itself lead to
 account action.
 
+## Org and namespace claims
+
+Org, brand, package-scope, owner-handle, or namespace ownership disputes should
+use the [Org and Namespace Claims](./namespace-claims.md) process, not the
+in-product report flow or the account appeal form.
+
+Use that process when you need ClawHub staff to review non-sensitive proof that a
+namespace should be reserved, transferred, renamed, hidden, quarantined, aliased,
+or otherwise reviewed. Do not include secrets, private documents, private legal
+files, personal identity documents, API tokens, or DNS challenge tokens in a
+public issue.
+
 ## Moderation holds
 
 Some severe findings or policy issues can place a publisher or listing under a

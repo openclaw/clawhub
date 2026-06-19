@@ -214,7 +214,7 @@ describe("applyRateLimit headers", () => {
         .fn()
         .mockRejectedValue(
           new Error(
-            'Document in table "rateLimitShards" changed while this mutation was being run',
+            'Document in table "rateLimitCounters" changed while this mutation was being run',
           ),
         ),
     } as unknown as Parameters<typeof applyRateLimit>[0];
@@ -228,6 +228,29 @@ describe("applyRateLimit headers", () => {
     if (result.ok) return;
     expect(result.response.status).toBe(429);
     expect(result.response.headers.get("Retry-After")).toBe("30");
+  });
+
+  it("selects one of 16 active counter shards", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(2_600_000);
+    vi.spyOn(Math, "random").mockReturnValue(0.999);
+    const ctx = makeRateLimitCtx({
+      ip: {
+        allowed: true,
+        remaining: 19,
+        limit: 20,
+        resetAt: 2_640_000,
+      },
+    });
+    const request = new Request("https://example.com", {
+      headers: { "cf-connecting-ip": "203.0.113.1" },
+    });
+
+    const result = await applyRateLimit(ctx, request, "download");
+
+    expect(result.ok).toBe(true);
+    const runMutation = (ctx as unknown as { runMutation: ReturnType<typeof vi.fn> }).runMutation;
+    const [, args] = runMutation.mock.calls[0] as [unknown, Record<string, unknown>];
+    expect(args.shard).toBe(15);
   });
 
   it("allows authenticated users when user bucket is healthy and shared ip bucket is exhausted", async () => {

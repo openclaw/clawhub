@@ -33,6 +33,7 @@ let loaderDataMock:
         summary?: string | null;
         ownerHandle?: string | null;
         latestVersion?: string | null;
+        topics?: string[];
         stats?: { downloads: number; installs: number; stars: number; versions: number };
         createdAt: number;
         updatedAt: number;
@@ -73,6 +74,9 @@ vi.mock("convex/react", () => ({
 
 vi.mock("../../convex/_generated/api", () => ({
   api: {
+    catalogTopics: {
+      listTopByCategory: "catalogTopics:listTopByCategory",
+    },
     packages: {
       countPublicPlugins: "packages:countPublicPlugins",
     },
@@ -151,6 +155,38 @@ describe("plugins route", () => {
       sort: undefined,
       view: undefined,
     });
+  });
+
+  it("maps legacy category URLs before browsing", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+
+    expect(validateSearch({ category: "data" })).toEqual(
+      expect.objectContaining({ category: "tools" }),
+    );
+    expect(validateSearch({ category: "dev-tools" })).toEqual(
+      expect.objectContaining({ category: "runtime" }),
+    );
+    expect(validateSearch({ category: "unknown" })).toEqual(
+      expect.objectContaining({ category: undefined }),
+    );
+  });
+
+  it("keeps validated legacy category URLs without a redundant redirect", async () => {
+    const route = await loadRoute();
+    const validateSearch = route.__config.validateSearch as (
+      search: Record<string, unknown>,
+    ) => Record<string, unknown>;
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() => beforeLoad?.({ search: validateSearch({ category: "data" }) })).not.toThrow();
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 
   it("drops removed downloads sort links to the plugin browse default", async () => {
@@ -251,6 +287,21 @@ describe("plugins route", () => {
     expect(() =>
       beforeLoad?.({
         search: { q: "security", sort: "relevance" },
+      }),
+    ).not.toThrow();
+  });
+
+  it("keeps featured browse URLs when there is no search query", async () => {
+    const route = await loadRoute();
+    const beforeLoad = (
+      route.__config as never as {
+        beforeLoad?: (args: { search: Record<string, unknown> }) => void;
+      }
+    ).beforeLoad;
+
+    expect(() =>
+      beforeLoad?.({
+        search: { featured: true, sort: "recommended" },
       }),
     ).not.toThrow();
   });
@@ -398,21 +449,38 @@ describe("plugins route", () => {
     );
   });
 
-  it("forwards category through catalog loading without changing the query", async () => {
+  it("forwards category and topic through catalog loading without changing the query", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
 
     await loadPluginsPageData({
       q: "api",
-      category: "data",
+      category: "tools",
+      topic: "postgres",
     });
 
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         q: "api",
-        category: "data",
+        category: "tools",
+        topic: "postgres",
+        officialFirst: false,
         cursor: undefined,
         limit: 25,
+      }),
+    );
+  });
+
+  it("requests official-first pagination for category browse", async () => {
+    fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
+    const { loadPluginsPageData } = await import("../routes/plugins/index");
+
+    await loadPluginsPageData({ category: "security" });
+
+    expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        category: "security",
+        officialFirst: true,
       }),
     );
   });
@@ -601,6 +669,63 @@ describe("plugins route", () => {
     expect(screen.queryByText("321")).toBeNull();
   });
 
+  it("does not render an active topic in the sidebar when it has no results", async () => {
+    searchMock = { topic: "postgres" };
+    loaderDataMock = {
+      items: [],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("radio", { name: "postgres" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
+  });
+
+  it("shows category topic chips and filters plugins by the selected topic", async () => {
+    searchMock = { category: "runtime" };
+    loaderDataMock = {
+      items: [],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: string }).kind === "plugin"
+      ) {
+        return ["docker", "typescript", "github", "debugging", "coding"];
+      }
+      return null;
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getAllByRole("button", { name: /^#/ })).toHaveLength(5);
+    fireEvent.click(screen.getByRole("button", { name: "#docker" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+      replace?: boolean;
+    };
+    expect(lastCall.search({ category: "runtime" })).toEqual({
+      category: "runtime",
+      cursor: undefined,
+      family: undefined,
+      topic: "docker",
+    });
+    expect(lastCall.replace).toBe(true);
+  });
+
   it("renders a label-only title without positive count data and switches to grid view", async () => {
     loaderDataMock = {
       items: [
@@ -748,7 +873,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
   });
 
-  it("selects recommended from the plugin sort group", async () => {
+  it("preserves featured browse when selecting recommended from the plugin sort group", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
@@ -772,8 +897,8 @@ describe("plugins route", () => {
     ).toEqual({
       family: undefined,
       cursor: undefined,
-      featured: undefined,
-      sort: undefined,
+      featured: true,
+      sort: "recommended",
     });
   });
 
@@ -934,13 +1059,51 @@ describe("plugins route", () => {
     );
   });
 
-  it("does not render unsupported plugin categories", async () => {
+  it("preserves backend official-first ordering on category pages", async () => {
+    searchMock = { category: "security" };
+    loaderDataMock = {
+      items: [
+        {
+          name: "official-security",
+          displayName: "Official Security",
+          family: "code-plugin",
+          channel: "official",
+          isOfficial: true,
+          createdAt: 1,
+          updatedAt: 1,
+        },
+        {
+          name: "community-security",
+          displayName: "Community Security",
+          family: "code-plugin",
+          channel: "community",
+          isOfficial: false,
+          createdAt: 2,
+          updatedAt: 2,
+        },
+      ],
+      nextCursor: null,
+      rateLimited: false,
+      retryAfterSeconds: null,
+    };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
-    expect(screen.queryByRole("radio", { name: "Other" })).toBeNull();
+    const titles = Array.from(document.querySelectorAll(".skill-list-item-name")).map(
+      (node) => node.textContent,
+    );
+    expect(titles).toEqual(["Official Security", "Community Security"]);
+  });
+
+  it("does not render retired plugin categories", async () => {
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.queryByRole("radio", { name: "Integrations" })).toBeNull();
   });
 
   it("submitting search clears browse-only state", async () => {
@@ -1013,7 +1176,12 @@ describe("plugins route", () => {
   });
 
   it("clears plugin search from the search field", async () => {
-    searchMock = { q: "github", cursor: "cursor:current", sort: "name", category: "security" };
+    searchMock = {
+      q: "github",
+      cursor: "cursor:current",
+      sort: "name",
+      category: "security",
+    };
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
@@ -1066,12 +1234,32 @@ describe("plugins route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
+    expect(screen.getByRole("radio", { name: "Most installed" }).getAttribute("aria-checked")).toBe(
       "true",
     );
-    expect(screen.getByRole("radio", { name: "Most installed" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Recommended" })).toBeTruthy();
     expect(screen.getByRole("radio", { name: "Recently updated" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
+  });
+
+  it("keeps featured browse active when selecting recommended sort", async () => {
+    searchMock = { featured: true };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Recommended" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({ featured: true, cursor: "cursor:current" })).toEqual({
+      featured: true,
+      cursor: undefined,
+      family: undefined,
+      sort: "recommended",
+    });
   });
 
   it("selects visible search sort without changing the query", async () => {

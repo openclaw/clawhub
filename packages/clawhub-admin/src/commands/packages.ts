@@ -5,7 +5,7 @@ import {
 } from "../../../clawhub/src/cli/commands/moderationPlan.js";
 import { getRegistry } from "../../../clawhub/src/cli/registry.js";
 import type { GlobalOpts } from "../../../clawhub/src/cli/types.js";
-import { createSpinner, fail, formatError } from "../../../clawhub/src/cli/ui.js";
+import { createCrabLoader, fail, formatError } from "../../../clawhub/src/cli/ui.js";
 import { apiRequest, registryUrl } from "../../../clawhub/src/http.js";
 import {
   ApiRoutes,
@@ -13,6 +13,7 @@ import {
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageRepairNameResponseSchema,
+  ApiV1PackageRepairRuntimeIdResponseSchema,
   ApiV1PackageReleaseModerationResponseSchema,
   ApiV1PackageReportListResponseSchema,
   ApiV1PackageReportTriageResponseSchema,
@@ -99,6 +100,13 @@ type PackageRepairNameOptions = {
   json?: boolean;
 };
 
+type PackageRepairRuntimeIdOptions = {
+  nextRuntimeId?: string;
+  reason?: string;
+  apply?: boolean;
+  json?: boolean;
+};
+
 type PackageTransferOwnerOptions = {
   to?: string;
   reason?: string;
@@ -120,7 +128,7 @@ export async function cmdSetPackageTrustedPublisher(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Saving trusted publisher");
+  const spinner = createCrabLoader("Saving trusted publisher");
   try {
     const result = await apiRequest(
       registry,
@@ -159,7 +167,7 @@ export async function cmdDeletePackageTrustedPublisher(
   const trimmed = normalizePackageNameOrFail(packageName);
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Deleting trusted publisher");
+  const spinner = createCrabLoader("Deleting trusted publisher");
   try {
     const result = await apiRequest<{ ok: boolean }>(registry, {
       method: "DELETE",
@@ -195,7 +203,7 @@ export async function cmdModeratePackageRelease(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Moderating ${trimmed}@${version}`);
+  const spinner = options.json ? null : createCrabLoader(`Moderating ${trimmed}@${version}`);
   try {
     const result = await apiRequest(
       registry,
@@ -300,7 +308,7 @@ export async function cmdTriagePackageReport(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Updating report ${trimmed}`);
+  const spinner = options.json ? null : createCrabLoader(`Updating report ${trimmed}`);
   try {
     const result = await apiRequest(
       registry,
@@ -403,7 +411,7 @@ export async function cmdRepairPackageName(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`${dryRun ? "Planning" : "Applying"} package name repair`);
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package name repair`);
   try {
     const result = await apiRequest(
       registry,
@@ -437,6 +445,55 @@ export async function cmdRepairPackageName(
       } else {
         console.log(`- ${operation.action}: ${operation.from} -> ${operation.to}`);
       }
+    }
+    if (result.dryRun) console.log("Re-run with --apply to write these changes.");
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdRepairPackageRuntimeId(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageRepairRuntimeIdOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const nextRuntimeId = options.nextRuntimeId?.trim();
+  const reason = options.reason?.trim();
+  const dryRun = options.apply !== true;
+  if (!nextRuntimeId) fail("--next-runtime-id required");
+  if (!reason) fail("--reason required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package runtime id repair`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/repair-runtime-id`,
+        token,
+        body: {
+          nextRuntimeId,
+          reason,
+          dryRun,
+        },
+      },
+      ApiV1PackageRepairRuntimeIdResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+
+    console.log(`${result.dryRun ? "Dry run" : "Applied"} package runtime id repair: ${trimmed}`);
+    for (const operation of result.operations) {
+      console.log(`- ${operation.action}: ${operation.from ?? "<none>"} -> ${operation.to}`);
     }
     if (result.dryRun) console.log("Re-run with --apply to write these changes.");
   } catch (error) {
@@ -522,7 +579,7 @@ export async function cmdUpsertPackageMigration(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = options.json ? null : createSpinner(`Updating migration ${trimmed}`);
+  const spinner = options.json ? null : createCrabLoader(`Updating migration ${trimmed}`);
   try {
     const result = await apiRequest(
       registry,
@@ -584,7 +641,7 @@ export async function cmdTransferPackageOwner(
   const registry = await getRegistry(opts, { cache: true });
   const spinner = options.json
     ? null
-    : createSpinner(`${dryRun ? "Planning" : "Applying"} package owner transfer`);
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package owner transfer`);
   try {
     const result = await apiRequest(
       registry,

@@ -1,4 +1,5 @@
-import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { Link, createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { inferSkillCategories, isSkillCategorySlug, resolveSkillCategories } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
   PLATFORM_SKILL_LICENSE_NAME,
@@ -21,6 +22,11 @@ import semver from "semver";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { MAX_PUBLISH_FILE_BYTES, MAX_PUBLISH_TOTAL_BYTES } from "../../../convex/lib/publishLimits";
+import {
+  CatalogMetadataFields,
+  formatCatalogTopicsInput,
+  parseCatalogTopicsInput,
+} from "../../components/CatalogMetadataFields";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import {
@@ -29,7 +35,6 @@ import {
 } from "../../components/PublisherOwnerSelect";
 import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
-import { SkillIconPicker } from "../../components/SkillIconPicker";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardTitle } from "../../components/ui/card";
@@ -38,7 +43,8 @@ import { Label } from "../../components/ui/label";
 import { Textarea } from "../../components/ui/textarea";
 import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
-import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
+import { setPostPublishFlash } from "../../lib/postPublishFlash";
+import { extractSkillFrontmatterDescription } from "../../lib/skillFrontmatter";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -62,6 +68,14 @@ function isRequiredSkillFile(path: string) {
   return REQUIRED_SKILL_FILE_NAMES.includes(path.trim().toLowerCase());
 }
 
+function GitHubLogo({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" className={className} aria-hidden="true">
+      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.16 1.18.92-.26 1.9-.38 2.88-.39.98 0 1.96.13 2.88.39 2.19-1.49 3.15-1.18 3.15-1.18.63 1.58.24 2.75.12 3.04.74.8 1.18 1.83 1.18 3.08 0 4.42-2.69 5.39-5.25 5.67.42.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+    </svg>
+  );
+}
+
 type SkillPublishField = "slug" | "displayName" | "version" | "tags" | "license";
 
 export const Route = createFileRoute("/skills/publish")({
@@ -80,7 +94,26 @@ export function Upload() {
   const generateUploadUrl = useMutation(api.uploads.generateUploadUrl);
   const publishVersion = useAction(api.skills.publishVersion);
   const generateChangelogPreview = useAction(api.skills.generateChangelogPreview);
-  const existing = useQuery(api.skills.getBySlug, updateSlug ? { slug: updateSlug } : "skip");
+  const existingSkill = useQuery(
+    api.skills.getBySlug,
+    updateSlug ? { slug: updateSlug, ownerHandle: searchOwnerHandle || undefined } : "skip",
+  );
+  const existing = existingSkill as
+    | {
+        skill?: {
+          slug: string;
+          displayName: string;
+          summary?: string;
+          categories?: string[];
+          topics?: string[];
+        };
+        latestVersion?: { version: string };
+        // Used to default the Owner selector to the skill's current owner in
+        // update mode so a New Version publish does not silently re-own it.
+        owner?: { handle: string; displayName?: string };
+      }
+    | null
+    | undefined;
 
   const [hasAttempted, setHasAttempted] = useState(false);
   const [files, setFiles] = useState<File[]>([]);
@@ -96,27 +129,20 @@ export function Upload() {
     license: false,
   });
   const [metadataPrefillNote, setMetadataPrefillNote] = useState<string | null>(null);
-  // Selected lucide icon name (e.g. `Plug`) or null when "no icon".
-  const [iconName, setIconName] = useState<string | null>(null);
   const [version, setVersion] = useState("1.0.0");
   const [tags, setTags] = useState("latest");
+  const [categories, setCategories] = useState<string[]>([]);
+  const [topics, setTopics] = useState("");
+  const [uploadedSkillSummary, setUploadedSkillSummary] = useState<string | undefined>();
   const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
   const [changelog, setChangelog] = useState("");
+  const categoriesTouchedRef = useRef(false);
+  const topicsTouchedRef = useRef(false);
   const [changelogStatus, setChangelogStatus] = useState<"idle" | "loading" | "ready" | "error">(
     "idle",
   );
   const [changelogSource, setChangelogSource] = useState<"auto" | "user" | null>(null);
   const changelogTouchedRef = useRef(false);
-  // Tracks whether the publisher has interacted with the Skill icon picker
-  // during this session. Used by the submit handler to honour the "key
-  // omitted = leave existing alone" branch in skill mode: a routine New
-  // Version publish that never touches the picker must NOT forward an
-  // empty `icon: ""` (which the backend would treat as an explicit
-  // clear). This protects against silently wiping a custom icon when
-  // pre-population fails — for example after the client allow-list is
-  // pruned in a future deploy and the stored lucide name no longer
-  // resolves.
-  const iconTouchedRef = useRef(false);
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -222,6 +248,17 @@ export function Upload() {
   }, [ignoredLocalMetadataPaths]);
   const trimmedSlug = slug.trim();
   const trimmedName = displayName.trim();
+  const suggestedCategories = useMemo(
+    () =>
+      resolveSkillCategories({
+        inferred: inferSkillCategories({
+          slug: trimmedSlug,
+          displayName: trimmedName,
+          summary: uploadedSkillSummary ?? existing?.skill?.summary,
+        }),
+      }),
+    [existing?.skill?.summary, trimmedName, trimmedSlug, uploadedSkillSummary],
+  );
   const trimmedChangelog = changelog.trim();
   const trimmedVersion = version.trim();
   const slugAvailability = useQuery(
@@ -248,16 +285,48 @@ export function Upload() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+    const requiredIndex = normalizedPaths.findIndex((path) => isRequiredSkillFile(path));
+    const requiredFile = requiredIndex >= 0 ? files[requiredIndex] : undefined;
+    if (!requiredFile) {
+      setUploadedSkillSummary(undefined);
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    setUploadedSkillSummary(undefined);
+    void readText(requiredFile)
+      .then((text) => {
+        if (!cancelled) setUploadedSkillSummary(extractSkillFrontmatterDescription(text));
+      })
+      .catch(() => {
+        if (!cancelled) setUploadedSkillSummary(undefined);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [files, normalizedPaths]);
+
+  useEffect(() => {
     if (!existing?.latestVersion || !existing?.skill) return;
     const name = existing.skill.displayName;
     const nextSlug = existing.skill.slug;
     if (nextSlug) setSlug(nextSlug);
     if (name) setDisplayName(name);
-    // Pre-populate the icon picker from the existing skill so a New Version
-    // publish keeps the previously selected icon unless the user changes it.
-    if (existing.skill.icon !== undefined) {
-      const parsed = parseSkillIcon(existing.skill.icon ?? null);
-      setIconName(parsed?.kind === "lucide" ? parsed.name : null);
+    if (!categoriesTouchedRef.current) {
+      const nextCategories = (existing.skill.categories ?? []).filter(isSkillCategorySlug);
+      setCategories((current) =>
+        current.length === nextCategories.length &&
+        current.every((category, index) => category === nextCategories[index])
+          ? current
+          : nextCategories,
+      );
+    }
+    if (!topicsTouchedRef.current) {
+      const nextTopics = formatCatalogTopicsInput(existing.skill.topics ?? []);
+      setTopics((current) => (current === nextTopics ? current : nextTopics));
     }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
@@ -649,38 +718,26 @@ export function Upload() {
 
     setStatus("Publishing…");
     try {
-      // Skill mode forwards an `icon` field only when the picker has
-      // actually been touched in this session, so the form is the single
-      // source of truth for the tri-state contract:
-      //   * touched + whitelisted name → `lucide:<Name>` (set)
-      //   * touched + None / unparseable selection → `""` (clear)
-      //   * untouched → field omitted (keep existing)
-      // The backend treats blank input as "clear the icon" and a missing
-      // key as "keep whatever is already stored", so the omit branch is
-      // what protects routine version bumps from silently wiping an
-      // existing custom icon when pre-population fails (e.g. the stored
-      // lucide name was pruned from `ALLOWED_LUCIDE_ICONS`).
-      let iconPayload: string | undefined;
-      if (!iconTouchedRef.current) {
-        iconPayload = undefined;
-      } else if (iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, iconName)) {
-        iconPayload = makeLucideIconValue(iconName as keyof typeof ALLOWED_LUCIDE_ICONS);
-      } else {
-        iconPayload = "";
-      }
       const result = await publishVersion({
         ownerHandle: ownerHandle || undefined,
+        sourceOwnerHandle:
+          isOwnerMigration && confirmMigrateOwner && existingOwnerHandle
+            ? existingOwnerHandle
+            : undefined,
         // Only propagate the migration opt-in when the user is actually
         // changing the skill's owner AND has explicitly confirmed the move.
         // Same-owner republishes must never carry `migrateOwner: true`.
         migrateOwner: isOwnerMigration && confirmMigrateOwner ? true : undefined,
         slug: trimmedSlug,
         displayName: trimmedName,
-        ...(iconPayload !== undefined ? { icon: iconPayload } : {}),
         version: trimmedVersion,
         changelog: trimmedChangelog,
         acceptLicenseTerms: acceptedLicenseTerms,
         tags: parsedTags,
+        ...(categories.length || categoriesTouchedRef.current ? { categories } : {}),
+        ...(topics.trim() || topicsTouchedRef.current
+          ? { topics: parseCatalogTopicsInput(topics) }
+          : {}),
         files: uploaded,
       });
       setStatus(null);
@@ -688,11 +745,15 @@ export function Upload() {
       setHasAttempted(false);
       setChangelogSource("user");
       if (result) {
-        toast.success(`Published ${trimmedSlug}@${trimmedVersion}`);
         const ownerParam = ownerHandle || me?.handle || (me?._id ? String(me._id) : "unknown");
+        const didSetPostPublishFlash = setPostPublishFlash(ownerParam, trimmedSlug);
+        if (!didSetPostPublishFlash) {
+          toast.success(`Published ${trimmedSlug}@${trimmedVersion}`);
+        }
         void navigate({
           to: "/$owner/$slug",
           params: { owner: ownerParam, slug: trimmedSlug },
+          search: {},
         });
       }
     } catch (publishError) {
@@ -713,12 +774,20 @@ export function Upload() {
             </h1>
             <p className="text-sm text-[color:var(--ink-soft)]">Drop or select a skill folder</p>
           </div>
-          <Button asChild variant="outline" size="sm" className="w-fit">
-            <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
-              Skill publishing guide
-              <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
-            </a>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm" className="w-fit">
+              <Link to="/import">
+                <GitHubLogo className="h-3.5 w-3.5" />
+                Import from GitHub
+              </Link>
+            </Button>
+            <Button asChild variant="outline" size="sm" className="w-fit">
+              <a href={SKILL_PUBLISHING_GUIDE_URL} target="_blank" rel="noreferrer">
+                Skill publishing guide
+                <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+              </a>
+            </Button>
+          </div>
         </header>
 
         <form onSubmit={handleSubmit} className="flex flex-col gap-6">
@@ -1008,6 +1077,21 @@ export function Upload() {
                     </a>
                   ) : null}
                 </div>
+                <CatalogMetadataFields
+                  kind="skill"
+                  categories={categories}
+                  suggestedCategories={suggestedCategories}
+                  topics={topics}
+                  disabled={isSubmitting}
+                  onCategoriesChange={(nextCategories) => {
+                    categoriesTouchedRef.current = true;
+                    setCategories(nextCategories);
+                  }}
+                  onTopicsChange={(nextTopics) => {
+                    topicsTouchedRef.current = true;
+                    setTopics(nextTopics);
+                  }}
+                />
               </div>
               {metadataPrefillNote ? (
                 <p
@@ -1018,24 +1102,6 @@ export function Upload() {
                   <span className="leading-5">{metadataPrefillNote}</span>
                 </p>
               ) : null}
-
-              <div className="flex flex-col gap-3">
-                {/* The picker is a custom radiogroup; the visible "Icon"
-                    heading is decorative and does not need `htmlFor` —
-                    `SkillIconPicker` exposes its own `aria-label`. */}
-                <Label>Icon</Label>
-                <SkillIconPicker
-                  value={iconName}
-                  onChange={(next) => {
-                    // Mark the picker as user-touched so the submit
-                    // handler knows it can forward the resulting value
-                    // (including `null` → "") instead of falling back
-                    // to the omit-key branch.
-                    iconTouchedRef.current = true;
-                    setIconName(next);
-                  }}
-                />
-              </div>
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="ownerHandle">Owner</Label>

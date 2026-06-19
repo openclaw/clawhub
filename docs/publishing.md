@@ -68,11 +68,20 @@ The scope must match the selected publish owner. If your package is named
 This prevents a package from claiming an org namespace that the publisher does
 not control.
 
+If you are the rightful owner of an org, brand, package scope, owner handle, or
+namespace that is already claimed or reserved on ClawHub, open an
+[Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
+with public, non-sensitive proof. See
+[Org and Namespace Claims](./namespace-claims.md) for what to include and what
+to keep out of public issues.
+
 ### Before Publishing a Plugin
 
 - Pick an owner that matches the package scope.
 - Include `openclaw.plugin.json`. Code plugins also need `package.json` with
   `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
+- To show a custom plugin card icon, add `icon` to `openclaw.plugin.json` with
+  any HTTPS image URL.
 - Include source repository and exact commit metadata, or use the CLI from a
   GitHub-backed checkout so it can detect them.
 - Run `clawhub package validate <source>` before publishing. For package,
@@ -150,6 +159,12 @@ clawhub package transfer @opik/opik-openclaw --to opik
 Use package or skill transfer only when you have admin access to both the
 current owner and the destination publisher. Package transfer does not let you
 publish into a scope you cannot manage.
+
+If you do not have access to the current owner but believe your org, project, or
+brand is the rightful namespace owner, open an
+[Org / Namespace Claim issue](https://github.com/openclaw/clawhub/issues/new?template=org-namespace-claim.yml)
+with public, non-sensitive proof for staff review. See
+[Org and Namespace Claims](./namespace-claims.md) before filing.
 
 This protects org namespaces. A package named `@openclaw/dronzer` claims the
 `@openclaw` namespace, so only publishers with access to the `@openclaw` owner

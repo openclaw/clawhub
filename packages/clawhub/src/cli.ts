@@ -54,19 +54,19 @@ import {
   cmdTransferRequest,
 } from "./cli/commands/transfer.js";
 import { cmdUnstarSkill } from "./cli/commands/unstar.js";
-import { configureCommanderHelp, styleEnvBlock, styleTitle } from "./cli/helpStyle.js";
+import { configureCommanderHelp, styleEnvBlock, styleError, styleTitle } from "./cli/helpStyle.js";
 import { DEFAULT_REGISTRY, DEFAULT_SITE } from "./cli/registry.js";
 import type { GlobalOpts } from "./cli/types.js";
-import { fail } from "./cli/ui.js";
+import { fail, formatError } from "./cli/ui.js";
+
+const CLI_HELP_HEADER = styleTitle(`🦞 ClawHub CLI ${getCliBuildLabel()}`);
+const HELP_DESCRIPTION = "Display help for command";
 
 const program = new Command()
   .name("clawhub")
-  .description(
-    `${styleTitle(`ClawHub CLI ${getCliBuildLabel()}`)}\n${styleEnvBlock(
-      "install, update, search, and publish skills plus OpenClaw packages.",
-    )}`,
-  )
+  .description(styleEnvBlock("install, update, search, and publish skills plus OpenClaw packages."))
   .version(getCliVersion(), "-V, --cli-version", "Show CLI version")
+  .helpOption("-h, --help", HELP_DESCRIPTION)
   .option("--workdir <dir>", "Working directory (default: cwd)")
   .option("--dir <dir>", "Skills directory (relative to workdir, default: skills)")
   .option("--site <url>", "Site base URL (for browser login)")
@@ -74,6 +74,7 @@ const program = new Command()
   .option("--no-input", "Disable prompts")
   .showHelpAfterError()
   .showSuggestionAfterError()
+  .addHelpCommand("help [command]", HELP_DESCRIPTION)
   .addHelpText(
     "after",
     styleEnvBlock(
@@ -82,13 +83,32 @@ const program = new Command()
   );
 
 configureCommanderHelp(program);
+addCliHelpHeader(program);
+program.configureOutput({
+  outputError: (message, write) => write(styleError(message)),
+});
+
+function addCliHelpHeader(command: Command) {
+  command.addHelpText("beforeAll", `${CLI_HELP_HEADER}\n`);
+}
 
 function registerCommand(parent: Command, path: readonly string[]) {
-  return parent.command(path.at(-1) ?? "");
+  const command = parent.command(path.at(-1) ?? "").helpOption("-h, --help", HELP_DESCRIPTION);
+  configureCommanderHelp(command);
+  return command;
 }
 
 function registerCommandGroup(parent: Command, path: readonly string[]) {
-  return parent.command(path.at(-1) ?? "");
+  const command = parent.command(path.at(-1) ?? "").helpOption("-h, --help", HELP_DESCRIPTION);
+  configureCommanderHelp(command);
+  return command;
+}
+
+function applyCommandHelpGroups(parent: Command, groups: Record<string, string>) {
+  for (const command of parent.commands) {
+    const group = groups[command.name()];
+    if (group) command.helpGroup(group);
+  }
 }
 
 function validateTopLevelCommand(args: string[]) {
@@ -268,8 +288,8 @@ registerCommand(program, ["search"])
   });
 
 registerCommand(program, ["install"])
-  .description("Install into <dir>/<slug>")
-  .argument("<slug>", "Skill slug")
+  .description("Install a skill into <dir>")
+  .argument("<skill>", "Skill to install, e.g. @openclaw/demo")
   .option("--version <version>", "Version to install")
   .option("--force", "Overwrite existing folder")
   .option("--force-install", "Install a pending GitHub-backed skill before ClawHub scan completes")
@@ -280,7 +300,7 @@ registerCommand(program, ["install"])
 
 registerCommand(program, ["update"])
   .description("Update installed skills")
-  .argument("[slug]", "Skill slug")
+  .argument("[skill]", "Skill to update, e.g. @openclaw/demo")
   .option("--all", "Update all installed skills")
   .option("--version <version>", "Update to specific version (single slug only)")
   .option("--force", "Overwrite when local files do not match any version")
@@ -292,7 +312,7 @@ registerCommand(program, ["update"])
 
 registerCommand(program, ["uninstall"])
   .description("Uninstall a skill")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Installed skill to remove")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -308,7 +328,7 @@ registerCommand(program, ["list"])
 
 registerCommand(program, ["pin"])
   .description("Pin an installed skill so update commands skip it")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Installed skill to pin")
   .option("--reason <text>", "Optional pin reason")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -317,7 +337,7 @@ registerCommand(program, ["pin"])
 
 registerCommand(program, ["unpin"])
   .description("Remove a skill pin so updates can change it again")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Installed skill to unpin")
   .action(async (slug) => {
     const opts = await resolveGlobalOpts();
     await cmdUnpin(opts, slug);
@@ -346,7 +366,7 @@ registerCommand(program, ["explore"])
 
 registerCommand(program, ["inspect"])
   .description("Fetch skill metadata and files without installing")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to inspect, e.g. @openclaw/demo")
   .option("--version <version>", "Version to inspect")
   .option("--tag <tag>", "Tag to inspect (default: latest)")
   .option("--versions", "List version history (first page)")
@@ -362,14 +382,17 @@ registerCommand(program, ["inspect"])
 registerCommand(program, ["publish"])
   .description("Legacy alias: publish a skill from folder")
   .argument("<path>", "Skill folder path")
-  .option("--slug <slug>", "Skill slug")
+  .option("--slug <slug>", "Published skill URL name")
   .option("--name <name>", "Display name")
   .option("--owner <handle>", "Publish under an org/user publisher handle")
+  .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
   .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
   .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
   .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--categories <slugs>", "Comma-separated category slugs")
+  .option("--topics <topics>", "Comma-separated topics")
   .option("--dry-run", "Preview without publishing")
   .option("--json", "Output JSON")
   .option("--source-repo <repo>", "GitHub source repository")
@@ -412,7 +435,7 @@ registerCommand(scanCmd, ["scan", "download"])
 
 registerCommand(program, ["delete"])
   .description("Soft-delete a skill or permanently delete one version")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill ref")
   .option(
     "--version <version>",
     "Permanently delete one version; cannot be restored or republished; publish a replacement first if deleting the current latest version",
@@ -427,7 +450,7 @@ registerCommand(program, ["delete"])
 
 registerCommand(program, ["hide"])
   .description("Hide one of your skills")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to hide")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -438,7 +461,7 @@ registerCommand(program, ["hide"])
 
 registerCommand(program, ["undelete"])
   .description("Restore one of your hidden skills")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to restore")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -449,7 +472,7 @@ registerCommand(program, ["undelete"])
 
 registerCommand(program, ["unhide"])
   .description("Unhide one of your skills")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to unhide")
   .option("--reason <text>", "Moderation note/reason")
   .option("--note <text>", "Alias for --reason")
   .option("--yes", "Skip confirmation")
@@ -462,14 +485,17 @@ const skill = registerCommandGroup(program, ["skill"]).description("Manage publi
 registerCommand(skill, ["skill", "publish"])
   .description("Publish a skill from folder")
   .argument("<path>", "Skill folder path")
-  .option("--slug <slug>", "Skill slug")
+  .option("--slug <slug>", "Published skill URL name")
   .option("--name <name>", "Display name")
   .option("--owner <handle>", "Publish under an org/user publisher handle")
+  .option("--source-owner <handle>", "Source owner handle when migrating an existing skill")
   .option("--migrate-owner", "Move an existing skill to the selected owner when republishing")
   .option("--version <version>", "Explicit version (defaults to 1.0.0 or next patch)")
   .option("--fork-of <slug[@version]>", "Mark as a fork of an existing skill")
   .option("--changelog <text>", "Changelog text")
   .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--categories <slugs>", "Comma-separated category slugs")
+  .option("--topics <topics>", "Comma-separated topics")
   .option("--dry-run", "Preview without publishing")
   .option("--json", "Output JSON")
   .option("--source-repo <repo>", "GitHub source repository")
@@ -701,6 +727,8 @@ registerCommand(packageCmd, ["package", "publish"])
     "Required for manual publish when trusted publisher config exists",
   )
   .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--categories <slugs>", "Comma-separated category slugs")
+  .option("--topics <topics>", "Comma-separated topics")
   .option("--bundle-format <format>", "Bundle format")
   .option("--host-targets <targets>", "Comma-separated bundle host targets")
   .option("--source-repo <repo>", "GitHub repo (owner/repo or URL)")
@@ -751,7 +779,7 @@ registerCommand(trustedPublisherCmd, ["package", "trusted-publisher", "delete"])
 
 registerCommand(skill, ["skill", "rename"])
   .description("Rename a published skill and keep the old slug as a redirect")
-  .argument("<slug>", "Current skill slug")
+  .argument("<skill>", "Current skill")
   .argument("<new-slug>", "New canonical slug")
   .option("--yes", "Skip confirmation")
   .action(async (slug, newSlug, options) => {
@@ -761,8 +789,8 @@ registerCommand(skill, ["skill", "rename"])
 
 registerCommand(skill, ["skill", "merge"])
   .description("Merge one owned skill into another and redirect the old slug")
-  .argument("<source-slug>", "Source skill slug")
-  .argument("<target-slug>", "Target canonical slug")
+  .argument("<source>", "Source skill")
+  .argument("<target>", "Target skill")
   .option("--yes", "Skip confirmation")
   .action(async (sourceSlug, targetSlug, options) => {
     const opts = await resolveGlobalOpts();
@@ -775,7 +803,7 @@ const transfer = registerCommandGroup(program, ["transfer"]).description(
 
 registerCommand(transfer, ["transfer", "request"])
   .description("Request skill transfer to another user")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to transfer")
   .argument("<handle>", "Recipient handle (e.g., @username)")
   .option("--message <text>", "Optional message for recipient")
   .option("--yes", "Skip confirmation")
@@ -794,7 +822,7 @@ registerCommand(transfer, ["transfer", "list"])
 
 registerCommand(transfer, ["transfer", "accept"])
   .description("Accept incoming transfer for a skill")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to accept")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -803,7 +831,7 @@ registerCommand(transfer, ["transfer", "accept"])
 
 registerCommand(transfer, ["transfer", "reject"])
   .description("Reject incoming transfer for a skill")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to reject")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -812,7 +840,7 @@ registerCommand(transfer, ["transfer", "reject"])
 
 registerCommand(transfer, ["transfer", "cancel"])
   .description("Cancel outgoing transfer for a skill")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to cancel")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -821,7 +849,7 @@ registerCommand(transfer, ["transfer", "cancel"])
 
 registerCommand(program, ["star"])
   .description("Add a skill to your highlights")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to highlight")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
@@ -830,12 +858,57 @@ registerCommand(program, ["star"])
 
 registerCommand(program, ["unstar"])
   .description("Remove a skill from your highlights")
-  .argument("<slug>", "Skill slug")
+  .argument("<skill>", "Skill to remove from highlights")
   .option("--yes", "Skip confirmation")
   .action(async (slug, options) => {
     const opts = await resolveGlobalOpts();
     await cmdUnstarSkill(opts, slug, options, isInputAllowed());
   });
+
+applyCommandHelpGroups(program, {
+  login: "Auth:",
+  logout: "Auth:",
+  whoami: "Auth:",
+  auth: "Auth:",
+  search: "Skills:",
+  install: "Skills:",
+  update: "Skills:",
+  uninstall: "Skills:",
+  list: "Skills:",
+  pin: "Skills:",
+  unpin: "Skills:",
+  explore: "Skills:",
+  inspect: "Skills:",
+  star: "Skills:",
+  unstar: "Skills:",
+  publish: "Publishing:",
+  skill: "Publishing:",
+  publisher: "Publishing:",
+  package: "Packages:",
+  delete: "Moderation:",
+  hide: "Moderation:",
+  undelete: "Moderation:",
+  unhide: "Moderation:",
+  transfer: "Moderation:",
+  help: "Help:",
+});
+
+applyCommandHelpGroups(packageCmd, {
+  explore: "Discovery:",
+  inspect: "Discovery:",
+  download: "Artifacts:",
+  verify: "Artifacts:",
+  pack: "Publishing:",
+  publish: "Publishing:",
+  "trusted-publisher": "Publishing:",
+  delete: "Moderation:",
+  undelete: "Moderation:",
+  transfer: "Moderation:",
+  report: "Moderation:",
+  "moderation-status": "Moderation:",
+  readiness: "Operations:",
+  "migration-status": "Operations:",
+});
 
 program.action(() => {
   program.outputHelp();
@@ -845,6 +918,5 @@ program.action(() => {
 validateTopLevelCommand(process.argv.slice(2));
 
 void program.parseAsync(process.argv).catch((error) => {
-  const message = error instanceof Error ? error.message : String(error);
-  fail(message);
+  fail(formatError(error));
 });

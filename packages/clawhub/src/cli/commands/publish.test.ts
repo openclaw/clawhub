@@ -39,10 +39,7 @@ afterEach(() => {
 });
 
 beforeEach(() => {
-  httpMocks.apiRequest.mockResolvedValue({
-    match: null,
-    latestVersion: null,
-  });
+  mockDefaultApiRequest();
 });
 
 describe("cmdPublish", () => {
@@ -206,6 +203,8 @@ describe("cmdPublish", () => {
         version: "1.0.0",
         changelog: "",
         tags: "latest",
+        categories: "automation, development",
+        topics: "React, GPU development",
       } as Parameters<typeof cmdPublish>[2];
 
       await cmdPublish(makeOpts(workdir), "my-skill", options);
@@ -221,12 +220,75 @@ describe("cmdPublish", () => {
       const payload = JSON.parse(payloadEntry);
       expect(payload.slug).toBe("my-skill");
       expect(payload.displayName).toBe("My Skill");
+      expect(payload.ownerHandle).toBe("me");
       expect(payload.version).toBe("1.0.0");
       expect(payload.changelog).toBe("");
       expect(payload.acceptLicenseTerms).toBe(true);
       expect(payload.tags).toEqual(["latest"]);
+      expect(payload.categories).toEqual(["automation", "development"]);
+      expect(payload.topics).toEqual(["React", "GPU development"]);
       const files = publishForm.getAll("files") as Array<Blob & { name?: string }>;
       expect(files.map((file) => file.name ?? "").sort()).toEqual(["SKILL.md", "notes.md"]);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends explicit empty catalog metadata to clear existing skill values", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "clear-topics");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Clear topics\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "clear-topics", { categories: "", topics: "" });
+
+      expect(publishPayload()).toMatchObject({ categories: [], topics: [] });
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("sends owner-scoped fork provenance when --fork-of is owner-qualified", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "demo-fork");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      httpMocks.apiRequestForm.mockResolvedValueOnce({
+        ok: true,
+        skillId: "skill_1",
+        versionId: "ver_1",
+      });
+
+      await cmdPublish(makeOpts(workdir), "demo-fork", {
+        slug: "demo-fork",
+        name: "Demo Fork",
+        version: "1.0.0",
+        changelog: "",
+        forkOf: "@openclaw/demo@1.2.3",
+      });
+
+      const publishCall = httpMocks.apiRequestForm.mock.calls.find((call) => {
+        const req = call[1] as { path?: string } | undefined;
+        return req?.path === "/api/v1/skills";
+      });
+      if (!publishCall) throw new Error("Missing publish call");
+      const publishForm = (publishCall[1] as { form?: FormData }).form as FormData;
+      const payloadEntry = publishForm.get("payload");
+      if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
+      expect(JSON.parse(payloadEntry).forkOf).toEqual({
+        slug: "demo",
+        ownerHandle: "openclaw",
+        version: "1.2.3",
+      });
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -364,7 +426,30 @@ describe("cmdPublish", () => {
       if (typeof payloadEntry !== "string") throw new Error("Missing publish payload");
       const payload = JSON.parse(payloadEntry);
       expect(payload.ownerHandle).toBe("openclaw");
+      expect(payload.sourceOwnerHandle).toBe("me");
       expect(payload.migrateOwner).toBe(true);
+    } finally {
+      await rm(workdir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails clearly when publishing without --owner and whoami has no handle", async () => {
+    const workdir = await makeTmpWorkdir();
+    try {
+      const folder = join(workdir, "anonymous-skill");
+      await mkdir(folder, { recursive: true });
+      await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
+
+      mockDefaultApiRequest(null);
+
+      await expect(
+        cmdPublish(makeOpts(workdir), "anonymous-skill", {
+          version: "1.0.0",
+          changelog: "",
+          tags: "latest",
+        }),
+      ).rejects.toThrow("Unable to resolve your publisher handle. Pass --owner explicitly.");
+      expect(httpMocks.apiRequestForm).not.toHaveBeenCalled();
     } finally {
       await rm(workdir, { recursive: true, force: true });
     }
@@ -378,6 +463,7 @@ describe("cmdPublish", () => {
       await mkdir(folder, { recursive: true });
       await writeFile(join(folder, "SKILL.md"), "# Skill\n", "utf8");
 
+      mockDefaultApiRequest("steipete");
       httpMocks.apiRequestForm.mockResolvedValueOnce({
         ok: true,
         skillId: "skill_1",
@@ -412,8 +498,8 @@ describe("cmdPublish", () => {
         path: "skills/source-skill",
         importedAt: 123_456_789,
       });
-      dateSpy.mockRestore();
     } finally {
+      dateSpy.mockRestore();
       await rm(workdir, { recursive: true, force: true });
     }
   });
@@ -458,4 +544,28 @@ function publishPayload() {
   const payload = form?.get("payload");
   if (typeof payload !== "string") throw new Error("Missing publish payload");
   return JSON.parse(payload) as Record<string, unknown>;
+}
+
+function mockDefaultApiRequest(whoamiHandle: string | null = "me") {
+  httpMocks.apiRequest.mockReset();
+  httpMocks.apiRequest.mockImplementation(async (_registry: unknown, request: unknown) => {
+    if (isWhoamiRequest(request)) {
+      return { user: { handle: whoamiHandle } };
+    }
+    return {
+      match: null,
+      latestVersion: null,
+    };
+  });
+}
+
+function isWhoamiRequest(request: unknown) {
+  const args = request as { path?: unknown; url?: unknown } | null | undefined;
+  if (args?.path === "/api/v1/whoami") return true;
+  if (typeof args?.url !== "string") return false;
+  try {
+    return new URL(args.url).pathname === "/api/v1/whoami";
+  } catch {
+    return false;
+  }
 }

@@ -28,7 +28,7 @@ export function SkillsResults({
   isLoadingSkills,
   sorted,
   view,
-  listDoneLoading: _listDoneLoading,
+  listDoneLoading,
   hasQuery,
   canLoadMore,
   isLoadingMore,
@@ -40,7 +40,7 @@ export function SkillsResults({
     <>
       {isLoadingSkills ? (
         <BrowseResultsSkeleton variant={view} />
-      ) : sorted.length === 0 ? (
+      ) : sorted.length === 0 && listDoneLoading ? (
         <div className="empty-state">
           <p className="empty-state-title">No skills found</p>
           <p className="empty-state-body">

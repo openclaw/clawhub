@@ -191,6 +191,7 @@ describe("Settings", () => {
     vi.mocked(toast.success).mockReset();
     useAuthActionsMock.mockReturnValue({
       signIn: vi.fn(),
+      signOut: vi.fn().mockResolvedValue(undefined),
     });
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
@@ -308,6 +309,28 @@ describe("Settings", () => {
       expect(getLastQueryArgs("tokens:listMine")).toBe("skip");
       expect(getLastQueryArgs("publishers:listMine")).toBe("skip");
     });
+  });
+
+  it("clears auth state and leaves settings after account deletion succeeds", async () => {
+    const deleteAccount = vi.fn().mockResolvedValue(undefined);
+    const signOut = vi.fn().mockResolvedValue(undefined);
+    useAuthActionsMock.mockReturnValue({ signIn: vi.fn(), signOut });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "users:deleteAccount" ? deleteAccount : vi.fn(),
+    );
+    mockSignedInSettings({
+      search: { view: "danger" },
+      memberships: [personalMembership],
+    });
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete account" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Permanently delete account" }));
+
+    await waitFor(() => expect(deleteAccount).toHaveBeenCalled());
+    await waitFor(() => expect(signOut).toHaveBeenCalled());
+    expect(navigateMock).toHaveBeenCalledWith({ to: "/", replace: true });
   });
 
   it("lets official publisher owners configure a public GitHub sync source", async () => {

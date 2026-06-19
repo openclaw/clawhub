@@ -392,7 +392,7 @@ describe("telemetry install events", () => {
 
     const result = await pruneInstallTelemetryDedupesHandler(ctx);
 
-    expect(take).toHaveBeenCalledWith(200);
+    expect(take).toHaveBeenCalledWith(500);
     expect(result).toEqual({ deleted: 2, hasMore: false });
     expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:one");
     expect(deleteDoc).toHaveBeenCalledWith("installTelemetryDedupes:two");
@@ -400,7 +400,7 @@ describe("telemetry install events", () => {
 
   it("reschedules stale dedupe pruning when one bounded batch fills", async () => {
     vi.setSystemTime(20 * 86_400_000);
-    const stale = Array.from({ length: 200 }, (_, index) => ({
+    const stale = Array.from({ length: 500 }, (_, index) => ({
       _id: `installTelemetryDedupes:${index}`,
     }));
     const runAfter = vi.fn();
@@ -416,7 +416,7 @@ describe("telemetry install events", () => {
 
     const result = await pruneInstallTelemetryDedupesHandler(ctx);
 
-    expect(result).toEqual({ deleted: 200, hasMore: true });
+    expect(result).toEqual({ deleted: 500, hasMore: true });
     expect(runAfter).toHaveBeenCalledWith(
       0,
       telemetryRefs.pruneInstallTelemetryDedupesInternal,

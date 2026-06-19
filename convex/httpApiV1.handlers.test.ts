@@ -1,7 +1,7 @@
 /* @vitest-environment node */
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { internal } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 
@@ -350,7 +350,11 @@ describe("httpApiV1 handlers", () => {
 
   it("search returns empty results for blank query", async () => {
     const runAction = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     const response = await __handlers.searchSkillsV1Handler(
       makeCtx({ runAction, runMutation }),
       new Request("https://example.com/api/v1/search?q=%20%20"),
@@ -365,7 +369,11 @@ describe("httpApiV1 handlers", () => {
   it("users/restore forbids non-admin api tokens", async () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
       user: { _id: "users:actor", role: "user" },
@@ -1195,7 +1203,11 @@ describe("httpApiV1 handlers", () => {
   it("users/reclaim forbids non-admin api tokens", async () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
       user: { _id: "users:actor", role: "user" },
@@ -1723,7 +1735,14 @@ describe("httpApiV1 handlers", () => {
     const runAction = vi.fn().mockResolvedValue([
       {
         score: 1,
-        skill: { slug: "a", displayName: "A", summary: null, updatedAt: 1 },
+        skill: {
+          slug: "a",
+          displayName: "A",
+          summary: null,
+          updatedAt: 1,
+          stats: { downloads: 9 },
+        },
+        ownerHandle: "openclaw",
         version: { version: "1.0.0" },
       },
     ]);
@@ -1741,13 +1760,23 @@ describe("httpApiV1 handlers", () => {
       highlightedOnly: true,
       nonSuspiciousOnly: undefined,
     });
+    expect(await response.json()).toMatchObject({
+      results: [{ slug: "a", ownerHandle: "openclaw" }],
+    });
   });
 
   it("search includes public owner metadata without publisher bio", async () => {
     const runAction = vi.fn().mockResolvedValue([
       {
         score: 1,
-        skill: { slug: "demo", displayName: "Demo", summary: "Summary", updatedAt: 1 },
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: "Summary",
+          updatedAt: 1,
+          statsDownloads: 42,
+          stats: { downloads: 1 },
+        },
         version: { version: "1.0.0" },
         ownerHandle: "openclaw",
         owner: {
@@ -1774,6 +1803,7 @@ describe("httpApiV1 handlers", () => {
           displayName: "Demo",
           summary: "Summary",
           version: "1.0.0",
+          downloads: 42,
           updatedAt: 1,
           ownerHandle: "openclaw",
           owner: {
@@ -1885,6 +1915,25 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(404);
   });
 
+  it("resolve returns ownerHandle guidance when the slug is ambiguous", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      match: null,
+      latestVersion: null,
+      ambiguous: true,
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const hash = "a".repeat(64);
+    const response = await __handlers.resolveSkillVersionV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(`https://example.com/api/v1/resolve?slug=demo&hash=${hash}`),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain('Ambiguous skill slug "demo"');
+    expect(body).toContain(`/api/v1/resolve?slug=demo&ownerHandle=<owner>&hash=${hash}`);
+  });
+
   it("resolve returns match and latestVersion", async () => {
     const runQuery = vi.fn().mockResolvedValue({
       match: { version: "1.0.0" },
@@ -1900,6 +1949,28 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.match.version).toBe("1.0.0");
+  });
+
+  it("threads ownerHandle through the legacy skills resolve subroute", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      match: { version: "1.0.0" },
+      latestVersion: { version: "2.0.0" },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const hash = "a".repeat(64);
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/skills/resolve?slug=demo&ownerHandle=acme&hash=${hash}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      api.skills.resolveVersionByHash,
+      expect.objectContaining({ slug: "demo", hash, ownerHandle: "acme" }),
+    );
   });
 
   it("lists skills with resolved tags using batch query", async () => {
@@ -2217,6 +2288,44 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/skills/missing"),
     );
     expect(response.status).toBe(404);
+  });
+
+  it("get skill returns ownerHandle guidance when the slug is ambiguous", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      skill: null,
+      ambiguous: true,
+      ambiguousMatches: [
+        { slug: "demo", ownerHandle: "openclaw" },
+        { slug: "demo", ownerHandle: "patrick" },
+      ],
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo"),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body).toEqual({
+      code: "AMBIGUOUS_SKILL_SLUG",
+      message: 'Found multiple skills with the slug "demo"; specify which one you want to install:',
+      slug: "demo",
+      matches: [
+        {
+          ownerHandle: "openclaw",
+          slug: "demo",
+          ref: "@openclaw/demo",
+          url: "https://example.com/openclaw/demo",
+        },
+        {
+          ownerHandle: "patrick",
+          slug: "demo",
+          ref: "@patrick/demo",
+          url: "https://example.com/patrick/demo",
+        },
+      ],
+    });
   });
 
   it("get skill returns pending-scan message for owner api token", async () => {
@@ -3411,6 +3520,20 @@ describe("httpApiV1 handlers", () => {
     expect(await response.text()).toBe("Skill not found");
   });
 
+  it("returns ownerHandle guidance for ambiguous version list requests", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ skill: null, ambiguous: true });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions?limit=1"),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain('Ambiguous skill slug "demo"');
+    expect(body).toContain("/api/v1/skills/demo/versions?ownerHandle=<owner>");
+  });
+
   it("returns version detail", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
@@ -3497,6 +3620,20 @@ describe("httpApiV1 handlers", () => {
     );
     expect(response.status).toBe(404);
     expect(await response.text()).toBe("Skill not found");
+  });
+
+  it("returns ownerHandle guidance for ambiguous version detail requests", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ skill: null, ambiguous: true });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/versions/1.0.0"),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain('Ambiguous skill slug "demo"');
+    expect(body).toContain("/api/v1/skills/demo/versions/1.0.0?ownerHandle=<owner>");
   });
 
   it("returns version detail security from vt analysis", async () => {
@@ -4545,6 +4682,56 @@ describe("httpApiV1 handlers", () => {
     expect(response.headers.get("X-Content-SHA256")).toBe("abcd");
   });
 
+  it("looks up raw files in the requested owner namespace", async () => {
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) {
+        return {
+          skill: {
+            _id: "skills:1",
+            slug: "demo",
+            displayName: "Demo",
+            tags: {},
+            latestVersionId: "skillVersions:1",
+          },
+          latestVersion: { _id: "skillVersions:1", version: "1.0.0" },
+          owner: { handle: "clawkit" },
+        };
+      }
+      if ("versionId" in args) {
+        return {
+          _id: "skillVersions:1",
+          skillId: "skills:1",
+          version: "1.0.0",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 5,
+              storageId: "storage:1",
+              sha256: "abcd",
+              contentType: "text/plain",
+            },
+          ],
+        };
+      }
+      return null;
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const storage = {
+      get: vi.fn().mockResolvedValue(new Blob(["hello"], { type: "text/plain" })),
+    };
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation, storage }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md&ownerHandle=clawkit"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      api.skills.getBySlug,
+      expect.objectContaining({ slug: "demo", ownerHandle: "clawkit" }),
+    );
+  });
+
   it("blocks raw file reads for malware-blocked skills", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
       if ("slug" in args) {
@@ -4693,10 +4880,14 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage }),
-      new Request("https://example.com/api/v1/skills/demo/card?tag=stable"),
+      new Request("https://example.com/api/v1/skills/demo/card?ownerHandle=acme&tag=stable"),
     );
 
     expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      api.skills.getBySlug,
+      expect.objectContaining({ slug: "demo", ownerHandle: "acme" }),
+    );
     expect(await response.text()).toBe("# Skill Card");
     expect(response.headers.get("X-Content-SHA256")).toBe("card-sha");
   });
@@ -5476,10 +5667,14 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.skillsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation, storage: { get: vi.fn() } }),
-      new Request("https://example.com/api/v1/skills/demo/verify?tag=stable"),
+      new Request("https://example.com/api/v1/skills/demo/verify?ownerHandle=acme&tag=stable"),
     );
 
     expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      api.skills.getBySlug,
+      expect.objectContaining({ slug: "demo", ownerHandle: "acme" }),
+    );
     const json = await response.json();
     expect(json).toMatchObject({
       schema: "clawhub.skill.verify.v1",
@@ -5499,7 +5694,7 @@ describe("httpApiV1 handlers", () => {
       card: {
         available: true,
         path: "skill-card.md",
-        url: "https://example.com/api/v1/skills/demo/card?version=1.0.0",
+        url: "https://example.com/api/v1/skills/demo/card?ownerHandle=acme&version=1.0.0",
         sha256: "card-sha",
         size: 12,
       },
@@ -5874,6 +6069,20 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(410);
   });
 
+  it("returns ownerHandle guidance for ambiguous raw file requests", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ skill: null, ambiguous: true });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/file?path=SKILL.md"),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.text();
+    expect(body).toContain('Ambiguous skill slug "demo"');
+    expect(body).toContain("/api/v1/skills/demo/file?ownerHandle=<owner>&path=SKILL.md");
+  });
+
   it("returns 413 when raw file too large", async () => {
     const internalVersion = {
       skillId: "skills:1",
@@ -5936,9 +6145,69 @@ describe("httpApiV1 handlers", () => {
     const body = JSON.stringify({
       slug: "demo",
       displayName: "Demo",
+      ownerHandle: "me",
       version: "1.0.0",
       changelog: "c",
       acceptLicenseTerms: true,
+      forkOf: { slug: "upstream", ownerHandle: "@openclaw", version: "1.0.0" },
+      files: [
+        {
+          path: "SKILL.md",
+          size: 1,
+          storageId: "storage:1",
+          sha256: "abc",
+          contentType: "text/plain",
+        },
+      ],
+    });
+    runMutation.mockImplementation(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
+    const response = await __handlers.publishSkillV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+        body,
+      }),
+    );
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.ok).toBe(true);
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "users:1",
+      expect.objectContaining({
+        forkOf: { slug: "upstream", ownerHandle: "openclaw", version: "1.0.0" },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("publish json defaults omitted ownerHandle to personal publish scope", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: "s",
+      versionId: "v",
+      embeddingId: "e",
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error("owner resolution should not run for omitted ownerHandle");
+    });
+    const body = JSON.stringify({
+      slug: "demo",
+      displayName: "Demo",
+      version: "1.0.0",
+      changelog: "c",
+      acceptLicenseTerms: true,
+      migrateOwner: true,
+      sourceOwnerHandle: "org",
       files: [
         {
           path: "SKILL.md",
@@ -5957,10 +6226,23 @@ describe("httpApiV1 handlers", () => {
         body,
       }),
     );
+    if (response.status !== 200) {
+      throw new Error(await response.text());
+    }
     expect(response.status).toBe(200);
-    const json = await response.json();
-    expect(json.ok).toBe(true);
-    expect(publishVersionForUser).toHaveBeenCalled();
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "users:1",
+      expect.not.objectContaining({ ownerHandle: expect.anything() }),
+      expect.not.objectContaining({ ownerPublisherId: expect.anything() }),
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "ownerPublisherId",
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "sourceOwnerPublisherId",
+    );
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty("migrateOwner");
   });
 
   it("keeps client-declared publish source out of trusted provenance options", async () => {
@@ -6015,8 +6297,11 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       "users:1",
       expect.objectContaining({ source }),
+      {},
     );
-    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).toBeUndefined();
+    expect(vi.mocked(publishVersionForUser).mock.calls[0]?.[3]).not.toHaveProperty(
+      "sourceProvenance",
+    );
   });
 
   it("publish json resolves requested owner publisher", async () => {
@@ -6073,7 +6358,58 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       "users:1",
       expect.not.objectContaining({ ownerHandle: expect.anything() }),
-      { ownerPublisherId: "publishers:openclaw", migrateOwner: true },
+      { ownerPublisherId: "publishers:openclaw" },
+    );
+  });
+
+  it("publish json treats same source and target owner as a normal owner-scoped publish", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValueOnce({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+    vi.mocked(publishVersionForUser).mockResolvedValueOnce({
+      skillId: "s",
+      versionId: "v",
+      embeddingId: "e",
+    } as never);
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "openclaw") return { publisherId: "publishers:openclaw" };
+      return okRate();
+    });
+    const body = JSON.stringify({
+      slug: "demo",
+      displayName: "Demo",
+      ownerHandle: "@openclaw",
+      sourceOwnerHandle: "openclaw",
+      migrateOwner: true,
+      version: "1.0.0",
+      changelog: "c",
+      acceptLicenseTerms: true,
+      files: [
+        {
+          path: "SKILL.md",
+          size: 1,
+          storageId: "storage:1",
+          sha256: "abc",
+          contentType: "text/plain",
+        },
+      ],
+    });
+    const response = await __handlers.publishSkillV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: "Bearer clh_test" },
+        body,
+      }),
+    );
+    expect(response.status).toBe(200);
+    expect(publishVersionForUser).toHaveBeenCalledWith(
+      expect.anything(),
+      "users:1",
+      expect.not.objectContaining({ ownerHandle: expect.anything() }),
+      { ownerPublisherId: "publishers:openclaw" },
     );
   });
 
@@ -6125,6 +6461,7 @@ describe("httpApiV1 handlers", () => {
     const body = JSON.stringify({
       slug: "demo",
       displayName: "Demo",
+      ownerHandle: "me",
       version: "1.0.0",
       changelog: "c",
       files: [
@@ -6160,13 +6497,18 @@ describe("httpApiV1 handlers", () => {
       versionId: "v",
       embeddingId: "e",
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     const form = new FormData();
     form.set(
       "payload",
       JSON.stringify({
         slug: "demo",
         displayName: "Demo",
+        ownerHandle: "me",
         version: "1.0.0",
         changelog: "",
         acceptLicenseTerms: true,
@@ -6230,7 +6572,7 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       "users:1",
       expect.not.objectContaining({ ownerHandle: expect.anything() }),
-      { ownerPublisherId: "publishers:openclaw", migrateOwner: true },
+      { ownerPublisherId: "publishers:openclaw" },
     );
   });
 
@@ -6239,13 +6581,18 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     const form = new FormData();
     form.set(
       "payload",
       JSON.stringify({
         slug: "demo",
         displayName: "Demo",
+        ownerHandle: "me",
         version: "1.0.0",
         changelog: "",
         tags: ["latest"],
@@ -6270,10 +6617,15 @@ describe("httpApiV1 handlers", () => {
       userId: "users:1",
       user: { handle: "p" },
     } as never);
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
+      return okRate();
+    });
     const body = JSON.stringify({
       slug: "demo",
       displayName: "Demo",
+      ownerHandle: "me",
       version: "1.0.0",
       changelog: "c",
       acceptLicenseTerms: false,
@@ -6317,6 +6669,7 @@ describe("httpApiV1 handlers", () => {
       JSON.stringify({
         slug: "demo",
         displayName: "Demo",
+        ownerHandle: "me",
         version: "1.0.0",
         changelog: "",
         acceptLicenseTerms: true,
@@ -6423,12 +6776,30 @@ describe("httpApiV1 handlers", () => {
       }),
     );
 
+    const responseWithOwner = await __handlers.skillsDeleteRouterV1Handler(
+      makeCtx({ runMutation }),
+      new Request("https://example.com/api/v1/skills/demo?ownerHandle=alice", {
+        method: "DELETE",
+        headers: { Authorization: "Bearer clh_test" },
+      }),
+    );
+    expect(responseWithOwner.status).toBe(200);
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        userId: "users:1",
+        slug: "demo",
+        deleted: true,
+        ownerHandle: "alice",
+      }),
+    );
+
     const response2 = await __handlers.skillsPostRouterV1Handler(
       makeCtx({ runMutation }),
       new Request("https://example.com/api/v1/skills/demo/undelete", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
-        body: JSON.stringify({ reason: "reviewed" }),
+        body: JSON.stringify({ reason: "reviewed", ownerHandle: "alice" }),
       }),
     );
     expect(response2.status).toBe(200);
@@ -6440,6 +6811,7 @@ describe("httpApiV1 handlers", () => {
         slug: "demo",
         deleted: false,
         reason: "reviewed",
+        ownerHandle: "alice",
       }),
     );
   });
@@ -6682,7 +7054,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.skillsPostRouterV1Handler(
       makeCtx({ runMutation }),
-      new Request("https://example.com/api/v1/skills/demo/rescan", {
+      new Request("https://example.com/api/v1/skills/demo/rescan?ownerHandle=openclaw", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
         body: JSON.stringify({ version: "1.0.0" }),
@@ -6702,6 +7074,7 @@ describe("httpApiV1 handlers", () => {
       {
         actorUserId: "users:moderator",
         slug: "demo",
+        ownerHandle: "openclaw",
         version: "1.0.0",
       },
     );
@@ -7041,6 +7414,37 @@ describe("httpApiV1 handlers", () => {
     );
   });
 
+  it("transfer request forwards ownerHandle to skill resolution", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:1",
+      user: { handle: "p" },
+    } as never);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("slug" in args) return { _id: "skills:1", slug: "demo" };
+      return null;
+    });
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true, transferId: "skillOwnershipTransfers:1", toUserHandle: "alice" };
+    });
+
+    const response = await __handlers.skillsPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/transfer?ownerHandle=openclaw", {
+        method: "POST",
+        headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
+        body: JSON.stringify({ toUserHandle: "alice" }),
+      }),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.skills.getSkillBySlugInternal,
+      expect.objectContaining({ slug: "demo", ownerHandle: "openclaw" }),
+    );
+  });
+
   it("allows platform admins to transfer soft-deleted skills", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:admin",
@@ -7356,7 +7760,7 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/skills/demo/rename", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
-        body: JSON.stringify({ newSlug: "demo-new" }),
+        body: JSON.stringify({ newSlug: "demo-new", ownerHandle: "alice" }),
       }),
     );
 
@@ -7367,6 +7771,7 @@ describe("httpApiV1 handlers", () => {
         actorUserId: "users:1",
         slug: "demo",
         newSlug: "demo-new",
+        ownerHandle: "alice",
       }),
     );
   });
@@ -7387,7 +7792,11 @@ describe("httpApiV1 handlers", () => {
       new Request("https://example.com/api/v1/skills/demo-old/merge", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test", "content-type": "application/json" },
-        body: JSON.stringify({ targetSlug: "demo" }),
+        body: JSON.stringify({
+          targetSlug: "demo",
+          sourceOwnerHandle: "alice",
+          targetOwnerHandle: "alice",
+        }),
       }),
     );
 
@@ -7398,6 +7807,8 @@ describe("httpApiV1 handlers", () => {
         actorUserId: "users:1",
         sourceSlug: "demo-old",
         targetSlug: "demo",
+        sourceOwnerHandle: "alice",
+        targetOwnerHandle: "alice",
       }),
     );
   });
@@ -7710,6 +8121,7 @@ describe("httpApiV1 handlers", () => {
     const resendBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(resendBody.from).toBe("ClawHub <noreply@notifications.openclaw.ai>");
     expect(resendBody.from).not.toBe("Legacy <legacy@example.com>");
+    expect(resendBody).not.toHaveProperty("replyTo");
   });
 
   it("staff email ignores legacy noreply sender env names", async () => {
@@ -7758,6 +8170,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const resendBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
     expect(resendBody.from).toBe("ClawHub <noreply@notifications.openclaw.ai>");
+    expect(resendBody).not.toHaveProperty("replyTo");
   });
 
   it("set role requires auth", async () => {
@@ -7820,7 +8233,7 @@ describe("httpApiV1 handlers", () => {
       .mockResolvedValueOnce({ ok: true, starred: true, alreadyStarred: false });
     const response = await __handlers.starsPostRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/stars/demo", {
+      new Request("https://example.com/api/v1/stars/demo?ownerHandle=openclaw", {
         method: "POST",
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -7829,6 +8242,10 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.ok).toBe(true);
     expect(json.starred).toBe(true);
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.skills.getSkillBySlugInternal,
+      expect.objectContaining({ slug: "demo", ownerHandle: "openclaw" }),
+    );
   });
 
   it("stars delete succeeds", async () => {
@@ -7844,7 +8261,7 @@ describe("httpApiV1 handlers", () => {
       .mockResolvedValueOnce({ ok: true, unstarred: true, alreadyUnstarred: false });
     const response = await __handlers.starsDeleteRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/stars/demo", {
+      new Request("https://example.com/api/v1/stars/demo?ownerHandle=openclaw", {
         method: "DELETE",
         headers: { Authorization: "Bearer clh_test" },
       }),
@@ -7853,6 +8270,10 @@ describe("httpApiV1 handlers", () => {
     const json = await response.json();
     expect(json.ok).toBe(true);
     expect(json.unstarred).toBe(true);
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.skills.getSkillBySlugInternal,
+      expect.objectContaining({ slug: "demo", ownerHandle: "openclaw" }),
+    );
   });
 
   it("packages search ignores retired execution and capability filters", async () => {
@@ -7948,13 +8369,13 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).not.toHaveBeenCalled();
   });
 
-  it("packages list supports family=skill on the generic route", async () => {
+  it("packages list supports family=skill and topics on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.listPackagesV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages?family=skill&limit=7"),
+      new Request("https://example.com/api/v1/packages?family=skill&limit=7&topic=calendar"),
     );
 
     expect(response.status).toBe(200);
@@ -7962,7 +8383,26 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         paginationOpts: { cursor: null, numItems: 7 },
+        topic: "calendar",
       }),
+    );
+  });
+
+  it("packages list forwards topics to both unified catalog sources", async () => {
+    const runQuery = vi.fn().mockResolvedValue({ page: [], isDone: true, continueCursor: "" });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages?limit=7&topic=calendar"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery.mock.calls.map(([, args]) => args)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ topic: "calendar" }),
+        expect.objectContaining({ topic: "calendar" }),
+      ]),
     );
   });
 
@@ -7996,7 +8436,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPackagesV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages?family=code-plugin&category=data&limit=7"),
+      new Request("https://example.com/api/v1/packages?family=code-plugin&category=tools&limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -8004,7 +8444,7 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         family: "code-plugin",
-        category: "data",
+        category: "tools",
         paginationOpts: { cursor: null, numItems: 7 },
       }),
     );
@@ -8115,6 +8555,45 @@ describe("httpApiV1 handlers", () => {
     expect(runQuery).toHaveBeenCalledTimes(4);
   });
 
+  it("packages list keeps legacy updated fallback sort from recommended pagination cursors", async () => {
+    const fallbackCursor = `pkgcatalog:${JSON.stringify({
+      packages: { cursor: "legacy-package-next", offset: 0, pageSize: 1, done: false },
+      skills: { cursor: null, offset: 0, pageSize: 1, done: true },
+      recommendedFallback: "updated",
+    })}`;
+    const pluginPackage = makeCatalogItem("plugin-next", {
+      family: "code-plugin",
+      updatedAt: 100,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        throw new Error("readiness should come from the pagination cursor");
+      }
+      expect(args).toEqual(
+        expect.objectContaining({
+          sort: "updated",
+          paginationOpts: expect.objectContaining({ cursor: "legacy-package-next" }),
+        }),
+      );
+      return { page: [pluginPackage], isDone: false, continueCursor: "packages-next" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPackagesV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/packages?limit=1&sort=recommended&cursor=${encodeURIComponent(
+          fallbackCursor,
+        )}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["plugin-next"]);
+    expect(json.nextCursor).toContain('"recommendedFallback":"updated"');
+  });
+
   it("plugins list defaults to plugin package families", async () => {
     const codePlugin = {
       name: "code-plugin",
@@ -8179,6 +8658,32 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("plugins list omits the global total count for topic-filtered results", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        throw new Error("global count must not be queried for topic filters");
+      }
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        return false;
+      }
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?topic=calendar&limit=7"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json).not.toHaveProperty("totalCount");
+    for (const [, args] of runQuery.mock.calls) {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
+      expect(args).toEqual(expect.objectContaining({ topic: "calendar" }));
+    }
+  });
+
   it("plugins list forwards category to both plugin families", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) {
@@ -8190,7 +8695,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.listPluginsV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?category=data&limit=7"),
+      new Request("https://example.com/api/v1/plugins?category=tools&limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -8198,10 +8703,94 @@ describe("httpApiV1 handlers", () => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
       expect(args).toEqual(
         expect.objectContaining({
-          category: "data",
+          category: "tools",
           paginationOpts: { cursor: null, numItems: 7 },
         }),
       );
+    }
+  });
+
+  it("plugins list maps retired v1 category filters to controlled categories", async () => {
+    const aliases = {
+      "mcp-tooling": "tools",
+      data: "tools",
+      observability: "gateway",
+      automation: "tools",
+      deployment: "gateway",
+      "dev-tools": "runtime",
+    } as const;
+
+    for (const [legacyCategory, controlledCategory] of Object.entries(aliases)) {
+      const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+        if (hasPluginRecommendedScoreReadinessArgs(args)) {
+          return false;
+        }
+        return { page: [], isDone: true, continueCursor: "" };
+      });
+      const runMutation = vi.fn().mockResolvedValue(okRate());
+
+      const response = await __handlers.listPluginsV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins?category=${legacyCategory}&limit=7`),
+      );
+
+      expect(response.status).toBe(200);
+      for (const [, args] of runQuery.mock.calls) {
+        if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
+        expect(args).toEqual(
+          expect.objectContaining({
+            category: controlledCategory,
+            paginationOpts: { cursor: null, numItems: 7 },
+          }),
+        );
+      }
+    }
+  });
+
+  it("plugins list fills official-first pages from the community phase", async () => {
+    const officialPlugin = {
+      ...makeCatalogItem("official-memory", { family: "code-plugin", updatedAt: 2 }),
+      isOfficial: true,
+    };
+    const communityPlugin = {
+      ...makeCatalogItem("community-memory", { family: "code-plugin", updatedAt: 1 }),
+      isOfficial: false,
+    };
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      if (args.family === "bundle-plugin") {
+        return { page: [], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "code-plugin") {
+        const cursor = (args.paginationOpts as { cursor: string | null }).cursor;
+        if (cursor === null) {
+          return {
+            page: [officialPlugin],
+            isDone: false,
+            continueCursor: "community-phase",
+          };
+        }
+        expect(cursor).toBe("community-phase");
+        return { page: [communityPlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?category=memory&officialFirst=true&limit=2"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "official-memory",
+      "community-memory",
+    ]);
+    for (const [, args] of runQuery.mock.calls) {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
+      expect(args).toEqual(expect.objectContaining({ officialFirst: true }));
     }
   });
 
@@ -8266,7 +8855,7 @@ describe("httpApiV1 handlers", () => {
       if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
       expect(args).toEqual(
         expect.objectContaining({
-          category: "data",
+          category: "tools",
           sort: "installs",
           paginationOpts: { cursor: null, numItems: 7 },
         }),
@@ -8494,6 +9083,47 @@ describe("httpApiV1 handlers", () => {
     expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["code-next"]);
   });
 
+  it("plugins list keeps legacy updated fallback sort from recommended pagination cursors", async () => {
+    const fallbackCursor = `pkgplugins:${JSON.stringify({
+      codePlugins: { cursor: "legacy-code-next", offset: 0, pageSize: 1, done: false },
+      bundlePlugins: { cursor: null, offset: 0, pageSize: 1, done: true },
+      recommendedFallback: "updated",
+    })}`;
+    const codePlugin = makeCatalogItem("code-next", {
+      family: "code-plugin",
+      updatedAt: 100,
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 1;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        throw new Error("readiness should come from the pagination cursor");
+      }
+      expect(args).toEqual(
+        expect.objectContaining({
+          family: "code-plugin",
+          sort: "updated",
+          paginationOpts: expect.objectContaining({ cursor: "legacy-code-next" }),
+        }),
+      );
+      return { page: [codePlugin], isDone: false, continueCursor: "code-next" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        `https://example.com/api/v1/plugins?limit=1&sort=recommended&cursor=${encodeURIComponent(
+          fallbackCursor,
+        )}`,
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual(["code-next"]);
+    expect(json.nextCursor).toContain('"recommendedFallback":"updated"');
+  });
+
   it("plugins list keeps legacy recommended cursors on recommended sort", async () => {
     const legacyCursor = `pkgplugins:${JSON.stringify({
       codePlugins: { cursor: "legacy-code-next", offset: 0, pageSize: 1, done: false },
@@ -8538,17 +9168,19 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins list rejects invalid categories", async () => {
-    const runQuery = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    for (const category of ["not-a-category", "constructor", "toString"]) {
+      const runQuery = vi.fn();
+      const runMutation = vi.fn().mockResolvedValue(okRate());
 
-    const response = await __handlers.listPluginsV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins?category=other"),
-    );
+      const response = await __handlers.listPluginsV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins?category=${category}`),
+      );
 
-    expect(response.status).toBe(400);
-    expect(await response.text()).toBe("Invalid plugin category");
-    expect(runQuery).not.toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Invalid plugin category");
+      expect(runQuery).not.toHaveBeenCalled();
+    }
   });
 
   it("plugins list paginates with separate plugin family cursors", async () => {
@@ -8680,13 +9312,13 @@ describe("httpApiV1 handlers", () => {
     expect(cursors).toEqual(cursors.map(() => null));
   });
 
-  it("packages search supports family=skill on the generic route", async () => {
+  it("packages search supports family=skill and topics on the generic route", async () => {
     const runQuery = vi.fn().mockResolvedValue([]);
     const runMutation = vi.fn().mockResolvedValue(okRate());
 
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/packages/search?q=demo&family=skill"),
+      new Request("https://example.com/api/v1/packages/search?q=demo&family=skill&topic=calendar"),
     );
 
     expect(response.status).toBe(200);
@@ -8694,7 +9326,26 @@ describe("httpApiV1 handlers", () => {
       expect.anything(),
       expect.objectContaining({
         query: "demo",
+        topic: "calendar",
       }),
+    );
+  });
+
+  it("packages search forwards topics to both unified catalog sources", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.packagesGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/packages/search?q=demo&topic=calendar"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery.mock.calls.map(([, args]) => args)).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ query: "demo", topic: "calendar" }),
+        expect.objectContaining({ query: "demo", topic: "calendar" }),
+      ]),
     );
   });
 
@@ -8705,7 +9356,7 @@ describe("httpApiV1 handlers", () => {
     const response = await __handlers.packagesGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
       new Request(
-        "https://example.com/api/v1/packages/search?q=api&family=code-plugin&category=data",
+        "https://example.com/api/v1/packages/search?q=api&family=code-plugin&category=tools",
       ),
     );
 
@@ -8715,7 +9366,7 @@ describe("httpApiV1 handlers", () => {
       expect.objectContaining({
         query: "api",
         family: "code-plugin",
-        category: "data",
+        category: "tools",
       }),
     );
   });
@@ -8760,7 +9411,7 @@ describe("httpApiV1 handlers", () => {
 
     const response = await __handlers.pluginsGetRouterV1Handler(
       makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=weather&category=data&limit=7"),
+      new Request("https://example.com/api/v1/plugins/search?q=weather&category=tools&limit=7"),
     );
 
     expect(response.status).toBe(200);
@@ -8775,7 +9426,30 @@ describe("httpApiV1 handlers", () => {
       expect(args).toEqual(
         expect.objectContaining({
           query: "weather",
-          category: "data",
+          category: "tools",
+          limit: 7,
+        }),
+      );
+    }
+  });
+
+  it("plugins search maps retired v1 category filters to controlled categories", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/plugins/search?q=metrics&category=observability&limit=7",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          query: "metrics",
+          category: "gateway",
           limit: 7,
         }),
       );
@@ -8858,17 +9532,19 @@ describe("httpApiV1 handlers", () => {
   });
 
   it("plugins search rejects invalid categories", async () => {
-    const runQuery = vi.fn();
-    const runMutation = vi.fn().mockResolvedValue(okRate());
+    for (const category of ["not-a-category", "constructor", "toString"]) {
+      const runQuery = vi.fn();
+      const runMutation = vi.fn().mockResolvedValue(okRate());
 
-    const response = await __handlers.pluginsGetRouterV1Handler(
-      makeCtx({ runQuery, runMutation }),
-      new Request("https://example.com/api/v1/plugins/search?q=plugin&category=other"),
-    );
+      const response = await __handlers.pluginsGetRouterV1Handler(
+        makeCtx({ runQuery, runMutation }),
+        new Request(`https://example.com/api/v1/plugins/search?q=plugin&category=${category}`),
+      );
 
-    expect(response.status).toBe(400);
-    expect(await response.text()).toBe("Invalid plugin category");
-    expect(runQuery).not.toHaveBeenCalled();
+      expect(response.status).toBe(400);
+      expect(await response.text()).toBe("Invalid plugin category");
+      expect(runQuery).not.toHaveBeenCalled();
+    }
   });
 
   it("plugins search sorts by rank tier before score without exposing rank metadata", async () => {
@@ -9363,7 +10039,7 @@ describe("httpApiV1 handlers", () => {
 
     expect(response.status).toBe(307);
     expect(response.headers.get("Location")).toBe(
-      "https://example.com/api/v1/download?slug=demo&version=1.0.0",
+      "https://example.com/api/v1/download?slug=demo&ownerHandle=steipete&version=1.0.0",
     );
   });
 
@@ -13285,6 +13961,139 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     vi.useRealTimers();
+  });
+
+  it("dry-runs package runtime id repair without mutating packages", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin", handle: "patrick" },
+    } as never);
+    const sourcePackage = {
+      _id: "packages:stepfun",
+      name: "@hengm3467/stepfun-openclaw-plugin",
+      normalizedName: "@hengm3467/stepfun-openclaw-plugin",
+      runtimeId: "stepfun",
+      ownerUserId: "users:hengm",
+      ownerPublisherId: "publishers:hengm",
+      channel: "community",
+      softDeletedAt: undefined,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      if (args.name === "@hengm3467/stepfun-openclaw-plugin") return sourcePackage;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40hengm3467%2Fstepfun-openclaw-plugin/repair-runtime-id",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            nextRuntimeId: "stepfun-2",
+            reason: "Release official StepFun runtime id claim",
+            dryRun: true,
+          }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      dryRun: true,
+      source: {
+        packageId: "packages:stepfun",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        runtimeId: "stepfun",
+      },
+      operations: [
+        {
+          action: "repair-runtime-id",
+          packageId: "packages:stepfun",
+          from: "stepfun",
+          to: "stepfun-2",
+        },
+      ],
+    });
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        nextRuntimeId: "stepfun-2",
+      }),
+    );
+  });
+
+  it("applies package runtime id repair through the admin repair mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin", handle: "patrick" },
+    } as never);
+    const sourcePackage = {
+      _id: "packages:stepfun",
+      name: "@hengm3467/stepfun-openclaw-plugin",
+      normalizedName: "@hengm3467/stepfun-openclaw-plugin",
+      runtimeId: "stepfun",
+      ownerUserId: "users:hengm",
+      ownerPublisherId: "publishers:hengm",
+      channel: "community",
+      softDeletedAt: undefined,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        packageId: "packages:stepfun",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        runtimeId: "stepfun-2",
+      };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      if (args.name === "@hengm3467/stepfun-openclaw-plugin") return sourcePackage;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40hengm3467%2Fstepfun-openclaw-plugin/repair-runtime-id",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            nextRuntimeId: "stepfun-2",
+            reason: "Release official StepFun runtime id claim",
+            dryRun: false,
+          }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        nextRuntimeId: "stepfun-2",
+        reason: "Release official StepFun runtime id claim",
+      }),
+    );
   });
 
   it("package transfer maps ownership denials to 403", async () => {

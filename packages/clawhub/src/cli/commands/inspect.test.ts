@@ -24,6 +24,10 @@ const { cmdInspect, cmdVerifySkill } = await import("./inspect");
 const mockLog = vi.spyOn(console, "log").mockImplementation(() => {});
 const mockWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
+function loggedOutput() {
+  return mockLog.mock.calls.map((call) => String(call[0])).join("\n");
+}
+
 afterEach(() => {
   vi.clearAllMocks();
   mockLog.mockClear();
@@ -56,10 +60,35 @@ describe("cmdInspect", () => {
 
     const firstArgs = httpMocks.apiRequest.mock.calls[0]?.[1];
     const secondArgs = httpMocks.apiRequest.mock.calls[1]?.[1];
-    expect(firstArgs?.path).toBe(`${ApiRoutes.skills}/${encodeURIComponent("demo")}`);
-    expect(secondArgs?.path).toBe(
+    expect(new URL(String(firstArgs?.url)).pathname).toBe(
+      `${ApiRoutes.skills}/${encodeURIComponent("demo")}`,
+    );
+    expect(new URL(String(secondArgs?.url)).pathname).toBe(
       `${ApiRoutes.skills}/${encodeURIComponent("demo")}/versions/${encodeURIComponent("1.2.3")}`,
     );
+  });
+
+  it("passes owner when inspecting an owner-named skill", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 1,
+        updatedAt: 2,
+      },
+      latestVersion: null,
+      owner: { handle: "openclaw" },
+    });
+
+    await cmdInspect(makeGlobalOpts(), "@openclaw/demo");
+
+    const args = httpMocks.apiRequest.mock.calls[0]?.[1];
+    const url = new URL(String(args?.url));
+    expect(url.pathname).toBe("/api/v1/skills/demo");
+    expect(url.searchParams.get("ownerHandle")).toBe("openclaw");
   });
 
   it("uses tag param when fetching a file", async () => {
@@ -126,11 +155,12 @@ describe("cmdInspect", () => {
 
     await cmdInspect(makeGlobalOpts(), "demo", { version: "2.0.0" });
 
-    expect(mockLog).toHaveBeenCalledWith(expect.stringContaining("License: MIT-0"));
-    expect(mockLog).toHaveBeenCalledWith("Security: SUSPICIOUS");
-    expect(mockLog).toHaveBeenCalledWith("Warnings: yes");
-    expect(mockLog).toHaveBeenCalledWith("Checked: 2023-11-14T22:13:20.000Z");
-    expect(mockLog).toHaveBeenCalledWith("Model: gpt-5.2");
+    const output = loggedOutput();
+    expect(output).toMatch(/License\s+MIT-0/);
+    expect(output).toMatch(/Security\s+SUSPICIOUS/);
+    expect(output).toMatch(/Warnings\s+yes/);
+    expect(output).toMatch(/Checked\s+2023-11-14 22:13 UTC/);
+    expect(output).toMatch(/Model\s+gpt-5.2/);
   });
 
   it("prints skill moderation status without requiring a version fetch", async () => {
@@ -160,12 +190,13 @@ describe("cmdInspect", () => {
     await cmdInspect(makeGlobalOpts(), "demo");
 
     expect(httpMocks.apiRequest).toHaveBeenCalledTimes(1);
-    expect(mockLog).toHaveBeenCalledWith("Moderation: SUSPICIOUS");
-    expect(mockLog).toHaveBeenCalledWith("Reasons: network-send, credential-pattern");
-    expect(mockLog).toHaveBeenCalledWith("Moderation Updated: 2023-11-14T22:13:20.000Z");
-    expect(mockLog).toHaveBeenCalledWith("Moderation Engine: scanner-v2");
-    expect(mockLog).toHaveBeenCalledWith(
-      "Moderation Summary: Found credential-like configuration and outbound network behavior.",
+    const output = loggedOutput();
+    expect(output).toMatch(/Moderate\s+SUSPICIOUS/);
+    expect(output).toMatch(/Reasons\s+network-send, credential-pattern/);
+    expect(output).toMatch(/Mod Time\s+2023-11-14 22:13 UTC/);
+    expect(output).toMatch(/Engine\s+scanner-v2/);
+    expect(output).toMatch(
+      /Mod Note\s+Found credential-like configuration and outbound network behavior/,
     );
   });
 
@@ -205,15 +236,16 @@ describe("cmdInspect", () => {
     expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
     expect(httpMocks.apiRequest.mock.calls[1]?.[1]).toMatchObject({
       method: "GET",
-      path: `${ApiRoutes.skills}/${encodeURIComponent("demo")}/moderation`,
       token: "tkn",
     });
-    expect(mockLog).toHaveBeenCalledWith("Moderation: SUSPICIOUS");
-    expect(mockLog).toHaveBeenCalledWith("Reasons: suspicious.dynamic_code_execution");
-    expect(mockLog).toHaveBeenCalledWith("Moderation Reason: quality.low");
-    expect(mockLog).toHaveBeenCalledWith(
-      "Visibility Guidance: publish a substantive update that passes quality assessment, then re-run inspect.",
+    expect(new URL(String(httpMocks.apiRequest.mock.calls[1]?.[1].url)).pathname).toBe(
+      `${ApiRoutes.skills}/${encodeURIComponent("demo")}/moderation`,
     );
+    const output = loggedOutput();
+    expect(output).toMatch(/Moderate\s+SUSPICIOUS/);
+    expect(output).toMatch(/Reasons\s+suspicious.dynamic_code_execution/);
+    expect(output).toMatch(/Reason\s+quality.low/);
+    expect(output).toMatch(/Guidance\s+Visibility Guidance: publish a substantive update/);
   });
 
   it("prints owner moderation diagnostics when public detail is hidden", async () => {
@@ -239,10 +271,9 @@ describe("cmdInspect", () => {
     expect(httpMocks.apiRequest).toHaveBeenCalledTimes(2);
     expect(mockLog).toHaveBeenCalledWith("demo is not publicly visible.");
     expect(mockLog).toHaveBeenCalledWith("Detail: Skill is hidden by quality checks.");
-    expect(mockLog).toHaveBeenCalledWith("Moderation Reason: quality.low");
-    expect(mockLog).toHaveBeenCalledWith(
-      "Visibility Guidance: publish a substantive update that passes quality assessment, then re-run inspect.",
-    );
+    const output = loggedOutput();
+    expect(output).toMatch(/Reason\s+quality.low/);
+    expect(output).toMatch(/Guidance\s+Visibility Guidance: publish a substantive update/);
   });
 
   it("includes moderation metadata in inspect JSON output", async () => {

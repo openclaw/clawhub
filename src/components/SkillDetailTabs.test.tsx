@@ -3,9 +3,20 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { useState } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { Doc } from "../../convex/_generated/dataModel";
 import { SkillDetailTabs, type DetailTab } from "./SkillDetailTabs";
+
+const useMutationMock = vi.fn();
+
+vi.mock("convex/react", () => ({
+  useMutation: (...args: unknown[]) => useMutationMock(...args),
+}));
+
+beforeEach(() => {
+  useMutationMock.mockReset();
+  useMutationMock.mockReturnValue(vi.fn());
+});
 
 function renderReadme(readmeContent: string) {
   return render(
@@ -20,6 +31,32 @@ function renderReadme(readmeContent: string) {
       latestFiles={[]}
       latestVersionId={null}
       skill={{ slug: "api-gateway" } as Doc<"skills">}
+      onCompareIntent={vi.fn()}
+      diffVersions={undefined}
+      versions={undefined}
+      nixPlugin={false}
+      suppressVersionScanResults={false}
+      scanResultsSuppressedMessage={null}
+      clawdis={undefined}
+      osLabels={[]}
+    />,
+  );
+}
+
+function renderReadmeForOwner(readmeContent: string) {
+  return render(
+    <SkillDetailTabs
+      activeTab="readme"
+      setActiveTab={vi.fn()}
+      readmeContent={readmeContent}
+      readmeError={null}
+      skillCardContent={null}
+      skillCardError={null}
+      hasSkillCard={false}
+      latestFiles={[]}
+      latestVersionId={null}
+      skill={{ slug: "api-gateway" } as Doc<"skills">}
+      ownerHandle="clawkit"
       onCompareIntent={vi.fn()}
       diffVersions={undefined}
       versions={undefined}
@@ -55,7 +92,7 @@ describe("SkillDetailTabs README links", () => {
         hasSkillCard={true}
         latestFiles={[]}
         latestVersionId={null}
-        skill={{ slug: "api-gateway" } as Doc<"skills">}
+        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
         onCompareIntent={vi.fn()}
         diffVersions={undefined}
         versions={undefined}
@@ -96,6 +133,88 @@ describe("SkillDetailTabs README links", () => {
       (link) => link.textContent === "Traversal",
     );
     expect(traversal?.getAttribute("href")).toBe("");
+  });
+
+  it("keeps relative README links in the viewed owner namespace", () => {
+    renderReadmeForOwner("[Usage](docs/Usage.md)");
+
+    expect(screen.getByRole("link", { name: "Usage" }).getAttribute("href")).toBe(
+      "/api/v1/skills/api-gateway/file?path=docs%2FUsage.md&ownerHandle=clawkit",
+    );
+  });
+
+  it("keeps relative Skill Card links in the viewed owner namespace", () => {
+    render(
+      <SkillDetailTabs
+        activeTab="skill-card"
+        setActiveTab={vi.fn()}
+        readmeContent="# API Gateway"
+        readmeError={null}
+        skillCardContent="[Evidence](reports/card.md)"
+        skillCardError={null}
+        hasSkillCard={true}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
+        ownerHandle="clawkit"
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={undefined}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    expect(screen.getByRole("link", { name: "Evidence" }).getAttribute("href")).toBe(
+      "/api/v1/skills/api-gateway/file?path=reports%2Fcard.md&ownerHandle=clawkit",
+    );
+  });
+
+  it("keeps version download links in the viewed owner namespace", () => {
+    render(
+      <SkillDetailTabs
+        activeTab="versions"
+        setActiveTab={vi.fn()}
+        readmeContent="# API Gateway"
+        readmeError={null}
+        skillCardContent={null}
+        skillCardError={null}
+        hasSkillCard={false}
+        latestFiles={[]}
+        latestVersionId={null}
+        skill={{ slug: "api-gateway", tags: {} } as Doc<"skills">}
+        ownerHandle="clawkit"
+        onCompareIntent={vi.fn()}
+        diffVersions={undefined}
+        versions={[
+          {
+            _id: "skillVersions:1",
+            _creationTime: 1,
+            skillId: "skills:1",
+            version: "1.0.0",
+            changelog: "Initial release",
+            files: [],
+            createdBy: "users:owner",
+            createdAt: 1,
+          } as unknown as Doc<"skillVersions">,
+        ]}
+        nixPlugin={false}
+        suppressVersionScanResults={false}
+        scanResultsSuppressedMessage={null}
+        clawdis={undefined}
+        osLabels={[]}
+      />,
+    );
+
+    const href = screen.getByRole("link", { name: "Zip" }).getAttribute("href");
+    const url = new URL(href ?? "");
+    expect(url.pathname).toBe("/api/v1/download");
+    expect(url.searchParams.get("slug")).toBe("api-gateway");
+    expect(url.searchParams.get("ownerHandle")).toBe("clawkit");
+    expect(url.searchParams.get("version")).toBe("1.0.0");
   });
 
   it("uses a custom README link resolver when provided", () => {

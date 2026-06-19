@@ -1,4 +1,4 @@
-import { apiRequest } from "../../http.js";
+import { apiRequest, registryUrl } from "../../http.js";
 import {
   ApiRoutes,
   ApiV1TransferDecisionResponseSchema,
@@ -9,7 +9,7 @@ import {
 import { requireAuthToken } from "../authToken.js";
 import { getRegistry } from "../registry.js";
 import type { GlobalOpts } from "../types.js";
-import { createSpinner, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
+import { createCrabLoader, fail, formatError, isInteractive, promptConfirm } from "../ui.js";
 
 type ConfirmOptions = { yes?: boolean };
 
@@ -45,8 +45,45 @@ const DECISION_SPECS: Record<DecisionAction, DecisionSpec> = {
 
 function normalizeSlug(slugArg: string) {
   const slug = slugArg.trim().toLowerCase();
-  if (!slug) fail("Skill slug required");
+  if (!slug) fail("Skill required");
   return slug;
+}
+
+function parseSkillRef(skillArg: string) {
+  const value = skillArg.trim().toLowerCase();
+  if (!value) fail("Skill required");
+  const slashIndex = value.indexOf("/");
+  if (slashIndex < 0) return { slug: normalizeSlug(value), ownerHandle: undefined };
+  if (value.indexOf("/", slashIndex + 1) >= 0) fail(`Invalid skill ref: ${skillArg}`);
+  const ownerHandle = value.slice(0, slashIndex).replace(/^@+/, "");
+  const slug = normalizeSlug(value.slice(slashIndex + 1));
+  if (!ownerHandle) fail(`Invalid skill ref: ${skillArg}`);
+  return { slug, ownerHandle };
+}
+
+function ownerScopedTransferUrl(
+  registry: string,
+  slug: string,
+  ownerHandle: string | undefined,
+  suffix = "",
+) {
+  const path = `${ApiRoutes.skills}/${encodeURIComponent(slug)}/transfer${suffix}`;
+  if (!ownerHandle) return null;
+  const url = registryUrl(path, registry);
+  url.searchParams.set("ownerHandle", ownerHandle);
+  return url.toString();
+}
+
+function transferRequestArgs(
+  registry: string,
+  slug: string,
+  ownerHandle: string | undefined,
+  suffix: string,
+  token: string,
+) {
+  const path = `${ApiRoutes.skills}/${encodeURIComponent(slug)}/transfer${suffix}`;
+  const url = ownerScopedTransferUrl(registry, slug, ownerHandle, suffix);
+  return url ? { method: "POST" as const, url, token } : { method: "POST" as const, path, token };
 }
 
 function canPrompt(inputAllowed: boolean) {
@@ -66,7 +103,8 @@ export async function cmdTransferRequest(
   options: ConfirmOptions & { message?: string },
   inputAllowed: boolean,
 ) {
-  const slug = normalizeSlug(slugArg);
+  const requested = parseSkillRef(slugArg);
+  const slug = requested.slug;
   const toHandle = toHandleArg.trim().replace(/^@+/, "").toLowerCase();
   if (!toHandle) fail("Recipient handle required (e.g., @username)");
 
@@ -79,15 +117,13 @@ export async function cmdTransferRequest(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`Requesting transfer of ${slug} to @${toHandle}`);
+  const spinner = createCrabLoader(`Requesting transfer of ${slug} to @${toHandle}`);
 
   try {
     const result = await apiRequest(
       registry,
       {
-        method: "POST",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/transfer`,
-        token,
+        ...transferRequestArgs(registry, slug, requested.ownerHandle, "", token),
         body: {
           toUserHandle: toHandle,
           message: options.message,
@@ -115,7 +151,7 @@ export async function cmdTransferRequest(
 export async function cmdTransferList(opts: GlobalOpts, options: { outgoing?: boolean }) {
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner("Fetching transfers");
+  const spinner = createCrabLoader("Fetching transfers");
 
   try {
     const path = options.outgoing
@@ -158,7 +194,8 @@ async function runTransferDecision(
   inputAllowed: boolean,
   spec: DecisionSpec,
 ) {
-  const slug = normalizeSlug(slugArg);
+  const requested = parseSkillRef(slugArg);
+  const slug = requested.slug;
   const confirmed = await requireYesOrConfirm(
     options,
     inputAllowed,
@@ -168,16 +205,12 @@ async function runTransferDecision(
 
   const token = await requireAuthToken();
   const registry = await getRegistry(opts, { cache: true });
-  const spinner = createSpinner(`${spec.progress} transfer of ${slug}`);
+  const spinner = createCrabLoader(`${spec.progress} transfer of ${slug}`);
 
   try {
     const result = await apiRequest(
       registry,
-      {
-        method: "POST",
-        path: `${ApiRoutes.skills}/${encodeURIComponent(slug)}/transfer/${spec.action}`,
-        token,
-      },
+      transferRequestArgs(registry, slug, requested.ownerHandle, `/${spec.action}`, token),
       ApiV1TransferDecisionResponseSchema,
     );
     const parsed = parseArk(ApiV1TransferDecisionResponseSchema, result, "Transfer response");

@@ -188,6 +188,54 @@ describe("node http client", () => {
     expect(clearTimeoutImpl).toHaveBeenCalledTimes(3);
   });
 
+  it("formats ambiguous skill slug errors with install choices", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 409,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      text: async () =>
+        JSON.stringify({
+          code: "AMBIGUOUS_SKILL_SLUG",
+          message:
+            'Found multiple skills with the slug "discrawl"; specify which one you want to install:',
+          slug: "discrawl",
+          matches: [
+            {
+              ownerHandle: "openclaw",
+              slug: "discrawl",
+              ref: "@openclaw/discrawl",
+              url: "https://clawhub.ai/openclaw/discrawl",
+            },
+            {
+              ownerHandle: "patrick",
+              slug: "discrawl",
+              ref: "@patrick/discrawl",
+              url: "https://clawhub.ai/patrick/discrawl",
+            },
+          ],
+        }),
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await expect(
+      client.apiRequest("https://clawhub.ai", { method: "GET", path: "/api/v1/skills/discrawl" }),
+    ).rejects.toThrow(
+      [
+        'Found multiple skills with the slug "discrawl"; specify which one you want to install:',
+        "",
+        "  1.",
+        "     Skill: openclaw/discrawl",
+        "     Page:  https://clawhub.ai/openclaw/discrawl",
+        "     Run:   clawhub install @openclaw/discrawl",
+        "",
+        "  2.",
+        "     Skill: patrick/discrawl",
+        "     Page:  https://clawhub.ai/patrick/discrawl",
+        "     Run:   clawhub install @patrick/discrawl",
+      ].join("\n"),
+    );
+  });
+
   it("interprets legacy epoch Retry-After values as reset delays", async () => {
     const { setTimeoutImpl, clearTimeoutImpl } = createImmediateTimeouts();
     const fetchImpl = vi.fn().mockResolvedValue({
@@ -364,6 +412,27 @@ describe("node http client", () => {
       "nope",
     );
     expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it("includes ownerHandle when downloading owner-qualified skills", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    });
+    const client = createNodeClient({ fetchImpl: fetchImpl as unknown as typeof fetch });
+
+    await client.downloadZip("https://example.com", {
+      slug: "demo",
+      ownerHandle: "openclaw",
+      version: "1.0.0",
+    });
+
+    const [url] = fetchImpl.mock.calls[0] as [string, RequestInit];
+    const parsed = new URL(url);
+    expect(parsed.pathname).toBe("/api/v1/download");
+    expect(parsed.searchParams.get("slug")).toBe("demo");
+    expect(parsed.searchParams.get("ownerHandle")).toBe("openclaw");
+    expect(parsed.searchParams.get("version")).toBe("1.0.0");
   });
 
   it("retries request and text timeouts using injected timeout helpers", async () => {

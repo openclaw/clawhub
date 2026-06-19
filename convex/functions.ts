@@ -24,7 +24,11 @@ import {
   adjustPublisherStatsForPackageChange,
   adjustPublisherStatsForSkillChange,
 } from "./lib/publisherStats";
-import { extractValidatedDigestFields, upsertSkillSearchDigest } from "./lib/skillSearchDigest";
+import {
+  deleteSkillSearchDigests,
+  extractValidatedDigestFields,
+  upsertSkillSearchDigest,
+} from "./lib/skillSearchDigest";
 
 const triggers = new Triggers<DataModel>();
 
@@ -45,6 +49,7 @@ type LatestPackageRelease = Pick<
   | "version"
   | "changelog"
   | "summary"
+  | "icon"
   | "compatibility"
   | "verification"
   | "distTags"
@@ -60,6 +65,7 @@ function toPackageLatestVersionSummary(
     version: release.version,
     createdAt: release.createdAt,
     changelog: release.changelog,
+    icon: release.icon,
     compatibility: release.compatibility,
     verification: release.verification,
   };
@@ -105,6 +111,7 @@ async function getPreferredFallbackPackageRelease(
         version: release.version,
         changelog: release.changelog,
         summary: release.summary,
+        icon: release.icon,
         compatibility: release.compatibility,
         verification: release.verification,
         scanStatus: release.verification?.scanStatus,
@@ -396,6 +403,7 @@ export async function repointPackageLatestRelease(
     patch.latestReleaseId = nextLatest?._id;
     patch.latestVersionSummary = toPackageLatestVersionSummary(nextLatest);
     patch.summary = nextLatest?.summary;
+    patch.icon = nextLatest?.icon;
     patch.compatibility = nextLatest?.compatibility;
     patch.verification = nextLatest?.verification;
     patch.scanStatus = nextLatest?.scanStatus;
@@ -411,11 +419,7 @@ triggers.register("skills", async (ctx, change) => {
     change.operation === "delete" ? null : change.newDoc,
   );
   if (change.operation === "delete") {
-    const existing = await ctx.db
-      .query("skillSearchDigest")
-      .withIndex("by_skill", (q) => q.eq("skillId", change.id))
-      .unique();
-    if (existing) await ctx.db.delete(existing._id);
+    await deleteSkillSearchDigests(ctx, change.id);
   } else {
     await syncSkillSearchDigestForSkill(ctx, change.newDoc);
   }

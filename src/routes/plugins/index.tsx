@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
-import { isPluginCategorySlug } from "clawhub-schema";
+import { isPluginCategorySlug, normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { PackageSearch, Search, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -9,7 +9,7 @@ import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { formatBrowseCount } from "../../lib/browseCount";
-import { PLUGIN_CATEGORIES } from "../../lib/categories";
+import { PLUGIN_CATEGORIES, resolvePluginBrowseCategorySlug } from "../../lib/categories";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
@@ -25,6 +25,7 @@ const PLUGINS_PAGE_SIZE = 25;
 type PluginSearchState = {
   q?: string;
   category?: string;
+  topic?: string;
   cursor?: string;
   family?: undefined;
   featured?: boolean;
@@ -61,6 +62,7 @@ type PluginsLoaderData = {
 type PluginsPageDataRequest = {
   q?: string;
   category?: string;
+  topic?: string;
   cursor?: string;
   featured?: boolean;
   official?: boolean;
@@ -140,9 +142,9 @@ function getDefaultPluginBrowseSort(
 }
 
 function hasPersistentPluginBrowseFilter(
-  args: Pick<PluginsPageDataRequest, "category" | "official">,
+  args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
 ) {
-  return Boolean(args.category || args.official);
+  return Boolean(args.category || args.featured || args.official);
 }
 function isNavigationAbortError(err: unknown, signal?: AbortSignal) {
   if (signal?.aborted) return true;
@@ -156,6 +158,8 @@ export async function loadPluginsPageData(
     const data = await fetchPluginCatalog({
       q: args.q,
       category: args.category,
+      topic: args.topic,
+      officialFirst: Boolean(args.category && !args.q),
       cursor: args.q ? undefined : args.cursor,
       featured: args.featured,
       isOfficial: args.official,
@@ -210,9 +214,10 @@ export const Route = createFileRoute("/plugins/")({
   validateSearch: (search): PluginSearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q.trim() : undefined,
     category:
-      typeof search.category === "string" && isPluginCategorySlug(search.category)
-        ? search.category
+      typeof search.category === "string"
+        ? resolvePluginBrowseCategorySlug(search.category)
         : undefined,
+    topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
     cursor:
       search.sort !== "downloads" && typeof search.cursor === "string" && search.cursor
         ? search.cursor
@@ -241,14 +246,12 @@ export const Route = createFileRoute("/plugins/")({
       search.sort !== "updated" &&
       search.sort !== "installs" &&
       !(hasQuery && search.sort === "relevance");
-    const staleFeatured = Boolean(search.featured);
-    const invalidCategory = Boolean(search.category && !isPluginCategorySlug(search.category));
-    if (incompatibleSort || staleFeatured || invalidCategory) {
+    const staleFeatured = Boolean(hasQuery && search.featured);
+    if (incompatibleSort || staleFeatured) {
       throw redirect({
         to: "/plugins",
         search: {
           ...search,
-          category: invalidCategory ? undefined : search.category,
           featured: staleFeatured ? undefined : search.featured,
           sort: incompatibleSort ? undefined : search.sort,
         },
@@ -341,7 +344,11 @@ function PluginsIndex() {
 
   const hasQuery = Boolean(search.q?.trim());
   const hasActiveFilters =
-    hasQuery || Boolean(search.category) || Boolean(search.official) || Boolean(search.featured);
+    hasQuery ||
+    Boolean(search.category) ||
+    Boolean(search.topic) ||
+    Boolean(search.official) ||
+    Boolean(search.featured);
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalCount) : null;
 
   useEffect(() => {
@@ -354,6 +361,7 @@ function PluginsIndex() {
     void loadPluginsPageData({
       q: search.q,
       category: search.category,
+      topic: search.topic,
       cursor: search.cursor,
       featured: search.featured,
       official: search.official,
@@ -374,19 +382,34 @@ function PluginsIndex() {
         });
       });
     return () => controller.abort();
-  }, [search.category, search.cursor, search.featured, search.official, search.q, search.sort]);
+  }, [
+    search.category,
+    search.cursor,
+    search.featured,
+    search.official,
+    search.q,
+    search.sort,
+    search.topic,
+  ]);
 
   const activeCategory = search.category;
+  const categoryTopics = useQuery(
+    api.catalogTopics.listTopByCategory,
+    activeCategory
+      ? {
+          kind: "plugin",
+          category: activeCategory,
+        }
+      : "skip",
+  );
 
   const activeSort: PluginSort =
     search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
       ? "recommended"
-      : (search.sort ?? "recommended");
-  const visibleItems = useMemo(
-    () => (hasQuery ? sortPluginSearchItems(items, activeSort) : items),
-    [activeSort, hasQuery, items],
-  );
-
+      : (search.sort ?? (hasQuery ? "recommended" : getDefaultPluginBrowseSort(search)));
+  const visibleItems = useMemo(() => {
+    return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
+  }, [activeSort, hasQuery, items]);
   const handleFilterToggle = (key: string) => {
     if (key === "official") {
       void navigate({
@@ -416,7 +439,7 @@ function PluginsIndex() {
           ...prev,
           cursor: undefined,
           family: undefined,
-          featured: undefined,
+          featured: prev.q ? undefined : prev.featured,
           sort,
         };
       },
@@ -432,8 +455,21 @@ function PluginsIndex() {
         cursor: undefined,
         family: undefined,
         category,
+        topic: undefined,
         featured: undefined,
         sort: undefined,
+      }),
+      replace: true,
+    });
+  };
+
+  const handleTopicChange = (topic: string | undefined) => {
+    void navigate({
+      search: (prev: PluginSearchState) => ({
+        ...prev,
+        cursor: undefined,
+        family: undefined,
+        topic,
       }),
       replace: true,
     });
@@ -567,6 +603,9 @@ function PluginsIndex() {
           categories={PLUGIN_CATEGORIES}
           activeCategory={activeCategory}
           onCategoryChange={handleCategoryChange}
+          categoryTopics={categoryTopics ?? []}
+          activeTopic={search.topic}
+          onTopicChange={handleTopicChange}
           sortOptions={PLUGIN_SORT_OPTIONS}
           activeSort={activeSort}
           onSortChange={handleSortChange}

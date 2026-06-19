@@ -138,6 +138,9 @@ const listPublicPageHandler = (
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
+      topic?: string;
+      officialFirst?: boolean;
+      highlightedOnly?: boolean;
       sort?: "updated" | "downloads" | "recommended" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -153,6 +156,9 @@ const listPageForViewerInternalHandler = (
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
+      topic?: string;
+      officialFirst?: boolean;
+      highlightedOnly?: boolean;
       sort?: "updated" | "downloads" | "recommended" | "installs";
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
@@ -210,8 +216,11 @@ const insertReleaseInternalHandler = (
       family: "skill" | "code-plugin" | "bundle-plugin";
       version: string;
       changelog: string;
+      icon?: string;
       tags: string[];
       summary: string;
+      categories?: string[];
+      topics?: string[];
       files: Array<{
         path: string;
         size: number;
@@ -273,6 +282,7 @@ const searchPublicHandler = (
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
+      topic?: string;
     },
     Array<{ package: { name: string } }>
   >
@@ -288,6 +298,7 @@ const searchForViewerInternalHandler = (
       executesCode?: boolean;
       capabilityTag?: string;
       category?: string;
+      topic?: string;
       viewerUserId?: string;
     },
     Array<{ package: { name: string } }>
@@ -1076,6 +1087,11 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
+  topicPages?: Array<{
+    page: Array<Record<string, unknown>>;
+    isDone: boolean;
+    continueCursor: string;
+  }>;
   categoryPages?: Array<{
     page: Array<Record<string, unknown>>;
     isDone: boolean;
@@ -1090,6 +1106,7 @@ function makeDigestCtx(options: {
   exactDigests?: Array<Record<string, unknown>>;
   publisherDocs?: Record<string, Record<string, unknown>>;
   publisherMemberships?: Record<string, "owner" | "admin" | "publisher">;
+  highlightedBadges?: Array<Record<string, unknown>>;
 }) {
   const pageByTable = new Map<
     string,
@@ -1140,6 +1157,7 @@ function makeDigestCtx(options: {
 
   setPages("packageSearchDigest", options.pages ?? []);
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
+  setPages("packageTopicSearchDigest", options.topicPages ?? []);
   setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
   setPages("packages", options.packagePages ?? []);
 
@@ -1210,6 +1228,15 @@ function makeDigestCtx(options: {
           return null;
         }),
         query: vi.fn((table: string) => {
+          if (table === "packageBadges") {
+            return {
+              withIndex: vi.fn(() => ({
+                order: vi.fn(() => ({
+                  take: vi.fn().mockResolvedValue(options.highlightedBadges ?? []),
+                })),
+              })),
+            };
+          }
           if (table === "packages") {
             return {
               withIndex: vi.fn(
@@ -1392,13 +1419,64 @@ function makeDigestCtx(options: {
           }
           if (
             table !== "packageCapabilitySearchDigest" &&
+            table !== "packageTopicSearchDigest" &&
             table !== "packagePluginCategorySearchDigest"
           ) {
             throw new Error(`Unexpected table ${table}`);
           }
           tableNames.push(table);
           return {
-            withIndex: (indexName: string) => withIndex(table, indexName),
+            withIndex: (
+              indexName: string,
+              builder?: (q: {
+                eq: (field: string, value: unknown) => unknown;
+                gte: (field: string, value: string) => unknown;
+                lt: (field: string, value: string) => unknown;
+              }) => unknown,
+            ) => {
+              if (table !== "packageTopicSearchDigest" || indexName !== "by_active_topic_updated") {
+                return withIndex(table, indexName);
+              }
+              let exactTopic = "";
+              let lowerBound = "";
+              let upperBound = "";
+              const queryBuilder = {
+                eq: (field: string, value: unknown) => {
+                  if (field === "topic" && typeof value === "string") exactTopic = value;
+                  return queryBuilder;
+                },
+                gte: (field: string, value: string) => {
+                  if (field === "topic") lowerBound = value;
+                  return queryBuilder;
+                },
+                lt: (field: string, value: string) => {
+                  if (field === "topic") upperBound = value;
+                  return queryBuilder;
+                },
+              };
+              builder?.(queryBuilder);
+              const baseQuery = withIndex(table, indexName);
+              return {
+                ...baseQuery,
+                order: () => {
+                  const ordered = baseQuery.order();
+                  return {
+                    ...ordered,
+                    take: async (limit: number) => {
+                      take(limit);
+                      const rows = rowsByTable.get(table) ?? [];
+                      return rows
+                        .filter((row) => {
+                          const rowTopic = typeof row.topic === "string" ? row.topic : "";
+                          if (exactTopic) return rowTopic === exactTopic;
+                          return rowTopic >= lowerBound && rowTopic < upperBound;
+                        })
+                        .slice(0, limit);
+                    },
+                  };
+                },
+              };
+            },
           };
         }),
       },
@@ -1859,6 +1937,7 @@ function makeTransferPackageOwnerCtx(options?: {
           }
           if (
             table === "packageCapabilitySearchDigest" ||
+            table === "packageTopicSearchDigest" ||
             table === "packagePluginCategorySearchDigest"
           ) {
             return {
@@ -1950,6 +2029,7 @@ function makeUserTransferPackageOwnerCtx(options?: {
           }
           if (
             table === "packageCapabilitySearchDigest" ||
+            table === "packageTopicSearchDigest" ||
             table === "packagePluginCategorySearchDigest"
           ) {
             return {
@@ -2181,6 +2261,7 @@ function makeSoftDeletePackageCtx(options?: {
           }
           if (
             table === "packageCapabilitySearchDigest" ||
+            table === "packageTopicSearchDigest" ||
             table === "packagePluginCategorySearchDigest"
           ) {
             return {
@@ -2475,6 +2556,66 @@ describe("packages public queries", () => {
     ]);
     expect(paginate).toHaveBeenCalledTimes(1);
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
+  it("includes current inferred taxonomy on install-sorted package pages", async () => {
+    const { ctx } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              categories: undefined,
+              topics: undefined,
+              inferredCategories: ["memory", "tools"],
+              inferredTopics: ["Agent Memory", "Retrieval"],
+              inferredFromReleaseId: "packageReleases:demo-1",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page[0]).toMatchObject({
+      categories: ["memory", "tools"],
+      topics: ["Agent Memory", "Retrieval"],
+    });
+  });
+
+  it("preserves stored skill taxonomy on install-sorted package pages", async () => {
+    const { ctx } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              family: "skill",
+              categories: ["developer-tools"],
+              topics: ["Automation"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "skill",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page[0]).toMatchObject({
+      categories: ["developer-tools"],
+      topics: ["Automation"],
+    });
   });
 
   it("uses a family-scoped weighted recommended score index after backfill", async () => {
@@ -2894,6 +3035,33 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["secret-plugin", "public-plugin"]);
   });
 
+  it("sorts highlighted package pages by the requested install order", async () => {
+    const lowerInstall = makeDigest("lower-install", {
+      updatedAt: 20,
+      stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
+    });
+    const higherInstall = makeDigest("higher-install", {
+      updatedAt: 10,
+      stats: { downloads: 1, installs: 50, stars: 0, versions: 1 },
+    });
+    const { ctx } = makeDigestCtx({
+      highlightedBadges: [
+        { packageId: lowerInstall.packageId },
+        { packageId: higherInstall.packageId },
+      ],
+      exactDigests: [lowerInstall, higherInstall],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      highlightedOnly: true,
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["higher-install", "lower-install"]);
+  });
+
   it("does not let stale personal ownerUserId expose private package digests", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
@@ -3202,7 +3370,7 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["secret-tools"]);
   });
 
-  it("uses one bounded digest take for fallback search", async () => {
+  it("uses bounded topic and fallback digest takes for search", async () => {
     const { ctx, paginate, take } = makeDigestCtx({
       pages: [
         {
@@ -3226,8 +3394,122 @@ describe("packages public queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["needle-plugin"]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
+  });
+
+  it("recalls plugins whose category matches the query", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              pluginCategory: "runtime",
+              pluginCategoryTags: ["runtime"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "runtime",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["focused-helper"]);
+    expect(tableNames).toContain("packagePluginCategorySearchDigest");
+  });
+
+  it("does not use the fallback other category as search evidence", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              pluginCategory: "other",
+              pluginCategoryTags: ["other"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "other",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+    expect(tableNames).not.toContain("packagePluginCategorySearchDigest");
+  });
+
+  it("uses partial author topics as plugin search evidence", async () => {
+    const { ctx } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              topic: "gpu-development",
+              topics: ["GPU development"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "gpu",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["focused-helper"]);
+  });
+
+  it("prioritizes exact plugin topics ahead of bounded prefix recall", async () => {
+    const prefixTopics = Array.from({ length: 100 }, (_, index) =>
+      makeDigest(`react-prefix-${index}`, {
+        topic: `react-${index}`,
+        topics: [`React ${index}`],
+      }),
+    );
+    const exactTopic = makeDigest("react-exact", {
+      topic: "react",
+      topics: ["React"],
+    });
+    const { ctx } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [...prefixTopics, exactTopic],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "react",
+      family: "code-plugin",
+      limit: 1,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["react-exact"]);
   });
 
   it("does not let official status make unrelated packages eligible for search", async () => {
@@ -3437,8 +3719,16 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
-    expect(new Set(tableNames)).toEqual(new Set(["packageSearchDigest"]));
-    expect(new Set(indexNames)).toEqual(new Set(["by_active_updated"]));
+    expect(new Set(tableNames)).toEqual(
+      new Set([
+        "packageSearchDigest",
+        "packageTopicSearchDigest",
+        "packagePluginCategorySearchDigest",
+      ]),
+    );
+    expect(new Set(indexNames)).toEqual(
+      new Set(["by_active_topic_updated", "by_active_category_updated", "by_active_updated"]),
+    );
   });
 
   it("uses plugin category digests for category-filtered listings", async () => {
@@ -3447,8 +3737,8 @@ describe("packages public queries", () => {
         {
           page: [
             makeDigest("api-demo", {
-              pluginCategory: "data",
-              pluginCategoryTags: ["data"],
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
               executesCode: true,
             }),
           ],
@@ -3459,13 +3749,499 @@ describe("packages public queries", () => {
     });
 
     const result = await listPublicPageHandler(ctx, {
-      category: "data",
+      category: "tools",
+      sort: "recommended",
       paginationOpts: { cursor: null, numItems: 10 },
     });
 
     expect(result.page.map((entry) => entry.name)).toEqual(["api-demo"]);
     expect(tableNames).toEqual(["packagePluginCategorySearchDigest"]);
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_recommended_score_version",
+      "by_active_recommended_score_version",
+      "by_active_category_recommended_score",
+    ]);
+  });
+
+  it("uses plugin category digest sort indexes for filtered listings", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPublicPageHandler(ctx, {
+      category: "tools",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(indexNames).toEqual(["by_active_category_installs"]);
+  });
+
+  it("uses family-aware plugin category sort indexes for plugin browse sources", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              family: "code-plugin",
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      category: "tools",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(indexNames).toEqual(["by_active_family_category_installs"]);
+  });
+
+  it("uses family-aware official category sort indexes for official-first sources", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              family: "code-plugin",
+              isOfficial: true,
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      isOfficial: true,
+      category: "tools",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(indexNames).toEqual(["by_active_family_official_category_installs"]);
+  });
+
+  it("resumes legacy category digest cursors on the updated index", async () => {
+    const legacyCursor = `pkgpage:${JSON.stringify({
+      cursor: "category:next",
+      offset: 0,
+      pageSize: 50,
+      done: false,
+      mode: "digest",
+    })}`;
+    const { ctx, indexNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("api-demo", {
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPublicPageHandler(ctx, {
+      category: "tools",
+      sort: "installs",
+      paginationOpts: { cursor: legacyCursor, numItems: 10 },
+    });
+
     expect(indexNames).toEqual(["by_active_category_updated"]);
+  });
+
+  it("preserves family filters on sorted category digest pages", async () => {
+    const { ctx } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("bundle-tools", {
+              family: "bundle-plugin",
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+            makeDigest("code-tools", {
+              family: "code-plugin",
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      category: "tools",
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["code-tools"]);
+  });
+
+  it("uses topic digests so topic-filtered listings do not skip later matches", async () => {
+    const { ctx, indexNames, tableNames } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("newer-noise", { topics: ["notes"] })],
+          isDone: false,
+          continueCursor: "later",
+        },
+        {
+          page: [makeDigest("calendar-demo", { topics: ["calendar"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      topicPages: [
+        {
+          page: [
+            makeDigest("calendar-demo", {
+              topic: "calendar",
+              topics: ["calendar", "Official"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      topic: " Calendar ",
+      sort: "recommended",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-demo"]);
+    expect(tableNames).toEqual(["packageTopicSearchDigest"]);
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_recommended_score_version",
+      "by_active_recommended_score_version",
+      "by_active_topic_recommended_score",
+    ]);
+  });
+
+  it("uses topic digest sort indexes for filtered listings", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [makeDigest("calendar-demo", { topic: "calendar", topics: ["calendar"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(indexNames).toEqual(["by_active_topic_downloads"]);
+  });
+
+  it("keeps metadata recommendation fallback cursors on the updated digest index", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [makePackageDoc({ recommendedScore: undefined })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      topicPages: [
+        {
+          page: [makeDigest("calendar-first", { topic: "calendar", topics: ["calendar"] })],
+          isDone: false,
+          continueCursor: "topic:next",
+        },
+        {
+          page: [makeDigest("calendar-second", { topic: "calendar", topics: ["calendar"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const first = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      sort: "recommended",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    const second = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      sort: "recommended",
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+
+    expect(first.page.map((entry) => entry.name)).toEqual(["calendar-first"]);
+    expect(second.page.map((entry) => entry.name)).toEqual(["calendar-second"]);
+    expect(indexNames).toEqual([
+      "by_active_recommended_score",
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+    ]);
+  });
+
+  it("does not revive retired capability filters for topic-filtered listings", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [makeDigest("calendar-demo", { topic: "calendar", topics: ["calendar"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      capabilityTag: "tools",
+      executesCode: true,
+      paginationOpts: { cursor: null, numItems: 10 },
+    } as Parameters<typeof listPublicPageHandler>[1] & {
+      capabilityTag?: string;
+      executesCode?: boolean;
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-demo"]);
+    expect(indexNames).toEqual(["by_active_topic_updated"]);
+  });
+
+  it("continues topic digest scans after filtering private packages", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("calendar-private", {
+              channel: "private",
+              topic: "calendar",
+              topics: ["calendar"],
+            }),
+          ],
+          isDone: false,
+          continueCursor: "topic:public",
+        },
+        {
+          page: [makeDigest("calendar-public", { topic: "calendar", topics: ["calendar"] })],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-public"]);
+    expect(result.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
+  it("rejects invalid topic filters instead of returning an unfiltered listing", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("unfiltered-plugin")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      topic: "!!!",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result).toEqual({ page: [], isDone: true, continueCursor: "" });
+    expect(tableNames).toEqual([]);
+  });
+
+  it("scans topic digest pages until a combined category match is found", async () => {
+    const { ctx, indexNames, tableNames, paginate } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("calendar-chat", {
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["channels"],
+            }),
+          ],
+          isDone: false,
+          continueCursor: "later",
+        },
+        {
+          page: [
+            makeDigest("calendar-api", {
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      category: "tools",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["calendar-api"]);
+    expect(tableNames).toEqual(["packageTopicSearchDigest", "packageTopicSearchDigest"]);
+    expect(indexNames).toEqual(["by_active_topic_updated", "by_active_topic_updated"]);
+    expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds sparse combined-filter scans and resumes from the returned cursor", async () => {
+    const topicPages = Array.from({ length: 7 }, (_, index) => ({
+      page: [
+        makeDigest(index === 6 ? "calendar-api" : `calendar-noise-${index}`, {
+          topic: "calendar",
+          topics: ["calendar"],
+          pluginCategoryTags: [index === 6 ? "tools" : "channels"],
+        }),
+      ],
+      isDone: index === 6,
+      continueCursor: index === 6 ? "" : `topic:${index + 1}`,
+    }));
+    const { ctx, paginate } = makeDigestCtx({ topicPages });
+
+    const first = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      category: "tools",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(first.page).toEqual([]);
+    expect(first.isDone).toBe(false);
+    expect(first.continueCursor.startsWith("pkgpage:")).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(6);
+
+    const second = await listPublicPageHandler(ctx, {
+      topic: "calendar",
+      category: "tools",
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+
+    expect(second.page.map((entry) => entry.name)).toEqual(["calendar-api"]);
+    expect(second.isDone).toBe(true);
+    expect(paginate).toHaveBeenCalledTimes(7);
+  });
+
+  it("paginates official category plugins before community fallback", async () => {
+    const { ctx } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("community-security", {
+              isOfficial: false,
+              pluginCategory: "security",
+              pluginCategoryTags: ["security"],
+            }),
+            makeDigest("official-security", {
+              isOfficial: true,
+              pluginCategory: "security",
+              pluginCategoryTags: ["security"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const first = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    expect(first.page.map((entry) => entry.name)).toEqual(["official-security"]);
+    expect(first.isDone).toBe(false);
+
+    const second = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+    expect(second.page.map((entry) => entry.name)).toEqual(["community-security"]);
+    expect(second.isDone).toBe(false);
+
+    const third = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: second.continueCursor, numItems: 1 },
+    });
+    expect(third.page).toEqual([]);
+    expect(third.isDone).toBe(true);
+  });
+
+  it("does not advertise an empty community page after a full official category page", async () => {
+    const { ctx } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("official-security", {
+              isOfficial: true,
+              pluginCategory: "security",
+              pluginCategoryTags: ["security"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
   });
 
   it("uses plugin category digests for category-filtered search", async () => {
@@ -3474,8 +4250,8 @@ describe("packages public queries", () => {
         {
           page: [
             makeDigest("api-demo", {
-              pluginCategory: "data",
-              pluginCategoryTags: ["data"],
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
             }),
           ],
           isDone: true,
@@ -3486,13 +4262,178 @@ describe("packages public queries", () => {
 
     const result = await searchPublicHandler(ctx, {
       query: "api",
-      category: "data",
+      category: "tools",
       limit: 10,
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["api-demo"]);
     expect(tableNames).toEqual(["packagePluginCategorySearchDigest"]);
     expect(indexNames).toEqual(["by_active_category_updated"]);
+  });
+
+  it("uses topic digests for topic-filtered search", async () => {
+    const { ctx, indexNames, tableNames } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("calendar-demo", {
+              topic: "calendar",
+              topics: ["calendar"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "calendar",
+      topic: "calendar",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["calendar-demo"]);
+    expect(tableNames).toContain("packageTopicSearchDigest");
+    expect(indexNames).toContain("by_active_topic_updated");
+  });
+
+  it("includes exact package-name matches in topic-filtered search", async () => {
+    const exactPkg = makePackageDoc({
+      _id: "packages:exact",
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+    });
+    const exactDigest = makeDigest("demo-plugin", {
+      packageId: "packages:exact",
+      topics: ["calendar"],
+    });
+    const { ctx } = makeDigestCtx({
+      topicPages: [{ page: [], isDone: true, continueCursor: "" }],
+      exactPackages: [exactPkg],
+      exactDigests: [exactDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo-plugin",
+      topic: "calendar",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
+  });
+
+  it("scans topic digest pages until a combined category search match is found", async () => {
+    const { ctx, paginate } = makeDigestCtx({
+      topicPages: [
+        {
+          page: Array.from({ length: 50 }, (_, index) =>
+            makeDigest(`calendar-chat-${index}`, {
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["channels"],
+            }),
+          ),
+          isDone: false,
+          continueCursor: "later",
+        },
+        {
+          page: [
+            makeDigest("calendar-api", {
+              topic: "calendar",
+              topics: ["calendar"],
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "calendar",
+      topic: "calendar",
+      category: "tools",
+      limit: 1,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["calendar-api"]);
+    expect(paginate).toHaveBeenCalledTimes(2);
+  });
+
+  it("bounds sparse combined-filter search scans", async () => {
+    const topicPages = Array.from({ length: 7 }, (_page, pageIndex) => ({
+      page: Array.from({ length: 50 }, (_digest, digestIndex) =>
+        makeDigest(`calendar-noise-${pageIndex}-${digestIndex}`, {
+          topic: "calendar",
+          topics: ["calendar"],
+          pluginCategoryTags: ["channels"],
+        }),
+      ),
+      isDone: pageIndex === 6,
+      continueCursor: pageIndex === 6 ? "" : `topic:${pageIndex + 1}`,
+    }));
+    const { ctx, paginate, take } = makeDigestCtx({ topicPages });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "calendar",
+      topic: "calendar",
+      category: "tools",
+      limit: 1,
+    });
+
+    expect(result).toEqual([]);
+    expect(paginate).toHaveBeenCalledTimes(6);
+    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledWith(20);
+  });
+
+  it("recalls exact author topics without an explicit topic filter", async () => {
+    const { ctx, indexNames, tableNames } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("accelerated-helper", {
+              topic: "gpu-development",
+              topics: ["GPU development"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "GPU development",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["accelerated-helper"]);
+    expect(tableNames).toContain("packageTopicSearchDigest");
+    expect(indexNames).toContain("by_active_topic_updated");
+  });
+
+  it("rejects invalid topic filters instead of returning unfiltered search results", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      pages: [
+        {
+          page: [makeDigest("unfiltered-plugin")],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "plugin",
+      topic: "!!!",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+    expect(tableNames).toEqual([]);
   });
 
   it("bounds fallback search to the first digest take window", async () => {
@@ -3523,7 +4464,8 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
 
@@ -3548,7 +4490,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -3575,7 +4517,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["runtime-demo"]);
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -3600,7 +4542,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-prefix"]);
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -3655,7 +4597,8 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-alpha", "demo-beta"]);
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
 
@@ -3752,7 +4695,8 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(3);
+    expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(200);
   });
 
@@ -3774,7 +4718,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["official-demo"]);
-    expect(indexNames).toEqual(["by_active_official_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_official_updated",
+    ]);
   });
 
   it("uses the channel index for no-family channel search filters", async () => {
@@ -3795,7 +4743,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["community-demo"]);
-    expect(indexNames).toEqual(["by_active_channel_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_channel_updated",
+    ]);
   });
 
   it("uses the combined channel and official index when both filters are set", async () => {
@@ -3822,7 +4774,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["official-community-demo"]);
-    expect(indexNames).toEqual(["by_active_channel_official_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_channel_official_updated",
+    ]);
   });
 
   it("blocks anonymous reads of private packages", async () => {
@@ -6710,6 +7666,255 @@ describe("packages public queries", () => {
     ).rejects.toThrow("openclaw.plugin.json is required");
   });
 
+  it("allows package names that match an unrelated skill slug", async () => {
+    const storedFiles = new Map<string, string>([
+      [
+        "storage:package",
+        JSON.stringify({
+          name: "shared-slug",
+          openclaw: {
+            extensions: ["./dist/index.js"],
+            hostTargets: ["darwin-arm64", "linux-x64"],
+            environment: {},
+            compat: { pluginApi: "^1.0.0" },
+            build: { openclawVersion: "2026.3.14" },
+            configSchema: { type: "object" },
+          },
+        }),
+      ],
+      ["storage:manifest", JSON.stringify({ id: "shared.plugin" })],
+      ["storage:code", "export default {};"],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if (args.minimumRole === "publisher") {
+        return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
+      }
+      if ("name" in args && "version" in args && "files" in args) {
+        return { ok: true, packageId: "packages:demo", releaseId: "releases:demo-1" };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "users:owner",
+          role: "user",
+          githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+        })
+        .mockResolvedValueOnce({
+          _id: "publishers:owner",
+          kind: "user",
+          handle: "owner",
+          linkedUserId: "users:owner",
+        }),
+      runMutation,
+      runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content ? new Blob([content]) : null;
+        }),
+      },
+    };
+
+    const result = await publishPackageForUserInternalHandler(ctx as never, {
+      actorUserId: "users:owner",
+      payload: {
+        name: "shared-slug",
+        displayName: "Shared Slug Plugin",
+        family: "code-plugin",
+        version: "1.0.0",
+        changelog: "init",
+        source: {
+          kind: "github",
+          url: "https://github.com/openclaw/shared-slug",
+          repo: "openclaw/shared-slug",
+          ref: "refs/tags/v1.0.0",
+          commit: "abc123",
+          path: ".",
+          importedAt: Date.now(),
+        },
+        files: [
+          {
+            path: "package.json",
+            size: 1,
+            storageId: "storage:package",
+            sha256: "package",
+            contentType: "application/json",
+          },
+          {
+            path: "openclaw.plugin.json",
+            size: 1,
+            storageId: "storage:manifest",
+            sha256: "manifest",
+            contentType: "application/json",
+          },
+          {
+            path: "dist/index.js",
+            size: 1,
+            storageId: "storage:code",
+            sha256: "code",
+            contentType: "application/javascript",
+          },
+        ],
+      },
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      packageId: "packages:demo",
+      releaseId: "releases:demo-1",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: "shared-slug",
+        ownerPublisherId: "publishers:owner",
+      }),
+    );
+  });
+
+  it("forwards only valid HTTPS plugin manifest icons to release insertion", async () => {
+    async function publishWithManifestIcon(icon: unknown) {
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (args.minimumRole === "publisher") {
+          return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
+        }
+        if ("name" in args && "version" in args && "files" in args) {
+          return { ok: true, packageId: "packages:demo", releaseId: "releases:demo-1" };
+        }
+        return null;
+      });
+      const storedFiles = new Map<string, string>([
+        [
+          "storage:package",
+          JSON.stringify({
+            name: "demo-plugin",
+            openclaw: {
+              extensions: ["./dist/index.js"],
+              hostTargets: ["darwin-arm64", "linux-x64"],
+              environment: {},
+              compat: { pluginApi: "^1.0.0" },
+              build: { openclawVersion: "2026.3.14" },
+              configSchema: { type: "object" },
+            },
+          }),
+        ],
+        ["storage:manifest", JSON.stringify({ id: "demo.plugin", icon })],
+        ["storage:code", "export default {};"],
+      ]);
+      const ctx = {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "publishers:owner",
+            kind: "user",
+            handle: "owner",
+            linkedUserId: "users:owner",
+          }),
+        runMutation,
+        runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+        scheduler: {
+          runAfter: vi.fn(),
+        },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content ? new Blob([content]) : null;
+          }),
+        },
+      };
+
+      await publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          source: {
+            kind: "github",
+            url: "https://github.com/openclaw/demo-plugin",
+            repo: "openclaw/demo-plugin",
+            ref: "refs/tags/v1.0.0",
+            commit: "abc123",
+            path: ".",
+            importedAt: Date.now(),
+          },
+          files: [
+            {
+              path: "package.json",
+              size: 1,
+              storageId: "storage:package",
+              sha256: "package",
+              contentType: "application/json",
+            },
+            {
+              path: "openclaw.plugin.json",
+              size: 1,
+              storageId: "storage:manifest",
+              sha256: "manifest",
+              contentType: "application/json",
+            },
+            {
+              path: "dist/index.js",
+              size: 1,
+              storageId: "storage:code",
+              sha256: "code",
+              contentType: "application/javascript",
+            },
+          ],
+        },
+      });
+
+      const insertCall = runMutation.mock.calls.find(
+        ([, args]) =>
+          typeof args === "object" &&
+          args !== null &&
+          (args as { name?: string }).name === "demo-plugin" &&
+          (args as { version?: string }).version === "1.0.0",
+      );
+      return insertCall?.[1] as Record<string, unknown>;
+    }
+
+    await expect(
+      publishWithManifestIcon("https://cdn.example.test/icons/demo.svg"),
+    ).resolves.toMatchObject({ icon: "https://cdn.example.test/icons/demo.svg" });
+
+    for (const icon of [
+      "http://cdn.example.test/icons/demo.svg",
+      "/icons/demo.svg",
+      "not a url",
+      "",
+      123,
+      { src: "https://cdn.example.test/icons/demo.svg" },
+    ]) {
+      await expect(publishWithManifestIcon(icon)).resolves.not.toHaveProperty("icon");
+    }
+  });
+
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {
     const runMutation = vi.fn(async (_ref: unknown, args: unknown) => args);
     const storedFiles = new Map<string, string>([
@@ -6717,6 +7922,18 @@ describe("packages public queries", () => {
         "storage:package",
         JSON.stringify({
           name: "demo-plugin",
+          keywords: [
+            "one",
+            "two",
+            "three",
+            "four",
+            "five",
+            "six",
+            "seven",
+            "eight",
+            "nine",
+            "a".repeat(33),
+          ],
           openclaw: {
             extensions: ["./dist/index.js"],
             hostTargets: ["darwin-arm64", "linux-x64"],
@@ -6731,7 +7948,9 @@ describe("packages public queries", () => {
         "storage:manifest",
         JSON.stringify({
           id: "demo.plugin",
-          tools: [{ name: "demoTool" }],
+          categories: ["security"],
+          topics: ["Manifest Topic"],
+          contracts: { tools: ["demoTool"] },
         }),
       ],
       [
@@ -6742,6 +7961,7 @@ describe("packages public queries", () => {
     const ctx = {
       runQuery: vi
         .fn()
+        .mockResolvedValueOnce(makePackageDoc({ categories: ["retired-category"] }))
         .mockResolvedValueOnce(null)
         .mockResolvedValueOnce({
           _id: "users:owner",
@@ -6834,6 +8054,8 @@ describe("packages public queries", () => {
     );
 
     expect(runMutation).toHaveBeenCalled();
+    expect(result.categories).toEqual(["other"]);
+    expect(result.topics).toBeUndefined();
     expect(result.sha256hash).toBe(expectedLegacyZipSha256);
     expect(result.verification).toEqual(expect.objectContaining({ scanStatus: "pending" }));
     expect(result.staticScan).toEqual(
@@ -7519,6 +8741,57 @@ describe("packages public queries", () => {
     });
   });
 
+  it("summarizes only latest-release plugin inspector findings", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue(null);
+    const warningIndexEq = vi.fn(() => ({}));
+    const warningWithIndex = vi.fn(
+      (_indexName: string, build: (q: { eq: typeof warningIndexEq }) => unknown) => {
+        build({ eq: warningIndexEq });
+        return {
+          order: vi.fn(() => ({
+            take: vi.fn().mockResolvedValue([]),
+          })),
+        };
+      },
+    );
+    const ctx = {
+      db: {
+        get: vi.fn(),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packages:demo",
+                  name: "demo-plugin",
+                  normalizedName: "demo-plugin",
+                  family: "code-plugin",
+                  latestReleaseId: "packageReleases:demo-2",
+                }),
+              })),
+            };
+          }
+          if (table === "packageInspectorWarnings") {
+            return { withIndex: warningWithIndex };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      getPackageInspectorValidationSummaryPublicHandler(ctx as never, { name: "demo-plugin" }),
+    ).resolves.toEqual({
+      findingCount: 0,
+      errorCount: 0,
+      warningCount: 0,
+      incompatibleAfterOpenClawVersion: null,
+    });
+    expect(warningWithIndex).toHaveBeenCalledWith("by_release_created", expect.any(Function));
+    expect(warningIndexEq).toHaveBeenCalledWith("releaseId", "packageReleases:demo-2");
+    expect(warningIndexEq).not.toHaveBeenCalledWith("packageId", "packages:demo");
+  });
+
   it("does not list detailed plugin inspector findings for signed-out viewers", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue(null);
     const ctx = {
@@ -8072,6 +9345,71 @@ describe("packages public queries", () => {
       }),
     ).resolves.toEqual([]);
     expect(ctx.db.query).not.toHaveBeenCalled();
+  });
+
+  it("lists manager plugin inspector findings only for the latest release", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const warningIndexEq = vi.fn(() => ({}));
+    const warningWithIndex = vi.fn(
+      (_indexName: string, build: (q: { eq: typeof warningIndexEq }) => unknown) => {
+        build({ eq: warningIndexEq });
+        return {
+          order: vi.fn(() => ({
+            take: vi.fn().mockResolvedValue([
+              {
+                _id: "packageInspectorWarnings:latest",
+                packageName: "demo-plugin",
+                version: "2.0.0",
+                findingKind: "warning",
+                code: "latest-warning",
+                message: "latest release warning",
+                createdAt: 2,
+                authorRemediation: {
+                  summary: "Update the plugin API usage.",
+                },
+              },
+            ]),
+          })),
+        };
+      },
+    );
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: "users:owner", role: "user" };
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packages:demo",
+                  name: "demo-plugin",
+                  normalizedName: "demo-plugin",
+                  family: "code-plugin",
+                  ownerUserId: "users:owner",
+                  latestReleaseId: "packageReleases:demo-2",
+                }),
+              })),
+            };
+          }
+          if (table === "packageInspectorWarnings") {
+            return { withIndex: warningWithIndex };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      listPackageInspectorWarningsForManagerHandler(ctx as never, {
+        name: "demo-plugin",
+      }),
+    ).resolves.toMatchObject([{ code: "latest-warning", version: "2.0.0" }]);
+    expect(warningWithIndex).toHaveBeenCalledWith("by_release_created", expect.any(Function));
+    expect(warningIndexEq).toHaveBeenCalledWith("releaseId", "packageReleases:demo-2");
+    expect(warningIndexEq).not.toHaveBeenCalledWith("packageId", "packages:demo");
   });
 
   it("infers owner handle from scoped package names for user package publishes", async () => {
@@ -9209,6 +10547,7 @@ describe("packages public queries", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -9301,6 +10640,7 @@ describe("packages public queries", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -9779,7 +11119,7 @@ describe("packages public queries", () => {
     ]);
   });
 
-  it("returns only slim package identifiers for package manage context", async () => {
+  it("returns slim package metadata and generated category suggestions for manage context", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
 
     const pkg = makePackageDoc({
@@ -9841,11 +11181,14 @@ describe("packages public queries", () => {
         _id: "packages:demo",
         name: "large-plugin",
         displayName: "Large Plugin",
+        categories: undefined,
+        topics: undefined,
       },
       latestRelease: {
         _id: "packageReleases:demo-1",
         version: "1.2.3",
       },
+      suggestedCategories: ["other"],
     });
   });
 
@@ -9944,6 +11287,7 @@ describe("packages public queries", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -10041,6 +11385,7 @@ describe("packages public queries", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -10746,6 +12091,7 @@ describe("package scan backfill", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -10851,7 +12197,10 @@ describe("package scan backfill", () => {
                 })),
               };
             }
-            if (table === "packagePluginCategorySearchDigest") {
+            if (
+              table === "packagePluginCategorySearchDigest" ||
+              table === "packageTopicSearchDigest"
+            ) {
               return {
                 withIndex: vi.fn(() => ({
                   collect: vi.fn().mockResolvedValue([]),
@@ -10936,6 +12285,7 @@ describe("package scan backfill", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -11074,6 +12424,7 @@ describe("package scan backfill", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -11206,6 +12557,7 @@ describe("package scan backfill", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -11322,6 +12674,7 @@ describe("package scan backfill", () => {
             }
             if (
               table === "packageCapabilitySearchDigest" ||
+              table === "packageTopicSearchDigest" ||
               table === "packagePluginCategorySearchDigest"
             ) {
               return {
@@ -11467,7 +12820,10 @@ function makeSoftDeleteCtx(options?: {
               })),
             };
           }
-          if (table === "packagePluginCategorySearchDigest") {
+          if (
+            table === "packageTopicSearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 collect: vi.fn().mockResolvedValue([]),
@@ -11647,7 +13003,10 @@ function makeOwnedPackageBatchCtx(options?: {
               })),
             };
           }
-          if (table === "packagePluginCategorySearchDigest") {
+          if (
+            table === "packageTopicSearchDigest" ||
+            table === "packagePluginCategorySearchDigest"
+          ) {
             return {
               withIndex: vi.fn(() => ({
                 collect: vi.fn().mockResolvedValue([]),

@@ -155,6 +155,13 @@ describe("public skill version queries", () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
+          if (table === "skillSlugAliases") {
+            return {
+              withIndex: vi.fn(() => ({
+                take: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
           if (table !== "skills") throw new Error(`Unexpected table ${table}`);
           return {
             withIndex: vi.fn(() => ({

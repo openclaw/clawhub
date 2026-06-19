@@ -2,8 +2,15 @@ import { ConvexError, v } from "convex/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
-import { action, internalAction, internalMutation, internalQuery } from "./functions";
+import {
+  action,
+  internalAction,
+  internalMutation,
+  internalQuery,
+  syncPackageSearchDigestForPackageId,
+} from "./functions";
 import { assertRole, requireUserFromAction } from "./lib/access";
+import { extractPackageDigestFields } from "./lib/packageSearchDigest";
 import {
   derivePersonalPublisherHandle,
   ensurePersonalPublisherForUser,
@@ -647,6 +654,203 @@ export const continueSkillSummaryBackfillJobInternal = internalAction({
     }
 
     return result;
+  },
+});
+
+const PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM =
+  "resync-plugin-catalog-metadata-digests" as const;
+const PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+type PluginCatalogMetadataDigestResyncFamily =
+  (typeof PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_FAMILIES)[number];
+
+const pluginCatalogMetadataDigestResyncFamilyValidator = v.union(
+  v.literal("code-plugin"),
+  v.literal("bundle-plugin"),
+);
+
+type PluginCatalogMetadataDigestResyncStats = Record<
+  PluginCatalogMetadataDigestResyncFamily,
+  { scanned: number; matched: number; mutated: number }
+>;
+
+type PluginCatalogMetadataDigestResyncBatchResult = {
+  family: PluginCatalogMetadataDigestResyncFamily;
+  cursor: string | null;
+  isDone: boolean;
+  scanned: number;
+  matched: number;
+  mutated: number;
+};
+
+type PluginCatalogMetadataDigestResyncActionResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: typeof PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM;
+  family: PluginCatalogMetadataDigestResyncFamily | null;
+  cursor: string | null;
+  isDone: boolean;
+  stats: PluginCatalogMetadataDigestResyncStats;
+};
+
+function emptyPluginCatalogMetadataDigestResyncStats(): PluginCatalogMetadataDigestResyncStats {
+  return {
+    "code-plugin": { scanned: 0, matched: 0, mutated: 0 },
+    "bundle-plugin": { scanned: 0, matched: 0, mutated: 0 },
+  };
+}
+
+function nextPluginCatalogMetadataDigestResyncFamily(
+  family: PluginCatalogMetadataDigestResyncFamily,
+) {
+  const index = PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_FAMILIES.indexOf(family);
+  return PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_FAMILIES[index + 1] ?? null;
+}
+
+function equalStringSets(left: string[] | undefined, right: string[] | undefined) {
+  const leftSet = new Set(left ?? []);
+  const rightSet = new Set(right ?? []);
+  return (
+    leftSet.size === rightSet.size && Array.from(leftSet).every((value) => rightSet.has(value))
+  );
+}
+
+async function pluginCatalogMetadataDigestIsStale(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Doc<"packages">,
+) {
+  const expectedCategories = extractPackageDigestFields(pkg).pluginCategoryTags ?? [];
+  const digest = await ctx.db
+    .query("packageSearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .unique();
+  if (!digest || !equalStringSets(digest.pluginCategoryTags, expectedCategories)) return true;
+
+  const categoryDigests = await ctx.db
+    .query("packagePluginCategorySearchDigest")
+    .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  if (
+    !equalStringSets(
+      categoryDigests.map((row) => row.pluginCategory),
+      expectedCategories,
+    )
+  ) {
+    return true;
+  }
+  return categoryDigests.some(
+    (row) => !equalStringSets(row.pluginCategoryTags, expectedCategories),
+  );
+}
+
+export const resyncPluginCatalogMetadataDigestsBatchInternal = internalMutation({
+  args: {
+    family: pluginCatalogMetadataDigestResyncFamilyValidator,
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<PluginCatalogMetadataDigestResyncBatchResult> => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM}" to apply.`,
+      );
+    }
+    const numItems = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_family_updated", (q) => q.eq("family", args.family))
+      .paginate({ cursor: args.cursor ?? null, numItems });
+    let matched = 0;
+    let mutated = 0;
+
+    for (const pkg of page.page) {
+      if (!(await pluginCatalogMetadataDigestIsStale(ctx, pkg))) continue;
+      matched += 1;
+      if (!dryRun) {
+        await syncPackageSearchDigestForPackageId(ctx, pkg._id);
+        mutated += 1;
+      }
+    }
+
+    return {
+      family: args.family,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+      scanned: page.page.length,
+      matched,
+      mutated,
+    };
+  },
+});
+
+export const resyncPluginCatalogMetadataDigestsInternal: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      dryRun: v.optional(v.boolean()),
+      confirm: v.optional(v.string()),
+      family: v.optional(pluginCatalogMetadataDigestResyncFamilyValidator),
+      cursor: v.optional(v.string()),
+      batchSize: v.optional(v.number()),
+      maxBatches: v.optional(v.number()),
+    },
+    handler: async (ctx, args): Promise<PluginCatalogMetadataDigestResyncActionResult> => {
+      const dryRun = args.dryRun !== false;
+      const maxBatches = dryRun
+        ? clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES)
+        : clampInt(args.maxBatches ?? 1, 1, MAX_MAX_BATCHES);
+      const stats = emptyPluginCatalogMetadataDigestResyncStats();
+      let family: PluginCatalogMetadataDigestResyncFamily | null = args.family ?? "code-plugin";
+      let cursor: string | null = args.cursor ?? null;
+
+      for (let batchIndex = 0; family && batchIndex < maxBatches; batchIndex += 1) {
+        const result = (await ctx.runMutation(
+          internal.maintenance.resyncPluginCatalogMetadataDigestsBatchInternal,
+          {
+            family,
+            cursor: cursor ?? undefined,
+            batchSize: args.batchSize,
+            dryRun,
+            confirm: args.confirm,
+          },
+        )) as PluginCatalogMetadataDigestResyncBatchResult;
+        stats[family].scanned += result.scanned;
+        stats[family].matched += result.matched;
+        stats[family].mutated += result.mutated;
+        if (!result.isDone) {
+          cursor = result.cursor;
+          break;
+        }
+        family = nextPluginCatalogMetadataDigestResyncFamily(family);
+        cursor = null;
+      }
+
+      return {
+        ok: true as const,
+        dryRun,
+        confirmRequired: dryRun ? PLUGIN_CATALOG_METADATA_DIGEST_RESYNC_CONFIRM : undefined,
+        family,
+        cursor,
+        isDone: family === null,
+        stats,
+      };
+    },
+  });
+
+export const resyncPluginCatalogMetadataDigests: ReturnType<typeof action> = action({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    family: v.optional(pluginCatalogMetadataDigestResyncFamilyValidator),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return ctx.runAction(internal.maintenance.resyncPluginCatalogMetadataDigestsInternal, args);
   },
 });
 

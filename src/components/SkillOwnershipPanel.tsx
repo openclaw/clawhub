@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { CatalogMetadataEditor } from "./CatalogMetadataEditor";
 import { SettingsActionRow } from "./settings/SettingsActionRow";
 import { Button } from "./ui/button";
 import {
@@ -34,6 +35,12 @@ type SkillOwnershipPanelProps = {
   ownedSkills: OwnedSkillOption[];
   summary?: string | null;
   onSaveSummary?: ((summary: string) => Promise<void>) | null;
+  categories?: string[] | null;
+  suggestedCategories?: string[];
+  topics?: string[] | null;
+  onSaveCatalogMetadata?:
+    | ((value: { categories?: string[]; topics: string[] }) => Promise<void>)
+    | null;
   canDeleteSkill: boolean;
 };
 
@@ -103,6 +110,10 @@ export function SkillOwnershipPanel({
   ownedSkills,
   summary,
   onSaveSummary,
+  categories,
+  suggestedCategories,
+  topics,
+  onSaveCatalogMetadata,
   canDeleteSkill,
 }: SkillOwnershipPanelProps) {
   const navigate = useNavigate();
@@ -132,7 +143,7 @@ export function SkillOwnershipPanel({
     setIsSubmitting(true);
     setError(null);
     try {
-      await renameOwnedSkill({ slug, newSlug: nextSlug });
+      await renameOwnedSkill({ slug, newSlug: nextSlug, ownerHandle: ownerHandle ?? undefined });
       toast.success(`Renamed to ${nextSlug}. Old slug will redirect.`);
       await navigate({
         to: "/$owner/$slug",
@@ -158,6 +169,8 @@ export function SkillOwnershipPanel({
       await mergeOwnedSkillIntoCanonical({
         sourceSlug: slug,
         targetSlug,
+        sourceOwnerHandle: ownerHandle ?? undefined,
+        targetOwnerHandle: ownerHandle ?? undefined,
       });
       toast.success(`Merged into ${targetSlug}. This slug will redirect.`);
       await navigate({
@@ -179,18 +192,10 @@ export function SkillOwnershipPanel({
     setIsSubmitting(true);
     setError(null);
     try {
-      const result = await setOwnedSkillSoftDeleted({
+      await setOwnedSkillSoftDeleted({
         skillId,
       });
-      const reservedUntil =
-        result && "slugReservedUntil" in result && typeof result.slugReservedUntil === "number"
-          ? new Date(result.slugReservedUntil).toLocaleDateString()
-          : null;
-      toast.success(
-        reservedUntil
-          ? `Deleted ${slug}. Slug reserved until ${reservedUntil}.`
-          : `Deleted ${slug}.`,
-      );
+      toast.success(`Deleted ${slug}.`);
       await navigate({ to: "/", replace: true });
     } catch (deleteError) {
       setError(formatMutationError(deleteError));
@@ -203,11 +208,41 @@ export function SkillOwnershipPanel({
     <>
       <div className="skill-admin-panel" data-skill-id={skillId}>
         <SettingsActionRow
+          title="Publish a new version"
+          description="Upload a replacement release for this skill. New releases get a fresh scan."
+        >
+          <Button asChild variant="outline">
+            <a
+              href={`/publish-skill?updateSlug=${encodeURIComponent(slug)}${
+                ownerHandle ? `&ownerHandle=${encodeURIComponent(ownerHandle)}` : ""
+              }`}
+            >
+              New Version
+            </a>
+          </Button>
+        </SettingsActionRow>
+
+        <SettingsActionRow
           title="Short summary"
           description="Update the short summary used in cards, search, and previews."
         >
           {onSaveSummary ? (
             <SummarySettingsEditor summary={summary} onSaveSummary={onSaveSummary} />
+          ) : null}
+        </SettingsActionRow>
+
+        <SettingsActionRow
+          title="Catalog metadata"
+          description="Choose browse categories and author topics for this skill."
+        >
+          {onSaveCatalogMetadata ? (
+            <CatalogMetadataEditor
+              kind="skill"
+              categories={categories}
+              suggestedCategories={suggestedCategories}
+              topics={topics}
+              onSave={onSaveCatalogMetadata}
+            />
           ) : null}
         </SettingsActionRow>
 
@@ -287,8 +322,7 @@ export function SkillOwnershipPanel({
                 <div className="min-w-0">
                   <h3 className="text-sm font-bold text-red-700 dark:text-red-300">Delete skill</h3>
                   <p className="text-sm text-[color:var(--ink-soft)]">
-                    Hide this skill from search, browse, and public install surfaces. The slug stays
-                    reserved for 30 days.
+                    Hide this skill from search, browse, and public install surfaces.
                   </p>
                 </div>
               </div>
@@ -373,8 +407,8 @@ export function SkillOwnershipPanel({
           <DialogHeader>
             <DialogTitle>Delete skill</DialogTitle>
             <DialogDescription>
-              Delete <strong>{slug}</strong> from public ClawHub surfaces. The slug stays reserved
-              for 30 days so accidental deletes can be restored.
+              Delete <strong>{slug}</strong> from public ClawHub surfaces. Accidental deletes can be
+              restored.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>

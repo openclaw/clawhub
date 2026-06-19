@@ -76,7 +76,7 @@ type PackageBackupPageItem =
     }
   | { kind: "missingPackage" }
   | { kind: "missingOwner" }
-  | { kind: "missingArtifact" };
+  | { kind: "missingArtifact"; releaseId: Id<"packageReleases"> };
 
 export type RegistryArtifactBackupSyncStats = {
   skillsScanned: number;
@@ -90,6 +90,8 @@ export type RegistryArtifactBackupSyncStats = {
   packagesMissingArtifact: number;
   packagesMissingPackage: number;
   packagesMissingOwner: number;
+  skillsEnqueued: number;
+  packagesEnqueued: number;
   retryJobsProcessed: number;
   retryJobsSucceeded: number;
   retryJobsFailed: number;
@@ -102,6 +104,7 @@ export type SeedRegistryArtifactBackupsInternalArgs = {
   dryRun?: boolean;
   batchSize?: number;
   maxBatches?: number;
+  queueOnly?: boolean;
 };
 
 export type SeedRegistryArtifactBackupsInternalResult = {
@@ -120,6 +123,14 @@ export type ProcessRegistryArtifactBackupRetriesInternalResult = {
 export type ProcessRegistryArtifactBackupRetriesInternalArgs = {
   dryRun?: boolean;
   forceDue?: boolean;
+};
+
+export type ProcessRegistryArtifactBackupQueueInternalArgs = {
+  dryRun?: boolean;
+  forceDue?: boolean;
+  limit?: number;
+  leaseTtlMs?: number;
+  workerId?: string;
 };
 
 export const backupSkillForPublishInternal = internalAction({
@@ -233,6 +244,7 @@ export async function seedRegistryArtifactBackupsInternalHandler(
   args: SeedRegistryArtifactBackupsInternalArgs,
 ): Promise<SeedRegistryArtifactBackupsInternalResult> {
   const dryRun = Boolean(args.dryRun);
+  const queueOnly = Boolean(args.queueOnly);
   const stats = initialRegistryArtifactBackupSyncStats();
 
   if (!isRegistryArtifactBackupConfigured()) {
@@ -249,21 +261,24 @@ export async function seedRegistryArtifactBackupsInternalHandler(
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
   const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
   const context = getRegistryArtifactBackupContext();
-  await processDueRegistryArtifactBackupJobs(ctx, context, dryRun, stats);
+  if (!queueOnly) {
+    await processDueRegistryArtifactBackupJobs(ctx, context, dryRun, stats);
+  }
 
   const state = dryRun
-    ? { cursor: null as string | null }
+    ? { cursor: null as string | null, isDone: false }
     : ((await ctx.runQuery(
         internal.registryArtifactBackups.getRegistryArtifactBackupSyncStateInternal,
         {},
       )) as {
         cursor: string | null;
+        isDone: boolean;
       });
 
   let cursor: string | null = state.cursor;
-  let isDone = false;
+  let isDone = state.isDone;
 
-  for (let batch = 0; batch < maxBatches; batch++) {
+  for (let batch = 0; !isDone && batch < maxBatches; batch++) {
     const page = (await ctx.runQuery(
       internal.registryArtifactBackups.getRegistryArtifactBackupPageInternal,
       {
@@ -284,6 +299,21 @@ export async function seedRegistryArtifactBackupsInternalHandler(
       }
 
       stats.skillsScanned += 1;
+      if (queueOnly) {
+        if (!dryRun) {
+          await ctx.runMutation(
+            internal.registryArtifactBackups.enqueueRegistryArtifactBackupJobInternal,
+            {
+              targetKind: "skillVersion",
+              skillVersionId: item.versionId,
+              reason: "seed",
+              preserveTerminal: true,
+            },
+          );
+        }
+        stats.skillsEnqueued += 1;
+        continue;
+      }
       try {
         const meta = await fetchSkillVersionBackupMeta(
           context,
@@ -344,6 +374,7 @@ export async function seedRegistryArtifactBackupsInternalHandler(
         internal.registryArtifactBackups.setRegistryArtifactBackupSyncStateInternal,
         {
           cursor: isDone ? undefined : (cursor ?? undefined),
+          isDone,
         },
       );
     }
@@ -351,14 +382,15 @@ export async function seedRegistryArtifactBackupsInternalHandler(
     if (isDone) break;
   }
 
-  const packageSync = await syncPackageReleaseBackups(ctx, context, args, dryRun, stats);
+  const packageSync = await syncPackageReleaseBackups(ctx, context, args, dryRun, queueOnly, stats);
   await alertOnUnhealthyBackupBacklog(ctx, stats);
 
-  if (!dryRun) {
+  if (!dryRun && !state.isDone) {
     await ctx.runMutation(
       internal.registryArtifactBackups.setRegistryArtifactBackupSyncStateInternal,
       {
         cursor: isDone ? undefined : (cursor ?? undefined),
+        isDone,
       },
     );
   }
@@ -378,23 +410,25 @@ async function syncPackageReleaseBackups(
   context: RegistryArtifactBackupContext,
   args: SeedRegistryArtifactBackupsInternalArgs,
   dryRun: boolean,
+  queueOnly: boolean,
   stats: RegistryArtifactBackupSyncStats,
 ): Promise<{ cursor: string | null; isDone: boolean }> {
   const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
   const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
 
   const state = dryRun
-    ? { cursor: null as string | null }
+    ? { cursor: null as string | null, isDone: false }
     : ((await ctx.runQuery(
         internal.registryArtifactBackups.getPackageRegistryArtifactBackupSyncStateInternal,
         {},
       )) as {
         cursor: string | null;
+        isDone: boolean;
       });
   let cursor: string | null = state.cursor;
-  let isDone = false;
+  let isDone = state.isDone;
 
-  for (let batch = 0; batch < maxBatches; batch++) {
+  for (let batch = 0; !isDone && batch < maxBatches; batch++) {
     const page = (await ctx.runQuery(
       internal.registryArtifactBackups.getPackageRegistryArtifactBackupPageInternal,
       {
@@ -407,12 +441,41 @@ async function syncPackageReleaseBackups(
 
     for (const item of page.items) {
       if (item.kind !== "ok") {
-        if (item.kind === "missingArtifact") stats.packagesMissingArtifact += 1;
+        if (item.kind === "missingArtifact") {
+          stats.packagesMissingArtifact += 1;
+          if (queueOnly && !dryRun) {
+            await ctx.runMutation(
+              internal.registryArtifactBackups.enqueueRegistryArtifactBackupJobInternal,
+              {
+                targetKind: "packageRelease",
+                packageReleaseId: item.releaseId,
+                reason: "seed",
+                status: "missingArtifact",
+                preserveTerminal: true,
+              },
+            );
+          }
+        }
         if (item.kind === "missingPackage") stats.packagesMissingPackage += 1;
         if (item.kind === "missingOwner") stats.packagesMissingOwner += 1;
         continue;
       }
       stats.packagesScanned += 1;
+      if (queueOnly) {
+        if (!dryRun) {
+          await ctx.runMutation(
+            internal.registryArtifactBackups.enqueueRegistryArtifactBackupJobInternal,
+            {
+              targetKind: "packageRelease",
+              packageReleaseId: item.releaseId,
+              reason: "seed",
+              preserveTerminal: true,
+            },
+          );
+        }
+        stats.packagesEnqueued += 1;
+        continue;
+      }
       try {
         const meta = await fetchPackageReleaseBackupMeta(
           context,
@@ -453,6 +516,7 @@ async function syncPackageReleaseBackups(
         internal.registryArtifactBackups.setPackageRegistryArtifactBackupSyncStateInternal,
         {
           cursor: isDone ? undefined : (cursor ?? undefined),
+          isDone,
         },
       );
     }
@@ -466,15 +530,20 @@ async function processDueRegistryArtifactBackupJobs(
   context: RegistryArtifactBackupContext,
   dryRun: boolean,
   stats: RegistryArtifactBackupSyncStats,
-  options: { forceDue?: boolean } = {},
+  options: { forceDue?: boolean; leaseToken?: string } = {},
 ) {
   if (dryRun) return;
-  const jobs = (await ctx.runQuery(
-    internal.registryArtifactBackups.getDueRegistryArtifactBackupJobsInternal,
+  const leaseToken =
+    options.leaseToken ??
+    `registry-backup-serial-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const jobs = (await ctx.runMutation(
+    internal.registryArtifactBackups.claimRegistryArtifactBackupJobsInternal,
     {
-      includeExhaustedRepair: true,
-      ignoreNextRunAt: options.forceDue,
+      forceDue: options.forceDue,
       limit: DEFAULT_JOB_BATCH_SIZE,
+      leaseToken,
+      leaseTtlMs: RETRY_LEASE_TTL_MS,
+      includeExhaustedRepair: true,
       maxRepairAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
     },
   )) as Array<Doc<"registryArtifactBackupJobs">>;
@@ -483,7 +552,7 @@ async function processDueRegistryArtifactBackupJobs(
   const chunks = chunkRetryJobGroups(groups);
   for (const chunk of chunks) {
     const results = await Promise.all(
-      chunk.map((group) => processRetryJobGroup(ctx, context, group)),
+      chunk.map((group) => processRetryJobGroup(ctx, context, group, leaseToken)),
     );
     for (const result of results) {
       stats.retryJobsProcessed += result.processed;
@@ -583,6 +652,7 @@ async function processRetryJobGroup(
   ctx: ActionCtx,
   context: RegistryArtifactBackupContext,
   group: RetryJobGroup,
+  leaseToken?: string,
 ) {
   const result = { processed: 0, succeeded: 0, failed: 0 };
   for (const workItem of group.items) {
@@ -591,49 +661,55 @@ async function processRetryJobGroup(
       if (workItem.kind === "lookupFailed") {
         throw workItem.error;
       } else if (workItem.kind === "missing") {
-        await markRetryJobSucceeded(ctx, workItem.job);
-        result.succeeded += 1;
+        const mark = await markRetryJobSucceeded(ctx, workItem.job, leaseToken);
+        if (!mark?.stale) result.succeeded += 1;
       } else if (workItem.kind === "packageRelease") {
         if (await hasMatchingPackageReleaseMeta(context, workItem.item)) {
-          await markRetryJobSucceeded(ctx, workItem.job);
-          result.succeeded += 1;
+          const mark = await markRetryJobSucceeded(ctx, workItem.job, leaseToken);
+          if (!mark?.stale) result.succeeded += 1;
         } else {
           await backupPackageReleaseToObjectStorage(ctx, workItem.item, context);
-          await markRetryJobSucceeded(ctx, workItem.job);
-          result.succeeded += 1;
+          const mark = await markRetryJobSucceeded(ctx, workItem.job, leaseToken);
+          if (!mark?.stale) result.succeeded += 1;
         }
       } else {
         if (await hasMatchingSkillVersionMeta(context, workItem.item)) {
-          await markRetryJobSucceeded(ctx, workItem.job);
-          result.succeeded += 1;
+          const mark = await markRetryJobSucceeded(ctx, workItem.job, leaseToken);
+          if (!mark?.stale) result.succeeded += 1;
         } else {
           await backupSkillVersionToObjectStorage(ctx, workItem.item, context);
-          await markRetryJobSucceeded(ctx, workItem.job);
-          result.succeeded += 1;
+          const mark = await markRetryJobSucceeded(ctx, workItem.job, leaseToken);
+          if (!mark?.stale) result.succeeded += 1;
         }
       }
     } catch (error) {
-      result.failed += 1;
-      await ctx.runMutation(
+      const mark = (await ctx.runMutation(
         internal.registryArtifactBackups.markRegistryArtifactBackupJobFailedInternal,
         {
           jobId: workItem.job._id,
           error: errorMessage(error),
+          leaseToken,
           maxAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
         },
-      );
+      )) as { stale?: boolean };
+      if (!mark?.stale) result.failed += 1;
     }
   }
   return result;
 }
 
-async function markRetryJobSucceeded(ctx: ActionCtx, job: Doc<"registryArtifactBackupJobs">) {
-  await ctx.runMutation(
+async function markRetryJobSucceeded(
+  ctx: ActionCtx,
+  job: Doc<"registryArtifactBackupJobs">,
+  leaseToken?: string,
+) {
+  return (await ctx.runMutation(
     internal.registryArtifactBackups.markRegistryArtifactBackupJobSucceededInternal,
     {
       jobId: job._id,
+      leaseToken,
     },
-  );
+  )) as { stale?: boolean };
 }
 
 async function hasMatchingSkillVersionMeta(
@@ -834,6 +910,7 @@ export async function processRegistryArtifactBackupRetriesInternalHandler(
   try {
     await processDueRegistryArtifactBackupJobs(ctx, context, false, stats, {
       forceDue: args.forceDue,
+      leaseToken: token,
     });
     await alertOnUnhealthyBackupBacklog(ctx, stats);
   } finally {
@@ -847,11 +924,59 @@ export async function processRegistryArtifactBackupRetriesInternalHandler(
   return { stats };
 }
 
+export async function processRegistryArtifactBackupQueueInternalHandler(
+  ctx: ActionCtx,
+  args: ProcessRegistryArtifactBackupQueueInternalArgs,
+): Promise<ProcessRegistryArtifactBackupRetriesInternalResult> {
+  const stats = initialRegistryArtifactBackupSyncStats();
+
+  if (!isRegistryArtifactBackupConfigured()) {
+    return { stats };
+  }
+
+  const context = getRegistryArtifactBackupContext();
+  if (args.dryRun) {
+    await processDueRegistryArtifactBackupJobs(ctx, context, true, stats);
+    await alertOnUnhealthyBackupBacklog(ctx, stats);
+    return { stats };
+  }
+
+  const workerLabel = args.workerId ?? "registry-backup-worker";
+  const leaseToken = `${workerLabel}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const jobs = (await ctx.runMutation(
+    internal.registryArtifactBackups.claimRegistryArtifactBackupJobsInternal,
+    {
+      forceDue: args.forceDue,
+      leaseToken,
+      leaseTtlMs: args.leaseTtlMs,
+      limit: args.limit,
+      includeExhaustedRepair: true,
+      maxRepairAttempts: MAX_RETRY_REPAIR_ATTEMPTS,
+    },
+  )) as Array<Doc<"registryArtifactBackupJobs">>;
+
+  const groups = await groupRetryJobsByRoot(ctx, jobs);
+  const chunks = chunkRetryJobGroups(groups);
+  for (const chunk of chunks) {
+    const results = await Promise.all(
+      chunk.map((group) => processRetryJobGroup(ctx, context, group, leaseToken)),
+    );
+    for (const result of results) {
+      stats.retryJobsProcessed += result.processed;
+      stats.retryJobsSucceeded += result.succeeded;
+      stats.retryJobsFailed += result.failed;
+    }
+  }
+  await alertOnUnhealthyBackupBacklog(ctx, stats);
+  return { stats };
+}
+
 export const seedRegistryArtifactBackupsInternal = internalAction({
   args: {
     dryRun: v.optional(v.boolean()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
+    queueOnly: v.optional(v.boolean()),
   },
   handler: seedRegistryArtifactBackupsInternalHandler,
 });
@@ -862,6 +987,17 @@ export const processRegistryArtifactBackupRetriesInternal = internalAction({
     forceDue: v.optional(v.boolean()),
   },
   handler: processRegistryArtifactBackupRetriesInternalHandler,
+});
+
+export const processRegistryArtifactBackupQueueInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    forceDue: v.optional(v.boolean()),
+    limit: v.optional(v.number()),
+    leaseTtlMs: v.optional(v.number()),
+    workerId: v.optional(v.string()),
+  },
+  handler: processRegistryArtifactBackupQueueInternalHandler,
 });
 
 function clampInt(value: number, min: number, max: number) {
@@ -885,6 +1021,8 @@ function initialRegistryArtifactBackupSyncStats(): RegistryArtifactBackupSyncSta
     packagesMissingArtifact: 0,
     packagesMissingPackage: 0,
     packagesMissingOwner: 0,
+    skillsEnqueued: 0,
+    packagesEnqueued: 0,
     retryJobsProcessed: 0,
     retryJobsSucceeded: 0,
     retryJobsFailed: 0,

@@ -1,20 +1,16 @@
-import { v } from "convex/values";
 import { api, internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { buildDownloadMetricArgs, getDownloadIdentity } from "./downloadMetrics";
-import { httpAction, internalMutation } from "./functions";
+import { httpAction } from "./functions";
+import { ambiguousSkillSlugResponse } from "./httpApiV1/shared";
 import { getOptionalActiveAuthUserIdFromAction } from "./lib/access";
 import { getOptionalApiTokenUserId } from "./lib/apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./lib/httpHeaders";
 import { applyRateLimit, getClientIp } from "./lib/httpRateLimit";
 import { getPublicSkillVersionDownloadBlock, isSkillVersionForSkill } from "./lib/skillFileAccess";
 import { buildDeterministicZip } from "./lib/skillZip";
-import { insertStatEvent } from "./skillStatEvents";
 
 const HOUR_MS = 3_600_000;
-const DEDUPE_RETENTION_MS = 7 * 24 * HOUR_MS;
-const PRUNE_BATCH_SIZE = 200;
-const PRUNE_MAX_BATCHES = 50;
 const DOWNLOAD_STAT_JITTER_MS = 60_000;
 
 export async function downloadZipHandler(
@@ -23,6 +19,10 @@ export async function downloadZipHandler(
 ) {
   const url = new URL(request.url);
   const slug = url.searchParams.get("slug")?.trim().toLowerCase();
+  const ownerHandle =
+    (url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner"))
+      ?.trim()
+      .replace(/^@+/, "") || undefined;
   const versionParam = url.searchParams.get("version")?.trim();
   const tagParam = url.searchParams.get("tag")?.trim();
 
@@ -36,8 +36,18 @@ export async function downloadZipHandler(
   const rate = await applyRateLimit(ctx, request, "download");
   if (!rate.ok) return rate.response;
 
-  const skillResult = await ctx.runQuery(api.skills.getBySlug, { slug });
+  const skillResult = await ctx.runQuery(api.skills.getBySlug, {
+    slug,
+    ...(ownerHandle ? { ownerHandle } : {}),
+  });
   if (!skillResult?.skill) {
+    if (skillResult?.ambiguous) {
+      return ambiguousSkillSlugResponse(
+        slug,
+        `/api/v1/download?slug=${encodeURIComponent(slug)}&ownerHandle=<owner>`,
+        mergeHeaders(rate.headers, corsHeaders()),
+      );
+    }
     return new Response("Skill not found", {
       status: 404,
       headers: mergeHeaders(rate.headers, corsHeaders()),
@@ -136,60 +146,6 @@ export async function downloadZipHandler(
 }
 
 export const downloadZip = httpAction(downloadZipHandler);
-
-export const recordDownloadInternal = internalMutation({
-  args: {
-    skillId: v.id("skills"),
-    identityHash: v.string(),
-    hourStart: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const existing = await ctx.db
-      .query("downloadDedupes")
-      .withIndex("by_skill_identity_hour", (q) =>
-        q
-          .eq("skillId", args.skillId)
-          .eq("identityHash", args.identityHash)
-          .eq("hourStart", args.hourStart),
-      )
-      .first();
-    if (existing) return;
-
-    await ctx.db.insert("downloadDedupes", {
-      skillId: args.skillId,
-      identityHash: args.identityHash,
-      hourStart: args.hourStart,
-      createdAt: Date.now(),
-    });
-
-    await insertStatEvent(ctx, {
-      skillId: args.skillId,
-      kind: "download",
-    });
-  },
-});
-
-export const pruneDownloadDedupesInternal = internalMutation({
-  args: {},
-  handler: async (ctx) => {
-    const cutoff = Date.now() - DEDUPE_RETENTION_MS;
-
-    for (let batches = 0; batches < PRUNE_MAX_BATCHES; batches += 1) {
-      const stale = await ctx.db
-        .query("downloadDedupes")
-        .withIndex("by_hour", (q) => q.lt("hourStart", cutoff))
-        .take(PRUNE_BATCH_SIZE);
-
-      if (stale.length === 0) break;
-
-      for (const entry of stale) {
-        await ctx.db.delete(entry._id);
-      }
-
-      if (stale.length < PRUNE_BATCH_SIZE) break;
-    }
-  },
-});
 
 export function getHourStart(timestamp: number) {
   return Math.floor(timestamp / HOUR_MS) * HOUR_MS;

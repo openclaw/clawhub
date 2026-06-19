@@ -281,6 +281,18 @@ export function maybeParseJson(text: string | null | undefined) {
   return parseJsonFile(trimmed, "JSON file");
 }
 
+export function normalizePluginManifestIcon(manifest: unknown): string | undefined {
+  if (!isRecord(manifest) || typeof manifest.icon !== "string") return undefined;
+  const icon = manifest.icon.trim();
+  if (!icon) return undefined;
+  try {
+    const url = new URL(icon);
+    return url.protocol === "https:" ? icon : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function toConvexSafeJsonValue(
   value: unknown,
   options: { maxDepth?: number } = {},

@@ -8,6 +8,7 @@ import {
   PackageAppealRequestSchema,
   PackageOfficialMigrationUpsertRequestSchema,
   PackageRepairNameRequestSchema,
+  PackageRepairRuntimeIdRequestSchema,
   PackageReportRequestSchema,
   PackageReportTriageRequestSchema,
   PackageReleaseModerationRequestSchema,
@@ -22,6 +23,7 @@ import {
   type PackageModerationQueueStatus,
   type PackageOfficialMigrationListPhase,
   type PackageReportListStatus,
+  type PluginCategorySlug,
   type ServerPackagePublishRequest,
 } from "clawhub-schema";
 import { api, internal } from "../_generated/api";
@@ -81,6 +83,8 @@ import {
   requirePackagePublishAuthOrResponse,
   safeTextFileResponse,
   softDeleteErrorToResponse,
+  ambiguousSkillSlugResponse,
+  type AmbiguousSkillSlugChoice,
   formatAuthzMessage,
   formatUserFacingErrorMessage,
   text,
@@ -306,10 +310,27 @@ const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "installs"] as const;
+const LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES = {
+  "mcp-tooling": "tools",
+  data: "tools",
+  observability: "gateway",
+  automation: "tools",
+  deployment: "gateway",
+  "dev-tools": "runtime",
+} as const satisfies Record<string, PluginCategorySlug>;
 const MAX_PLUGIN_EXPORT_FILE_COUNT = 10_000;
 const MAX_PLUGIN_EXPORT_PAGE_LIMIT = 250;
 const DEFAULT_PLUGIN_EXPORT_PAGE_LIMIT = 250;
 const MAX_PLUGIN_EXPORT_TOTAL_BYTES = 256 * 1024 * 1024;
+
+function resolvePluginCategoryFilter(value: string | undefined): PluginCategorySlug | undefined {
+  if (!value) return undefined;
+  if (isPluginCategorySlug(value)) return value;
+  if (!Object.hasOwn(LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES, value)) return undefined;
+  return LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES[
+    value as keyof typeof LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES
+  ];
+}
 
 function invalidQueryParamMessage(name: string) {
   return `Invalid ${name} query parameter`;
@@ -407,6 +428,8 @@ type PackageListQueryArgs = {
   isOfficial?: boolean;
   highlightedOnly?: boolean;
   category?: string;
+  topic?: string;
+  officialFirst?: boolean;
   sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
@@ -791,14 +814,16 @@ type CatalogSourceCursorState = {
 type UnifiedCatalogCursorState = {
   packages: CatalogSourceCursorState;
   skills: CatalogSourceCursorState;
-  recommendedFallback?: "installs";
+  recommendedFallback?: RecommendedFallbackSort;
 };
 
 type PluginCatalogCursorState = {
   codePlugins: CatalogSourceCursorState;
   bundlePlugins: CatalogSourceCursorState;
-  recommendedFallback?: "installs";
+  recommendedFallback?: RecommendedFallbackSort;
 };
+
+type RecommendedFallbackSort = "updated" | "installs";
 
 type CatalogPageResult<T> = {
   page: T[];
@@ -826,6 +851,10 @@ const CATALOG_CURSOR_PREFIXES = [
   SKILL_CATALOG_CURSOR_PREFIX,
   PACKAGE_PAGE_CURSOR_PREFIX,
 ];
+
+function normalizeRecommendedFallbackSort(value: unknown): RecommendedFallbackSort | undefined {
+  return value === "updated" || value === RECOMMENDED_FALLBACK_SORT ? value : undefined;
+}
 
 function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
   return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -864,10 +893,7 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
     return {
       packages: normalize(parsed.packages),
       skills: normalize(parsed.skills),
-      recommendedFallback:
-        parsed.recommendedFallback === RECOMMENDED_FALLBACK_SORT
-          ? RECOMMENDED_FALLBACK_SORT
-          : undefined,
+      recommendedFallback: normalizeRecommendedFallbackSort(parsed.recommendedFallback),
     };
   } catch {
     return {
@@ -908,10 +934,7 @@ function decodeMultiPluginCursor(
     return {
       codePlugins: normalize(parsed.codePlugins),
       bundlePlugins: normalize(parsed.bundlePlugins),
-      recommendedFallback:
-        parsed.recommendedFallback === RECOMMENDED_FALLBACK_SORT
-          ? RECOMMENDED_FALLBACK_SORT
-          : undefined,
+      recommendedFallback: normalizeRecommendedFallbackSort(parsed.recommendedFallback),
     };
   } catch {
     return {
@@ -1042,6 +1065,7 @@ async function searchPackageCatalog(
     isOfficial?: boolean;
     highlightedOnly?: boolean;
     category?: string;
+    topic?: string;
     viewerUserId?: Id<"users">;
   },
 ): Promise<CatalogSearchEntry[]> {
@@ -1056,6 +1080,7 @@ async function searchPackageCatalog(
       isOfficial: args.isOfficial,
       highlightedOnly: args.highlightedOnly,
       category: args.category,
+      topic: args.topic,
       viewerUserId: args.viewerUserId,
     },
   );
@@ -1439,8 +1464,12 @@ async function listPackages(
   const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
   if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
   const cursor = rawCursor;
-  const category = url.searchParams.get("category")?.trim() || undefined;
-  if (category && !isPluginCategorySlug(category)) {
+  const rawCategory = url.searchParams.get("category")?.trim() || undefined;
+  const category = resolvePluginCategoryFilter(rawCategory);
+  const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
+  const officialFirst = parseBooleanQueryParam(url.searchParams, "officialFirst");
+  if (!officialFirst.ok) return text(officialFirst.message, 400, rate.headers);
+  if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
   const effectiveFamily = family ?? familyParam.value;
@@ -1471,6 +1500,7 @@ async function listPackages(
       channel: channelParam.value,
       isOfficial: isOfficial.value,
       highlightedOnly: highlightedOnly || undefined,
+      topic,
       sort: effectiveSort,
       paginationOpts: { cursor, numItems: limit },
     });
@@ -1499,12 +1529,15 @@ async function listPackages(
             ),
           ])
         : [false, false];
-    const useRecommendationFallback =
-      effectiveSort === "recommended" &&
-      (decodedCursor.recommendedFallback === RECOMMENDED_FALLBACK_SORT ||
-        (isFreshRecommendedRequest &&
-          (hasMissingPackageRecommendationScores || hasMissingSkillRecommendationScores)));
-    const unifiedListSort = useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : effectiveSort;
+    const recommendedFallback =
+      effectiveSort === "recommended"
+        ? (decodedCursor.recommendedFallback ??
+          (isFreshRecommendedRequest &&
+          (hasMissingPackageRecommendationScores || hasMissingSkillRecommendationScores)
+            ? RECOMMENDED_FALLBACK_SORT
+            : undefined))
+        : undefined;
+    const unifiedListSort = recommendedFallback ?? effectiveSort;
     const packageSource = initCatalogSource<CatalogListItem>(decodedCursor.packages);
     const skillSource = initCatalogSource<CatalogListItem>(decodedCursor.skills);
     const pageSize = limit;
@@ -1522,6 +1555,8 @@ async function listPackages(
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
             category,
+            topic,
+            officialFirst: officialFirst.value,
             sort: unifiedListSort,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
@@ -1541,6 +1576,7 @@ async function listPackages(
             channel: channelParam.value,
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
+            topic,
             sort: unifiedListSort,
             paginationOpts: { cursor: pageCursor, numItems },
           });
@@ -1569,7 +1605,7 @@ async function listPackages(
     const nextState = {
       packages: finalizeCatalogSource(packageSource),
       skills: finalizeCatalogSource(skillSource),
-      recommendedFallback: useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : undefined,
+      recommendedFallback,
     };
     const isDoneAll =
       nextState.packages.done &&
@@ -1590,6 +1626,7 @@ async function listPackages(
     const includeTotalCount =
       !includeSkills &&
       !category &&
+      !topic &&
       !channelParam.value &&
       typeof isOfficial.value !== "boolean" &&
       !highlightedOnly;
@@ -1609,11 +1646,14 @@ async function listPackages(
           },
         )
       : false;
-    const useRecommendationFallback =
-      effectiveSort === "recommended" &&
-      (decodedCursor.recommendedFallback === RECOMMENDED_FALLBACK_SORT ||
-        (isFreshRecommendedRequest && hasMissingRecommendationScores));
-    const pluginListSort = useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : effectiveSort;
+    const recommendedFallback =
+      effectiveSort === "recommended"
+        ? (decodedCursor.recommendedFallback ??
+          (isFreshRecommendedRequest && hasMissingRecommendationScores
+            ? RECOMMENDED_FALLBACK_SORT
+            : undefined))
+        : undefined;
+    const pluginListSort = recommendedFallback ?? effectiveSort;
     const pageSize = limit;
     const items: CatalogListItem[] = [];
     const fetchPluginPage = async (
@@ -1631,6 +1671,8 @@ async function listPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
+        officialFirst: officialFirst.value,
         sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
@@ -1660,8 +1702,14 @@ async function listPackages(
       if (
         !bundlePluginCandidate ||
         (codePluginCandidate &&
-          compareCatalogItemsForSort(codePluginCandidate, bundlePluginCandidate, pluginListSort) <=
-            0)
+          ((officialFirst.value
+            ? Number(bundlePluginCandidate.isOfficial) - Number(codePluginCandidate.isOfficial)
+            : 0) ||
+            compareCatalogItemsForSort(
+              codePluginCandidate,
+              bundlePluginCandidate,
+              pluginListSort,
+            )) <= 0)
       ) {
         items.push(codePluginCandidate!);
         codePluginSource.index += 1;
@@ -1674,7 +1722,7 @@ async function listPackages(
     const nextState = {
       codePlugins: finalizeCatalogSource(codePluginSource),
       bundlePlugins: finalizeCatalogSource(bundlePluginSource),
-      recommendedFallback: useRecommendationFallback ? RECOMMENDED_FALLBACK_SORT : undefined,
+      recommendedFallback,
     };
     const isDoneAll =
       nextState.codePlugins.done &&
@@ -1702,6 +1750,8 @@ async function listPackages(
     isOfficial: isOfficial.value,
     highlightedOnly: highlightedOnly || undefined,
     category,
+    topic,
+    officialFirst: officialFirst.value,
     sort: effectiveSort,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
@@ -2580,6 +2630,74 @@ export async function packagesPostRouterV1Handler(ctx: ActionCtx, request: Reque
     }
   }
 
+  if (packageSegments[0] === "repair-runtime-id" && packageSegments.length === 1) {
+    const rate = await applyRateLimit(ctx, request, "write");
+    if (!rate.ok) return rate.response;
+    const auth = await requireApiTokenUserOrResponse(ctx, request, rate.headers);
+    if (!auth.ok) return auth.response;
+    const admin = requireAdminOrResponse(auth.user, rate.headers);
+    if (!admin.ok) return admin.response;
+
+    try {
+      const body = parseArk(
+        PackageRepairRuntimeIdRequestSchema,
+        await request.json(),
+        "Package runtime id repair payload",
+      ) as {
+        nextRuntimeId: string;
+        reason: string;
+        dryRun?: boolean;
+      };
+      const nextRuntimeId = body.nextRuntimeId.trim();
+      if (!nextRuntimeId) return text("Runtime id required", 400, rate.headers);
+      const reason = body.reason.trim();
+      if (!reason) return text("Repair reason required", 400, rate.headers);
+      const dryRun = body.dryRun !== false;
+
+      const source = await runQueryRef<AdminRepairPackageLike | null>(
+        ctx,
+        internalRefs.packages.getPackageByNameInternal,
+        { name: packageName },
+      );
+      if (!source || source.softDeletedAt) return text("Package not found", 404, rate.headers);
+
+      const operations = [
+        {
+          action: "repair-runtime-id",
+          packageId: String(source._id),
+          from: source.runtimeId ?? null,
+          to: nextRuntimeId,
+        },
+      ];
+
+      if (!dryRun) {
+        await runMutationRef(ctx, internalRefs.packages.repairPackageIdentityInternal, {
+          actorUserId: auth.userId,
+          name: packageName,
+          nextRuntimeId,
+          reason,
+        });
+      }
+
+      return json(
+        {
+          ok: true,
+          dryRun,
+          source: toRepairPackageSnapshot(source),
+          operations,
+        },
+        200,
+        rate.headers,
+      );
+    } catch (error) {
+      return packageOperationErrorToResponse(
+        error,
+        rate.headers,
+        "Package runtime id repair failed",
+      );
+    }
+  }
+
   if (
     packageSegments[0] === "versions" &&
     packageSegments[1] &&
@@ -2931,11 +3049,22 @@ function resolvePackageFilePath(release: ReleaseLike, requestedPath: string) {
   );
 }
 
-async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
-  return (await runQueryRef(ctx, apiRefs.skills.getBySlug, { slug })) as {
+function getOwnerHandleParam(request: Request) {
+  const url = new URL(request.url);
+  const value = url.searchParams.get("ownerHandle") ?? url.searchParams.get("owner");
+  return value?.trim().replace(/^@+/, "") || undefined;
+}
+
+async function getSkillDetailForRequest(ctx: ActionCtx, slug: string, ownerHandle?: string) {
+  return (await runQueryRef(ctx, apiRefs.skills.getBySlug, {
+    slug,
+    ...(ownerHandle ? { ownerHandle } : {}),
+  })) as {
     skill: SkillPackageDocLike | null;
     latestVersion: SkillVersionLike | null;
     owner: { handle?: string; displayName?: string; image?: string } | null;
+    ambiguous?: boolean;
+    ambiguousMatches?: Array<{ slug: string; ownerHandle?: string | null }>;
     moderationInfo?: {
       isPendingScan?: boolean | null;
       isMalwareBlocked?: boolean | null;
@@ -2944,6 +3073,29 @@ async function getSkillDetailForRequest(ctx: ActionCtx, slug: string) {
       sourceVersionId?: Id<"skillVersions"> | null;
     } | null;
   } | null;
+}
+
+function ambiguousSkillChoicesForPackageRequest(
+  request: Request,
+  matches: Array<{ slug: string; ownerHandle?: string | null }> | undefined,
+): AmbiguousSkillSlugChoice[] {
+  return (matches ?? []).flatMap((match) => {
+    const ownerHandle = match.ownerHandle?.trim().replace(/^@+/, "");
+    if (!ownerHandle) return [];
+    const slug = match.slug.trim().toLowerCase();
+    if (!slug) return [];
+    return [
+      {
+        ownerHandle,
+        slug,
+        ref: `@${ownerHandle}/${slug}`,
+        url: new URL(
+          `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(slug)}`,
+          request.url,
+        ).toString(),
+      },
+    ];
+  });
 }
 
 type PackageExactVersionModeratedSkill = Pick<
@@ -2962,12 +3114,13 @@ type PackageExactVersionModeratedSkill = Pick<
 async function getUnavailableSkillPackageVersionBlock(
   ctx: ActionCtx,
   slug: string,
+  ownerHandle: string | undefined,
   versionName: string,
 ) {
   const skill = await runQueryRef<PackageExactVersionModeratedSkill | null>(
     ctx,
     internalRefs.skills.getSkillBySlugInternal,
-    { slug },
+    { slug, ...(ownerHandle ? { ownerHandle } : {}) },
   );
   if (!skill || skill.softDeletedAt) return null;
 
@@ -3045,8 +3198,10 @@ async function searchPackages(
   const highlightedOnlyParam = parseBooleanQueryParam(url.searchParams, "highlightedOnly");
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
   const highlightedOnly = featured.value === true || highlightedOnlyParam.value === true;
-  const category = url.searchParams.get("category")?.trim() || undefined;
-  if (category && !isPluginCategorySlug(category)) {
+  const rawCategory = url.searchParams.get("category")?.trim() || undefined;
+  const category = resolvePluginCategoryFilter(rawCategory);
+  const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
+  if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
   const family = familyParam.value;
@@ -3070,6 +3225,7 @@ async function searchPackages(
         channel: channelParam.value,
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
+        topic,
       },
     );
   } else if (family || !includeSkills) {
@@ -3084,6 +3240,7 @@ async function searchPackages(
             isOfficial: isOfficial.value,
             highlightedOnly: highlightedOnly || undefined,
             category,
+            topic,
             viewerUserId: viewerUserId ?? undefined,
           }),
         ),
@@ -3108,6 +3265,7 @@ async function searchPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
         viewerUserId: viewerUserId ?? undefined,
       });
     }
@@ -3120,6 +3278,7 @@ async function searchPackages(
         isOfficial: isOfficial.value,
         highlightedOnly: highlightedOnly || undefined,
         category,
+        topic,
         viewerUserId: viewerUserId ?? undefined,
       }),
       runQueryRef<CatalogSearchEntry[]>(
@@ -3131,6 +3290,7 @@ async function searchPackages(
           channel: channelParam.value,
           isOfficial: isOfficial.value,
           highlightedOnly: highlightedOnly || undefined,
+          topic,
         },
       ),
     ]);
@@ -3319,6 +3479,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     return json(parsed, 200, rate.headers);
   }
 
+  const ownerHandle = getOwnerHandleParam(request);
+  const isExactVersionRequest =
+    packageSegments[0] === "versions" && packageSegments[1] && packageSegments.length === 2;
   const detail = (await runQueryRef(ctx, internalRefs.packages.getByNameForViewerInternal, {
     name: normalizedPackageName,
     viewerUserId: viewerUserId ?? undefined,
@@ -3329,19 +3492,26 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
   } | null;
   const skillDetail = detail?.package
     ? null
-    : await getSkillDetailForRequest(ctx, normalizedPackageName);
-  const isExactVersionRequest =
-    packageSegments[0] === "versions" && packageSegments[1] && packageSegments.length === 2;
+    : await getSkillDetailForRequest(ctx, normalizedPackageName, ownerHandle);
   if (!detail?.package && !skillDetail?.skill) {
     if (isExactVersionRequest) {
       const moderationBlock = await getUnavailableSkillPackageVersionBlock(
         ctx,
         normalizedPackageName,
+        ownerHandle,
         packageSegments[1],
       );
       if (moderationBlock) {
         return text(moderationBlock.message, moderationBlock.status, rate.headers);
       }
+    }
+    if (skillDetail?.ambiguous) {
+      return ambiguousSkillSlugResponse(
+        normalizedPackageName,
+        `/api/v1/packages/${encodeURIComponent(normalizedPackageName)}?ownerHandle=<owner>`,
+        rate.headers,
+        ambiguousSkillChoicesForPackageRequest(request, skillDetail.ambiguousMatches),
+      );
     }
     return text("Package not found", 404, rate.headers);
   }
@@ -3671,6 +3841,9 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
     if (skillDetail?.skill) {
       const url = new URL("/api/v1/download", request.url);
       url.searchParams.set("slug", skillDetail.skill.slug);
+      if (skillDetail.owner?.handle) {
+        url.searchParams.set("ownerHandle", skillDetail.owner.handle);
+      }
       const requestUrl = new URL(request.url);
       const version = requestUrl.searchParams.get("version")?.trim();
       const tag = requestUrl.searchParams.get("tag")?.trim();
