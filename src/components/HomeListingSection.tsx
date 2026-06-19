@@ -4,10 +4,10 @@ import {
   BadgeCheck,
   Binoculars,
   CloudOff,
+  Download,
   LayoutGrid,
   Loader2,
   Moon,
-  PackageCheck,
   Plus,
   Rows3,
   Search,
@@ -302,7 +302,7 @@ function HomeListingSkillRow({ entry }: { entry: SkillPageEntry }) {
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
-          <PackageCheck size={13} aria-hidden="true" />
+          <Download size={13} aria-hidden="true" />
           {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
         </span>
       </div>
@@ -332,7 +332,7 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
-          <PackageCheck size={13} aria-hidden="true" />
+          <Download size={13} aria-hidden="true" />
           {formatCompactStat(plugin.stats?.installs ?? 0)}
         </span>
       </div>
@@ -360,7 +360,7 @@ function HomeListingSkillCard({ entry }: { entry: SkillPageEntry }) {
       </p>
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
         <span>
-          <PackageCheck size={13} aria-hidden="true" />
+          <Download size={13} aria-hidden="true" />
           {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
         </span>
       </div>
@@ -392,7 +392,7 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
       </p>
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
         <span>
-          <PackageCheck size={13} aria-hidden="true" />
+          <Download size={13} aria-hidden="true" />
           {formatCompactStat(plugin.stats?.installs ?? 0)}
         </span>
       </div>
