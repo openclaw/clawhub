@@ -881,7 +881,7 @@ describe("publisher abuse dry-run persistence", () => {
               },
             };
             build(q);
-            expect(constraints.modelVersion).toBe("publisher-abuse-pressure.v2");
+            expect(constraints.modelVersion).toBe("publisher-abuse-pressure.v4");
             return {
               order: () => ({
                 first: async () => latestRun,
@@ -2965,6 +2965,98 @@ describe("publisher abuse dry-run persistence", () => {
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseReviewNominations:existing",
       expect.objectContaining({ latestScoreId: "publisherAbuseScores:score" }),
+    );
+  });
+
+  it("keeps below-pivot high z-score publishers out of spam abuse review", async () => {
+    const modelConfig = {
+      ...TEST_MODEL_CONFIG,
+      modelVersion: "publisher-abuse-pressure.v4",
+      skillPivot: 200,
+    };
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: modelConfig.modelVersion,
+          modelConfig,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 3,
+          sumSquaredLogPressure: 9,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:spacesq-shape",
+                        ownerKey: "publisher:publishers:spacesq-shape",
+                        ownerPublisherId: "publishers:spacesq-shape",
+                        ownerUserId: "users:spacesq-shape",
+                        handleSnapshot: "spacesq-shape",
+                        modelVersion: modelConfig.modelVersion,
+                        pressure: 1000,
+                        logPressure: 6,
+                        publishedSkills: 62,
+                        totalInstalls: 0,
+                        totalStars: 0,
+                        totalDownloads: 29_906,
+                        installsPerSkill: 0,
+                        starsPerSkill: 0,
+                        downloadsPerSkill: 482.35,
+                        reasonCodes: ["low_installs_per_skill", "low_stars_per_skill"],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: () => ({
+                first: async () => null,
+              }),
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: true, finalized: 1, nominations: 0 }),
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScores:spacesq-shape",
+      expect.objectContaining({ label: "pass", zScore: 0 }),
+    );
+    expect(insert).not.toHaveBeenCalledWith("publisherAbuseReviewNominations", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        passCount: 1,
+        reviewCount: 0,
+        potentialBanCandidateCount: 0,
+      }),
     );
   });
 

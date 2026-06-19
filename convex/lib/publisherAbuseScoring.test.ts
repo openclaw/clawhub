@@ -8,14 +8,16 @@ import {
   computeTemporalAbuseCohortBenchmark,
   computeTemporalPublisherAbuseZScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+  labelForPublisherAbuseScore,
   labelForTemporalPublisherAbuse,
   labelForPublisherAbuseZScore,
   scorePublisherAbuseCohort,
 } from "./publisherAbuseScoring";
 
 describe("publisher abuse scoring", () => {
-  it("uses a stronger superlinear output elasticity for bulk publishers", () => {
-    expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.modelVersion).toBe("publisher-abuse-pressure.v2");
+  it("uses the mature catalog pivot for publisher spam abuse checks", () => {
+    expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.modelVersion).toBe("publisher-abuse-pressure.v4");
+    expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.skillPivot).toBe(200);
     expect(DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.outputElasticity).toBe(1.5);
   });
 
@@ -109,26 +111,74 @@ describe("publisher abuse scoring", () => {
     expect(byHandle.get("peand-rover")?.rank).toBeLessThan(byHandle.get("byungkyu")?.rank ?? 0);
   });
 
-  it("keeps catalog pressure linear below the bulk publisher pivot", () => {
-    const score50 = computePublisherAbuseRawScore(
-      publisher("ordinary-50", {
-        publishedSkills: 50,
-        totalInstalls: 50,
-        totalStars: 1.25,
-        totalDownloads: 12_500,
+  it("keeps below-pivot catalogs out of aggregate spam abuse labels", () => {
+    const score199 = computePublisherAbuseRawScore(
+      publisher("ordinary-199", {
+        publishedSkills: 199,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 50_000,
       }),
     );
-    const score100 = computePublisherAbuseRawScore(
-      publisher("ordinary-100", {
-        publishedSkills: 100,
-        totalInstalls: 100,
-        totalStars: 2.5,
-        totalDownloads: 25_000,
+    const score200 = computePublisherAbuseRawScore(
+      publisher("bulk-200", {
+        publishedSkills: 200,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 50_000,
       }),
     );
 
-    expect(score50.pressure).toBeGreaterThan(0);
-    expect(score50.pressure / score100.pressure).toBeCloseTo(0.5);
+    expect(score199.pressure).toBeGreaterThan(0);
+    expect(score199.logPressure).toBeGreaterThan(0);
+    expect(score199.reasonCodes).toEqual([]);
+    expect(labelForPublisherAbuseScore(score199, 3)).toBe("pass");
+    expect(score200.pressure).toBeGreaterThan(0);
+  });
+
+  it("keeps tiny catalogs out of aggregate spam abuse labels", () => {
+    const score6 = computePublisherAbuseRawScore(
+      publisher("tiny-6", {
+        publishedSkills: 6,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 0,
+      }),
+    );
+    const score200 = computePublisherAbuseRawScore(
+      publisher("bulk-200", {
+        publishedSkills: 200,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 0,
+      }),
+    );
+
+    expect(score6.pressure).toBeGreaterThan(0);
+    expect(score6.reasonCodes).toEqual([]);
+    expect(score200.pressure).toBeGreaterThan(0);
+  });
+
+  it("does not nominate publishers before the catalog reaches the bulk maturity pivot", () => {
+    const belowPivot = computePublisherAbuseRawScore(
+      publisher("spacesq-shape", {
+        publishedSkills: 62,
+        totalInstalls: 0,
+        totalStars: 0,
+        totalDownloads: 29_906,
+      }),
+    );
+    const abovePivot = computePublisherAbuseRawScore(
+      publisher("justoneapi-shape", {
+        publishedSkills: 224,
+        totalInstalls: 33,
+        totalStars: 0,
+        totalDownloads: 83_543,
+      }),
+    );
+
+    expect(labelForPublisherAbuseScore(belowPivot, 3)).toBe("pass");
+    expect(labelForPublisherAbuseScore(abovePivot, 3)).toBe("potential_ban_candidate");
   });
 
   it("increases catalog pressure faster than skill count above the pivot", () => {

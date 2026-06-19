@@ -1,4 +1,4 @@
-export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v2";
+export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v4";
 export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v1";
 
 export type PublisherAbuseLabel = "pass" | "review" | "potential_ban_candidate";
@@ -99,7 +99,7 @@ export type TemporalAbuseCohortBenchmark = {
 
 export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
   modelVersion: PUBLISHER_ABUSE_MODEL_VERSION,
-  skillPivot: 100,
+  skillPivot: 200,
   // Two installs per skill is only a rough review calibration point. It can be
   // the author plus one friend, so it is not proof of legitimacy or abuse.
   installsPerSkillPivot: 2,
@@ -137,6 +137,29 @@ export function labelForPublisherAbuseZScore(
   if (zScore >= config.potentialBanCandidateZThreshold) return "potential_ban_candidate";
   if (zScore >= config.reviewZThreshold) return "review";
   return "pass";
+}
+
+export function labelForPublisherAbuseScore(
+  score: Pick<PublisherAbuseRawScore, "publishedSkills">,
+  zScore: number,
+  config: PublisherAbuseModelConfig = DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+): PublisherAbuseLabel {
+  if (!isPublisherAbuseCheckEligible(score, config)) return "pass";
+  if (zScore < config.reviewZThreshold) return "pass";
+  if (
+    zScore >= config.potentialBanCandidateZThreshold &&
+    isPublisherAbuseCheckEligible(score, config)
+  ) {
+    return "potential_ban_candidate";
+  }
+  return "review";
+}
+
+export function isPublisherAbuseCheckEligible(
+  score: Pick<PublisherAbuseRawScore, "publishedSkills">,
+  config: PublisherAbuseModelConfig = DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+) {
+  return score.publishedSkills >= Math.max(1, config.skillPivot);
 }
 
 export function computeTemporalPublisherAbuseZScore(input: {
@@ -220,8 +243,7 @@ export function computePublisherAbusePressure(
   );
 
   const skillOutputRatio = skills / skillPivot;
-  const catalogPressure =
-    skillOutputRatio <= 1 ? skillOutputRatio : skillOutputRatio ** config.outputElasticity;
+  const catalogPressure = skillOutputRatio ** config.outputElasticity;
 
   return (
     catalogPressure *
@@ -236,20 +258,23 @@ export function scorePublisherAbuseCohort(
   config: PublisherAbuseModelConfig = DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
 ): PublisherAbuseScore[] {
   const rawScores = inputs.map((input) => computePublisherAbuseRawScore(input, config));
-  const mean = average(rawScores.map((score) => score.logPressure));
+  const scoredRawScores = rawScores.filter((score) => score.publishedSkills > 0);
+  const mean = average(scoredRawScores.map((score) => score.logPressure));
   const stdDev = standardDeviation(
-    rawScores.map((score) => score.logPressure),
+    scoredRawScores.map((score) => score.logPressure),
     mean,
   );
   const safeStdDev = stdDev === 0 ? 1 : stdDev;
 
   return rawScores
     .map((score) => {
-      const zScore = (score.logPressure - mean) / safeStdDev;
+      const zScore = isPublisherAbuseCheckEligible(score, config)
+        ? (score.logPressure - mean) / safeStdDev
+        : 0;
       return {
         ...score,
         zScore,
-        label: labelForPublisherAbuseZScore(zScore, config),
+        label: labelForPublisherAbuseScore(score, zScore, config),
         rank: 0,
       };
     })
@@ -453,6 +478,7 @@ function reasonCodesForPublisher(input: {
 }) {
   const codes: string[] = [];
   if (input.publishedSkills <= 0) return codes;
+  if (!isPublisherAbuseCheckEligible(input, input.config)) return codes;
   if (input.publishedSkills >= input.config.skillPivot) codes.push("high_catalog_volume");
   if (input.installsPerSkill < input.config.installsPerSkillPivot) {
     codes.push("low_installs_per_skill");
