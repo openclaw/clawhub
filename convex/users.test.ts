@@ -3376,6 +3376,60 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
     expect(runAfter).not.toHaveBeenCalled();
   });
 
+  it("does not ban when the publisher abuse nomination was relinked to another user", async () => {
+    const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx();
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      if (id === "publisherAbuseReviewNominations:candidate") {
+        return publisherAbuseAutobanNomination();
+      }
+      if (id === "publishers:candidate") {
+        return { _id: "publishers:candidate", linkedUserId: "users:new-owner" };
+      }
+      return null;
+    });
+    runMutation
+      .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
+      .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
+      .mockResolvedValueOnce(undefined);
+
+    const handler = (
+      autobanPublisherAbuseOwnerInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            ownerUserId: string;
+            nominationId: string;
+            scoreId: string;
+            reason: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(ctx, {
+        ownerUserId: "users:target",
+        nominationId: "publisherAbuseReviewNominations:candidate",
+        scoreId: "publisherAbuseScores:candidate",
+        reason: "publisher_abuse: potential ban candidate",
+      }),
+    ).resolves.toEqual({ ok: false, reason: "nomination_not_actionable" });
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  });
+
   it("reruns package cleanup for already-banned publisher abuse owners", async () => {
     const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx();
 
@@ -3867,6 +3921,85 @@ describe("users.unbanUserForBanAppealServiceInternal", () => {
       scheduledSkills: false,
       restoredPackages: 2,
       scheduledPackages: true,
+    });
+  });
+
+  it("restores publisher-abuse autobans for accepted appeals", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
+    const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx({
+      auditLogs: [
+        {
+          _id: "auditLogs:publisher-abuse-ban",
+          action: "user.autoban.publisher_abuse",
+          targetType: "user",
+          targetId: "users:target",
+          createdAt: 1_700_000_000_000,
+        },
+      ],
+    });
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+          deletedAt: 1_700_000_000_000,
+          deactivatedAt: undefined,
+          banReason: "publisher_abuse: potential ban candidate",
+        };
+      }
+      return null;
+    });
+    runMutation
+      .mockResolvedValueOnce({ restoredCount: 3, scheduled: false })
+      .mockResolvedValueOnce({ restoredCount: 0, scheduled: false });
+
+    const handler = (
+      unbanUserForBanAppealServiceInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: { targetUserId: string; reason?: string; reviewerDiscordId: string },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(ctx, {
+        targetUserId: "users:target",
+        reason: "publisher abuse appeal accepted",
+        reviewerDiscordId: "discord-reviewer-1",
+      }),
+    ).resolves.toMatchObject({
+      ok: true,
+      alreadyUnbanned: false,
+      restoredSkills: 3,
+    });
+    expect(patch).toHaveBeenCalledWith("users:target", {
+      deletedAt: undefined,
+      banReason: undefined,
+      role: "user",
+      updatedAt: 1_700_000_100_000,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "user.unban",
+        targetId: "users:target",
+        metadata: expect.objectContaining({
+          source: "ban_appeal.service",
+          reason: "publisher abuse appeal accepted",
+        }),
+      }),
+    );
+    expect(runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      userId: "users:target",
+      restoredAt: 1_700_000_100_000,
+      to: "target@example.com",
+      handle: "target-user",
+      restoredListings: undefined,
+      skillsRestored: 3,
+      packagesRestored: 0,
     });
   });
 

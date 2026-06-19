@@ -4,6 +4,7 @@ import { mkdir, appendFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { v } from "convex/values";
 import { Resend } from "resend";
+import { internal } from "./_generated/api";
 import { internalAction } from "./functions";
 import {
   buildBanNotificationEmail,
@@ -41,6 +42,8 @@ type SendEmailArgs = {
   text: string;
   html: string;
 };
+
+type SendEmailResult = { ok: true; id: string | null } | { ok: false; reason: string };
 
 function getEmailConfig() {
   return {
@@ -183,28 +186,67 @@ export const sendMaliciousArtifactNotificationInternal = internalAction({
 
 export const sendPublisherAbuseWarningInternal = internalAction({
   args: {
+    nominationId: v.id("publisherAbuseReviewNominations"),
+    ownerKey: v.string(),
+    runId: v.id("publisherAbuseScoreRuns"),
+    scoreId: v.id("publisherAbuseScores"),
     userId: v.id("users"),
     to: v.string(),
     handle: v.optional(v.string()),
     publisherHandle: v.string(),
-    warningSentAt: v.number(),
-    deadlineAt: v.number(),
+    warningPendingAt: v.number(),
+    graceMs: v.number(),
     score: publisherAbuseWarningScoreValidator,
   },
-  handler: async (_ctx, args) => {
+  handler: async (ctx, args): Promise<SendEmailResult> => {
+    const claimResult: { ok: boolean; reason?: string } = await ctx.runMutation(
+      internal.publisherAbuse.claimPublisherAbusePendingWarningInternal,
+      {
+        nominationId: args.nominationId,
+        runId: args.runId,
+        scoreId: args.scoreId,
+        warningPendingAt: args.warningPendingAt,
+      },
+    );
+    if (!claimResult.ok) {
+      return { ok: false, reason: claimResult.reason ?? "stale_warning" };
+    }
+
+    const warningSentAt = Date.now();
+    const deadlineAt = warningSentAt + args.graceMs;
     const email = await buildPublisherAbuseWarningEmail({
       handle: args.handle,
       publisherHandle: args.publisherHandle,
-      warningSentAt: args.warningSentAt,
-      deadlineAt: args.deadlineAt,
+      warningSentAt,
+      deadlineAt,
       score: args.score,
     });
-    return await sendTransactionalEmail({
-      idempotencyKey: `publisher-abuse-warning:${args.userId}:${args.warningSentAt}`,
+    const result = await sendTransactionalEmail({
+      idempotencyKey: `publisher-abuse-warning:${args.userId}:${args.warningPendingAt}`,
       to: args.to,
       subject: email.subject,
       text: email.text,
       html: email.html,
     });
+    if (!result.ok) {
+      await ctx.runMutation(internal.publisherAbuse.clearPublisherAbusePendingWarningInternal, {
+        nominationId: args.nominationId,
+        runId: args.runId,
+        scoreId: args.scoreId,
+        warningPendingAt: args.warningPendingAt,
+      });
+      return result;
+    }
+
+    await ctx.runMutation(internal.publisherAbuse.recordPublisherAbuseWarningSentInternal, {
+      nominationId: args.nominationId,
+      ownerKey: args.ownerKey,
+      runId: args.runId,
+      scoreId: args.scoreId,
+      warningPendingAt: args.warningPendingAt,
+      warningSentAt,
+      deadlineAt,
+    });
+    return result;
   },
 });

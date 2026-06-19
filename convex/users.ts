@@ -224,6 +224,16 @@ async function getActionablePublisherAbuseAutobanNomination(
   if (nomination.ownerUserId !== args.ownerUserId) {
     return { ok: false, reason: "nomination_not_actionable" };
   }
+  if (!nomination.ownerPublisherId) return { ok: false, reason: "nomination_not_actionable" };
+  const publisher = await ctx.db.get(nomination.ownerPublisherId);
+  if (
+    !publisher ||
+    publisher.deletedAt ||
+    publisher.deactivatedAt ||
+    publisher.linkedUserId !== args.ownerUserId
+  ) {
+    return { ok: false, reason: "nomination_not_actionable" };
+  }
   return { ok: true, nomination };
 }
 

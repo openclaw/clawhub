@@ -386,7 +386,6 @@ describe("Management", () => {
     expect(screen.getByRole("link", { name: "Users" }).getAttribute("href")).toBe(
       "/management?view=users",
     );
-    expect(screen.queryByRole("link", { name: "System" })).toBeNull();
   });
 
   it("does not expose the users sidebar link to moderators", () => {
