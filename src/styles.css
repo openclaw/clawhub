@@ -17378,6 +17378,456 @@ a.home-v2-apps-see-all:focus-visible svg {
 
 /* ═══ HOME DISCOVER (stacks & collections) ═══ */
 
+/* ===== Home v2 — Bring your skills (CLI) ===== */
+
+.home-v2-byos {
+  --byos-x: 50%;
+  --byos-y: 42%;
+  --byos-intensity: 0;
+  --byos-art-size: 112%;
+  --byos-art-x: 22%;
+  --byos-art-y: 50%;
+  position: relative;
+  isolation: isolate;
+  /* Break out of the page-max `main` column to the full viewport width. */
+  width: 100vw;
+  max-width: none;
+  margin-top: 88px;
+  margin-bottom: 0;
+  margin-inline: calc(50% - 50vw);
+  padding: 104px 48px 112px;
+  overflow: hidden;
+  background: #050505;
+}
+
+/* Full-bleed reveal backdrop — mirrors the footer easter egg mechanic. */
+.home-v2-byos-reveal {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.home-v2-byos-reveal-image {
+  position: absolute;
+  inset: 0;
+  background-position: var(--byos-art-x, 50%) var(--byos-art-y, 50%);
+  background-repeat: no-repeat;
+  background-size: var(--byos-art-size, 112%) auto;
+  pointer-events: none;
+}
+
+.home-v2-byos-reveal-image--base {
+  background-image: url("/footer-openclaw-easter-egg.png");
+}
+
+/* Legibility overlay: darken toward the center where the copy + card sit and
+   feather the band into the page above/below. */
+.home-v2-byos-reveal-scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      72% 84% at 50% 48%,
+      rgb(5 5 5 / 0.9) 0%,
+      rgb(5 5 5 / 0.45) 52%,
+      rgb(5 5 5 / 0) 82%
+    ),
+    linear-gradient(
+      to bottom,
+      #050505 0%,
+      rgb(5 5 5 / 0) 18%,
+      rgb(5 5 5 / 0) 82%,
+      #050505 100%
+    );
+}
+
+.home-v2-byos-reveal-ascii {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  margin: 0;
+  color: color-mix(in srgb, var(--hv2-accent) 72%, white 12%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.38;
+  letter-spacing: 0.08em;
+  white-space: pre;
+  opacity: calc(0.46 * var(--byos-intensity));
+  mix-blend-mode: screen;
+  transform: translate3d(-1.5%, -1%, 0) rotate(-1deg);
+  mask-image:
+    radial-gradient(
+      ellipse 170px 142px at var(--byos-x) var(--byos-y),
+      #000 0 34%,
+      rgb(0 0 0 / 0.7) 52%,
+      transparent 80%
+    ),
+    radial-gradient(
+      ellipse 82px 58px at calc(var(--byos-x) - 78px) calc(var(--byos-y) + 24px),
+      rgb(0 0 0 / 0.78) 0 42%,
+      transparent 76%
+    ),
+    radial-gradient(
+      ellipse 66px 92px at calc(var(--byos-x) + 88px) calc(var(--byos-y) - 38px),
+      rgb(0 0 0 / 0.74) 0 38%,
+      transparent 78%
+    ),
+    radial-gradient(
+      ellipse 52px 38px at calc(var(--byos-x) + 28px) calc(var(--byos-y) + 92px),
+      rgb(0 0 0 / 0.55) 0 34%,
+      transparent 72%
+    );
+  transition: opacity 180ms ease;
+  pointer-events: none;
+}
+
+.home-v2-byos-reveal-image--top {
+  z-index: 3;
+  background-image: url("/footer-openclaw-easter-egg-transparent.png");
+  opacity: 0.95;
+}
+
+.home-v2-byos-content {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 16px;
+  width: 100%;
+  max-width: 760px;
+  margin: 0 auto;
+}
+
+/* The reveal band is always dark in both themes, so pin text to light. */
+.home-v2-byos .home-v2-byos-title {
+  color: #f4f4f5;
+}
+
+.home-v2-byos .home-v2-byos-lede {
+  color: rgb(255 255 255 / 0.62);
+}
+
+.home-v2-byos .home-v2-byos-eyebrow {
+  color: color-mix(in srgb, var(--hv2-accent) 70%, white 30%);
+}
+
+.home-v2-byos .home-v2-byos-import {
+  color: rgb(255 255 255 / 0.72);
+}
+
+.home-v2-byos .home-v2-byos-import:hover,
+.home-v2-byos .home-v2-byos-import:focus-visible {
+  color: #fff;
+}
+
+/* Audience switch sits on the dark band — no chrome, just a divider. */
+.home-v2-byos .home-v2-byos-tabs {
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-v2-byos .home-v2-byos-tab {
+  border-radius: 0;
+  background: none;
+  color: rgb(255 255 255 / 0.5);
+}
+
+.home-v2-byos .home-v2-byos-tab + .home-v2-byos-tab {
+  border-left: 1px solid rgb(255 255 255 / 0.18);
+}
+
+.home-v2-byos .home-v2-byos-tab:hover {
+  color: rgb(255 255 255 / 0.8);
+}
+
+.home-v2-byos .home-v2-byos-tab[aria-selected="true"] {
+  background: none;
+  color: #fff;
+  box-shadow: none;
+}
+
+/* Command card: frosted glass so the artwork drifts softly behind it. */
+.home-v2-byos .home-v2-byos-term {
+  border-color: rgb(255 255 255 / 0.12);
+  background: rgb(18 18 20 / 0.55);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  backdrop-filter: blur(16px) saturate(1.1);
+  box-shadow:
+    0 30px 70px -34px rgb(0 0 0 / 0.85),
+    inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+
+.home-v2-byos .home-v2-byos-term-bar {
+  border-bottom-color: rgb(255 255 255 / 0.1);
+}
+
+.home-v2-byos .home-v2-byos-term-label {
+  color: rgb(255 255 255 / 0.5);
+}
+
+.home-v2-byos .home-v2-byos-term-dot {
+  background: rgb(255 255 255 / 0.18);
+}
+
+.home-v2-byos .home-v2-byos-cmd,
+.home-v2-byos .home-v2-byos-prompt-text {
+  color: rgb(244 244 245 / 0.94);
+}
+
+.home-v2-byos .home-v2-byos-comment {
+  color: rgb(255 255 255 / 0.45);
+}
+
+.home-v2-byos .home-v2-byos-prompt {
+  color: color-mix(in srgb, var(--hv2-accent) 78%, white 12%);
+}
+
+.home-v2-byos .home-v2-byos-copy.skill-install-copy-button {
+  border-color: rgb(255 255 255 / 0.16);
+  background: rgb(255 255 255 / 0.06);
+  color: rgb(255 255 255 / 0.85);
+}
+
+.home-v2-byos .home-v2-byos-copy.skill-install-copy-button:hover:not(:disabled) {
+  border-color: rgb(255 255 255 / 0.3);
+  background: rgb(255 255 255 / 0.13);
+  color: #fff;
+}
+
+.home-v2-byos-head {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  text-align: center;
+}
+
+.home-v2-byos-eyebrow {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: color-mix(in srgb, var(--hv2-accent) 80%, var(--hv2-text));
+}
+
+.home-v2-byos-title {
+  margin: 0;
+  font-size: clamp(24px, 2.6vw, 34px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  line-height: 1.08;
+  color: var(--hv2-text);
+}
+
+.home-v2-byos-lede {
+  margin: 0;
+  max-width: 54ch;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--hv2-text-tertiary);
+}
+
+.home-v2-byos-tabs {
+  justify-self: center;
+  display: inline-flex;
+  gap: 3px;
+  padding: 3px;
+  border: 1px solid var(--hv2-border);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--hv2-text) 4%, var(--hv2-surface));
+}
+
+.home-v2-byos-tab {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  padding: 7px 18px;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--hv2-text-tertiary);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  transition:
+    background 0.15s ease,
+    color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+.home-v2-byos-tab:hover {
+  color: var(--hv2-text-secondary);
+}
+
+.home-v2-byos-tab[aria-selected="true"] {
+  background: var(--hv2-surface);
+  color: var(--hv2-text);
+  box-shadow:
+    0 1px 2px color-mix(in srgb, var(--hv2-text) 14%, transparent),
+    inset 0 0 0 1px var(--hv2-border-strong);
+}
+
+.home-v2-byos-tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--hv2-accent) 55%, transparent);
+  outline-offset: 1px;
+}
+
+.home-v2-byos-panel {
+  display: grid;
+  gap: 12px;
+  align-content: start;
+  justify-items: center;
+  width: 100%;
+  max-width: 720px;
+  /* Reserve the taller (terminal) height so switching tabs never resizes the
+     section — otherwise the % background reflows and the artwork jumps. */
+  min-height: 184px;
+  margin: 0 auto;
+}
+
+.home-v2-byos-caption {
+  margin: 0;
+  max-width: 52ch;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--hv2-text-tertiary);
+}
+
+.home-v2-byos-term {
+  width: 100%;
+  border: 1px solid var(--hv2-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--hv2-text) 4%, var(--hv2-surface));
+  overflow: hidden;
+}
+
+.home-v2-byos-term-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--hv2-border);
+}
+
+.home-v2-byos-term-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--hv2-text) 16%, transparent);
+}
+
+.home-v2-byos-term-label {
+  margin-left: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--hv2-text-tertiary);
+}
+
+.home-v2-byos-term-body {
+  position: relative;
+}
+
+.home-v2-byos-code {
+  margin: 0;
+  padding: 14px 16px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.7;
+  color: var(--hv2-text-secondary);
+}
+
+.home-v2-byos-line {
+  display: block;
+  white-space: pre;
+}
+
+.home-v2-byos-prompt {
+  color: color-mix(in srgb, var(--hv2-accent) 70%, var(--hv2-text-tertiary));
+  user-select: none;
+}
+
+.home-v2-byos-cmd {
+  color: var(--hv2-text);
+}
+
+.home-v2-byos-comment {
+  color: var(--hv2-text-tertiary);
+  opacity: 0.8;
+}
+
+.home-v2-byos-copy.skill-install-copy-button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+}
+
+.home-v2-byos-prompt-spark {
+  color: color-mix(in srgb, var(--hv2-accent) 78%, var(--hv2-text));
+}
+
+.home-v2-byos-prompt-text {
+  margin: 0;
+  padding: 18px 56px 18px 18px;
+  font-size: 14.5px;
+  line-height: 1.6;
+  color: var(--hv2-text-secondary);
+}
+
+.home-v2-byos-foot {
+  display: flex;
+  justify-content: center;
+}
+
+a.home-v2-byos-import {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--hv2-text-secondary);
+  text-decoration: none;
+  transition: color 0.15s ease;
+}
+
+a.home-v2-byos-import:hover,
+a.home-v2-byos-import:focus-visible {
+  color: color-mix(in srgb, var(--hv2-accent) 70%, var(--hv2-text));
+  text-decoration: none;
+  outline: none;
+}
+
+.home-v2-byos-import-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+a.home-v2-byos-import svg:last-child {
+  transition: transform 0.15s ease;
+}
+
+a.home-v2-byos-import:hover svg:last-child,
+a.home-v2-byos-import:focus-visible svg:last-child {
+  transform: translateX(2px);
+}
+
+@media (max-width: 760px) {
+  .home-v2-byos {
+    margin-top: 56px;
+    padding: 72px 20px 80px;
+  }
+}
+
 /* ═══ RESPONSIVE ═══ */
 @media (max-width: 1024px) {
   .home-v2-discovery-grid {
