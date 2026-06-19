@@ -15109,6 +15109,10 @@ a.publisher-profile-detail:hover {
   padding: 0 12px;
 }
 
+.home-v2-listing-kind-btn {
+  padding-inline: 10px;
+}
+
 .home-v2-listing-view-btn {
   width: var(--clawhub-segmented-seg-h);
   padding: 0;
