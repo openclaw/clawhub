@@ -16167,7 +16167,7 @@ a.publisher-profile-detail:hover {
   position: relative;
   isolation: isolate;
   margin-bottom: var(--footer-easter-depth);
-  border-radius: 0 0 40px 40px;
+  border-radius: 0;
   background: var(--hv2-bg);
   border-top-color: var(--hv2-border);
   box-shadow: 0 26px 46px rgb(0 0 0 / 0.34);
