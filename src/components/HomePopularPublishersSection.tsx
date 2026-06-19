@@ -105,11 +105,11 @@ export function HomePopularPublishersSection() {
     <section className="home-v2-popular-publishers" aria-labelledby="popular-publishers-title">
       <header className="home-v2-popular-publishers-header">
         <div className="home-v2-popular-publishers-heading">
-          <h2 id="popular-publishers-title">Popular publishers</h2>
+          <h2 id="popular-publishers-title">Popular creators</h2>
           <p>Explore skills and plugins from standout builders.</p>
         </div>
         <Link to="/publishers" className="home-v2-popular-publishers-link">
-          Browse publishers <ArrowRight size={14} aria-hidden="true" />
+          Browse creators <ArrowRight size={14} aria-hidden="true" />
         </Link>
       </header>
       <div
