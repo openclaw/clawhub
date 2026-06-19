@@ -556,6 +556,32 @@ describe("package registry artifact backup page filtering", () => {
 });
 
 describe("seedRegistryArtifactBackupsInternalHandler", () => {
+  it("does not rescan backup dimensions whose sync state is already complete", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({ cursor: null, isDone: true })
+      .mockResolvedValueOnce({ cursor: null, isDone: true })
+      .mockResolvedValueOnce({ stale: 0, exhausted: 0 });
+    const runMutation = vi.fn();
+
+    const result = await seedRegistryArtifactBackupsInternalHandler(
+      { runQuery, runMutation } as never,
+      { queueOnly: true, batchSize: 2, maxBatches: 1 },
+    );
+
+    expect(result).toMatchObject({
+      cursor: null,
+      packageCursor: null,
+      skillsIsDone: true,
+      packageIsDone: true,
+      isDone: true,
+    });
+    expect(result.stats.skillsEnqueued).toBe(0);
+    expect(result.stats.packagesEnqueued).toBe(0);
+    expect(runQuery).toHaveBeenCalledTimes(3);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
   it("can seed the backup ledger without uploading artifacts inline", async () => {
     const runQuery = vi
       .fn()

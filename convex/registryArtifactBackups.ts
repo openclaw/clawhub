@@ -86,6 +86,7 @@ type PackageBackupPageResult = {
 
 type BackupSyncState = {
   cursor: string | null;
+  isDone: boolean;
 };
 
 export type SeedRegistryArtifactBackupsResult = {
@@ -274,13 +275,14 @@ export const getRegistryArtifactBackupSyncStateInternal = internalQuery({
       .query("registryArtifactBackupSyncState")
       .withIndex("by_key", (q) => q.eq("key", SYNC_STATE_KEY))
       .unique();
-    return { cursor: state?.cursor ?? null };
+    return { cursor: state?.cursor ?? null, isDone: state?.isDone === true };
   },
 });
 
 export const setRegistryArtifactBackupSyncStateInternal = internalMutation({
   args: {
     cursor: v.optional(v.string()),
+    isDone: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -293,6 +295,7 @@ export const setRegistryArtifactBackupSyncStateInternal = internalMutation({
       await ctx.db.insert("registryArtifactBackupSyncState", {
         key: SYNC_STATE_KEY,
         cursor: args.cursor,
+        isDone: args.isDone ?? false,
         updatedAt: now,
       });
       return { ok: true as const };
@@ -300,6 +303,7 @@ export const setRegistryArtifactBackupSyncStateInternal = internalMutation({
 
     await ctx.db.patch(state._id, {
       cursor: args.cursor,
+      isDone: args.isDone ?? false,
       updatedAt: now,
     });
 
@@ -314,13 +318,14 @@ export const getPackageRegistryArtifactBackupSyncStateInternal = internalQuery({
       .query("registryArtifactBackupSyncState")
       .withIndex("by_key", (q) => q.eq("key", PACKAGE_SYNC_STATE_KEY))
       .unique();
-    return { cursor: state?.cursor ?? null };
+    return { cursor: state?.cursor ?? null, isDone: state?.isDone === true };
   },
 });
 
 export const setPackageRegistryArtifactBackupSyncStateInternal = internalMutation({
   args: {
     cursor: v.optional(v.string()),
+    isDone: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const now = Date.now();
@@ -333,6 +338,7 @@ export const setPackageRegistryArtifactBackupSyncStateInternal = internalMutatio
       await ctx.db.insert("registryArtifactBackupSyncState", {
         key: PACKAGE_SYNC_STATE_KEY,
         cursor: args.cursor,
+        isDone: args.isDone ?? false,
         updatedAt: now,
       });
       return { ok: true as const };
@@ -340,6 +346,7 @@ export const setPackageRegistryArtifactBackupSyncStateInternal = internalMutatio
 
     await ctx.db.patch(state._id, {
       cursor: args.cursor,
+      isDone: args.isDone ?? false,
       updatedAt: now,
     });
 
@@ -649,12 +656,14 @@ export const seedRegistryArtifactBackups: ReturnType<typeof action> = action({
         internal.registryArtifactBackups.setRegistryArtifactBackupSyncStateInternal,
         {
           cursor: undefined,
+          isDone: false,
         },
       );
       await ctx.runMutation(
         internal.registryArtifactBackups.setPackageRegistryArtifactBackupSyncStateInternal,
         {
           cursor: undefined,
+          isDone: false,
         },
       );
     }

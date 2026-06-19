@@ -266,18 +266,19 @@ export async function seedRegistryArtifactBackupsInternalHandler(
   }
 
   const state = dryRun
-    ? { cursor: null as string | null }
+    ? { cursor: null as string | null, isDone: false }
     : ((await ctx.runQuery(
         internal.registryArtifactBackups.getRegistryArtifactBackupSyncStateInternal,
         {},
       )) as {
         cursor: string | null;
+        isDone: boolean;
       });
 
   let cursor: string | null = state.cursor;
-  let isDone = false;
+  let isDone = state.isDone;
 
-  for (let batch = 0; batch < maxBatches; batch++) {
+  for (let batch = 0; !isDone && batch < maxBatches; batch++) {
     const page = (await ctx.runQuery(
       internal.registryArtifactBackups.getRegistryArtifactBackupPageInternal,
       {
@@ -373,6 +374,7 @@ export async function seedRegistryArtifactBackupsInternalHandler(
         internal.registryArtifactBackups.setRegistryArtifactBackupSyncStateInternal,
         {
           cursor: isDone ? undefined : (cursor ?? undefined),
+          isDone,
         },
       );
     }
@@ -383,11 +385,12 @@ export async function seedRegistryArtifactBackupsInternalHandler(
   const packageSync = await syncPackageReleaseBackups(ctx, context, args, dryRun, queueOnly, stats);
   await alertOnUnhealthyBackupBacklog(ctx, stats);
 
-  if (!dryRun) {
+  if (!dryRun && !state.isDone) {
     await ctx.runMutation(
       internal.registryArtifactBackups.setRegistryArtifactBackupSyncStateInternal,
       {
         cursor: isDone ? undefined : (cursor ?? undefined),
+        isDone,
       },
     );
   }
@@ -414,17 +417,18 @@ async function syncPackageReleaseBackups(
   const maxBatches = clampInt(args.maxBatches ?? DEFAULT_MAX_BATCHES, 1, MAX_MAX_BATCHES);
 
   const state = dryRun
-    ? { cursor: null as string | null }
+    ? { cursor: null as string | null, isDone: false }
     : ((await ctx.runQuery(
         internal.registryArtifactBackups.getPackageRegistryArtifactBackupSyncStateInternal,
         {},
       )) as {
         cursor: string | null;
+        isDone: boolean;
       });
   let cursor: string | null = state.cursor;
-  let isDone = false;
+  let isDone = state.isDone;
 
-  for (let batch = 0; batch < maxBatches; batch++) {
+  for (let batch = 0; !isDone && batch < maxBatches; batch++) {
     const page = (await ctx.runQuery(
       internal.registryArtifactBackups.getPackageRegistryArtifactBackupPageInternal,
       {
@@ -512,6 +516,7 @@ async function syncPackageReleaseBackups(
         internal.registryArtifactBackups.setPackageRegistryArtifactBackupSyncStateInternal,
         {
           cursor: isDone ? undefined : (cursor ?? undefined),
+          isDone,
         },
       );
     }
