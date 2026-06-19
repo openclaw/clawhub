@@ -2,7 +2,8 @@ import { Link } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import { ArrowRight } from "lucide-react";
 import { api } from "../../convex/_generated/api";
-import type { PublicPublisher } from "../lib/publicUser";
+import { formatCompactStat } from "../lib/numberFormat";
+import type { PublicPublisherListItem } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 
 type PinnedPublisher = {
@@ -20,8 +21,8 @@ const PINNED_PUBLISHERS: PinnedPublisher[] = [
 ];
 
 function PopularPublisherCard({ pinned }: { pinned: PinnedPublisher }) {
-  const publisher = useQuery(api.publishers.getByHandle, { handle: pinned.handle }) as
-    | PublicPublisher
+  const publisher = useQuery(api.publishers.getProfileByHandle, { handle: pinned.handle }) as
+    | PublicPublisherListItem
     | null
     | undefined;
   const name = publisher?.displayName?.trim() || pinned.name;
@@ -47,7 +48,10 @@ function PopularPublisherCard({ pinned }: { pinned: PinnedPublisher }) {
       </div>
       <div className="home-v2-popular-publisher-copy">
         <p className="home-v2-popular-publisher-bio">{bio}</p>
-        <span className="home-v2-popular-publisher-handle">@{pinned.handle}</span>
+        <span className="home-v2-popular-publisher-stats">
+          <span>{formatCompactStat(publisher?.stats.skills ?? 0)} skills</span>
+          <span>{formatCompactStat(publisher?.stats.packages ?? 0)} plugins</span>
+        </span>
       </div>
     </Link>
   );
