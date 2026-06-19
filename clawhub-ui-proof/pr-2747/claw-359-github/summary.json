@@ -3,7 +3,7 @@
   "mode": "feature",
   "scenario": "Plugin cards render HTTPS manifest icon and default fallback icon",
   "provider": "Codex in-app browser",
-  "candidate": "4272228c feat: surface plugin manifest icons",
+  "candidate": "15584ab7 merge origin/main with plugin icon support",
   "lanes": [
     {
       "name": "candidate",
