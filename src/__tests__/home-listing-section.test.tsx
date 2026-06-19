@@ -151,6 +151,46 @@ describe("HomeListingSection", () => {
     });
   });
 
+  it("searches skills inside the selected category before truncating results", async () => {
+    convexActionMock.mockResolvedValue([
+      {
+        skill: {
+          _id: "skills:dev-alpha",
+          slug: "dev-alpha",
+          displayName: "Dev Alpha",
+          summary: "Alpha",
+          categories: ["development"],
+          stats: { stars: 1, downloads: 1 },
+        },
+        ownerHandle: "builder",
+      },
+    ]);
+
+    render(<HomeListingSection />);
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(screen.getByRole("option", { name: "Development" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+        "Development",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    const searchInput = await screen.findByRole("searchbox", { name: "Search skills" });
+    fireEvent.change(searchInput, { target: { value: "alpha" } });
+
+    await waitFor(() => {
+      expect(convexActionMock).toHaveBeenCalledWith("search:searchSkills", {
+        query: "alpha",
+        limit: 20,
+        categorySlug: "development",
+      });
+      expect(screen.getByText("Dev Alpha")).toBeTruthy();
+    });
+  });
+
   it("renders the canonical skill and plugin category definitions", async () => {
     render(<HomeListingSection />);
 
@@ -355,6 +395,66 @@ describe("HomeListingSection", () => {
       "skills:listPublicPageV4",
       expect.objectContaining({ cursor: "skills-cursor-2" }),
     );
+  });
+
+  it("keeps load more available when selected skill categories overflow after merging", async () => {
+    const makeEntry = (index: number, category: string) => ({
+      skill: {
+        _id: `skills:${category}:${index}`,
+        slug: `${category}-skill-${index}`,
+        displayName: `${category} Skill ${index}`,
+        summary: "Category skill.",
+        categories: [category],
+        stats: { installsAllTime: 100 - index },
+      },
+      ownerHandle: "builder",
+    });
+    const development = Array.from({ length: 12 }, (_, index) => makeEntry(index, "development"));
+    const security = Array.from({ length: 12 }, (_, index) => makeEntry(index, "security"));
+
+    convexQueryMock.mockImplementation((name, args?: { categorySlug?: string }) => {
+      if (name !== "skills:listPublicPageV4") {
+        return Promise.resolve({ items: [], nextCursor: null });
+      }
+      if (args?.categorySlug === "development") {
+        return Promise.resolve({ page: development, hasMore: false, nextCursor: null });
+      }
+      if (args?.categorySlug === "security") {
+        return Promise.resolve({ page: security, hasMore: false, nextCursor: null });
+      }
+      return Promise.resolve({ page: development, hasMore: false, nextCursor: null });
+    });
+
+    render(<HomeListingSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText("development Skill 0")).toBeTruthy();
+    });
+
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    fireEvent.click(screen.getByRole("option", { name: "Development" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+        "Development",
+      );
+    });
+
+    fireEvent.click(screen.getByRole("option", { name: "Security" }));
+
+    await waitFor(() => {
+      expect(screen.getByRole("combobox", { name: "Category" }).textContent).toContain(
+        "2 categories",
+      );
+      expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    });
+    expect(screen.queryByText("security Skill 11")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Load more" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("security Skill 11")).toBeTruthy();
+    });
   });
 
   it("allows selecting multiple skill categories and refetches each selected category", async () => {

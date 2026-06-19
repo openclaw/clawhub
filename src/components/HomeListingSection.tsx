@@ -284,11 +284,9 @@ async function fetchSkillListing(
     }),
   );
   const pages = results.flatMap((result) => result.page);
-  const hasMore = results.some((result) => result.hasMore);
-  const page = sortSkillEntries(filterSkillsByTab(uniqueSkillEntries(pages), tab), tab).slice(
-    0,
-    numItems,
-  );
+  const sorted = sortSkillEntries(filterSkillsByTab(uniqueSkillEntries(pages), tab), tab);
+  const hasMore = sorted.length > numItems || results.some((result) => result.hasMore);
+  const page = sorted.slice(0, numItems);
   return { page, hasMore };
 }
 
@@ -628,24 +626,35 @@ export function HomeListingSection() {
     const handle = window.setTimeout(() => {
       const load =
         kind === "skills"
-          ? convexHttp
-              .action(api.search.searchSkills, {
-                query: trimmedSearch,
-                limit: fetchLimit,
-              })
-              .then((hits) => {
-                if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
-                const rows = (hits as SkillSearchHit[])
-                  .map((hit) => ({
-                    skill: hit.skill,
-                    ownerHandle: hit.ownerHandle,
-                    owner: hit.owner,
-                  }))
-                  .filter((entry) => skillMatchesAnyCategory(entry.skill, categorySlugs));
-                setSearchSkills(tab === "new" ? sortSkillEntries(rows, tab) : rows);
-                setListingHasMore(rows.length >= fetchLimit);
-                setSearchStatus("idle");
-              })
+          ? Promise.all(
+              (categorySlugs.length > 0 ? categorySlugs : [null]).map((categorySlug) =>
+                convexHttp.action(api.search.searchSkills, {
+                  query: trimmedSearch,
+                  limit: fetchLimit,
+                  ...(categorySlug ? { categorySlug } : {}),
+                }),
+              ),
+            ).then((results) => {
+              if (controller.signal.aborted || requestId !== searchRequestRef.current) return;
+              const rows = uniqueSkillEntries(
+                results.flatMap((hits) =>
+                  (hits as SkillSearchHit[])
+                    .map((hit) => ({
+                      skill: hit.skill,
+                      ownerHandle: hit.ownerHandle,
+                      owner: hit.owner,
+                    }))
+                    .filter((entry) => skillMatchesAnyCategory(entry.skill, categorySlugs)),
+                ),
+              );
+              const sortedRows = tab === "new" ? sortSkillEntries(rows, tab) : rows;
+              setSearchSkills(sortedRows.slice(0, fetchLimit));
+              setListingHasMore(
+                sortedRows.length > fetchLimit ||
+                  results.some((hits) => (hits as SkillSearchHit[]).length >= fetchLimit),
+              );
+              setSearchStatus("idle");
+            })
           : Promise.all(
               (categorySlugs.length > 0 ? categorySlugs : [null]).map((categorySlug) =>
                 fetchPluginCatalog({
