@@ -39,6 +39,7 @@ import {
 import {
   assertAdmin,
   assertModerator,
+  assertRole,
   getOptionalActiveAuthUserId,
   requireUserFromAction,
   requireUser,
@@ -381,6 +382,7 @@ const internalRefs = internal as unknown as {
     insertAuditLogInternal: unknown;
     updateReleaseStaticScanInternal: unknown;
     backfillLatestPackageScanStatusInternal: unknown;
+    normalizeOfficialPublisherPackagesInternal: unknown;
     insertPackageInspectorWarningsInternal: unknown;
     sendPackageInspectorFindingsEmailInternal: unknown;
     getPackageInspectorEmailContextInternal: unknown;
@@ -8726,6 +8728,95 @@ export const backfillLatestPackageScanStatus = action({
       internalRefs.packages.backfillLatestPackageScanStatusInternal,
       {
         batchSize: args.batchSize,
+      },
+    );
+  },
+});
+
+export const normalizeOfficialPublisherPackagesInternal = internalMutation({
+  args: {
+    family: v.optional(v.union(v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const batchSize = Math.max(10, Math.min(args.batchSize ?? 100, 200));
+    const dryRun = args.dryRun !== false;
+    const family = args.family ?? "code-plugin";
+    const { page, continueCursor, isDone } = await ctx.db
+      .query("packages")
+      .withIndex("by_family_updated", (q) => q.eq("family", family))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    let matched = 0;
+    let patched = 0;
+    let skippedPrivate = 0;
+    for (const pkg of page) {
+      if (!pkg.ownerPublisherId || pkg.softDeletedAt) continue;
+      const ownerPublisher = await ctx.db.get(pkg.ownerPublisherId);
+      if (!(await isOfficialPublisher(ctx, ownerPublisher))) continue;
+      if (pkg.channel === "private") {
+        skippedPrivate++;
+        continue;
+      }
+      if (pkg.channel === "official" && pkg.isOfficial === true) continue;
+
+      matched++;
+      if (dryRun) continue;
+
+      const nextPackage = {
+        ...pkg,
+        channel: "official" as const,
+        isOfficial: true,
+      };
+      await ctx.db.patch(pkg._id, {
+        channel: nextPackage.channel,
+        isOfficial: nextPackage.isOfficial,
+      });
+      const owner = await getOwnerPublisher(ctx, {
+        ownerPublisherId: nextPackage.ownerPublisherId,
+        ownerUserId: nextPackage.ownerUserId,
+      });
+      await upsertPackageSearchDigest(ctx, {
+        ...extractPackageDigestFields(nextPackage),
+        ownerHandle: owner?.handle ?? "",
+        ownerKind: owner?.kind,
+      });
+      patched++;
+    }
+
+    return {
+      family,
+      cursor: continueCursor,
+      isDone,
+      scanned: page.length,
+      matched,
+      patched,
+      skippedPrivate,
+      dryRun,
+    };
+  },
+});
+
+export const normalizeOfficialPublisherPackages = action({
+  args: {
+    family: v.optional(v.union(v.literal("code-plugin"), v.literal("bundle-plugin"))),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const { user } = await requireUserFromAction(ctx);
+    assertRole(user, ["admin"]);
+    return await runMutationRef(
+      ctx,
+      internalRefs.packages.normalizeOfficialPublisherPackagesInternal,
+      {
+        family: args.family,
+        cursor: args.cursor,
+        batchSize: args.batchSize,
+        dryRun: args.dryRun,
       },
     );
   },
