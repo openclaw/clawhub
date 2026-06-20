@@ -276,6 +276,7 @@ function makeNomination(
     ownerUserId: string;
     latestScoreId: string;
     handleSnapshot: string;
+    modelVersion: string;
     label: "potential_ban_candidate" | "review" | "pass";
     status: PublisherAbuseTestTriageStatus;
     lastScoredAt: number;
@@ -290,7 +291,7 @@ function makeNomination(
     ownerUserId: fields.ownerUserId,
     handleSnapshot: fields.handleSnapshot ?? "owner",
     latestScoreId: fields.latestScoreId ?? "publisherAbuseScores:score",
-    modelVersion: "publisher-abuse-pressure.v2",
+    modelVersion: fields.modelVersion ?? "publisher-abuse-pressure.v2",
     label: fields.label ?? "potential_ban_candidate",
     status: fields.status ?? "pending",
     openedAt: 1,
@@ -2970,6 +2971,7 @@ describe("publisher abuse dry-run persistence", () => {
                   _id: "publisherAbuseReviewNominations:existing",
                   status: "pending",
                 }),
+                take: async () => [],
               }),
             };
           }
@@ -3123,6 +3125,149 @@ describe("publisher abuse dry-run persistence", () => {
         passCount: 1,
         reviewCount: 0,
         potentialBanCandidateCount: 0,
+      }),
+    );
+  });
+
+  it("clears stale higher-severity aggregate nominations after a downgrade to review", async () => {
+    const modelConfig = {
+      ...TEST_MODEL_CONFIG,
+      modelVersion: "publisher-abuse-pressure.v4",
+      skillPivot: 200,
+    };
+    const staleV2Nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:stale-v2",
+      ownerKey: "publisher:publishers:downgraded",
+      ownerPublisherId: "publishers:downgraded",
+      ownerUserId: "users:downgraded",
+      latestScoreId: "publisherAbuseScores:old-v2-score",
+      handleSnapshot: "downgraded",
+      modelVersion: "publisher-abuse-pressure.v2",
+      label: "potential_ban_candidate",
+      status: "pending",
+      lastScoredAt: 1,
+      updatedAt: 1,
+    });
+    const insert = vi.fn(async (table: string) =>
+      table === "publisherAbuseReviewNominations"
+        ? "publisherAbuseReviewNominations:current-v4"
+        : `${table}:new`,
+    );
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: modelConfig.modelVersion,
+          modelConfig,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 3,
+          sumSquaredLogPressure: 9,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:downgraded-v4",
+                        ownerKey: "publisher:publishers:downgraded",
+                        ownerPublisherId: "publishers:downgraded",
+                        ownerUserId: "users:downgraded",
+                        handleSnapshot: "downgraded",
+                        modelVersion: modelConfig.modelVersion,
+                        pressure: 100,
+                        logPressure: 5,
+                        publishedSkills: 220,
+                        totalInstalls: 80,
+                        totalStars: 2,
+                        totalDownloads: 2_000,
+                        installsPerSkill: 0.36,
+                        starsPerSkill: 0.009,
+                        downloadsPerSkill: 9.09,
+                        reasonCodes: ["high_catalog_volume"],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_owner_key_and_model_version");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                return {
+                  first: async () => null,
+                  take: async () =>
+                    constraints.ownerKey === staleV2Nomination.ownerKey ? [staleV2Nomination] : [],
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: true, finalized: 1, nominations: 1 }),
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScores:downgraded-v4",
+      expect.objectContaining({ label: "review", zScore: 2 }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewNominations",
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:downgraded-v4",
+        modelVersion: modelConfig.modelVersion,
+        label: "review",
+        status: "pending",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      staleV2Nomination._id,
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:downgraded-v4",
+        label: "pass",
+        lastScoredAt: expect.any(Number),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: staleV2Nomination._id,
+        eventType: "nomination_score_updated",
+        previousLabel: "potential_ban_candidate",
+        nextLabel: "pass",
+        scoreId: "publisherAbuseScores:downgraded-v4",
       }),
     );
   });
@@ -3373,6 +3518,7 @@ describe("publisher abuse dry-run persistence", () => {
                   reviewedByUserId: "users:admin",
                   reviewedAt: 100,
                 }),
+                take: async () => [],
               }),
             };
           }
@@ -3473,6 +3619,7 @@ describe("publisher abuse dry-run persistence", () => {
                   reviewedByUserId: "users:admin",
                   reviewedAt: 100,
                 }),
+                take: async () => [],
               }),
             };
           }
@@ -3572,6 +3719,7 @@ describe("publisher abuse dry-run persistence", () => {
                   reviewedByUserId: "users:admin",
                   reviewedAt: 100,
                 }),
+                take: async () => [],
               }),
             };
           }

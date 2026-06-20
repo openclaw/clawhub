@@ -1505,6 +1505,7 @@ async function upsertPublisherAbuseReviewNomination(
       nextStatus: shouldReopen ? "pending" : undefined,
       createdAt: args.now,
     });
+    await markStaleAggregatePublisherAbuseReviewNominationsAsPass(ctx, args);
     return existing._id;
   }
 
@@ -1532,7 +1533,36 @@ async function upsertPublisherAbuseReviewNomination(
     nextLabel: args.score.label,
     createdAt: args.now,
   });
+  await markStaleAggregatePublisherAbuseReviewNominationsAsPass(ctx, args);
   return nominationId;
+}
+
+async function markStaleAggregatePublisherAbuseReviewNominationsAsPass(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    score: ScoreDoc;
+    run: ScoreRun;
+    now: number;
+  },
+) {
+  if (!isAggregatePublisherAbuseModelVersion(args.score.modelVersion)) return null;
+
+  const existingNominations = await ctx.db
+    .query("publisherAbuseReviewNominations")
+    .withIndex("by_owner_key_and_model_version", (q) => q.eq("ownerKey", args.score.ownerKey))
+    .take(MAX_OWNER_NOMINATION_VERSION_SCAN);
+
+  let updatedNominationId: Id<"publisherAbuseReviewNominations"> | null = null;
+  for (const existing of existingNominations) {
+    if (
+      !shouldClearStaleAggregatePublisherAbuseReviewNomination(existing, args.score.modelVersion)
+    ) {
+      continue;
+    }
+    await markPublisherAbuseReviewNominationAsPass(ctx, { ...args, existing });
+    updatedNominationId ??= existing._id;
+  }
+  return updatedNominationId;
 }
 
 async function updateExistingPublisherAbuseReviewNominationForPass(
@@ -1562,7 +1592,10 @@ async function updateExistingPublisherAbuseReviewNominationForPass(
 
   let updatedNominationId: Id<"publisherAbuseReviewNominations"> | null = null;
   for (const existing of existingNominations) {
-    if (!shouldClearPublisherAbuseReviewNominationForPass(existing, args.score.modelVersion)) {
+    if (
+      existing.modelVersion !== args.score.modelVersion &&
+      !shouldClearStaleAggregatePublisherAbuseReviewNomination(existing, args.score.modelVersion)
+    ) {
       continue;
     }
     await markPublisherAbuseReviewNominationAsPass(ctx, { ...args, existing });
@@ -1571,12 +1604,12 @@ async function updateExistingPublisherAbuseReviewNominationForPass(
   return updatedNominationId;
 }
 
-function shouldClearPublisherAbuseReviewNominationForPass(
+function shouldClearStaleAggregatePublisherAbuseReviewNomination(
   nomination: Doc<"publisherAbuseReviewNominations">,
   currentModelVersion: string,
 ) {
-  if (nomination.modelVersion === currentModelVersion) return true;
   return (
+    nomination.modelVersion !== currentModelVersion &&
     nomination.status === "pending" &&
     nomination.label !== "pass" &&
     isAggregatePublisherAbuseModelVersion(nomination.modelVersion)
