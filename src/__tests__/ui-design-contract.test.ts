@@ -178,7 +178,11 @@ describe("restored UI design contract", () => {
     const listingSource = read("src/components/HomeListingSection.tsx");
     const css = styles();
 
-    expect(homeSource).toContain("BUILT BY THE COMMUNITY");
+    expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
+    expect(homeSource).not.toContain("Unleash.");
+    expect(homeSource).not.toContain("Ship.");
+    expect(homeSource).not.toContain("Build.");
+    expect(homeSource).not.toContain("Create.");
     expect(homeSource).toContain("Discover skills and plugins from top creators");
     expect(homeSource).not.toContain("home-v2-sub-stat");
     expect(homeSource).toContain("HomeListingSection");

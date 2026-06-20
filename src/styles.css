@@ -14294,44 +14294,22 @@ a.publisher-profile-detail:hover {
 }
 
 /* Headline */
-.home-v2-hero-label {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--hv2-text-tertiary);
-  margin-bottom: 20px;
-  transition:
-    color 0.2s,
-    text-shadow 0.3s;
-  cursor: default;
-}
-.home-v2-hero-label:hover,
-.home-v2-hero-label:focus-visible {
-  color: var(--hv2-accent);
-}
-.home-v2-hero-label:focus-visible {
-  outline: 1px solid color-mix(in srgb, var(--hv2-accent) 55%, transparent);
-  outline-offset: 6px;
-}
-
 .home-v2-headline {
   font-family: "Inter", sans-serif;
   font-weight: 700;
-  font-size: clamp(38px, 4.5vw, 58px);
+  font-size: clamp(36px, 4.25vw, 54px);
   line-height: 1.12;
   letter-spacing: -0.035em;
   margin-bottom: 14px;
   max-width: 1060px;
+  width: 100%;
   white-space: nowrap;
   display: flex;
   justify-content: center;
+  text-align: center;
   color: var(--hv2-text);
+  cursor: default;
+  user-select: none;
 }
 .home-v2-headline-clear {
   max-width: 960px;
@@ -14340,6 +14318,7 @@ a.publisher-profile-detail:hover {
 .home-v2-headline-inner {
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 .home-v2-action-word {
   font-family: "JetBrains Mono", monospace;
@@ -14409,20 +14388,6 @@ a.publisher-profile-detail:hover {
 }
 
 /* Slot machine easter egg */
-.home-v2-hero-label-active {
-  color: var(--hv2-accent) !important;
-  text-shadow: 0 0 12px rgba(212, 69, 58, 0.4);
-  animation: home-v2-labelPulse 0.6s ease-in-out infinite;
-}
-@keyframes home-v2-labelPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
 .home-v2-headline-slots {
   min-height: 1.15em;
   position: relative;
@@ -18585,43 +18550,19 @@ a.publisher-profile-detail:hover {
 }
 
 /* Headline */
-.home-v2-hero-label {
-  appearance: none;
-  border: 0;
-  background: transparent;
-  padding: 0;
-  font-family: "JetBrains Mono", monospace;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--hv2-text-tertiary);
-  margin-bottom: 20px;
-  transition:
-    color 0.2s,
-    text-shadow 0.3s;
-  cursor: default;
-}
-.home-v2-hero-label:hover,
-.home-v2-hero-label:focus-visible {
-  color: var(--hv2-accent);
-}
-.home-v2-hero-label:focus-visible {
-  outline: 1px solid color-mix(in srgb, var(--hv2-accent) 55%, transparent);
-  outline-offset: 6px;
-}
-
 .home-v2-headline {
   font-family: "Inter", sans-serif;
   font-weight: 700;
-  font-size: clamp(38px, 4.5vw, 58px);
+  font-size: clamp(36px, 4.25vw, 54px);
   line-height: 1.12;
   letter-spacing: -0.035em;
   margin-bottom: 14px;
   max-width: 1060px;
+  width: 100%;
   white-space: nowrap;
   display: flex;
   justify-content: center;
+  text-align: center;
   color: var(--hv2-text);
 }
 .home-v2-headline-clear {
@@ -18631,6 +18572,7 @@ a.publisher-profile-detail:hover {
 .home-v2-headline-inner {
   display: flex;
   align-items: center;
+  justify-content: center;
 }
 .home-v2-action-word {
   font-family: "JetBrains Mono", monospace;
@@ -18700,20 +18642,6 @@ a.publisher-profile-detail:hover {
 }
 
 /* Slot machine easter egg */
-.home-v2-hero-label-active {
-  color: var(--hv2-accent) !important;
-  text-shadow: 0 0 12px rgba(212, 69, 58, 0.4);
-  animation: home-v2-labelPulse 0.6s ease-in-out infinite;
-}
-@keyframes home-v2-labelPulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
 .home-v2-headline-slots {
   min-height: 1.15em;
   position: relative;
@@ -21774,20 +21702,17 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     grid-template-columns: repeat(2, 1fr);
   }
 }
-@media (max-width: 768px) {
-  .home-v2-hero {
-    padding: 48px 20px 36px;
-  }
-  .home-v2-ring {
-    display: none;
-  }
+@media (max-width: 900px) {
   .home-v2-headline {
-    font-size: clamp(28px, 6vw, 38px);
     white-space: normal;
   }
   .home-v2-headline-inner {
     flex-wrap: wrap;
     justify-content: center;
+    row-gap: 0.08em;
+  }
+  .home-v2-sep-final {
+    display: none;
   }
   .home-v2-cycle-wrap {
     flex: 0 0 100%;
@@ -21801,6 +21726,17 @@ a.home-v2-byos-import:focus-visible svg:last-child {
     width: 100%;
     justify-content: center;
     text-align: center;
+  }
+}
+@media (max-width: 768px) {
+  .home-v2-hero {
+    padding: 48px 20px 36px;
+  }
+  .home-v2-ring {
+    display: none;
+  }
+  .home-v2-headline {
+    font-size: clamp(28px, 6vw, 38px);
   }
   .home-v2-categories-grid {
     --home-v2-category-columns: 1;

@@ -264,7 +264,7 @@ function SkillsHome() {
     slotTimersRef.current.push(finalTimer);
   }, [fireConfetti]);
 
-  const handleLabelClick = useCallback(() => {
+  const handleHeadlineClick = useCallback(() => {
     const now = Date.now();
     if (now < cooldownUntilRef.current) return;
     clickTimesRef.current.push(now);
@@ -307,14 +307,6 @@ function SkillsHome() {
           <div className="home-v2-ring home-v2-ring-3" />
         </div>
 
-        <button
-          className={`home-v2-hero-label ${slotState ? "home-v2-hero-label-active" : ""}`}
-          type="button"
-          onClick={handleLabelClick}
-        >
-          BUILT BY THE COMMUNITY
-        </button>
-
         {slotState ? (
           <h1
             className={`home-v2-headline home-v2-headline-slots${
@@ -324,6 +316,7 @@ function SkillsHome() {
                   : " home-v2-headline-jackpot"
                 : ""
             }`}
+            onClick={handleHeadlineClick}
           >
             {slotState.phase === "stopped" && slotState.isHackJackpot ? (
               <img
@@ -337,24 +330,24 @@ function SkillsHome() {
               {renderSlotReel(0)}
               <span className="home-v2-sep" />
               {renderSlotReel(1)}
-              <span className="home-v2-sep" />
+              <span className="home-v2-sep home-v2-sep-final" />
               {renderSlotReel(2)}
             </span>
           </h1>
         ) : (
-          <h1 className="home-v2-headline">
+          <h1 className="home-v2-headline" onClick={handleHeadlineClick}>
             <span className="home-v2-headline-inner">
               <span className="home-v2-action-word">Equip</span>
               <span className="home-v2-sep" />
               <span className="home-v2-action-word">Install</span>
-              <span className="home-v2-sep" />
+              <span className="home-v2-sep home-v2-sep-final" />
               <span className="home-v2-cycle-wrap">
                 <span className="home-v2-cycle-track">
-                  <span className="home-v2-cycle-word">Unleash.</span>
-                  <span className="home-v2-cycle-word">Ship.</span>
-                  <span className="home-v2-cycle-word">Build.</span>
-                  <span className="home-v2-cycle-word">Create.</span>
-                  <span className="home-v2-cycle-word">Unleash.</span>
+                  <span className="home-v2-cycle-word">Unleash</span>
+                  <span className="home-v2-cycle-word">Ship</span>
+                  <span className="home-v2-cycle-word">Build</span>
+                  <span className="home-v2-cycle-word">Create</span>
+                  <span className="home-v2-cycle-word">Unleash</span>
                 </span>
               </span>
             </span>
