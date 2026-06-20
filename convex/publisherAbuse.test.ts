@@ -2996,6 +2996,18 @@ describe("publisher abuse dry-run persistence", () => {
       modelVersion: "publisher-abuse-pressure.v4",
       skillPivot: 200,
     };
+    const staleV2Nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:stale-v2",
+      ownerKey: "publisher:publishers:spacesq-shape",
+      ownerPublisherId: "publishers:spacesq-shape",
+      ownerUserId: "users:spacesq-shape",
+      latestScoreId: "publisherAbuseScores:old-v2-score",
+      handleSnapshot: "spacesq-shape",
+      label: "potential_ban_candidate",
+      status: "pending",
+      lastScoredAt: 1,
+      updatedAt: 1,
+    });
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);
     const ctx = {
@@ -3052,9 +3064,24 @@ describe("publisher abuse dry-run persistence", () => {
           }
           if (table === "publisherAbuseReviewNominations") {
             return {
-              withIndex: () => ({
-                first: async () => null,
-              }),
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_owner_key_and_model_version");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                return {
+                  take: async () =>
+                    constraints.ownerKey === staleV2Nomination.ownerKey ? [staleV2Nomination] : [],
+                };
+              },
             };
           }
           if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
@@ -3072,6 +3099,24 @@ describe("publisher abuse dry-run persistence", () => {
       expect.objectContaining({ label: "pass", zScore: 0 }),
     );
     expect(insert).not.toHaveBeenCalledWith("publisherAbuseReviewNominations", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      staleV2Nomination._id,
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:spacesq-shape",
+        label: "pass",
+        lastScoredAt: expect.any(Number),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: staleV2Nomination._id,
+        eventType: "nomination_score_updated",
+        previousLabel: "potential_ban_candidate",
+        nextLabel: "pass",
+        scoreId: "publisherAbuseScores:spacesq-shape",
+      }),
+    );
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseScoreRuns:run",
       expect.objectContaining({
@@ -3230,7 +3275,7 @@ describe("publisher abuse dry-run persistence", () => {
           if (table === "publisherAbuseReviewNominations") {
             return {
               withIndex: () => ({
-                first: async () => null,
+                take: async () => [],
               }),
             };
           }
@@ -3606,13 +3651,15 @@ describe("publisher abuse dry-run persistence", () => {
             };
           }
           if (table === "publisherAbuseReviewNominations") {
+            const existingNomination = {
+              _id: "publisherAbuseReviewNominations:existing",
+              ownerKey: "publisher:publishers:recovered",
+              modelVersion: "publisher-abuse-pressure.v2",
+              label: "review",
+            };
             return {
               withIndex: () => ({
-                first: async () => ({
-                  _id: "publisherAbuseReviewNominations:existing",
-                  ownerKey: "publisher:publishers:recovered",
-                  label: "review",
-                }),
+                take: async () => [existingNomination],
               }),
             };
           }

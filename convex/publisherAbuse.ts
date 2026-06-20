@@ -41,6 +41,7 @@ const MAX_MAX_PAGES = 50;
 const ACTION_CONTINUATION_DELAY_MS = 60_000;
 const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
 const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
+const MAX_OWNER_NOMINATION_VERSION_SCAN = 20;
 const MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER = 3;
 const MAX_REVIEW_DASHBOARD_SCORE_SCAN_MULTIPLIER = 32;
 const MAX_REVIEW_DASHBOARD_SCORE_SCAN = 2000;
@@ -1542,15 +1543,60 @@ async function updateExistingPublisherAbuseReviewNominationForPass(
     now: number;
   },
 ) {
-  const existing = await ctx.db
+  if (!isAggregatePublisherAbuseModelVersion(args.score.modelVersion)) {
+    const existing = await ctx.db
+      .query("publisherAbuseReviewNominations")
+      .withIndex("by_owner_key_and_model_version", (q) =>
+        q.eq("ownerKey", args.score.ownerKey).eq("modelVersion", args.score.modelVersion),
+      )
+      .first();
+    if (!existing) return null;
+    await markPublisherAbuseReviewNominationAsPass(ctx, { ...args, existing });
+    return existing._id;
+  }
+
+  const existingNominations = await ctx.db
     .query("publisherAbuseReviewNominations")
-    .withIndex("by_owner_key_and_model_version", (q) =>
-      q.eq("ownerKey", args.score.ownerKey).eq("modelVersion", args.score.modelVersion),
-    )
-    .first();
+    .withIndex("by_owner_key_and_model_version", (q) => q.eq("ownerKey", args.score.ownerKey))
+    .take(MAX_OWNER_NOMINATION_VERSION_SCAN);
 
-  if (!existing) return null;
+  let updatedNominationId: Id<"publisherAbuseReviewNominations"> | null = null;
+  for (const existing of existingNominations) {
+    if (!shouldClearPublisherAbuseReviewNominationForPass(existing, args.score.modelVersion)) {
+      continue;
+    }
+    await markPublisherAbuseReviewNominationAsPass(ctx, { ...args, existing });
+    updatedNominationId ??= existing._id;
+  }
+  return updatedNominationId;
+}
 
+function shouldClearPublisherAbuseReviewNominationForPass(
+  nomination: Doc<"publisherAbuseReviewNominations">,
+  currentModelVersion: string,
+) {
+  if (nomination.modelVersion === currentModelVersion) return true;
+  return (
+    nomination.status === "pending" &&
+    nomination.label !== "pass" &&
+    isAggregatePublisherAbuseModelVersion(nomination.modelVersion)
+  );
+}
+
+function isAggregatePublisherAbuseModelVersion(modelVersion: string) {
+  return modelVersion.startsWith("publisher-abuse-pressure.");
+}
+
+async function markPublisherAbuseReviewNominationAsPass(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    existing: Doc<"publisherAbuseReviewNominations">;
+    score: ScoreDoc;
+    run: ScoreRun;
+    now: number;
+  },
+) {
+  const { existing } = args;
   await ctx.db.patch(existing._id, {
     latestScoreId: args.score._id,
     label: "pass",
