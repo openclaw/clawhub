@@ -38,6 +38,13 @@ type SourceInfo = {
 
 type JsonRecord = Record<string, unknown>;
 
+type PluginManifestSummaryFile = {
+  path: string;
+  size: number;
+  sha256: string;
+  text?: string;
+};
+
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -53,6 +60,264 @@ function normalizeStringList(input: unknown): string[] {
       .filter(Boolean);
   }
   return [];
+}
+
+function normalizeNamedList(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map((value) =>
+      typeof value === "string"
+        ? value.trim()
+        : isRecord(value)
+          ? optionalString(value.name)
+          : undefined,
+    )
+    .filter(Boolean) as string[];
+}
+
+function uniq(items: Array<string | undefined | null>) {
+  return [...new Set(items.map((item) => item?.trim()).filter(Boolean) as string[])];
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" && value.trim() ? value.trim() : undefined;
+}
+
+function pathDerivedName(path: string) {
+  const segment = path.split("/").filter(Boolean).at(-1) ?? path;
+  return segment.trim() || path;
+}
+
+function normalizeSkillRootPath(value: unknown) {
+  const raw =
+    typeof value === "string"
+      ? value
+      : isRecord(value)
+        ? (optionalString(value.path) ??
+          optionalString(value.root) ??
+          optionalString(value.rootPath))
+        : undefined;
+  if (!raw) return null;
+  return sanitizePath(raw)?.replace(/^\.\//, "").replace(/\/+$/, "") ?? null;
+}
+
+function normalizeSkillRootPaths(input: unknown) {
+  const values = Array.isArray(input) ? input : input ? [input] : [];
+  return uniq(values.map(normalizeSkillRootPath));
+}
+
+function findSkillMarkdownFile(files: PluginManifestSummaryFile[], rootPath: string) {
+  const expected = `${rootPath}/SKILL.md`;
+  const expectedLower = expected.toLowerCase();
+  return (
+    files.find((file) => file.path === expected) ??
+    files.find((file) => file.path.toLowerCase() === expectedLower) ??
+    null
+  );
+}
+
+function skillRootPathFromMarkdownFile(filePath: string) {
+  return filePath.split("/").slice(0, -1).join("/");
+}
+
+function findSkillMarkdownFiles(files: PluginManifestSummaryFile[], rootPath: string) {
+  const exact = findSkillMarkdownFile(files, rootPath);
+  if (exact) return [{ rootPath, file: exact }];
+
+  const directoryPrefix = `${rootPath.toLowerCase()}/`;
+  const seen = new Set<string>();
+  return files
+    .filter((file) => {
+      const lowerPath = file.path.toLowerCase();
+      return lowerPath.startsWith(directoryPrefix) && lowerPath.endsWith("/skill.md");
+    })
+    .map((file) => ({
+      rootPath: skillRootPathFromMarkdownFile(file.path),
+      file,
+    }))
+    .filter((entry) => {
+      const key = entry.file.path.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+}
+
+function extractCompatibilityFromManifest(
+  manifest: JsonRecord,
+  fallback?: PackageCompatibility,
+): PackageCompatibility | undefined {
+  const normalized = normalizeOpenClawExternalPluginCompatibility({ openclaw: manifest.openclaw });
+  const compatibility = {
+    pluginApiRange: normalized?.pluginApiRange ?? fallback?.pluginApiRange,
+    builtWithOpenClawVersion:
+      normalized?.builtWithOpenClawVersion ?? fallback?.builtWithOpenClawVersion,
+    pluginSdkVersion: normalized?.pluginSdkVersion ?? fallback?.pluginSdkVersion,
+    minGatewayVersion: normalized?.minGatewayVersion ?? fallback?.minGatewayVersion,
+  };
+  const entries = Object.entries(compatibility).filter(
+    (entry): entry is [keyof PackageCompatibility, string] =>
+      typeof entry[1] === "string" && entry[1].trim().length > 0,
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function extractManifestIdentity(manifest: JsonRecord) {
+  const identity = {
+    name: optionalString(manifest.name),
+    description: optionalString(manifest.description),
+    version: optionalString(manifest.version),
+    family: optionalString(manifest.family),
+  };
+  const entries = Object.entries(identity).filter(
+    (entry): entry is [keyof typeof identity, string] => Boolean(entry[1]),
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+function isSensitiveConfigProperty(name: string, property: JsonRecord) {
+  if (property.sensitive === true || property.secret === true || property["x-sensitive"] === true) {
+    return true;
+  }
+  if (isRecord(property.uiHints) && property.uiHints.sensitive === true) {
+    return true;
+  }
+  const loweredName = name.toLowerCase();
+  if (/(secret|token|api[_-]?key|password|credential)/.test(loweredName)) return true;
+  const format = optionalString(property.format)?.toLowerCase();
+  return format === "password" || format === "secret";
+}
+
+const CONFIG_SCHEMA_META_KEYS = new Set([
+  "$schema",
+  "$defs",
+  "additionalProperties",
+  "definitions",
+  "description",
+  "dependentSchemas",
+  "patternProperties",
+  "properties",
+  "required",
+  "title",
+  "type",
+  "uiHints",
+]);
+
+function isLikelyDirectConfigFieldProperty(value: JsonRecord) {
+  return (
+    optionalString(value.type) !== undefined ||
+    optionalString(value.description) !== undefined ||
+    optionalString(value.format) !== undefined ||
+    value.required === true ||
+    value.required === false ||
+    value.sensitive === true ||
+    value.secret === true ||
+    value["x-sensitive"] === true ||
+    isRecord(value.uiHints)
+  );
+}
+
+function extractConfigFields(manifest: JsonRecord) {
+  const openclaw = isRecord(manifest.openclaw) ? manifest.openclaw : undefined;
+  const schema = isRecord(manifest.configSchema)
+    ? manifest.configSchema
+    : isRecord(openclaw?.configSchema)
+      ? openclaw.configSchema
+      : undefined;
+  if (!schema) return [];
+  const required = new Set(normalizeStringList(schema.required));
+  const shouldReadDirectMap =
+    !isRecord(schema.properties) &&
+    optionalString(schema.type) === undefined &&
+    optionalString(schema["$schema"]) === undefined;
+  const properties = isRecord(schema.properties)
+    ? schema.properties
+    : shouldReadDirectMap
+      ? Object.fromEntries(
+          Object.entries(schema).filter(
+            ([name, value]) =>
+              !CONFIG_SCHEMA_META_KEYS.has(name) &&
+              isRecord(value) &&
+              isLikelyDirectConfigFieldProperty(value),
+          ),
+        )
+      : {};
+  return Object.entries(properties)
+    .filter((entry): entry is [string, JsonRecord] => isRecord(entry[1]))
+    .map(([name, property]) => ({
+      name,
+      ...(optionalString(property.description)
+        ? { description: optionalString(property.description) }
+        : {}),
+      required: required.has(name) || property.required === true,
+      sensitive: isSensitiveConfigProperty(name, property),
+    }));
+}
+
+function extractMcpServerNames(manifest: JsonRecord) {
+  const raw = manifest.mcpServers ?? manifest.mcp;
+  if (Array.isArray(raw)) return uniq(normalizeNamedList(raw));
+  if (isRecord(raw))
+    return Object.keys(raw)
+      .map((name) => name.trim())
+      .filter(Boolean)
+      .sort();
+  return [];
+}
+
+function parseSkillMarkdownMetadata(text: string | undefined) {
+  if (!text) return {};
+  const frontmatter = parseFrontmatter(text);
+  return {
+    name: optionalString(getFrontmatterValue(frontmatter, "name")),
+    description: optionalString(getFrontmatterValue(frontmatter, "description")),
+  };
+}
+
+export function derivePluginManifestSummary(params: {
+  pluginManifest: JsonRecord;
+  skillManifest?: JsonRecord;
+  files: PluginManifestSummaryFile[];
+  compatibility?: PackageCompatibility;
+}) {
+  const compatibility = extractCompatibilityFromManifest(
+    params.pluginManifest,
+    params.compatibility,
+  );
+  const manifestIdentity = extractManifestIdentity(params.pluginManifest);
+  const skillManifest = params.skillManifest ?? params.pluginManifest;
+  const skillRoots = uniq([
+    ...normalizeSkillRootPaths(skillManifest.skills),
+    ...normalizeSkillRootPaths(skillManifest.bundledSkills),
+  ]);
+  const bundledSkills = skillRoots
+    .flatMap((rootPath) => findSkillMarkdownFiles(params.files, rootPath))
+    .map(({ rootPath, file }) => {
+      const metadata = parseSkillMarkdownMetadata(file.text);
+      return {
+        name: metadata.name ?? pathDerivedName(rootPath),
+        ...(metadata.description ? { description: metadata.description } : {}),
+        rootPath,
+        skillMdPath: file.path,
+        sha256: file.sha256,
+        size: file.size,
+      };
+    })
+    .filter((entry, index, entries) => {
+      const firstIndex = entries.findIndex(
+        (candidate) => candidate.skillMdPath.toLowerCase() === entry.skillMdPath.toLowerCase(),
+      );
+      return firstIndex === index;
+    });
+
+  return {
+    schemaVersion: 1 as const,
+    ...(compatibility ? { compatibility } : {}),
+    ...(manifestIdentity ? { manifestIdentity } : {}),
+    configFields: extractConfigFields(params.pluginManifest),
+    mcpServers: extractMcpServerNames(params.pluginManifest).map((name) => ({ name })),
+    bundledSkills,
+  };
 }
 
 export function normalizePackageName(name: string) {
@@ -279,6 +544,18 @@ export function maybeParseJson(text: string | null | undefined) {
   const trimmed = text.trim();
   if (!trimmed) return undefined;
   return parseJsonFile(trimmed, "JSON file");
+}
+
+export function normalizePluginManifestIcon(manifest: unknown): string | undefined {
+  if (!isRecord(manifest) || typeof manifest.icon !== "string") return undefined;
+  const icon = manifest.icon.trim();
+  if (!icon) return undefined;
+  try {
+    const url = new URL(icon);
+    return url.protocol === "https:" ? icon : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function toConvexSafeJsonValue(

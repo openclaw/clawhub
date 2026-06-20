@@ -309,6 +309,25 @@ describe("SkillsIndex", () => {
     });
   });
 
+  it("passes the selected category to backend skill search", async () => {
+    searchMock = { q: "helper", category: "development" };
+    const actionFn = vi.fn().mockResolvedValue([]);
+    convexReactMocks.useAction.mockReturnValue(actionFn);
+    vi.useFakeTimers();
+
+    render(<SkillsIndex />);
+    await act(async () => {
+      await vi.runAllTimersAsync();
+    });
+
+    expect(actionFn).toHaveBeenCalledWith({
+      query: "helper",
+      highlightedOnly: false,
+      categorySlug: "development",
+      limit: 25,
+    });
+  });
+
   it("keeps recommended as the visible default search sort", async () => {
     searchMock = { q: "notion" };
     const actionFn = vi.fn().mockResolvedValue([]);
@@ -614,7 +633,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
-  it("passes author topics to browse filtering and renders the active topic facet", async () => {
+  it("passes author topics to browse filtering without rendering topic navigation", async () => {
     searchMock = { topic: "google-calendar" };
     convexHttpMock.query.mockResolvedValue({
       page: [
@@ -634,13 +653,82 @@ describe("SkillsIndex", () => {
         topic: "google-calendar",
       }),
     );
-    expect(
-      screen.getByRole("radio", { name: "google-calendar" }).getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(screen.getAllByText("google-calendar")).toHaveLength(2);
+    expect(screen.queryByRole("radio", { name: "google-calendar" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
-  it("keeps an active topic facet visible when it has no results", async () => {
+  it("shows the top five topics beneath the selected category and filters by chip", async () => {
+    searchMock = { category: "development" };
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: string }).kind === "skill"
+      ) {
+        return ["typescript", "docker", "github", "debugging", "coding"];
+      }
+      return null;
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const category = screen.getByRole("radio", { name: "Development" });
+    const firstTopic = screen.getByRole("button", { name: "#typescript" });
+    expect(
+      Boolean(category.compareDocumentPosition(firstTopic) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
+    expect(screen.getAllByRole("button", { name: /^#/ })).toHaveLength(5);
+
+    fireEvent.click(screen.getByRole("button", { name: "#docker" }));
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+      replace?: boolean;
+    };
+    expect(lastCall.search({ category: "development" })).toEqual({
+      category: "development",
+      topic: "docker",
+      featured: undefined,
+      highlighted: undefined,
+    });
+    expect(lastCall.replace).toBe(true);
+  });
+
+  it("clears the active category topic when its chip is selected again", async () => {
+    searchMock = { category: "development", topic: "docker" };
+    convexReactMocks.useQuery.mockImplementation((_reference, args) => {
+      if (
+        args &&
+        typeof args === "object" &&
+        "kind" in args &&
+        (args as { kind?: string }).kind === "skill"
+      ) {
+        return ["docker"];
+      }
+      return null;
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const topic = screen.getByRole("button", { name: "#docker" });
+    expect(topic.getAttribute("aria-pressed")).toBe("true");
+    fireEvent.click(topic);
+
+    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
+      search: (prev: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(lastCall.search({ category: "development", topic: "docker" })).toEqual({
+      category: "development",
+      topic: undefined,
+      featured: undefined,
+      highlighted: undefined,
+    });
+  });
+
+  it("does not render an active topic in the sidebar when it has no results", async () => {
     searchMock = { topic: "google-calendar" };
     convexHttpMock.query.mockResolvedValue({
       page: [],
@@ -651,10 +739,8 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(
-      screen.getByRole("radio", { name: "google-calendar" }).getAttribute("aria-checked"),
-    ).toBe("true");
-    expect(screen.getByRole("radio", { name: "All topics" })).toBeTruthy();
+    expect(screen.queryByRole("radio", { name: "google-calendar" })).toBeNull();
+    expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
   it("preserves backend official-first ordering on category pages", async () => {

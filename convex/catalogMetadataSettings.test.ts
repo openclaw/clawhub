@@ -112,6 +112,16 @@ describe("catalog metadata settings", () => {
       slug: "demo",
       displayName: "Demo",
       ownerUserId: user._id,
+      inferredCategories: ["automation"],
+      inferredTopics: ["Old inference"],
+      inferredFromVersionId: "skillVersions:demo",
+      inferredCategoryConfidence: "medium",
+      inferredTopicConfidence: "high",
+      inferredClassifierVersion: "taxonomy-prototype-v9",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredInputHash: "category-hash",
+      inferredTopicInputHash: "old-hash",
+      inferredAt: 123,
       tags: {},
       stats: {
         downloads: 0,
@@ -137,6 +147,16 @@ describe("catalog metadata settings", () => {
       expect.objectContaining({
         categories: ["development"],
         topics: ["GPU development"],
+        inferredCategories: undefined,
+        inferredTopics: undefined,
+        inferredFromVersionId: undefined,
+        inferredCategoryConfidence: undefined,
+        inferredTopicConfidence: undefined,
+        inferredClassifierVersion: undefined,
+        inferredTopicClassifierVersion: undefined,
+        inferredInputHash: undefined,
+        inferredTopicInputHash: undefined,
+        inferredAt: undefined,
       }),
     );
     expect(upsertSkillSearchDigestMock).toHaveBeenCalledWith(
@@ -162,6 +182,16 @@ describe("catalog metadata settings", () => {
       channel: "community",
       isOfficial: false,
       ownerUserId: user._id,
+      inferredCategories: ["tools"],
+      inferredTopics: ["Old inference"],
+      inferredFromReleaseId: "packageReleases:demo",
+      inferredCategoryConfidence: "medium",
+      inferredTopicConfidence: "high",
+      inferredClassifierVersion: "taxonomy-prototype-v9",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredInputHash: "category-hash",
+      inferredTopicInputHash: "old-hash",
+      inferredAt: 123,
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       scanStatus: "clean",
       createdAt: 1,
@@ -180,6 +210,16 @@ describe("catalog metadata settings", () => {
       expect.objectContaining({
         categories: ["models"],
         topics: ["Local models"],
+        inferredCategories: undefined,
+        inferredTopics: undefined,
+        inferredFromReleaseId: undefined,
+        inferredCategoryConfidence: undefined,
+        inferredTopicConfidence: undefined,
+        inferredClassifierVersion: undefined,
+        inferredTopicClassifierVersion: undefined,
+        inferredInputHash: undefined,
+        inferredTopicInputHash: undefined,
+        inferredAt: undefined,
       }),
     );
     expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(
@@ -201,6 +241,8 @@ describe("catalog metadata settings", () => {
       slug: "demo",
       displayName: "Demo",
       categories: ["development"],
+      inferredTopics: ["Old inference"],
+      inferredTopicConfidence: "medium",
       ownerUserId: user._id,
       tags: {},
       stats: {
@@ -261,6 +303,9 @@ describe("catalog metadata settings", () => {
       skill._id,
       expect.objectContaining({
         categories: ["other"],
+        topics: undefined,
+        inferredTopics: undefined,
+        inferredTopicConfidence: undefined,
       }),
     );
     expect(upsertSkillSearchDigestMock).toHaveBeenCalledWith(
@@ -325,6 +370,8 @@ describe("catalog metadata settings", () => {
       channel: "community",
       isOfficial: false,
       categories: ["tools"],
+      inferredTopics: ["Old inference"],
+      inferredTopicConfidence: "medium",
       ownerUserId: user._id,
       stats: { downloads: 0, installs: 0, stars: 0, versions: 1 },
       scanStatus: "clean",
@@ -343,6 +390,9 @@ describe("catalog metadata settings", () => {
       pkg._id,
       expect.objectContaining({
         categories: ["other"],
+        topics: undefined,
+        inferredTopics: undefined,
+        inferredTopicConfidence: undefined,
       }),
     );
     expect(upsertPackageSearchDigestMock).toHaveBeenCalledWith(

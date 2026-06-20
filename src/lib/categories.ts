@@ -57,6 +57,10 @@ const LEGACY_SKILL_BROWSE_CATEGORY_ALIASES = {
   data: "integrations",
 } as const satisfies Record<string, SkillCategorySlug>;
 
+const SKILL_CATEGORIES_BY_SLUG = new Map(
+  SKILL_CATEGORIES.map((category) => [category.slug, category]),
+);
+
 export function resolvePluginBrowseCategorySlug(
   value: string | null | undefined,
 ): PluginCategorySlug | undefined {
@@ -81,21 +85,42 @@ export function resolveSkillBrowseCategorySlug(
 
 type SkillCategoryCandidate = {
   categories?: readonly string[] | null;
+  inferredCategories?: readonly string[] | null;
+  latestVersionId?: string | null;
+  inferredFromVersionId?: string | null;
   slug: string;
   displayName: string;
   summary?: string | null;
 };
+
+type SkillIconCategoryCandidate = Pick<
+  SkillCategoryCandidate,
+  "categories" | "inferredCategories" | "latestVersionId" | "inferredFromVersionId"
+>;
 
 export function getSkillCategoryForSkill(skill: SkillCategoryCandidate): SkillCategory | null {
   return getSkillCategoriesForSkill(skill)[0] ?? null;
 }
 
 export function getSkillCategoriesForSkill(skill: SkillCategoryCandidate): SkillCategory[] {
-  const categoriesBySlug = new Map(SKILL_CATEGORIES.map((category) => [category.slug, category]));
   return resolveStoredSkillCategories(skill).flatMap((slug) => {
-    const category = categoriesBySlug.get(slug);
+    const category = SKILL_CATEGORIES_BY_SLUG.get(slug);
     return category ? [category] : [];
   });
+}
+
+export function getSkillIconCategoryForSkill(
+  skill: SkillIconCategoryCandidate,
+): SkillCategory | null {
+  const storedCategory = skill.categories?.find(isSkillCategorySlug);
+  if (storedCategory) return SKILL_CATEGORIES_BY_SLUG.get(storedCategory) ?? null;
+
+  const inferenceCurrent =
+    Boolean(skill.latestVersionId) && skill.latestVersionId === skill.inferredFromVersionId;
+  const inferredCategory = inferenceCurrent
+    ? skill.inferredCategories?.find(isSkillCategorySlug)
+    : null;
+  return inferredCategory ? (SKILL_CATEGORIES_BY_SLUG.get(inferredCategory) ?? null) : null;
 }
 
 export function getSkillCategoryBySlug(slug: string | null | undefined) {

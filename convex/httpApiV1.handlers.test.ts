@@ -366,100 +366,6 @@ describe("httpApiV1 handlers", () => {
     expect(runAction).not.toHaveBeenCalled();
   });
 
-  it("users/restore forbids non-admin api tokens", async () => {
-    const runQuery = vi.fn();
-    const runAction = vi.fn();
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      if (args.ownerHandle === "me") return { publisherId: "publishers:me" };
-      return okRate();
-    });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:actor",
-      user: { _id: "users:actor", role: "user" },
-    } as never);
-
-    const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runQuery, runAction, runMutation }),
-      new Request("https://example.com/api/v1/users/restore", {
-        method: "POST",
-        body: JSON.stringify({ handle: "target", slugs: ["a"] }),
-      }),
-    );
-    expect(response.status).toBe(403);
-    expect(runQuery).not.toHaveBeenCalled();
-    expect(runAction).not.toHaveBeenCalled();
-  });
-
-  it("users/restore calls restore action for admin", async () => {
-    const runAction = vi.fn().mockResolvedValue({ ok: true, totalRestored: 1, results: [] });
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      return { ok: true };
-    });
-    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if ("handle" in args) return { _id: "users:target" };
-      return null;
-    });
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
-
-    const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runQuery, runAction, runMutation }),
-      new Request("https://example.com/api/v1/users/restore", {
-        method: "POST",
-        body: JSON.stringify({
-          handle: "Target",
-          slugs: ["a", "b"],
-          versionsBySlug: { a: "1.0.0", b: "1.1.0" },
-          forceOverwriteSquatter: true,
-        }),
-      }),
-    );
-    if (response.status !== 200) throw new Error(await response.text());
-    expect(runAction).toHaveBeenCalledWith(expect.anything(), {
-      actorUserId: "users:admin",
-      ownerHandle: "target",
-      ownerUserId: "users:target",
-      slugs: ["a", "b"],
-      versionsBySlug: { a: "1.0.0", b: "1.1.0" },
-      forceOverwriteSquatter: true,
-    });
-  });
-
-  it("users/restore requires a backup version for every slug", async () => {
-    const runAction = vi.fn();
-    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
-      return { ok: true };
-    });
-    const runQuery = vi.fn();
-    vi.mocked(requireApiTokenUser).mockResolvedValue({
-      userId: "users:admin",
-      user: { _id: "users:admin", role: "admin" },
-    } as never);
-
-    const response = await __handlers.usersPostRouterV1Handler(
-      makeCtx({ runQuery, runAction, runMutation }),
-      new Request("https://example.com/api/v1/users/restore", {
-        method: "POST",
-        body: JSON.stringify({
-          handle: "Target",
-          slugs: ["a", "b"],
-          versionsBySlug: { a: "1.0.0" },
-          forceOverwriteSquatter: true,
-        }),
-      }),
-    );
-
-    expect(response.status).toBe(400);
-    expect(await response.text()).toBe("Missing backup version for slug b");
-    expect(runQuery).not.toHaveBeenCalled();
-    expect(runAction).not.toHaveBeenCalled();
-  });
-
   it("skills export allows authenticated non-admin users at the key rate limit", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
@@ -1984,6 +1890,7 @@ describe("httpApiV1 handlers", () => {
                 slug: "demo",
                 displayName: "Demo",
                 summary: "s",
+                topics: ["Automation", "Email"],
                 tags: { latest: "versions:1" },
                 stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
                 createdAt: 1,
@@ -2011,6 +1918,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items[0].tags.latest).toBe("1.0.0");
+    expect(json.items[0].topics).toEqual(["Automation", "Email"]);
   });
 
   it("lists skills with long description metadata and setup requirements", async () => {
@@ -2383,6 +2291,7 @@ describe("httpApiV1 handlers", () => {
             slug: "demo",
             displayName: "Demo",
             summary: "s",
+            topics: ["Automation", "Email"],
             tags: { latest: "versions:1" },
             stats: { downloads: 0, stars: 0, versions: 1, comments: 0 },
             createdAt: 1,
@@ -2420,6 +2329,7 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.skill.slug).toBe("demo");
+    expect(json.skill.topics).toEqual(["Automation", "Email"]);
     expect(json.latestVersion.version).toBe("1.0.0");
     expect(json.moderation).toEqual({
       isSuspicious: true,
@@ -8947,6 +8857,73 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
+  it("official plugins install sort forwards the filter to both families and merges by installs", async () => {
+    const codePlugin = makeCatalogItem("code-installed", {
+      family: "code-plugin",
+      updatedAt: 100,
+      stats: { downloads: 1, installs: 50, stars: 0, versions: 1 },
+    });
+    const bundlePlugin = makeCatalogItem("bundle-downloaded", {
+      family: "bundle-plugin",
+      updatedAt: 200,
+      stats: { downloads: 100, installs: 5, stars: 0, versions: 1 },
+    });
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) return 2;
+      if (hasPluginRecommendedScoreReadinessArgs(args)) return false;
+      expect(args).toEqual(expect.objectContaining({ isOfficial: true, sort: "installs" }));
+      if (args.family === "code-plugin") {
+        return { page: [codePlugin], isDone: true, continueCursor: "" };
+      }
+      if (args.family === "bundle-plugin") {
+        return { page: [bundlePlugin], isDone: true, continueCursor: "" };
+      }
+      throw new Error(`unexpected family ${String(args.family)}`);
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/plugins?isOfficial=true&limit=2&sort=installs"),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json.items.map((entry: { name: string }) => entry.name)).toEqual([
+      "bundle-downloaded",
+      "code-low-download",
+    ]);
+  });
+
+  it("plugins list forwards excluded scan statuses to both plugin families", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        throw new Error("filtered listings must not query the global count");
+      }
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/plugins?sort=updated&excludeScanStatus=pending,suspicious",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const familyCalls = runQuery.mock.calls.filter(([, args]) => "family" in args);
+    expect(familyCalls).toHaveLength(2);
+    for (const [, args] of familyCalls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          excludedScanStatuses: ["pending", "suspicious"],
+          sort: "updated",
+        }),
+      );
+    }
+  });
+
   it("plugins list recommended sort uses weighted scores across plugin families", async () => {
     const codePlugin = makeCatalogItem("code-starred", {
       family: "code-plugin",
@@ -9472,6 +9449,28 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("plugins search forwards excluded scan statuses to both plugin families", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/plugins/search?q=calendar&excludeScanStatus=pending,suspicious",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledTimes(2);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          excludedScanStatuses: ["pending", "suspicious"],
+        }),
+      );
+    }
+  });
+
   it("plugins search dedupes and sorts results from both plugin families", async () => {
     const runQuery = vi.fn((_, args: Record<string, unknown>) => {
       if (args.family === "code-plugin") {
@@ -9708,6 +9707,7 @@ describe("httpApiV1 handlers", () => {
             slug: "demo",
             displayName: "Demo Skill",
             summary: "Skill summary",
+            topics: ["Automation", "Email"],
             latestVersionId: "skillVersions:demo-1",
             tags: { latest: "skillVersions:demo-1" },
             badges: {},
@@ -9744,6 +9744,7 @@ describe("httpApiV1 handlers", () => {
         family: "skill",
         latestVersion: "1.0.0",
         channel: "community",
+        topics: ["Automation", "Email"],
       },
       owner: {
         handle: "steipete",
@@ -13977,6 +13978,139 @@ describe("httpApiV1 handlers", () => {
       }),
     );
     vi.useRealTimers();
+  });
+
+  it("dry-runs package runtime id repair without mutating packages", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin", handle: "patrick" },
+    } as never);
+    const sourcePackage = {
+      _id: "packages:stepfun",
+      name: "@hengm3467/stepfun-openclaw-plugin",
+      normalizedName: "@hengm3467/stepfun-openclaw-plugin",
+      runtimeId: "stepfun",
+      ownerUserId: "users:hengm",
+      ownerPublisherId: "publishers:hengm",
+      channel: "community",
+      softDeletedAt: undefined,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return { ok: true };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      if (args.name === "@hengm3467/stepfun-openclaw-plugin") return sourcePackage;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40hengm3467%2Fstepfun-openclaw-plugin/repair-runtime-id",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            nextRuntimeId: "stepfun-2",
+            reason: "Release official StepFun runtime id claim",
+            dryRun: true,
+          }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      dryRun: true,
+      source: {
+        packageId: "packages:stepfun",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        runtimeId: "stepfun",
+      },
+      operations: [
+        {
+          action: "repair-runtime-id",
+          packageId: "packages:stepfun",
+          from: "stepfun",
+          to: "stepfun-2",
+        },
+      ],
+    });
+    expect(runMutation).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        nextRuntimeId: "stepfun-2",
+      }),
+    );
+  });
+
+  it("applies package runtime id repair through the admin repair mutation", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin", handle: "patrick" },
+    } as never);
+    const sourcePackage = {
+      _id: "packages:stepfun",
+      name: "@hengm3467/stepfun-openclaw-plugin",
+      normalizedName: "@hengm3467/stepfun-openclaw-plugin",
+      runtimeId: "stepfun",
+      ownerUserId: "users:hengm",
+      ownerPublisherId: "publishers:hengm",
+      channel: "community",
+      softDeletedAt: undefined,
+    };
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      return {
+        ok: true,
+        packageId: "packages:stepfun",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        runtimeId: "stepfun-2",
+      };
+    });
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("key" in args) return okRate();
+      if (args.name === "@hengm3467/stepfun-openclaw-plugin") return sourcePackage;
+      return null;
+    });
+
+    const response = await __handlers.packagesPostRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/packages/%40hengm3467%2Fstepfun-openclaw-plugin/repair-runtime-id",
+        {
+          method: "POST",
+          headers: {
+            Authorization: "Bearer clh_test",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            nextRuntimeId: "stepfun-2",
+            reason: "Release official StepFun runtime id claim",
+            dryRun: false,
+          }),
+        },
+      ),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        nextRuntimeId: "stepfun-2",
+        reason: "Release official StepFun runtime id claim",
+      }),
+    );
   });
 
   it("package transfer maps ownership denials to 403", async () => {

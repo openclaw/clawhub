@@ -35,7 +35,13 @@ export function SkillCard({
   return (
     <Link to={link} className={["card skill-card", className].filter(Boolean).join(" ")}>
       <div className="skill-card-header">
-        <MarketplaceIcon kind="skill" label={skill.displayName} icon={skill.icon} size="md" />
+        <MarketplaceIcon
+          kind="skill"
+          label={skill.displayName}
+          icon={skill.icon}
+          skill={skill}
+          size="md"
+        />
         <h3 className="skill-card-title">{skill.displayName}</h3>
       </div>
       <p className="skill-card-summary">{skill.summary ?? summaryFallback}</p>

@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { PackageListItem } from "../lib/packageApi";
@@ -28,10 +28,55 @@ describe("PluginListItem", () => {
   });
 
   it("renders author topics", () => {
-    render(<PluginListItem item={makePlugin({ topics: ["local-models", "inference"] })} />);
+    render(
+      <PluginListItem
+        item={makePlugin({
+          categories: ["models"],
+          topics: ["local-models", "inference"],
+        })}
+      />,
+    );
 
     expect(screen.getByText("local-models")).toBeTruthy();
     expect(screen.getByText("inference")).toBeTruthy();
+    expect(screen.queryByText("Models")).toBeNull();
+    expect(screen.getByLabelText("Topics")).toBeTruthy();
+  });
+
+  it("renders category labels when topics are unavailable", () => {
+    render(<PluginListItem item={makePlugin({ categories: ["memory", "tools"] })} />);
+
+    expect(screen.getByText("Memory")).toBeTruthy();
+    expect(screen.getByText("Tools")).toBeTruthy();
+    expect(screen.getByLabelText("Categories")).toBeTruthy();
+  });
+
+  it("renders a plugin manifest icon URL with safe image attributes", () => {
+    render(
+      <PluginListItem
+        item={makePlugin({ icon: "https://cdn.example.test/icons/demo.svg" })}
+        variant="card"
+      />,
+    );
+
+    const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
+    expect(image).toBeTruthy();
+    expect(image?.getAttribute("src")).toBe("https://cdn.example.test/icons/demo.svg");
+    expect(image?.getAttribute("referrerpolicy")).toBe("no-referrer");
+    expect(image?.getAttribute("loading")).toBe("lazy");
+    expect(image?.getAttribute("decoding")).toBe("async");
+  });
+
+  it("falls back to the default plugin glyph when a manifest icon fails to load", () => {
+    render(<PluginListItem item={makePlugin({ icon: "https://cdn.example.test/broken.svg" })} />);
+
+    const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
+    expect(image).toBeTruthy();
+
+    fireEvent.error(image!);
+
+    expect(document.querySelector(".marketplace-icon-image")).toBeNull();
+    expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
   });
 });
 

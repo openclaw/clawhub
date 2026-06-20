@@ -3,12 +3,13 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalMutation } from "./functions";
 import { getClientIp } from "./lib/httpRateLimit";
+import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 import { hashToken } from "./lib/tokens";
 import { insertStatEvent } from "./skillStatEvents";
 
 const DAY_MS = 86_400_000;
 const DEDUPE_RETENTION_MS = 14 * DAY_MS;
-const PRUNE_BATCH_SIZE = 200;
+const PRUNE_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
 
 const identityKindValidator = v.union(v.literal("user"), v.literal("ip"));
 

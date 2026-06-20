@@ -18,7 +18,7 @@
     "ci:playwright": "VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run build && VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run test:pw",
     "ci:playwright-smoke": "VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run build && VITE_CONVEX_URL=https://wry-manatee-359.convex.cloud VITE_CONVEX_SITE_URL=https://wry-manatee-359.convex.site bun run test:pw -- --project=chromium e2e/ci-smoke.pw.test.ts e2e/public-routes-smoke.pw.test.ts",
     "ci:pr": "bun run ci:static && bun run ci:unit && bun run ci:packages && bun run ci:types-build && bun run ci:e2e-http",
-    "ci:static": "bun run check:peers && bun audit --ignore GHSA-rmmr-r34h-pfm5 --ignore GHSA-gv7w-rqvm-qjhr --ignore GHSA-g7r4-m6w7-qqqr --ignore GHSA-x4vx-rjvf-j5p4 --ignore GHSA-76mc-f452-cxcm --ignore GHSA-hpcv-96wg-7vj8 --ignore GHSA-r47g-fvhr-h676 --ignore GHSA-vxr8-fq34-vvx9 --ignore GHSA-gvmj-g25r-r7wr --ignore GHSA-rp9w-3fw7-7cwq && bun run format:check && bun run lint && bun run deadcode:ci",
+    "ci:static": "bun run check:peers && bun audit --ignore GHSA-rmmr-r34h-pfm5 --ignore GHSA-gv7w-rqvm-qjhr --ignore GHSA-g7r4-m6w7-qqqr --ignore GHSA-x4vx-rjvf-j5p4 --ignore GHSA-76mc-f452-cxcm --ignore GHSA-hpcv-96wg-7vj8 --ignore GHSA-r47g-fvhr-h676 --ignore GHSA-vxr8-fq34-vvx9 --ignore GHSA-gvmj-g25r-r7wr --ignore GHSA-rp9w-3fw7-7cwq --ignore GHSA-cmwh-pvxp-8882 --ignore GHSA-vmh5-mc38-953g --ignore GHSA-pr7r-676h-xcf6 && bun run format:check && bun run lint && bun run deadcode:ci",
     "ci:types-build": "bunx tsc --noEmit && bunx tsc -p packages/schema/tsconfig.json --noEmit && bunx tsc -p packages/clawhub/tsconfig.json --noEmit && bun run --cwd packages/clawhub-admin typecheck && VITE_CONVEX_URL=https://example.invalid bun run build",
     "ci:unit": "VITE_CONVEX_URL=https://example.invalid bun run coverage",
     "clawscan:local": "bun scripts/local-clawscan-dry-run.ts",
@@ -96,6 +96,7 @@
     "@tanstack/react-router": "1.170.16",
     "@tanstack/react-start": "1.168.26",
     "@vercel/analytics": "2.0.1",
+    "@vercel/speed-insights": "2.0.0",
     "class-variance-authority": "0.7.1",
     "clawhub-schema": "workspace:0.0.2",
     "clsx": "2.1.1",
@@ -154,10 +155,11 @@
   },
   "overrides": {
     "ast-v8-to-istanbul": "1.0.4",
-    "dompurify": "3.4.10",
+    "dompurify": "3.4.11",
     "esbuild": "0.28.1",
     "next": "16.2.6",
     "postcss": "8.5.12",
+    "undici": "7.28.0",
     "ws": "8.21.0"
   }
 }

@@ -4,17 +4,19 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const interval = vi.fn();
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
-  const registryArtifactBackupRetryRef = Symbol("registry-artifact-backup-retry");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
+  const authSessionsPruneRef = Symbol("auth-sessions-prune");
+  const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   return {
     interval,
     githubSkillSyncRef,
-    registryArtifactBackupRetryRef,
     installTelemetryDedupePruneRef,
     rateLimitCountersPruneRef,
     skillStatEventPruneRef,
+    authSessionsPruneRef,
+    authRefreshTokensPruneRef,
   };
 });
 
@@ -26,9 +28,6 @@ vi.mock("convex/server", () => ({
 
 vi.mock("./_generated/api", () => ({
   internal: {
-    registryArtifactBackupsNode: {
-      processRegistryArtifactBackupRetriesInternal: mocks.registryArtifactBackupRetryRef,
-    },
     githubSkillSyncNode: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
     leaderboards: { rebuildTrendingLeaderboardAction: Symbol("trending-leaderboard") },
     statsMaintenance: {
@@ -63,6 +62,10 @@ vi.mock("./_generated/api", () => ({
     rateLimits: {
       pruneRateLimitCountersInternal: mocks.rateLimitCountersPruneRef,
     },
+    retention: {
+      pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
+      pruneExpiredAuthRefreshTokensInternal: mocks.authRefreshTokensPruneRef,
+    },
   },
 }));
 
@@ -83,17 +86,6 @@ describe("crons", () => {
     await import("./crons");
 
     expect(mocks.interval).not.toHaveBeenCalled();
-  });
-
-  it("drains registry artifact backup retries frequently enough for publish bursts", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "registry-artifact-backup-retries",
-      { minutes: 5 },
-      mocks.registryArtifactBackupRetryRef,
-      {},
-    );
   });
 
   it("runs GitHub skill source sync every 15 minutes", async () => {
@@ -136,6 +128,23 @@ describe("crons", () => {
       "rate-limit-counters-prune",
       { minutes: 15 },
       mocks.rateLimitCountersPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes expired auth sessions and refresh tokens with the standard batch size", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "auth-session-retention-prune",
+      { hours: 1 },
+      mocks.authSessionsPruneRef,
+      { batchSize: 500 },
+    );
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "auth-refresh-token-retention-prune",
+      { hours: 6 },
+      mocks.authRefreshTokensPruneRef,
       { batchSize: 500 },
     );
   });

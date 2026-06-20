@@ -235,6 +235,7 @@ export const importGitHubSkill = action({
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
     topics: v.optional(v.array(v.string())),
+    // Legacy cached clients may still send this; accept and ignore it.
     icon: v.optional(v.string()),
     acceptLicenseTerms: v.boolean(),
   },
@@ -385,7 +386,6 @@ async function importGitHubSkillForUser(
         tags,
         categories: args.categories,
         topics: args.topics,
-        icon: args.icon?.trim() || undefined,
         files: storedFiles,
         source: sourceProvenance,
       },

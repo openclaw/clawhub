@@ -790,6 +790,25 @@ describe("devSeed local fixtures", () => {
       scannedPluginName,
     ]);
     expect(tables.packages?.every((pkg) => pkg.ownerUserId === userId)).toBe(true);
+    expect(tables.packages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: scannedPluginName,
+          icon: "https://cdn.simpleicons.org/github/111111",
+          latestVersionSummary: expect.objectContaining({
+            icon: "https://cdn.simpleicons.org/github/111111",
+          }),
+        }),
+      ]),
+    );
+    expect(tables.packageReleases).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packageId: expect.stringMatching(/^packages:/),
+          icon: "https://cdn.simpleicons.org/github/111111",
+        }),
+      ]),
+    );
     expect(tables.packageInspectorWarnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

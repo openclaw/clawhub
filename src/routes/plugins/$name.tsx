@@ -12,6 +12,7 @@ import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { ActivityMetricLabel } from "../../components/ActivityMetricLabel";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
+import { CatalogTopicList } from "../../components/CatalogTopicList";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
   DetailSecuritySummary,
@@ -34,6 +35,13 @@ import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "../../components/ui/dialog";
+import {
   getActivityTrendEndDay,
   getPackageActivityTrendForName,
   isActivityTrend,
@@ -44,6 +52,7 @@ import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
   fetchPackageDetail,
+  fetchPackageFile,
   fetchPackageReadme,
   fetchPackageVersion,
   fetchPackageVersions,
@@ -67,7 +76,14 @@ type PluginDetailRateLimitState = {
   retryAfterSeconds: number | null;
 } | null;
 
-type PluginDetailTab = "readme" | "versions" | "compatibility" | "validation";
+type PluginDetailTab =
+  | "readme"
+  | "versions"
+  | "compatibility"
+  | "configuration"
+  | "mcpServers"
+  | "skills"
+  | "validation";
 
 type PluginInspectorFinding = {
   packageName: string;
@@ -243,7 +259,14 @@ function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
   const hash = hashValue.replace("#", "");
   if (hash === "warnings") return "validation";
   if (hash === "verification") return "compatibility";
-  return hash === "versions" || hash === "compatibility" || hash === "validation" ? hash : "readme";
+  if (hash === "mcp-servers" || hash === "mcpServers") return "mcpServers";
+  return hash === "versions" ||
+    hash === "compatibility" ||
+    hash === "configuration" ||
+    hash === "skills" ||
+    hash === "validation"
+    ? hash
+    : "readme";
 }
 
 function PluginDetailTabs({
@@ -252,6 +275,9 @@ function PluginDetailTabs({
   readmePanel,
   versionsPanel,
   compatibilityPanel,
+  configurationPanel,
+  mcpServersPanel,
+  skillsPanel,
   validationPanel,
   validationCount,
 }: {
@@ -260,6 +286,9 @@ function PluginDetailTabs({
   readmePanel: ReactNode;
   versionsPanel: ReactNode;
   compatibilityPanel: ReactNode | null;
+  configurationPanel: ReactNode | null;
+  mcpServersPanel: ReactNode | null;
+  skillsPanel: ReactNode | null;
   validationPanel: ReactNode | null;
   validationCount: number;
 }) {
@@ -267,7 +296,7 @@ function PluginDetailTabs({
   const selectTab = (tab: PluginDetailTab) => {
     setActiveTab(tab);
     if (typeof window === "undefined") return;
-    const hash = tab === "readme" ? "" : `#${tab}`;
+    const hash = tab === "readme" ? "" : tab === "mcpServers" ? "#mcp-servers" : `#${tab}`;
     window.history.replaceState(
       null,
       "",
@@ -280,18 +309,30 @@ function PluginDetailTabs({
       ? "versions"
       : activeTab === "compatibility" && compatibilityPanel
         ? "compatibility"
-        : activeTab === "validation" && validationPanel
-          ? "validation"
-          : "readme";
+        : activeTab === "configuration" && configurationPanel
+          ? "configuration"
+          : activeTab === "mcpServers" && mcpServersPanel
+            ? "mcpServers"
+            : activeTab === "skills" && skillsPanel
+              ? "skills"
+              : activeTab === "validation" && validationPanel
+                ? "validation"
+                : "readme";
   useEffect(() => {
     if (effectiveActiveTab === "versions") setHasMountedVersions(true);
   }, [effectiveActiveTab]);
   const activePanel =
     effectiveActiveTab === "compatibility" && compatibilityPanel
       ? compatibilityPanel
-      : effectiveActiveTab === "validation" && validationPanel
-        ? validationPanel
-        : readmePanel;
+      : effectiveActiveTab === "configuration" && configurationPanel
+        ? configurationPanel
+        : effectiveActiveTab === "mcpServers" && mcpServersPanel
+          ? mcpServersPanel
+          : effectiveActiveTab === "skills" && skillsPanel
+            ? skillsPanel
+            : effectiveActiveTab === "validation" && validationPanel
+              ? validationPanel
+              : readmePanel;
 
   return (
     <div className="tab-card">
@@ -305,15 +346,39 @@ function PluginDetailTabs({
         >
           README
         </button>
-        <button
-          className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
-          type="button"
-          role="tab"
-          aria-selected={effectiveActiveTab === "versions"}
-          onClick={() => selectTab("versions")}
-        >
-          Versions
-        </button>
+        {skillsPanel ? (
+          <button
+            className={`tab-button${effectiveActiveTab === "skills" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={effectiveActiveTab === "skills"}
+            onClick={() => selectTab("skills")}
+          >
+            Skills
+          </button>
+        ) : null}
+        {mcpServersPanel ? (
+          <button
+            className={`tab-button${effectiveActiveTab === "mcpServers" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={effectiveActiveTab === "mcpServers"}
+            onClick={() => selectTab("mcpServers")}
+          >
+            MCP Servers
+          </button>
+        ) : null}
+        {configurationPanel ? (
+          <button
+            className={`tab-button${effectiveActiveTab === "configuration" ? " is-active" : ""}`}
+            type="button"
+            role="tab"
+            aria-selected={effectiveActiveTab === "configuration"}
+            onClick={() => selectTab("configuration")}
+          >
+            Configuration
+          </button>
+        ) : null}
         {compatibilityPanel ? (
           <button
             className={`tab-button${effectiveActiveTab === "compatibility" ? " is-active" : ""}`}
@@ -325,6 +390,15 @@ function PluginDetailTabs({
             Compatibility
           </button>
         ) : null}
+        <button
+          className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
+          type="button"
+          role="tab"
+          aria-selected={effectiveActiveTab === "versions"}
+          onClick={() => selectTab("versions")}
+        >
+          Versions
+        </button>
         {validationPanel ? (
           <button
             className={`tab-button${effectiveActiveTab === "validation" ? " is-active" : ""}`}
@@ -343,6 +417,124 @@ function PluginDetailTabs({
           <div hidden={effectiveActiveTab !== "versions"}>{versionsPanel}</div>
         ) : null}
       </div>
+    </div>
+  );
+}
+
+type PluginManifestSummary = NonNullable<
+  NonNullable<PackageVersionDetail["version"]>["pluginManifestSummary"]
+>;
+type BundledPluginSkill = PluginManifestSummary["bundledSkills"][number];
+type PluginConfigField = PluginManifestSummary["configFields"][number];
+type PluginMcpServer = PluginManifestSummary["mcpServers"][number];
+
+function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigField[] }) {
+  return (
+    <div className="plugin-manifest-capabilities">
+      <section className="plugin-manifest-section">
+        <div className="plugin-manifest-list">
+          {fields.map((field) => (
+            <article key={field.name} className="plugin-manifest-row">
+              <div className="plugin-manifest-row-main">
+                <code>{field.name}</code>
+                {field.description ? <p>{field.description}</p> : null}
+              </div>
+              <div className="plugin-manifest-badges">
+                {field.required ? <Badge variant="warning">Required</Badge> : null}
+                {field.sensitive ? <Badge variant="review">Sensitive</Badge> : null}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PluginManifestMcpServersPanel({ servers }: { servers: PluginMcpServer[] }) {
+  return (
+    <div className="plugin-manifest-capabilities">
+      <section className="plugin-manifest-section">
+        <div className="plugin-manifest-chip-list">
+          {servers.map((server) => (
+            <Badge key={server.name} variant="compact">
+              {server.name}
+            </Badge>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function PluginManifestSkillsPanel({
+  packageName,
+  version,
+  skills,
+}: {
+  packageName: string;
+  version: string | null;
+  skills: BundledPluginSkill[];
+}) {
+  const [previewSkill, setPreviewSkill] = useState<BundledPluginSkill | null>(null);
+  const [previewContent, setPreviewContent] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [isPreviewLoading, setIsPreviewLoading] = useState(false);
+
+  async function openSkillPreview(skill: BundledPluginSkill) {
+    setPreviewSkill(skill);
+    setPreviewContent(null);
+    setPreviewError(null);
+    setIsPreviewLoading(true);
+    try {
+      const content = await fetchPackageFile(packageName, skill.skillMdPath, version);
+      setPreviewContent(content ?? "Skill markdown is unavailable.");
+    } catch (error) {
+      setPreviewError(error instanceof Error ? error.message : "Failed to load skill markdown.");
+    } finally {
+      setIsPreviewLoading(false);
+    }
+  }
+
+  return (
+    <div className="plugin-manifest-capabilities">
+      <section className="plugin-manifest-section">
+        <div className="plugin-manifest-list">
+          {skills.map((skill) => (
+            <article key={skill.skillMdPath} className="plugin-manifest-row">
+              <div className="plugin-manifest-row-main">
+                <code>{skill.name}</code>
+                {skill.description ? <p>{skill.description}</p> : null}
+                <span>{skill.rootPath}</span>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => void openSkillPreview(skill)}
+                aria-label={`Preview ${skill.name}`}
+              >
+                Preview
+              </Button>
+            </article>
+          ))}
+        </div>
+      </section>
+      <Dialog open={Boolean(previewSkill)} onOpenChange={(open) => !open && setPreviewSkill(null)}>
+        <DialogContent className="max-h-[85vh] max-w-[min(920px,92vw)] overflow-auto">
+          <DialogHeader>
+            <DialogTitle>{previewSkill?.name ?? "Bundled skill"}</DialogTitle>
+            <DialogDescription>{previewSkill?.skillMdPath}</DialogDescription>
+          </DialogHeader>
+          {isPreviewLoading ? (
+            <div className="stat">Loading skill markdown...</div>
+          ) : previewError ? (
+            <div className="stat">Failed to load skill markdown: {previewError}</div>
+          ) : previewContent ? (
+            <MarkdownPreview>{previewContent}</MarkdownPreview>
+          ) : null}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -469,6 +661,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         : `openclaw skills install ${pkg.name}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
+  const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
   const verification = latestRelease?.verification ?? pkg.verification;
   const readmeAssetBaseUrl = buildReadmeAssetBaseUrl(
     verification?.sourceRepo,
@@ -490,6 +683,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const compatEntries = compatibility
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
+  const manifestPluginApiRange = pluginManifestSummary?.compatibility?.pluginApiRange;
   const readmePanel = readme ? (
     <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
   ) : (
@@ -508,9 +702,15 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     />
   );
   const compatibilityPanel =
-    compatEntries.length > 0 || artifact ? (
+    compatEntries.length > 0 || artifact || manifestPluginApiRange ? (
       <div className="plugin-tab-panel">
         <dl className="plugin-kv-grid">
+          {manifestPluginApiRange ? (
+            <div className="plugin-kv-row">
+              <dt className="plugin-kv-label">OpenClaw plugin API</dt>
+              <dd className="plugin-kv-value font-mono text-xs">{manifestPluginApiRange}</dd>
+            </div>
+          ) : null}
           {artifact ? (
             <>
               <div className="plugin-kv-row">
@@ -564,6 +764,22 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           ))}
         </dl>
       </div>
+    ) : null;
+  const configurationPanel =
+    pluginManifestSummary && pluginManifestSummary.configFields.length > 0 ? (
+      <PluginManifestConfigurationPanel fields={pluginManifestSummary.configFields} />
+    ) : null;
+  const mcpServersPanel =
+    pluginManifestSummary && pluginManifestSummary.mcpServers.length > 0 ? (
+      <PluginManifestMcpServersPanel servers={pluginManifestSummary.mcpServers} />
+    ) : null;
+  const skillsPanel =
+    pluginManifestSummary && pluginManifestSummary.bundledSkills.length > 0 ? (
+      <PluginManifestSkillsPanel
+        packageName={pkg.name}
+        version={latestRelease?.version ?? pkg.latestVersion ?? null}
+        skills={pluginManifestSummary.bundledSkills}
+      />
     ) : null;
   const validationCount = authorInspectorFindings?.length ?? validationSummary?.findingCount ?? 0;
   const incompatibilityAlert =
@@ -755,6 +971,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   </div>
                 ) : null}
               </div>
+              <CatalogTopicList topics={pkg.topics} />
               <p className="section-subtitle">{pkg.summary ?? "No summary provided."}</p>
 
               {rateLimited?.scope === "metadata" ? (
@@ -872,6 +1089,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
             readmePanel={readmePanel}
             versionsPanel={versionsPanel}
             compatibilityPanel={compatibilityPanel}
+            configurationPanel={configurationPanel}
+            mcpServersPanel={mcpServersPanel}
+            skillsPanel={skillsPanel}
             validationPanel={validationPanel}
             validationCount={validationCount}
           />

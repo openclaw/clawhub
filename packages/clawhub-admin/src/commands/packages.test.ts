@@ -19,7 +19,8 @@ vi.mock("../../../clawhub/src/cli/registry.js", () => registryMocks.moduleFactor
 vi.mock("../../../clawhub/src/http.js", () => httpMocks.moduleFactory());
 vi.mock("../../../clawhub/src/cli/ui.js", () => uiMocks.moduleFactory());
 
-const { cmdRepairPackageName, cmdTransferPackageOwner } = await import("./packages");
+const { cmdRepairPackageName, cmdRepairPackageRuntimeId, cmdTransferPackageOwner } =
+  await import("./packages");
 
 afterEach(() => {
   vi.clearAllMocks();
@@ -97,6 +98,62 @@ describe("cmdRepairPackageName", () => {
     await expect(
       cmdRepairPackageName(makeGlobalOpts(), "@openclaw/openviking", {
         nextName: "@openviking/openclaw-plugin",
+      }),
+    ).rejects.toThrow(/--reason required/i);
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("cmdRepairPackageRuntimeId", () => {
+  it("defaults to a dry run", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      dryRun: true,
+      source: {
+        packageId: "packages:stepfun",
+        name: "@hengm3467/stepfun-openclaw-plugin",
+        runtimeId: "stepfun",
+      },
+      operations: [
+        {
+          action: "repair-runtime-id",
+          packageId: "packages:stepfun",
+          from: "stepfun",
+          to: "stepfun-2",
+        },
+      ],
+    });
+
+    await cmdRepairPackageRuntimeId(makeGlobalOpts(), "@hengm3467/stepfun-openclaw-plugin", {
+      nextRuntimeId: "stepfun-2",
+      reason: "Release official StepFun runtime id claim",
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/packages/%40hengm3467%2Fstepfun-openclaw-plugin/repair-runtime-id",
+        token: "tkn",
+        body: {
+          nextRuntimeId: "stepfun-2",
+          reason: "Release official StepFun runtime id claim",
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires a runtime id and reason", async () => {
+    await expect(
+      cmdRepairPackageRuntimeId(makeGlobalOpts(), "@hengm3467/stepfun-openclaw-plugin", {
+        reason: "Release official StepFun runtime id claim",
+      }),
+    ).rejects.toThrow(/--next-runtime-id required/i);
+    await expect(
+      cmdRepairPackageRuntimeId(makeGlobalOpts(), "@hengm3467/stepfun-openclaw-plugin", {
+        nextRuntimeId: "stepfun-2",
       }),
     ).rejects.toThrow(/--reason required/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();

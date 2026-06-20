@@ -40,21 +40,11 @@ import { SignInPrompt } from "../components/SignInPrompt";
 import { ImportGitHubSkeleton } from "../components/skeletons/ProtectedPageSkeletons";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardTitle } from "../components/ui/card";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "../components/ui/dropdown-menu";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../components/ui/tooltip";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { getClawHubSiteUrl, SITE_NAME } from "../lib/site";
-import {
-  ALLOWED_LUCIDE_ICON_NAMES,
-  ALLOWED_LUCIDE_ICONS,
-  makeLucideIconValue,
-} from "../lib/skillIcon";
 import { getPublicSlugCollision } from "../lib/slugCollision";
 import { formatBytes } from "../lib/uploadUtils";
 import { useAuthStatus } from "../lib/useAuthStatus";
@@ -145,7 +135,6 @@ type ReviewDraft = {
   tags: string;
   categories: string[];
   topics: string;
-  iconName: string | null;
 };
 
 type SlugAvailabilityResult =
@@ -544,7 +533,6 @@ export function ImportGitHub() {
           tags: (result.defaults.tags ?? ["latest"]).join(","),
           categories: [],
           topics: "",
-          iconName: pickDefaultIconName(`${repo.fullName}:${repo.skillPath}`),
         };
       }
       setReviewDrafts(drafts);
@@ -578,10 +566,6 @@ export function ImportGitHub() {
       .split(",")
       .map((tag) => tag.trim())
       .filter(Boolean);
-    const icon =
-      draft.iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, draft.iconName)
-        ? makeLucideIconValue(draft.iconName as keyof typeof ALLOWED_LUCIDE_ICONS)
-        : undefined;
     return importSkill({
       url: draft.preview.resolved.originalUrl,
       commit: draft.preview.resolved.commit,
@@ -594,7 +578,6 @@ export function ImportGitHub() {
       tags: tagList,
       ...(draft.categories.length ? { categories: draft.categories } : {}),
       ...(draft.topics.trim() ? { topics: parseCatalogTopicsInput(draft.topics) } : {}),
-      ...(icon ? { icon } : {}),
       acceptLicenseTerms: acceptedLicenseTerms,
     });
   };
@@ -997,11 +980,7 @@ function PublishedImportSuccess({
     const slug = result.slug ?? "";
     const href = buildSkillHref(ownerHandle, slug);
     const url = buildSkillUrl(ownerHandle, slug);
-    const Icon =
-      draft?.iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, draft.iconName)
-        ? ALLOWED_LUCIDE_ICONS[draft.iconName]
-        : Rocket;
-    return { ...result, draft, href, Icon, url };
+    return { ...result, draft, href, url };
   });
 
   const copyAll = async () => {
@@ -1045,7 +1024,6 @@ function PublishedImportSuccess({
 
       <div className="divide-y divide-[color:var(--line)] rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)]/70">
         {publishedItems.map((item) => {
-          const Icon = item.Icon;
           return (
             <div
               key={item.key}
@@ -1053,7 +1031,7 @@ function PublishedImportSuccess({
             >
               <div className="flex min-w-0 items-center gap-3">
                 <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[linear-gradient(135deg,var(--surface-muted),var(--surface))] text-[color:var(--ink)]">
-                  <Icon className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+                  <Rocket className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
                 </div>
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold text-[color:var(--ink)]">
@@ -1281,10 +1259,6 @@ function ReviewSkillCard({
     slugResult.available &&
     !issues.some((issue) => issue.toLowerCase().includes("slug"));
   const showSlugUnavailableIcon = issues.some((issue) => issue.toLowerCase().includes("slug"));
-  const Icon =
-    draft.iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, draft.iconName)
-      ? ALLOWED_LUCIDE_ICONS[draft.iconName]
-      : null;
   const suggestedCategories = useMemo(
     () =>
       resolveSkillCategories({
@@ -1337,7 +1311,7 @@ function ReviewSkillCard({
           </button>
         </div>
 
-        <div className="flex items-end gap-3">
+        <div className="grid gap-3 md:grid-cols-2">
           <div className="flex min-w-0 flex-1 flex-col gap-1.5">
             <Label
               htmlFor={`${fieldIdPrefix}-display`}
@@ -1395,59 +1369,6 @@ function ReviewSkillCard({
                 />
               ) : null}
             </div>
-          </div>
-          <div className="relative flex shrink-0 flex-col gap-1.5">
-            <Label
-              htmlFor={`${fieldIdPrefix}-icon`}
-              className="text-xs font-semibold uppercase tracking-[0.14em] text-[color:var(--label-fg)]"
-            >
-              Icon
-            </Label>
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <button
-                  id={`${fieldIdPrefix}-icon`}
-                  type="button"
-                  className="flex h-[48px] w-[56px] cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border border-input-border bg-[linear-gradient(115deg,var(--input-bg)_0%,var(--input-bg)_62%,color-mix(in_srgb,white_8%,var(--input-bg))_100%)] text-[color:var(--ink)] transition-colors hover:border-input-focus-border disabled:cursor-not-allowed disabled:opacity-60"
-                  aria-label="Choose icon"
-                  disabled={isBusy}
-                >
-                  {Icon ? <Icon className="h-5 w-5" strokeWidth={1.8} /> : "None"}
-                </button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" sideOffset={8} className="w-[252px] rounded-xl">
-                <div
-                  className="gap-2"
-                  style={{
-                    display: "grid",
-                    gridTemplateColumns: "repeat(4, minmax(0, 1fr))",
-                  }}
-                >
-                  {ALLOWED_LUCIDE_ICON_NAMES.map((name) => {
-                    const PickerIcon = ALLOWED_LUCIDE_ICONS[name];
-                    if (!PickerIcon) return null;
-                    const selected = draft.iconName === name;
-                    return (
-                      <button
-                        type="button"
-                        key={name}
-                        title={name}
-                        aria-label={name}
-                        onClick={() => onChangeDraft({ iconName: name })}
-                        className={[
-                          "flex h-11 cursor-pointer items-center justify-center rounded-[var(--radius-sm)] border border-[color:var(--line)] transition-colors hover:bg-[color:var(--hover-bg)]",
-                          selected
-                            ? "border-[color:var(--accent)]/35 bg-[color:var(--accent)]/10 text-[color:var(--ink)]"
-                            : "text-[color:var(--ink-soft)]",
-                        ].join(" ")}
-                      >
-                        <PickerIcon className="h-4 w-4" strokeWidth={1.8} />
-                      </button>
-                    );
-                  })}
-                </div>
-              </DropdownMenuContent>
-            </DropdownMenu>
           </div>
         </div>
 
@@ -1696,14 +1617,6 @@ function normalizePublishResultMessage(message: string | undefined) {
     .replace(/\s*Check skill format, slug availability, and try again\.?$/i, "")
     .trim();
   return cleaned || "Import failed";
-}
-
-function pickDefaultIconName(seed: string) {
-  let hash = 0;
-  for (let index = 0; index < seed.length; index += 1) {
-    hash = (hash * 31 + seed.charCodeAt(index)) >>> 0;
-  }
-  return ALLOWED_LUCIDE_ICON_NAMES[hash % ALLOWED_LUCIDE_ICON_NAMES.length] ?? "Code2";
 }
 
 function nextNumericSlug(value: string, used: Set<string>) {

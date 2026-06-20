@@ -983,7 +983,7 @@ export function SkillDetailPage({
         isOpen={showPublishSuccessDialog}
         displayName={skill.displayName}
         skillPath={detailHref}
-        skillIcon={skill.icon ?? null}
+        skill={skill}
         publisher={
           owner
             ? {

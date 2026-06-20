@@ -233,6 +233,7 @@ function makeTopicCtx(
                   field,
                   value,
                   eq: () => ({ eq: () => ({}), lt: () => ({}) }),
+                  gte: () => ({ lt: () => ({}) }),
                   lt: () => ({}),
                 };
               },
@@ -246,6 +247,7 @@ function makeTopicCtx(
               field,
               value,
               eq: () => ({ eq: () => ({}), lt: () => ({}) }),
+              gte: () => ({ lt: () => ({}) }),
               lt: () => ({}),
             }),
           });
@@ -803,6 +805,30 @@ describe("skills package catalog queries", () => {
     expect(result[0]?.score).toBeGreaterThan(0);
   });
 
+  it("uses stored categories as skill package search evidence", async () => {
+    const result = await searchPackageCatalogPublicHandler(
+      makeCtx([
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              categories: ["development"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ]),
+      {
+        query: "dev",
+        limit: 5,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["focused-helper"]);
+  });
+
   it("matches author topics in unfiltered skill package search", async () => {
     const topicSkill = makeDigest("render-helper", {
       displayName: "Render Helper",
@@ -836,6 +862,38 @@ describe("skills package catalog queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["render-helper"]);
     expect(indexNames).toContain("by_active_topic_updated");
+  });
+
+  it("uses partial author topics as skill package search evidence", async () => {
+    const topicSkill = makeDigest("focused-helper", {
+      displayName: "Focused Helper",
+      summary: "Keeps projects tidy.",
+      topics: ["GPU development"],
+    });
+    const result = await searchPackageCatalogPublicHandler(
+      makeTopicCtx(
+        [
+          {
+            page: [
+              {
+                skillId: topicSkill.skillId,
+                topic: "gpu-development",
+                updatedAt: topicSkill.updatedAt,
+              },
+            ],
+            isDone: true,
+            continueCursor: "",
+          },
+        ],
+        [topicSkill],
+      ),
+      {
+        query: "gpu",
+        limit: 1,
+      },
+    );
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["focused-helper"]);
   });
 
   it("normalizes and filters skill package catalog search topics", async () => {

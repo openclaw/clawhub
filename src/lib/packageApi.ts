@@ -2,6 +2,7 @@ import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
   PackageCompatibility,
+  PluginManifestSummary,
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
@@ -16,6 +17,7 @@ export type PackageListItem = {
   channel: "official" | "community" | "private";
   isOfficial: boolean;
   summary?: string | null;
+  icon?: string | null;
   ownerHandle?: string | null;
   createdAt: number;
   updatedAt: number;
@@ -51,6 +53,7 @@ export type PackageVersionDetail = {
       contentType?: string;
     }>;
     compatibility?: PackageCompatibility | null;
+    pluginManifestSummary?: PluginManifestSummary | null;
     verification?: PackageVerificationSummary | null;
     artifact?: {
       kind: "legacy-zip" | "npm-pack";
@@ -368,6 +371,7 @@ export async function fetchPackages(params: {
   category?: string;
   topic?: string;
   officialFirst?: boolean;
+  excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
   sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
@@ -409,6 +413,9 @@ export async function fetchPackages(params: {
   if (params.category) url.searchParams.set("category", params.category);
   if (params.topic) url.searchParams.set("topic", params.topic);
   if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+  if (params.excludedScanStatuses?.length) {
+    url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
+  }
   if (params.sort) url.searchParams.set("sort", params.sort);
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
     url,
@@ -425,6 +432,7 @@ export async function fetchPluginCatalog(params: {
   category?: string;
   topic?: string;
   officialFirst?: boolean;
+  excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
   sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
@@ -439,6 +447,7 @@ export async function fetchPluginCatalog(params: {
       category: params.category,
       topic: params.topic,
       officialFirst: params.officialFirst,
+      excludedScanStatuses: params.excludedScanStatuses,
       sort: params.sort,
       limit: params.limit,
       signal: params.signal,
@@ -468,6 +477,9 @@ export async function fetchPluginCatalog(params: {
     if (params.featured) url.searchParams.set("featured", "true");
     if (params.category) url.searchParams.set("category", params.category);
     if (params.topic) url.searchParams.set("topic", params.topic);
+    if (params.excludedScanStatuses?.length) {
+      url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
+    }
     const response = await fetchJson<{
       results?: Array<{
         score: number;
@@ -490,6 +502,9 @@ export async function fetchPluginCatalog(params: {
   if (params.category) url.searchParams.set("category", params.category);
   if (params.topic) url.searchParams.set("topic", params.topic);
   if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+  if (params.excludedScanStatuses?.length) {
+    url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
+  }
   if (params.sort) url.searchParams.set("sort", params.sort);
   const result = await fetchJson<PluginCatalogResult>(url, params.signal);
   return {
@@ -544,6 +559,22 @@ export async function fetchPackageReadme(
 ): Promise<string | null> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
   url.searchParams.set("path", "README.md");
+  if (version) url.searchParams.set("version", version);
+  const response = await packageFetch(url, "text/plain");
+  if (response.ok) return await response.text();
+  if (response.status === 403 || response.status === 404 || response.status === 423) {
+    return null;
+  }
+  throw await createPackageApiError(response);
+}
+
+export async function fetchPackageFile(
+  name: string,
+  path: string,
+  version?: string | null,
+): Promise<string | null> {
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
+  url.searchParams.set("path", path);
   if (version) url.searchParams.set("version", version);
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();

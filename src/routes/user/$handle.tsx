@@ -564,7 +564,9 @@ export function PublishedItemCard({
           <MarketplaceIcon
             kind={item.kind}
             label={item.displayName}
+            imageUrl={item.kind === "plugin" ? item.icon : null}
             icon={item.kind === "skill" ? item.icon : null}
+            skill={item.kind === "skill" ? item : null}
             size="md"
           />
           <h3 className="skill-card-title">{item.displayName}</h3>
@@ -594,7 +596,9 @@ export function PublishedItemCard({
       <MarketplaceIcon
         kind={item.kind}
         label={item.displayName}
+        imageUrl={item.kind === "plugin" ? item.icon : null}
         icon={item.kind === "skill" ? item.icon : null}
+        skill={item.kind === "skill" ? item : null}
       />
       <div className="skill-list-item-body">
         <span className="skill-list-item-main">

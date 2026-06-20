@@ -13,6 +13,7 @@ import {
   ApiV1PackageOfficialMigrationListResponseSchema,
   ApiV1PackageOfficialMigrationResponseSchema,
   ApiV1PackageRepairNameResponseSchema,
+  ApiV1PackageRepairRuntimeIdResponseSchema,
   ApiV1PackageReleaseModerationResponseSchema,
   ApiV1PackageReportListResponseSchema,
   ApiV1PackageReportTriageResponseSchema,
@@ -94,6 +95,13 @@ type PackageRepairNameOptions = {
   nextName?: string;
   retireTarget?: boolean;
   owner?: string;
+  reason?: string;
+  apply?: boolean;
+  json?: boolean;
+};
+
+type PackageRepairRuntimeIdOptions = {
+  nextRuntimeId?: string;
   reason?: string;
   apply?: boolean;
   json?: boolean;
@@ -437,6 +445,55 @@ export async function cmdRepairPackageName(
       } else {
         console.log(`- ${operation.action}: ${operation.from} -> ${operation.to}`);
       }
+    }
+    if (result.dryRun) console.log("Re-run with --apply to write these changes.");
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdRepairPackageRuntimeId(
+  opts: GlobalOpts,
+  packageName: string,
+  options: PackageRepairRuntimeIdOptions = {},
+) {
+  const trimmed = normalizePackageNameOrFail(packageName);
+  const nextRuntimeId = options.nextRuntimeId?.trim();
+  const reason = options.reason?.trim();
+  const dryRun = options.apply !== true;
+  if (!nextRuntimeId) fail("--next-runtime-id required");
+  if (!reason) fail("--reason required");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createCrabLoader(`${dryRun ? "Planning" : "Applying"} package runtime id repair`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.packages}/${encodeURIComponent(trimmed)}/repair-runtime-id`,
+        token,
+        body: {
+          nextRuntimeId,
+          reason,
+          dryRun,
+        },
+      },
+      ApiV1PackageRepairRuntimeIdResponseSchema,
+    );
+    spinner?.stop();
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+      return;
+    }
+
+    console.log(`${result.dryRun ? "Dry run" : "Applied"} package runtime id repair: ${trimmed}`);
+    for (const operation of result.operations) {
+      console.log(`- ${operation.action}: ${operation.from ?? "<none>"} -> ${operation.to}`);
     }
     if (result.dryRun) console.log("Re-run with --apply to write these changes.");
   } catch (error) {

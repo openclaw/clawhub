@@ -1930,11 +1930,12 @@ describe("publishers membership controls", () => {
     expect(result.page.map((item) => item.displayName)).toEqual(["Visible Skill"]);
   });
 
-  it("includes skill.icon on catalog items and surfaces null for plugins (F7)", async () => {
+  it("includes catalog icons but suppresses private plugin icon URLs (F7)", async () => {
     // Regression guard for F2: listPublishedPage must mirror `skills.icon`
     // onto the catalog DTO so the publisher profile page (/p/<handle>) can
     // render the same custom glyph that SkillCard / SkillListItem show on
-    // /skills and /search. Plugins always carry `icon: null` in Phase 1.
+    // /skills and /search. Public plugin icons mirror browse cards, but private
+    // plugin URLs must not leak through public publisher profiles.
     const publisher = {
       _id: "publishers:openclaw",
       _creationTime: 1,
@@ -2010,8 +2011,39 @@ describe("publishers membership controls", () => {
                   name: "@openclaw/example-plugin",
                   displayName: "Example Plugin",
                   summary: "A plugin",
+                  channel: "community",
+                  scanStatus: "clean",
+                  icon: "https://cdn.simpleicons.org/github/111111",
                   stats: { downloads: 5, installs: 2, stars: 0, versions: 1 },
                   updatedAt: 4,
+                },
+                {
+                  _id: "packages:blocked-plugin",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  family: "code-plugin",
+                  name: "@openclaw/blocked-plugin",
+                  displayName: "Blocked Plugin",
+                  summary: "A blocked plugin",
+                  channel: "community",
+                  scanStatus: "malicious",
+                  icon: "https://malicious.example/icon.png",
+                  stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
+                  updatedAt: 3,
+                },
+                {
+                  _id: "packages:private-plugin",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  family: "code-plugin",
+                  name: "@openclaw/private-plugin",
+                  displayName: "Private Plugin",
+                  summary: "A private plugin",
+                  channel: "private",
+                  scanStatus: "clean",
+                  icon: "https://private.example/icon.png",
+                  stats: { downloads: 1, installs: 1, stars: 0, versions: 1 },
+                  updatedAt: 2,
                 },
               ]);
             }
@@ -2038,11 +2070,18 @@ describe("publishers membership controls", () => {
     const byName = Object.fromEntries(result.page.map((item) => [item.displayName, item]));
     // Skill with a stored icon must surface it on the DTO.
     expect(byName["Icon Skill"]).toMatchObject({ kind: "skill", icon: "lucide:Plug" });
-    // Skill without an icon must surface null (not undefined) so the client
-    // type is uniform and MarketplaceIcon can safely pass it to parseSkillIcon.
+    // Skill without a legacy icon must surface null (not undefined) so cached
+    // clients keep receiving a uniform response shape.
     expect(byName["Plain Skill"]).toMatchObject({ kind: "skill", icon: null });
-    // Plugins always carry null in Phase 1.
-    expect(byName["Example Plugin"]).toMatchObject({ kind: "plugin", icon: null });
+    // Public plugins mirror the manifest icon used on browse cards.
+    expect(byName["Example Plugin"]).toMatchObject({
+      kind: "plugin",
+      icon: "https://cdn.simpleicons.org/github/111111",
+    });
+    // Blocked plugin icon URLs also stay out of public publisher profiles.
+    expect(byName["Blocked Plugin"]).toMatchObject({ kind: "plugin", icon: null });
+    // Private plugin icon URLs must not leak through public publisher profiles.
+    expect(byName["Private Plugin"]).toMatchObject({ kind: "plugin", icon: null });
   });
 
   it("returns GitHub-backed display manifest groups for publisher catalogs", async () => {

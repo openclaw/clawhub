@@ -60,6 +60,7 @@ function contrastRatio(foreground: string, background: string) {
 }
 
 describe("restored UI design contract", () => {
+  const rootRoute = () => read("src/routes/__root.tsx");
   const header = () => read("src/components/Header.tsx");
   const footer = () => read("src/components/Footer.tsx");
   const home = () => read("src/routes/index.tsx");
@@ -67,6 +68,17 @@ describe("restored UI design contract", () => {
   const settings = () => read("src/routes/settings.tsx");
   const styles = () => read("src/styles.css");
   const theme = () => read("src/lib/theme.ts");
+
+  it("keeps Vercel browser instrumentation mounted outside local dev", () => {
+    const rootSource = rootRoute();
+
+    expect(rootSource).toContain('import { Analytics } from "@vercel/analytics/react";');
+    expect(rootSource).toContain('import { SpeedInsights } from "@vercel/speed-insights/react";');
+    expect(rootSource).toContain('!["localhost", "127.0.0.1", "::1"].includes');
+    expect(rootSource).toContain("{showAnalytics ? (");
+    expect(rootSource).toContain("<Analytics />");
+    expect(rootSource).toContain("<SpeedInsights />");
+  });
 
   it("requires the responsive header rail, search overlay, and theme controls", () => {
     const headerSource = header();
@@ -161,42 +173,25 @@ describe("restored UI design contract", () => {
     expect(compact).not.toContain(".navbar-search {\n    display: none;");
   });
 
-  it("requires the restored home hero, carousel, category grid, and Trending Now sections", () => {
+  it("requires the experiment hero and canonical home catalog without later sections", () => {
     const homeSource = home();
+    const listingSource = read("src/components/HomeListingSection.tsx");
     const css = styles();
 
-    expect(homeSource).toContain("BUILT BY THE COMMUNITY.");
-    expect(homeSource).toContain("Tools built by thousands, ready in one search.");
-    expect(homeSource).toContain("api.skills.listHighlightedPublic");
-    expect(homeSource).toContain("api.skills.listPublicPageV4");
-    expect(homeSource).toContain("const [popular, setPopular]");
-    expect(homeSource).toContain('className="home-v2-carousel-section"');
-    expect(homeSource).toContain(
-      'data-source={carouselUsesHighlighted ? "highlighted" : "popular"}',
+    expect(homeSource).toContain("BUILT BY THE COMMUNITY");
+    expect(homeSource).toContain("Discover skills and plugins from top creators");
+    expect(homeSource).not.toContain("home-v2-sub-stat");
+    expect(homeSource).toContain("HomeListingSection");
+    expect(homeSource).not.toContain("What are you looking for?");
+    expect(homeSource).not.toContain("Featured skills");
+    expect(homeSource).not.toContain("Trending Now");
+    expect(listingSource).toContain("SKILL_CATEGORIES");
+    expect(listingSource).toContain("PLUGIN_CATEGORIES");
+    expect(listingSource).toContain("HomeListingCategorySelect");
+    expect(cssRule(css, ".home-v2-listing-toolbar")).toContain("display: flex");
+    expect(cssRule(css, ".home-v2-listing-grid")).toContain(
+      "grid-template-columns: repeat(3, minmax(0, 1fr))",
     );
-    expect(homeSource).toContain("Featured skills");
-    expect(homeSource).toContain("Trending Now");
-    expect(homeSource).toContain('className="home-v2-trending-grid"');
-
-    const searchShell = cssRule(css, ".home-v2-search-bar");
-    expect(searchShell).toContain("border: 1px solid var(--hv2-border-strong)");
-    expect(searchShell).not.toContain("border-color: var(--hv2-accent-border)");
-
-    const searchFocus = cssRule(css, ".home-v2-search-bar:focus-within");
-    expect(searchFocus).toContain("border-color: var(--hv2-accent-border)");
-
-    const categories = cssRule(css, ".home-v2-categories-grid");
-    expect(categories).toContain("--home-v2-category-columns: 3");
-    expect(categories).toContain("grid-template-columns: repeat(var(--home-v2-category-columns)");
-
-    const trending = cssRule(css, ".home-v2-trending-grid");
-    expect(trending).toContain("grid-template-columns: repeat(3, 1fr)");
-    cssMediaContaining(css, "(max-width: 1024px)", [
-      ".home-v2-trending-grid {\n    grid-template-columns: repeat(2, 1fr);",
-    ]);
-    cssMediaContaining(css, "(max-width: 768px)", [
-      ".home-v2-trending-grid {\n    grid-template-columns: 1fr;",
-    ]);
   });
 
   it("requires the restored footer columns and mobile section toggles", () => {
@@ -206,8 +201,8 @@ describe("restored UI design contract", () => {
 
     expect(navSource).toContain('title: "Browse"');
     expect(navSource).toContain('title: "Publish"');
+    expect(navSource).toContain('title: "Ecosystem"');
     expect(navSource).toContain('title: "Community"');
-    expect(navSource).toContain('title: "Platform"');
     expect(navSource).toContain('label: "Publish Skill"');
     expect(navSource).toContain('label: "Publish Plugin"');
     expect(navSource).toContain('label: "GitHub"');

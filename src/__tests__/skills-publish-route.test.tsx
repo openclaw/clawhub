@@ -788,20 +788,19 @@ describe("Upload route", () => {
     });
   });
 
-  it("renders the icon picker and forwards the selected lucide icon to publishVersion", async () => {
+  it("does not render the skill icon picker or forward icon values to publishVersion", async () => {
     generateUploadUrl.mockResolvedValue("https://upload.local");
     publishVersion.mockResolvedValue(undefined);
     render(<Upload />);
 
-    // Picker is visible in skill mode and defaults to "No icon".
-    const noneTile = screen.getByRole("radio", { name: "No icon" });
-    expect(noneTile.getAttribute("aria-checked")).toBe("true");
+    expect(screen.queryByRole("radio", { name: "No icon" })).toBeNull();
+    expect(screen.queryByText(/^Icon$/)).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText("skill-name"), {
-      target: { value: "with-icon" },
+      target: { value: "category-icon-skill" },
     });
     fireEvent.change(screen.getByPlaceholderText("My skill"), {
-      target: { value: "With Icon" },
+      target: { value: "Category Icon Skill" },
     });
     fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
       target: { value: "1.0.0" },
@@ -809,8 +808,6 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
       target: { value: "latest" },
     });
-    fireEvent.click(screen.getByRole("radio", { name: "Plug" }));
-    expect(screen.getByRole("radio", { name: "Plug" }).getAttribute("aria-checked")).toBe("true");
 
     const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
     const input = screen.getByTestId("upload-input") as HTMLInputElement;
@@ -837,73 +834,14 @@ describe("Upload route", () => {
     const args = publishVersion.mock.calls
       .map((call) => call[0] as { icon?: string; files?: unknown })
       .find((call) => Array.isArray(call.files));
-    expect(args?.icon).toBe("lucide:Plug");
+    expect(args).not.toBeUndefined();
+    expect(Object.hasOwn(args!, "icon")).toBe(false);
   });
 
-  it("sends an empty icon string when the publisher explicitly picks 'No icon'", async () => {
-    generateUploadUrl.mockResolvedValue("https://upload.local");
-    publishVersion.mockResolvedValue(undefined);
-    render(<Upload />);
-
-    fireEvent.change(screen.getByPlaceholderText("skill-name"), {
-      target: { value: "no-icon-skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("My skill"), {
-      target: { value: "No Icon Skill" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
-      target: { value: "1.0.0" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
-      target: { value: "latest" },
-    });
-
-    // Pick then unpick so the publisher's intent is recorded as "clear".
-    fireEvent.click(screen.getByRole("radio", { name: "Plug" }));
-    fireEvent.click(screen.getByRole("radio", { name: "No icon" }));
-
-    const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
-    const input = screen.getByTestId("upload-input") as HTMLInputElement;
-    fireEvent.change(input, { target: { files: [file] } });
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
-      }),
-    );
-
-    const publishButton = screen.getByRole("button", { name: /publish skill/i });
-    await waitFor(() => {
-      expect(publishButton.getAttribute("disabled")).toBeNull();
-    });
-    fireEvent.click(publishButton);
-
-    await waitFor(() => {
-      expect(
-        publishVersion.mock.calls.some((call) =>
-          Array.isArray((call[0] as { files?: unknown }).files),
-        ),
-      ).toBe(true);
-    });
-    const args = publishVersion.mock.calls
-      .map((call) => call[0] as { icon?: string; files?: unknown })
-      .find((call) => Array.isArray(call.files));
-    // The publish form distinguishes "clear" (empty string) from "untouched"
-    // (key absent). Since the picker is always present in skill mode, even
-    // the default state forwards an explicit empty string.
-    expect(args).toHaveProperty("icon");
-    expect(args?.icon).toBe("");
-  });
-
-  it("preserves the existing icon when republishing without touching the picker (F1)", async () => {
-    // Simulate a `New Version` flow: `?updateSlug=with-icon` is in the URL
-    // and the existing skill row carries `icon: \"lucide:Plug\"`.
+  it("omits icon when republishing a skill that still has a stored legacy icon", async () => {
     useSearchMock.mockReturnValue({ updateSlug: "with-icon" });
     useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
       if (args === "skip") return undefined;
-      // The convex `anyApi` proxy returns a fresh proxy on every property
-      // access, so reference equality on `api.skills.getBySlug` is unsafe.
-      // `getFunctionName` resolves the proxy to its stable string id
-      // (e.g. `"skills:getBySlug"`).
       const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
       if (name === "skills:getBySlug") {
         return {
@@ -924,87 +862,10 @@ describe("Upload route", () => {
 
     render(<Upload />);
 
-    // The picker should be pre-populated to `Plug` from the stored value.
     await waitFor(() => {
-      expect(screen.getByRole("radio", { name: "Plug" }).getAttribute("aria-checked")).toBe("true");
+      expect(screen.getByDisplayValue("With Icon")).toBeTruthy();
     });
-
-    // Routine version bump, never touch the picker.
-    fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
-      target: { value: "1.0.1" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("latest, stable"), {
-      target: { value: "latest" },
-    });
-    fireEvent.change(screen.getByPlaceholderText("Describe what changed in this skill..."), {
-      target: { value: "Routine bump." },
-    });
-
-    const file = new File(["hello"], "SKILL.md", { type: "text/markdown" });
-    const input = screen.getByTestId("upload-input") as HTMLInputElement;
-    fireEvent.change(input, { target: { files: [file] } });
-    fireEvent.click(
-      screen.getByRole("checkbox", {
-        name: /i have the rights to publish this skill under mit-0/i,
-      }),
-    );
-
-    const publishButton = screen.getByRole("button", { name: /publish skill/i });
-    await waitFor(() => {
-      expect(publishButton.getAttribute("disabled")).toBeNull();
-    });
-    fireEvent.click(publishButton);
-
-    await waitFor(() => {
-      expect(
-        publishVersion.mock.calls.some((call) =>
-          Array.isArray((call[0] as { files?: unknown }).files),
-        ),
-      ).toBe(true);
-    });
-    const args = publishVersion.mock.calls
-      .map((call) => call[0] as Record<string, unknown>)
-      .find((call) => Array.isArray(call.files));
-    // The picker was never touched, so the form must omit `icon` entirely
-    // and let the backend keep `skill.icon` as-is. Forwarding `\"\"` here
-    // would silently clear the existing icon on a routine version bump.
-    expect(args).not.toBeUndefined();
-    expect(Object.hasOwn(args!, "icon")).toBe(false);
-  });
-
-  it("does not silently clear an unparseable existing icon on republish (F1)", async () => {
-    // Same scenario as above, except the stored lucide name is no longer
-    // in the client allow-list (e.g. `ALLOWED_LUCIDE_ICONS` was pruned in a
-    // later deploy). `parseSkillIcon` returns `null`, the picker falls back
-    // to \"No icon\", and pre-population leaves `iconName === null` without
-    // any user interaction.
-    useSearchMock.mockReturnValue({ updateSlug: "stale-icon" });
-    useQueryMock.mockImplementation((fn: unknown, args: unknown) => {
-      if (args === "skip") return undefined;
-      const name = fn ? getFunctionName(fn as Parameters<typeof getFunctionName>[0]) : "";
-      if (name === "skills:getBySlug") {
-        return {
-          skill: {
-            slug: "stale-icon",
-            displayName: "Stale Icon",
-            icon: "lucide:NoLongerAllowedGlyph",
-          },
-          latestVersion: { version: "1.0.0" },
-          owner: { handle: "alice", displayName: "Alice" },
-        };
-      }
-      return null;
-    });
-    generateUploadUrl.mockResolvedValue("https://upload.local");
-    publishVersion.mockResolvedValue(undefined);
-
-    render(<Upload />);
-
-    await waitFor(() => {
-      expect(screen.getByRole("radio", { name: "No icon" }).getAttribute("aria-checked")).toBe(
-        "true",
-      );
-    });
+    expect(screen.queryByRole("radio", { name: "Plug" })).toBeNull();
 
     fireEvent.change(screen.getByPlaceholderText("1.0.0"), {
       target: { value: "1.0.1" },
@@ -1041,12 +902,6 @@ describe("Upload route", () => {
     const args = publishVersion.mock.calls
       .map((call) => call[0] as Record<string, unknown>)
       .find((call) => Array.isArray(call.files));
-    // Even though the picker visually shows \"No icon\" because the stored
-    // lucide name is no longer renderable, the user did not interact with
-    // it. We must NOT forward `icon: \"\"` (which the backend would treat
-    // as an explicit clear), so that the next time the publisher visits
-    // the form with an updated allow-list, their original icon is still
-    // there.
     expect(args).not.toBeUndefined();
     expect(Object.hasOwn(args!, "icon")).toBe(false);
   });

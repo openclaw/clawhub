@@ -1,21 +1,10 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import {
-  ArrowLeft,
-  ArrowRight,
-  ChevronRight,
-  Code2,
-  Download,
-  Package,
-  Search,
-  Star,
-  Users,
-} from "lucide-react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../../convex/_generated/api";
-import { convexHttp } from "../convex/client";
-import { fetchFeaturedPlugins } from "../lib/featuredCatalog";
-import type { PackageListItem } from "../lib/packageApi";
-import type { PublicSkill, PublicUser } from "../lib/publicUser";
+import { createFileRoute } from "@tanstack/react-router";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { HomeAppsSection } from "../components/HomeAppsSection";
+import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
+import { HomeListingSection } from "../components/HomeListingSection";
+import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
+import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
 
 export const Route = createFileRoute("/")({
   component: SkillsHome,
@@ -39,78 +28,6 @@ const SLOT_WORDS = [
 const HACK_INDEX = SLOT_WORDS.indexOf("Hack");
 
 function SkillsHome() {
-  type SkillPageEntry = {
-    skill: PublicSkill;
-    ownerHandle?: string | null;
-    owner?: PublicUser | null;
-    latestVersion?: unknown;
-  };
-
-  const [highlighted, setHighlighted] = useState<SkillPageEntry[]>([]);
-  const [popular, setPopular] = useState<SkillPageEntry[]>([]);
-  const [featuredPlugins, setFeaturedPlugins] = useState<PackageListItem[]>([]);
-  const [query, setQuery] = useState("");
-  const navigate = useNavigate();
-
-  useEffect(() => {
-    let cancelled = false;
-    convexHttp
-      .query(api.skills.listHighlightedPublic, { limit: 6 })
-      .then((r) => {
-        if (!cancelled) setHighlighted(r as SkillPageEntry[]);
-      })
-      .catch(() => {});
-    convexHttp
-      .query(api.skills.listPublicPageV4, {
-        numItems: 6,
-        dir: "desc",
-      })
-      .then((r) => {
-        if (cancelled) return;
-        const page = Array.isArray(r) ? [] : ((r as { page?: SkillPageEntry[] }).page ?? []);
-        setPopular(page);
-      })
-      .catch(() => {});
-    fetchFeaturedPlugins(6)
-      .then((items) => {
-        if (!cancelled) setFeaturedPlugins(items);
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const trimmedQuery = useMemo(() => query.trim(), [query]);
-
-  const handleSearch = (e: React.FormEvent) => {
-    e.preventDefault();
-    void navigate({
-      to: "/search",
-      search: { q: trimmedQuery || undefined },
-    });
-  };
-
-  // Format stat numbers
-  const formatStat = (n: number | undefined): string => {
-    if (!n) return "0";
-    if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-    if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
-    return String(n);
-  };
-
-  // Build skill detail link
-  const skillLink = (entry: SkillPageEntry) =>
-    `/${encodeURIComponent(entry.ownerHandle || entry.owner?.handle || entry.skill.ownerUserId)}/${entry.skill.slug}`;
-
-  // Build carousel cards from highlighted data, then fall back to the public skill feed.
-  const highlightedCarouselCards = highlighted.slice(0, 6);
-  const fallbackCarouselCards = popular.slice(0, 6);
-  const carouselCards =
-    highlightedCarouselCards.length > 0 ? highlightedCarouselCards : fallbackCarouselCards;
-  const carouselUsesHighlighted = highlightedCarouselCards.length > 0;
-  const trendingCards = popular.slice(0, 6);
-
   const clickTimesRef = useRef<number[]>([]);
   const [slotState, setSlotState] = useState<
     | null
@@ -123,21 +40,6 @@ function SkillsHome() {
   const confettiRef = useRef<HTMLCanvasElement>(null);
   const spinIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const cooldownUntilRef = useRef<number>(0);
-  const carouselWrapRef = useRef<HTMLDivElement>(null);
-
-  const scrollCarousel = (direction: -1 | 1) => {
-    const carousel = carouselWrapRef.current;
-    if (!carousel) return;
-
-    const firstCard = carousel.querySelector<HTMLElement>(".home-v2-c-card");
-    const scrollAmount = (firstCard?.offsetWidth ?? 320) + 16;
-    if (typeof carousel.scrollBy === "function") {
-      carousel.scrollBy({ left: direction * scrollAmount, behavior: "smooth" });
-      return;
-    }
-
-    carousel.scrollLeft += direction * scrollAmount;
-  };
 
   useEffect(() => {
     return () => {
@@ -392,6 +294,7 @@ function SkillsHome() {
 
   return (
     <main className="home-v2-main">
+      <HomeV2FoldBottomFade />
       <canvas ref={confettiRef} className="home-v2-confetti" style={{ display: "none" }} />
 
       {/* ═══ HERO ═══ */}
@@ -409,7 +312,7 @@ function SkillsHome() {
           type="button"
           onClick={handleLabelClick}
         >
-          BUILT BY THE COMMUNITY.
+          BUILT BY THE COMMUNITY
         </button>
 
         {slotState ? (
@@ -424,7 +327,7 @@ function SkillsHome() {
           >
             {slotState.phase === "stopped" && slotState.isHackJackpot ? (
               <img
-                src="/clawd-mark.png"
+                src="/og-clawhub-watermark.png"
                 alt=""
                 aria-hidden="true"
                 className="home-v2-hack-lobster"
@@ -458,315 +361,13 @@ function SkillsHome() {
           </h1>
         )}
 
-        <p className="home-v2-sub">Tools built by thousands, ready in one search.</p>
-
-        <div className="home-v2-search-container">
-          <form className="home-v2-search-bar" onSubmit={handleSearch}>
-            <Search className="home-v2-search-icon" size={20} />
-            <input
-              autoFocus
-              type="text"
-              placeholder="What are you looking for?"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            <button type="submit" className="home-v2-search-go" aria-label="Search">
-              <span className="home-v2-search-go-label">Search</span> <ArrowRight size={16} />
-            </button>
-          </form>
-        </div>
+        <p className="home-v2-sub">Discover skills and plugins from top creators</p>
       </section>
 
-      {/* ═══ FEATURED CAROUSEL ═══ */}
-      {carouselCards.length > 0 && (
-        <section
-          className="home-v2-carousel-section"
-          data-source={carouselUsesHighlighted ? "highlighted" : "popular"}
-        >
-          <div className="home-v2-carousel-header">
-            <h2>Featured skills</h2>
-            <div className="home-v2-carousel-controls">
-              <Link
-                to="/skills"
-                search={
-                  carouselUsesHighlighted
-                    ? {
-                        q: undefined,
-                        sort: undefined,
-                        dir: undefined,
-                        featured: true,
-                        highlighted: undefined,
-                        view: undefined,
-                        focus: undefined,
-                      }
-                    : {
-                        q: undefined,
-                        sort: undefined,
-                        dir: undefined,
-                        featured: undefined,
-                        highlighted: undefined,
-                        view: undefined,
-                        focus: undefined,
-                      }
-                }
-                className="home-v2-section-link"
-              >
-                View all <ArrowRight size={14} />
-              </Link>
-              <button
-                type="button"
-                className="home-v2-carousel-btn"
-                aria-label="Previous"
-                onClick={() => scrollCarousel(-1)}
-              >
-                <ArrowLeft size={16} />
-              </button>
-              <button
-                type="button"
-                className="home-v2-carousel-btn"
-                aria-label="Next"
-                onClick={() => scrollCarousel(1)}
-              >
-                <ArrowRight size={16} />
-              </button>
-            </div>
-          </div>
-          <div className="home-v2-carousel-wrap" ref={carouselWrapRef}>
-            <div className="home-v2-carousel-track">
-              {/* First pass */}
-              {carouselCards.map((entry) => (
-                <Link
-                  key={`c1-${entry.skill._id}`}
-                  to={skillLink(entry)}
-                  className="home-v2-c-card"
-                >
-                  <div className="home-v2-c-head">
-                    <div className="home-v2-c-meta">
-                      <div className="home-v2-c-name">
-                        {entry.skill.displayName || entry.skill.slug}
-                      </div>
-                      <div className="home-v2-c-by">
-                        by {entry.ownerHandle || entry.owner?.handle || "unknown"}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="home-v2-c-tag">Skill</span>
-                  <div className="home-v2-c-desc">
-                    {entry.skill.summary || "A fresh skill bundle."}
-                  </div>
-                  <div className="home-v2-c-footer">
-                    <div className="home-v2-c-stats">
-                      <span>
-                        <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
-                      </span>
-                      <span>
-                        <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
-                      </span>
-                    </div>
-                    <span className="home-v2-c-install">
-                      <Download size={13} /> Install
-                    </span>
-                  </div>
-                </Link>
-              ))}
-              {/* Duplicate for seamless loop */}
-              {carouselCards.map((entry) => (
-                <Link
-                  key={`c2-${entry.skill._id}`}
-                  to={skillLink(entry)}
-                  className="home-v2-c-card"
-                >
-                  <div className="home-v2-c-head">
-                    <div className="home-v2-c-meta">
-                      <div className="home-v2-c-name">
-                        {entry.skill.displayName || entry.skill.slug}
-                      </div>
-                      <div className="home-v2-c-by">
-                        by {entry.ownerHandle || entry.owner?.handle || "unknown"}
-                      </div>
-                    </div>
-                  </div>
-                  <span className="home-v2-c-tag">Skill</span>
-                  <div className="home-v2-c-desc">
-                    {entry.skill.summary || "A fresh skill bundle."}
-                  </div>
-                  <div className="home-v2-c-footer">
-                    <div className="home-v2-c-stats">
-                      <span>
-                        <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
-                      </span>
-                      <span>
-                        <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
-                      </span>
-                    </div>
-                    <span className="home-v2-c-install">
-                      <Download size={13} /> Install
-                    </span>
-                  </div>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </section>
-      )}
-
-      {/* ═══ CATEGORIES ═══ */}
-      <section className="home-v2-categories">
-        <div className="home-v2-categories-grid">
-          <Link
-            to="/skills"
-            search={{
-              q: undefined,
-              sort: undefined,
-              dir: undefined,
-              highlighted: undefined,
-              view: undefined,
-              focus: undefined,
-            }}
-            className="home-v2-cat-item"
-          >
-            <div className="home-v2-cat-icon">
-              <Package size={20} />
-            </div>
-            <div className="home-v2-cat-text">
-              <div className="home-v2-cat-name">Skills</div>
-              <div className="home-v2-cat-desc">Agent skill bundles</div>
-            </div>
-            <span className="home-v2-cat-arrow">
-              <ChevronRight size={16} />
-            </span>
-          </Link>
-          <Link to="/plugins" className="home-v2-cat-item">
-            <div className="home-v2-cat-icon">
-              <Code2 size={20} />
-            </div>
-            <div className="home-v2-cat-text">
-              <div className="home-v2-cat-name">Plugins</div>
-              <div className="home-v2-cat-desc">Gateway plugins</div>
-            </div>
-            <span className="home-v2-cat-arrow">
-              <ChevronRight size={16} />
-            </span>
-          </Link>
-          <Link to="/publishers" className="home-v2-cat-item">
-            <div className="home-v2-cat-icon">
-              <Users size={20} />
-            </div>
-            <div className="home-v2-cat-text">
-              <div className="home-v2-cat-name">Publishers</div>
-              <div className="home-v2-cat-desc">People and organizations</div>
-            </div>
-            <span className="home-v2-cat-arrow">
-              <ChevronRight size={16} />
-            </span>
-          </Link>
-        </div>
-      </section>
-
-      {/* ═══ TRENDING ═══ */}
-      {trendingCards.length > 0 && (
-        <section className="home-v2-trending-section">
-          <div className="home-v2-section-header">
-            <h2>Trending Now</h2>
-            <Link
-              to="/skills"
-              search={{
-                q: undefined,
-                sort: undefined,
-                dir: undefined,
-                featured: undefined,
-                highlighted: undefined,
-                view: undefined,
-                focus: undefined,
-              }}
-              className="home-v2-section-link"
-            >
-              View all <ArrowRight size={14} />
-            </Link>
-          </div>
-          <div className="home-v2-trending-grid">
-            {trendingCards.map((entry) => (
-              <Link key={entry.skill._id} to={skillLink(entry)} className="home-v2-trend-card">
-                <div className="home-v2-trend-head">
-                  <div className="home-v2-trend-title">
-                    {entry.skill.displayName || entry.skill.slug}
-                  </div>
-                  <div className="home-v2-trend-creator">
-                    by {entry.ownerHandle || entry.owner?.handle || "unknown"}
-                  </div>
-                </div>
-                <div className="home-v2-trend-desc">
-                  {entry.skill.summary || "Agent-ready skill pack."}
-                </div>
-                <div className="home-v2-trend-bottom">
-                  <div className="home-v2-trend-signals">
-                    <span>
-                      <Star size={12} /> {formatStat(entry.skill.stats?.stars)}
-                    </span>
-                    <span>
-                      <Download size={12} /> {formatStat(entry.skill.stats?.downloads)}
-                    </span>
-                  </div>
-                  <span className="home-v2-trend-install">
-                    <Download size={13} /> Install
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* ═══ FEATURED PLUGINS ═══ */}
-      {featuredPlugins.length > 0 && (
-        <section className="home-v2-trending-section">
-          <div className="home-v2-section-header">
-            <h2>Featured plugins</h2>
-            <Link
-              to="/plugins"
-              search={{
-                q: undefined,
-                cursor: undefined,
-                family: undefined,
-                featured: true,
-                official: undefined,
-              }}
-              className="home-v2-section-link"
-            >
-              View all <ArrowRight size={14} />
-            </Link>
-          </div>
-          <div className="home-v2-trending-grid">
-            {featuredPlugins.slice(0, 6).map((plugin) => (
-              <Link
-                key={plugin.name}
-                to="/plugins/$name"
-                params={{ name: plugin.name }}
-                className="home-v2-trend-card"
-              >
-                <div className="home-v2-trend-head">
-                  <div className="home-v2-trend-title">{plugin.displayName || plugin.name}</div>
-                  <div className="home-v2-trend-creator">
-                    {plugin.ownerHandle ? `by @${plugin.ownerHandle}` : "community plugin"}
-                  </div>
-                </div>
-                <div className="home-v2-trend-desc">
-                  {plugin.summary || "Gateway plugin for OpenClaw workflows."}
-                </div>
-                <div className="home-v2-trend-bottom">
-                  <div className="home-v2-trend-signals">
-                    {plugin.isOfficial ? <span>Official</span> : null}
-                    {plugin.latestVersion ? <span>v{plugin.latestVersion}</span> : null}
-                  </div>
-                  <span className="home-v2-trend-install">
-                    <Download size={13} /> Install
-                  </span>
-                </div>
-              </Link>
-            ))}
-          </div>
-        </section>
-      )}
+      <HomeListingSection />
+      <HomePopularPublishersSection />
+      <HomeAppsSection />
+      <HomeBringSkillsSection />
     </main>
   );
 }

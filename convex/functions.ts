@@ -49,6 +49,7 @@ type LatestPackageRelease = Pick<
   | "version"
   | "changelog"
   | "summary"
+  | "icon"
   | "compatibility"
   | "verification"
   | "distTags"
@@ -64,6 +65,7 @@ function toPackageLatestVersionSummary(
     version: release.version,
     createdAt: release.createdAt,
     changelog: release.changelog,
+    icon: release.icon,
     compatibility: release.compatibility,
     verification: release.verification,
   };
@@ -109,6 +111,7 @@ async function getPreferredFallbackPackageRelease(
         version: release.version,
         changelog: release.changelog,
         summary: release.summary,
+        icon: release.icon,
         compatibility: release.compatibility,
         verification: release.verification,
         scanStatus: release.verification?.scanStatus,
@@ -400,6 +403,7 @@ export async function repointPackageLatestRelease(
     patch.latestReleaseId = nextLatest?._id;
     patch.latestVersionSummary = toPackageLatestVersionSummary(nextLatest);
     patch.summary = nextLatest?.summary;
+    patch.icon = nextLatest?.icon;
     patch.compatibility = nextLatest?.compatibility;
     patch.verification = nextLatest?.verification;
     patch.scanStatus = nextLatest?.scanStatus;

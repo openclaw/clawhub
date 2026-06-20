@@ -1,4 +1,5 @@
 import { Link } from "@tanstack/react-router";
+import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
 import { Download } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
@@ -11,8 +12,24 @@ type PluginListItemProps = {
   variant?: "list" | "card";
 };
 
+const PLUGIN_CATEGORY_LABELS = new Map<string, string>(
+  PLUGIN_CATEGORY_DEFINITIONS.map(({ slug, label }) => [slug, label]),
+);
+
+function getPluginTaxonomyDisplay(item: PackageListItem) {
+  const topics = (item.topics ?? []).filter((topic) => topic.trim());
+  if (topics.length > 0) return { labels: topics, ariaLabel: "Topics" };
+
+  const categories = (item.categories ?? []).flatMap((category) => {
+    const label = PLUGIN_CATEGORY_LABELS.get(category);
+    return label ? [label] : [];
+  });
+  return { labels: categories, ariaLabel: "Categories" };
+}
+
 export function PluginListItem({ item, variant = "list" }: PluginListItemProps) {
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
+  const taxonomy = getPluginTaxonomyDisplay(item);
 
   if (variant === "card") {
     return (
@@ -28,13 +45,13 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
           </div>
         ) : null}
         <div className="skill-card-header">
-          <MarketplaceIcon kind="plugin" label={item.displayName} size="md" />
+          <MarketplaceIcon kind="plugin" label={item.displayName} imageUrl={item.icon} size="md" />
           <h3 className="skill-card-title">{item.displayName}</h3>
         </div>
         <p className="skill-card-summary">
           {item.summary ?? "Plugin package for agent workflows."}
         </p>
-        <CatalogTopicList topics={item.topics} limit={3} />
+        <CatalogTopicList topics={taxonomy.labels} limit={3} ariaLabel={taxonomy.ariaLabel} />
         <div className="skill-card-footer">
           <div className="skill-list-item-meta plugin-card-meta">
             <span className="skill-list-item-meta-item">Plugin</span>
@@ -60,7 +77,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
       className="skill-list-item"
       aria-label={`Plugin: ${item.displayName}`}
     >
-      <MarketplaceIcon kind="plugin" label={item.displayName} />
+      <MarketplaceIcon kind="plugin" label={item.displayName} imageUrl={item.icon} />
       <div className="skill-list-item-body">
         <div className="skill-list-item-main">
           {item.ownerHandle ? (
@@ -75,7 +92,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
         <p className="skill-list-item-summary">
           {item.summary ?? "Plugin package for agent workflows."}
         </p>
-        <CatalogTopicList topics={item.topics} />
+        <CatalogTopicList topics={taxonomy.labels} ariaLabel={taxonomy.ariaLabel} />
         <div className="skill-list-item-meta">
           <span className="skill-list-item-meta-item">Plugin</span>
           {item.latestVersion ? (

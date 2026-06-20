@@ -11,9 +11,9 @@ import {
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { getClawHubSiteUrl } from "../lib/site";
-import { parseSkillIcon } from "../lib/skillIcon";
 import { cn } from "../lib/utils";
 import { copyText } from "./InstallCopyButton";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 import { Button } from "./ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "./ui/dialog";
 
@@ -28,7 +28,16 @@ type SkillPublishSuccessDialogProps = {
   isOpen: boolean;
   displayName: string;
   skillPath: string;
-  skillIcon?: string | null;
+  skill?: {
+    categories?: readonly string[] | null;
+    inferredCategories?: readonly string[] | null;
+    latestVersionId?: string | null;
+    inferredFromVersionId?: string | null;
+    slug: string;
+    displayName: string;
+    summary?: string | null;
+    icon?: string | null;
+  } | null;
   publisher?: {
     displayName?: string | null;
     handle?: string | null;
@@ -69,7 +78,7 @@ export function SkillPublishSuccessDialog({
   isOpen,
   displayName,
   skillPath,
-  skillIcon,
+  skill,
   publisher,
   categoryLabel,
   onDismiss,
@@ -185,7 +194,12 @@ export function SkillPublishSuccessDialog({
             <div>
               <div className="relative z-10 rounded-t-[var(--radius-md)] rounded-b-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:color-mix(in_srgb,var(--surface-muted)_78%,var(--surface))] px-3.5 pb-3.5 pt-3">
                 <div className="flex min-w-0 items-center gap-2.5">
-                  <SkillDialogGlyph icon={skillIcon} />
+                  <MarketplaceIcon
+                    kind="skill"
+                    label={displayName}
+                    icon={skill?.icon}
+                    skill={skill}
+                  />
                   <div className="min-w-0 flex-1">
                     <div className="flex min-w-0 items-center justify-between gap-3">
                       <div className="flex min-w-0 flex-wrap items-center gap-2">
@@ -324,24 +338,6 @@ function XIcon({ className, ...props }: React.SVGProps<SVGSVGElement>) {
         d="M14.234 10.162 22.977 0h-2.072l-7.591 8.824L7.251 0H.258l9.168 13.343L.258 24H2.33l8.016-9.318L16.749 24h6.993zm-2.837 3.299-.929-1.329L3.076 1.56h3.182l5.965 8.532.929 1.329 7.754 11.09h-3.182z"
       />
     </svg>
-  );
-}
-
-function SkillDialogGlyph({ icon }: { icon?: string | null }) {
-  const parsed = parseSkillIcon(icon);
-  if (parsed?.kind === "url") {
-    return (
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden">
-        <img src={parsed.url} alt="" className="h-7 w-7 rounded-[var(--radius-sm)] object-cover" />
-      </span>
-    );
-  }
-
-  const Icon = parsed?.kind === "lucide" ? parsed.component : Package;
-  return (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center text-[color:var(--ink-soft)]">
-      <Icon className="h-6 w-6" aria-hidden="true" strokeWidth={1.8} />
-    </span>
   );
 }
 

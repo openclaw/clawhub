@@ -23,6 +23,35 @@ export const PackageCompatibilitySchema = type({
 });
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
 
+export const PluginManifestSummarySchema = type({
+  schemaVersion: "number",
+  compatibility: PackageCompatibilitySchema.optional(),
+  manifestIdentity: type({
+    name: "string?",
+    description: "string?",
+    version: "string?",
+    family: "string?",
+  }).optional(),
+  configFields: type({
+    name: "string",
+    description: "string?",
+    required: "boolean",
+    sensitive: "boolean",
+  }).array(),
+  mcpServers: type({
+    name: "string",
+  }).array(),
+  bundledSkills: type({
+    name: "string",
+    description: "string?",
+    rootPath: "string",
+    skillMdPath: "string",
+    sha256: "string",
+    size: "number",
+  }).array(),
+});
+export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
+
 export const PackageVerificationSummarySchema = type({
   tier: PackageVerificationTierSchema,
   scope: PackageVerificationScopeSchema,
@@ -325,6 +354,7 @@ export const PackageListItemSchema = type({
   channel: PackageChannelSchema,
   isOfficial: "boolean",
   summary: "string|null?",
+  icon: "string|null?",
   ownerHandle: "string|null?",
   createdAt: "number",
   updatedAt: "number",
@@ -357,6 +387,7 @@ export const ApiV1PackageResponseSchema = type({
     channel: PackageChannelSchema,
     isOfficial: "boolean",
     summary: "string|null?",
+    icon: "string|null?",
     ownerHandle: "string|null?",
     createdAt: "number",
     updatedAt: "number",
@@ -365,6 +396,7 @@ export const ApiV1PackageResponseSchema = type({
     topics: "string[]?",
     tags: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
+    pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     scanStatus: '"clean"|"suspicious"|"malicious"|"pending"|"not-run"?',
@@ -400,6 +432,7 @@ export const ApiV1PackageVersionResponseSchema = type({
     distTags: "string[]?",
     files: "unknown",
     compatibility: PackageCompatibilitySchema.or("null").optional(),
+    pluginManifestSummary: PluginManifestSummarySchema.or("null").optional(),
     verification: PackageVerificationSummarySchema.or("null").optional(),
     artifact: PackageArtifactSummarySchema.or("null").optional(),
     // Deprecated compatibility hash for exact /download ZIP bytes; use artifact.sha256 for installs.
@@ -704,6 +737,31 @@ export const ApiV1PackageRepairNameResponseSchema = type({
 });
 export type ApiV1PackageRepairNameResponse =
   (typeof ApiV1PackageRepairNameResponseSchema)[inferred];
+
+export const PackageRepairRuntimeIdRequestSchema = type({
+  nextRuntimeId: "string",
+  reason: "string",
+  dryRun: "boolean?",
+});
+export type PackageRepairRuntimeIdRequest = (typeof PackageRepairRuntimeIdRequestSchema)[inferred];
+
+export const PackageRepairRuntimeIdOperationSchema = type({
+  action: '"repair-runtime-id"',
+  packageId: "string?",
+  from: "string|null?",
+  to: "string?",
+});
+export type PackageRepairRuntimeIdOperation =
+  (typeof PackageRepairRuntimeIdOperationSchema)[inferred];
+
+export const ApiV1PackageRepairRuntimeIdResponseSchema = type({
+  ok: "true",
+  dryRun: "boolean",
+  source: PackageRepairNamePackageSchema,
+  operations: PackageRepairRuntimeIdOperationSchema.array(),
+});
+export type ApiV1PackageRepairRuntimeIdResponse =
+  (typeof ApiV1PackageRepairRuntimeIdResponseSchema)[inferred];
 
 export const PackageOfficialMigrationUpsertRequestSchema = type({
   bundledPluginId: "string",

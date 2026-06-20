@@ -78,7 +78,6 @@ description: Automation workflow for recurring reports.
       {
         bypassGitHubAccountAge: true,
         bypassQualityGate: true,
-        skipBackup: true,
         skipWebhook: true,
       },
     );
@@ -157,7 +156,6 @@ description: Research helper for literature reviews.
       {
         bypassGitHubAccountAge: true,
         bypassQualityGate: true,
-        skipBackup: true,
         skipWebhook: true,
       },
     );
@@ -236,7 +234,6 @@ description: Research helper for literature reviews.
       {
         bypassGitHubAccountAge: true,
         bypassQualityGate: true,
-        skipBackup: true,
         skipWebhook: true,
       },
     );

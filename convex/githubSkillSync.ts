@@ -545,67 +545,57 @@ export async function applyGitHubSkillSourceSyncHandler(
       continue;
     }
 
-    const existingBySlug = await ctx.db
-      .query("skills")
-      .withIndex("by_slug", (q) => q.eq("slug", skillInsert.slug))
-      .unique();
-    if (existingBySlug) {
-      if (canReviveGitHubSkillSlugConflict(existingBySlug, sourceOwnerPublisherId)) {
-        const previousSkillSnapshot = { ...existingBySlug } as Doc<"skills">;
-        const doc = stripUndefined(skillInsert.doc) as Partial<Doc<"skills">>;
-        const patch = {
-          ...doc,
-          createdAt: existingBySlug.createdAt,
-          tags: existingBySlug.tags ?? {},
-          statsDownloads: existingBySlug.statsDownloads ?? doc.statsDownloads,
-          statsStars: existingBySlug.statsStars ?? doc.statsStars,
-          statsInstallsCurrent: existingBySlug.statsInstallsCurrent ?? doc.statsInstallsCurrent,
-          statsInstallsAllTime: existingBySlug.statsInstallsAllTime ?? doc.statsInstallsAllTime,
-          stats: existingBySlug.stats ?? doc.stats,
-          badges: existingBySlug.badges,
-          latestVersionId: undefined,
-          githubRemovedAt: undefined,
-          softDeletedAt: undefined,
-          updatedAt: now,
-        };
-        await ctx.db.patch(existingBySlug._id, patch);
-        const nextSkillSnapshot = { ...previousSkillSnapshot, ...patch } as Doc<"skills">;
-        const discovered = discoveredBySlug.get(skillInsert.slug);
-        if (discovered) {
-          if (hasGitHubSkillContent(discovered)) {
-            await upsertGitHubSkillContent(ctx, {
-              skillId: existingBySlug._id,
-              sourceId,
-              discovered,
-              commit: args.snapshot.commit,
-              now,
-            });
-          }
-          await scheduleGitHubSkillVerification(ctx, {
-            skillId: existingBySlug._id,
-            contentHash: discovered.contentHash,
-            scanStatus: doc.githubScanStatus,
+    const reviveCandidate = await findGitHubSkillRevivalCandidate(ctx, {
+      ownerUserId: args.ownerUserId,
+      ownerPublisherId: sourceOwnerPublisherId,
+      slug: skillInsert.slug,
+    });
+    if (reviveCandidate && canReviveGitHubSkillForSource(reviveCandidate)) {
+      const previousSkillSnapshot = { ...reviveCandidate } as Doc<"skills">;
+      const doc = stripUndefined(skillInsert.doc) as Partial<Doc<"skills">>;
+      const patch = {
+        ...doc,
+        createdAt: reviveCandidate.createdAt,
+        tags: reviveCandidate.tags ?? {},
+        statsDownloads: reviveCandidate.statsDownloads ?? doc.statsDownloads,
+        statsStars: reviveCandidate.statsStars ?? doc.statsStars,
+        statsInstallsCurrent: reviveCandidate.statsInstallsCurrent ?? doc.statsInstallsCurrent,
+        statsInstallsAllTime: reviveCandidate.statsInstallsAllTime ?? doc.statsInstallsAllTime,
+        stats: reviveCandidate.stats ?? doc.stats,
+        badges: reviveCandidate.badges,
+        latestVersionId: undefined,
+        githubRemovedAt: undefined,
+        softDeletedAt: undefined,
+        updatedAt: now,
+      };
+      await ctx.db.patch(reviveCandidate._id, patch);
+      const nextSkillSnapshot = { ...previousSkillSnapshot, ...patch } as Doc<"skills">;
+      const discovered = discoveredBySlug.get(skillInsert.slug);
+      if (discovered) {
+        if (hasGitHubSkillContent(discovered)) {
+          await upsertGitHubSkillContent(ctx, {
+            skillId: reviveCandidate._id,
+            sourceId,
+            discovered,
+            commit: args.snapshot.commit,
             now,
           });
         }
-        await adjustGlobalPublicCountForSkillChange(
-          ctx,
-          previousSkillSnapshot,
-          nextSkillSnapshot,
+        await scheduleGitHubSkillVerification(ctx, {
+          skillId: reviveCandidate._id,
+          contentHash: discovered.contentHash,
+          scanStatus: doc.githubScanStatus,
           now,
-        );
-        await syncSkillSearchDigestForSkill(ctx, nextSkillSnapshot);
-        revived += 1;
-        continue;
+        });
       }
-      conflicts += 1;
-      issues.push(
-        await buildSlugConflictIssue(ctx, {
-          skillInsert,
-          existingSkill: existingBySlug,
-          discovered: discoveredBySlug.get(skillInsert.slug),
-        }),
+      await adjustGlobalPublicCountForSkillChange(
+        ctx,
+        previousSkillSnapshot,
+        nextSkillSnapshot,
+        now,
       );
+      await syncSkillSearchDigestForSkill(ctx, nextSkillSnapshot);
+      revived += 1;
       continue;
     }
 
@@ -658,58 +648,30 @@ export async function applyGitHubSkillSourceSyncHandler(
   };
 }
 
-async function buildSlugConflictIssue(
+async function findGitHubSkillRevivalCandidate(
   ctx: MutationCtx,
   args: {
-    skillInsert: ReturnType<typeof buildGitHubSkillSyncPlan>["skillInserts"][number];
-    existingSkill: Doc<"skills">;
-    discovered: GitHubSkillSourceMetadataSnapshot["skills"][number] | undefined;
+    ownerUserId: Id<"users">;
+    ownerPublisherId: Id<"publishers"> | undefined;
+    slug: string;
   },
-): Promise<GitHubSkillSourceSyncIssue> {
-  const displayName =
-    typeof args.skillInsert.doc.displayName === "string"
-      ? args.skillInsert.doc.displayName
-      : args.skillInsert.slug;
-  const path =
-    args.discovered?.path ??
-    (typeof args.skillInsert.doc.githubPath === "string"
-      ? args.skillInsert.doc.githubPath
-      : args.skillInsert.slug);
-  const existingOwnerHandle = await getSkillOwnerHandle(ctx, args.existingSkill);
-  const ownerPhrase = existingOwnerHandle ? ` under @${existingOwnerHandle}` : "";
-  return {
-    slug: args.skillInsert.slug,
-    path,
-    displayName,
-    kind: "slug_conflict",
-    severity: "error",
-    message: `Slug already exists on ClawHub${ownerPhrase}.`,
-    ...(existingOwnerHandle ? { existingOwnerHandle } : {}),
-  };
-}
-
-async function getSkillOwnerHandle(ctx: MutationCtx, skill: Doc<"skills">) {
-  if (skill.ownerPublisherId) {
-    const publisher = await ctx.db.get(skill.ownerPublisherId);
-    if (publisher?.handle) return publisher.handle;
-  }
-  if (skill.ownerUserId) {
-    const user = await ctx.db.get(skill.ownerUserId);
-    if (user?.handle) return user.handle;
-  }
-  return null;
-}
-
-function canReviveGitHubSkillSlugConflict(
-  skill: Doc<"skills">,
-  ownerPublisherId: Id<"publishers"> | undefined,
 ) {
-  return (
-    skill.installKind === "github" &&
-    typeof skill.softDeletedAt === "number" &&
-    Boolean(ownerPublisherId) &&
-    skill.ownerPublisherId === ownerPublisherId
-  );
+  if (args.ownerPublisherId) {
+    return await ctx.db
+      .query("skills")
+      .withIndex("by_owner_publisher_slug", (q) =>
+        q.eq("ownerPublisherId", args.ownerPublisherId).eq("slug", args.slug),
+      )
+      .unique();
+  }
+  return await ctx.db
+    .query("skills")
+    .withIndex("by_owner_slug", (q) => q.eq("ownerUserId", args.ownerUserId).eq("slug", args.slug))
+    .unique();
+}
+
+function canReviveGitHubSkillForSource(skill: Doc<"skills">) {
+  return skill.installKind === "github" && typeof skill.softDeletedAt === "number";
 }
 
 function hasGitHubSkillContent(

@@ -22,19 +22,33 @@
 - Capability tags are not taxonomy inputs.
 - Existing items without valid stored categories remain in `other` until an author or operator
   explicitly accepts generated or manually selected categories.
-- Operators run the tracked package and skill catalog digest migrations after backend deployment
-  and verify completion before considering the taxonomy rollout complete. The deploy workflow does
-  not invoke them automatically.
+- `categories` is the single canonical source for detail, settings, profile, API, and discovery
+  reads.
+- The one-time classifier backfill may seed `categories` only when a publisher has never supplied
+  the field. Once seeded, publishers own the values and may replace them through UI settings or a
+  latest CLI publish. Explicit catalog flags publish an automatic patch version even when artifact
+  files are unchanged. Explicitly clearing categories saves canonical `other`.
 
 ## Topics
 
 - Authors may supply up to five topics through CLI or UI publish and edit surfaces.
 - Stored topics preserve author-facing labels. Lookup uses normalized topic slugs.
 - Reserved platform trust labels such as `official`, `featured`, and `verified` are rejected.
-- Topics are separate from release tags and are available to browse and exact-topic global search.
+- Topics are separate from release tags and remain available to search.
+- Browse sidebars do not enumerate the global topic space because it is open-ended and
+  author-facing labels may use different casing. Selecting a category reveals at most five
+  normalized top-topic chips from a bounded sample of that category's highest-ranked public items.
+  Exact normalized topic browse links remain supported.
 - Authors can edit categories and topics from skill and plugin settings.
 - Settings expose Generate as an explicit category action. Clearing categories saves `other`.
 - Backports and non-latest plugin releases do not replace current topics.
+- `topics` is the single canonical source for detail, settings, profile, API, and discovery reads.
+- The one-time classifier backfill may seed `topics` only when a publisher has never supplied the
+  field. Once seeded, publishers own the values and may edit or explicitly clear them.
+- Saving catalog metadata or promoting a latest UI/CLI publish clears category and topic inference
+  compatibility state so an old backfill cannot reappear after a publisher edit or explicit clear.
+- Future generated topic suggestions must remain non-canonical until a publisher or operator
+  explicitly accepts them.
 
 ## Browse
 
@@ -54,7 +68,7 @@
 
 ## Follow-Up
 
-Corpus classification is a separate operator-run phase from digest projection:
+Corpus classification was a one-time operator-run phase:
 
 - `taxonomy-prototype-v9` classifies categories and `topic-prototype-v1` classifies zero to five
   topics from bounded static artifact evidence. The plugin lane covers code and bundle plugins only;
@@ -62,24 +76,18 @@ Corpus classification is a separate operator-run phase from digest projection:
 - Classification writes bounded preview rows to `catalogClassificationResults`. Preview generation
   never changes skill/package taxonomy or search digests.
 - Explicit author categories/topics always win. Explicit empty arrays remain authoritative.
-- Applied inferred values remain separate in `inferredCategories` and `inferredTopics`. They are
-  eligible for discovery only while their recorded source version/release is still latest.
+- Applied inferred categories and topics were bootstrap data only. The catalog metadata
+  canonicalization migration copies current valid `inferredCategories` and `inferredTopics` into
+  canonical fields only when the corresponding publisher field is absent, clears all inference
+  metadata, and refreshes affected search digests.
+- The migration skips promotion when a skill or package has a catalog-metadata audit record. That
+  preserves publisher metadata edits and explicit topic clears that were historically stored as an
+  absent `topics` field.
 - The preview runner is cursor-batched and resumable. It uses an action instead of
   `@convex-dev/migrations` because it must read immutable storage blobs; the source-changing apply
   phase uses the migrations component.
-- Apply defaults to a dry run and requires a confidence-specific confirmation string. High
-  confidence is the default production lane. Medium confidence requires an explicit operator
-  decision after reviewing the generated corpus report.
-
-Operator sequence:
-
-```bash
-bunx convex run catalogClassificationNode:classifyCatalogInternal \
-  '{"targetKind":"skill","maxBatches":20,"continueOnIncomplete":true}' --prod
-bunx convex run catalogClassificationNode:classifyCatalogInternal \
-  '{"targetKind":"plugin","maxBatches":20,"continueOnIncomplete":true}' --prod
-bunx convex run migrations:runCatalogClassificationApply \
-  '{"minimumConfidence":"high","dryRun":true}' --prod
-bunx convex run migrations:runCatalogClassificationApply \
-  '{"minimumConfidence":"high","dryRun":false,"confirm":"apply-high-confidence-catalog-classifications"}' --prod
-```
+- High- and medium-confidence rollout apply was a one-time production migration. The temporary
+  apply migrations and operator wrappers were removed after the verified rollout completed.
+- Remove the temporary catalog metadata canonicalization migration and the remaining inferred
+  category/topic read/schema compatibility only after its production apply and migration-component
+  status are verified.

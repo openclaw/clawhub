@@ -373,18 +373,16 @@ describe("moderation notification email copy", () => {
     });
 
     expect(email.subject).toBe("Content rights report");
-    expect(email.text).toContain("Hi octocat,");
+    expect(email.text).not.toContain("Hi octocat,");
     expect(email.text).toContain("Action required: content rights report");
     expect(email.text.indexOf("Action required: content rights report")).toBeLessThan(
-      email.text.indexOf("Hi octocat,"),
+      email.text.indexOf("We received a report"),
     );
     expect(email.text).toContain("Open appeal: https://appeals.openclaw.ai/case-123");
     expect(email.html).toContain("font-size:18px");
     expect(email.html).toContain("ClawHub");
     expect(email.html).toContain("Action required: content rights report");
-    expect(email.html.indexOf("Action required: content rights report")).toBeLessThan(
-      email.html.indexOf("octocat"),
-    );
+    expect(email.html).not.toContain("Hi octocat");
     expect(email.html).toContain("We received a report about &lt;package&gt;.");
     expect(email.html).toContain("Open appeal");
     expect(email.html).not.toContain("<package>");

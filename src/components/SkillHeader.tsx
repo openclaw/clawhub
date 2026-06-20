@@ -12,6 +12,7 @@ import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
+import { CatalogTopicList } from "./CatalogTopicList";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { MetricTrendCard, MetricTrendCardSkeleton } from "./MetricTrendCard";
@@ -347,6 +348,7 @@ export function SkillHeader({
                     {category.label}
                   </a>
                 ) : null}
+                <CatalogTopicList topics={skill.topics} />
               </div>
               <div className="skill-summary-block">
                 <p className="section-subtitle skill-summary-line">{headerDescription}</p>

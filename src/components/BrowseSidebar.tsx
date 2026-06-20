@@ -51,6 +51,9 @@ type BrowseSidebarProps = {
   categories?: BrowseCategory[];
   activeCategory?: string;
   onCategoryChange?: (slug: string | undefined) => void;
+  categoryTopics?: string[];
+  activeTopic?: string;
+  onTopicChange?: (topic: string | undefined) => void;
   sortOptions?: SortOption[];
   activeSort?: string;
   onSortChange?: (value: string) => void;
@@ -91,6 +94,9 @@ export function BrowseSidebar({
   categories,
   activeCategory,
   onCategoryChange,
+  categoryTopics = [],
+  activeTopic,
+  onTopicChange,
   sortOptions,
   activeSort,
   onSortChange,
@@ -171,21 +177,43 @@ export function BrowseSidebar({
           >
             All
           </button>
-          {categories.map((cat) => (
-            <button
-              key={cat.slug}
-              className={`sidebar-option${activeCategory === cat.slug ? " is-active" : ""}`}
-              type="button"
-              role="radio"
-              aria-checked={activeCategory === cat.slug}
-              onClick={() => onCategoryChange(cat.slug)}
-            >
-              <span className="sidebar-option-icon" aria-hidden="true">
-                {getCategoryIcon(cat.icon)}
-              </span>
-              {cat.label}
-            </button>
-          ))}
+          {categories.map((cat) => {
+            const isActive = activeCategory === cat.slug;
+            return (
+              <div key={cat.slug} className="sidebar-category">
+                <button
+                  className={`sidebar-option${isActive ? " is-active" : ""}`}
+                  type="button"
+                  role="radio"
+                  aria-checked={isActive}
+                  onClick={() => onCategoryChange(cat.slug)}
+                >
+                  <span className="sidebar-option-icon" aria-hidden="true">
+                    {getCategoryIcon(cat.icon)}
+                  </span>
+                  {cat.label}
+                </button>
+                {isActive && categoryTopics.length > 0 && onTopicChange ? (
+                  <div className="sidebar-category-topics" aria-label={`${cat.label} top topics`}>
+                    {categoryTopics.slice(0, 5).map((topic) => {
+                      const isActiveTopic = activeTopic === topic;
+                      return (
+                        <button
+                          key={topic}
+                          className={`sidebar-topic-chip${isActiveTopic ? " is-active" : ""}`}
+                          type="button"
+                          aria-pressed={isActiveTopic}
+                          onClick={() => onTopicChange(isActiveTopic ? undefined : topic)}
+                        >
+                          #{topic}
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
         </fieldset>
       ) : null}
 

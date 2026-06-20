@@ -71,8 +71,6 @@ export type PublishResult = {
 export type PublishVersionArgs = {
   slug: string;
   displayName: string;
-  /** Optional icon hint (e.g. `lucide:Plug`). Server validates the format. */
-  icon?: string;
   version: string;
   changelog: string;
   tags?: string[];
@@ -101,7 +99,6 @@ export type PublishOptions = {
   bypassGitHubAccountAge?: boolean;
   bypassNewSkillRateLimit?: boolean;
   bypassQualityGate?: boolean;
-  skipBackup?: boolean;
   skipWebhook?: boolean;
   ownerPublisherId?: Id<"publishers">;
   sourceOwnerPublisherId?: Id<"publishers">;
@@ -145,10 +142,6 @@ export async function publishVersionForUser(
     migrateOwner: options.migrateOwner,
   })) as Doc<"skills"> | null;
   const isNewSkill = !existingSkill;
-  const publishedVersionIsLatest = shouldPublishVersionBecomeLatest(
-    version,
-    existingSkill?.latestVersionSummary?.version,
-  );
 
   // For new skills, enforce the full write-path rules (length, pattern,
   // reserved-word blocklist). For existing skills the slug is already
@@ -333,7 +326,6 @@ export async function publishVersionForUser(
     migrateOwner: options.migrateOwner,
     slug,
     displayName,
-    icon: args.icon,
     version,
     changelog: changelogText,
     changelogSource,
@@ -393,35 +385,6 @@ export async function publishVersionForUser(
   const ownerHandle =
     targetPublisher?.handle ?? owner?.handle ?? owner?.displayName ?? owner?.name ?? "unknown";
 
-  if (!options.skipBackup) {
-    await ctx.scheduler
-      .runAfter(0, internal.registryArtifactBackupsNode.backupSkillForPublishInternal, {
-        skillId: publishResult.skillId,
-        versionId: publishResult.versionId,
-        slug,
-        version,
-        isLatest: publishedVersionIsLatest,
-        displayName,
-        ownerHandle,
-        files: publishFiles,
-        publishedAt: Date.now(),
-      })
-      .catch((error) => {
-        const message = errorMessage(error);
-        console.error("registry artifact backup scheduling failed", error);
-        return ctx
-          .runMutation(internal.registryArtifactBackups.enqueueRegistryArtifactBackupJobInternal, {
-            targetKind: "skillVersion",
-            skillVersionId: publishResult.versionId,
-            reason: "publish",
-            error: message,
-          })
-          .catch((enqueueError) => {
-            console.error("registry artifact backup retry enqueue failed", enqueueError);
-          });
-      });
-  }
-
   if (!options.skipWebhook) {
     void schedulePublishWebhook(ctx, {
       slug,
@@ -432,18 +395,6 @@ export async function publishVersionForUser(
   }
 
   return publishResult;
-}
-
-function errorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function shouldPublishVersionBecomeLatest(version: string, previousLatestVersion?: string) {
-  return (
-    !previousLatestVersion ||
-    !semver.valid(previousLatestVersion) ||
-    semver.gt(version, previousLatestVersion)
-  );
 }
 
 function mergeSourceIntoMetadata(

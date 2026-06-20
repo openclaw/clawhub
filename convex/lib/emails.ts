@@ -234,7 +234,7 @@ async function renderGenericOneOffTemplate(args: AdminOneOffEmailArgs) {
   const actionLabel = args.primaryActionLabel?.trim();
   const actionUrl = args.primaryActionUrl?.trim();
   const rendered = await renderAdminOneOffEmail({
-    recipientHandle: args.recipientHandle?.trim() || "there",
+    ...(args.recipientHandle?.trim() ? { recipientHandle: args.recipientHandle.trim() } : {}),
     subject,
     title,
     body: args.body.trim(),
@@ -481,7 +481,7 @@ export async function buildPackageInspectorFindingsEmail(args: PackageInspectorF
 
 export async function buildAdminOneOffEmail(args: AdminOneOffEmailArgs) {
   const title = args.title?.trim() || args.subject.trim();
-  const lines = [title, "", greeting(args.recipientHandle), "", args.body.trim()];
+  const lines = [title, "", args.body.trim()];
   if (args.primaryActionLabel?.trim() && args.primaryActionUrl?.trim()) {
     lines.push("", `${args.primaryActionLabel.trim()}: ${args.primaryActionUrl.trim()}`);
   }

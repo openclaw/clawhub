@@ -1,6 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import {
   getCatalogTopicSlugs,
+  INTERNAL_UNCATEGORIZED_CATEGORY,
   isSkillCategorySlug,
   normalizeCatalogTopic,
   normalizeCatalogTopics,
@@ -125,7 +126,6 @@ import {
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
 import { isPublicSkillVersionAvailableForSkill } from "./lib/skillFileAccess";
-import { normalizeSkillIconValue } from "./lib/skillIcon";
 import {
   fetchText,
   type PublishResult,
@@ -5993,6 +5993,7 @@ async function buildPublicSkillApiListEntryFromDigest(
       slug: publicSkill.slug,
       displayName: publicSkill.displayName,
       summary: publicSkill.summary,
+      topics: publicSkill.topics,
       tags: publicSkill.tags,
       stats: publicSkill.stats,
       createdAt: publicSkill.createdAt,
@@ -6403,9 +6404,22 @@ function skillCatalogSearchMatch(
     setMatch(1, 35);
   }
 
-  const topicQuery = normalizeCatalogTopic(queryText);
-  if (topicQuery && getCatalogTopicSlugs(digest.topics).includes(topicQuery)) {
+  const taxonomyQuery = normalizeCatalogTopic(queryText);
+  const categories = (digest.categories ?? []).filter(
+    (category) => category !== INTERNAL_UNCATEGORIZED_CATEGORY,
+  );
+  const topicSlugs = getCatalogTopicSlugs(digest.topics);
+  if (taxonomyQuery && (categories.includes(taxonomyQuery) || topicSlugs.includes(taxonomyQuery))) {
     setMatch(2, 25);
+  }
+  if (
+    matchesExploratoryTokenPrefixes(
+      queryTokens,
+      [...categories, ...(digest.topics ?? [])],
+      EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH,
+    )
+  ) {
+    setMatch(2, 20);
   }
 
   if (
@@ -6578,6 +6592,10 @@ export const hasMissingPackageCatalogRecommendationScoresInternal = internalQuer
 
 const EXPLORATORY_SKILL_CATALOG_SEARCH_MIN_TOKEN_LENGTH = 3;
 
+function skillCatalogPrefixUpperBound(value: string) {
+  return `${value}\uffff`;
+}
+
 type SkillPackageCatalogSearchArgs = {
   query: string;
   limit?: number;
@@ -6620,13 +6638,30 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
   if (!topic && matches.length < targetCount) {
     const directTopic = normalizeCatalogTopic(queryText);
     if (directTopic) {
-      const topicDigests = await ctx.db
+      const exactTopicDigests = await ctx.db
         .query("skillTopicSearchDigest")
         .withIndex("by_active_topic_updated", (q) =>
           q.eq("softDeletedAt", undefined).eq("topic", directTopic),
         )
         .order("desc")
         .take(MAX_DIRECT_SKILL_CATALOG_SEARCH_CANDIDATES);
+      const prefixTopicDigests =
+        exactTopicDigests.length < MAX_DIRECT_SKILL_CATALOG_SEARCH_CANDIDATES
+          ? await ctx.db
+              .query("skillTopicSearchDigest")
+              .withIndex("by_active_topic_updated", (q) =>
+                q
+                  .eq("softDeletedAt", undefined)
+                  .gte("topic", directTopic)
+                  .lt("topic", skillCatalogPrefixUpperBound(directTopic)),
+              )
+              .order("desc")
+              .take(MAX_DIRECT_SKILL_CATALOG_SEARCH_CANDIDATES - exactTopicDigests.length)
+          : [];
+      const topicDigests = [...exactTopicDigests, ...prefixTopicDigests].filter(
+        (digest, index, all) =>
+          all.findIndex((candidate) => candidate.skillId === digest.skillId) === index,
+      );
       for (const topicDigest of topicDigests) {
         const digest = await ctx.db
           .query("skillSearchDigest")
@@ -9479,9 +9514,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
-    // Skill icon hint chosen by the publisher in the publish form. Stored as
-    // a protocol-prefixed string (e.g. `lucide:Plug`). Unknown values are
-    // silently dropped server-side; see lib/skillIcon.ts.
+    // Legacy cached clients may still send this; accept and ignore it.
     icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
@@ -9528,7 +9561,8 @@ export const publishVersion: ReturnType<typeof action> = action({
             minimumRole: "publisher",
           })) as { publisherId: Id<"publishers"> })
         : null;
-    return publishVersionForUser(ctx, userId, args, {
+    const { icon: _legacyIcon, ...publishArgs } = args;
+    return publishVersionForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
@@ -9890,112 +9924,8 @@ export const updateTags = mutation({
     if (latestEntry) {
       await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now);
     }
-
-    if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
-      const version = versionsById.get(latestEntry.versionId);
-      const owner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: skill.ownerPublisherId,
-        ownerUserId: skill.ownerUserId,
-      });
-      if (version && owner) {
-        await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
-          skill,
-          version,
-          isLatest: true,
-          ownerHandle: owner.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId),
-          logContext: "latest refresh",
-        });
-      }
-    }
   },
 });
-
-async function scheduleRegistryArtifactSkillVersionBackupRefresh(
-  ctx: MutationCtx,
-  params: {
-    skill: Pick<Doc<"skills">, "_id" | "slug" | "displayName" | "ownerUserId" | "ownerPublisherId">;
-    version: Doc<"skillVersions">;
-    ownerHandle: string;
-    isLatest: boolean;
-    logContext: string;
-  },
-) {
-  try {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.registryArtifactBackupsNode.backupSkillForPublishInternal,
-      {
-        skillId: params.skill._id,
-        versionId: params.version._id,
-        slug: params.skill.slug,
-        version: params.version.version,
-        isLatest: params.isLatest,
-        displayName: params.skill.displayName,
-        ownerHandle: params.ownerHandle,
-        files: params.version.files,
-        publishedAt: params.version.createdAt,
-      },
-    );
-  } catch (error) {
-    console.error(`registry artifact backup ${params.logContext} scheduling failed`, error);
-    await enqueueSkillVersionBackupRetryJob(ctx, {
-      versionId: params.version._id,
-      error: errorMessageForBackupJob(error),
-    }).catch((enqueueError) => {
-      console.error(
-        `registry artifact backup ${params.logContext} retry enqueue failed`,
-        enqueueError,
-      );
-    });
-  }
-}
-
-async function enqueueSkillVersionBackupRetryJob(
-  ctx: Pick<MutationCtx, "db">,
-  args: { versionId: Id<"skillVersions">; error?: string },
-) {
-  const now = Date.now();
-  const lastError = truncateBackupJobError(args.error);
-  const existing = await ctx.db
-    .query("registryArtifactBackupJobs")
-    .withIndex("by_skill_version", (q) => q.eq("skillVersionId", args.versionId))
-    .unique();
-  if (existing) {
-    await ctx.db.patch(existing._id, {
-      status: "pending",
-      reason: "retry",
-      attempts: 0,
-      lastError,
-      nextRunAt: now,
-      createdAt: now,
-      updatedAt: now,
-      exhaustedAt: undefined,
-      completedAt: undefined,
-    });
-    return;
-  }
-  await ctx.db.insert("registryArtifactBackupJobs", {
-    targetKind: "skillVersion",
-    skillVersionId: args.versionId,
-    packageReleaseId: undefined,
-    status: "pending",
-    reason: "retry",
-    attempts: 0,
-    nextRunAt: now,
-    lastError,
-    createdAt: now,
-    updatedAt: now,
-  });
-}
-
-function errorMessageForBackupJob(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function truncateBackupJobError(error: string | undefined) {
-  if (!error) return undefined;
-  return error.length > 4000 ? `${error.slice(0, 3997)}...` : error;
-}
 
 export const deleteTags = mutation({
   args: {
@@ -10094,11 +10024,31 @@ export const setCatalogMetadata = mutation({
       ...skill,
       categories,
       topics: topics.length ? topics : undefined,
+      inferredCategories: undefined,
+      inferredTopics: undefined,
+      inferredFromVersionId: undefined,
+      inferredCategoryConfidence: undefined,
+      inferredTopicConfidence: undefined,
+      inferredClassifierVersion: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredInputHash: undefined,
+      inferredTopicInputHash: undefined,
+      inferredAt: undefined,
       updatedAt: now,
     };
     await ctx.db.patch(skill._id, {
       categories: nextSkill.categories,
       topics: nextSkill.topics,
+      inferredCategories: nextSkill.inferredCategories,
+      inferredTopics: nextSkill.inferredTopics,
+      inferredFromVersionId: nextSkill.inferredFromVersionId,
+      inferredCategoryConfidence: nextSkill.inferredCategoryConfidence,
+      inferredTopicConfidence: nextSkill.inferredTopicConfidence,
+      inferredClassifierVersion: nextSkill.inferredClassifierVersion,
+      inferredTopicClassifierVersion: nextSkill.inferredTopicClassifierVersion,
+      inferredInputHash: nextSkill.inferredInputHash,
+      inferredTopicInputHash: nextSkill.inferredTopicInputHash,
+      inferredAt: nextSkill.inferredAt,
       updatedAt: now,
     });
     await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
@@ -10620,23 +10570,6 @@ async function renameOwnedSkillByActor(
     createdAt: now,
   });
 
-  if (skill.latestVersionId) {
-    const latestVersion = await ctx.db.get(skill.latestVersionId);
-    const owner = await getOwnerPublisher(ctx, {
-      ownerPublisherId: skill.ownerPublisherId,
-      ownerUserId: skill.ownerUserId,
-    });
-    if (latestVersion && !latestVersion.softDeletedAt && owner) {
-      await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
-        skill: { ...skill, slug: newSlug },
-        version: latestVersion,
-        isLatest: true,
-        ownerHandle: owner.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId),
-        logContext: "rename refresh",
-      });
-    }
-  }
-
   return { ok: true as const, slug: newSlug, previousSlug: skill.slug };
 }
 
@@ -11069,23 +11002,6 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       },
       createdAt: now,
     });
-
-    if (skill.latestVersionId) {
-      const latestVersion = await ctx.db.get(skill.latestVersionId);
-      if (latestVersion && !latestVersion.softDeletedAt) {
-        await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
-          skill: {
-            ...skill,
-            ownerUserId: nextOwner._id,
-            ownerPublisherId: destinationPublisher._id,
-          },
-          version: latestVersion,
-          isLatest: true,
-          ownerHandle: destinationPublisher.handle,
-          logContext: "owner transfer refresh",
-        });
-      }
-    }
 
     return {
       ok: true as const,
@@ -11578,9 +11494,6 @@ export const insertVersion = internalMutation({
     migrateOwner: v.optional(v.boolean()),
     slug: v.string(),
     displayName: v.string(),
-    // Skill icon hint chosen by the publisher (e.g. `lucide:Plug`). Optional;
-    // omitted on backport publishes to preserve the existing skill icon.
-    icon: v.optional(v.string()),
     version: v.string(),
     changelog: v.string(),
     changelogSource: v.optional(v.union(v.literal("auto"), v.literal("user"))),
@@ -12073,7 +11986,7 @@ export const insertVersion = internalMutation({
         slug,
         displayName: args.displayName,
         summary: summaryValue,
-        icon: normalizeSkillIconValue(args.icon),
+        icon: undefined,
         ownerUserId: userId,
         ownerPublisherId,
         canonicalSkillId,
@@ -12136,7 +12049,6 @@ export const insertVersion = internalMutation({
     }
 
     if (!skill) throw new Error("Skill creation failed");
-    const versionIcon = args.icon !== undefined ? normalizeSkillIconValue(args.icon) : skill.icon;
 
     const existingVersion = await ctx.db
       .query("skillVersions")
@@ -12155,7 +12067,7 @@ export const insertVersion = internalMutation({
       sourceProvenance: args.sourceProvenance,
       changelog: args.changelog,
       changelogSource: args.changelogSource,
-      icon: versionIcon,
+      icon: undefined,
       files: args.files,
       parsed: args.parsed,
       staticScan: args.staticScan,
@@ -12209,11 +12121,6 @@ export const insertVersion = internalMutation({
     // the same values that will actually be persisted. Otherwise we would
     // persist flags derived from text the user can never see on the card.
     const nextDisplayName = isNewLatest ? args.displayName : skill.displayName;
-    // Skill icon follows the same "only update on new latest" rule as
-    // displayName / summary so backport publishes can't surprise the card.
-    // Only update when the publisher explicitly picked one this time —
-    // omitting `args.icon` keeps the previously stored value.
-    const nextIcon = isNewLatest ? versionIcon : skill.icon;
     const derivedFlags = deriveModerationFlags({
       skill: {
         slug: skill.slug,
@@ -12230,7 +12137,7 @@ export const insertVersion = internalMutation({
     const basePatch: SkillModerationPatch = {
       displayName: nextDisplayName,
       summary: nextSummary ?? undefined,
-      icon: nextIcon,
+      icon: skill.icon,
       ownerPublisherId: skill.ownerPublisherId ?? ownerPublisherId,
       latestVersionId: isNewLatest ? versionId : skill.latestVersionId,
       latestVersionSummary: isNewLatest
@@ -12246,6 +12153,20 @@ export const insertVersion = internalMutation({
       tags: nextTags,
       categories: isNewLatest ? args.categories : skill.categories,
       topics: isNewLatest ? args.topics : skill.topics,
+      ...(isNewLatest
+        ? {
+            inferredCategories: undefined,
+            inferredTopics: undefined,
+            inferredFromVersionId: undefined,
+            inferredCategoryConfidence: undefined,
+            inferredTopicConfidence: undefined,
+            inferredClassifierVersion: undefined,
+            inferredTopicClassifierVersion: undefined,
+            inferredInputHash: undefined,
+            inferredTopicInputHash: undefined,
+            inferredAt: undefined,
+          }
+        : {}),
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
       moderationStatus: initialModerationStatus,

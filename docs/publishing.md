@@ -80,6 +80,8 @@ to keep out of public issues.
 - Pick an owner that matches the package scope.
 - Include `openclaw.plugin.json`. Code plugins also need `package.json` with
   `openclaw.compat.pluginApi` and `openclaw.build.openclawVersion`.
+- To show a custom plugin card icon, add `icon` to `openclaw.plugin.json` with
+  any HTTPS image URL.
 - Include source repository and exact commit metadata, or use the CLI from a
   GitHub-backed checkout so it can detect them.
 - Run `clawhub package validate <source>` before publishing. For package,

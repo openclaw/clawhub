@@ -8,6 +8,7 @@ import { assertAdmin, getOptionalActiveAuthUserId, requireUser } from "./lib/acc
 import { isPublicSkillDoc } from "./lib/globalStats";
 import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
+import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
@@ -76,10 +77,14 @@ type PublisherCatalogItem = {
   displayName: string;
   summary: string | null;
   topics?: string[];
-  // Mirrors `skills.icon` for `kind: "skill"` items so the publisher
-  // profile catalog (`/p/<handle>`) can render the same custom glyph that
-  // `SkillCard` and `SkillListItem` show on `/skills` and `/search`.
-  // Always `null` for plugins in Phase 1.
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: Id<"skillVersions">;
+  inferredFromVersionId?: Id<"skillVersions">;
+  /**
+   * Legacy skill icon field or public plugin manifest HTTPS icon URL retained
+   * while older frontend bundles are cached.
+   */
   icon: string | null;
   href: string;
   installs: number;
@@ -379,6 +384,10 @@ function getPublisherCatalogItems(
       displayName: skill.displayName,
       summary: skill.summary ?? null,
       topics: skill.topics,
+      categories: skill.categories,
+      inferredCategories: skill.inferredCategories,
+      latestVersionId: skill.latestVersionId,
+      inferredFromVersionId: skill.inferredFromVersionId,
       icon: skill.icon ?? null,
       href: `/${encodeURIComponent(publisher.handle)}/${encodeURIComponent(skill.slug)}`,
       installs: readCanonicalStat(skill, "installsAllTime"),
@@ -397,7 +406,10 @@ function getPublisherCatalogItems(
       displayName: pkg.displayName,
       summary: pkg.summary ?? null,
       topics: pkg.topics,
-      icon: null,
+      icon:
+        pkg.channel === "private" || isPackageBlockedFromPublic(pkg.scanStatus)
+          ? null
+          : (pkg.icon ?? null),
       href: buildPluginDetailHref(pkg.name),
       installs: pkg.stats.installs,
       downloads: pkg.stats.downloads,
@@ -428,6 +440,12 @@ function toGitHubSkillCatalogItem(
     slug: item.slug ?? null,
     displayName: item.displayName,
     summary: item.summary,
+    categories: item.categories,
+    inferredCategories: item.inferredCategories,
+    latestVersionId: item.latestVersionId ? String(item.latestVersionId) : undefined,
+    inferredFromVersionId: item.inferredFromVersionId
+      ? String(item.inferredFromVersionId)
+      : undefined,
     icon: item.icon,
     href: item.href,
     installs: item.installs,
@@ -1932,6 +1950,10 @@ export const listStarredPage = query({
             kind: "skill" as const,
             displayName: skill.displayName,
             summary: skill.summary ?? null,
+            categories: skill.categories,
+            inferredCategories: skill.inferredCategories,
+            latestVersionId: skill.latestVersionId,
+            inferredFromVersionId: skill.inferredFromVersionId,
             icon: skill.icon ?? null,
             href: `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(skill.slug)}`,
             installs: readCanonicalStat(skill, "installsAllTime"),

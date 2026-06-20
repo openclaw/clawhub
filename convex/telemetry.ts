@@ -4,11 +4,12 @@ import type { Id } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { internalMutation, mutation } from "./functions";
 import { requireUser } from "./lib/access";
+import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 import { insertStatEvent } from "./skillStatEvents";
 
 const DAY_MS = 86_400_000;
 const INSTALL_TELEMETRY_DEDUPE_RETENTION_MS = 14 * DAY_MS;
-const PRUNE_BATCH_SIZE = 200;
+const PRUNE_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
 const CLEAR_INSTALLS_BATCH_SIZE = 5_000;
 const CLEAR_DEDUPES_BATCH_SIZE = 10_000;
 

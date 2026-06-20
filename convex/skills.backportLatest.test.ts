@@ -434,7 +434,18 @@ describe("skills.insertVersion latest-tag protection", () => {
   });
 
   it("promotes latest when publishing a strictly higher version", async () => {
-    const skill = buildExistingSkill();
+    const skill = buildExistingSkill({
+      inferredCategories: ["automation"],
+      inferredTopics: ["Old inference"],
+      inferredFromVersionId: PREV_LATEST_VERSION_ID,
+      inferredCategoryConfidence: "high",
+      inferredTopicConfidence: "high",
+      inferredClassifierVersion: "taxonomy-prototype-v9",
+      inferredTopicClassifierVersion: "topic-prototype-v1",
+      inferredInputHash: "category-hash",
+      inferredTopicInputHash: "topic-hash",
+      inferredAt: 123,
+    });
     const { ctx, captured } = buildCtx(skill);
 
     const result = await insertVersionHandler(
@@ -462,6 +473,20 @@ describe("skills.insertVersion latest-tag protection", () => {
     expect((finalPatch as Record<string, unknown>).latestVersionSummary).toMatchObject({
       version: "2.1.0",
     });
+    for (const field of [
+      "inferredCategories",
+      "inferredTopics",
+      "inferredFromVersionId",
+      "inferredCategoryConfidence",
+      "inferredTopicConfidence",
+      "inferredClassifierVersion",
+      "inferredTopicClassifierVersion",
+      "inferredInputHash",
+      "inferredTopicInputHash",
+      "inferredAt",
+    ]) {
+      expect(finalPatch).toHaveProperty(field, undefined);
+    }
 
     // New embedding is the latest; the previous latest embedding is demoted.
     expect(captured.embeddingInserts[0]).toMatchObject({
@@ -476,7 +501,11 @@ describe("skills.insertVersion latest-tag protection", () => {
   });
 
   it("does not clobber latest when publishing an older (backport) version", async () => {
-    const skill = buildExistingSkill();
+    const skill = buildExistingSkill({
+      inferredCategories: ["automation"],
+      inferredTopics: ["Old inference"],
+      inferredFromVersionId: PREV_LATEST_VERSION_ID,
+    });
     const { ctx, captured } = buildCtx(skill);
 
     const result = await insertVersionHandler(
@@ -510,6 +539,9 @@ describe("skills.insertVersion latest-tag protection", () => {
 
     // versions counter still increments on every publish, regardless of version order.
     expect(finalPatch.stats).toMatchObject({ versions: 2 });
+    expect(finalPatch).not.toHaveProperty("inferredCategories");
+    expect(finalPatch).not.toHaveProperty("inferredTopics");
+    expect(finalPatch).not.toHaveProperty("inferredFromVersionId");
   });
 
   it("keeps the previous latest embedding untouched on backport publishes", async () => {

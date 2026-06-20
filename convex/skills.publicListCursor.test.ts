@@ -1181,6 +1181,30 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
+  it("carries topics through the public API list projection", async () => {
+    getPageMock.mockResolvedValueOnce({
+      page: [
+        makeSearchDigest({
+          topics: ["Calendar", "Scheduling"],
+        }),
+      ],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    const result = await listPublicApiPageV1Handler({} as never, {
+      numItems: 10,
+      sort: "updated",
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      skill: {
+        topics: ["Calendar", "Scheduling"],
+      },
+    });
+  });
+
   it("drops stale trending latest versions that belong to another skill", async () => {
     const staleDigest = makeSearchDigest({
       latestVersionId: "skillVersions:other",

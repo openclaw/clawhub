@@ -35,7 +35,6 @@ import {
 } from "../../components/PublisherOwnerSelect";
 import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
-import { SkillIconPicker } from "../../components/SkillIconPicker";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardTitle } from "../../components/ui/card";
@@ -46,7 +45,6 @@ import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
 import { setPostPublishFlash } from "../../lib/postPublishFlash";
 import { extractSkillFrontmatterDescription } from "../../lib/skillFrontmatter";
-import { ALLOWED_LUCIDE_ICONS, makeLucideIconValue, parseSkillIcon } from "../../lib/skillIcon";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -105,7 +103,6 @@ export function Upload() {
         skill?: {
           slug: string;
           displayName: string;
-          icon?: string | null;
           summary?: string;
           categories?: string[];
           topics?: string[];
@@ -132,8 +129,6 @@ export function Upload() {
     license: false,
   });
   const [metadataPrefillNote, setMetadataPrefillNote] = useState<string | null>(null);
-  // Selected lucide icon name (e.g. `Plug`) or null when "no icon".
-  const [iconName, setIconName] = useState<string | null>(null);
   const [version, setVersion] = useState("1.0.0");
   const [tags, setTags] = useState("latest");
   const [categories, setCategories] = useState<string[]>([]);
@@ -148,16 +143,6 @@ export function Upload() {
   );
   const [changelogSource, setChangelogSource] = useState<"auto" | "user" | null>(null);
   const changelogTouchedRef = useRef(false);
-  // Tracks whether the publisher has interacted with the Skill icon picker
-  // during this session. Used by the submit handler to honour the "key
-  // omitted = leave existing alone" branch in skill mode: a routine New
-  // Version publish that never touches the picker must NOT forward an
-  // empty `icon: ""` (which the backend would treat as an explicit
-  // clear). This protects against silently wiping a custom icon when
-  // pre-population fails — for example after the client allow-list is
-  // pruned in a future deploy and the stored lucide name no longer
-  // resolves.
-  const iconTouchedRef = useRef(false);
   const changelogRequestRef = useRef(0);
   const changelogKeyRef = useRef<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -342,12 +327,6 @@ export function Upload() {
     if (!topicsTouchedRef.current) {
       const nextTopics = formatCatalogTopicsInput(existing.skill.topics ?? []);
       setTopics((current) => (current === nextTopics ? current : nextTopics));
-    }
-    // Pre-populate the icon picker from the existing skill so a New Version
-    // publish keeps the previously selected icon unless the user changes it.
-    if (existing.skill.icon !== undefined) {
-      const parsed = parseSkillIcon(existing.skill.icon ?? null);
-      setIconName(parsed?.kind === "lucide" ? parsed.name : null);
     }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
@@ -739,25 +718,6 @@ export function Upload() {
 
     setStatus("Publishing…");
     try {
-      // Skill mode forwards an `icon` field only when the picker has
-      // actually been touched in this session, so the form is the single
-      // source of truth for the tri-state contract:
-      //   * touched + whitelisted name → `lucide:<Name>` (set)
-      //   * touched + None / unparseable selection → `""` (clear)
-      //   * untouched → field omitted (keep existing)
-      // The backend treats blank input as "clear the icon" and a missing
-      // key as "keep whatever is already stored", so the omit branch is
-      // what protects routine version bumps from silently wiping an
-      // existing custom icon when pre-population fails (e.g. the stored
-      // lucide name was pruned from `ALLOWED_LUCIDE_ICONS`).
-      let iconPayload: string | undefined;
-      if (!iconTouchedRef.current) {
-        iconPayload = undefined;
-      } else if (iconName && Object.hasOwn(ALLOWED_LUCIDE_ICONS, iconName)) {
-        iconPayload = makeLucideIconValue(iconName as keyof typeof ALLOWED_LUCIDE_ICONS);
-      } else {
-        iconPayload = "";
-      }
       const result = await publishVersion({
         ownerHandle: ownerHandle || undefined,
         sourceOwnerHandle:
@@ -770,7 +730,6 @@ export function Upload() {
         migrateOwner: isOwnerMigration && confirmMigrateOwner ? true : undefined,
         slug: trimmedSlug,
         displayName: trimmedName,
-        ...(iconPayload !== undefined ? { icon: iconPayload } : {}),
         version: trimmedVersion,
         changelog: trimmedChangelog,
         acceptLicenseTerms: acceptedLicenseTerms,
@@ -1143,24 +1102,6 @@ export function Upload() {
                   <span className="leading-5">{metadataPrefillNote}</span>
                 </p>
               ) : null}
-
-              <div className="flex flex-col gap-3">
-                {/* The picker is a custom radiogroup; the visible "Icon"
-                    heading is decorative and does not need `htmlFor` —
-                    `SkillIconPicker` exposes its own `aria-label`. */}
-                <Label>Icon</Label>
-                <SkillIconPicker
-                  value={iconName}
-                  onChange={(next) => {
-                    // Mark the picker as user-touched so the submit
-                    // handler knows it can forward the resulting value
-                    // (including `null` → "") instead of falling back
-                    // to the omit-key branch.
-                    iconTouchedRef.current = true;
-                    setIconName(next);
-                  }}
-                />
-              </div>
 
               <div className="flex flex-col gap-2">
                 <Label htmlFor="ownerHandle">Owner</Label>

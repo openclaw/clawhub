@@ -238,6 +238,18 @@ describe("SkillHeader", () => {
     expect(container.querySelector(".official-tag")).toBeTruthy();
   });
 
+  it("renders canonical topics in the detail hero", () => {
+    renderHeader({
+      skill: {
+        ...skill,
+        topics: ["Google Workspace", "Email"],
+      },
+    });
+
+    expect(screen.getByLabelText("Topics").textContent).toContain("Google Workspace");
+    expect(screen.getByLabelText("Topics").textContent).toContain("Email");
+  });
+
   it("shows a New version action for managers above Settings", () => {
     renderHeader({
       canManage: true,

@@ -12,6 +12,7 @@ import { buildDeterministicPackageZip } from "./lib/skillZip";
 import {
   backfillLatestPackageScanStatusInternal,
   backfillPackageReleaseScansInternal,
+  normalizeOfficialPublisherPackagesInternal,
   getPackageReleaseScanBackfillBatchInternal,
   getByName,
   list,
@@ -141,6 +142,7 @@ const listPublicPageHandler = (
       topic?: string;
       officialFirst?: boolean;
       highlightedOnly?: boolean;
+      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
       sort?: "updated" | "downloads" | "recommended" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -159,6 +161,7 @@ const listPageForViewerInternalHandler = (
       topic?: string;
       officialFirst?: boolean;
       highlightedOnly?: boolean;
+      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
       sort?: "updated" | "downloads" | "recommended" | "installs";
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
@@ -216,6 +219,7 @@ const insertReleaseInternalHandler = (
       family: "skill" | "code-plugin" | "bundle-plugin";
       version: string;
       changelog: string;
+      icon?: string;
       tags: string[];
       summary: string;
       categories?: string[];
@@ -282,6 +286,7 @@ const searchPublicHandler = (
       capabilityTag?: string;
       category?: string;
       topic?: string;
+      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
     },
     Array<{ package: { name: string } }>
   >
@@ -298,6 +303,7 @@ const searchForViewerInternalHandler = (
       capabilityTag?: string;
       category?: string;
       topic?: string;
+      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
       viewerUserId?: string;
     },
     Array<{ package: { name: string } }>
@@ -677,6 +683,26 @@ const backfillPackageReleaseScansInternalHandler = (
       scheduled?: number;
     },
     { scheduled: number; nextCursor: number; done: boolean }
+  >
+)._handler;
+const normalizeOfficialPublisherPackagesInternalHandler = (
+  normalizeOfficialPublisherPackagesInternal as unknown as WrappedHandler<
+    {
+      family?: "code-plugin" | "bundle-plugin";
+      cursor?: string | null;
+      batchSize?: number;
+      dryRun?: boolean;
+    },
+    {
+      family: "code-plugin" | "bundle-plugin";
+      cursor: string;
+      isDone: boolean;
+      scanned: number;
+      matched: number;
+      patched: number;
+      skippedPrivate: number;
+      dryRun: boolean;
+    }
   >
 )._handler;
 const listOfficialPluginMigrationsInternalHandler = (
@@ -1276,6 +1302,7 @@ function makeDigestCtx(options: {
                     indexName === "by_active_family_downloads" ||
                     indexName === "by_active_installs" ||
                     indexName === "by_active_family_installs" ||
+                    indexName === "by_active_family_official_installs" ||
                     indexName === "by_active_recommended_rank" ||
                     indexName === "by_active_family_recommended_rank" ||
                     indexName === "by_active_recommended_score" ||
@@ -1425,7 +1452,57 @@ function makeDigestCtx(options: {
           }
           tableNames.push(table);
           return {
-            withIndex: (indexName: string) => withIndex(table, indexName),
+            withIndex: (
+              indexName: string,
+              builder?: (q: {
+                eq: (field: string, value: unknown) => unknown;
+                gte: (field: string, value: string) => unknown;
+                lt: (field: string, value: string) => unknown;
+              }) => unknown,
+            ) => {
+              if (table !== "packageTopicSearchDigest" || indexName !== "by_active_topic_updated") {
+                return withIndex(table, indexName);
+              }
+              let exactTopic = "";
+              let lowerBound = "";
+              let upperBound = "";
+              const queryBuilder = {
+                eq: (field: string, value: unknown) => {
+                  if (field === "topic" && typeof value === "string") exactTopic = value;
+                  return queryBuilder;
+                },
+                gte: (field: string, value: string) => {
+                  if (field === "topic") lowerBound = value;
+                  return queryBuilder;
+                },
+                lt: (field: string, value: string) => {
+                  if (field === "topic") upperBound = value;
+                  return queryBuilder;
+                },
+              };
+              builder?.(queryBuilder);
+              const baseQuery = withIndex(table, indexName);
+              return {
+                ...baseQuery,
+                order: () => {
+                  const ordered = baseQuery.order();
+                  return {
+                    ...ordered,
+                    take: async (limit: number) => {
+                      take(limit);
+                      const rows = rowsByTable.get(table) ?? [];
+                      return rows
+                        .filter((row) => {
+                          const rowTopic = typeof row.topic === "string" ? row.topic : "";
+                          if (exactTopic) return rowTopic === exactTopic;
+                          return rowTopic >= lowerBound && rowTopic < upperBound;
+                        })
+                        .slice(0, limit);
+                    },
+                  };
+                },
+              };
+            },
           };
         }),
       },
@@ -2373,6 +2450,32 @@ describe("packages public queries", () => {
     expect((result.page[0] as { stats?: unknown }).stats).toEqual(stats);
   });
 
+  it("fills filtered pages without pending or suspicious packages", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("pending", { scanStatus: "pending", updatedAt: 40 }),
+            makeDigest("suspicious", { scanStatus: "suspicious", updatedAt: 30 }),
+            makeDigest("clean", { scanStatus: "clean", updatedAt: 20 }),
+            makeDigest("not-run", { scanStatus: "not-run", updatedAt: 10 }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      sort: "updated",
+      excludedScanStatuses: ["pending", "suspicious"],
+      paginationOpts: { cursor: null, numItems: 2 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["clean", "not-run"]);
+    expect(result.isDone).toBe(true);
+  });
+
   it("uses current package stats when digest stats are stale", async () => {
     const currentStats = { downloads: 99, installs: 7, stars: 2, versions: 3 };
     const { ctx } = makeDigestCtx({
@@ -2505,6 +2608,271 @@ describe("packages public queries", () => {
     ]);
     expect(paginate).toHaveBeenCalledTimes(1);
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 50 });
+  });
+
+  it("uses a family-and-official installs index for official plugin pages", async () => {
+    const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:official-code-plugin",
+              name: "official-code-plugin",
+              normalizedName: "official-code-plugin",
+              displayName: "Official Code Plugin",
+              family: "code-plugin",
+              isOfficial: true,
+              channel: "official",
+              stats: { downloads: 100, installs: 200, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      isOfficial: true,
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 24 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-code-plugin"]);
+    expect(result.isDone).toBe(true);
+    expect(indexNames).toEqual(["by_active_family_official_installs"]);
+    expect(indexFilters).toEqual([
+      {
+        indexName: "by_active_family_official_installs",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
+          { field: "isOfficial", value: true },
+        ],
+      },
+    ]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 120 });
+  });
+
+  it("normalizes public plugins from official publishers for official browse", async () => {
+    const officialPublisher = {
+      _id: "publishers:openclaw",
+      handle: "openclaw",
+      kind: "org",
+      deletedAt: undefined,
+      deactivatedAt: undefined,
+    };
+    const staleOfficialPlugin = makePackageDoc({
+      _id: "packages:memory",
+      name: "@openclaw/memory-lancedb",
+      normalizedName: "@openclaw/memory-lancedb",
+      displayName: "Memory LanceDB",
+      ownerPublisherId: officialPublisher._id,
+      channel: "community",
+      isOfficial: false,
+      capabilityTags: ["memory"],
+    });
+    const privateOfficialPlugin = makePackageDoc({
+      _id: "packages:private",
+      name: "@openclaw/private-plugin",
+      normalizedName: "@openclaw/private-plugin",
+      displayName: "Private Plugin",
+      ownerPublisherId: officialPublisher._id,
+      channel: "private",
+      isOfficial: false,
+    });
+    const communityPlugin = makePackageDoc({
+      _id: "packages:community",
+      name: "community-plugin",
+      normalizedName: "community-plugin",
+      displayName: "Community Plugin",
+      ownerPublisherId: "publishers:community",
+      channel: "community",
+      isOfficial: false,
+    });
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const packageIndex = vi.fn();
+    const paginatePackages = vi.fn().mockResolvedValue({
+      page: [staleOfficialPlugin, privateOfficialPlugin, communityPlugin],
+      continueCursor: "",
+      isDone: true,
+    });
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === officialPublisher._id) return officialPublisher;
+          if (id === "publishers:community") {
+            return {
+              _id: id,
+              handle: "community",
+              kind: "org",
+              deletedAt: undefined,
+              deactivatedAt: undefined,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "packages") {
+            return {
+              withIndex: packageIndex.mockImplementation((_indexName, builder) => {
+                builder?.({
+                  eq: (_field: string, _value: string) => ({}),
+                });
+                return { paginate: paginatePackages };
+              }),
+            };
+          }
+          if (table === "officialPublishers") {
+            return {
+              withIndex: vi.fn((_indexName, builder) => {
+                let publisherId: string | undefined;
+                builder?.({
+                  eq: (_field: string, value: string) => {
+                    publisherId = value;
+                    return {};
+                  },
+                });
+                return {
+                  unique: vi
+                    .fn()
+                    .mockResolvedValue(
+                      publisherId === officialPublisher._id
+                        ? { _id: "officialPublishers:openclaw", publisherId }
+                        : null,
+                    ),
+                };
+              }),
+            };
+          }
+          if (table === "packageSearchDigest") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  _id: "packageSearchDigest:memory",
+                  packageId: staleOfficialPlugin._id,
+                  channel: "community",
+                  isOfficial: false,
+                }),
+              })),
+            };
+          }
+          if (
+            table === "packageCapabilitySearchDigest" ||
+            table === "packagePluginCategorySearchDigest" ||
+            table === "packageTopicSearchDigest"
+          ) {
+            return {
+              withIndex: vi.fn(() => ({
+                collect: vi.fn().mockResolvedValue([]),
+              })),
+            };
+          }
+          throw new Error(`Unexpected table ${table}`);
+        }),
+        patch,
+        insert,
+        delete: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    const result = await normalizeOfficialPublisherPackagesInternalHandler(ctx as never, {
+      family: "code-plugin",
+      dryRun: false,
+      batchSize: 10,
+    });
+
+    expect(result).toMatchObject({
+      family: "code-plugin",
+      scanned: 3,
+      matched: 1,
+      patched: 1,
+      skippedPrivate: 1,
+      dryRun: false,
+    });
+    expect(packageIndex).toHaveBeenCalledWith("by_family_updated", expect.any(Function));
+    expect(paginatePackages).toHaveBeenCalledWith({ cursor: null, numItems: 10 });
+    expect(patch).toHaveBeenCalledWith("packages:memory", {
+      channel: "official",
+      isOfficial: true,
+    });
+    expect(patch).not.toHaveBeenCalledWith(
+      "packages:private",
+      expect.objectContaining({ channel: "official" }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "packageSearchDigest:memory",
+      expect.objectContaining({
+        channel: "official",
+        isOfficial: true,
+        ownerHandle: "openclaw",
+        ownerKind: "org",
+      }),
+    );
+  });
+
+  it("includes current inferred taxonomy on install-sorted package pages", async () => {
+    const { ctx } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              categories: undefined,
+              topics: undefined,
+              inferredCategories: ["memory", "tools"],
+              inferredTopics: ["Agent Memory", "Retrieval"],
+              inferredFromReleaseId: "packageReleases:demo-1",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "code-plugin",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page[0]).toMatchObject({
+      categories: ["memory", "tools"],
+      topics: ["Agent Memory", "Retrieval"],
+    });
+  });
+
+  it("preserves stored skill taxonomy on install-sorted package pages", async () => {
+    const { ctx } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              family: "skill",
+              categories: ["developer-tools"],
+              topics: ["Automation"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      family: "skill",
+      sort: "installs",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page[0]).toMatchObject({
+      categories: ["developer-tools"],
+      topics: ["Automation"],
+    });
   });
 
   it("uses a family-scoped weighted recommended score index after backfill", async () => {
@@ -3229,6 +3597,30 @@ describe("packages public queries", () => {
     expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
   });
 
+  it("excludes selected scan statuses from package search", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("pending-demo", { scanStatus: "pending" }),
+            makeDigest("suspicious-demo", { scanStatus: "suspicious" }),
+            makeDigest("clean-demo", { scanStatus: "clean" }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo",
+      limit: 10,
+      excludedScanStatuses: ["pending", "suspicious"],
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["clean-demo"]);
+  });
+
   it("allows owners to search their private packages", async () => {
     const { ctx } = makeDigestCtx({
       pages: [
@@ -3283,9 +3675,122 @@ describe("packages public queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["needle-plugin"]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
+  });
+
+  it("recalls plugins whose category matches the query", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              pluginCategory: "runtime",
+              pluginCategoryTags: ["runtime"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "runtime",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["focused-helper"]);
+    expect(tableNames).toContain("packagePluginCategorySearchDigest");
+  });
+
+  it("does not use the fallback other category as search evidence", async () => {
+    const { ctx, tableNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              pluginCategory: "other",
+              pluginCategoryTags: ["other"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "other",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result).toEqual([]);
+    expect(tableNames).not.toContain("packagePluginCategorySearchDigest");
+  });
+
+  it("uses partial author topics as plugin search evidence", async () => {
+    const { ctx } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [
+            makeDigest("focused-helper", {
+              displayName: "Focused Helper",
+              summary: "Keeps projects tidy.",
+              topic: "gpu-development",
+              topics: ["GPU development"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "gpu",
+      family: "code-plugin",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["focused-helper"]);
+  });
+
+  it("prioritizes exact plugin topics ahead of bounded prefix recall", async () => {
+    const prefixTopics = Array.from({ length: 100 }, (_, index) =>
+      makeDigest(`react-prefix-${index}`, {
+        topic: `react-${index}`,
+        topics: [`React ${index}`],
+      }),
+    );
+    const exactTopic = makeDigest("react-exact", {
+      topic: "react",
+      topics: ["React"],
+    });
+    const { ctx } = makeDigestCtx({
+      topicPages: [
+        {
+          page: [...prefixTopics, exactTopic],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "react",
+      family: "code-plugin",
+      limit: 1,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["react-exact"]);
   });
 
   it("does not let official status make unrelated packages eligible for search", async () => {
@@ -3496,9 +4001,15 @@ describe("packages public queries", () => {
 
     expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
     expect(new Set(tableNames)).toEqual(
-      new Set(["packageSearchDigest", "packageTopicSearchDigest"]),
+      new Set([
+        "packageSearchDigest",
+        "packageTopicSearchDigest",
+        "packagePluginCategorySearchDigest",
+      ]),
     );
-    expect(new Set(indexNames)).toEqual(new Set(["by_active_topic_updated", "by_active_updated"]));
+    expect(new Set(indexNames)).toEqual(
+      new Set(["by_active_topic_updated", "by_active_category_updated", "by_active_updated"]),
+    );
   });
 
   it("uses plugin category digests for category-filtered listings", async () => {
@@ -4234,7 +4745,7 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
@@ -4260,7 +4771,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-plugin"]);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -4287,7 +4798,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["runtime-demo"]);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -4312,7 +4823,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-prefix"]);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
@@ -4367,7 +4878,7 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["demo-alpha", "demo-beta"]);
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);
   });
@@ -4465,7 +4976,7 @@ describe("packages public queries", () => {
 
     expect(result).toEqual([]);
     expect(paginate).not.toHaveBeenCalled();
-    expect(take).toHaveBeenCalledTimes(2);
+    expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(200);
   });
@@ -4488,7 +4999,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["official-demo"]);
-    expect(indexNames).toEqual(["by_active_topic_updated", "by_active_official_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_official_updated",
+    ]);
   });
 
   it("uses the channel index for no-family channel search filters", async () => {
@@ -4509,7 +5024,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["community-demo"]);
-    expect(indexNames).toEqual(["by_active_topic_updated", "by_active_channel_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_channel_updated",
+    ]);
   });
 
   it("uses the combined channel and official index when both filters are set", async () => {
@@ -4536,7 +5055,11 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["official-community-demo"]);
-    expect(indexNames).toEqual(["by_active_topic_updated", "by_active_channel_official_updated"]);
+    expect(indexNames).toEqual([
+      "by_active_topic_updated",
+      "by_active_topic_updated",
+      "by_active_channel_official_updated",
+    ]);
   });
 
   it("blocks anonymous reads of private packages", async () => {
@@ -5757,6 +6280,56 @@ describe("packages public queries", () => {
     );
   });
 
+  it("clears inferred catalog state when a publisher promotes a latest package release", async () => {
+    const ctx = makeInsertReleaseCtx(
+      makePackageDoc({
+        inferredCategories: ["tools"],
+        inferredTopics: ["Old inference"],
+        inferredFromReleaseId: "packageReleases:demo-1",
+        inferredCategoryConfidence: "high",
+        inferredTopicConfidence: "high",
+        inferredClassifierVersion: "taxonomy-prototype-v9",
+        inferredTopicClassifierVersion: "topic-prototype-v1",
+        inferredInputHash: "category-hash",
+        inferredTopicInputHash: "topic-hash",
+        inferredAt: 123,
+      }),
+    );
+
+    await insertReleaseInternalHandler(ctx, {
+      actorUserId: "users:owner",
+      ownerUserId: "users:owner",
+      name: "demo-plugin",
+      displayName: "Demo Plugin",
+      family: "code-plugin",
+      version: "1.0.1",
+      changelog: "replace catalog metadata",
+      tags: ["latest"],
+      summary: "demo",
+      categories: ["models"],
+      topics: ["Local models"],
+      files: [],
+      integritySha256: "abc123",
+    });
+
+    const packagePatch = ctx.patch.mock.calls.find(([id]) => id === "packages:demo")?.[1];
+    expect(packagePatch).toBeDefined();
+    for (const field of [
+      "inferredCategories",
+      "inferredTopics",
+      "inferredFromReleaseId",
+      "inferredCategoryConfidence",
+      "inferredTopicConfidence",
+      "inferredClassifierVersion",
+      "inferredTopicClassifierVersion",
+      "inferredInputHash",
+      "inferredTopicInputHash",
+      "inferredAt",
+    ]) {
+      expect(packagePatch).toHaveProperty(field, undefined);
+    }
+  });
+
   it("rejects family changes on an existing package name", async () => {
     const ctx = makeInsertReleaseCtx(makePackageDoc({ family: "bundle-plugin" }));
 
@@ -6919,16 +7492,7 @@ describe("packages public queries", () => {
       runMutation,
       runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
       scheduler: {
-        runAfter: vi.fn(async (_delayMs: number, _ref: unknown, args: unknown) => {
-          if (
-            typeof args === "object" &&
-            args !== null &&
-            "artifactStorageId" in args &&
-            args.artifactStorageId === "storage:clawpack"
-          ) {
-            throw new Error("scheduler unavailable");
-          }
-        }),
+        runAfter: vi.fn(async () => {}),
       },
       storage: {
         get: vi.fn(async (storageId: string) => {
@@ -7032,35 +7596,6 @@ describe("packages public queries", () => {
         ]),
       }),
     );
-    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
-      0,
-      expect.anything(),
-      expect.objectContaining({
-        releaseId: "releases:demo-1",
-        packageName: "demo-plugin",
-        artifactStorageId: "storage:clawpack",
-        artifactSha256: "clawpack",
-        artifactFileName: "demo-plugin-1.0.0.tgz",
-      }),
-    );
-    await vi.waitFor(() => {
-      const retryArgs = runMutation.mock.calls
-        .map(([, args]) => args)
-        .find(
-          (args): args is Record<string, unknown> =>
-            typeof args === "object" &&
-            args !== null &&
-            "targetKind" in args &&
-            args.targetKind === "packageRelease",
-        );
-      expect(retryArgs).toEqual(
-        expect.objectContaining({
-          packageReleaseId: "releases:demo-1",
-          reason: "publish",
-          error: "scheduler unavailable",
-        }),
-      );
-    });
   });
 
   it("rejects trusted publish tokens after trusted publisher rotation or deletion", async () => {
@@ -7540,6 +8075,137 @@ describe("packages public queries", () => {
         ownerPublisherId: "publishers:owner",
       }),
     );
+  });
+
+  it("forwards only valid HTTPS plugin manifest icons to release insertion", async () => {
+    async function publishWithManifestIcon(icon: unknown) {
+      const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+        if (args.minimumRole === "publisher") {
+          return { publisherId: "publishers:owner", linkedUserId: "users:owner" };
+        }
+        if ("name" in args && "version" in args && "files" in args) {
+          return { ok: true, packageId: "packages:demo", releaseId: "releases:demo-1" };
+        }
+        return null;
+      });
+      const storedFiles = new Map<string, string>([
+        [
+          "storage:package",
+          JSON.stringify({
+            name: "demo-plugin",
+            openclaw: {
+              extensions: ["./dist/index.js"],
+              hostTargets: ["darwin-arm64", "linux-x64"],
+              environment: {},
+              compat: { pluginApi: "^1.0.0" },
+              build: { openclawVersion: "2026.3.14" },
+              configSchema: { type: "object" },
+            },
+          }),
+        ],
+        ["storage:manifest", JSON.stringify({ id: "demo.plugin", icon })],
+        ["storage:code", "export default {};"],
+      ]);
+      const ctx = {
+        runQuery: vi
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "users:owner",
+            role: "user",
+            githubCreatedAt: Date.now() - 20 * 24 * 60 * 60 * 1000,
+          })
+          .mockResolvedValueOnce({
+            _id: "publishers:owner",
+            kind: "user",
+            handle: "owner",
+            linkedUserId: "users:owner",
+          }),
+        runMutation,
+        runAction: vi.fn(async () => makeCleanPackageInspectorResult()),
+        scheduler: {
+          runAfter: vi.fn(),
+        },
+        storage: {
+          get: vi.fn(async (storageId: string) => {
+            const content = storedFiles.get(storageId);
+            return content ? new Blob([content]) : null;
+          }),
+        },
+      };
+
+      await publishPackageForUserInternalHandler(ctx as never, {
+        actorUserId: "users:owner",
+        payload: {
+          name: "demo-plugin",
+          displayName: "Demo Plugin",
+          family: "code-plugin",
+          version: "1.0.0",
+          changelog: "init",
+          source: {
+            kind: "github",
+            url: "https://github.com/openclaw/demo-plugin",
+            repo: "openclaw/demo-plugin",
+            ref: "refs/tags/v1.0.0",
+            commit: "abc123",
+            path: ".",
+            importedAt: Date.now(),
+          },
+          files: [
+            {
+              path: "package.json",
+              size: 1,
+              storageId: "storage:package",
+              sha256: "package",
+              contentType: "application/json",
+            },
+            {
+              path: "openclaw.plugin.json",
+              size: 1,
+              storageId: "storage:manifest",
+              sha256: "manifest",
+              contentType: "application/json",
+            },
+            {
+              path: "dist/index.js",
+              size: 1,
+              storageId: "storage:code",
+              sha256: "code",
+              contentType: "application/javascript",
+            },
+          ],
+        },
+      });
+
+      const insertCall = runMutation.mock.calls.find(
+        ([, args]) =>
+          typeof args === "object" &&
+          args !== null &&
+          (args as { name?: string }).name === "demo-plugin" &&
+          (args as { version?: string }).version === "1.0.0",
+      );
+      return insertCall?.[1] as Record<string, unknown>;
+    }
+
+    await expect(
+      publishWithManifestIcon("https://cdn.example.test/icons/demo.svg"),
+    ).resolves.toMatchObject({ icon: "https://cdn.example.test/icons/demo.svg" });
+
+    for (const icon of [
+      "http://cdn.example.test/icons/demo.svg",
+      "/icons/demo.svg",
+      "not a url",
+      "",
+      123,
+      { src: "https://cdn.example.test/icons/demo.svg" },
+    ]) {
+      await expect(publishWithManifestIcon(icon)).resolves.not.toHaveProperty("icon");
+    }
   });
 
   it("scans plugin publishes and forwards scan status to insertReleaseInternal", async () => {

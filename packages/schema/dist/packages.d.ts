@@ -22,6 +22,39 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
     minGatewayVersion?: string | undefined;
 }, {}>;
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
+export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    schemaVersion: number;
+    configFields: {
+        name: string;
+        required: boolean;
+        sensitive: boolean;
+        description?: string | undefined;
+    }[];
+    mcpServers: {
+        name: string;
+    }[];
+    bundledSkills: {
+        name: string;
+        rootPath: string;
+        skillMdPath: string;
+        sha256: string;
+        size: number;
+        description?: string | undefined;
+    }[];
+    compatibility?: {
+        pluginApiRange?: string | undefined;
+        builtWithOpenClawVersion?: string | undefined;
+        pluginSdkVersion?: string | undefined;
+        minGatewayVersion?: string | undefined;
+    } | undefined;
+    manifestIdentity?: {
+        name?: string | undefined;
+        description?: string | undefined;
+        version?: string | undefined;
+        family?: string | undefined;
+    } | undefined;
+}, {}>;
+export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
 export declare const PackageVerificationSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
     scope: "artifact-only" | "dependency-graph-aware";
@@ -309,6 +342,7 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     updatedAt: number;
     runtimeId?: string | null | undefined;
     summary?: string | null | undefined;
+    icon?: string | null | undefined;
     ownerHandle?: string | null | undefined;
     latestVersion?: string | null | undefined;
     categories?: string[] | undefined;
@@ -333,6 +367,7 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         updatedAt: number;
         runtimeId?: string | null | undefined;
         summary?: string | null | undefined;
+        icon?: string | null | undefined;
         ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
         categories?: string[] | undefined;
@@ -361,6 +396,7 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             updatedAt: number;
             runtimeId?: string | null | undefined;
             summary?: string | null | undefined;
+            icon?: string | null | undefined;
             ownerHandle?: string | null | undefined;
             latestVersion?: string | null | undefined;
             categories?: string[] | undefined;
@@ -388,6 +424,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         tags: unknown;
         runtimeId?: string | null | undefined;
         summary?: string | null | undefined;
+        icon?: string | null | undefined;
         ownerHandle?: string | null | undefined;
         latestVersion?: string | null | undefined;
         categories?: string[] | undefined;
@@ -397,6 +434,38 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             builtWithOpenClawVersion?: string | undefined;
             pluginSdkVersion?: string | undefined;
             minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            configFields: {
+                name: string;
+                required: boolean;
+                sensitive: boolean;
+                description?: string | undefined;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+                description?: string | undefined;
+            }[];
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
         } | null | undefined;
         verification?: {
             tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
@@ -468,6 +537,38 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             builtWithOpenClawVersion?: string | undefined;
             pluginSdkVersion?: string | undefined;
             minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            configFields: {
+                name: string;
+                required: boolean;
+                sensitive: boolean;
+                description?: string | undefined;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+                description?: string | undefined;
+            }[];
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
         } | null | undefined;
         verification?: {
             tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
@@ -858,6 +959,39 @@ export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/inter
     retiredName?: string | null | undefined;
 }, {}>;
 export type ApiV1PackageRepairNameResponse = (typeof ApiV1PackageRepairNameResponseSchema)[inferred];
+export declare const PackageRepairRuntimeIdRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    nextRuntimeId: string;
+    reason: string;
+    dryRun?: boolean | undefined;
+}, {}>;
+export type PackageRepairRuntimeIdRequest = (typeof PackageRepairRuntimeIdRequestSchema)[inferred];
+export declare const PackageRepairRuntimeIdOperationSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    action: "repair-runtime-id";
+    packageId?: string | undefined;
+    from?: string | null | undefined;
+    to?: string | undefined;
+}, {}>;
+export type PackageRepairRuntimeIdOperation = (typeof PackageRepairRuntimeIdOperationSchema)[inferred];
+export declare const ApiV1PackageRepairRuntimeIdResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    dryRun: boolean;
+    source: {
+        packageId: string;
+        name: string;
+        ownerUserId: string;
+        channel: "official" | "community" | "private";
+        runtimeId?: string | null | undefined;
+        ownerPublisherId?: string | null | undefined;
+        softDeletedAt?: number | null | undefined;
+    };
+    operations: {
+        action: "repair-runtime-id";
+        packageId?: string | undefined;
+        from?: string | null | undefined;
+        to?: string | undefined;
+    }[];
+}, {}>;
+export type ApiV1PackageRepairRuntimeIdResponse = (typeof ApiV1PackageRepairRuntimeIdResponseSchema)[inferred];
 export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     bundledPluginId: string;
     packageName: string;

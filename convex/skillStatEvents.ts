@@ -188,7 +188,7 @@ const DEFAULT_PROCESSED_EVENT_RETENTION_DAYS = 7;
 const MIN_PROCESSED_EVENT_RETENTION_DAYS = 1;
 const MAX_PROCESSED_EVENT_RETENTION_DAYS = 90;
 const DEFAULT_PROCESSED_EVENT_PRUNE_BATCH_SIZE = 1_000;
-const MAX_PROCESSED_EVENT_PRUNE_BATCH_SIZE = 5_000;
+const MAX_PROCESSED_EVENT_PRUNE_BATCH_SIZE = 3_000;
 const DEFAULT_PROCESSED_EVENT_PRUNE_MAX_BATCHES = 20;
 const MAX_PROCESSED_EVENT_PRUNE_MAX_BATCHES = 100;
 
@@ -233,6 +233,8 @@ type SkillStatDocSyncActionResult =
 
 type ProcessedSkillStatEventPruneBatchResult = {
   cutoffProcessedAt: number;
+  minProcessedAt: number | null;
+  maxProcessedAt: number | null;
   dryRun: boolean;
   matched: number;
   deleted: number;
@@ -241,6 +243,8 @@ type ProcessedSkillStatEventPruneBatchResult = {
 
 type ProcessedSkillStatEventPruneResult = {
   cutoffProcessedAt: number;
+  minProcessedAt: number | null;
+  maxProcessedAt: number | null;
   retentionCutoffProcessedAt: number;
   dailyStatsCursorCreationTime: number | null;
   retentionDays: number;
@@ -250,6 +254,17 @@ type ProcessedSkillStatEventPruneResult = {
   deleted: number;
   stoppedReason: "empty" | "max_batches" | "cursor_not_ready";
   scheduledContinuation: boolean;
+};
+
+const DEFAULT_SKILL_STAT_EVENT_SURVIVOR_COUNT_PAGE_SIZE = 5_000;
+const MAX_SKILL_STAT_EVENT_SURVIVOR_COUNT_PAGE_SIZE = 10_000;
+const DEFAULT_SKILL_STAT_EVENT_SURVIVOR_COUNT_MAX_PAGES = 2_000;
+
+type SkillStatEventSurvivorCountPage = {
+  count: number;
+  scanned: number;
+  isDone: boolean;
+  continueCursor: string | null;
 };
 
 function clampInt(value: number, min: number, max: number) {
@@ -295,6 +310,18 @@ function normalizeProcessedEventPruneMaxBatches(maxBatches: number | undefined) 
     1,
     MAX_PROCESSED_EVENT_PRUNE_MAX_BATCHES,
   );
+}
+
+function normalizeSkillStatEventSurvivorCountPageSize(pageSize: number | undefined) {
+  return clampInt(
+    pageSize ?? DEFAULT_SKILL_STAT_EVENT_SURVIVOR_COUNT_PAGE_SIZE,
+    1,
+    MAX_SKILL_STAT_EVENT_SURVIVOR_COUNT_PAGE_SIZE,
+  );
+}
+
+function normalizeSkillStatEventSurvivorCountMaxPages(maxPages: number | undefined) {
+  return Math.max(1, Math.floor(maxPages ?? DEFAULT_SKILL_STAT_EVENT_SURVIVOR_COUNT_MAX_PAGES));
 }
 
 export const claimSkillStatDocSyncLeaseInternal = internalMutation({
@@ -636,11 +663,137 @@ export const getSkillStatDocSyncStatusInternal = internalQuery({
   },
 });
 
+export const countUnprocessedSkillStatEventSurvivorPageInternal = internalQuery({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<SkillStatEventSurvivorCountPage> => {
+    const page = await ctx.db
+      .query("skillStatEvents")
+      .withIndex("by_unprocessed", (q) => q.eq("processedAt", undefined))
+      .paginate({
+        cursor: args.cursor,
+        numItems: normalizeSkillStatEventSurvivorCountPageSize(args.pageSize),
+      });
+
+    return {
+      count: page.page.length,
+      scanned: page.page.length,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+export const countProcessedRecentSkillStatEventSurvivorPageInternal = internalQuery({
+  args: {
+    cursor: v.union(v.string(), v.null()),
+    creationTimeLowerBound: v.number(),
+    pageSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<SkillStatEventSurvivorCountPage> => {
+    const page = await ctx.db
+      .query("skillStatEvents")
+      .withIndex("by_creation_time", (q) => q.gt("_creationTime", args.creationTimeLowerBound))
+      .paginate({
+        cursor: args.cursor,
+        numItems: normalizeSkillStatEventSurvivorCountPageSize(args.pageSize),
+      });
+    const processedRecent = page.page.filter((event) => event.processedAt !== undefined);
+
+    return {
+      count: processedRecent.length,
+      scanned: page.page.length,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+export const countSkillStatEventImportSurvivorsInternal: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      pageSize: v.optional(v.number()),
+      maxPages: v.optional(v.number()),
+      recentWindowMs: v.optional(v.number()),
+      unprocessedCursor: v.optional(v.union(v.string(), v.null())),
+      processedRecentCursor: v.optional(v.union(v.string(), v.null())),
+    },
+    handler: async (ctx, args) => {
+      const pageSize = normalizeSkillStatEventSurvivorCountPageSize(args.pageSize);
+      const maxPages = normalizeSkillStatEventSurvivorCountMaxPages(args.maxPages);
+      const dailyStatsCursorCreationTime = (await ctx.runQuery(
+        internal.skillStatEvents.getStatEventCursor,
+      )) as number | undefined;
+      const recentCutoff =
+        args.recentWindowMs === undefined
+          ? Infinity
+          : Date.now() - Math.max(0, args.recentWindowMs);
+      const creationTimeLowerBound = Math.min(
+        dailyStatsCursorCreationTime ?? Infinity,
+        recentCutoff,
+      );
+
+      let pagesUsed = 0;
+      let unprocessedCursor = args.unprocessedCursor ?? null;
+      let processedRecentCursor = args.processedRecentCursor ?? null;
+      let unprocessedCount = 0;
+      let processedRecentCount = 0;
+      let unprocessedScanned = 0;
+      let processedRecentScanned = 0;
+      let unprocessedDone = false;
+      let processedRecentDone = creationTimeLowerBound === Infinity;
+
+      while (pagesUsed < maxPages && !unprocessedDone) {
+        const page = (await ctx.runQuery(
+          internal.skillStatEvents.countUnprocessedSkillStatEventSurvivorPageInternal,
+          { cursor: unprocessedCursor, pageSize },
+        )) as SkillStatEventSurvivorCountPage;
+        pagesUsed += 1;
+        unprocessedCount += page.count;
+        unprocessedScanned += page.scanned;
+        unprocessedCursor = page.continueCursor;
+        unprocessedDone = page.isDone;
+      }
+
+      while (pagesUsed < maxPages && !processedRecentDone) {
+        const page = (await ctx.runQuery(
+          internal.skillStatEvents.countProcessedRecentSkillStatEventSurvivorPageInternal,
+          { cursor: processedRecentCursor, creationTimeLowerBound, pageSize },
+        )) as SkillStatEventSurvivorCountPage;
+        pagesUsed += 1;
+        processedRecentCount += page.count;
+        processedRecentScanned += page.scanned;
+        processedRecentCursor = page.continueCursor;
+        processedRecentDone = page.isDone;
+      }
+
+      return {
+        survivorCount: unprocessedCount + processedRecentCount,
+        unprocessedCount,
+        processedRecentCount,
+        unprocessedScanned,
+        processedRecentScanned,
+        dailyStatsCursorCreationTime: dailyStatsCursorCreationTime ?? null,
+        creationTimeLowerBound: creationTimeLowerBound === Infinity ? null : creationTimeLowerBound,
+        pageSize,
+        pagesUsed,
+        maxPages,
+        isDone: unprocessedDone && processedRecentDone,
+        unprocessedCursor: unprocessedDone ? null : unprocessedCursor,
+        processedRecentCursor: processedRecentDone ? null : processedRecentCursor,
+      };
+    },
+  });
+
 export const pruneProcessedSkillStatEventBatchInternal = internalMutation({
   args: {
     cutoffProcessedAt: v.number(),
     dryRun: v.boolean(),
     batchSize: v.optional(v.number()),
+    minProcessedAt: v.optional(v.number()),
+    maxProcessedAt: v.optional(v.number()),
     confirmationToken: v.optional(v.string()),
   },
   handler: async (ctx, args): Promise<ProcessedSkillStatEventPruneBatchResult> => {
@@ -654,11 +807,33 @@ export const pruneProcessedSkillStatEventBatchInternal = internalMutation({
     }
 
     const batchSize = normalizeProcessedEventPruneBatchSize(args.batchSize);
+    const minProcessedAt = args.minProcessedAt;
+    const cutoffProcessedAt = Math.min(args.cutoffProcessedAt, args.maxProcessedAt ?? Infinity);
+
+    if (
+      cutoffProcessedAt <= 0 ||
+      (minProcessedAt !== undefined && cutoffProcessedAt <= minProcessedAt)
+    ) {
+      return {
+        cutoffProcessedAt,
+        minProcessedAt: minProcessedAt ?? null,
+        maxProcessedAt: args.maxProcessedAt ?? null,
+        dryRun: args.dryRun,
+        matched: 0,
+        deleted: 0,
+        hasMore: false,
+      };
+    }
+
     const events = await ctx.db
       .query("skillStatEvents")
-      .withIndex("by_unprocessed", (q) =>
-        q.gt("processedAt", 0).lt("processedAt", args.cutoffProcessedAt),
-      )
+      .withIndex("by_unprocessed", (q) => {
+        const lowerBound =
+          minProcessedAt === undefined
+            ? q.gt("processedAt", 0)
+            : q.gte("processedAt", minProcessedAt);
+        return lowerBound.lt("processedAt", cutoffProcessedAt);
+      })
       .take(batchSize);
 
     if (!args.dryRun) {
@@ -668,7 +843,9 @@ export const pruneProcessedSkillStatEventBatchInternal = internalMutation({
     }
 
     return {
-      cutoffProcessedAt: args.cutoffProcessedAt,
+      cutoffProcessedAt,
+      minProcessedAt: minProcessedAt ?? null,
+      maxProcessedAt: args.maxProcessedAt ?? null,
       dryRun: args.dryRun,
       matched: events.length,
       deleted: args.dryRun ? 0 : events.length,
@@ -684,6 +861,8 @@ export const pruneProcessedSkillStatEventsInternal: ReturnType<typeof internalAc
       retentionDays: v.optional(v.number()),
       batchSize: v.optional(v.number()),
       maxBatches: v.optional(v.number()),
+      minProcessedAt: v.optional(v.number()),
+      maxProcessedAt: v.optional(v.number()),
       confirmationToken: v.optional(v.string()),
     },
     handler: async (ctx, args): Promise<ProcessedSkillStatEventPruneResult> => {
@@ -698,11 +877,14 @@ export const pruneProcessedSkillStatEventsInternal: ReturnType<typeof internalAc
       const cutoffProcessedAt = Math.min(
         retentionCutoffProcessedAt,
         dailyStatsCursorCreationTime ?? 0,
+        args.maxProcessedAt ?? Infinity,
       );
 
       if (cutoffProcessedAt <= 0) {
         return {
           cutoffProcessedAt,
+          minProcessedAt: args.minProcessedAt ?? null,
+          maxProcessedAt: args.maxProcessedAt ?? null,
           retentionCutoffProcessedAt,
           dailyStatsCursorCreationTime: dailyStatsCursorCreationTime ?? null,
           retentionDays,
@@ -711,6 +893,23 @@ export const pruneProcessedSkillStatEventsInternal: ReturnType<typeof internalAc
           matched: 0,
           deleted: 0,
           stoppedReason: "cursor_not_ready",
+          scheduledContinuation: false,
+        };
+      }
+
+      if (args.minProcessedAt !== undefined && cutoffProcessedAt <= args.minProcessedAt) {
+        return {
+          cutoffProcessedAt,
+          minProcessedAt: args.minProcessedAt,
+          maxProcessedAt: args.maxProcessedAt ?? null,
+          retentionCutoffProcessedAt,
+          dailyStatsCursorCreationTime: dailyStatsCursorCreationTime ?? null,
+          retentionDays,
+          dryRun,
+          batches: 0,
+          matched: 0,
+          deleted: 0,
+          stoppedReason: "empty",
           scheduledContinuation: false,
         };
       }
@@ -729,6 +928,8 @@ export const pruneProcessedSkillStatEventsInternal: ReturnType<typeof internalAc
             cutoffProcessedAt,
             dryRun,
             batchSize,
+            minProcessedAt: args.minProcessedAt,
+            maxProcessedAt: args.maxProcessedAt,
             confirmationToken: args.confirmationToken,
           },
         )) as ProcessedSkillStatEventPruneBatchResult;
@@ -755,6 +956,8 @@ export const pruneProcessedSkillStatEventsInternal: ReturnType<typeof internalAc
             retentionDays,
             batchSize,
             maxBatches,
+            minProcessedAt: args.minProcessedAt,
+            maxProcessedAt: args.maxProcessedAt,
             confirmationToken: args.confirmationToken,
           },
         );
@@ -762,6 +965,8 @@ export const pruneProcessedSkillStatEventsInternal: ReturnType<typeof internalAc
 
       return {
         cutoffProcessedAt,
+        minProcessedAt: args.minProcessedAt ?? null,
+        maxProcessedAt: args.maxProcessedAt ?? null,
         retentionCutoffProcessedAt,
         dailyStatsCursorCreationTime: dailyStatsCursorCreationTime ?? null,
         retentionDays,
@@ -781,6 +986,8 @@ export const kickProcessedSkillStatEventPruneInternal = internalMutation({
     retentionDays: v.optional(v.number()),
     batchSize: v.optional(v.number()),
     maxBatches: v.optional(v.number()),
+    minProcessedAt: v.optional(v.number()),
+    maxProcessedAt: v.optional(v.number()),
     confirmationToken: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -802,6 +1009,8 @@ export const kickProcessedSkillStatEventPruneInternal = internalMutation({
         retentionDays,
         batchSize,
         maxBatches,
+        minProcessedAt: args.minProcessedAt,
+        maxProcessedAt: args.maxProcessedAt,
         confirmationToken: args.confirmationToken,
       },
     );

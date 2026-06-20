@@ -526,6 +526,7 @@ describe("Import route", () => {
     await screen.findByRole("checkbox");
     fireEvent.click(screen.getByRole("button", { name: /review selected/i }));
     await screen.findByDisplayValue("default-skill");
+    expect(screen.queryByLabelText("Choose icon")).toBeNull();
     fireEvent.click(screen.getByLabelText(/I have the rights/i));
     fireEvent.click(screen.getByRole("button", { name: /publish selected/i }));
 
@@ -539,6 +540,7 @@ describe("Import route", () => {
     const args = importSkill.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(Object.hasOwn(args, "categories")).toBe(false);
     expect(Object.hasOwn(args, "topics")).toBe(false);
+    expect(Object.hasOwn(args, "icon")).toBe(false);
   });
 
   it("surfaces preview errors instead of staying in the loading state", async () => {
