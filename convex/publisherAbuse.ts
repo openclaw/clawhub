@@ -44,7 +44,6 @@ const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
 const MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER = 3;
 const MAX_REVIEW_DASHBOARD_SCORE_SCAN_MULTIPLIER = 32;
 const MAX_REVIEW_DASHBOARD_SCORE_SCAN = 2000;
-const MAX_BAN_REASON_LENGTH = 500;
 const DEFAULT_TEMPORAL_BATCH_SIZE = 50;
 const MAX_TEMPORAL_BATCH_SIZE = 100;
 const DEFAULT_TEMPORAL_CANDIDATE_LIMIT = 1000;
@@ -301,55 +300,9 @@ export const banPublisherAbuseOwner = mutation({
     }
     await requirePublisherAbuseNominationNotExcluded(ctx, nomination);
 
-    const reason = normalizeBanReason(args.reason);
-    await ctx.runMutation(internal.users.banUserInternal, {
-      actorUserId: user._id,
-      targetUserId: nomination.ownerUserId,
-      reason,
-    });
-
-    const now = Date.now();
-    await setPublisherAbuseReviewStatusWithActor(ctx, {
-      nomination,
-      status: "banned",
-      notes: reason,
-      actorUserId: user._id,
-      now,
-    });
-
-    return { ok: true, status: "banned" as const };
+    throw new Error("Publisher abuse bans are disabled while the scoring model is flag-only.");
   },
 });
-
-async function setPublisherAbuseReviewStatusWithActor(
-  ctx: Pick<MutationCtx, "db">,
-  args: {
-    nomination: Doc<"publisherAbuseReviewNominations">;
-    status: TriageStatus;
-    notes: string | undefined;
-    actorUserId: Id<"users">;
-    now: number;
-  },
-) {
-  await ctx.db.patch(args.nomination._id, {
-    status: args.status,
-    reviewedByUserId: args.status === "pending" ? undefined : args.actorUserId,
-    reviewedAt: args.status === "pending" ? undefined : args.now,
-    notes: args.notes,
-    updatedAt: args.now,
-  });
-  await ctx.db.insert("publisherAbuseReviewEvents", {
-    nominationId: args.nomination._id,
-    ownerKey: args.nomination.ownerKey,
-    actorUserId: args.actorUserId,
-    scoreId: args.nomination.latestScoreId,
-    eventType: "triage_status_changed",
-    previousStatus: args.nomination.status,
-    nextStatus: args.status,
-    notes: args.notes,
-    createdAt: args.now,
-  });
-}
 
 function requireFreshPublisherAbuseReviewNomination(
   nomination: Doc<"publisherAbuseReviewNominations">,
@@ -1907,12 +1860,6 @@ function summarizeUserForAbuseReview(user: Doc<"users">) {
     deactivatedAt: user.deactivatedAt,
     banReason: user.banReason,
   };
-}
-
-function normalizeBanReason(rawReason?: string) {
-  const reason = rawReason?.trim();
-  if (!reason) return undefined;
-  return reason.slice(0, MAX_BAN_REASON_LENGTH);
 }
 
 function publisherAbuseLabelSeverity(label: PublisherAbuseLabel) {

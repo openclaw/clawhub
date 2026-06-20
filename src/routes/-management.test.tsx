@@ -547,14 +547,11 @@ describe("Management", () => {
     expect(screen.getByText("of 42 scored")).toBeTruthy();
     expect(screen.getAllByText("spammy-pub").length).toBeGreaterThanOrEqual(2);
 
-    const banReason = screen.getByPlaceholderText("Why are you taking this action? (optional)");
-    fireEvent.change(banReason, { target: { value: "first publisher reason" } });
-    expect(banReason).toHaveProperty("value", "first publisher reason");
+    expect(screen.getByText("Flagged for review")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ban user" })).toBeNull();
+    expect(screen.queryByPlaceholderText("Why are you taking this action? (optional)")).toBeNull();
 
-    fireEvent.click(screen.getByText("second-pub"));
-    expect(
-      screen.getByPlaceholderText("Why are you taking this action? (optional)"),
-    ).toHaveProperty("value", "");
+    expect(screen.queryByRole("button", { name: "Ban user" })).toBeNull();
   });
 
   it("closes the abuse drawer when search hides the selected nomination", async () => {
@@ -725,9 +722,11 @@ describe("Management", () => {
     expect(screen.getByText("Peer 30d P95")).toBeTruthy();
   });
 
-  it("marks the abuse nomination resolved after banning its linked user", async () => {
+  it("shows publisher abuse ban candidates as flag-only review items", () => {
     const banUser = vi.fn(async () => ({ ok: true }));
-    const banPublisherAbuseOwner = vi.fn(async () => ({ ok: true, status: "banned" }));
+    const banPublisherAbuseOwner = vi.fn(async () => {
+      throw new Error("Publisher abuse bans are disabled");
+    });
     const item = makePublisherAbuseItem();
     useMutationMock.mockImplementation((mutation) => {
       const name = getFunctionName(mutation);
@@ -757,92 +756,13 @@ describe("Management", () => {
     render(<Management />);
 
     fireEvent.click(screen.getByText("spammy-pub"));
-    const banReason = screen.getByPlaceholderText("Why are you taking this action? (optional)");
-    expect(banReason.getAttribute("maxlength")).toBe("500");
-    fireEvent.change(banReason, { target: { value: "confirmed spam" } });
-    fireEvent.click(screen.getByRole("button", { name: "Ban user" }));
-    const confirmButtons = screen.getAllByRole("button", { name: "Ban user" });
-    fireEvent.click(confirmButtons[confirmButtons.length - 1]);
 
-    await waitFor(() => {
-      expect(banPublisherAbuseOwner).toHaveBeenCalledWith({
-        nominationId: "publisherAbuseReviewNominations:1",
-        expectedLatestScoreId: "publisherAbuseScores:1",
-        expectedUpdatedAt: 1,
-        reason: "confirmed spam",
-      });
-      expect(banUser).not.toHaveBeenCalled();
-    });
-  });
-
-  it("disables abuse bans for the current user", () => {
-    const item = makePublisherAbuseItem({
-      handle: "self-pub",
-      ownerKey: "user:admin",
-      ownerUserId: "users:admin",
-    });
-    useQueryMock.mockImplementation((query, args) => {
-      if (args === "skip") return undefined;
-      const name = getFunctionName(query);
-      if (name === "skills:listRecentVersions") return [];
-      if (name === "skills:listReportedSkills") return [];
-      if (name === "skills:listDuplicateCandidates") return [];
-      if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [item],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
-      }
-      if (name === "users:list") return { items: [], total: 0 };
-      return undefined;
-    });
-
-    render(<Management />);
-
-    fireEvent.click(screen.getByText("self-pub"));
-
-    expect(screen.getByRole("button", { name: "Ban user" })).toHaveProperty("disabled", true);
-  });
-
-  it("disables abuse bans for admin-owned candidates when viewed by moderators", () => {
-    authUser = {
-      _id: "users:moderator",
-      handle: "moderator",
-      role: "moderator",
-    };
-    const item = makePublisherAbuseItem({
-      handle: "admin-pub",
-      ownerKey: "user:owner-admin",
-      ownerRole: "admin",
-      ownerUserId: "users:owner-admin",
-    });
-    useQueryMock.mockImplementation((query, args) => {
-      if (args === "skip") return undefined;
-      const name = getFunctionName(query);
-      if (name === "skills:listRecentVersions") return [];
-      if (name === "skills:listReportedSkills") return [];
-      if (name === "skills:listDuplicateCandidates") return [];
-      if (name === "publisherAbuse:listReviewDashboard") {
-        return {
-          latestRun: null,
-          pendingItems: [],
-          pendingPotentialBanCandidateItems: [item],
-          pendingReviewItems: [],
-          recentResolvedItems: [],
-        };
-      }
-      if (name === "users:list") return { items: [], total: 0 };
-      return undefined;
-    });
-
-    render(<Management />);
-
-    fireEvent.click(screen.getByText("admin-pub"));
-
-    expect(screen.getByRole("button", { name: "Ban user" })).toHaveProperty("disabled", true);
+    expect(screen.getByText("Flagged for review")).toBeTruthy();
+    expect(screen.getByText(/Publisher-abuse bans are disabled/i)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ban user" })).toBeNull();
+    expect(screen.queryByPlaceholderText("Why are you taking this action? (optional)")).toBeNull();
+    expect(banPublisherAbuseOwner).not.toHaveBeenCalled();
+    expect(banUser).not.toHaveBeenCalled();
   });
 
   it("does not show non-ban resolution controls for potential-ban nominations", () => {
@@ -876,7 +796,7 @@ describe("Management", () => {
 
     fireEvent.click(screen.getByText("spammy-pub"));
 
-    expect(screen.getByRole("button", { name: "Ban user" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Ban user" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Mark reviewed" })).toBeNull();
     expect(screen.queryByRole("button", { name: "False positive" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Needs discussion" })).toBeNull();

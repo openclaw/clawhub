@@ -30,7 +30,6 @@ import { isAdmin, isModerator } from "../lib/roles";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import {
   AbusePage,
-  canBanPublisherAbuseOwner,
   comparePublisherAbuseItems,
   filterPublisherAbuseItems,
   getPublisherAbuseItemsForTab,
@@ -47,7 +46,6 @@ import {
   type ManagementUserListResult,
   type ManagementView,
   type PluginByNameResult,
-  type PublisherAbuseReviewItem,
   type PublisherAbuseTab,
   type RecentVersionEntry,
   type ReportedSkillEntry,
@@ -233,7 +231,6 @@ export function Management() {
   const setDeprecatedBadge = useMutation(api.skills.setDeprecatedBadge);
   const setSkillManualOverride = useMutation(api.skills.setSkillManualOverride);
   const clearSkillManualOverride = useMutation(api.skills.clearSkillManualOverride);
-  const banPublisherAbuseOwnerMutation = useMutation(api.publisherAbuse.banPublisherAbuseOwner);
   const startPublisherAbuseScoreRun = useAction(api.publisherAbuse.startPublisherAbuseScoreRun);
 
   const [selectedDuplicate, setSelectedDuplicate] = useState("");
@@ -251,7 +248,6 @@ export function Management() {
   const [publisherAbuseTab, setPublisherAbuseTab] =
     useState<PublisherAbuseTab>("potential_ban_candidate");
   const [publisherAbuseSearch, setPublisherAbuseSearch] = useState("");
-  const [publisherAbuseNotes, setPublisherAbuseNotes] = useState("");
   const [selectedPublisherAbuseNominationId, setSelectedPublisherAbuseNominationId] =
     useState<Id<"publisherAbuseReviewNominations"> | null>(null);
 
@@ -339,10 +335,6 @@ export function Management() {
     );
     if (!stillVisible) setSelectedPublisherAbuseNominationId(null);
   }, [filteredPublisherAbuseItems, selectedPublisherAbuseNominationId]);
-
-  useEffect(() => {
-    setPublisherAbuseNotes("");
-  }, [selectedPublisherAbuseNominationId]);
 
   if (isAuthLoading) {
     return <ManagementSkeleton />;
@@ -533,34 +525,6 @@ export function Management() {
     });
   };
 
-  const banPublisherAbuseOwner = (item: PublisherAbuseReviewItem) => {
-    const ownerUser = item.ownerUser;
-    if (!ownerUser || !canBanPublisherAbuseOwner(item, me?._id ?? null, admin)) return;
-    const label = `@${ownerUser.handle ?? ownerUser.name ?? item.nomination.handleSnapshot}`;
-    // The review notes box above the Ban button is the ban reason — no separate prompt.
-    const reason = publisherAbuseNotes.trim() || undefined;
-    setConfirmRequest({
-      title: `Ban ${label}?`,
-      body: "Hides their skills and personal package/plugin resources, and revokes package publish tokens.",
-      confirmLabel: "Ban user",
-      destructive: true,
-      onConfirm: () => {
-        void banPublisherAbuseOwnerMutation({
-          nominationId: item.nomination._id,
-          expectedLatestScoreId: item.nomination.latestScoreId,
-          expectedUpdatedAt: item.nomination.updatedAt,
-          reason,
-        })
-          .then(() => {
-            toast.success(`Banned ${label}.`);
-            setPublisherAbuseNotes("");
-            setSelectedPublisherAbuseNominationId(null);
-          })
-          .catch((error) => toast.error(formatMutationError(error)));
-      },
-    });
-  };
-
   return (
     <main className="management-shell">
       <ManagementSidebar
@@ -585,18 +549,13 @@ export function Management() {
 
         {activeView === "abuse" ? (
           <AbusePage
-            admin={admin}
-            currentUserId={me?._id ?? null}
             dashboard={publisherAbuseDashboard}
             detail={selectedPublisherAbuseDetail}
             items={filteredPublisherAbuseItems}
-            notes={publisherAbuseNotes}
             search={publisherAbuseSearch}
             selectedItem={selectedPublisherAbuseItem}
             selectedNominationId={selectedPublisherAbuseNominationId}
             tab={publisherAbuseTab}
-            onBanOwner={banPublisherAbuseOwner}
-            onChangeNotes={setPublisherAbuseNotes}
             onChangeSearch={setPublisherAbuseSearch}
             onChangeTab={setPublisherAbuseTab}
             onRefresh={() => {

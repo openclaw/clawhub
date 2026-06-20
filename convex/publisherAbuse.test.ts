@@ -667,7 +667,7 @@ describe("publisher abuse dry-run persistence", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
-  it("bans the linked owner and resolves the nomination in one mutation", async () => {
+  it("rejects publisher abuse ban enforcement while nominations are flag-only", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
       user: { _id: "users:moderator", role: "moderator" },
@@ -704,73 +704,9 @@ describe("publisher abuse dry-run persistence", () => {
         expectedUpdatedAt: 1,
         reason: " confirmed spam ",
       }),
-    ).resolves.toEqual({ ok: true, status: "banned" });
+    ).rejects.toThrow(/publisher abuse bans are disabled/i);
 
-    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
-      actorUserId: "users:moderator",
-      targetUserId: "users:owner",
-      reason: "confirmed spam",
-    });
-    expect(patch).toHaveBeenCalledWith(
-      "publisherAbuseReviewNominations:nomination",
-      expect.objectContaining({
-        status: "banned",
-        reviewedByUserId: "users:moderator",
-        notes: "confirmed spam",
-      }),
-    );
-    expect(insert).toHaveBeenCalledWith(
-      "publisherAbuseReviewEvents",
-      expect.objectContaining({
-        eventType: "triage_status_changed",
-        previousStatus: "pending",
-        nextStatus: "banned",
-        notes: "confirmed spam",
-      }),
-    );
-  });
-
-  it("does not resolve the nomination when linked owner ban fails", async () => {
-    vi.mocked(requireUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
-    const runMutation = vi.fn(async () => {
-      throw new Error("Ban failed");
-    });
-    const patch = vi.fn(async () => null);
-    const insert = vi.fn(async (table: string) => `${table}:new`);
-    const ctx = {
-      runMutation,
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "publisherAbuseReviewNominations:nomination") {
-            return {
-              _id: "publisherAbuseReviewNominations:nomination",
-              ownerKey: "user:owner",
-              ownerUserId: "users:owner",
-              latestScoreId: "publisherAbuseScores:score",
-              label: "potential_ban_candidate",
-              status: "pending",
-              updatedAt: 1,
-            };
-          }
-          return null;
-        }),
-        insert,
-        patch,
-      },
-    };
-
-    await expect(
-      banPublisherAbuseOwnerHandler(ctx, {
-        nominationId: "publisherAbuseReviewNominations:nomination",
-        expectedLatestScoreId: "publisherAbuseScores:score",
-        expectedUpdatedAt: 1,
-        reason: "confirmed spam",
-      }),
-    ).rejects.toThrow("Ban failed");
-
+    expect(runMutation).not.toHaveBeenCalled();
     expect(patch).not.toHaveBeenCalled();
     expect(insert).not.toHaveBeenCalled();
   });
