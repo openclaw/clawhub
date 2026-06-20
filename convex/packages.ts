@@ -61,6 +61,7 @@ import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
   assertPackageVersion,
+  derivePluginManifestSummary,
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
@@ -68,6 +69,7 @@ import {
   normalizePluginManifestIcon,
   normalizePackageName,
   normalizePublishFiles,
+  readStorageText,
   readOptionalTextFile,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
@@ -6583,6 +6585,29 @@ function normalizeStoredPluginCategoryOverride(categories: readonly string[] | u
   }
 }
 
+async function withSkillMarkdownTextsForManifestSummary(
+  ctx: Pick<ActionCtx, "storage">,
+  files: ReturnType<typeof normalizePublishFiles>,
+) {
+  const summaryFiles: Array<
+    (typeof files)[number] & {
+      text?: string;
+    }
+  > = [];
+  for (const file of files) {
+    const lower = file.path.toLowerCase();
+    if (lower === "skill.md" || lower.endsWith("/skill.md")) {
+      summaryFiles.push({
+        ...file,
+        text: await readStorageText(ctx, file.storageId),
+      });
+    } else {
+      summaryFiles.push(file);
+    }
+  }
+  return summaryFiles;
+}
+
 async function publishPackageImpl(
   ctx: Parameters<typeof requireGitHubAccountAge>[0] &
     Pick<ActionCtx, "storage" | "scheduler" | "runAction">,
@@ -6883,6 +6908,12 @@ async function publishPackageImpl(
   const integritySha256 = await hashSkillFiles(
     files.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
+  const pluginManifestSummary = derivePluginManifestSummary({
+    pluginManifest,
+    ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
+    compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
+    files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
+  });
 
   const publishResult = await runMutationRef<{
     ok: true;
@@ -6928,6 +6959,7 @@ async function publishPackageImpl(
     extractedPackageJson: storedPackageJson,
     extractedPluginManifest: storedPluginManifest,
     normalizedBundleManifest: family === "bundle-plugin" ? storedBundleManifest : undefined,
+    pluginManifestSummary,
     source: effectiveSource,
   });
 
@@ -8111,6 +8143,7 @@ export const insertReleaseInternal = internalMutation({
     extractedPackageJson: v.optional(v.any()),
     extractedPluginManifest: v.optional(v.any()),
     normalizedBundleManifest: v.optional(v.any()),
+    pluginManifestSummary: v.optional(v.any()),
     source: v.optional(v.any()),
   },
   handler: async (ctx, args) => {
@@ -8317,6 +8350,7 @@ export const insertReleaseInternal = internalMutation({
       extractedPackageJson: args.extractedPackageJson,
       extractedPluginManifest: args.extractedPluginManifest,
       normalizedBundleManifest: args.normalizedBundleManifest,
+      pluginManifestSummary: args.pluginManifestSummary,
       compatibility: args.compatibility,
       runtimeId: args.runtimeId,
       sourceRepo: args.sourceRepo,

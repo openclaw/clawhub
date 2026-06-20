@@ -518,6 +518,49 @@ const packageCompatibilityValidator = v.optional(
   }),
 );
 
+const pluginManifestSummaryValidator = v.object({
+  schemaVersion: v.literal(1),
+  compatibility: v.optional(
+    v.object({
+      pluginApiRange: v.optional(v.string()),
+      builtWithOpenClawVersion: v.optional(v.string()),
+      pluginSdkVersion: v.optional(v.string()),
+      minGatewayVersion: v.optional(v.string()),
+    }),
+  ),
+  manifestIdentity: v.optional(
+    v.object({
+      name: v.optional(v.string()),
+      description: v.optional(v.string()),
+      version: v.optional(v.string()),
+      family: v.optional(v.string()),
+    }),
+  ),
+  configFields: v.array(
+    v.object({
+      name: v.string(),
+      description: v.optional(v.string()),
+      required: v.boolean(),
+      sensitive: v.boolean(),
+    }),
+  ),
+  mcpServers: v.array(
+    v.object({
+      name: v.string(),
+    }),
+  ),
+  bundledSkills: v.array(
+    v.object({
+      name: v.string(),
+      description: v.optional(v.string()),
+      rootPath: v.string(),
+      skillMdPath: v.string(),
+      sha256: v.string(),
+      size: v.number(),
+    }),
+  ),
+});
+
 const packageVerificationValidator = v.optional(
   v.object({
     tier: packageVerificationTierValidator,
@@ -1443,6 +1486,7 @@ const packageReleases = defineTable({
   extractedPackageJson: v.optional(v.any()),
   extractedPluginManifest: v.optional(v.any()),
   normalizedBundleManifest: v.optional(v.any()),
+  pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),

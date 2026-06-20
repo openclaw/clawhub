@@ -4038,6 +4038,78 @@ code {
   gap: var(--space-4);
 }
 
+.plugin-manifest-capabilities {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.plugin-manifest-section {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.plugin-manifest-section h3 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 0.95rem;
+  font-weight: 750;
+}
+
+.plugin-manifest-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.plugin-manifest-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  padding: var(--space-3);
+}
+
+.plugin-manifest-row-main {
+  display: grid;
+  gap: 0.2rem;
+  min-width: 0;
+}
+
+.plugin-manifest-row-main code {
+  width: fit-content;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border-radius: 4px;
+  background: var(--surface-muted);
+  padding: 0.125rem 0.35rem;
+  color: var(--ink);
+  font-size: 0.82rem;
+}
+
+.plugin-manifest-row-main p,
+.plugin-manifest-row-main span {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.84rem;
+}
+
+.plugin-manifest-badges,
+.plugin-manifest-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (max-width: 640px) {
+  .plugin-manifest-row {
+    grid-template-columns: 1fr;
+    align-items: start;
+  }
+}
+
 .plugin-warning-list {
   display: grid;
   gap: var(--space-3);

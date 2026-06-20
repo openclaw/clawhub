@@ -22,6 +22,39 @@ export declare const PackageCompatibilitySchema: import("arktype/internal/varian
     minGatewayVersion?: string | undefined;
 }, {}>;
 export type PackageCompatibility = (typeof PackageCompatibilitySchema)[inferred];
+export declare const PluginManifestSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    schemaVersion: number;
+    configFields: {
+        name: string;
+        required: boolean;
+        sensitive: boolean;
+        description?: string | undefined;
+    }[];
+    mcpServers: {
+        name: string;
+    }[];
+    bundledSkills: {
+        name: string;
+        rootPath: string;
+        skillMdPath: string;
+        sha256: string;
+        size: number;
+        description?: string | undefined;
+    }[];
+    compatibility?: {
+        pluginApiRange?: string | undefined;
+        builtWithOpenClawVersion?: string | undefined;
+        pluginSdkVersion?: string | undefined;
+        minGatewayVersion?: string | undefined;
+    } | undefined;
+    manifestIdentity?: {
+        name?: string | undefined;
+        description?: string | undefined;
+        version?: string | undefined;
+        family?: string | undefined;
+    } | undefined;
+}, {}>;
+export type PluginManifestSummary = (typeof PluginManifestSummarySchema)[inferred];
 export declare const PackageVerificationSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
     scope: "artifact-only" | "dependency-graph-aware";
@@ -402,6 +435,38 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
             pluginSdkVersion?: string | undefined;
             minGatewayVersion?: string | undefined;
         } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            configFields: {
+                name: string;
+                required: boolean;
+                sensitive: boolean;
+                description?: string | undefined;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+                description?: string | undefined;
+            }[];
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
+        } | null | undefined;
         verification?: {
             tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
             scope: "artifact-only" | "dependency-graph-aware";
@@ -472,6 +537,38 @@ export declare const ApiV1PackageVersionResponseSchema: import("arktype/internal
             builtWithOpenClawVersion?: string | undefined;
             pluginSdkVersion?: string | undefined;
             minGatewayVersion?: string | undefined;
+        } | null | undefined;
+        pluginManifestSummary?: {
+            schemaVersion: number;
+            configFields: {
+                name: string;
+                required: boolean;
+                sensitive: boolean;
+                description?: string | undefined;
+            }[];
+            mcpServers: {
+                name: string;
+            }[];
+            bundledSkills: {
+                name: string;
+                rootPath: string;
+                skillMdPath: string;
+                sha256: string;
+                size: number;
+                description?: string | undefined;
+            }[];
+            compatibility?: {
+                pluginApiRange?: string | undefined;
+                builtWithOpenClawVersion?: string | undefined;
+                pluginSdkVersion?: string | undefined;
+                minGatewayVersion?: string | undefined;
+            } | undefined;
+            manifestIdentity?: {
+                name?: string | undefined;
+                description?: string | undefined;
+                version?: string | undefined;
+                family?: string | undefined;
+            } | undefined;
         } | null | undefined;
         verification?: {
             tier: "structural" | "source-linked" | "provenance-verified" | "rebuild-verified";
