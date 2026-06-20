@@ -1608,16 +1608,27 @@ function shouldClearStaleAggregatePublisherAbuseReviewNomination(
   nomination: Doc<"publisherAbuseReviewNominations">,
   currentModelVersion: string,
 ) {
+  const nominationVersion = aggregatePublisherAbuseModelVersionNumber(nomination.modelVersion);
+  const currentVersion = aggregatePublisherAbuseModelVersionNumber(currentModelVersion);
   return (
-    nomination.modelVersion !== currentModelVersion &&
+    nominationVersion !== null &&
+    currentVersion !== null &&
+    nominationVersion < currentVersion &&
     nomination.status === "pending" &&
-    nomination.label !== "pass" &&
-    isAggregatePublisherAbuseModelVersion(nomination.modelVersion)
+    nomination.label !== "pass"
   );
 }
 
 function isAggregatePublisherAbuseModelVersion(modelVersion: string) {
   return modelVersion.startsWith("publisher-abuse-pressure.");
+}
+
+function aggregatePublisherAbuseModelVersionNumber(modelVersion: string) {
+  const match = /^publisher-abuse-pressure\.v(\d+)$/.exec(modelVersion);
+  const versionText = match?.[1];
+  if (!versionText) return null;
+  const version = Number(versionText);
+  return Number.isSafeInteger(version) ? version : null;
 }
 
 async function markPublisherAbuseReviewNominationAsPass(

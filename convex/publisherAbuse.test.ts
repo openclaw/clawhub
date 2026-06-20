@@ -3363,6 +3363,128 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it("does not clear newer aggregate nominations when an older stored run finalizes", async () => {
+    const modelConfig = {
+      ...TEST_MODEL_CONFIG,
+      modelVersion: "publisher-abuse-pressure.v2",
+      minPublishedSkillsForAggregateLabel: undefined,
+    };
+    const newerV4Nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:newer-v4",
+      ownerKey: "publisher:publishers:late-v2",
+      ownerPublisherId: "publishers:late-v2",
+      ownerUserId: "users:late-v2",
+      latestScoreId: "publisherAbuseScores:newer-v4-score",
+      handleSnapshot: "late-v2",
+      modelVersion: "publisher-abuse-pressure.v4",
+      label: "potential_ban_candidate",
+      status: "pending",
+      lastScoredAt: 2,
+      updatedAt: 2,
+    });
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:late-v2",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: modelConfig.modelVersion,
+          modelConfig,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:late-v2-score",
+                        ownerKey: "publisher:publishers:late-v2",
+                        ownerPublisherId: "publishers:late-v2",
+                        ownerUserId: "users:late-v2",
+                        handleSnapshot: "late-v2",
+                        modelVersion: modelConfig.modelVersion,
+                        pressure: 1,
+                        logPressure: 0,
+                        publishedSkills: 220,
+                        totalInstalls: 600,
+                        totalStars: 20,
+                        totalDownloads: 80_000,
+                        installsPerSkill: 2.72,
+                        starsPerSkill: 0.09,
+                        downloadsPerSkill: 363.64,
+                        reasonCodes: [],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_owner_key_and_model_version");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                return {
+                  take: async () =>
+                    constraints.ownerKey === newerV4Nomination.ownerKey ? [newerV4Nomination] : [],
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:late-v2" }),
+    ).resolves.toEqual(expect.objectContaining({ isDone: true, finalized: 1, nominations: 0 }));
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScores:late-v2-score",
+      expect.objectContaining({ label: "pass", zScore: 0 }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      newerV4Nomination._id,
+      expect.objectContaining({ label: "pass" }),
+    );
+    expect(insert).not.toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: newerV4Nomination._id,
+        nextLabel: "pass",
+      }),
+    );
+  });
+
   it("does not create nominations for official publisher score rows left by an older run", async () => {
     const insert = vi.fn(async (table: string) => `${table}:new`);
     const patch = vi.fn(async () => null);
