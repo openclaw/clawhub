@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   computeCurrentSkillTemporalAbuseScore,
   computeHistoricalSkillTemporalAbuseScore,
+  computePublisherAbusePressure,
   computePublisherAbuseRawScore,
   computeTemporalAbuseCohortBenchmark,
   computeTemporalPublisherAbuseZScore,
@@ -253,6 +254,29 @@ describe("publisher abuse scoring", () => {
     );
 
     expect(labelForPublisherAbuseScore(score99, 3, legacyConfig)).toBe("potential_ban_candidate");
+  });
+
+  it("preserves legacy below-pivot catalog pressure for resumed stored configs", () => {
+    const legacyConfig = {
+      ...DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+      modelVersion: "publisher-abuse-pressure.v2",
+      skillPivot: 100,
+      outputElasticity: 1.5,
+      engagementElasticity: undefined,
+      minPublishedSkillsForAggregateLabel: undefined,
+    };
+
+    const pressure = computePublisherAbusePressure(
+      {
+        publishedSkills: 25,
+        totalInstalls: 50,
+        totalStars: 1.25,
+        totalDownloads: 6_250,
+      },
+      legacyConfig,
+    );
+
+    expect(pressure).toBeCloseTo(0.25);
   });
 
   it("increases catalog pressure when catalog grows without matching adoption", () => {

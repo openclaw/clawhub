@@ -245,7 +245,12 @@ export function computePublisherAbusePressure(
   );
 
   const skillOutputRatio = skills / skillPivot;
-  const catalogPressure = skillOutputRatio ** config.outputElasticity;
+  const usesWholePublisherEngagement = typeof config.engagementElasticity === "number";
+  const catalogPressure = usesWholePublisherEngagement
+    ? skillOutputRatio ** config.outputElasticity
+    : skillOutputRatio <= 1
+      ? skillOutputRatio
+      : skillOutputRatio ** config.outputElasticity;
   const engagementScale = skillOutputRatio ** (config.engagementElasticity ?? 1);
   const installBenchmark = installsPerSkillPivot * skillPivot * engagementScale;
   const starBenchmark = starsPerSkillPivot * skillPivot * engagementScale;
