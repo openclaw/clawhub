@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { useQuery } from "convex/react";
 import { ArrowRight } from "lucide-react";
-import { type PointerEvent, useRef, useState } from "react";
+import { type PointerEvent, useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { convexHttp } from "../convex/client";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PublicPublisherListItem } from "../lib/publicUser";
 import { MarketplaceIcon } from "./MarketplaceIcon";
@@ -26,11 +26,13 @@ const PINNED_PUBLISHERS: PinnedPublisher[] = [
   { handle: "spclaudehome", name: "spclaudehome", kind: "user" },
 ];
 
-function PopularPublisherCard({ pinned }: { pinned: PinnedPublisher }) {
-  const publisher = useQuery(api.publishers.getProfileByHandle, { handle: pinned.handle }) as
-    | PublicPublisherListItem
-    | null
-    | undefined;
+function PopularPublisherCard({
+  pinned,
+  publisher,
+}: {
+  pinned: PinnedPublisher;
+  publisher?: PublicPublisherListItem;
+}) {
   const name = publisher?.displayName?.trim() || pinned.name;
   const bio = publisher?.bio?.trim() || "Publisher on ClawHub.";
   const kind = publisher?.kind ?? pinned.kind;
@@ -69,6 +71,39 @@ export function HomePopularPublishersSection() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef({ pointerId: -1, startX: 0, scrollLeft: 0, moved: false });
   const [dragging, setDragging] = useState(false);
+  const [publishersByHandle, setPublishersByHandle] = useState<
+    Record<string, PublicPublisherListItem>
+  >({});
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const hydratePublishers = async () => {
+      // These profile queries compute catalog totals. Keep them serial so the
+      // homepage does not starve auth and navigation queries on smaller deployments.
+      for (const pinned of PINNED_PUBLISHERS) {
+        try {
+          const publisher = (await convexHttp.query(api.publishers.getProfileByHandle, {
+            handle: pinned.handle,
+          })) as PublicPublisherListItem | null;
+          if (cancelled) return;
+          if (publisher) {
+            setPublishersByHandle((current) => ({
+              ...current,
+              [pinned.handle]: publisher,
+            }));
+          }
+        } catch {
+          // Static card metadata remains usable when a profile cannot be hydrated.
+        }
+      }
+    };
+
+    void hydratePublishers();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const handlePointerDown = (event: PointerEvent<HTMLDivElement>) => {
     if (event.pointerType !== "mouse" || event.button !== 0) return;
@@ -129,7 +164,11 @@ export function HomePopularPublishersSection() {
       >
         <div className="home-v2-popular-publishers-track" role="list">
           {PINNED_PUBLISHERS.map((publisher) => (
-            <PopularPublisherCard key={publisher.handle} pinned={publisher} />
+            <PopularPublisherCard
+              key={publisher.handle}
+              pinned={publisher}
+              publisher={publishersByHandle[publisher.handle]}
+            />
           ))}
         </div>
       </div>

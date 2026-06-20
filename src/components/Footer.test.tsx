@@ -28,7 +28,7 @@ describe("Footer", () => {
     );
   }
 
-  it("renders the restored four-column public footer", () => {
+  it("renders the public footer columns and bottom platform links", () => {
     const { container } = render(<Footer />);
 
     const columns = container.querySelectorAll(".footer-col");
@@ -36,13 +36,14 @@ describe("Footer", () => {
 
     const browse = screen.getByRole("heading", { name: "Browse" }).closest(".footer-col");
     const publish = screen.getByRole("heading", { name: "Publish" }).closest(".footer-col");
+    const ecosystem = screen.getByRole("heading", { name: "Ecosystem" }).closest(".footer-col");
     const community = screen.getByRole("heading", { name: "Community" }).closest(".footer-col");
-    const platform = screen.getByRole("heading", { name: "Platform" }).closest(".footer-col");
 
     expect(browse).not.toBeNull();
     expect(publish).not.toBeNull();
+    expect(ecosystem).not.toBeNull();
     expect(community).not.toBeNull();
-    expect(platform).not.toBeNull();
+    expect(screen.queryByRole("heading", { name: "Platform" })).toBeNull();
 
     expect(
       within(browse as HTMLElement)
@@ -70,21 +71,17 @@ describe("Footer", () => {
         .getAttribute("href"),
     ).toBe("https://github.com/openclaw/clawhub");
     expect(
-      within(community as HTMLElement)
+      within(ecosystem as HTMLElement)
         .getByRole("link", { name: "OpenClaw" })
         .getAttribute("href"),
     ).toBe("https://openclaw.ai");
     expect(within(community as HTMLElement).queryByRole("link", { name: "About" })).toBeNull();
-    expect(
-      within(platform as HTMLElement)
-        .getByRole("link", { name: "Deployed on Vercel" })
-        .getAttribute("href"),
-    ).toBe("https://vercel.com");
-    expect(
-      within(platform as HTMLElement)
-        .getByRole("link", { name: "Powered by Convex" })
-        .getAttribute("href"),
-    ).toBe("https://www.convex.dev");
+    expect(screen.getByRole("link", { name: "Deployed on Vercel" }).getAttribute("href")).toBe(
+      "https://vercel.com",
+    );
+    expect(screen.getByRole("link", { name: "Powered by Convex" }).getAttribute("href")).toBe(
+      "https://www.convex.dev",
+    );
   });
 
   it("collapses footer sections by heading until toggled open", async () => {
@@ -93,15 +90,11 @@ describe("Footer", () => {
 
     const browseToggle = screen.getByRole("button", { name: "Browse" });
     const browseLinks = document.getElementById("footer-section-browse-links");
-    const platformToggle = screen.getByRole("button", { name: "Platform" });
-    const platformLinks = document.getElementById("footer-section-platform-links");
 
     expect(browseLinks).not.toBeNull();
-    expect(platformLinks).not.toBeNull();
     await waitFor(() => expect(browseToggle.getAttribute("aria-expanded")).toBe("false"));
     expect(browseLinks?.getAttribute("data-open")).toBe("false");
-    expect(platformToggle.getAttribute("aria-expanded")).toBe("false");
-    expect(platformLinks?.getAttribute("data-open")).toBe("false");
+    expect(screen.queryByRole("button", { name: "Platform" })).toBeNull();
 
     fireEvent.click(browseToggle);
 
@@ -112,7 +105,6 @@ describe("Footer", () => {
         .getByRole("link", { name: "Skills" })
         .getAttribute("href"),
     ).toBe("/skills");
-    expect(platformLinks?.getAttribute("data-open")).toBe("false");
 
     fireEvent.click(browseToggle);
 
