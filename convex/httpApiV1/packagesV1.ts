@@ -480,6 +480,7 @@ type ReleaseLike = {
     contentType?: string;
   }>;
   compatibility?: Doc<"packageReleases">["compatibility"];
+  pluginManifestSummary?: Doc<"packageReleases">["pluginManifestSummary"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
@@ -3768,6 +3769,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
             contentType: file.contentType,
           })),
           compatibility: result.version.compatibility ?? null,
+          pluginManifestSummary: result.version.pluginManifestSummary ?? null,
           verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,

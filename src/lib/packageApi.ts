@@ -2,6 +2,7 @@ import type {
   ApiV1PackageResponse,
   ApiV1PackageVersionListResponse,
   PackageCompatibility,
+  PluginManifestSummary,
   PackageVerificationSummary,
 } from "clawhub-schema";
 import { ApiRoutes } from "clawhub-schema/routes";
@@ -52,6 +53,7 @@ export type PackageVersionDetail = {
       contentType?: string;
     }>;
     compatibility?: PackageCompatibility | null;
+    pluginManifestSummary?: PluginManifestSummary | null;
     verification?: PackageVerificationSummary | null;
     artifact?: {
       kind: "legacy-zip" | "npm-pack";
@@ -545,6 +547,22 @@ export async function fetchPackageReadme(
 ): Promise<string | null> {
   const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
   url.searchParams.set("path", "README.md");
+  if (version) url.searchParams.set("version", version);
+  const response = await packageFetch(url, "text/plain");
+  if (response.ok) return await response.text();
+  if (response.status === 403 || response.status === 404 || response.status === 423) {
+    return null;
+  }
+  throw await createPackageApiError(response);
+}
+
+export async function fetchPackageFile(
+  name: string,
+  path: string,
+  version?: string | null,
+): Promise<string | null> {
+  const url = await packageApiUrl(`${ApiRoutes.packages}/${encodeURIComponent(name)}/file`);
+  url.searchParams.set("path", path);
   if (version) url.searchParams.set("version", version);
   const response = await packageFetch(url, "text/plain");
   if (response.ok) return await response.text();

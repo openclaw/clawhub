@@ -2,6 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 import {
+  derivePluginManifestSummary,
   ensurePluginNameMatchesPackage,
   extractBundlePluginArtifacts,
   extractCodePluginArtifacts,
@@ -74,6 +75,170 @@ describe("packageRegistry", () => {
     expect(result).not.toHaveProperty("capabilities");
     expect(result.verification.tier).toBe("source-linked");
     expect(result.verification.scanStatus).toBe("not-run");
+  });
+
+  it("derives a safe bundled plugin manifest summary from dummy plugin metadata", () => {
+    const summary = derivePluginManifestSummary({
+      compatibility: { pluginApiRange: "^1.2.0" },
+      pluginManifest: {
+        name: "example-ai-plugin",
+        description: "Manifest description is diagnostic only",
+        version: "9.9.9",
+        family: "code-plugin",
+        openclaw: {
+          compat: {
+            pluginApi: "^2.0.0",
+          },
+        },
+        configSchema: {
+          type: "object",
+          required: ["EXAMPLE_PLUGIN_API_KEY"],
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              description: "API key used to connect to the example service.",
+              sensitive: true,
+            },
+            EXAMPLE_PLUGIN_MODEL: {
+              type: "string",
+              description: "Optional model override.",
+            },
+          },
+        },
+        mcpServers: {
+          exampleMcp: {
+            command: "node",
+            args: ["dist/mcp.js"],
+            env: { EXAMPLE_PLUGIN_API_KEY: "${EXAMPLE_PLUGIN_API_KEY}" },
+            transport: "stdio",
+          },
+        },
+        skills: [
+          "skills/research",
+          { path: "skills/write-report" },
+          "../outside",
+          "skills/missing",
+        ],
+        shared_deps: ["ignored"],
+        excluded_from_install: ["also-ignored"],
+        contracts: [{ ignored: true }],
+      },
+      files: [
+        {
+          path: "skills/research/SKILL.md",
+          size: 128,
+          sha256: "a".repeat(64),
+          text: "---\nname: research\n---\n# Research\n\nDeep research assistant.",
+        },
+        {
+          path: "skills/write-report/SKILL.md",
+          size: 256,
+          sha256: "b".repeat(64),
+          text: "---\nname: write-report\ndescription: Drafts a report.\n---\n# Write Report",
+        },
+        {
+          path: "skills/missing/README.md",
+          size: 12,
+          sha256: "c".repeat(64),
+          text: "not a skill",
+        },
+      ],
+    });
+
+    expect(summary).toEqual({
+      schemaVersion: 1,
+      compatibility: { pluginApiRange: "^2.0.0" },
+      manifestIdentity: {
+        name: "example-ai-plugin",
+        description: "Manifest description is diagnostic only",
+        version: "9.9.9",
+        family: "code-plugin",
+      },
+      configFields: [
+        {
+          name: "EXAMPLE_PLUGIN_API_KEY",
+          description: "API key used to connect to the example service.",
+          required: true,
+          sensitive: true,
+        },
+        {
+          name: "EXAMPLE_PLUGIN_MODEL",
+          description: "Optional model override.",
+          required: false,
+          sensitive: false,
+        },
+      ],
+      mcpServers: [{ name: "exampleMcp" }],
+      bundledSkills: [
+        {
+          name: "research",
+          rootPath: "skills/research",
+          skillMdPath: "skills/research/SKILL.md",
+          sha256: "a".repeat(64),
+          size: 128,
+        },
+        {
+          name: "write-report",
+          description: "Drafts a report.",
+          rootPath: "skills/write-report",
+          skillMdPath: "skills/write-report/SKILL.md",
+          sha256: "b".repeat(64),
+          size: 256,
+        },
+      ],
+    });
+    expect(JSON.stringify(summary)).not.toContain("command");
+    expect(JSON.stringify(summary)).not.toContain("transport");
+    expect(JSON.stringify(summary)).not.toContain("shared_deps");
+    expect(JSON.stringify(summary)).not.toContain("contracts");
+  });
+
+  it("derives bundled skills from the real bundle manifest when present", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        id: "example-ai-plugin",
+        openclaw: { compat: { pluginApi: "^2.0.0" } },
+        configSchema: {
+          type: "object",
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              sensitive: true,
+            },
+          },
+        },
+      },
+      skillManifest: {
+        name: "Example bundle manifest",
+        skills: [{ path: "skills/answer-review" }],
+      },
+      files: [
+        {
+          path: "skills/answer-review/SKILL.md",
+          size: 192,
+          sha256: "d".repeat(64),
+          text: "---\nname: answer-review\ndescription: Reviews generated answers.\n---\n# Answer Review",
+        },
+      ],
+    });
+
+    expect(summary.configFields).toEqual([
+      {
+        name: "EXAMPLE_PLUGIN_API_KEY",
+        required: false,
+        sensitive: true,
+      },
+    ]);
+    expect(summary.bundledSkills).toEqual([
+      {
+        name: "answer-review",
+        description: "Reviews generated answers.",
+        rootPath: "skills/answer-review",
+        skillMdPath: "skills/answer-review/SKILL.md",
+        sha256: "d".repeat(64),
+        size: 192,
+      },
+    ]);
   });
 
   it("allows missing host and environment metadata for code plugins", () => {

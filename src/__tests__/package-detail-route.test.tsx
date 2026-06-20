@@ -8,6 +8,7 @@ import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   fetchPackageDetail,
+  fetchPackageFile,
   fetchPackageReadme,
   fetchPackageVersion,
   fetchPackageVersions,
@@ -108,6 +109,7 @@ vi.mock("sonner", () => ({
 
 vi.mock("../lib/packageApi", () => ({
   fetchPackageDetail: vi.fn(),
+  fetchPackageFile: vi.fn(),
   fetchPackageReadme: vi.fn(),
   fetchPackageVersion: vi.fn(),
   fetchPackageVersions: vi.fn(),
@@ -148,10 +150,12 @@ describe("plugin detail route", () => {
     pathnameMock = "/plugins/demo-plugin";
     window.location.hash = "";
     vi.mocked(fetchPackageDetail).mockReset();
+    vi.mocked(fetchPackageFile).mockReset();
     vi.mocked(fetchPackageReadme).mockReset();
     vi.mocked(fetchPackageVersion).mockReset();
     vi.mocked(fetchPackageVersions).mockReset();
     vi.mocked(fetchPackageVersions).mockResolvedValue(emptyVersions);
+    vi.mocked(fetchPackageFile).mockResolvedValue("# Bundled Skill");
     loaderDataMock = {
       detail: {
         package: {
@@ -441,6 +445,117 @@ describe("plugin detail route", () => {
 
     expect(screen.getByText("Loaded after empty page")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
+  });
+
+  it("renders bundled manifest capabilities and lazy-loads skill previews", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          name: "example-ai-plugin",
+          displayName: "Example AI Plugin",
+          latestVersion: "1.2.3",
+        },
+        owner: null,
+      },
+      version: {
+        package: {
+          name: "example-ai-plugin",
+          displayName: "Example AI Plugin",
+          family: "code-plugin",
+        },
+        version: {
+          version: "1.2.3",
+          createdAt: 1,
+          changelog: "demo",
+          distTags: ["latest"],
+          files: [],
+          compatibility: { pluginApiRange: "^1.0.0" },
+          verification: null,
+          artifact: null,
+          pluginManifestSummary: {
+            schemaVersion: 1,
+            compatibility: { pluginApiRange: "^2.0.0" },
+            configFields: [
+              {
+                name: "EXAMPLE_PLUGIN_API_KEY",
+                description: "API key used to connect to the example service.",
+                required: true,
+                sensitive: true,
+              },
+              {
+                name: "EXAMPLE_PLUGIN_MODEL",
+                description: "Optional model override.",
+                required: false,
+                sensitive: false,
+              },
+            ],
+            mcpServers: [{ name: "exampleMcp" }],
+            bundledSkills: [
+              {
+                name: "research",
+                description: "Deep research assistant.",
+                rootPath: "skills/research",
+                skillMdPath: "skills/research/SKILL.md",
+                sha256: "a".repeat(64),
+                size: 128,
+              },
+            ],
+          },
+        },
+      },
+    };
+    vi.mocked(fetchPackageFile).mockResolvedValueOnce("# Research\n\nDeep research assistant.");
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+      "README",
+      "Skills",
+      "MCP Servers",
+      "Configuration",
+      "Compatibility",
+      "Versions",
+    ]);
+    expect(screen.getByRole("tab", { name: "Compatibility" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Configuration" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "MCP Servers" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Skills" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Compatibility" }));
+    expect(screen.getByText("OpenClaw plugin API")).toBeTruthy();
+    expect(screen.getByText("^2.0.0")).toBeTruthy();
+    expect(screen.queryByText("EXAMPLE_PLUGIN_API_KEY")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Configuration" }));
+    expect(screen.getByText("EXAMPLE_PLUGIN_API_KEY")).toBeTruthy();
+    expect(screen.getByText("Required")).toBeTruthy();
+    expect(screen.getByText("Sensitive")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("tab", { name: "MCP Servers" }));
+    expect(screen.getAllByText("exampleMcp").length).toBeGreaterThanOrEqual(1);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Skills" }));
+    expect(screen.getByText("Deep research assistant.")).toBeTruthy();
+    expect(fetchPackageFile).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: /preview research/i }));
+
+    await waitFor(() => {
+      expect(fetchPackageFile).toHaveBeenCalledWith(
+        "example-ai-plugin",
+        "skills/research/SKILL.md",
+        "1.2.3",
+      );
+    });
+    expect(
+      screen.getAllByText((_content, element) =>
+        Boolean(element?.textContent?.includes("# Research")),
+      ).length,
+    ).toBeGreaterThan(0);
   });
 
   it("keeps loaded releases and allows retry when loading more fails", async () => {
