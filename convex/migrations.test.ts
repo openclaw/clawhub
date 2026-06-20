@@ -846,6 +846,107 @@ describe("plugin manifest summary backfill migration", () => {
     });
   });
 
+  it("derives a summary from stored openclaw.plugin.json when the extracted manifest is missing", async () => {
+    const storageGet = vi.fn(async () => {
+      return new Blob([
+        JSON.stringify({
+          configSchema: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              description: "API key used to connect to the example service.",
+              required: true,
+              uiHints: { sensitive: true },
+            },
+          },
+          mcpServers: {
+            exampleMcp: {
+              command: "node",
+              args: ["server.js"],
+            },
+          },
+          skills: ["skills/research"],
+          compat: {
+            pluginApi: "^2.0.0",
+          },
+        }),
+      ]);
+    });
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      page: [
+        {
+          packageName: "example-ai-plugin",
+          displayName: "Example AI Plugin",
+          release: {
+            _id: packageReleaseId,
+            version: "1.0.0",
+            files: [
+              {
+                path: "openclaw.plugin.json",
+                storageId: "storage:manifest",
+                size: 512,
+                sha256: "a".repeat(64),
+              },
+              {
+                path: "skills/research/SKILL.md",
+                storageId: "storage:skill",
+                size: 128,
+                sha256: "b".repeat(64),
+              },
+            ],
+            compatibility: { builtWithOpenClawVersion: "1.0.0" },
+            extractedPluginManifest: null,
+          },
+        },
+      ],
+      isDone: true,
+      continueCursor: "",
+    });
+    const runMutation = vi.fn().mockResolvedValue(true);
+    const handler = (
+      runPluginManifestSummaryBackfillPage as unknown as PluginManifestSummaryBackfillPageWrappedHandler
+    )._handler;
+
+    const result = await handler(
+      {
+        runQuery,
+        runMutation,
+        storage: { get: storageGet },
+      },
+      {
+        family: "bundle-plugin",
+        dryRun: false,
+        confirm: "backfill-plugin-manifest-summaries",
+      },
+    );
+
+    expect(storageGet).toHaveBeenCalledWith("storage:manifest");
+    const mutationArgs = runMutation.mock.calls[0]?.[1];
+    expect(mutationArgs?.releaseId).toBe(packageReleaseId);
+    expect(mutationArgs?.pluginManifestSummary).toMatchObject({
+      configFields: [
+        {
+          name: "EXAMPLE_PLUGIN_API_KEY",
+          description: "API key used to connect to the example service.",
+          required: true,
+          sensitive: true,
+        },
+      ],
+      mcpServers: [{ name: "exampleMcp" }],
+      bundledSkills: [expect.objectContaining({ rootPath: "skills/research" })],
+      compatibility: expect.objectContaining({ builtWithOpenClawVersion: "1.0.0" }),
+    });
+    expect(JSON.stringify(mutationArgs?.pluginManifestSummary)).not.toContain("server.js");
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      eligibleReleases: 1,
+      changedReleases: 1,
+      patchedReleases: 1,
+      skippedMissingManifest: 0,
+      skillMarkdownReadErrors: 0,
+    });
+  });
+
   it("skips applying a degraded summary when skill markdown cannot be read", async () => {
     const runQuery = vi
       .fn()

@@ -551,11 +551,13 @@ describe("plugin detail route", () => {
         "1.2.3",
       );
     });
-    expect(
-      screen.getAllByText((_content, element) =>
-        Boolean(element?.textContent?.includes("# Research")),
-      ).length,
-    ).toBeGreaterThan(0);
+    await waitFor(() => {
+      expect(
+        screen.getAllByText((_content, element) =>
+          Boolean(element?.textContent?.includes("# Research")),
+        ).length,
+      ).toBeGreaterThan(0);
+    });
   });
 
   it("keeps loaded releases and allows retry when loading more fails", async () => {

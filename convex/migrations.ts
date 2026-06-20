@@ -372,10 +372,37 @@ function isSkillMarkdownPath(path: string) {
   return lowerPath === "skill.md" || lowerPath.endsWith("/skill.md");
 }
 
+function isPluginManifestPath(path: string) {
+  return path.toLowerCase() === "openclaw.plugin.json";
+}
+
 async function readStorageText(ctx: Pick<ActionCtx, "storage">, storageId: string) {
   const blob = await ctx.storage.get(storageId as never);
   if (!blob) throw new ConvexError("Uploaded file no longer exists");
   return await blob.text();
+}
+
+async function readStoredPluginManifestForBackfill(
+  ctx: Pick<ActionCtx, "storage">,
+  files: Doc<"packageReleases">["files"],
+) {
+  const manifestFile = files.find((file) => isPluginManifestPath(file.path));
+  if (!manifestFile) return null;
+  try {
+    const text = await readStorageText(ctx, manifestFile.storageId);
+    const parsed: unknown = JSON.parse(text);
+    return isJsonRecord(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resolvePluginManifestForSummaryBackfill(
+  ctx: Pick<ActionCtx, "storage">,
+  release: Doc<"packageReleases">,
+) {
+  if (isJsonRecord(release.extractedPluginManifest)) return release.extractedPluginManifest;
+  return await readStoredPluginManifestForBackfill(ctx, release.files);
 }
 
 async function withSkillMarkdownTextsForPluginManifestSummaryBackfill(
@@ -500,7 +527,7 @@ async function backfillLatestPluginManifestSummariesForFamily(
         continue;
       }
 
-      const pluginManifest = candidate.release.extractedPluginManifest;
+      const pluginManifest = await resolvePluginManifestForSummaryBackfill(ctx, candidate.release);
       if (!isJsonRecord(pluginManifest)) {
         skippedMissingManifest += 1;
         continue;
@@ -733,7 +760,7 @@ export const runPluginManifestSummaryBackfillPage = internalAction({
         continue;
       }
 
-      const pluginManifest = candidate.release.extractedPluginManifest;
+      const pluginManifest = await resolvePluginManifestForSummaryBackfill(ctx, candidate.release);
       if (!isJsonRecord(pluginManifest)) {
         skippedMissingManifest += 1;
         continue;
