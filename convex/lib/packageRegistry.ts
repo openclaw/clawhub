@@ -98,7 +98,7 @@ function normalizeSkillRootPath(value: unknown) {
           optionalString(value.rootPath))
         : undefined;
   if (!raw) return null;
-  return sanitizePath(raw.replace(/\/+$/, ""));
+  return sanitizePath(raw)?.replace(/^\.\//, "").replace(/\/+$/, "") ?? null;
 }
 
 function normalizeSkillRootPaths(input: unknown) {
@@ -114,6 +114,33 @@ function findSkillMarkdownFile(files: PluginManifestSummaryFile[], rootPath: str
     files.find((file) => file.path.toLowerCase() === expectedLower) ??
     null
   );
+}
+
+function skillRootPathFromMarkdownFile(filePath: string) {
+  return filePath.split("/").slice(0, -1).join("/");
+}
+
+function findSkillMarkdownFiles(files: PluginManifestSummaryFile[], rootPath: string) {
+  const exact = findSkillMarkdownFile(files, rootPath);
+  if (exact) return [{ rootPath, file: exact }];
+
+  const directoryPrefix = `${rootPath.toLowerCase()}/`;
+  const seen = new Set<string>();
+  return files
+    .filter((file) => {
+      const lowerPath = file.path.toLowerCase();
+      return lowerPath.startsWith(directoryPrefix) && lowerPath.endsWith("/skill.md");
+    })
+    .map((file) => ({
+      rootPath: skillRootPathFromMarkdownFile(file.path),
+      file,
+    }))
+    .filter((entry) => {
+      const key = entry.file.path.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
 }
 
 function extractCompatibilityFromManifest(
@@ -217,9 +244,8 @@ export function derivePluginManifestSummary(params: {
     ...normalizeSkillRootPaths(skillManifest.bundledSkills),
   ]);
   const bundledSkills = skillRoots
-    .map((rootPath) => {
-      const file = findSkillMarkdownFile(params.files, rootPath);
-      if (!file) return null;
+    .flatMap((rootPath) => findSkillMarkdownFiles(params.files, rootPath))
+    .map(({ rootPath, file }) => {
       const metadata = parseSkillMarkdownMetadata(file.text);
       return {
         name: metadata.name ?? pathDerivedName(rootPath),
@@ -230,7 +256,12 @@ export function derivePluginManifestSummary(params: {
         size: file.size,
       };
     })
-    .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    .filter((entry, index, entries) => {
+      const firstIndex = entries.findIndex(
+        (candidate) => candidate.skillMdPath.toLowerCase() === entry.skillMdPath.toLowerCase(),
+      );
+      return firstIndex === index;
+    });
 
   return {
     schemaVersion: 1 as const,

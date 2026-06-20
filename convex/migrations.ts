@@ -7,9 +7,10 @@ import {
 import { ConvexError, v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { MutationCtx } from "./_generated/server";
-import { internalAction } from "./_generated/server";
+import type { ActionCtx, MutationCtx } from "./_generated/server";
+import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { syncPackageSearchDigestForPackageId } from "./functions";
+import { derivePluginManifestSummary } from "./lib/packageRegistry";
 import { adjustPublisherStatsForSkillChange } from "./lib/publisherStats";
 import {
   buildSkillInstallBackfillPatch,
@@ -22,8 +23,12 @@ import schema from "./schema";
 
 const CANONICALIZE_CATALOG_METADATA_CONFIRM = "canonicalize-catalog-metadata";
 const APPLY_SKILL_INSTALL_BACKFILL_CONFIRM = "apply-skill-install-backfill";
+const BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM = "backfill-plugin-manifest-summaries";
 const SKILL_STAT_EVENTS_CURSOR_KEY = "skill_stat_events";
 const MAX_PENDING_SKILL_STAT_EVENTS_PER_SKILL = 1_000;
+const PLUGIN_PACKAGE_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+const PLUGIN_MANIFEST_SUMMARY_BACKFILL_PAGE_SIZE = 50;
+const PLUGIN_MANIFEST_SUMMARY_BACKFILL_MAX_PACKAGES = 5_000;
 
 export const migrations = new Migrations(components.migrations, {
   schema,
@@ -314,6 +319,340 @@ export const backfillSkillInstallEstimates = migrations.define({
   batchSize: 10,
   migrateOne: async (ctx, skill) => {
     await backfillOneSkillInstallEstimate(ctx, skill);
+  },
+});
+
+type PluginPackageFamily = (typeof PLUGIN_PACKAGE_FAMILIES)[number];
+
+type LatestPluginManifestSummaryCandidate = {
+  packageName: string;
+  displayName: string;
+  release: Doc<"packageReleases"> | null;
+};
+
+type LatestPluginManifestSummaryCandidatePage = {
+  page: LatestPluginManifestSummaryCandidate[];
+  isDone: boolean;
+  continueCursor: string;
+};
+
+type PluginManifestSummaryBackfillSample = {
+  packageName: string;
+  displayName: string;
+  version: string;
+  releaseId: Id<"packageReleases">;
+  configFieldCount: number;
+  mcpServerCount: number;
+  bundledSkillCount: number;
+};
+
+type PluginManifestSummaryBackfillResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: string;
+  scannedPackages: number;
+  eligibleReleases: number;
+  changedReleases: number;
+  patchedReleases: number;
+  unchangedReleases: number;
+  skippedMissingRelease: number;
+  skippedMissingManifest: number;
+  skippedSkillMarkdownReadErrorReleases: number;
+  skillMarkdownReadErrors: number;
+  samples: PluginManifestSummaryBackfillSample[];
+};
+
+function isJsonRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function isSkillMarkdownPath(path: string) {
+  const lowerPath = path.toLowerCase();
+  return lowerPath === "skill.md" || lowerPath.endsWith("/skill.md");
+}
+
+async function readStorageText(ctx: Pick<ActionCtx, "storage">, storageId: string) {
+  const blob = await ctx.storage.get(storageId as never);
+  if (!blob) throw new ConvexError("Uploaded file no longer exists");
+  return await blob.text();
+}
+
+async function withSkillMarkdownTextsForPluginManifestSummaryBackfill(
+  ctx: Pick<ActionCtx, "storage">,
+  files: Doc<"packageReleases">["files"],
+) {
+  let readErrors = 0;
+  const nextFiles = await Promise.all(
+    files.map(async (file) => {
+      if (!isSkillMarkdownPath(file.path)) return file;
+      try {
+        return {
+          ...file,
+          text: await readStorageText(ctx, file.storageId),
+        };
+      } catch {
+        readErrors += 1;
+        return file;
+      }
+    }),
+  );
+  return { files: nextFiles, readErrors };
+}
+
+function hasSamePluginManifestSummary(
+  release: Doc<"packageReleases">,
+  pluginManifestSummary: unknown,
+) {
+  return (
+    JSON.stringify(release.pluginManifestSummary ?? null) === JSON.stringify(pluginManifestSummary)
+  );
+}
+
+export const listLatestPluginManifestSummaryBackfillCandidates = internalQuery({
+  args: {
+    family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
+    cursor: v.union(v.string(), v.null()),
+    limit: v.number(),
+  },
+  returns: v.object({
+    page: v.array(
+      v.object({
+        packageName: v.string(),
+        displayName: v.string(),
+        release: v.union(v.any(), v.null()),
+      }),
+    ),
+    isDone: v.boolean(),
+    continueCursor: v.string(),
+  }),
+  handler: async (ctx, args) => {
+    const numItems = Math.max(1, Math.min(100, Math.floor(args.limit)));
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_active_family_recommended_score", (q) =>
+        q.eq("softDeletedAt", undefined).eq("family", args.family),
+      )
+      .paginate({ cursor: args.cursor, numItems });
+    const candidates = await Promise.all(
+      page.page.map(async (pkg) => ({
+        packageName: pkg.normalizedName,
+        displayName: pkg.displayName,
+        release: pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null,
+      })),
+    );
+    return {
+      page: candidates,
+      isDone: page.isDone,
+      continueCursor: page.continueCursor,
+    };
+  },
+});
+
+export const applyPluginManifestSummaryBackfillPatch = internalMutation({
+  args: {
+    releaseId: v.id("packageReleases"),
+    pluginManifestSummary: v.any(),
+  },
+  returns: v.boolean(),
+  handler: async (ctx, args) => {
+    const release = await ctx.db.get(args.releaseId);
+    if (!release || release.softDeletedAt !== undefined) return false;
+    await ctx.db.patch(args.releaseId, {
+      pluginManifestSummary: args.pluginManifestSummary,
+    });
+    return true;
+  },
+});
+
+async function backfillLatestPluginManifestSummariesForFamily(
+  ctx: Pick<ActionCtx, "runMutation" | "runQuery" | "storage">,
+  family: PluginPackageFamily,
+  dryRun: boolean,
+  maxPackages: number,
+) {
+  let cursor: string | null = null;
+  let scannedPackages = 0;
+  let eligibleReleases = 0;
+  let changedReleases = 0;
+  let patchedReleases = 0;
+  let unchangedReleases = 0;
+  let skippedMissingRelease = 0;
+  let skippedMissingManifest = 0;
+  let skippedSkillMarkdownReadErrorReleases = 0;
+  let skillMarkdownReadErrors = 0;
+  const samples: PluginManifestSummaryBackfillSample[] = [];
+
+  while (scannedPackages < maxPackages) {
+    const page: LatestPluginManifestSummaryCandidatePage = await ctx.runQuery(
+      internal.migrations.listLatestPluginManifestSummaryBackfillCandidates,
+      {
+        family,
+        cursor,
+        limit: Math.min(PLUGIN_MANIFEST_SUMMARY_BACKFILL_PAGE_SIZE, maxPackages - scannedPackages),
+      },
+    );
+
+    for (const candidate of page.page) {
+      scannedPackages += 1;
+      if (!candidate.release || candidate.release.softDeletedAt !== undefined) {
+        skippedMissingRelease += 1;
+        continue;
+      }
+
+      const pluginManifest = candidate.release.extractedPluginManifest;
+      if (!isJsonRecord(pluginManifest)) {
+        skippedMissingManifest += 1;
+        continue;
+      }
+
+      eligibleReleases += 1;
+      const filesResult = await withSkillMarkdownTextsForPluginManifestSummaryBackfill(
+        ctx,
+        candidate.release.files,
+      );
+      skillMarkdownReadErrors += filesResult.readErrors;
+      if (filesResult.readErrors > 0) {
+        skippedSkillMarkdownReadErrorReleases += 1;
+        continue;
+      }
+      const summary = derivePluginManifestSummary({
+        pluginManifest,
+        ...(isJsonRecord(candidate.release.normalizedBundleManifest)
+          ? { skillManifest: candidate.release.normalizedBundleManifest }
+          : {}),
+        compatibility: candidate.release.compatibility,
+        files: filesResult.files,
+      });
+      if (hasSamePluginManifestSummary(candidate.release, summary)) {
+        unchangedReleases += 1;
+        continue;
+      }
+
+      changedReleases += 1;
+      if (!dryRun) {
+        const patched: boolean = await ctx.runMutation(
+          internal.migrations.applyPluginManifestSummaryBackfillPatch,
+          {
+            releaseId: candidate.release._id,
+            pluginManifestSummary: summary,
+          },
+        );
+        if (patched) patchedReleases += 1;
+      }
+      if (samples.length < 10) {
+        samples.push({
+          packageName: candidate.packageName,
+          displayName: candidate.displayName,
+          version: candidate.release.version,
+          releaseId: candidate.release._id,
+          configFieldCount: summary.configFields.length,
+          mcpServerCount: summary.mcpServers.length,
+          bundledSkillCount: summary.bundledSkills.length,
+        });
+      }
+    }
+
+    if (page.isDone || scannedPackages >= maxPackages) break;
+    cursor = page.continueCursor;
+  }
+
+  return {
+    scannedPackages,
+    eligibleReleases,
+    changedReleases,
+    patchedReleases,
+    unchangedReleases,
+    skippedMissingRelease,
+    skippedMissingManifest,
+    skippedSkillMarkdownReadErrorReleases,
+    skillMarkdownReadErrors,
+    samples,
+  };
+}
+
+export const runPluginManifestSummaryBackfill = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    maxPackages: v.optional(v.number()),
+  },
+  returns: v.object({
+    ok: v.literal(true),
+    dryRun: v.boolean(),
+    confirmRequired: v.optional(v.string()),
+    scannedPackages: v.number(),
+    eligibleReleases: v.number(),
+    changedReleases: v.number(),
+    patchedReleases: v.number(),
+    unchangedReleases: v.number(),
+    skippedMissingRelease: v.number(),
+    skippedMissingManifest: v.number(),
+    skippedSkillMarkdownReadErrorReleases: v.number(),
+    skillMarkdownReadErrors: v.number(),
+    samples: v.array(
+      v.object({
+        packageName: v.string(),
+        displayName: v.string(),
+        version: v.string(),
+        releaseId: v.id("packageReleases"),
+        configFieldCount: v.number(),
+        mcpServerCount: v.number(),
+        bundledSkillCount: v.number(),
+      }),
+    ),
+  }),
+  handler: async (ctx, args): Promise<PluginManifestSummaryBackfillResult> => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM}" to apply.`,
+      );
+    }
+
+    const maxPackages = Math.max(
+      1,
+      Math.min(
+        PLUGIN_MANIFEST_SUMMARY_BACKFILL_MAX_PACKAGES,
+        Math.floor(args.maxPackages ?? PLUGIN_MANIFEST_SUMMARY_BACKFILL_MAX_PACKAGES),
+      ),
+    );
+    const totals: PluginManifestSummaryBackfillResult = {
+      ok: true,
+      dryRun,
+      confirmRequired: dryRun ? BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM : undefined,
+      scannedPackages: 0,
+      eligibleReleases: 0,
+      changedReleases: 0,
+      patchedReleases: 0,
+      unchangedReleases: 0,
+      skippedMissingRelease: 0,
+      skippedMissingManifest: 0,
+      skippedSkillMarkdownReadErrorReleases: 0,
+      skillMarkdownReadErrors: 0,
+      samples: [],
+    };
+
+    for (const family of PLUGIN_PACKAGE_FAMILIES) {
+      const result = await backfillLatestPluginManifestSummariesForFamily(
+        ctx,
+        family,
+        dryRun,
+        maxPackages - totals.scannedPackages,
+      );
+      totals.scannedPackages += result.scannedPackages;
+      totals.eligibleReleases += result.eligibleReleases;
+      totals.changedReleases += result.changedReleases;
+      totals.patchedReleases += result.patchedReleases;
+      totals.unchangedReleases += result.unchangedReleases;
+      totals.skippedMissingRelease += result.skippedMissingRelease;
+      totals.skippedMissingManifest += result.skippedMissingManifest;
+      totals.skippedSkillMarkdownReadErrorReleases += result.skippedSkillMarkdownReadErrorReleases;
+      totals.skillMarkdownReadErrors += result.skillMarkdownReadErrors;
+      totals.samples.push(...result.samples.slice(0, 10 - totals.samples.length));
+      if (totals.scannedPackages >= maxPackages) break;
+    }
+
+    return totals;
   },
 });
 

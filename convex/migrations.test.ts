@@ -10,11 +10,19 @@ import {
   backfillOneSkillInstallEstimate,
   buildCanonicalCatalogMetadataPatch,
   runCatalogMetadataCanonicalization,
+  runPluginManifestSummaryBackfill,
   runSkillInstallBackfill,
 } from "./migrations";
 
 type InstallBackfillWrappedHandler = {
   _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
+};
+
+type PluginManifestSummaryBackfillWrappedHandler = {
+  _handler: (
+    ctx: unknown,
+    args: { dryRun?: boolean; confirm?: string; maxPackages?: number },
+  ) => Promise<unknown>;
 };
 
 type CatalogMetadataCanonicalizationWrappedHandler = {
@@ -35,6 +43,7 @@ const skillId = testId("skills", "skills:demo");
 const ownerUserId = testId("users", "users:owner");
 const publisherId = testId("publishers", "publishers:owner");
 const digestId = testId("skillSearchDigest", "skillSearchDigest:demo");
+const packageReleaseId = testId("packageReleases", "packageReleases:demo");
 
 function makeSkillDoc(): Doc<"skills"> {
   return {
@@ -693,5 +702,109 @@ describe("skill install backfill migration", () => {
         }),
       }),
     );
+  });
+});
+
+describe("plugin manifest summary backfill migration", () => {
+  it("dry-runs latest active plugin release summary backfill by default", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: true,
+      continueCursor: "",
+    });
+    const handler = (
+      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
+    )._handler;
+
+    const result = await handler({ runQuery, runMutation: vi.fn(), storage: {} }, {});
+
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      family: "code-plugin",
+      cursor: null,
+      limit: 50,
+    });
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      family: "bundle-plugin",
+      cursor: null,
+      limit: 50,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "backfill-plugin-manifest-summaries",
+      scannedPackages: 0,
+      eligibleReleases: 0,
+      changedReleases: 0,
+      patchedReleases: 0,
+    });
+  });
+
+  it("requires explicit confirmation before applying plugin manifest summary backfill", async () => {
+    const handler = (
+      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
+    )._handler;
+
+    await expect(
+      handler({ runQuery: vi.fn(), runMutation: vi.fn(), storage: {} }, { dryRun: false }),
+    ).rejects.toThrow('Pass confirm="backfill-plugin-manifest-summaries" to apply.');
+  });
+
+  it("skips applying a degraded summary when skill markdown cannot be read", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        page: [
+          {
+            packageName: "example-ai-plugin",
+            displayName: "Example AI Plugin",
+            release: {
+              _id: packageReleaseId,
+              version: "1.0.0",
+              files: [
+                {
+                  path: "skills/research/SKILL.md",
+                  storageId: "storage:missing",
+                  size: 128,
+                  sha256: "a".repeat(64),
+                },
+              ],
+              extractedPluginManifest: {
+                skills: ["skills/research"],
+              },
+            },
+          },
+        ],
+        isDone: true,
+        continueCursor: "",
+      })
+      .mockResolvedValue({
+        page: [],
+        isDone: true,
+        continueCursor: "",
+      });
+    const runMutation = vi.fn();
+    const handler = (
+      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
+    )._handler;
+
+    const result = await handler(
+      {
+        runQuery,
+        runMutation,
+        storage: { get: vi.fn(async () => null) },
+      },
+      { dryRun: false, confirm: "backfill-plugin-manifest-summaries" },
+    );
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      eligibleReleases: 1,
+      changedReleases: 0,
+      patchedReleases: 0,
+      skippedSkillMarkdownReadErrorReleases: 1,
+      skillMarkdownReadErrors: 1,
+    });
   });
 });

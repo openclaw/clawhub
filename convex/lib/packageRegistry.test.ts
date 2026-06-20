@@ -241,6 +241,95 @@ describe("packageRegistry", () => {
     ]);
   });
 
+  it("derives bundled skills from directory-style skill manifest roots", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        openclaw: { compat: { pluginApi: "^2.0.0" } },
+        configSchema: {
+          type: "object",
+          required: ["EXAMPLE_PLUGIN_API_KEY"],
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              description: "API key used to connect to the example service.",
+              sensitive: true,
+            },
+          },
+        },
+        mcpServers: {
+          exampleMcp: {
+            command: "node",
+            args: ["dist/mcp.js"],
+          },
+        },
+        customMetadata: {
+          ignored: true,
+        },
+      },
+      skillManifest: {
+        skills: ["./skills/"],
+      },
+      files: [
+        {
+          path: "skills/research/SKILL.md",
+          size: 128,
+          sha256: "a".repeat(64),
+          text: "---\nname: research\ndescription: Deep research assistant.\n---\n# Research",
+        },
+        {
+          path: "skills/write-report/SKILL.md",
+          size: 256,
+          sha256: "b".repeat(64),
+          text: "---\nname: write-report\ndescription: Drafts a concise report.\n---\n# Write Report",
+        },
+        {
+          path: "skills/code-audit/SKILL.md",
+          size: 384,
+          sha256: "c".repeat(64),
+          text: "---\nname: code-audit\ndescription: Reviews code changes.\n---\n# Code Audit",
+        },
+        {
+          path: "skills/not-a-skill/README.md",
+          size: 12,
+          sha256: "d".repeat(64),
+          text: "ignored",
+        },
+      ],
+    });
+
+    expect(summary.bundledSkills).toEqual([
+      {
+        name: "research",
+        description: "Deep research assistant.",
+        rootPath: "skills/research",
+        skillMdPath: "skills/research/SKILL.md",
+        sha256: "a".repeat(64),
+        size: 128,
+      },
+      {
+        name: "write-report",
+        description: "Drafts a concise report.",
+        rootPath: "skills/write-report",
+        skillMdPath: "skills/write-report/SKILL.md",
+        sha256: "b".repeat(64),
+        size: 256,
+      },
+      {
+        name: "code-audit",
+        description: "Reviews code changes.",
+        rootPath: "skills/code-audit",
+        skillMdPath: "skills/code-audit/SKILL.md",
+        sha256: "c".repeat(64),
+        size: 384,
+      },
+    ]);
+    expect(summary.configFields).toHaveLength(1);
+    expect(summary.mcpServers).toEqual([{ name: "exampleMcp" }]);
+    expect(JSON.stringify(summary)).not.toContain("command");
+    expect(JSON.stringify(summary)).not.toContain("customMetadata");
+  });
+
   it("allows missing host and environment metadata for code plugins", () => {
     const result = extractCodePluginArtifacts({
       packageName: "demo-plugin",
