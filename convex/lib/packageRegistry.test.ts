@@ -241,6 +241,66 @@ describe("packageRegistry", () => {
     ]);
   });
 
+  it("derives config fields from direct plugin config maps", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        configSchema: {
+          EXAMPLE_DATABASE_URL: {
+            type: "string",
+            required: true,
+            description: "Database connection URL.",
+            uiHints: { sensitive: true },
+          },
+          EXAMPLE_MODEL: {
+            type: "string",
+            required: false,
+            description: "Optional model override.",
+          },
+        },
+      },
+      files: [],
+    });
+
+    expect(summary.configFields).toEqual([
+      {
+        name: "EXAMPLE_DATABASE_URL",
+        description: "Database connection URL.",
+        required: true,
+        sensitive: true,
+      },
+      {
+        name: "EXAMPLE_MODEL",
+        description: "Optional model override.",
+        required: false,
+        sensitive: false,
+      },
+    ]);
+  });
+
+  it("does not treat JSON Schema metadata as direct config fields", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        configSchema: {
+          type: "object",
+          $defs: {
+            sharedSecret: {
+              type: "string",
+              description: "Reusable schema, not a top-level config field.",
+            },
+          },
+          patternProperties: {
+            "^EXAMPLE_": { type: "string" },
+          },
+        },
+      },
+      files: [],
+    });
+
+    expect(summary.configFields).toEqual([]);
+  });
+
   it("derives bundled skills from directory-style skill manifest roots", () => {
     const summary = derivePluginManifestSummary({
       pluginManifest: {

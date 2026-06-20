@@ -11,6 +11,7 @@ import {
   buildCanonicalCatalogMetadataPatch,
   runCatalogMetadataCanonicalization,
   runPluginManifestSummaryBackfill,
+  runPluginManifestSummaryBackfillPage,
   runSkillInstallBackfill,
 } from "./migrations";
 
@@ -22,6 +23,19 @@ type PluginManifestSummaryBackfillWrappedHandler = {
   _handler: (
     ctx: unknown,
     args: { dryRun?: boolean; confirm?: string; maxPackages?: number },
+  ) => Promise<unknown>;
+};
+
+type PluginManifestSummaryBackfillPageWrappedHandler = {
+  _handler: (
+    ctx: unknown,
+    args: {
+      family: "code-plugin" | "bundle-plugin";
+      cursor?: string | null;
+      limit?: number;
+      dryRun?: boolean;
+      confirm?: string;
+    },
   ) => Promise<unknown>;
 };
 
@@ -747,6 +761,89 @@ describe("plugin manifest summary backfill migration", () => {
     await expect(
       handler({ runQuery: vi.fn(), runMutation: vi.fn(), storage: {} }, { dryRun: false }),
     ).rejects.toThrow('Pass confirm="backfill-plugin-manifest-summaries" to apply.');
+  });
+
+  it("applies one cursor page for a single plugin family", async () => {
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      page: [
+        {
+          packageName: "example-ai-plugin",
+          displayName: "Example AI Plugin",
+          release: {
+            _id: packageReleaseId,
+            version: "1.0.0",
+            files: [],
+            compatibility: { builtWithOpenClawVersion: "1.0.0" },
+            extractedPluginManifest: {
+              configSchema: {
+                EXAMPLE_DATABASE_URL: {
+                  type: "string",
+                  required: true,
+                  uiHints: { sensitive: true },
+                },
+              },
+              mcpServers: {
+                exampleMcp: {
+                  command: "node",
+                  args: ["server.js"],
+                },
+              },
+            },
+          },
+        },
+      ],
+      isDone: false,
+      continueCursor: "next-page",
+    });
+    const runMutation = vi.fn().mockResolvedValue(true);
+    const handler = (
+      runPluginManifestSummaryBackfillPage as unknown as PluginManifestSummaryBackfillPageWrappedHandler
+    )._handler;
+
+    const result = await handler(
+      { runQuery, runMutation, storage: {} },
+      {
+        family: "bundle-plugin",
+        cursor: "current-page",
+        limit: 25,
+        dryRun: false,
+        confirm: "backfill-plugin-manifest-summaries",
+      },
+    );
+
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      family: "bundle-plugin",
+      cursor: "current-page",
+      limit: 25,
+    });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: packageReleaseId,
+      pluginManifestSummary: expect.objectContaining({
+        configFields: [
+          {
+            name: "EXAMPLE_DATABASE_URL",
+            required: true,
+            sensitive: true,
+          },
+        ],
+        mcpServers: [{ name: "exampleMcp" }],
+      }),
+    });
+    expect(JSON.stringify(runMutation.mock.calls[0]?.[1]?.pluginManifestSummary)).not.toContain(
+      "server.js",
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      family: "bundle-plugin",
+      continueCursor: "next-page",
+      isDone: false,
+      scannedPackages: 1,
+      eligibleReleases: 1,
+      changedReleases: 1,
+      patchedReleases: 1,
+      skillMarkdownReadErrors: 0,
+    });
   });
 
   it("skips applying a degraded summary when skill markdown cannot be read", async () => {

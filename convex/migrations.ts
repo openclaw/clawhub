@@ -29,6 +29,7 @@ const MAX_PENDING_SKILL_STAT_EVENTS_PER_SKILL = 1_000;
 const PLUGIN_PACKAGE_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const PLUGIN_MANIFEST_SUMMARY_BACKFILL_PAGE_SIZE = 50;
 const PLUGIN_MANIFEST_SUMMARY_BACKFILL_MAX_PACKAGES = 5_000;
+const pluginPackageFamilyValidator = v.union(v.literal("code-plugin"), v.literal("bundle-plugin"));
 
 export const migrations = new Migrations(components.migrations, {
   schema,
@@ -653,6 +654,157 @@ export const runPluginManifestSummaryBackfill = internalAction({
     }
 
     return totals;
+  },
+});
+
+export const runPluginManifestSummaryBackfillPage = internalAction({
+  args: {
+    family: pluginPackageFamilyValidator,
+    cursor: v.optional(v.union(v.string(), v.null())),
+    limit: v.optional(v.number()),
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+  },
+  returns: v.object({
+    ok: v.literal(true),
+    dryRun: v.boolean(),
+    confirmRequired: v.optional(v.string()),
+    family: pluginPackageFamilyValidator,
+    continueCursor: v.string(),
+    isDone: v.boolean(),
+    scannedPackages: v.number(),
+    eligibleReleases: v.number(),
+    changedReleases: v.number(),
+    patchedReleases: v.number(),
+    unchangedReleases: v.number(),
+    skippedMissingRelease: v.number(),
+    skippedMissingManifest: v.number(),
+    skippedSkillMarkdownReadErrorReleases: v.number(),
+    skillMarkdownReadErrors: v.number(),
+    samples: v.array(
+      v.object({
+        packageName: v.string(),
+        displayName: v.string(),
+        version: v.string(),
+        releaseId: v.id("packageReleases"),
+        configFieldCount: v.number(),
+        mcpServerCount: v.number(),
+        bundledSkillCount: v.number(),
+      }),
+    ),
+  }),
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM}" to apply.`,
+      );
+    }
+
+    const limit = Math.max(
+      1,
+      Math.min(
+        PLUGIN_MANIFEST_SUMMARY_BACKFILL_PAGE_SIZE,
+        Math.floor(args.limit ?? PLUGIN_MANIFEST_SUMMARY_BACKFILL_PAGE_SIZE),
+      ),
+    );
+    const page: LatestPluginManifestSummaryCandidatePage = await ctx.runQuery(
+      internal.migrations.listLatestPluginManifestSummaryBackfillCandidates,
+      {
+        family: args.family,
+        cursor: args.cursor ?? null,
+        limit,
+      },
+    );
+
+    let eligibleReleases = 0;
+    let changedReleases = 0;
+    let patchedReleases = 0;
+    let unchangedReleases = 0;
+    let skippedMissingRelease = 0;
+    let skippedMissingManifest = 0;
+    let skippedSkillMarkdownReadErrorReleases = 0;
+    let skillMarkdownReadErrors = 0;
+    const samples: PluginManifestSummaryBackfillSample[] = [];
+
+    for (const candidate of page.page) {
+      if (!candidate.release || candidate.release.softDeletedAt !== undefined) {
+        skippedMissingRelease += 1;
+        continue;
+      }
+
+      const pluginManifest = candidate.release.extractedPluginManifest;
+      if (!isJsonRecord(pluginManifest)) {
+        skippedMissingManifest += 1;
+        continue;
+      }
+
+      eligibleReleases += 1;
+      const filesResult = await withSkillMarkdownTextsForPluginManifestSummaryBackfill(
+        ctx,
+        candidate.release.files,
+      );
+      skillMarkdownReadErrors += filesResult.readErrors;
+      if (filesResult.readErrors > 0) {
+        skippedSkillMarkdownReadErrorReleases += 1;
+        continue;
+      }
+
+      const summary = derivePluginManifestSummary({
+        pluginManifest,
+        ...(isJsonRecord(candidate.release.normalizedBundleManifest)
+          ? { skillManifest: candidate.release.normalizedBundleManifest }
+          : {}),
+        compatibility: candidate.release.compatibility,
+        files: filesResult.files,
+      });
+      if (hasSamePluginManifestSummary(candidate.release, summary)) {
+        unchangedReleases += 1;
+        continue;
+      }
+
+      changedReleases += 1;
+      if (!dryRun) {
+        const patched: boolean = await ctx.runMutation(
+          internal.migrations.applyPluginManifestSummaryBackfillPatch,
+          {
+            releaseId: candidate.release._id,
+            pluginManifestSummary: summary,
+          },
+        );
+        if (patched) patchedReleases += 1;
+      }
+      if (samples.length < 10) {
+        samples.push({
+          packageName: candidate.packageName,
+          displayName: candidate.displayName,
+          version: candidate.release.version,
+          releaseId: candidate.release._id,
+          configFieldCount: summary.configFields.length,
+          mcpServerCount: summary.mcpServers.length,
+          bundledSkillCount: summary.bundledSkills.length,
+        });
+      }
+    }
+
+    return {
+      ok: true as const,
+      dryRun,
+      confirmRequired: dryRun ? BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM : undefined,
+      family: args.family,
+      continueCursor: page.continueCursor,
+      isDone: page.isDone,
+      scannedPackages: page.page.length,
+      eligibleReleases,
+      changedReleases,
+      patchedReleases,
+      unchangedReleases,
+      skippedMissingRelease,
+      skippedMissingManifest,
+      skippedSkillMarkdownReadErrorReleases,
+      skillMarkdownReadErrors,
+      samples,
+    };
   },
 });
 

@@ -179,10 +179,42 @@ function isSensitiveConfigProperty(name: string, property: JsonRecord) {
   if (property.sensitive === true || property.secret === true || property["x-sensitive"] === true) {
     return true;
   }
+  if (isRecord(property.uiHints) && property.uiHints.sensitive === true) {
+    return true;
+  }
   const loweredName = name.toLowerCase();
   if (/(secret|token|api[_-]?key|password|credential)/.test(loweredName)) return true;
   const format = optionalString(property.format)?.toLowerCase();
   return format === "password" || format === "secret";
+}
+
+const CONFIG_SCHEMA_META_KEYS = new Set([
+  "$schema",
+  "$defs",
+  "additionalProperties",
+  "definitions",
+  "description",
+  "dependentSchemas",
+  "patternProperties",
+  "properties",
+  "required",
+  "title",
+  "type",
+  "uiHints",
+]);
+
+function isLikelyDirectConfigFieldProperty(value: JsonRecord) {
+  return (
+    optionalString(value.type) !== undefined ||
+    optionalString(value.description) !== undefined ||
+    optionalString(value.format) !== undefined ||
+    value.required === true ||
+    value.required === false ||
+    value.sensitive === true ||
+    value.secret === true ||
+    value["x-sensitive"] === true ||
+    isRecord(value.uiHints)
+  );
 }
 
 function extractConfigFields(manifest: JsonRecord) {
@@ -194,7 +226,22 @@ function extractConfigFields(manifest: JsonRecord) {
       : undefined;
   if (!schema) return [];
   const required = new Set(normalizeStringList(schema.required));
-  const properties = isRecord(schema.properties) ? schema.properties : {};
+  const shouldReadDirectMap =
+    !isRecord(schema.properties) &&
+    optionalString(schema.type) === undefined &&
+    optionalString(schema["$schema"]) === undefined;
+  const properties = isRecord(schema.properties)
+    ? schema.properties
+    : shouldReadDirectMap
+      ? Object.fromEntries(
+          Object.entries(schema).filter(
+            ([name, value]) =>
+              !CONFIG_SCHEMA_META_KEYS.has(name) &&
+              isRecord(value) &&
+              isLikelyDirectConfigFieldProperty(value),
+          ),
+        )
+      : {};
   return Object.entries(properties)
     .filter((entry): entry is [string, JsonRecord] => isRecord(entry[1]))
     .map(([name, property]) => ({
@@ -202,7 +249,7 @@ function extractConfigFields(manifest: JsonRecord) {
       ...(optionalString(property.description)
         ? { description: optionalString(property.description) }
         : {}),
-      required: required.has(name),
+      required: required.has(name) || property.required === true,
       sensitive: isSensitiveConfigProperty(name, property),
     }));
 }
