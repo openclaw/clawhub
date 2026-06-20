@@ -4,10 +4,36 @@ import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
+const initialListingFixture = {
+  kind: "skills",
+  tab: "popular",
+  categorySlugs: [],
+  fetchLimit: 20,
+  items: [
+    {
+      skill: {
+        _id: "skills:initial",
+        slug: "initial-skill",
+        displayName: "Initial Skill",
+        stats: { installsAllTime: 10 },
+      },
+      ownerHandle: "builder",
+    },
+  ],
+  hasMore: false,
+};
+
+const homeListingSectionMock = vi.fn();
+const fetchInitialHomeListingMock = vi.fn(() => Promise.resolve(initialListingFixture));
+
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: { component?: unknown }) => ({
-    __config: config,
-  }),
+  createFileRoute: () => (config: { component?: unknown }) => {
+    const route = {
+      __config: config,
+      useLoaderData: () => initialListingFixture,
+    };
+    return route;
+  },
   Link: ({ children, className, to }: { children: ReactNode; className?: string; to?: string }) => (
     <a className={className} href={to ?? "/"}>
       {children}
@@ -16,7 +42,14 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("../components/HomeListingSection", () => ({
-  HomeListingSection: () => <section data-testid="home-listing-stub" />,
+  HomeListingSection: (props: unknown) => {
+    homeListingSectionMock(props);
+    return <section data-testid="home-listing-stub" />;
+  },
+}));
+
+vi.mock("../lib/homeListingData", () => ({
+  fetchInitialHomeListing: () => fetchInitialHomeListingMock(),
 }));
 
 vi.mock("../components/HomePopularPublishersSection", () => ({
@@ -36,6 +69,8 @@ describe("home route", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    homeListingSectionMock.mockClear();
+    fetchInitialHomeListingMock.mockClear();
   });
 
   async function renderHome() {
@@ -44,6 +79,11 @@ describe("home route", () => {
       .__config.component;
 
     render(<Component />);
+  }
+
+  async function getRouteLoader() {
+    const { Route } = await import("../routes/index");
+    return (Route as unknown as { __config: { loader: () => Promise<unknown> } }).__config.loader;
   }
 
   function clickHeroLabelTriple() {
@@ -77,6 +117,33 @@ describe("home route", () => {
     expect(screen.queryByText("Featured skills")).toBeNull();
     expect(screen.queryByText("Trending Now")).toBeNull();
     expect(screen.queryByText(/claw for your claw/i)).toBeNull();
+  });
+
+  it("passes the loader listing into the home listing section", async () => {
+    await renderHome();
+
+    expect(homeListingSectionMock).toHaveBeenCalledWith({
+      initialListing: initialListingFixture,
+    });
+  });
+
+  it("loads the default home listing in the route loader", async () => {
+    const loader = await getRouteLoader();
+
+    await expect(loader()).resolves.toBe(initialListingFixture);
+    expect(fetchInitialHomeListingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to client loading when the default listing loader fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchInitialHomeListingMock.mockRejectedValueOnce(new Error("offline"));
+    const loader = await getRouteLoader();
+
+    await expect(loader()).resolves.toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to load initial home listing:",
+      expect.any(Error),
+    );
   });
 
   it("does not render the homepage social proof stats strip", async () => {
