@@ -2181,6 +2181,40 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("the-news");
     expect(result[0].score).toBeGreaterThan(2.8);
   });
+
+  it("filters pending scans before applying the search result limit", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const pending = {
+      skill: makePublicSkill({
+        id: "skills:pending",
+        slug: "search-term-pending",
+        displayName: "Search Term Pending",
+        githubScanStatus: "pending",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const clean = {
+      skill: makePublicSkill({
+        id: "skills:clean",
+        slug: "search-term-clean",
+        displayName: "Search Term Clean",
+        githubScanStatus: "clean",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce([pending, clean]).mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "search term", limit: 1, excludePendingScan: true },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["search-term-clean"]);
+  });
 });
 
 function makePublicSkill(params: {
@@ -2194,6 +2228,7 @@ function makePublicSkill(params: {
   stars?: number;
   categories?: string[];
   topics?: string[];
+  githubScanStatus?: "pending" | "clean" | "suspicious" | "malicious" | "not-run";
 }) {
   return {
     _id: params.id,
@@ -2209,6 +2244,7 @@ function makePublicSkill(params: {
     tags: {},
     categories: params.categories,
     topics: params.topics,
+    githubScanStatus: params.githubScanStatus,
     badges: {},
     stats: {
       downloads: params.downloads ?? 0,

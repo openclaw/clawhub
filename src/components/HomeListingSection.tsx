@@ -98,6 +98,14 @@ function filterPluginsByTab(items: PackageListItem[], tab: ListingTab) {
   return items;
 }
 
+function isNewSkillEligible(skill: PublicSkill) {
+  return (
+    !skill.isSuspicious &&
+    skill.githubScanStatus !== "pending" &&
+    skill.githubScanStatus !== "suspicious"
+  );
+}
+
 function itemMatchesAnyCategory(
   item: { categories?: readonly string[] | null },
   categorySlugs: readonly string[],
@@ -269,8 +277,10 @@ async function fetchSkillListing(
         });
         if (Array.isArray(result)) break;
 
-        const resultPage = ((result as { page?: SkillPageEntry[] }).page ?? []).filter((entry) =>
-          skillMatchesAnyCategory(entry.skill, categorySlugs),
+        const resultPage = ((result as { page?: SkillPageEntry[] }).page ?? []).filter(
+          (entry) =>
+            skillMatchesAnyCategory(entry.skill, categorySlugs) &&
+            (tab !== "new" || isNewSkillEligible(entry.skill)),
         );
         page.push(...resultPage);
 
@@ -309,6 +319,7 @@ async function fetchPluginListing(
           category: categorySlug ?? undefined,
           cursor: cursor ?? undefined,
           isOfficial: openClawOfficials ? true : undefined,
+          excludedScanStatuses: tab === "new" ? ["pending", "suspicious"] : undefined,
           sort: tab === "new" ? "updated" : "installs",
           limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
           signal,
@@ -631,6 +642,7 @@ export function HomeListingSection() {
                 convexHttp.action(api.search.searchSkills, {
                   query: trimmedSearch,
                   limit: fetchLimit,
+                  ...(tab === "new" ? { nonSuspiciousOnly: true, excludePendingScan: true } : {}),
                   ...(categorySlug ? { categorySlug } : {}),
                 }),
               ),
@@ -644,7 +656,11 @@ export function HomeListingSection() {
                       ownerHandle: hit.ownerHandle,
                       owner: hit.owner,
                     }))
-                    .filter((entry) => skillMatchesAnyCategory(entry.skill, categorySlugs)),
+                    .filter(
+                      (entry) =>
+                        skillMatchesAnyCategory(entry.skill, categorySlugs) &&
+                        (tab !== "new" || isNewSkillEligible(entry.skill)),
+                    ),
                 ),
               );
               const sortedRows = tab === "new" ? sortSkillEntries(rows, tab) : rows;
@@ -661,6 +677,7 @@ export function HomeListingSection() {
                   q: trimmedSearch,
                   category: categorySlug ?? undefined,
                   isOfficial: tab === "officials" ? true : undefined,
+                  excludedScanStatuses: tab === "new" ? ["pending", "suspicious"] : undefined,
                   sort: tab === "new" ? "updated" : "installs",
                   limit: fetchLimit,
                   signal: controller.signal,

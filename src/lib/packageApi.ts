@@ -369,6 +369,7 @@ export async function fetchPackages(params: {
   category?: string;
   topic?: string;
   officialFirst?: boolean;
+  excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
   sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
@@ -410,6 +411,9 @@ export async function fetchPackages(params: {
   if (params.category) url.searchParams.set("category", params.category);
   if (params.topic) url.searchParams.set("topic", params.topic);
   if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+  if (params.excludedScanStatuses?.length) {
+    url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
+  }
   if (params.sort) url.searchParams.set("sort", params.sort);
   return await fetchJson<{ items: PackageListItem[]; nextCursor: string | null }>(
     url,
@@ -426,6 +430,7 @@ export async function fetchPluginCatalog(params: {
   category?: string;
   topic?: string;
   officialFirst?: boolean;
+  excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
   sort?: PackageCatalogSort;
   limit?: number;
   signal?: AbortSignal;
@@ -440,6 +445,7 @@ export async function fetchPluginCatalog(params: {
       category: params.category,
       topic: params.topic,
       officialFirst: params.officialFirst,
+      excludedScanStatuses: params.excludedScanStatuses,
       sort: params.sort,
       limit: params.limit,
       signal: params.signal,
@@ -469,6 +475,9 @@ export async function fetchPluginCatalog(params: {
     if (params.featured) url.searchParams.set("featured", "true");
     if (params.category) url.searchParams.set("category", params.category);
     if (params.topic) url.searchParams.set("topic", params.topic);
+    if (params.excludedScanStatuses?.length) {
+      url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
+    }
     const response = await fetchJson<{
       results?: Array<{
         score: number;
@@ -491,6 +500,9 @@ export async function fetchPluginCatalog(params: {
   if (params.category) url.searchParams.set("category", params.category);
   if (params.topic) url.searchParams.set("topic", params.topic);
   if (params.officialFirst) url.searchParams.set("officialFirst", "true");
+  if (params.excludedScanStatuses?.length) {
+    url.searchParams.set("excludeScanStatus", params.excludedScanStatuses.join(","));
+  }
   if (params.sort) url.searchParams.set("sort", params.sort);
   const result = await fetchJson<PluginCatalogResult>(url, params.signal);
   return {

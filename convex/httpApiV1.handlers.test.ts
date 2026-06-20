@@ -8841,6 +8841,35 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
+  it("plugins list forwards excluded scan statuses to both plugin families", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (Object.keys(args).length === 0) {
+        throw new Error("filtered listings must not query the global count");
+      }
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/plugins?sort=updated&excludeScanStatus=pending,suspicious",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const familyCalls = runQuery.mock.calls.filter(([, args]) => "family" in args);
+    expect(familyCalls).toHaveLength(2);
+    for (const [, args] of familyCalls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          excludedScanStatuses: ["pending", "suspicious"],
+          sort: "updated",
+        }),
+      );
+    }
+  });
+
   it("plugins list recommended sort uses weighted scores across plugin families", async () => {
     const codePlugin = makeCatalogItem("code-starred", {
       family: "code-plugin",
@@ -9361,6 +9390,28 @@ describe("httpApiV1 handlers", () => {
           query: "metrics",
           category: "gateway",
           limit: 7,
+        }),
+      );
+    }
+  });
+
+  it("plugins search forwards excluded scan statuses to both plugin families", async () => {
+    const runQuery = vi.fn().mockResolvedValue([]);
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.pluginsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/plugins/search?q=calendar&excludeScanStatus=pending,suspicious",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledTimes(2);
+    for (const [, args] of runQuery.mock.calls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          excludedScanStatuses: ["pending", "suspicious"],
         }),
       );
     }

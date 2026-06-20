@@ -290,6 +290,7 @@ export const searchSkills: ReturnType<typeof action> = action({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+    excludePendingScan: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
   },
@@ -316,14 +317,20 @@ export const searchSkills: ReturnType<typeof action> = action({
         : rawExactSlugMatches
           ? [rawExactSlugMatches]
           : []
-    ).filter((entry) => !args.highlightedOnly || isSkillHighlighted(entry.skill));
-    const directPrefixMatches = (await ctx.runQuery(internal.search.directPrefixSkillMatches, {
-      query,
-      highlightedOnly: args.highlightedOnly,
-      nonSuspiciousOnly: args.nonSuspiciousOnly,
-      categorySlug,
-      topic,
-    })) as SkillSearchEntry[];
+    ).filter(
+      (entry) =>
+        (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
+        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
+    );
+    const directPrefixMatches = (
+      (await ctx.runQuery(internal.search.directPrefixSkillMatches, {
+        query,
+        highlightedOnly: args.highlightedOnly,
+        nonSuspiciousOnly: args.nonSuspiciousOnly,
+        categorySlug,
+        topic,
+      })) as SkillSearchEntry[]
+    ).filter((entry) => !args.excludePendingScan || entry.skill.githubScanStatus !== "pending");
     let vector: number[] | null;
     try {
       vector = await generateEmbedding(query);
@@ -385,7 +392,9 @@ export const searchSkills: ReturnType<typeof action> = action({
         // Skills already have badges from their docs (via toPublicSkill).
         // No need for a separate badge table lookup.
         const filtered = hydrated.filter(
-          (entry) => !args.highlightedOnly || isSkillHighlighted(entry.skill),
+          (entry) =>
+            (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
+            (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
         );
 
         exactMatches = filtered.filter((entry) =>
@@ -426,12 +435,15 @@ export const searchSkills: ReturnType<typeof action> = action({
             ),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
+            excludePendingScan: args.excludePendingScan,
             skipExactSlugLookup: true,
             categorySlug,
             topic,
           })) as SkillSearchEntry[]);
-    const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches).filter((entry) =>
-      matchesCatalogFilters(entry.skill, categorySlug, topic),
+    const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches).filter(
+      (entry) =>
+        matchesCatalogFilters(entry.skill, categorySlug, topic) &&
+        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
     );
 
     const rankedMatches = mergedMatches
@@ -882,6 +894,7 @@ export const lexicalFallbackSkills = internalQuery({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+    excludePendingScan: v.optional(v.boolean()),
     skipExactSlugLookup: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
@@ -916,6 +929,7 @@ export const lexicalFallbackSkills = internalQuery({
         if (
           !exactSlugSkill.softDeletedAt &&
           (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
+          (!args.excludePendingScan || exactSlugSkill.githubScanStatus !== "pending") &&
           matchesCatalogFilters(exactSlugSkill, categorySlug, topic)
         ) {
           seenSkillIds.add(exactSlugSkill._id);
@@ -958,6 +972,7 @@ export const lexicalFallbackSkills = internalQuery({
       const skill = digestToHydratableSkill(digest);
       return (
         (!args.highlightedOnly || isSkillHighlighted(skill)) &&
+        (!args.excludePendingScan || skill.githubScanStatus !== "pending") &&
         matchesCatalogFilters(skill, categorySlug, topic) &&
         matchesExactTokens(args.queryTokens, [
           skill.displayName,
@@ -986,6 +1001,7 @@ export const lexicalFallbackSkills = internalQuery({
         if (seenSkillIds.has(digest.skillId)) continue;
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
+        if (args.excludePendingScan && skill.githubScanStatus === "pending") continue;
         if (!matchesCatalogFilters(skill, categorySlug, topic)) continue;
         seenSkillIds.add(digest.skillId);
         candidates.push(skill);

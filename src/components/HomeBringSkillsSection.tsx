@@ -78,7 +78,6 @@ const TABS: AudienceTab[] = [
       { text: "clawhub login" },
       { text: "clawhub skill publish ./my-skill --slug my-skill --version 1.0.0" },
       { text: "clawhub package publish your-org/your-plugin" },
-      { text: "clawhub sync --all" },
     ],
   },
 ];

@@ -310,6 +310,13 @@ const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
 const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "installs"] as const;
+const PACKAGE_SCAN_STATUS_VALUES = [
+  "clean",
+  "suspicious",
+  "malicious",
+  "pending",
+  "not-run",
+] as const;
 const LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES = {
   "mcp-tooling": "tools",
   data: "tools",
@@ -330,6 +337,27 @@ function resolvePluginCategoryFilter(value: string | undefined): PluginCategoryS
   return LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES[
     value as keyof typeof LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES
   ];
+}
+
+function parseExcludedScanStatuses(value: string | null) {
+  if (!value) return { ok: true as const, value: undefined };
+  const statuses = [
+    ...new Set(
+      value
+        .split(",")
+        .map((status) => status.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const invalid = statuses.find(
+    (status) =>
+      !PACKAGE_SCAN_STATUS_VALUES.includes(status as (typeof PACKAGE_SCAN_STATUS_VALUES)[number]),
+  );
+  if (invalid) return { ok: false as const, message: `Invalid excludeScanStatus: ${invalid}` };
+  return {
+    ok: true as const,
+    value: statuses as Array<(typeof PACKAGE_SCAN_STATUS_VALUES)[number]>,
+  };
 }
 
 function invalidQueryParamMessage(name: string) {
@@ -430,6 +458,7 @@ type PackageListQueryArgs = {
   category?: string;
   topic?: string;
   officialFirst?: boolean;
+  excludedScanStatuses?: Array<(typeof PACKAGE_SCAN_STATUS_VALUES)[number]>;
   sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
@@ -1067,6 +1096,7 @@ async function searchPackageCatalog(
     highlightedOnly?: boolean;
     category?: string;
     topic?: string;
+    excludedScanStatuses?: Array<(typeof PACKAGE_SCAN_STATUS_VALUES)[number]>;
     viewerUserId?: Id<"users">;
   },
 ): Promise<CatalogSearchEntry[]> {
@@ -1082,6 +1112,7 @@ async function searchPackageCatalog(
       highlightedOnly: args.highlightedOnly,
       category: args.category,
       topic: args.topic,
+      excludedScanStatuses: args.excludedScanStatuses,
       viewerUserId: args.viewerUserId,
     },
   );
@@ -1471,6 +1502,10 @@ async function listPackages(
   const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
   const officialFirst = parseBooleanQueryParam(url.searchParams, "officialFirst");
   if (!officialFirst.ok) return text(officialFirst.message, 400, rate.headers);
+  const excludedScanStatuses = parseExcludedScanStatuses(url.searchParams.get("excludeScanStatus"));
+  if (!excludedScanStatuses.ok) {
+    return text(excludedScanStatuses.message, 400, rate.headers);
+  }
   if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
@@ -1559,6 +1594,7 @@ async function listPackages(
             category,
             topic,
             officialFirst: officialFirst.value,
+            excludedScanStatuses: excludedScanStatuses.value,
             sort: unifiedListSort,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
@@ -1631,7 +1667,8 @@ async function listPackages(
       !topic &&
       !channelParam.value &&
       typeof isOfficial.value !== "boolean" &&
-      !highlightedOnly;
+      !highlightedOnly &&
+      !excludedScanStatuses.value?.length;
     const totalCount = includeTotalCount
       ? await runQueryRef<number | null>(ctx, internalRefs.packages.countPublicPluginsInternal, {})
       : null;
@@ -1675,6 +1712,7 @@ async function listPackages(
         category,
         topic,
         officialFirst: officialFirst.value,
+        excludedScanStatuses: excludedScanStatuses.value,
         sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
@@ -1754,6 +1792,7 @@ async function listPackages(
     category,
     topic,
     officialFirst: officialFirst.value,
+    excludedScanStatuses: excludedScanStatuses.value,
     sort: effectiveSort,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
@@ -3203,6 +3242,10 @@ async function searchPackages(
   const rawCategory = url.searchParams.get("category")?.trim() || undefined;
   const category = resolvePluginCategoryFilter(rawCategory);
   const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
+  const excludedScanStatuses = parseExcludedScanStatuses(url.searchParams.get("excludeScanStatus"));
+  if (!excludedScanStatuses.ok) {
+    return text(excludedScanStatuses.message, 400, rate.headers);
+  }
   if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
@@ -3243,6 +3286,7 @@ async function searchPackages(
             highlightedOnly: highlightedOnly || undefined,
             category,
             topic,
+            excludedScanStatuses: excludedScanStatuses.value,
             viewerUserId: viewerUserId ?? undefined,
           }),
         ),
@@ -3268,6 +3312,7 @@ async function searchPackages(
         highlightedOnly: highlightedOnly || undefined,
         category,
         topic,
+        excludedScanStatuses: excludedScanStatuses.value,
         viewerUserId: viewerUserId ?? undefined,
       });
     }
@@ -3281,6 +3326,7 @@ async function searchPackages(
         highlightedOnly: highlightedOnly || undefined,
         category,
         topic,
+        excludedScanStatuses: excludedScanStatuses.value,
         viewerUserId: viewerUserId ?? undefined,
       }),
       runQueryRef<CatalogSearchEntry[]>(

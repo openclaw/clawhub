@@ -44,7 +44,6 @@ function PopularPublisherCard({
       params={{ handle: pinned.handle }}
       className="home-v2-popular-publisher-card"
       aria-label={`${name}, @${pinned.handle}`}
-      role="listitem"
       draggable={false}
     >
       <div className="home-v2-popular-publisher-head">
@@ -115,7 +114,6 @@ export function HomePopularPublishersSection() {
       scrollLeft: viewport.scrollLeft,
       moved: false,
     };
-    viewport.setPointerCapture(event.pointerId);
     setDragging(true);
   };
 
@@ -123,7 +121,12 @@ export function HomePopularPublishersSection() {
     const viewport = viewportRef.current;
     if (!viewport || dragRef.current.pointerId !== event.pointerId) return;
     const distance = event.clientX - dragRef.current.startX;
-    if (Math.abs(distance) > 4) dragRef.current.moved = true;
+    if (Math.abs(distance) > 4) {
+      dragRef.current.moved = true;
+      if (!viewport.hasPointerCapture(event.pointerId)) {
+        viewport.setPointerCapture(event.pointerId);
+      }
+    }
     viewport.scrollLeft = dragRef.current.scrollLeft - distance;
   };
 
@@ -162,7 +165,7 @@ export function HomePopularPublishersSection() {
           dragRef.current.moved = false;
         }}
       >
-        <div className="home-v2-popular-publishers-track" role="list">
+        <div className="home-v2-popular-publishers-track">
           {PINNED_PUBLISHERS.map((publisher) => (
             <PopularPublisherCard
               key={publisher.handle}

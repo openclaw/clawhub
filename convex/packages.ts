@@ -117,6 +117,14 @@ const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
 const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
 const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
+const packageListScanStatusValidator = v.union(
+  v.literal("clean"),
+  v.literal("suspicious"),
+  v.literal("malicious"),
+  v.literal("pending"),
+  v.literal("not-run"),
+);
+type PackageListScanStatus = NonNullable<Doc<"packages">["scanStatus"]>;
 const MAX_APPEAL_MESSAGE_LENGTH = 2_000;
 const MAX_OFFICIAL_MIGRATION_BLOCKERS = 20;
 const MAX_OFFICIAL_MIGRATION_FIELD_LENGTH = 300;
@@ -1116,8 +1124,13 @@ function packageArtifactSummary(
 
 function digestMatchesFilters(
   digest: PackageDigestLike,
-  args: { category?: string; topic?: string },
+  args: {
+    category?: string;
+    topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
+  },
 ) {
+  if (digest.scanStatus && args.excludedScanStatuses?.includes(digest.scanStatus)) return false;
   if (args.category) {
     if (digest.pluginCategory) {
       if (digest.pluginCategory !== args.category) return false;
@@ -1139,6 +1152,7 @@ function digestMatchesSearchFilters(
     isOfficial?: boolean;
     category?: string;
     topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
   if (args.family && digest.family !== args.family) return false;
@@ -1157,8 +1171,10 @@ function packageMatchesListFilters(
     isOfficial?: boolean;
     category?: string;
     topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
   },
 ) {
+  if (pkg.scanStatus && args.excludedScanStatuses?.includes(pkg.scanStatus)) return false;
   if (args.family && pkg.family !== args.family) return false;
   if (args.channel && pkg.channel !== args.channel) return false;
   if (typeof args.isOfficial === "boolean" && pkg.isOfficial !== args.isOfficial) return false;
@@ -2701,6 +2717,7 @@ export const listPublicPage = query({
     category: v.optional(v.string()),
     topic: v.optional(v.string()),
     officialFirst: v.optional(v.boolean()),
+    excludedScanStatuses: v.optional(v.array(packageListScanStatusValidator)),
     sort: v.optional(
       v.union(
         v.literal("updated"),
@@ -3177,6 +3194,7 @@ export const listPageForViewerInternal = internalQuery({
     category: v.optional(v.string()),
     topic: v.optional(v.string()),
     officialFirst: v.optional(v.boolean()),
+    excludedScanStatuses: v.optional(v.array(packageListScanStatusValidator)),
     sort: v.optional(
       v.union(
         v.literal("updated"),
@@ -3235,6 +3253,7 @@ async function listPackagePageImpl(
     category?: string;
     topic?: string;
     officialFirst?: boolean;
+    excludedScanStatuses?: PackageListScanStatus[];
     sort?: "updated" | "downloads" | "recommended" | "installs";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
@@ -3436,7 +3455,8 @@ async function listPackagePageImpl(
   let pageOffset = offset;
   let pageSize: number | null = decodedCursor.pageSize ?? null;
   let done = decodedCursor.done;
-  const requiresDigestPostFilterScan = hasCatalogMetadataFilter;
+  const requiresDigestPostFilterScan =
+    hasCatalogMetadataFilter || Boolean(args.excludedScanStatuses?.length);
   let digestScanPages = 0;
   let remainingDigestScanBudget = requiresDigestPostFilterScan
     ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS
@@ -3624,6 +3644,7 @@ export const searchPublic = query({
     highlightedOnly: v.optional(v.boolean()),
     category: v.optional(v.string()),
     topic: v.optional(v.string()),
+    excludedScanStatuses: v.optional(v.array(packageListScanStatusValidator)),
   },
   handler: async (ctx, args) => {
     return (await searchPackagesImpl(ctx, args)).map(toPublicPackageSearchEntry);
@@ -3644,6 +3665,7 @@ export const searchForViewerInternal = internalQuery({
     highlightedOnly: v.optional(v.boolean()),
     category: v.optional(v.string()),
     topic: v.optional(v.string()),
+    excludedScanStatuses: v.optional(v.array(packageListScanStatusValidator)),
     viewerUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
@@ -3662,6 +3684,7 @@ async function searchPackagesImpl(
     highlightedOnly?: boolean;
     category?: string;
     topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
     viewerUserId?: Id<"users">;
   },
 ) {
@@ -3680,6 +3703,9 @@ async function searchPackagesImpl(
   if (args.highlightedOnly) {
     const digests = await fetchHighlightedPackageDigests(ctx, { ...args, category, topic });
     const entries = digests
+      .filter(
+        (digest) => !digest.scanStatus || !args.excludedScanStatuses?.includes(digest.scanStatus),
+      )
       .map((digest) => {
         const match = packageSearchMatch(digest, queryText);
         return match ? { ...match, package: digest } : null;

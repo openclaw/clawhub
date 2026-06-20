@@ -142,6 +142,7 @@ const listPublicPageHandler = (
       topic?: string;
       officialFirst?: boolean;
       highlightedOnly?: boolean;
+      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
       sort?: "updated" | "downloads" | "recommended" | "installs";
       paginationOpts: { cursor: string | null; numItems: number };
     },
@@ -160,6 +161,7 @@ const listPageForViewerInternalHandler = (
       topic?: string;
       officialFirst?: boolean;
       highlightedOnly?: boolean;
+      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
       sort?: "updated" | "downloads" | "recommended" | "installs";
       viewerUserId?: string;
       paginationOpts: { cursor: string | null; numItems: number };
@@ -284,6 +286,7 @@ const searchPublicHandler = (
       capabilityTag?: string;
       category?: string;
       topic?: string;
+      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
     },
     Array<{ package: { name: string } }>
   >
@@ -300,6 +303,7 @@ const searchForViewerInternalHandler = (
       capabilityTag?: string;
       category?: string;
       topic?: string;
+      excludedScanStatuses?: Array<"clean" | "suspicious" | "malicious" | "pending" | "not-run">;
       viewerUserId?: string;
     },
     Array<{ package: { name: string } }>
@@ -2446,6 +2450,32 @@ describe("packages public queries", () => {
     expect((result.page[0] as { stats?: unknown }).stats).toEqual(stats);
   });
 
+  it("fills filtered pages without pending or suspicious packages", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("pending", { scanStatus: "pending", updatedAt: 40 }),
+            makeDigest("suspicious", { scanStatus: "suspicious", updatedAt: 30 }),
+            makeDigest("clean", { scanStatus: "clean", updatedAt: 20 }),
+            makeDigest("not-run", { scanStatus: "not-run", updatedAt: 10 }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      sort: "updated",
+      excludedScanStatuses: ["pending", "suspicious"],
+      paginationOpts: { cursor: null, numItems: 2 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["clean", "not-run"]);
+    expect(result.isDone).toBe(true);
+  });
+
   it("uses current package stats when digest stats are stale", async () => {
     const currentStats = { downloads: 99, installs: 7, stars: 2, versions: 3 };
     const { ctx } = makeDigestCtx({
@@ -3565,6 +3595,30 @@ describe("packages public queries", () => {
     });
 
     expect(result.map((entry) => entry.package.name)).toEqual(["tools-demo"]);
+  });
+
+  it("excludes selected scan statuses from package search", async () => {
+    const { ctx } = makeDigestCtx({
+      pages: [
+        {
+          page: [
+            makeDigest("pending-demo", { scanStatus: "pending" }),
+            makeDigest("suspicious-demo", { scanStatus: "suspicious" }),
+            makeDigest("clean-demo", { scanStatus: "clean" }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "demo",
+      limit: 10,
+      excludedScanStatuses: ["pending", "suspicious"],
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["clean-demo"]);
   });
 
   it("allows owners to search their private packages", async () => {

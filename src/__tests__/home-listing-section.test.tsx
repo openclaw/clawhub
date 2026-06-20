@@ -304,6 +304,144 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("999")).toBeNull();
   });
 
+  it("keeps pending and suspicious audits out of skill New", async () => {
+    convexQueryMock.mockResolvedValue({
+      page: [
+        {
+          skill: {
+            _id: "skills:pending",
+            slug: "pending-skill",
+            displayName: "Pending Skill",
+            githubScanStatus: "pending",
+            createdAt: 30,
+            updatedAt: 30,
+            stats: { installsAllTime: 0 },
+          },
+          ownerHandle: "builder",
+        },
+        {
+          skill: {
+            _id: "skills:moderated-suspicious",
+            slug: "moderated-suspicious-skill",
+            displayName: "Moderated Suspicious Skill",
+            isSuspicious: true,
+            createdAt: 25,
+            updatedAt: 25,
+            stats: { installsAllTime: 0 },
+          },
+          ownerHandle: "builder",
+        },
+        {
+          skill: {
+            _id: "skills:suspicious",
+            slug: "suspicious-skill",
+            displayName: "Suspicious Skill",
+            githubScanStatus: "suspicious",
+            createdAt: 20,
+            updatedAt: 20,
+            stats: { installsAllTime: 0 },
+          },
+          ownerHandle: "builder",
+        },
+        {
+          skill: {
+            _id: "skills:clean",
+            slug: "clean-skill",
+            displayName: "Clean Skill",
+            githubScanStatus: "clean",
+            createdAt: 10,
+            updatedAt: 10,
+            stats: { installsAllTime: 0 },
+          },
+          ownerHandle: "builder",
+        },
+      ],
+      hasMore: false,
+      nextCursor: null,
+    });
+
+    render(<HomeListingSection />);
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Clean Skill")).toBeTruthy();
+    });
+    expect(screen.queryByText("Pending Skill")).toBeNull();
+    expect(screen.queryByText("Suspicious Skill")).toBeNull();
+    expect(screen.queryByText("Moderated Suspicious Skill")).toBeNull();
+  });
+
+  it("asks the plugin catalog to exclude pending and suspicious audits from New", async () => {
+    render(<HomeListingSection />);
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+
+    await waitFor(() => {
+      expect(fetchPluginCatalogMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          excludedScanStatuses: ["pending", "suspicious"],
+          sort: "updated",
+        }),
+      );
+    });
+  });
+
+  it("keeps pending and suspicious audits out of New search", async () => {
+    convexActionMock.mockResolvedValue([
+      {
+        skill: {
+          _id: "skills:pending-search",
+          slug: "pending-search",
+          displayName: "Pending Search Skill",
+          githubScanStatus: "pending",
+          createdAt: 2,
+          updatedAt: 2,
+          stats: { installsAllTime: 0 },
+        },
+        ownerHandle: "builder",
+      },
+      {
+        skill: {
+          _id: "skills:clean-search",
+          slug: "clean-search",
+          displayName: "Clean Search Skill",
+          githubScanStatus: "clean",
+          createdAt: 1,
+          updatedAt: 1,
+          stats: { installsAllTime: 0 },
+        },
+        ownerHandle: "builder",
+      },
+    ]);
+
+    render(<HomeListingSection />);
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "search" } });
+
+    await waitFor(() => {
+      expect(convexActionMock).toHaveBeenCalledWith("search:searchSkills", {
+        query: "search",
+        limit: 20,
+        nonSuspiciousOnly: true,
+        excludePendingScan: true,
+      });
+      expect(screen.getByText("Clean Search Skill")).toBeTruthy();
+    });
+    expect(screen.queryByText("Pending Search Skill")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+    fireEvent.click(screen.getByRole("tab", { name: "New" }));
+    await waitFor(() =>
+      expect(fetchPluginCatalogMock).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          excludedScanStatuses: ["pending", "suspicious"],
+          q: "search",
+        }),
+      ),
+    );
+  });
+
   it("requests official plugins from the catalog API", async () => {
     fetchPluginCatalogMock.mockResolvedValue({
       items: [
