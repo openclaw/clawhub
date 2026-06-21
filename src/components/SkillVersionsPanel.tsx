@@ -85,54 +85,53 @@ export function SkillVersionsPanel({
 
   return (
     <>
-      <div className="grid max-w-full gap-5 overflow-x-auto">
-        <div>
-          <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">
-            Versions
-          </h2>
-          <p className="m-0 text-sm text-[color:var(--ink-soft)]">
-            {nixPlugin
-              ? "Review release history and changelog."
-              : "Download older releases or scan the changelog."}
-          </p>
+      <div className="tab-body skill-versions-panel">
+        <div className="skill-versions-header">
+          <h2>Versions</h2>
+          <div className="skill-versions-header-copy">
+            <p>
+              {nixPlugin
+                ? "Review release history and changelog."
+                : "Download older releases or scan the changelog."}
+            </p>
+          </div>
           {suppressedMessage ? (
-            <p className="text-sm text-[color:var(--ink-soft)]">{suppressedMessage}</p>
+            <p className="skill-versions-suppressed-message">{suppressedMessage}</p>
           ) : null}
         </div>
-        <div className="max-h-[600px] overflow-y-auto">
-          <div className="flex flex-col gap-3">
+        <div className="skill-versions-scroll">
+          <div className="skill-versions-list">
             {visibleVersions.map((version) => {
               const isLatest =
                 version._id === latestVersionId || version._id === latestTaggedVersionId;
               const isAvailable =
                 version.softDeletedAt === undefined && version.ownerDeletedAt === undefined;
               return (
-                <div
+                <article
                   key={version._id}
-                  className="flex items-start justify-between gap-4 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
+                  className="skill-version-release"
                 >
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div>
-                      v{version.version} · {new Date(version.createdAt).toLocaleDateString()}
-                      {version.changelogSource === "auto" ? (
-                        <span className="text-[color:var(--ink-soft)]"> · auto</span>
-                      ) : null}
-                    </div>
-                    <div className="whitespace-pre-wrap break-words text-[color:var(--ink-soft)]">
-                      {version.changelog}
-                    </div>
-                    <div className="pt-1">
-                      {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
+                  <div className="skill-version-release-meta">
+                    <strong>v{version.version}</strong>
+                    <span>{new Date(version.createdAt).toLocaleDateString()}</span>
+                    {version.changelogSource === "auto" ? (
+                      <span className="skill-version-release-source">auto</span>
+                    ) : null}
+                  </div>
+                  <div className="skill-version-release-body">
+                    <div className="skill-version-release-changelog">{version.changelog}</div>
+                    {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
+                      <div className="skill-version-release-scan">
                         <SecurityScanResults
                           sha256hash={version.sha256hash}
                           vtAnalysis={version.vtAnalysis}
                           llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
                           variant="badge"
                         />
-                      ) : null}
-                    </div>
+                      </div>
+                    ) : null}
                   </div>
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                  <div className="skill-version-release-actions">
                     {isLatest ? <Badge variant="compact">Latest</Badge> : null}
                     {!nixPlugin && isAvailable ? (
                       <a
@@ -142,7 +141,7 @@ export function SkillVersionsPanel({
                           ownerHandle,
                           version.version,
                         )}
-                        className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold text-xs min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] transition-all duration-200 no-underline"
+                        className="skill-version-release-download"
                       >
                         Zip
                       </a>
@@ -159,7 +158,7 @@ export function SkillVersionsPanel({
                       </Button>
                     ) : null}
                   </div>
-                </div>
+                </article>
               );
             })}
           </div>

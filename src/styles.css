@@ -6897,7 +6897,143 @@ code {
   justify-self: end;
 }
 
+.skill-versions-panel {
+  display: grid;
+  gap: 18px;
+}
+
+.skill-versions-header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  min-width: 0;
+}
+
+.skill-versions-header h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.skill-versions-header-copy,
+.skill-versions-suppressed-message {
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.4;
+}
+
+.skill-versions-header-copy p,
+.skill-versions-suppressed-message {
+  margin: 0;
+}
+
+.skill-versions-scroll {
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.skill-versions-list {
+  display: grid;
+  gap: 10px;
+}
+
+.skill-version-release {
+  display: grid;
+  grid-template-columns: minmax(120px, 0.24fr) minmax(0, 1fr) auto;
+  gap: 16px;
+  align-items: start;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+}
+
+.skill-version-release-meta {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  color: var(--ink-soft);
+  font-size: 0.82rem;
+  line-height: 1.35;
+}
+
+.skill-version-release-meta strong {
+  color: var(--ink);
+  font-size: 0.92rem;
+  font-weight: 650;
+}
+
+.skill-version-release-source {
+  color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
+}
+
+.skill-version-release-body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.skill-version-release-changelog {
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.skill-version-release-scan {
+  min-width: 0;
+}
+
+.skill-version-release-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.skill-version-release-download {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 6px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  background: var(--surface);
+  color: var(--ink);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.skill-version-release-download:hover {
+  text-decoration: none;
+}
+
 @media (max-width: 760px) {
+  .skill-versions-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .skill-version-release {
+    grid-template-columns: 1fr;
+  }
+
+  .skill-version-release-actions {
+    justify-content: flex-start;
+  }
+
   .navbar-inner {
     padding: 0;
   }
