@@ -4560,34 +4560,14 @@ code {
   min-width: 0;
 }
 
-.skill-hero-layout.has-sidebar {
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-  column-gap: clamp(56px, 7vw, 96px);
-}
-
 .skill-hero-main {
   display: grid;
   gap: 20px;
   min-width: 0;
-  position: relative;
-  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
-  border-radius: var(--r-lg);
-  padding: clamp(18px, 2vw, 24px);
-  background:
-    radial-gradient(
-      ellipse at 18% 0%,
-      color-mix(in srgb, var(--accent) 13%, transparent) 0%,
-      transparent 34%
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-muted) 54%, transparent) 0%,
-      transparent 72%
-    );
 }
 
 .skill-hero-layout.has-sidebar .skill-summary-block {
-  max-width: none;
+  max-width: calc(100% - min(360px, max(300px, 26.5vw)) - clamp(56px, 7vw, 96px));
 }
 
 .skill-hero-lower {
@@ -4601,20 +4581,6 @@ code {
 .skill-hero-lower.has-sidebar {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: clamp(56px, 7vw, 96px);
-}
-
-.skill-hero-layout.has-sidebar .skill-hero-lower {
-  display: contents;
-}
-
-.skill-hero-layout.has-sidebar .skill-hero-main-extra {
-  grid-column: 1;
-  grid-row: 2;
-}
-
-.skill-hero-layout.has-sidebar .skill-hero-sidebar {
-  grid-column: 2;
-  grid-row: 1 / span 2;
 }
 
 .skill-hero-main-extra {
@@ -6459,16 +6425,7 @@ code {
   display: grid;
   gap: 18px;
   max-width: 100%;
-  overflow: hidden;
-  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  border-radius: var(--r-lg);
-  background:
-    radial-gradient(
-      ellipse at 10% 0%,
-      color-mix(in srgb, var(--accent) 10%, transparent) 0%,
-      transparent 34%
-    ),
-    color-mix(in srgb, var(--surface-muted) 58%, var(--bg));
+  overflow: visible;
 }
 
 .tab-header {
@@ -6476,9 +6433,9 @@ code {
   flex-wrap: wrap;
   align-items: center;
   gap: 22px;
-  padding: 0 18px;
+  padding: 0;
   border-bottom: 1px solid var(--line);
-  background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
+  background: transparent;
   overflow: visible;
   scrollbar-width: none;
   max-width: 100%;
@@ -6513,7 +6470,10 @@ code {
   gap: 20px;
   max-width: 100%;
   overflow-x: auto;
-  padding: 10px 18px 22px;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: var(--r-lg);
+  padding: 22px;
+  background: color-mix(in srgb, var(--surface-muted) 58%, var(--bg));
 }
 
 .tab-body .markdown {
@@ -7067,21 +7027,6 @@ code {
   .skill-hero-lower.has-sidebar {
     grid-template-columns: minmax(0, 1fr);
     gap: 28px;
-  }
-
-  .skill-hero-layout.has-sidebar {
-    grid-template-columns: minmax(0, 1fr);
-    column-gap: 0;
-  }
-
-  .skill-hero-layout.has-sidebar .skill-hero-lower {
-    display: grid;
-  }
-
-  .skill-hero-layout.has-sidebar .skill-hero-main-extra,
-  .skill-hero-layout.has-sidebar .skill-hero-sidebar {
-    grid-column: auto;
-    grid-row: auto;
   }
 
   .skill-hero-main-extra {
@@ -12527,12 +12472,12 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .tab-card {
-    overflow: hidden;
+    overflow: visible;
   }
 
   .tab-header {
     gap: 16px;
-    padding: 0 14px;
+    padding: 0;
     overflow-x: auto;
   }
 
@@ -12542,7 +12487,7 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .tab-body {
-    padding: 8px 14px 18px;
+    padding: 18px 14px;
   }
 
   .browse-page {
