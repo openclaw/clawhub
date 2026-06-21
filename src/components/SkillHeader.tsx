@@ -545,12 +545,7 @@ function SkillSidebarStats({
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
-        {
-          grid: [
-            { label: "Installs", value: formattedStats.installsAllTime },
-            { label: "Stars", value: formattedStats.stars },
-          ],
-        },
+        { label: "Installs", value: formattedStats.installsAllTime },
         { label: "Repository", value: githubRepositoryLink },
         {
           label: "Owner",
