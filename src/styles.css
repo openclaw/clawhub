@@ -349,13 +349,34 @@ code {
 }
 
 .app-shell {
+  position: relative;
   min-width: var(--page-min);
   min-height: 100vh;
   display: flex;
   flex-direction: column;
 }
 
+.app-shell:has(.skill-detail-page)::before {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  content: "";
+  background:
+    radial-gradient(
+      ellipse 58% 34% at 48% 0%,
+      color-mix(in srgb, #8f1d24 18%, transparent) 0%,
+      transparent 62%
+    ),
+    radial-gradient(
+      ellipse 44% 26% at 28% 8%,
+      color-mix(in srgb, #d34848 8%, transparent) 0%,
+      transparent 68%
+    );
+}
+
 .app-shell main {
+  position: relative;
   flex: 1;
   padding-bottom: clamp(72px, 9vw, 128px);
 }
