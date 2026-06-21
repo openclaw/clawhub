@@ -7,6 +7,7 @@ import { getUserFacingConvexError } from "../lib/convexError";
 import { fetchPackageVersions } from "../lib/packageApi";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import { VersionChangelog } from "./VersionChangelog";
 import { VersionDeleteDialog } from "./VersionDeleteDialog";
 
 export const PLUGIN_VERSIONS_PAGE_SIZE = 20;
@@ -127,7 +128,9 @@ export function PluginVersionsPanel({
                       <span>{new Date(release.createdAt).toLocaleDateString()}</span>
                     </div>
                     <div className="skill-version-release-body">
-                      <div className="skill-version-release-changelog">{release.changelog}</div>
+                      <div className="skill-version-release-changelog">
+                        <VersionChangelog text={release.changelog} />
+                      </div>
                       {release.distTags && release.distTags.length > 0 ? (
                         <div className="skill-version-release-scan">
                           {release.distTags.map((tag) => (

@@ -9,6 +9,7 @@ import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import { VersionChangelog } from "./VersionChangelog";
 import { VersionDeleteDialog } from "./VersionDeleteDialog";
 
 type SkillVersionsPanelProps = {
@@ -119,7 +120,9 @@ export function SkillVersionsPanel({
                     ) : null}
                   </div>
                   <div className="skill-version-release-body">
-                    <div className="skill-version-release-changelog">{version.changelog}</div>
+                    <div className="skill-version-release-changelog">
+                      <VersionChangelog text={version.changelog} />
+                    </div>
                     {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
                       <div className="skill-version-release-scan">
                         <SecurityScanResults
