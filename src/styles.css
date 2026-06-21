@@ -6543,6 +6543,7 @@ code {
 
 .tab-button {
   border: none;
+  border-bottom: 2px solid transparent;
   background: transparent;
   padding: 10px 0;
   border-radius: 0;
@@ -6556,6 +6557,7 @@ code {
 
 .tab-button.is-active {
   color: var(--ink);
+  border-bottom-color: currentColor;
 }
 
 .tab-body {
