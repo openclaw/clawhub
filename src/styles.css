@@ -4644,6 +4644,10 @@ code {
   font-weight: 520;
 }
 
+.skill-detail-page .skill-hero-breadcrumbs {
+  display: none;
+}
+
 .skill-hero-breadcrumbs a,
 .skill-hero-breadcrumbs span {
   min-width: 0;
