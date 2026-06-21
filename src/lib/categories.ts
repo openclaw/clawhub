@@ -132,3 +132,8 @@ export function buildSkillCategoryBrowseHref(category: SkillCategory) {
   const params = new URLSearchParams({ category: category.slug });
   return `/skills?${params.toString()}`;
 }
+
+export function buildPluginCategoryBrowseHref(category: BrowseCategory) {
+  const params = new URLSearchParams({ category: category.slug });
+  return `/plugins?${params.toString()}`;
+}

@@ -418,7 +418,7 @@ code {
   border-bottom: 1px solid var(--line);
 }
 
-.app-shell:has(.skill-detail-page) .navbar {
+.app-shell:has(.skill-detail-page, .plugin-detail-page) .navbar {
   border-bottom: 0;
 }
 
@@ -1407,7 +1407,7 @@ code {
   padding-top: calc(var(--space-5) + 16px);
 }
 
-.section.detail-page-section.skill-detail-page {
+.section.detail-page-section:is(.skill-detail-page, .plugin-detail-page) {
   padding-top: calc(var(--space-5) + clamp(20px, 2.2vw, 32px));
 }
 
@@ -4648,7 +4648,7 @@ code {
   font-weight: 520;
 }
 
-.skill-detail-page .skill-hero-breadcrumbs {
+:is(.skill-detail-page, .plugin-detail-page) .skill-hero-breadcrumbs {
   display: none;
 }
 

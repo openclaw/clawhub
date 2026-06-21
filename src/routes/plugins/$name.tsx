@@ -7,11 +7,10 @@ import {
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { AlertTriangle, Download, Info, Share2, Upload } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
-import { CatalogTopicList } from "../../components/CatalogTopicList";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
   DetailSecuritySummary,
@@ -40,6 +39,12 @@ import {
   DialogTitle,
 } from "../../components/ui/dialog";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
+import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
+import {
+  buildPluginCategoryBrowseHref,
+  PLUGIN_CATEGORIES,
+  resolvePluginBrowseCategorySlug,
+} from "../../lib/categories";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
@@ -560,7 +565,7 @@ function PluginDetailRoute() {
 
 export function PluginDetailPending() {
   return (
-    <main className="section detail-page-section" aria-busy="true">
+    <main className="section detail-page-section plugin-detail-page" aria-busy="true">
       <div role="status" aria-label="Loading plugin details">
         <SkillDetailSkeleton kind="plugin" />
       </div>
@@ -655,6 +660,17 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   }
 
   const pkg = detail.package;
+  const headerCategories = (pkg.categories ?? [])
+    .flatMap((value) => {
+      const slug = resolvePluginBrowseCategorySlug(value);
+      const category = PLUGIN_CATEGORIES.find((item) => item.slug === slug);
+      return category ? [category] : [];
+    })
+    .slice(0, 3);
+  const headerTopics = (pkg.topics ?? [])
+    .map((topic) => topic.trim())
+    .filter(Boolean)
+    .slice(0, 5);
   const owner = detail.owner;
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
@@ -938,7 +954,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   ) : null;
 
   return (
-    <main className="section detail-page-section">
+    <main className="section detail-page-section plugin-detail-page">
       <DetailPageShell>
         <DetailHero
           main={
@@ -954,20 +970,63 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   {pkg.name}
                 </a>
               </nav>
-              <div className="skill-hero-title-row">
-                <h1 className="skill-page-title">{pkg.displayName}</h1>
-                {pkg.isOfficial ? (
-                  <div className="skill-title-badges">
-                    <OfficialTag />
+              <div className="skill-hero-heading-stack">
+                {headerCategories.length > 0 || headerTopics.length > 0 ? (
+                  <div className="skill-hero-taxonomy-row" aria-label="Plugin metadata">
+                    {headerCategories.length > 0 ? (
+                      <div className="skill-category-meta-list" aria-label="Categories">
+                        {headerCategories.map((category, index) => (
+                          <Fragment key={category.slug}>
+                            <a
+                              className="skill-category-meta-link"
+                              href={buildPluginCategoryBrowseHref(category)}
+                              aria-label={`View ${category.label} plugins`}
+                            >
+                              <BrowseCategoryIcon
+                                slug={category.slug}
+                                icon={category.icon}
+                                size={14}
+                                className="skill-category-icon"
+                              />
+                              <span>{category.label}</span>
+                            </a>
+                            {index < headerCategories.length - 1 ? (
+                              <span className="skill-category-comma" aria-hidden="true">
+                                ,
+                              </span>
+                            ) : null}
+                          </Fragment>
+                        ))}
+                      </div>
+                    ) : null}
+                    {headerCategories.length > 0 && headerTopics.length > 0 ? (
+                      <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+                    ) : null}
+                    {headerTopics.length > 0 ? (
+                      <div className="skill-hero-topic-list" aria-label="Topics">
+                        {headerTopics.map((topic) => (
+                          <span className="skill-hero-topic" key={topic}>
+                            #{topic.toLowerCase().replace(/\s+/g, "-")}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
-                {isDownloadBlocked ? (
-                  <div className="skill-title-actions">
-                    <Badge variant="destructive">Download blocked</Badge>
-                  </div>
-                ) : null}
+                <div className="skill-hero-title-row">
+                  <h1 className="skill-page-title">{pkg.displayName}</h1>
+                  {pkg.isOfficial ? (
+                    <div className="skill-title-badges">
+                      <OfficialTag />
+                    </div>
+                  ) : null}
+                  {isDownloadBlocked ? (
+                    <div className="skill-title-actions">
+                      <Badge variant="destructive">Download blocked</Badge>
+                    </div>
+                  ) : null}
+                </div>
               </div>
-              <CatalogTopicList topics={pkg.topics} />
               <p className="section-subtitle">{pkg.summary ?? "No summary provided."}</p>
 
               {rateLimited?.scope === "metadata" ? (
