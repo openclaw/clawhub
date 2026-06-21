@@ -18,6 +18,11 @@ function makeFile(path: string, size: number): SkillFile {
 describe("SkillFilesPanel", () => {
   beforeEach(() => {
     getFileTextMock.mockReset();
+    getFileTextMock.mockResolvedValue({
+      text: "",
+      size: 0,
+      sha256: "0".repeat(64),
+    });
   });
 
   afterEach(() => {

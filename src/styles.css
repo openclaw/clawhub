@@ -6590,10 +6590,14 @@ code {
   color: var(--accent-deep);
 }
 
+.skill-files-panel {
+  padding: 18px;
+}
+
 .file-list {
   position: relative;
   display: grid;
-  gap: 12px;
+  gap: 10px;
   max-width: 100%;
 }
 
@@ -6602,14 +6606,16 @@ code {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
-  border-bottom: 1px solid var(--line);
   box-sizing: border-box;
-  height: 64px;
-  padding: 16px 0 14px;
+  min-height: 34px;
+  padding: 0 2px;
 }
 
 .file-list-header .section-title {
   margin: 0;
+  font-family: var(--font-sans);
+  font-size: 0.9rem;
+  letter-spacing: 0;
 }
 
 .file-list-count {
@@ -6625,8 +6631,12 @@ code {
 
 .file-list-body {
   display: grid;
-  gap: 8px;
+  gap: 1px;
   max-width: 100%;
+  border: 1px solid color-mix(in srgb, var(--line) 82%, transparent);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-muted) 42%, transparent);
+  padding: 6px;
 }
 
 .file-list-see-all-wrap {
@@ -6672,14 +6682,71 @@ code {
 
 .file-browser {
   display: grid;
-  gap: 16px;
+  gap: 18px;
 }
 
 @media (min-width: 900px) {
   .file-browser {
-    grid-template-columns: minmax(0, 0.95fr) minmax(0, 1.3fr);
+    grid-template-columns: minmax(220px, 0.58fr) minmax(0, 1.42fr);
     align-items: start;
   }
+}
+
+.file-tree-group {
+  display: grid;
+  gap: 1px;
+}
+
+.file-tree-directory,
+.file-tree-file {
+  --file-tree-indent: calc(var(--file-tree-level, 0) * 18px);
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  min-height: 32px;
+  padding: 5px 8px 5px calc(8px + var(--file-tree-indent));
+  border-radius: 8px;
+  color: var(--ink-soft);
+  font-size: 0.86rem;
+  line-height: 1.25;
+}
+
+.file-tree-directory {
+  color: color-mix(in srgb, var(--ink-soft) 88%, var(--ink));
+  font-weight: 650;
+}
+
+.file-tree-directory svg,
+.file-tree-file svg {
+  color: color-mix(in srgb, var(--ink-soft) 78%, transparent);
+}
+
+.file-tree-file {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.file-tree-file:hover,
+.file-tree-file:focus-visible {
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
+  outline: none;
+}
+
+.file-tree-file.is-active {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+
+.file-tree-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .file-row-button {

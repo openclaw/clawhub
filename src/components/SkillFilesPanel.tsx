@@ -1,6 +1,7 @@
 import { useAction } from "convex/react";
-import { ChevronDown, FileCode2 } from "lucide-react";
+import { ChevronDown, FileCode2, FileText, Folder } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { formatBytes } from "./skillDetailUtils";
@@ -15,13 +16,82 @@ type SkillFilesPanelProps = {
 const MOBILE_FILE_LIST_MAX_WIDTH = 899;
 const MOBILE_FILE_LIST_PREVIEW_COUNT = 8;
 
-function splitFilePath(path: string) {
-  const lastSlashIndex = path.lastIndexOf("/");
-  if (lastSlashIndex === -1) return { directory: "", filename: path };
+type FileTreeFileNode = {
+  type: "file";
+  name: string;
+  path: string;
+  size: number;
+};
+
+type FileTreeDirectoryNode = {
+  type: "directory";
+  name: string;
+  path: string;
+  children: FileTreeNode[];
+};
+
+type FileTreeNode = FileTreeDirectoryNode | FileTreeFileNode;
+
+type MutableDirectoryNode = FileTreeDirectoryNode & {
+  directories: Map<string, MutableDirectoryNode>;
+};
+
+function createDirectoryNode(name: string, path: string): MutableDirectoryNode {
   return {
-    directory: path.slice(0, lastSlashIndex + 1),
-    filename: path.slice(lastSlashIndex + 1),
+    type: "directory",
+    name,
+    path,
+    children: [],
+    directories: new Map(),
   };
+}
+
+function sortTreeNodes(left: FileTreeNode, right: FileTreeNode) {
+  if (left.type !== right.type) return left.type === "file" ? -1 : 1;
+  return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+}
+
+function stripMutableState(node: MutableDirectoryNode): FileTreeDirectoryNode {
+  return {
+    type: "directory",
+    name: node.name,
+    path: node.path,
+    children: node.children
+      .map((child) => (child.type === "directory" ? stripMutableState(child) : child))
+      .sort(sortTreeNodes),
+  };
+}
+
+function buildFileTree(files: SkillFile[]) {
+  const root = createDirectoryNode("", "");
+  for (const file of files) {
+    const parts = file.path.split("/").filter(Boolean);
+    if (parts.length === 0) continue;
+    let currentDirectory = root;
+    for (const directoryName of parts.slice(0, -1)) {
+      const directoryPath = currentDirectory.path
+        ? `${currentDirectory.path}/${directoryName}`
+        : directoryName;
+      let directory = currentDirectory.directories.get(directoryName);
+      if (!directory) {
+        directory = createDirectoryNode(directoryName, directoryPath);
+        currentDirectory.directories.set(directoryName, directory);
+        currentDirectory.children.push(directory);
+      }
+      currentDirectory = directory;
+    }
+    currentDirectory.children.push({
+      type: "file",
+      name: parts.at(-1) ?? file.path,
+      path: file.path,
+      size: file.size,
+    });
+  }
+  return stripMutableState(root).children;
+}
+
+function getFileTreeLevelStyle(level: number) {
+  return { "--file-tree-level": level } as CSSProperties;
 }
 
 export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps) {
@@ -74,6 +144,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   }, [isMobile, latestFiles, showAllMobileFiles]);
 
   const hiddenFilesCount = latestFiles.length - visibleFiles.length;
+  const fileTree = useMemo(() => buildFileTree(visibleFiles), [visibleFiles]);
 
   useEffect(() => {
     requestId.current += 1;
@@ -90,6 +161,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   const handleSelect = useCallback(
     (path: string) => {
       if (!versionId) return;
+      if (selectedPath === path && (isLoading || fileContent !== null)) return;
       const cacheKey = `${versionId}:${path}`;
       const cached = fileCache.current.get(cacheKey);
 
@@ -123,11 +195,51 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
           setIsLoading(false);
         });
     },
-    [getFileText, versionId],
+    [fileContent, getFileText, isLoading, selectedPath, versionId],
   );
 
+  useEffect(() => {
+    if (!versionId || latestFiles.length === 0) return;
+    if (selectedPath !== null) return;
+    const defaultPath =
+      latestFiles.find((file) => file.path === "SKILL.md")?.path ?? latestFiles[0]?.path ?? null;
+    if (!defaultPath) return;
+    handleSelect(defaultPath);
+  }, [handleSelect, latestFiles, selectedPath, versionId]);
+
+  const renderTreeNode = (node: FileTreeNode, level: number): ReactNode => {
+    if (node.type === "directory") {
+      return (
+        <div key={node.path} className="file-tree-group">
+          <div className="file-tree-directory" style={getFileTreeLevelStyle(level)}>
+            <Folder size={14} aria-hidden="true" />
+            <span>{node.name}</span>
+          </div>
+          {node.children.map((child) => renderTreeNode(child, level + 1))}
+        </div>
+      );
+    }
+
+    const formattedSize = formatBytes(node.size);
+    return (
+      <button
+        key={node.path}
+        className={`file-tree-file${selectedPath === node.path ? " is-active" : ""}`}
+        style={getFileTreeLevelStyle(level)}
+        type="button"
+        onClick={() => handleSelect(node.path)}
+        aria-current={selectedPath === node.path ? "true" : undefined}
+        aria-label={`${node.path} ${formattedSize}`}
+      >
+        <FileText size={14} aria-hidden="true" />
+        <span className="file-tree-name">{node.name}</span>
+        <span className="file-meta">{formattedSize}</span>
+      </button>
+    );
+  };
+
   return (
-    <div className="tab-body">
+    <div className="tab-body skill-files-panel">
       <div className="file-browser">
         <div className={`file-list${isMobile && hiddenFilesCount > 0 ? " has-hidden-files" : ""}`}>
           <div className="file-list-header">
@@ -138,28 +250,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
             {latestFiles.length === 0 ? (
               <div className="stat">No files available.</div>
             ) : (
-              visibleFiles.map((file) => {
-                const { directory, filename } = splitFilePath(file.path);
-                const formattedSize = formatBytes(file.size);
-                return (
-                  <button
-                    key={file.path}
-                    className={`file-row file-row-button${
-                      selectedPath === file.path ? " is-active" : ""
-                    }`}
-                    type="button"
-                    onClick={() => handleSelect(file.path)}
-                    aria-current={selectedPath === file.path ? "true" : undefined}
-                    aria-label={`${file.path} ${formattedSize}`}
-                  >
-                    <span className="file-row-path">
-                      {directory ? <span className="file-path-dir">{directory}</span> : null}
-                      <span className="file-path-name">{filename}</span>
-                    </span>
-                    <span className="file-meta">{formattedSize}</span>
-                  </button>
-                );
-              })
+              fileTree.map((node) => renderTreeNode(node, 0))
             )}
           </div>
           {isMobile && hiddenFilesCount > 0 ? (
