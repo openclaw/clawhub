@@ -139,7 +139,8 @@ export function SkillVersionsPanel({
                         ) : null}
                       </span>
                       <span className="skill-version-release-toggle-label">
-                        {isExpanded ? "Hide changelog" : "Changelog"}
+                        <span className="skill-version-release-chevron" aria-hidden="true" />
+                        {isExpanded ? "Hide changelog" : "Show changelog"}
                       </span>
                     </button>
                     {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (

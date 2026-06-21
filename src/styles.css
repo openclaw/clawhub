@@ -7060,6 +7060,11 @@ code {
   align-items: center;
   min-width: 0;
   padding: 14px 16px;
+  transition: background-color 160ms ease;
+}
+
+.skill-version-release-summary:hover {
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
 }
 
 .skill-version-release-toggle {
@@ -7104,9 +7109,26 @@ code {
 }
 
 .skill-version-release-toggle-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: color-mix(in srgb, var(--ink-soft) 84%, transparent);
   font-size: 0.76rem;
   font-weight: 650;
+}
+
+.skill-version-release-chevron {
+  display: inline-block;
+  width: 0.44em;
+  height: 0.44em;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(-45deg);
+  transition: transform 160ms ease;
+}
+
+.skill-version-release-toggle[aria-expanded="true"] .skill-version-release-chevron {
+  transform: rotate(45deg) translateY(-1px);
 }
 
 .skill-version-release-changelog {

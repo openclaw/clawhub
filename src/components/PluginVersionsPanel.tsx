@@ -158,7 +158,8 @@ export function PluginVersionsPanel({
                           <span>{new Date(release.createdAt).toLocaleDateString()}</span>
                         </span>
                         <span className="skill-version-release-toggle-label">
-                          {isExpanded ? "Hide changelog" : "Changelog"}
+                          <span className="skill-version-release-chevron" aria-hidden="true" />
+                          {isExpanded ? "Hide changelog" : "Show changelog"}
                         </span>
                       </button>
                       {release.distTags && release.distTags.length > 0 ? (
