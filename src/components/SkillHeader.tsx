@@ -328,20 +328,6 @@ export function SkillHeader({
                 </a>
               </nav>
               <div className="skill-hero-heading-stack">
-                <div className="skill-hero-title-row">
-                  <h1 className="skill-page-title">{skill.displayName}</h1>
-                  {isOfficial ? <OfficialTag /> : null}
-                  {showTitleBadges ? (
-                    <div className="skill-title-badges">
-                      {titleBadges.map((badge) => (
-                        <Badge key={badge} variant="compact">
-                          {badge}
-                        </Badge>
-                      ))}
-                    </div>
-                  ) : null}
-                  {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                </div>
                 {headerCategories.length > 0 || headerTopics.length > 0 ? (
                   <div className="skill-hero-taxonomy-row" aria-label="Skill metadata">
                     {headerCategories.length > 0 ? (
@@ -384,6 +370,20 @@ export function SkillHeader({
                     ) : null}
                   </div>
                 ) : null}
+                <div className="skill-hero-title-row">
+                  <h1 className="skill-page-title">{skill.displayName}</h1>
+                  {isOfficial ? <OfficialTag /> : null}
+                  {showTitleBadges ? (
+                    <div className="skill-title-badges">
+                      {titleBadges.map((badge) => (
+                        <Badge key={badge} variant="compact">
+                          {badge}
+                        </Badge>
+                      ))}
+                    </div>
+                  ) : null}
+                  {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                </div>
               </div>
               <div className="skill-summary-block">
                 <p
