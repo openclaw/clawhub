@@ -4633,7 +4633,7 @@ code {
 .skill-hero-heading-stack {
   display: grid;
   justify-items: start;
-  gap: 10px;
+  gap: 14px;
   min-width: 0;
 }
 
