@@ -5275,6 +5275,14 @@ code {
   color: currentColor;
 }
 
+.owner-official-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--official-fg);
+}
+
 .official-badge {
   flex: 0 0 auto;
   display: inline-flex;

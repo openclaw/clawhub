@@ -6,7 +6,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { AlertTriangle, Download, Info, Share2, Upload } from "lucide-react";
+import { AlertTriangle, BadgeCheck, Download, Info, Share2, Upload } from "lucide-react";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -940,6 +940,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       ) : (
         <span className="user-name">{owner.displayName ?? "unknown"}</span>
       )}
+      {pkg.isOfficial ? (
+        <span className="owner-official-icon" aria-label="Official" title="Official">
+          <BadgeCheck size={14} aria-hidden="true" />
+        </span>
+      ) : null}
     </span>
   ) : null;
   const hasSourceMetadata = Boolean(
