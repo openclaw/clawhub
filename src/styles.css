@@ -7116,6 +7116,13 @@ code {
   white-space: pre-wrap;
 }
 
+.version-changelog-empty {
+  margin: 0;
+  color: color-mix(in srgb, var(--ink-soft) 72%, transparent);
+  font-size: 0.84rem;
+  font-style: italic;
+}
+
 .skill-version-release-scan {
   display: flex;
   flex-wrap: wrap;

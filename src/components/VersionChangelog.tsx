@@ -1,10 +1,11 @@
 type VersionChangelogProps = {
   text: string | null | undefined;
+  fallback?: string;
 };
 
-export function VersionChangelog({ text }: VersionChangelogProps) {
+export function VersionChangelog({ fallback = "No changelog provided.", text }: VersionChangelogProps) {
   const trimmed = text?.trim();
-  if (!trimmed) return null;
+  if (!trimmed) return <p className="version-changelog-empty">{fallback}</p>;
 
   const lines = trimmed
     .split(/\r\n|\n|\r/)

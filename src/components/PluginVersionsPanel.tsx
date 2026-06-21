@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { fetchPackageVersions } from "../lib/packageApi";
+import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { VersionChangelog } from "./VersionChangelog";
@@ -19,6 +20,13 @@ type PluginVersionsPanelProps = {
   canDeleteVersions: boolean;
   onVersionDeleted?: () => void | Promise<void>;
 };
+
+function buildPluginDownloadHref(packageName: string, version: string) {
+  const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
+  const packagePath = encodeURIComponent(packageName);
+  const params = new URLSearchParams({ version });
+  return `${convexSiteUrl}/api/v1/packages/${packagePath}/download?${params.toString()}`;
+}
 
 export function PluginVersionsPanel({
   packageName,
@@ -143,6 +151,12 @@ export function PluginVersionsPanel({
                     </div>
                     <div className="skill-version-release-actions">
                       {isLatest && !hasLatestTag ? <Badge variant="compact">Latest</Badge> : null}
+                      <a
+                        href={buildPluginDownloadHref(packageName, release.version)}
+                        className="skill-version-release-download"
+                      >
+                        Zip
+                      </a>
                       {canDeleteVersions && !isLatest ? (
                         <Button
                           type="button"
