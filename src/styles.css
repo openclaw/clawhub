@@ -7042,11 +7042,8 @@ code {
 
 .skill-version-release {
   display: grid;
-  grid-template-columns: minmax(116px, 0.22fr) minmax(0, 1fr) auto;
-  gap: 20px;
-  align-items: start;
+  gap: 0;
   min-width: 0;
-  padding: 16px;
   border: 0;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
   background: transparent;
@@ -7056,32 +7053,66 @@ code {
   border-bottom: 0;
 }
 
-.skill-version-release-meta {
+.skill-version-release-summary {
   display: grid;
-  gap: 3px;
+  grid-template-columns: minmax(150px, 0.34fr) minmax(160px, 1fr) auto;
+  gap: 16px;
+  align-items: center;
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+.skill-version-release-toggle {
+  grid-column: 1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 4px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.skill-version-release-toggle:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 22%, transparent);
+  outline-offset: 4px;
+}
+
+.skill-version-release-version {
+  color: var(--ink);
+  font-size: 0.98rem;
+  font-weight: 700;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.skill-version-release-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
   min-width: 0;
   color: var(--ink-soft);
   font-size: 0.82rem;
   line-height: 1.35;
 }
 
-.skill-version-release-meta strong {
-  color: var(--ink);
-  font-size: 0.92rem;
-  font-weight: 650;
-}
-
 .skill-version-release-source {
   color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
 }
 
-.skill-version-release-body {
-  display: grid;
-  gap: 8px;
-  min-width: 0;
+.skill-version-release-toggle-label {
+  color: color-mix(in srgb, var(--ink-soft) 84%, transparent);
+  font-size: 0.76rem;
+  font-weight: 650;
 }
 
 .skill-version-release-changelog {
+  margin: 0 16px 16px;
+  padding: 12px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
   color: var(--ink-soft);
   font-size: 0.88rem;
   line-height: 1.5;
@@ -7130,6 +7161,7 @@ code {
 }
 
 .skill-version-release-scan {
+  grid-column: 2;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -7138,11 +7170,13 @@ code {
 }
 
 .skill-version-release-actions {
+  grid-column: 3;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
+  min-width: max-content;
 }
 
 .skill-version-release-download {
@@ -7175,6 +7209,17 @@ code {
 
   .skill-version-release {
     grid-template-columns: 1fr;
+  }
+
+  .skill-version-release-summary {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .skill-version-release-toggle,
+  .skill-version-release-scan,
+  .skill-version-release-actions {
+    grid-column: 1;
   }
 
   .skill-version-release-actions {

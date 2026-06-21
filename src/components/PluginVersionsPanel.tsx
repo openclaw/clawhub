@@ -43,6 +43,7 @@ export function PluginVersionsPanel({
   const [loadMoreError, setLoadMoreError] = useState<string | null>(null);
   const [deletingVersion, setDeletingVersion] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [expandedVersions, setExpandedVersions] = useState<Set<string>>(() => new Set());
   const loadMoreInFlightRef = useRef(false);
   const requestGenerationRef = useRef(0);
 
@@ -55,7 +56,20 @@ export function PluginVersionsPanel({
     setLoadMoreError(null);
     setDeletingVersion(null);
     setIsDeleting(false);
+    setExpandedVersions(new Set());
   }, [packageName, versions]);
+
+  const toggleVersion = (version: string) => {
+    setExpandedVersions((current) => {
+      const next = new Set(current);
+      if (next.has(version)) {
+        next.delete(version);
+      } else {
+        next.add(version);
+      }
+      return next;
+    });
+  };
 
   const loadMore = async () => {
     if (!nextCursor || loadMoreInFlightRef.current) return;
@@ -129,18 +143,26 @@ export function PluginVersionsPanel({
               {releases.map((release) => {
                 const hasLatestTag = release.distTags?.includes("latest");
                 const isLatest = release.version === latestVersion || hasLatestTag;
+                const isExpanded = expandedVersions.has(release.version);
                 return (
                   <article key={release.version} className="skill-version-release">
-                    <div className="skill-version-release-meta">
-                      <strong>v{release.version}</strong>
-                      <span>{new Date(release.createdAt).toLocaleDateString()}</span>
-                    </div>
-                    <div className="skill-version-release-body">
-                      <div className="skill-version-release-changelog">
-                        <VersionChangelog text={release.changelog} />
-                      </div>
+                    <div className="skill-version-release-summary">
+                      <button
+                        className="skill-version-release-toggle"
+                        type="button"
+                        aria-expanded={isExpanded}
+                        onClick={() => toggleVersion(release.version)}
+                      >
+                        <span className="skill-version-release-version">v{release.version}</span>
+                        <span className="skill-version-release-meta">
+                          <span>{new Date(release.createdAt).toLocaleDateString()}</span>
+                        </span>
+                        <span className="skill-version-release-toggle-label">
+                          {isExpanded ? "Hide changelog" : "Changelog"}
+                        </span>
+                      </button>
                       {release.distTags && release.distTags.length > 0 ? (
-                        <div className="skill-version-release-scan">
+                        <div className="skill-version-release-scan" aria-label="Release tags">
                           {release.distTags.map((tag) => (
                             <Badge key={tag} variant="compact">
                               {tag}
@@ -148,27 +170,32 @@ export function PluginVersionsPanel({
                           ))}
                         </div>
                       ) : null}
-                    </div>
-                    <div className="skill-version-release-actions">
-                      {isLatest && !hasLatestTag ? <Badge variant="compact">Latest</Badge> : null}
-                      <a
-                        href={buildPluginDownloadHref(packageName, release.version)}
-                        className="skill-version-release-download"
-                      >
-                        Zip
-                      </a>
-                      {canDeleteVersions && !isLatest ? (
-                        <Button
-                          type="button"
-                          variant="destructive"
-                          size="sm"
-                          aria-label={`Delete version ${release.version}`}
-                          onClick={() => setDeletingVersion(release.version)}
+                      <div className="skill-version-release-actions">
+                        {isLatest && !hasLatestTag ? <Badge variant="compact">Latest</Badge> : null}
+                        <a
+                          href={buildPluginDownloadHref(packageName, release.version)}
+                          className="skill-version-release-download"
                         >
-                          Delete
-                        </Button>
-                      ) : null}
+                          Zip
+                        </a>
+                        {canDeleteVersions && !isLatest ? (
+                          <Button
+                            type="button"
+                            variant="destructive"
+                            size="sm"
+                            aria-label={`Delete version ${release.version}`}
+                            onClick={() => setDeletingVersion(release.version)}
+                          >
+                            Delete
+                          </Button>
+                        ) : null}
+                      </div>
                     </div>
+                    {isExpanded ? (
+                      <div className="skill-version-release-changelog">
+                        <VersionChangelog text={release.changelog} />
+                      </div>
+                    ) : null}
                   </article>
                 );
               })}
