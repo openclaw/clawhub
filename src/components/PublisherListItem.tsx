@@ -58,10 +58,9 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
             <span className="publisher-card-title-row">
               <span className="publisher-card-name">{publisher.displayName}</span>
               {publisher.official ? <OfficialBadge /> : null}
-              {variant === "list" ? <span className="publisher-card-handle">@{handle}</span> : null}
               {publisher.kind === "org" ? <span className="publisher-card-kind">Org</span> : null}
             </span>
-            {variant === "list" ? null : <span className="publisher-card-handle">@{handle}</span>}
+            <span className="publisher-card-handle">@{handle}</span>
           </span>
           {summaryInMain ? (
             <p className="publisher-card-summary">{truncateText(summary, 80)}</p>

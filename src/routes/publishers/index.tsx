@@ -304,7 +304,7 @@ function PublishersIndex() {
   }, [canLoadMore, loadMore]);
 
   return (
-    <main className="browse-page browse-page-borderless-header">
+    <main className="browse-page browse-page-borderless-header publishers-browse-page">
       <div className="browse-page-header">
         <h1 className="browse-title">Publishers</h1>
       </div>
