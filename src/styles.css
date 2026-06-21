@@ -375,6 +375,14 @@ code {
     );
 }
 
+.app-shell:has(.skill-detail-page) .navbar.navbar-calm {
+  background: transparent;
+}
+
+.app-shell:has(.skill-detail-page) .navbar.navbar-calm.navbar-calm-scrolled {
+  background: color-mix(in srgb, var(--nav-bg) 78%, transparent);
+}
+
 .app-shell main {
   position: relative;
   flex: 1;
