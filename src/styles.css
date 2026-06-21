@@ -1397,10 +1397,17 @@ code {
 }
 
 .section.detail-page-section {
-  max-width: var(--page-max);
-  padding-right: clamp(var(--space-5), 4.5vw, 88px);
-  padding-left: clamp(var(--space-5), 4.5vw, 88px);
+  max-width: 1296px;
+  padding-right: 48px;
+  padding-left: 48px;
   padding-top: calc(var(--space-5) + 16px);
+}
+
+@media (max-width: 768px) {
+  .section.detail-page-section {
+    padding-right: 20px;
+    padding-left: 20px;
+  }
 }
 
 .security-scanner-layout {
