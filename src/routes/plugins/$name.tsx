@@ -6,7 +6,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { AlertTriangle, Download, Info, Upload } from "lucide-react";
+import { AlertTriangle, Download, Info, Share2, Upload } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -62,6 +62,7 @@ import {
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
+import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 type PluginDetailRateLimitState = {
@@ -331,20 +332,24 @@ function PluginDetailTabs({
     <div className="tab-card">
       <div className="tab-header" role="tablist" aria-label="Plugin detail tabs">
         <button
+          id="plugin-tab-readme"
           className={`tab-button${effectiveActiveTab === "readme" ? " is-active" : ""}`}
           type="button"
           role="tab"
           aria-selected={effectiveActiveTab === "readme"}
+          aria-controls="plugin-tabpanel-readme"
           onClick={() => selectTab("readme")}
         >
           README
         </button>
         {skillsPanel ? (
           <button
+            id="plugin-tab-skills"
             className={`tab-button${effectiveActiveTab === "skills" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "skills"}
+            aria-controls="plugin-tabpanel-skills"
             onClick={() => selectTab("skills")}
           >
             Skills
@@ -352,10 +357,12 @@ function PluginDetailTabs({
         ) : null}
         {mcpServersPanel ? (
           <button
+            id="plugin-tab-mcpServers"
             className={`tab-button${effectiveActiveTab === "mcpServers" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "mcpServers"}
+            aria-controls="plugin-tabpanel-mcpServers"
             onClick={() => selectTab("mcpServers")}
           >
             MCP Servers
@@ -363,10 +370,12 @@ function PluginDetailTabs({
         ) : null}
         {configurationPanel ? (
           <button
+            id="plugin-tab-configuration"
             className={`tab-button${effectiveActiveTab === "configuration" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "configuration"}
+            aria-controls="plugin-tabpanel-configuration"
             onClick={() => selectTab("configuration")}
           >
             Configuration
@@ -374,37 +383,48 @@ function PluginDetailTabs({
         ) : null}
         {compatibilityPanel ? (
           <button
+            id="plugin-tab-compatibility"
             className={`tab-button${effectiveActiveTab === "compatibility" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "compatibility"}
+            aria-controls="plugin-tabpanel-compatibility"
             onClick={() => selectTab("compatibility")}
           >
             Compatibility
           </button>
         ) : null}
         <button
+          id="plugin-tab-versions"
           className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
           type="button"
           role="tab"
           aria-selected={effectiveActiveTab === "versions"}
+          aria-controls="plugin-tabpanel-versions"
           onClick={() => selectTab("versions")}
         >
           Versions
         </button>
         {validationPanel ? (
           <button
+            id="plugin-tab-validation"
             className={`tab-button${effectiveActiveTab === "validation" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "validation"}
+            aria-controls="plugin-tabpanel-validation"
             onClick={() => selectTab("validation")}
           >
             Validation ({validationCount})
           </button>
         ) : null}
       </div>
-      <div className="tab-body">
+      <div
+        className="tab-body"
+        role="tabpanel"
+        id={`plugin-tabpanel-${effectiveActiveTab}`}
+        aria-labelledby={`plugin-tab-${effectiveActiveTab}`}
+      >
         {effectiveActiveTab === "versions" ? null : activePanel}
         {hasMountedVersions || effectiveActiveTab === "versions" ? (
           <div hidden={effectiveActiveTab !== "versions"}>{versionsPanel}</div>
@@ -886,16 +906,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         );
       })()
     : null;
-  const tagMetadataValue =
-    pkg.tags && Object.keys(pkg.tags).length > 0 ? (
-      <span className="plugin-sidebar-tag-list">
-        {Object.entries(pkg.tags).map(([key, value]) => (
-          <span key={key}>
-            {key} {String(value)}
-          </span>
-        ))}
-      </span>
-    ) : null;
   const ownerMetadataValue = owner ? (
     <span className="user-badge user-badge-md">
       <span className="user-avatar" aria-hidden="true">
@@ -917,7 +927,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     </span>
   ) : null;
   const hasSourceMetadata = Boolean(
-    sourceRepoLink || ownerMetadataValue || latestRelease || pkg.latestVersion || tagMetadataValue,
+    sourceRepoLink || ownerMetadataValue || latestRelease || pkg.latestVersion,
   );
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
@@ -940,9 +950,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   {owner?.handle ?? owner?.displayName ?? "unknown"}
                 </a>
                 <span aria-hidden="true">/</span>
-                <a href="/plugins">plugins</a>
-                <span aria-hidden="true">/</span>
-                <a href={buildPluginDetailHref(pkg.name)}>{pkg.name}</a>
+                <a href={buildPluginDetailHref(pkg.name)} aria-current="page">
+                  {pkg.name}
+                </a>
               </nav>
               <div className="skill-hero-title-row">
                 <h1 className="skill-page-title">{pkg.displayName}</h1>
@@ -968,7 +978,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
             </div>
           }
           sidebar={
-            <div className="plugin-sidebar-stack">
+            <div className="skill-hero-sidebar-stack">
               {hasSourceMetadata ? (
                 <SidebarMetadata
                   ariaLabel="Plugin metadata"
@@ -989,6 +999,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                         }
                       : { label: "", value: null },
                     {
+                      label: "Last updated",
+                      value: (
+                        <span title={new Date(pkg.updatedAt).toLocaleString()}>
+                          {timeAgo(pkg.updatedAt)}
+                        </span>
+                      ),
+                    },
+                    {
                       grid: [
                         {
                           label: "Current version",
@@ -997,7 +1015,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                         { label: "Type", value: familyLabel(pkg.family) },
                       ],
                     },
-                    { label: "Tags", value: tagMetadataValue },
                   ]}
                 />
               ) : null}
@@ -1012,13 +1029,29 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                       </a>
                     </Button>
                   ) : null}
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className="skill-sidebar-action-button"
+                    onClick={() => {
+                      if (typeof window === "undefined") return;
+                      void navigator.clipboard.writeText(window.location.href);
+                      toast.success("Link copied");
+                    }}
+                  >
+                    <Share2 size={14} aria-hidden="true" />
+                    Share
+                  </Button>
                   {newVersionHref ? (
-                    <Button asChild variant="outline" className="skill-sidebar-action-button">
-                      <a href={newVersionHref}>
-                        <Upload size={14} aria-hidden="true" />
-                        New version
-                      </a>
-                    </Button>
+                    <>
+                      <hr className="skill-sidebar-action-divider" />
+                      <Button asChild variant="outline" className="skill-sidebar-action-button">
+                        <a href={newVersionHref}>
+                          <Upload size={14} aria-hidden="true" />
+                          New version
+                        </a>
+                      </Button>
+                    </>
                   ) : null}
                 </div>
               ) : null}
