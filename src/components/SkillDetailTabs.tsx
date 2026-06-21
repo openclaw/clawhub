@@ -1,5 +1,5 @@
 import type { ClawdisSkillMetadata } from "clawhub-schema";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { defaultUrlTransform } from "react-markdown";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
@@ -14,6 +14,8 @@ const SkillDiffCard = lazy(() =>
 const SkillFilesPanel = lazy(() =>
   import("./SkillFilesPanel").then((module) => ({ default: module.SkillFilesPanel })),
 );
+
+const README_COLLAPSED_LINE_COUNT = 50;
 
 type SkillFile = Doc<"skillVersions">["files"][number];
 
@@ -79,6 +81,17 @@ export function SkillDetailTabs({
   const installTabs = buildSkillInstallTabs({ clawdis, osLabels });
   const activeInstallTab = installTabs.find((tab) => tab.id === activeTab);
   const compareEnabled = showArchiveTabs && (versions?.length ?? 0) > 1;
+  const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
+  const readmeLineCount = useMemo(
+    () => readmeContent?.split(/\r\n|\n|\r/).length ?? 0,
+    [readmeContent],
+  );
+  const isReadmeLong = readmeLineCount > README_COLLAPSED_LINE_COUNT;
+
+  useEffect(() => {
+    setIsReadmeExpanded(false);
+  }, [readmeContent]);
+
   const selectTab = (tab: DetailTab) => {
     setActiveTab(tab);
     if (typeof window === "undefined") return;
@@ -94,20 +107,24 @@ export function SkillDetailTabs({
     <div className="tab-card">
       <div className="tab-header" role="tablist" aria-label="Skill detail tabs">
         <button
+          id="skill-tab-readme"
           className={`tab-button${activeTab === "readme" ? " is-active" : ""}`}
           type="button"
           role="tab"
           aria-selected={activeTab === "readme"}
+          aria-controls="skill-tabpanel-readme"
           onClick={() => selectTab("readme")}
         >
           SKILL.md
         </button>
         {hasSkillCard ? (
           <button
+            id="skill-tab-skill-card"
             className={`tab-button${activeTab === "skill-card" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={activeTab === "skill-card"}
+            aria-controls="skill-tabpanel-skill-card"
             onClick={() => selectTab("skill-card")}
           >
             Skill Card
@@ -115,10 +132,12 @@ export function SkillDetailTabs({
         ) : null}
         {showArchiveTabs ? (
           <button
+            id="skill-tab-files"
             className={`tab-button${activeTab === "files" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={activeTab === "files"}
+            aria-controls="skill-tabpanel-files"
             onClick={() => selectTab("files")}
           >
             Files
@@ -126,10 +145,12 @@ export function SkillDetailTabs({
         ) : null}
         {compareEnabled ? (
           <button
+            id="skill-tab-compare"
             className={`tab-button${activeTab === "compare" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={activeTab === "compare"}
+            aria-controls="skill-tabpanel-compare"
             onClick={() => selectTab("compare")}
             onMouseEnter={() => {
               onCompareIntent();
@@ -145,10 +166,12 @@ export function SkillDetailTabs({
         ) : null}
         {showArchiveTabs ? (
           <button
+            id="skill-tab-versions"
             className={`tab-button${activeTab === "versions" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={activeTab === "versions"}
+            aria-controls="skill-tabpanel-versions"
             onClick={() => selectTab("versions")}
           >
             Versions
@@ -157,10 +180,12 @@ export function SkillDetailTabs({
         {installTabs.map((tab) => (
           <button
             key={tab.id}
+            id={`skill-tab-${tab.id}`}
             className={`tab-button${activeTab === tab.id ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={activeTab === tab.id}
+            aria-controls={`skill-tabpanel-${tab.id}`}
             onClick={() => selectTab(tab.id)}
           >
             {tab.label}
@@ -169,16 +194,39 @@ export function SkillDetailTabs({
       </div>
 
       {activeTab === "readme" ? (
-        <div className="tab-body">
+        <div
+          className="tab-body skill-readme-body"
+          role="tabpanel"
+          id="skill-tabpanel-readme"
+          aria-labelledby="skill-tab-readme"
+        >
           {readmeContent ? (
-            <MarkdownPreview
-              highlight={false}
-              urlTransform={(url, key) =>
-                key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
-              }
-            >
-              {readmeContent}
-            </MarkdownPreview>
+            <>
+              <div
+                className={`skill-readme-preview${
+                  isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
+                }`}
+              >
+                <MarkdownPreview
+                  highlight={false}
+                  urlTransform={(url, key) =>
+                    key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
+                  }
+                >
+                  {readmeContent}
+                </MarkdownPreview>
+              </div>
+              {isReadmeLong ? (
+                <button
+                  type="button"
+                  className="skill-readme-toggle"
+                  aria-expanded={isReadmeExpanded}
+                  onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
+                >
+                  {isReadmeExpanded ? "Show less" : "See more"}
+                </button>
+              ) : null}
+            </>
           ) : readmeError ? (
             <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
               <p className="empty-state-title">No README available</p>
@@ -191,7 +239,12 @@ export function SkillDetailTabs({
       ) : null}
 
       {activeTab === "skill-card" ? (
-        <div className="tab-body">
+        <div
+          className="tab-body"
+          role="tabpanel"
+          id="skill-tabpanel-skill-card"
+          aria-labelledby="skill-tab-skill-card"
+        >
           <p className="skill-card-info-callout">
             Skill Cards follow{" "}
             <a href="https://docs.nvidia.com/skills/skill-cards" target="_blank" rel="noreferrer">
@@ -227,7 +280,12 @@ export function SkillDetailTabs({
       ) : null}
 
       {showArchiveTabs && activeTab === "compare" ? (
-        <div className="tab-body">
+        <div
+          className="tab-body"
+          role="tabpanel"
+          id="skill-tabpanel-compare"
+          aria-labelledby="skill-tab-compare"
+        >
           <Suspense fallback={<div className="stat">Loading diff viewer...</div>}>
             <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
           </Suspense>
@@ -249,7 +307,14 @@ export function SkillDetailTabs({
       ) : null}
 
       {activeInstallTab ? (
-        <div className="tab-body skill-install-tabs">{activeInstallTab.panel}</div>
+        <div
+          className="tab-body skill-install-tabs"
+          role="tabpanel"
+          id={`skill-tabpanel-${activeInstallTab.id}`}
+          aria-labelledby={`skill-tab-${activeInstallTab.id}`}
+        >
+          {activeInstallTab.panel}
+        </div>
       ) : null}
     </div>
   );

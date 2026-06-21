@@ -7653,6 +7653,103 @@ code {
   margin: var(--space-5) 0;
 }
 
+.skill-readme-body {
+  --skill-readme-line-height: 28px;
+}
+
+.skill-readme-preview {
+  position: relative;
+  min-width: 0;
+}
+
+.skill-readme-preview.is-collapsed {
+  max-height: calc(var(--skill-readme-line-height) * 50);
+  overflow: hidden;
+}
+
+.skill-readme-preview.is-collapsed::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 112px;
+  pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--bg) 88%);
+}
+
+.skill-readme-toggle {
+  justify-self: start;
+  appearance: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-pill);
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.skill-readme-toggle:hover,
+.skill-readme-toggle:focus-visible {
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+}
+
+.skill-readme-body .markdown {
+  font-size: 16px;
+  line-height: 1.75;
+}
+
+.skill-readme-body .markdown :is(h1, h2, h3, h4, h5, h6) {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-weight: 700;
+  line-height: 1.25;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.skill-readme-body .markdown h1 {
+  margin: 0 0 var(--space-5);
+  font-size: 28px;
+}
+
+.skill-readme-body .markdown h2 {
+  margin: var(--space-7) 0 var(--space-4);
+  font-size: 22px;
+}
+
+.skill-readme-body .markdown h3 {
+  margin: var(--space-6) 0 var(--space-3);
+  font-size: 18px;
+}
+
+.skill-readme-body .markdown h4 {
+  margin: var(--space-5) 0 var(--space-2);
+  font-size: 16px;
+}
+
+.skill-readme-body .markdown h5,
+.skill-readme-body .markdown h6 {
+  margin: var(--space-4) 0 var(--space-2);
+  font-size: 14px;
+}
+
+.skill-readme-body .markdown p > strong:only-child {
+  font-weight: 650;
+}
+
+.skill-readme-body .markdown pre {
+  margin: var(--space-3) 0 var(--space-5);
+}
+
+.skill-readme-body .markdown hr {
+  display: none;
+}
+
 .markdown :not(pre) > code {
   background: var(--surface-muted);
   padding: 2px 6px;
