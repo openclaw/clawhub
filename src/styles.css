@@ -3894,21 +3894,6 @@ code {
   display: grid;
   gap: 16px;
   min-width: 0;
-  position: relative;
-  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
-  border-radius: var(--r-lg);
-  padding: clamp(18px, 2vw, 24px);
-  background:
-    radial-gradient(
-      ellipse at 18% 0%,
-      color-mix(in srgb, var(--accent) 13%, transparent) 0%,
-      transparent 34%
-    ),
-    linear-gradient(
-      180deg,
-      color-mix(in srgb, var(--surface-muted) 54%, transparent) 0%,
-      transparent 72%
-    );
 }
 
 .detail-layout {
@@ -4575,14 +4560,34 @@ code {
   min-width: 0;
 }
 
+.skill-hero-layout.has-sidebar {
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  column-gap: clamp(56px, 7vw, 96px);
+}
+
 .skill-hero-main {
   display: grid;
   gap: 20px;
   min-width: 0;
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  border-radius: var(--r-lg);
+  padding: clamp(18px, 2vw, 24px);
+  background:
+    radial-gradient(
+      ellipse at 18% 0%,
+      color-mix(in srgb, var(--accent) 13%, transparent) 0%,
+      transparent 34%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-muted) 54%, transparent) 0%,
+      transparent 72%
+    );
 }
 
 .skill-hero-layout.has-sidebar .skill-summary-block {
-  max-width: calc(100% - min(360px, max(300px, 26.5vw)) - clamp(56px, 7vw, 96px));
+  max-width: none;
 }
 
 .skill-hero-lower {
@@ -4596,6 +4601,20 @@ code {
 .skill-hero-lower.has-sidebar {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: clamp(56px, 7vw, 96px);
+}
+
+.skill-hero-layout.has-sidebar .skill-hero-lower {
+  display: contents;
+}
+
+.skill-hero-layout.has-sidebar .skill-hero-main-extra {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.skill-hero-layout.has-sidebar .skill-hero-sidebar {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .skill-hero-main-extra {
@@ -7038,6 +7057,21 @@ code {
   .skill-hero-lower.has-sidebar {
     grid-template-columns: minmax(0, 1fr);
     gap: 28px;
+  }
+
+  .skill-hero-layout.has-sidebar {
+    grid-template-columns: minmax(0, 1fr);
+    column-gap: 0;
+  }
+
+  .skill-hero-layout.has-sidebar .skill-hero-lower {
+    display: grid;
+  }
+
+  .skill-hero-layout.has-sidebar .skill-hero-main-extra,
+  .skill-hero-layout.has-sidebar .skill-hero-sidebar {
+    grid-column: auto;
+    grid-row: auto;
   }
 
   .skill-hero-main-extra {
