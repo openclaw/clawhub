@@ -3826,6 +3826,21 @@ code {
   overflow-x: hidden;
 }
 
+.section.detail-page-section,
+.section.detail-page-section .skill-detail-stack,
+.section.detail-page-section .skill-hero,
+.section.detail-page-section .skill-hero-layout,
+.section.detail-page-section .skill-hero-main,
+.section.detail-page-section .skill-hero-lower,
+.section.detail-page-section .skill-hero-main-extra,
+.section.detail-page-section .skill-hero-sidebar,
+.section.detail-page-section .skill-hero-sidebar-stack,
+.section.detail-page-section .skill-install-command-card,
+.section.detail-page-section .tab-card {
+  outline: 1px solid rgba(255, 0, 0, 0.88);
+  outline-offset: -1px;
+}
+
 .skill-settings-page {
   gap: 28px;
 }
