@@ -1,4 +1,5 @@
 import { Download } from "lucide-react";
+import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
@@ -99,6 +100,11 @@ export function SkillRelatedSection({
       </div>
       <div className="related-skills-footer">
         <a className="related-skills-category-link" href={buildSkillCategoryBrowseHref(category)}>
+          <BrowseCategoryIcon
+            slug={category.slug}
+            icon={category.icon}
+            size={13}
+          />
           More in {category.label}
         </a>
       </div>

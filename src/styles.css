@@ -5852,11 +5852,16 @@ code {
 .related-skills-section-compact .related-skills-header {
   align-items: baseline;
   gap: 12px;
-  padding-bottom: 10px;
+  padding-bottom: 4px;
+  border-bottom: 0;
 }
 
 .related-skills-section-compact .related-skills-title {
-  font-size: 13px;
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 0.86rem;
+  font-weight: 700;
+  letter-spacing: 0;
 }
 
 .related-skills-section-compact .related-skills-category-link {
@@ -5865,7 +5870,7 @@ code {
 
 .related-skills-footer {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .related-skills-header {
@@ -5888,6 +5893,9 @@ code {
 }
 
 .related-skills-category-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   color: color-mix(in srgb, var(--ink-soft) 78%, var(--bg));
   font-family: var(--font-body);
   font-size: var(--fs-xs);
