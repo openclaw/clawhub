@@ -1407,6 +1407,10 @@ code {
   padding-top: calc(var(--space-5) + 16px);
 }
 
+.section.detail-page-section.skill-detail-page {
+  padding-top: calc(var(--space-5) + clamp(20px, 2.2vw, 32px));
+}
+
 @media (max-width: 768px) {
   .section.detail-page-section {
     padding-right: 20px;
