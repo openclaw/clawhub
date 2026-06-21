@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { AlertTriangle, BadgeCheck, Download, Info, Share2, Upload } from "lucide-react";
-import { Fragment, useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
@@ -981,26 +981,23 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     {headerCategories.length > 0 ? (
                       <div className="skill-category-meta-list" aria-label="Categories">
                         {headerCategories.map((category, index) => (
-                          <Fragment key={category.slug}>
-                            <a
-                              className="skill-category-meta-link"
-                              href={buildPluginCategoryBrowseHref(category)}
-                              aria-label={`View ${category.label} plugins`}
-                            >
-                              <BrowseCategoryIcon
-                                slug={category.slug}
-                                icon={category.icon}
-                                size={14}
-                                className="skill-category-icon"
-                              />
-                              <span>{category.label}</span>
-                            </a>
-                            {index < headerCategories.length - 1 ? (
-                              <span className="skill-category-comma" aria-hidden="true">
-                                ,
-                              </span>
-                            ) : null}
-                          </Fragment>
+                          <a
+                            key={category.slug}
+                            className="skill-category-meta-link"
+                            href={buildPluginCategoryBrowseHref(category)}
+                            aria-label={`View ${category.label} plugins`}
+                          >
+                            <BrowseCategoryIcon
+                              slug={category.slug}
+                              icon={category.icon}
+                              size={14}
+                              className="skill-category-icon"
+                            />
+                            <span>
+                              {category.label}
+                              {index < headerCategories.length - 1 ? "," : ""}
+                            </span>
+                          </a>
                         ))}
                       </div>
                     ) : null}

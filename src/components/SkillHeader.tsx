@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
 import { Flag, Settings, Share2, ShieldCheck, Star, Upload } from "lucide-react";
-import { Fragment, useState, type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
@@ -333,26 +333,23 @@ export function SkillHeader({
                     {headerCategories.length > 0 ? (
                       <div className="skill-category-meta-list" aria-label="Categories">
                         {headerCategories.map((categoryItem, index) => (
-                          <Fragment key={categoryItem.slug}>
-                            <a
-                              className="skill-category-meta-link"
-                              href={buildSkillCategoryBrowseHref(categoryItem)}
-                              aria-label={`View ${categoryItem.label} skills`}
-                            >
-                              <BrowseCategoryIcon
-                                slug={categoryItem.slug}
-                                icon={categoryItem.icon}
-                                size={14}
-                                className="skill-category-icon"
-                              />
-                              <span>{categoryItem.label}</span>
-                            </a>
-                            {index < headerCategories.length - 1 ? (
-                              <span className="skill-category-comma" aria-hidden="true">
-                                ,
-                              </span>
-                            ) : null}
-                          </Fragment>
+                          <a
+                            key={categoryItem.slug}
+                            className="skill-category-meta-link"
+                            href={buildSkillCategoryBrowseHref(categoryItem)}
+                            aria-label={`View ${categoryItem.label} skills`}
+                          >
+                            <BrowseCategoryIcon
+                              slug={categoryItem.slug}
+                              icon={categoryItem.icon}
+                              size={14}
+                              className="skill-category-icon"
+                            />
+                            <span>
+                              {categoryItem.label}
+                              {index < headerCategories.length - 1 ? "," : ""}
+                            </span>
+                          </a>
                         ))}
                       </div>
                     ) : null}
