@@ -6456,9 +6456,19 @@ code {
 }
 
 .tab-card {
+  display: grid;
   gap: 18px;
   max-width: 100%;
-  overflow: visible;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  border-radius: var(--r-lg);
+  background:
+    radial-gradient(
+      ellipse at 10% 0%,
+      color-mix(in srgb, var(--accent) 10%, transparent) 0%,
+      transparent 34%
+    ),
+    color-mix(in srgb, var(--surface-muted) 58%, var(--bg));
 }
 
 .tab-header {
@@ -6466,9 +6476,9 @@ code {
   flex-wrap: wrap;
   align-items: center;
   gap: 22px;
-  padding: 0;
+  padding: 0 18px;
   border-bottom: 1px solid var(--line);
-  background: transparent;
+  background: color-mix(in srgb, var(--surface-muted) 44%, transparent);
   overflow: visible;
   scrollbar-width: none;
   max-width: 100%;
@@ -6482,7 +6492,7 @@ code {
   border: none;
   border-bottom: 2px solid transparent;
   background: transparent;
-  padding: 0 0 12px;
+  padding: 12px 0;
   border-radius: 0;
   font-weight: 600;
   color: var(--ink-soft);
@@ -6503,7 +6513,7 @@ code {
   gap: 20px;
   max-width: 100%;
   overflow-x: auto;
-  padding-top: 14px;
+  padding: 10px 18px 22px;
 }
 
 .tab-body .markdown {
@@ -12517,17 +12527,22 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .tab-card {
-    overflow: visible;
+    overflow: hidden;
   }
 
   .tab-header {
-    gap: 18px;
-    overflow: visible;
+    gap: 16px;
+    padding: 0 14px;
+    overflow-x: auto;
   }
 
   .tab-button {
     flex: 0 0 auto;
     justify-content: center;
+  }
+
+  .tab-body {
+    padding: 8px 14px 18px;
   }
 
   .browse-page {
