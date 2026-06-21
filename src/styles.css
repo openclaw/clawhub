@@ -5868,17 +5868,17 @@ code {
 }
 
 .related-skills-section-compact .related-skills-header {
-  align-items: start;
-  gap: 8px;
+  align-items: baseline;
+  gap: 12px;
   padding-bottom: 10px;
 }
 
 .related-skills-section-compact .related-skills-title {
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .related-skills-section-compact .related-skills-category-link {
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .related-skills-header {
@@ -5893,23 +5893,22 @@ code {
 .related-skills-title {
   margin: 0;
   color: var(--ink);
-  font-family: var(--font-mono);
-  font-size: var(--fs-lg);
-  font-weight: 600;
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 700;
   line-height: 1.2;
-  text-transform: uppercase;
+  letter-spacing: -0.01em;
 }
 
 .related-skills-category-link {
-  color: var(--ink-soft);
-  font-family: var(--font-mono);
-  font-size: var(--fs-sm);
-  font-weight: 600;
+  color: color-mix(in srgb, var(--ink-soft) 78%, var(--bg));
+  font-family: var(--font-body);
+  font-size: var(--fs-xs);
+  font-weight: 650;
   line-height: 1.2;
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--ink-soft) 42%, transparent);
+  text-decoration-color: color-mix(in srgb, var(--ink-soft) 34%, transparent);
   text-underline-offset: 0.28em;
-  text-transform: uppercase;
   white-space: nowrap;
 }
 
