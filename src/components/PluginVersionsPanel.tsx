@@ -102,14 +102,12 @@ export function PluginVersionsPanel({
 
   return (
     <>
-      <div className="grid max-w-full gap-5 overflow-x-auto">
-        <div>
-          <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">
-            Versions
-          </h2>
-          <p className="m-0 text-sm text-[color:var(--ink-soft)]">
-            Review active release history and changelog.
-          </p>
+      <div className="tab-body skill-versions-panel">
+        <div className="skill-versions-header">
+          <h2>Versions</h2>
+          <div className="skill-versions-header-copy">
+            <p>Review active release history and changelog.</p>
+          </div>
         </div>
         {isUnavailable ? (
           <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
@@ -117,25 +115,21 @@ export function PluginVersionsPanel({
             <p className="empty-state-body">Try again later.</p>
           </div>
         ) : releases.length > 0 || nextCursor ? (
-          <div className="max-h-[600px] overflow-y-auto">
-            <div className="flex flex-col gap-3">
+          <div className="skill-versions-scroll">
+            <div className="skill-versions-list">
               {releases.map((release) => {
                 const hasLatestTag = release.distTags?.includes("latest");
                 const isLatest = release.version === latestVersion || hasLatestTag;
                 return (
-                  <div
-                    key={release.version}
-                    className="flex items-start justify-between gap-4 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
-                  >
-                    <div className="flex min-w-0 flex-1 flex-col gap-1">
-                      <div>
-                        v{release.version} · {new Date(release.createdAt).toLocaleDateString()}
-                      </div>
-                      <div className="whitespace-pre-wrap break-words text-[color:var(--ink-soft)]">
-                        {release.changelog}
-                      </div>
+                  <article key={release.version} className="skill-version-release">
+                    <div className="skill-version-release-meta">
+                      <strong>v{release.version}</strong>
+                      <span>{new Date(release.createdAt).toLocaleDateString()}</span>
+                    </div>
+                    <div className="skill-version-release-body">
+                      <div className="skill-version-release-changelog">{release.changelog}</div>
                       {release.distTags && release.distTags.length > 0 ? (
-                        <div className="flex flex-wrap items-center gap-2 pt-1">
+                        <div className="skill-version-release-scan">
                           {release.distTags.map((tag) => (
                             <Badge key={tag} variant="compact">
                               {tag}
@@ -144,7 +138,7 @@ export function PluginVersionsPanel({
                         </div>
                       ) : null}
                     </div>
-                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                    <div className="skill-version-release-actions">
                       {isLatest && !hasLatestTag ? <Badge variant="compact">Latest</Badge> : null}
                       {canDeleteVersions && !isLatest ? (
                         <Button
@@ -158,7 +152,7 @@ export function PluginVersionsPanel({
                         </Button>
                       ) : null}
                     </div>
-                  </div>
+                  </article>
                 );
               })}
             </div>
