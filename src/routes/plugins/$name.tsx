@@ -1054,7 +1054,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                       large: true,
                     },
                     { label: "Repository", value: sourceRepoLink },
-                    { label: "Owner", value: ownerMetadataValue },
+                    { label: "Creator", value: ownerMetadataValue },
                     securitySummary
                       ? {
                           key: "security-audit",

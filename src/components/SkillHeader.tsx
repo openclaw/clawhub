@@ -548,7 +548,7 @@ function SkillSidebarStats({
         { label: "Installs", value: formattedStats.installsAllTime },
         { label: "Repository", value: githubRepositoryLink },
         {
-          label: "Owner",
+          label: "Creator",
           value: (
             <UserBadge
               user={owner}

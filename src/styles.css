@@ -3546,8 +3546,8 @@ code {
 }
 
 .user-badge-md .user-avatar {
-  width: 26px;
-  height: 26px;
+  width: 32px;
+  height: 32px;
 }
 
 .user-badge-md .user-handle {
@@ -3556,7 +3556,7 @@ code {
 
 .skill-hero-title > .section-subtitle,
 .skill-summary-block > .section-subtitle {
-  font-size: var(--fs-md);
+  font-size: 14px;
   line-height: 1.4;
 }
 
@@ -5909,15 +5909,13 @@ code {
   font-size: var(--fs-xs);
   font-weight: 650;
   line-height: 1.2;
-  text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--ink-soft) 34%, transparent);
-  text-underline-offset: 0.28em;
+  text-decoration: none;
   white-space: nowrap;
 }
 
 .related-skills-category-link:hover {
   color: var(--ink);
-  text-decoration-color: currentColor;
+  text-decoration: none;
 }
 
 .related-skills-list {
@@ -5953,6 +5951,10 @@ code {
 
 .related-skills-section-compact .related-skill-row:hover {
   background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
+}
+
+.related-skills-section-compact .related-skill-row:last-child {
+  border-bottom: 0;
 }
 
 .related-skill-row:hover .related-skill-name {
