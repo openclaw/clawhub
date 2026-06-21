@@ -770,7 +770,7 @@ export function SkillDetailPage({
 
   if (isLoadingSkill || wantsCanonicalRedirect) {
     return (
-      <main className="section detail-page-section" aria-busy="true">
+      <main className="section detail-page-section skill-detail-page" aria-busy="true">
         <div role="status" aria-label="Loading skill details">
           <SkillDetailSkeleton />
         </div>
@@ -829,7 +829,7 @@ export function SkillDetailPage({
 
   if (mode === "settings") {
     return (
-      <main className="section detail-page-section">
+      <main className="section detail-page-section skill-detail-page">
         <DetailPageShell className="skill-settings-page">
           <div className="skill-settings-page-header">
             <a href={detailHref} className="skill-settings-back-link">
@@ -868,7 +868,7 @@ export function SkillDetailPage({
   }
 
   return (
-    <main className="section detail-page-section">
+    <main className="section detail-page-section skill-detail-page">
       <DetailPageShell>
         <SkillHeader
           skill={displayedSkill}

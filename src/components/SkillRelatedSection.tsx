@@ -44,9 +44,6 @@ export function SkillRelatedSection({
         <h2 id="related-skills-heading" className="related-skills-title">
           Related skills
         </h2>
-        <a className="related-skills-category-link" href={buildSkillCategoryBrowseHref(category)}>
-          More in {category.label}
-        </a>
       </div>
       <div className="related-skills-list" aria-busy={isLoading}>
         {isLoading
@@ -99,6 +96,11 @@ export function SkillRelatedSection({
                 </a>
               );
             })}
+      </div>
+      <div className="related-skills-footer">
+        <a className="related-skills-category-link" href={buildSkillCategoryBrowseHref(category)}>
+          More in {category.label}
+        </a>
       </div>
     </section>
   );

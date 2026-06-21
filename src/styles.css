@@ -418,6 +418,10 @@ code {
   border-bottom: 1px solid var(--line);
 }
 
+.app-shell:has(.skill-detail-page) .navbar {
+  border-bottom: 0;
+}
+
 .navbar-inner {
   width: 100%;
   max-width: var(--page-max);
@@ -5851,6 +5855,11 @@ code {
   font-size: 12px;
 }
 
+.related-skills-footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .related-skills-header {
   display: flex;
   align-items: end;
@@ -5912,7 +5921,14 @@ code {
 .related-skills-section-compact .related-skill-row {
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
-  padding: 14px 0;
+  margin-inline: -10px;
+  padding: 14px 10px;
+  border-radius: var(--r-sm);
+  transition: background-color 120ms ease;
+}
+
+.related-skills-section-compact .related-skill-row:hover {
+  background: color-mix(in srgb, var(--surface-muted) 82%, transparent);
 }
 
 .related-skill-row:hover .related-skill-name {
@@ -7699,6 +7715,7 @@ code {
   overflow-x: auto;
   display: block;
   table-layout: fixed;
+  border-radius: var(--r-md);
 }
 
 .markdown td,
