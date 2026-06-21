@@ -5209,6 +5209,10 @@ code {
   padding: 16px 2px;
 }
 
+.sidebar-metadata-compact > .sidebar-metadata-row:first-child {
+  padding-top: 0;
+}
+
 .sidebar-metadata-compact .sidebar-metadata-label {
   font-size: 0.86rem;
 }
