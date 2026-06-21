@@ -4676,7 +4676,7 @@ code {
 .skill-page-title {
   margin: 0;
   font-family: var(--font-display);
-  font-size: clamp(1.9rem, 3.45vw, 2.7rem);
+  font-size: clamp(1.9rem, 3.45vw, 2.25rem);
   line-height: 1.05;
   font-weight: 700;
   color: var(--ink);
