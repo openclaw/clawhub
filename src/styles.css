@@ -7771,7 +7771,7 @@ code {
 }
 
 .skill-readme-preview.is-collapsed {
-  max-height: calc(var(--skill-readme-line-height) * 50);
+  max-height: calc(var(--skill-readme-line-height) * 32);
   overflow: hidden;
 }
 
