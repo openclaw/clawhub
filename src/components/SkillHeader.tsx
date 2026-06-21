@@ -400,7 +400,7 @@ export function SkillHeader({
                     aria-expanded={isSummaryExpanded}
                     onClick={() => setIsSummaryExpanded((expanded) => !expanded)}
                   >
-                    {isSummaryExpanded ? "Show less" : "See more"}
+                    {isSummaryExpanded ? "Show less" : "Read more"}
                   </button>
                 ) : null}
               </div>
