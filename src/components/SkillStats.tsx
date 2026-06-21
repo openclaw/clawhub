@@ -9,7 +9,6 @@ export function SkillStatsTripletLine({ stats }: { stats: SkillStatsTriplet }) {
         <Star size={14} aria-hidden="true" />
         {formatted.stars}
       </span>
-      <span className="skill-stats-dot">·</span>
       <span className="skill-stats-item">
         <Download size={14} aria-hidden="true" />
         {formatted.downloads}

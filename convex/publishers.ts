@@ -65,6 +65,12 @@ type PublisherListStats = {
 type PublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
+  summary?: string | null;
+  slug?: string;
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: Id<"skillVersions">;
+  inferredFromVersionId?: Id<"skillVersions">;
   installs: number;
   /** Legacy response field retained while older frontend bundles are cached. */
   downloads: number;
@@ -313,12 +319,19 @@ function getPublisherPublishedItems(
     ...rows.skills.map((skill) => ({
       kind: "skill" as const,
       displayName: skill.displayName,
+      summary: skill.summary,
+      slug: skill.slug,
+      categories: skill.categories,
+      inferredCategories: skill.inferredCategories,
+      latestVersionId: skill.latestVersionId,
+      inferredFromVersionId: skill.inferredFromVersionId,
       downloads: readCanonicalStat(skill, "downloads"),
       installs: readCanonicalStat(skill, "installsAllTime"),
     })),
     ...rows.packages.map((pkg) => ({
       kind: pkg.family === "skill" ? ("skill" as const) : ("plugin" as const),
       displayName: pkg.displayName,
+      categories: pkg.categories,
       downloads: pkg.stats.downloads,
       installs: pkg.stats.installs,
     })),
@@ -329,6 +342,12 @@ function getPublisherPublishedItems(
     .map((item) => ({
       kind: item.kind,
       displayName: item.displayName,
+      summary: item.summary,
+      slug: item.slug,
+      categories: item.categories,
+      inferredCategories: item.inferredCategories,
+      latestVersionId: item.latestVersionId,
+      inferredFromVersionId: item.inferredFromVersionId,
       installs: item.installs,
       downloads: item.downloads,
     }));
@@ -507,6 +526,7 @@ async function toPublisherListItem(
       : undefined;
   return {
     ...publicPublisher,
+    displayName: resolvePublisherDisplayName(publisher, linkedUser),
     image: publicPublisher.image ?? linkedUser?.image,
     bio: publicPublisher.bio ?? linkedUser?.bio,
     stats,
@@ -544,7 +564,14 @@ async function toVisiblePublisherListSummary(
   }
   const summary = toPublisherListSummary(visibility.publisher);
   if (!summary) return null;
-  return { ...summary, visibility };
+  return {
+    ...summary,
+    item: {
+      ...summary.item,
+      displayName: resolvePublisherDisplayName(visibility.publisher, visibility.linkedUser),
+    },
+    visibility,
+  };
 }
 
 function hasPublisherListContent(summary: PublisherListSummary) {
@@ -704,6 +731,14 @@ function matchesPublisherQuery(publisher: PublisherListItem, queryText: string) 
   const haystack =
     `${publisher.displayName} ${publisher.handle} ${publisher.bio ?? ""}`.toLowerCase();
   return haystack.includes(queryText);
+}
+
+function resolvePublisherDisplayName(
+  publisher: Pick<Doc<"publishers">, "kind" | "displayName">,
+  linkedUser: Pick<Doc<"users">, "displayName" | "name"> | null | undefined,
+) {
+  if (publisher.kind !== "user") return publisher.displayName;
+  return linkedUser?.displayName?.trim() || linkedUser?.name?.trim() || publisher.displayName;
 }
 
 function getPublisherListCounts(items: PublisherListItem[]): PublisherListCounts {
@@ -2159,6 +2194,7 @@ export const listPublic = query({
 export const listPublicPage = query({
   args: {
     kind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+    official: v.optional(v.boolean()),
     query: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
@@ -2168,7 +2204,24 @@ export const listPublicPage = query({
     const queryText = args.query?.trim();
     const offset = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : 0;
     const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
-    const activeRows = await getActivePublisherRowsByDownloads(ctx, kindFilter);
+    const officialRows = args.official
+      ? (
+          await Promise.all(
+            (
+              await ctx.db
+                .query("officialPublishers")
+                .withIndex("by_created")
+                .order("desc")
+                .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
+            ).map((row) => ctx.db.get(row.publisherId)),
+          )
+        ).filter((publisher): publisher is Doc<"publishers"> =>
+          Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt),
+        )
+      : undefined;
+    const activeRows = officialRows
+      ? officialRows.filter((publisher) => !kindFilter || publisher.kind === kindFilter)
+      : await getActivePublisherRowsByDownloads(ctx, kindFilter);
     const publisherSummaries = await getVisiblePublisherListSummaries(ctx, activeRows);
     const itemSummaries = publisherSummaries
       .filter(
@@ -2178,7 +2231,9 @@ export const listPublicPage = query({
       )
       .sort((a, b) => comparePublisherListItems(a.item, b.item));
     const globalPublisherSummaries = kindFilter
-      ? await getVisiblePublisherListSummaries(ctx, await getActivePublisherRowsByDownloads(ctx))
+      ? officialRows
+        ? await getVisiblePublisherListSummaries(ctx, officialRows)
+        : await getVisiblePublisherListSummaries(ctx, await getActivePublisherRowsByDownloads(ctx))
       : publisherSummaries;
     const globalCounts = getPublisherListSummaryCounts(globalPublisherSummaries);
     const counts = queryText ? getPublisherListSummaryCounts(itemSummaries) : globalCounts;

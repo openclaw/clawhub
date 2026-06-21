@@ -192,13 +192,16 @@ const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
       kind?: "user" | "org";
+      official?: boolean;
       query?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
       page: Array<{
         handle: string;
+        displayName?: string;
         kind: "user" | "org";
+        official?: boolean;
         stats: { downloads: number; installs: number };
         publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
       }>;
@@ -1522,6 +1525,132 @@ describe("publishers membership controls", () => {
     expect(get).toHaveBeenCalledWith("users:proof-banned-builder");
     expect(get).toHaveBeenCalledWith("users:alice");
     expect(ownerPublisherQueries).toEqual(["publishers:alice", "publishers:alice"]);
+  });
+
+  it("lists official creators and organizations from the official publisher index", async () => {
+    const publishers = [
+      {
+        _id: "publishers:steipete",
+        _creationTime: 1,
+        kind: "user",
+        handle: "steipete",
+        displayName: "steipete",
+        linkedUserId: "users:steipete",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 85_400,
+        totalDownloads: 100_000,
+        totalStars: 100,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 2,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        publishedSkills: 6,
+        publishedPackages: 59,
+        totalInstalls: 130,
+        totalDownloads: 95_000,
+        totalStars: 4,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      {
+        _id: "publishers:community",
+        _creationTime: 3,
+        kind: "org",
+        handle: "community",
+        displayName: "Community",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 1_000,
+        totalDownloads: 1_000,
+        totalStars: 1,
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ];
+    const officialRows = [
+      {
+        _id: "officialPublishers:steipete",
+        publisherId: "publishers:steipete",
+        createdAt: 1,
+      },
+      {
+        _id: "officialPublishers:openclaw",
+        publisherId: "publishers:openclaw",
+        createdAt: 2,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:steipete") {
+            return {
+              _id: id,
+              displayName: "Peter Steinberger",
+              image: "https://github.com/steipete.png",
+            };
+          }
+          return publishers.find((publisher) => publisher._id === id) ?? null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery?: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery?.(q);
+
+            if (table === "officialPublishers" && indexName === "by_created") {
+              return {
+                order: vi.fn(() => ({ take: vi.fn(async () => officialRows) })),
+              };
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return {
+                unique: vi.fn(async () =>
+                  officialRows.find((row) => row.publisherId === fields.publisherId),
+                ),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_downloads"
+            ) {
+              return indexedRows([]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      official: true,
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page.map((publisher) => publisher.handle)).toEqual(["steipete", "openclaw"]);
+    expect(result.page.map((publisher) => publisher.kind)).toEqual(["user", "org"]);
+    expect(result.page[0]?.displayName).toBe("Peter Steinberger");
+    expect(result.page.every((publisher) => publisher.official)).toBe(true);
+    expect(result.isDone).toBe(true);
+
+    const creators = await listPublicPageHandler(ctx as never, {
+      official: true,
+      kind: "user",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(creators.page.map((publisher) => publisher.handle)).toEqual(["steipete"]);
+    expect(creators.globalCounts).toEqual({ all: 2, individuals: 1, organizations: 1 });
   });
 
   it("orders and renders public publisher card previews by downloads", async () => {

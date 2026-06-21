@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
   ArrowRight,
+  ExternalLink,
   ChevronDown,
   Command,
   LayoutDashboard,
@@ -44,14 +45,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "./ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "./ui/sheet";
 
 const THEME_MODE_ITEMS = [
   { mode: "system", label: "System theme", Icon: Monitor },
@@ -373,18 +367,15 @@ export default function Header() {
                   <SheetHeader className="pr-10">
                     <SheetTitle>
                       <span className="mobile-nav-brand">
-                        <span className="mobile-nav-brand-mark" aria-hidden="true">
-                          <img
-                            src={CLAWHUB_BRAND_MARK_SRC}
-                            alt=""
-                            aria-hidden="true"
-                            className="mobile-nav-brand-mark-image"
-                          />
-                        </span>
+                        <img
+                          src={CLAWHUB_BRAND_MARK_SRC}
+                          alt=""
+                          aria-hidden="true"
+                          className="mobile-nav-brand-mark-image"
+                        />
                         <span className="mobile-nav-brand-name">{SITE_NAME}</span>
                       </span>
                     </SheetTitle>
-                    <SheetDescription>Browse sections and access account actions.</SheetDescription>
                   </SheetHeader>
                   <div className="mobile-nav-section">
                     <SheetClose asChild>
@@ -406,8 +397,18 @@ export default function Header() {
                     {SECONDARY_NAV_ITEMS.map((item) => (
                       <SheetClose key={(item.href ?? item.to ?? "") + item.label} asChild>
                         {item.href ? (
-                          <a href={item.href} className="mobile-nav-link">
-                            {item.label}
+                          <a
+                            href={item.href}
+                            className="mobile-nav-link"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <span>{item.label}</span>
+                            <ExternalLink
+                              size={16}
+                              className="mobile-nav-link-external"
+                              aria-hidden="true"
+                            />
                           </a>
                         ) : (
                           <Link
@@ -423,7 +424,7 @@ export default function Header() {
                   </div>
                   {!isAuthResolving && !isAuthenticated ? (
                     <div className="mobile-nav-section mobile-nav-appearance-section">
-                      <span className="mobile-nav-section-title">Theme</span>
+                      <span className="mobile-nav-section-title">Appearance</span>
                       <NavbarThemeSwitcher mode={mode} onSetMode={setThemeMode} />
                     </div>
                   ) : null}

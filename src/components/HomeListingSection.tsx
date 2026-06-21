@@ -11,6 +11,7 @@ import {
   Plus,
   Rows3,
   Search,
+  Star,
   X,
 } from "lucide-react";
 import {
@@ -34,9 +35,11 @@ import {
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
+import { truncateText } from "../lib/truncateText";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
+import { BrowseResultsSkeleton } from "./skeletons/BrowseResultsSkeleton";
 
 type ListingKind = "skills" | "plugins";
 type ListingTab = "popular" | "trending" | "officials" | "new";
@@ -366,11 +369,15 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
           {handle ? <span className="home-v2-listing-row-by">@{handle}</span> : null}
         </div>
         <p className="home-v2-listing-row-summary">
-          {entry.skill.summary || "Agent-ready skill pack."}
+          {truncateText(entry.skill.summary || "Agent-ready skill pack.", 80)}
         </p>
       </div>
       {showStats ? (
         <div className="home-v2-listing-row-stats" aria-label="Popularity">
+          <span>
+            <Star size={13} aria-hidden="true" />
+            {formatCompactStat(entry.skill.stats?.stars ?? 0)}
+          </span>
           <span>
             <Download size={13} aria-hidden="true" />
             {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
@@ -398,10 +405,14 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
           {plugin.isOfficial ? <OfficialBadge /> : null}
         </div>
         <p className="home-v2-listing-row-summary">
-          {plugin.summary || "Gateway plugin for OpenClaw workflows."}
+          {truncateText(plugin.summary || "Gateway plugin for OpenClaw workflows.", 80)}
         </p>
       </div>
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
+        <span>
+          <Star size={13} aria-hidden="true" />
+          {formatCompactStat(plugin.stats?.stars ?? 0)}
+        </span>
         <span>
           <Download size={13} aria-hidden="true" />
           {formatCompactStat(plugin.stats?.downloads ?? 0)}
@@ -430,10 +441,14 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
         </div>
       </div>
       <p className="home-v2-listing-card-summary">
-        {entry.skill.summary || "Agent-ready skill pack."}
+        {truncateText(entry.skill.summary || "Agent-ready skill pack.", 80)}
       </p>
       {showStats ? (
         <div className="home-v2-listing-card-stats" aria-label="Popularity">
+          <span>
+            <Star size={13} aria-hidden="true" />
+            {formatCompactStat(entry.skill.stats?.stars ?? 0)}
+          </span>
           <span>
             <Download size={13} aria-hidden="true" />
             {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
@@ -464,9 +479,13 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
         </div>
       </div>
       <p className="home-v2-listing-card-summary">
-        {plugin.summary || "Gateway plugin for OpenClaw workflows."}
+        {truncateText(plugin.summary || "Gateway plugin for OpenClaw workflows.", 80)}
       </p>
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
+        <span>
+          <Star size={13} aria-hidden="true" />
+          {formatCompactStat(plugin.stats?.stars ?? 0)}
+        </span>
         <span>
           <Download size={13} aria-hidden="true" />
           {formatCompactStat(plugin.stats?.downloads ?? 0)}
@@ -873,9 +892,7 @@ export function HomeListingSection() {
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
               placeholder={
-                kind === "skills"
-                  ? "Search skills in this catalog…"
-                  : "Search plugins in this catalog…"
+                kind === "skills" ? "Search skills on ClawHub" : "Search plugins on ClawHub"
               }
               aria-label={kind === "skills" ? "Search skills" : "Search plugins"}
               autoComplete="off"
@@ -938,11 +955,7 @@ export function HomeListingSection() {
       ) : null}
 
       {activeStatus === "loading" ? (
-        <div className="home-v2-listing-list home-v2-listing-list-loading" aria-busy="true">
-          {Array.from({ length: 6 }, (_, index) => (
-            <div key={index} className="home-v2-listing-skeleton" />
-          ))}
-        </div>
+        <BrowseResultsSkeleton label={kind === "skills" ? "Skill" : "Plugin"} variant="list" />
       ) : null}
 
       {activeStatus === "error" ? <HomeListingEmptyPanel variant="error" /> : null}

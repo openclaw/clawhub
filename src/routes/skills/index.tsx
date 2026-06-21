@@ -1,10 +1,23 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
-import { Search, X } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useRef } from "react";
 import { api } from "../../../convex/_generated/api";
-import { BrowseSidebar } from "../../components/BrowseSidebar";
+import {
+  BrowseActions,
+  BrowseCategorySelect,
+  BrowseControls,
+  BrowseControlsDivider,
+  BrowseControlsRow,
+  BrowseSearchInput,
+  BrowseSearchPanel,
+  BrowseSearchTrigger,
+  BrowseSortSelect,
+  BrowseTabs,
+  BrowseTopicChips,
+  BrowseViewToggle,
+  useBrowseSearchDisclosure,
+} from "../../components/BrowseControls";
 import { formatBrowseCount } from "../../lib/browseCount";
 import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
 import { parseDir, parseSort } from "./-params";
@@ -15,20 +28,17 @@ import {
   type SkillsSearchState,
 } from "./-useSkillsBrowseModel";
 
-const BROWSE_SORT_OPTIONS = [
-  { value: "recommended", label: "Recommended" },
+const SKILLS_VIEW_OPTIONS = [
+  { value: "all", label: "All" },
+  { value: "top", label: "Top" },
   { value: "stars", label: "Most starred" },
-  { value: "downloads", label: "Most downloaded" },
+  { value: "featured", label: "Featured" },
+];
+
+const SKILLS_SORT_OPTIONS = [
   { value: "updated", label: "Recently updated" },
   { value: "newest", label: "Newest" },
   { value: "name", label: "Name" },
-];
-
-const FEATURED_SORT_OPTION = { value: "featured", label: "Featured" };
-const SKILLS_SORT_OPTIONS = [
-  BROWSE_SORT_OPTIONS[0],
-  FEATURED_SORT_OPTION,
-  ...BROWSE_SORT_OPTIONS.slice(1),
 ];
 
 function parseSkillCategorySlug(value: unknown) {
@@ -62,19 +72,26 @@ export function SkillsIndex() {
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
   const searchInputRef = useRef<HTMLInputElement>(null);
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const model = useSkillsBrowseModel({
     navigate,
     search,
     searchInputRef,
   });
+  const browseSearch = useBrowseSearchDisclosure({
+    value: model.query,
+    onClear: model.onClearQuery,
+    inputRef: searchInputRef,
+  });
 
-  const activeSort = model.featuredOnly
+  const activeView = model.featuredOnly
     ? "featured"
-    : model.sort === "relevance"
-      ? "recommended"
-      : model.sort;
+    : model.sort === "downloads"
+      ? "top"
+      : model.sort === "stars"
+        ? "stars"
+        : "all";
+  const activeSort = ["updated", "newest", "name"].includes(model.sort) ? model.sort : undefined;
   const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly;
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
   const categoryTopics = useQuery(
@@ -88,41 +105,65 @@ export function SkillsIndex() {
   );
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalSkillsCount) : null;
 
-  const handleSortChange = useCallback(
+  const handleViewChange = useCallback(
     (value: string) => {
-      if (value === "featured") {
-        if (!model.featuredOnly) model.onToggleFeatured();
-        return;
-      }
-
-      if (model.featuredOnly) {
-        const nextSort = parseSort(value);
-        void navigate({
-          search: (prev: SkillsSearchState) => {
-            const reusePreviousDir =
-              prev.sort !== undefined &&
-              prev.sort !== "recommended" &&
-              prev.sort !== "default" &&
-              prev.sort !== "relevance";
+      void navigate({
+        search: (prev: SkillsSearchState) => {
+          if (value === "top" || value === "stars") {
+            const sort = value === "top" ? "downloads" : "stars";
             return {
               ...prev,
-              sort: nextSort,
-              dir:
-                nextSort === "recommended" || nextSort === "default"
-                  ? undefined
-                  : parseDir(reusePreviousDir ? prev.dir : undefined, nextSort),
+              sort,
+              dir: "desc",
               featured: undefined,
               highlighted: undefined,
             };
-          },
+          }
+
+          if (value === "featured") {
+            const sort = parseSort(prev.sort);
+            const keepSort = sort === "updated" || sort === "newest" || sort === "name";
+            return {
+              ...prev,
+              sort: keepSort ? sort : undefined,
+              dir: keepSort ? parseDir(prev.dir, sort) : undefined,
+              featured: true,
+              highlighted: undefined,
+            };
+          }
+
+          return {
+            ...prev,
+            sort: undefined,
+            dir: undefined,
+            featured: undefined,
+            highlighted: undefined,
+          };
+        },
+        replace: true,
+      });
+    },
+    [navigate],
+  );
+
+  const handleSortChange = useCallback(
+    (value: string | undefined) => {
+      if (!value) {
+        void navigate({
+          search: (prev: SkillsSearchState) => ({
+            ...prev,
+            sort: undefined,
+            dir: undefined,
+            featured: activeView === "featured" ? true : undefined,
+            highlighted: undefined,
+          }),
           replace: true,
         });
         return;
       }
-
       model.onSortChange(value);
     },
-    [model.featuredOnly, model.onSortChange, model.onToggleFeatured, navigate],
+    [activeView, model.onSortChange, navigate],
   );
 
   const handleCategoryChange = useCallback(
@@ -158,16 +199,8 @@ export function SkillsIndex() {
   );
 
   return (
-    <main className="browse-page">
+    <main className="browse-page browse-page-borderless-header">
       <div className="browse-page-header">
-        <button
-          className="browse-sidebar-toggle"
-          type="button"
-          onClick={() => setSidebarOpen(!sidebarOpen)}
-          aria-label="Toggle filters"
-        >
-          Filters
-        </button>
         <h1 className="browse-title">
           Skills
           {formattedCount ? (
@@ -177,56 +210,55 @@ export function SkillsIndex() {
             </>
           ) : null}
         </h1>
-        <div className="browse-view-toggle">
-          <button
-            className={`browse-view-btn${model.view === "list" ? " is-active" : ""}`}
-            type="button"
-            onClick={model.view === "grid" ? model.onToggleView : undefined}
-          >
-            List
-          </button>
-          <button
-            className={`browse-view-btn${model.view === "grid" ? " is-active" : ""}`}
-            type="button"
-            onClick={model.view === "list" ? model.onToggleView : undefined}
-          >
-            Grid
-          </button>
-        </div>
       </div>
-      <div className="browse-page-search">
-        <Search size={15} className="navbar-search-icon" aria-hidden="true" />
-        <input
-          ref={searchInputRef}
-          className="browse-search-input"
-          aria-label="Search skills"
-          value={model.query}
-          onChange={(event) => model.onQueryChange(event.target.value)}
-          placeholder="Search skills..."
-        />
-        {model.query ? (
-          <button
-            type="button"
-            className="browse-search-clear"
-            aria-label="Clear skill search"
-            onClick={model.onClearQuery}
-          >
-            <X size={14} aria-hidden="true" />
-          </button>
-        ) : null}
-      </div>
-      <div className={`browse-layout${sidebarOpen ? " sidebar-open" : ""}`}>
-        <BrowseSidebar
-          categories={SKILL_CATEGORIES}
-          activeCategory={model.activeCategory}
-          onCategoryChange={handleCategoryChange}
-          categoryTopics={categoryTopics ?? []}
+      <BrowseControls>
+        <BrowseControlsRow>
+          <BrowseTabs
+            ariaLabel="Skill view"
+            options={SKILLS_VIEW_OPTIONS}
+            value={activeView}
+            onChange={(value) => {
+              if (value) handleViewChange(value);
+            }}
+          />
+          <BrowseControlsDivider />
+          <BrowseSortSelect
+            options={SKILLS_SORT_OPTIONS}
+            value={activeSort}
+            onChange={handleSortChange}
+          />
+          <BrowseActions>
+            <BrowseSearchTrigger
+              open={browseSearch.open}
+              onOpen={browseSearch.openSearch}
+              label="Search skills"
+            />
+            <BrowseCategorySelect
+              categories={SKILL_CATEGORIES}
+              value={model.activeCategory}
+              onChange={handleCategoryChange}
+            />
+            <BrowseViewToggle view={model.view} onToggle={model.onToggleView} />
+          </BrowseActions>
+          <BrowseSearchPanel open={browseSearch.open}>
+            <BrowseSearchInput
+              inputRef={searchInputRef}
+              label="skill search"
+              placeholder="Search skills..."
+              value={model.query}
+              onChange={model.onQueryChange}
+              onClear={browseSearch.closeSearch}
+              closeLabel="Close search"
+            />
+          </BrowseSearchPanel>
+        </BrowseControlsRow>
+        <BrowseTopicChips
+          topics={categoryTopics ?? []}
           activeTopic={model.activeTopic}
-          onTopicChange={handleTopicChange}
-          sortOptions={SKILLS_SORT_OPTIONS}
-          activeSort={activeSort}
-          onSortChange={handleSortChange}
+          onChange={handleTopicChange}
         />
+      </BrowseControls>
+      <div className="browse-layout">
         <div className="browse-results">
           <SkillsResults
             isLoadingSkills={model.isLoadingSkills}

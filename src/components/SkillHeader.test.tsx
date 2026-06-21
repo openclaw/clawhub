@@ -222,8 +222,8 @@ describe("SkillHeader", () => {
       },
     });
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Google Workspace");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Email");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#google-workspace");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#email");
   });
 
   it("shows a New version action for managers above Settings", () => {

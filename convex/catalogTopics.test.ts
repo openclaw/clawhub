@@ -84,7 +84,7 @@ function makePluginCategoryDigest(overrides: Record<string, unknown> = {}) {
 }
 
 describe("catalog topic ranking", () => {
-  it("returns the five most frequent normalized topics and excludes the selected category", () => {
+  it("returns the most frequent normalized topics and excludes the selected category", () => {
     expect(
       rankTopCatalogTopics(
         [
@@ -95,7 +95,7 @@ describe("catalog topic ranking", () => {
         ],
         "development",
       ),
-    ).toEqual(["typescript", "docker", "github", "debugging", "coding"]);
+    ).toEqual(["typescript", "docker", "github", "debugging", "coding", "automation"]);
   });
 });
 
