@@ -2668,14 +2668,40 @@ code {
 
 .skill-summary-block {
   margin-bottom: var(--space-4);
+  display: grid;
+  gap: 8px;
+  justify-items: start;
 }
 
 .skill-summary-line {
   margin-bottom: 0;
+}
+
+.skill-summary-line.line-clamp-2 {
   display: -webkit-box;
   overflow: hidden;
-  -webkit-line-clamp: 5;
+  -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
+}
+
+.skill-summary-toggle {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.skill-summary-toggle:hover,
+.skill-summary-toggle:focus-visible {
+  color: var(--ink);
 }
 
 .grid {
@@ -3411,7 +3437,7 @@ code {
 
 .skill-card-statline-dot,
 .skill-stats-dot {
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
 
 .skill-stats-triplet {
@@ -4166,7 +4192,7 @@ code {
 }
 
 .plugin-warning-meta dt {
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: 0.72rem;
   font-weight: 700;
   text-transform: uppercase;
@@ -4267,7 +4293,7 @@ code {
 }
 
 .plugin-publish-error-table th {
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: 0.72rem;
   font-weight: 800;
   text-transform: uppercase;
@@ -4472,7 +4498,7 @@ code {
 }
 
 .summary-settings-meta {
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: 0.78rem;
   line-height: 1.3;
 }
@@ -4602,8 +4628,8 @@ code {
   align-items: center;
   gap: 8px;
   min-width: 0;
-  color: var(--ink-soft);
-  font-size: 0.92rem;
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
+  font-size: 12px;
   font-weight: 520;
 }
 
@@ -4680,6 +4706,74 @@ code {
   border-color: color-mix(in srgb, var(--ink-soft) 36%, var(--line));
   color: var(--ink);
   text-decoration: none;
+}
+
+.skill-hero-taxonomy-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
+  font-size: 12px;
+  line-height: 1;
+}
+
+.skill-category-meta-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
+}
+
+.skill-category-meta-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
+  font-size: 12px;
+  font-weight: 520;
+  text-decoration: none;
+}
+
+.skill-category-meta-link:hover,
+.skill-category-meta-link:focus-visible {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.skill-category-comma {
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
+}
+
+.skill-category-icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+}
+
+.skill-hero-taxonomy-separator {
+  width: 1px;
+  height: 14px;
+  flex: 0 0 auto;
+  background: color-mix(in srgb, var(--ink-soft) 28%, transparent);
+}
+
+.skill-hero-topic-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.skill-hero-topic {
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
+  font-size: 12px;
+  font-weight: 520;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .skill-settings-link {
@@ -4863,6 +4957,13 @@ code {
 .skill-sidebar-action-button {
   width: 100%;
   justify-content: center;
+}
+
+.skill-sidebar-action-divider {
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 6px 0;
+  width: 100%;
 }
 
 .security-audit-sidebar-label {
@@ -10912,7 +11013,7 @@ a.agentic-risk-finding-title:focus-visible {
 }
 
 .publisher-filter-tab span {
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-weight: 600;
 }
 
@@ -11008,7 +11109,7 @@ a.agentic-risk-finding-title:focus-visible {
   padding: 4px 6px;
   margin-inline: -6px;
   border-radius: var(--r-sm);
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: var(--fs-xs);
   line-height: 1.35;
   text-overflow: ellipsis;
@@ -11193,7 +11294,7 @@ a.agentic-risk-finding-title:focus-visible {
   align-items: center;
   justify-content: flex-end;
   gap: 5px;
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: var(--fs-xs);
   text-align: right;
 }
@@ -11205,12 +11306,12 @@ a.agentic-risk-finding-title:focus-visible {
 }
 
 .publisher-card-stat svg {
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
 
 .publisher-card-stat strong {
   overflow: hidden;
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: var(--fs-sm);
   font-weight: 700;
   text-overflow: ellipsis;
@@ -12914,7 +13015,7 @@ a.search-empty-action {
 }
 
 .publisher-profile-stat svg {
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
 
 .publisher-profile-stat strong {
@@ -13006,7 +13107,7 @@ a.publisher-profile-detail:hover {
 
 .publisher-profile-detail svg {
   flex: 0 0 auto;
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
 
 .publisher-profile-detail strong {
@@ -17197,7 +17298,7 @@ a.publisher-profile-detail:hover {
 }
 
 .publisher-profile-stat svg {
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
 
 .publisher-profile-stat strong {
@@ -17289,7 +17390,7 @@ a.publisher-profile-detail:hover {
 
 .publisher-profile-detail svg {
   flex: 0 0 auto;
-  color: var(--ink-muted);
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
 
 .publisher-profile-detail strong {

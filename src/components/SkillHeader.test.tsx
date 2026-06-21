@@ -148,8 +148,8 @@ describe("SkillHeader", () => {
       },
     });
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Google Workspace");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Email");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#google-workspace");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#email");
   });
 
   it("shows a New version action for managers above Settings", () => {
@@ -275,7 +275,7 @@ describe("SkillHeader", () => {
     expect(screen.queryByText("Demo summary")).toBeNull();
   });
 
-  it("keeps the download link in the owner namespace", () => {
+  it("keeps download actions and metrics hidden on the detail header", () => {
     renderHeader({
       latestVersion: {
         _id: "skillVersions:demo" as Id<"skillVersions">,
@@ -289,12 +289,8 @@ describe("SkillHeader", () => {
       },
     });
 
-    const href = screen.getByRole("link", { name: "Download" }).getAttribute("href");
-    expect(href).not.toBeNull();
-    const url = new URL(href ?? "");
-    expect(url.pathname).toBe("/api/v1/download");
-    expect(url.searchParams.get("slug")).toBe("demo");
-    expect(url.searchParams.get("ownerHandle")).toBe("local");
+    expect(screen.queryByRole("link", { name: "Download" })).toBeNull();
+    expect(screen.queryByText("Downloads")).toBeNull();
   });
 
   it("falls back to legacy parsed frontmatter description when present", () => {

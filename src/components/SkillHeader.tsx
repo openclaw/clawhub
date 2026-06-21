@@ -1,16 +1,16 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Download, Flag, Settings, ShieldCheck, Star, Upload } from "lucide-react";
-import type { ReactNode } from "react";
+import { Flag, Settings, Share2, ShieldCheck, Star, Upload } from "lucide-react";
+import { Fragment, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { getSkillBadges } from "../lib/badges";
+import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
-import { getRuntimeEnv } from "../lib/runtimeEnv";
 import { timeAgo } from "../lib/timeAgo";
-import { CatalogTopicList } from "./CatalogTopicList";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { OfficialTag } from "./OfficialBadge";
@@ -45,6 +45,13 @@ type SkillCanonical = {
   owner: { handle: string | null; userId: Id<"users"> | null };
 };
 
+const MAX_HEADER_TOPICS = 5;
+const SUMMARY_COLLAPSE_THRESHOLD = 220;
+
+function formatHeaderTopic(topic: string) {
+  return `#${topic.trim().toLowerCase().replace(/\s+/g, "-")}`;
+}
+
 type SkillHeaderLatestVersion =
   | (Omit<Doc<"skillVersions">, "parsed"> & {
       parsed?: (Partial<Doc<"skillVersions">["parsed"]> & { description?: string }) | null;
@@ -60,13 +67,6 @@ function getLatestVersionDescription(latestVersion: SkillHeaderLatestVersion) {
         ? parsed.frontmatter.description
         : null;
   return description?.trim() || null;
-}
-
-function buildSkillDownloadHref(convexSiteUrl: string, slug: string, ownerHandle: string | null) {
-  const params = new URLSearchParams({ slug });
-  const normalizedOwner = ownerHandle?.trim().replace(/^@+/, "");
-  if (normalizedOwner) params.set("ownerHandle", normalizedOwner);
-  return `${convexSiteUrl}/api/v1/download?${params.toString()}`;
 }
 
 function getGitHubRepositoryLink(skill: Doc<"skills"> | PublicSkill) {
@@ -114,6 +114,7 @@ type SkillHeaderProps = {
   cliHelp: string | undefined;
   clawdis: ClawdisSkillMetadata | undefined;
   category?: SkillCategory | null;
+  categories?: SkillCategory[] | null;
   priorityContent?: ReactNode;
   postInstallContent?: ReactNode;
   securityAuditSummary?: ReactNode;
@@ -149,6 +150,7 @@ export function SkillHeader({
   cliHelp,
   clawdis,
   category,
+  categories,
   priorityContent,
   postInstallContent,
   securityAuditSummary,
@@ -159,19 +161,10 @@ export function SkillHeader({
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
-  const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
-  const downloadHref =
-    latestVersion && !nixPlugin
-      ? buildSkillDownloadHref(convexSiteUrl, skill.slug, ownerHandle)
-      : null;
   const hasTitleActions = isStaff;
   const showReportAction = !canManage || isStaff;
   const hasSidebarActions =
-    Boolean(downloadHref) ||
-    showReportAction ||
-    Boolean(newVersionHref) ||
-    Boolean(settingsHref) ||
-    hasTitleActions;
+    showReportAction || Boolean(newVersionHref) || Boolean(settingsHref) || hasTitleActions;
   const badges = getSkillBadges(skill);
   const isOfficial = badges.includes("Official") || owner?.official === true;
   const titleBadges = badges.filter((badge) => badge !== "Official");
@@ -179,6 +172,13 @@ export function SkillHeader({
   const showTitleBadges = titleBadges.length > 0;
   const headerDescription =
     getLatestVersionDescription(latestVersion) ?? skill.summary ?? "No summary provided.";
+  const headerTopics = (skill.topics ?? [])
+    .map((topic) => topic.trim())
+    .filter(Boolean)
+    .slice(0, MAX_HEADER_TOPICS);
+  const headerCategories = (categories ?? (category ? [category] : [])).slice(0, 3);
+  const hasSummaryToggle = headerDescription.length > SUMMARY_COLLAPSE_THRESHOLD;
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
 
   return (
     <>
@@ -245,21 +245,27 @@ export function SkillHeader({
                     <span className="skill-action-count">{formattedStats.stars}</span>
                   </Button>
                 </SignedInActionTooltip>
-                {downloadHref ? (
-                  <Button asChild variant="outline" className="skill-sidebar-action-button">
-                    <a href={downloadHref}>
-                      <Download size={14} aria-hidden="true" />
-                      Download
-                    </a>
-                  </Button>
-                ) : null}
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="skill-sidebar-action-button"
+                  onClick={() => {
+                    if (typeof window === "undefined") return;
+                    void navigator.clipboard.writeText(window.location.href);
+                    toast.success("Link copied");
+                  }}
+                >
+                  <Share2 size={14} aria-hidden="true" />
+                  Share
+                </Button>
+                <hr className="skill-sidebar-action-divider" />
                 {showReportAction ? (
                   <SignedInActionTooltip
                     isAuthenticated={isAuthenticated}
                     message="You must be signed in to report a skill"
                   >
                     <Button
-                      variant="outline"
+                      variant="ghost"
                       type="button"
                       className="skill-sidebar-action-button"
                       onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
@@ -311,7 +317,10 @@ export function SkillHeader({
                   {ownerHandle ?? owner?.displayName ?? owner?._id ?? "unknown"}
                 </a>
                 <span aria-hidden="true">/</span>
-                <a href={buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}>
+                <a
+                  href={buildSkillHref(ownerHandle, owner?._id ?? null, skill.slug)}
+                  aria-current="page"
+                >
                   {skill.slug}
                 </a>
               </nav>
@@ -330,19 +339,67 @@ export function SkillHeader({
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
                 </div>
-                {category ? (
-                  <a
-                    className="skill-category-chip"
-                    href={buildSkillCategoryBrowseHref(category)}
-                    aria-label={`View ${category.label} skills`}
-                  >
-                    {category.label}
-                  </a>
+                {headerCategories.length > 0 || headerTopics.length > 0 ? (
+                  <div className="skill-hero-taxonomy-row" aria-label="Skill metadata">
+                    {headerCategories.length > 0 ? (
+                      <div className="skill-category-meta-list" aria-label="Categories">
+                        {headerCategories.map((categoryItem, index) => (
+                          <Fragment key={categoryItem.slug}>
+                            <a
+                              className="skill-category-meta-link"
+                              href={buildSkillCategoryBrowseHref(categoryItem)}
+                              aria-label={`View ${categoryItem.label} skills`}
+                            >
+                              <BrowseCategoryIcon
+                                slug={categoryItem.slug}
+                                icon={categoryItem.icon}
+                                size={14}
+                                className="skill-category-icon"
+                              />
+                              <span>{categoryItem.label}</span>
+                            </a>
+                            {index < headerCategories.length - 1 ? (
+                              <span className="skill-category-comma" aria-hidden="true">
+                                ,
+                              </span>
+                            ) : null}
+                          </Fragment>
+                        ))}
+                      </div>
+                    ) : null}
+                    {headerCategories.length > 0 && headerTopics.length > 0 ? (
+                      <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+                    ) : null}
+                    {headerTopics.length > 0 ? (
+                      <div className="skill-hero-topic-list" aria-label="Topics">
+                        {headerTopics.map((topic) => (
+                          <span className="skill-hero-topic" key={topic}>
+                            {formatHeaderTopic(topic)}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : null}
-                <CatalogTopicList topics={skill.topics} />
               </div>
               <div className="skill-summary-block">
-                <p className="section-subtitle skill-summary-line">{headerDescription}</p>
+                <p
+                  className={`section-subtitle skill-summary-line${
+                    hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
+                  }`}
+                >
+                  {headerDescription}
+                </p>
+                {hasSummaryToggle ? (
+                  <button
+                    type="button"
+                    className="skill-summary-toggle"
+                    aria-expanded={isSummaryExpanded}
+                    onClick={() => setIsSummaryExpanded((expanded) => !expanded)}
+                  >
+                    {isSummaryExpanded ? "Show less" : "See more"}
+                  </button>
+                ) : null}
               </div>
 
               {nixPlugin ? (
@@ -485,7 +542,12 @@ function SkillSidebarStats({
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
-        { label: "Installs", value: formattedStats.installsAllTime, large: true },
+        {
+          grid: [
+            { label: "Installs", value: formattedStats.installsAllTime },
+            { label: "Stars", value: formattedStats.stars },
+          ],
+        },
         { label: "Repository", value: githubRepositoryLink },
         {
           label: "Owner",
@@ -508,7 +570,14 @@ function SkillSidebarStats({
               value: securityAuditSummary,
             }
           : { label: "", value: null },
-        { label: "Last updated", value: timeAgo(skill.updatedAt) },
+        {
+          label: "Last updated",
+          value: (
+            <span title={new Date(skill.updatedAt).toLocaleString()}>
+              {timeAgo(skill.updatedAt)}
+            </span>
+          ),
+        },
         ...(showArchiveMetadata
           ? [
               {

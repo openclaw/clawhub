@@ -16,7 +16,7 @@ import {
   isBannedAccountAuthError,
   routeToBannedAccountPage,
 } from "../lib/authErrorMessage";
-import { getSkillCategoryForSkill } from "../lib/categories";
+import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
@@ -254,6 +254,10 @@ export function SkillDetailPage({
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
+  const relatedCategories = useMemo(
+    () => (skill ? getSkillCategoriesForSkill(skill).slice(0, 3) : []),
+    [skill],
+  );
   const suggestedCatalogCategories = useMemo(
     () => (skill ? resolveSkillCategories({ inferred: inferSkillCategories(skill) }) : undefined),
     [skill],
@@ -895,6 +899,7 @@ export function SkillDetailPage({
           cliHelp={cliHelp}
           clawdis={clawdis}
           category={relatedCategory}
+          categories={relatedCategories}
           priorityContent={staffVisibilityAlert}
           securityAuditSummary={securitySummary}
           newVersionHref={newVersionHref}
