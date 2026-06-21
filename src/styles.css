@@ -6569,9 +6569,9 @@ code {
 .skill-card-info-callout {
   margin: 0;
   padding: 12px 14px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 86%, var(--ink) 8%);
   border-radius: var(--r-md);
-  background: color-mix(in srgb, var(--surface-muted) 64%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 78%, var(--ink) 4%);
   color: var(--ink-soft);
   font-size: var(--fs-sm);
   line-height: 1.55;
@@ -8085,6 +8085,29 @@ code {
   font-family: inherit;
   color: inherit;
   font-size: inherit;
+}
+
+.tab-body .markdown :not(pre) > code {
+  background: color-mix(in srgb, var(--surface-muted) 74%, var(--ink) 6%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 56%, transparent);
+}
+
+.tab-body .markdown pre {
+  border-color: color-mix(in srgb, var(--line) 88%, var(--ink) 8%);
+  background: color-mix(in srgb, var(--surface-muted) 82%, var(--ink) 4%);
+}
+
+.tab-body .markdown table {
+  border-color: color-mix(in srgb, var(--line) 88%, var(--ink) 8%);
+  background: color-mix(in srgb, var(--surface-muted) 48%, transparent);
+}
+
+.tab-body .markdown th {
+  background: color-mix(in srgb, var(--surface-muted) 78%, var(--ink) 4%);
+}
+
+.tab-body .markdown td {
+  background: color-mix(in srgb, var(--surface-muted) 26%, transparent);
 }
 
 .markdown .mermaid-diagram {
