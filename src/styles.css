@@ -3909,6 +3909,21 @@ code {
   display: grid;
   gap: 16px;
   min-width: 0;
+  position: relative;
+  border: 1px solid color-mix(in srgb, var(--line) 74%, transparent);
+  border-radius: var(--r-lg);
+  padding: clamp(18px, 2vw, 24px);
+  background:
+    radial-gradient(
+      ellipse at 18% 0%,
+      color-mix(in srgb, var(--accent) 13%, transparent) 0%,
+      transparent 34%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--surface-muted) 54%, transparent) 0%,
+      transparent 72%
+    );
 }
 
 .detail-layout {
@@ -5848,6 +5863,24 @@ code {
   min-width: 0;
 }
 
+.related-skills-section-compact {
+  gap: 10px;
+}
+
+.related-skills-section-compact .related-skills-header {
+  align-items: start;
+  gap: 8px;
+  padding-bottom: 10px;
+}
+
+.related-skills-section-compact .related-skills-title {
+  font-size: 12px;
+}
+
+.related-skills-section-compact .related-skills-category-link {
+  font-size: 11px;
+}
+
 .related-skills-header {
   display: flex;
   align-items: end;
@@ -5891,6 +5924,10 @@ code {
   border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
 
+.related-skills-section-compact .related-skills-list {
+  border-top: 0;
+}
+
 .related-skill-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(180px, 0.34fr);
@@ -5901,6 +5938,12 @@ code {
   border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   color: inherit;
   text-decoration: none;
+}
+
+.related-skills-section-compact .related-skill-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  padding: 14px 0;
 }
 
 .related-skill-row:hover .related-skill-name {
@@ -5915,6 +5958,13 @@ code {
 .related-skill-copy {
   display: grid;
   gap: 5px;
+  min-width: 0;
+}
+
+.related-skill-title-line {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -5943,6 +5993,10 @@ code {
   -webkit-line-clamp: 1;
 }
 
+.related-skills-section-compact .related-skill-summary {
+  font-size: 12px;
+}
+
 .related-skill-owner {
   min-width: 0;
   color: var(--ink-soft);
@@ -5951,6 +6005,29 @@ code {
   line-height: 1.3;
   text-align: right;
   overflow-wrap: anywhere;
+}
+
+.related-skill-owner-inline {
+  overflow: hidden;
+  color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.related-skill-install-stat {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  white-space: nowrap;
 }
 
 .related-skill-row-skeleton {
@@ -7009,14 +7086,23 @@ code {
   }
 
   .skill-hero-sidebar {
-    order: initial;
+    order: -1;
     flex-direction: column;
     align-items: stretch;
     width: 100%;
   }
 
   .skill-hero-sidebar-stack {
-    gap: 16px;
+    gap: 18px;
+  }
+
+  .skill-hero-sidebar .sidebar-metadata-row {
+    padding: 12px 2px;
+  }
+
+  .skill-hero-sidebar .sidebar-metadata-label,
+  .skill-hero-sidebar .sidebar-metadata-value {
+    font-size: 12px;
   }
 
   .skill-hero-sidebar-meta {

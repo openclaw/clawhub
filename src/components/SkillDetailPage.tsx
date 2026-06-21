@@ -901,6 +901,14 @@ export function SkillDetailPage({
           category={relatedCategory}
           categories={relatedCategories}
           priorityContent={staffVisibilityAlert}
+          sidebarContent={
+            <SkillRelatedSection
+              category={relatedCategory}
+              relatedSkills={relatedSkillsResult?.items ?? []}
+              isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
+              variant="compact"
+            />
+          }
           securityAuditSummary={securitySummary}
           newVersionHref={newVersionHref}
           settingsHref={settingsHref}
@@ -943,12 +951,6 @@ export function SkillDetailPage({
             clawdis={clawdis}
             osLabels={osLabels}
             readmeHrefResolver={readmeHrefResolver}
-          />
-
-          <SkillRelatedSection
-            category={relatedCategory}
-            relatedSkills={relatedSkillsResult?.items ?? []}
-            isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
           />
         </SkillHeader>
       </DetailPageShell>
