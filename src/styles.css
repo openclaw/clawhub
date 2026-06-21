@@ -5674,31 +5674,33 @@ code {
   display: inline-flex;
   width: fit-content;
   align-items: center;
-  gap: 3px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.04);
-  padding: 3px;
+  gap: 4px;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 78%, var(--bg));
+  padding: 4px;
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 [data-theme-resolved="light"] .install-switcher-toggle {
-  border-color: rgba(15, 12, 10, 0.08);
-  background: rgba(15, 12, 10, 0.04);
+  border-color: color-mix(in srgb, var(--line) 92%, transparent);
+  background: color-mix(in srgb, var(--surface-muted) 72%, var(--bg));
 }
 
 .install-switcher-pill {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: max-content;
+  min-width: 64px;
+  min-height: 32px;
   border: none;
-  border-radius: 999px;
+  border-radius: 12px;
   background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
-  padding: 6px 14px;
+  padding: 0 14px;
   font-family: var(--font-body);
-  font-size: 0.72rem;
+  font-size: 0.78rem;
   font-weight: 700;
   line-height: 1;
   text-transform: none;
@@ -5720,9 +5722,9 @@ code {
 
 .install-switcher-pill.is-active,
 .install-switcher-pill[aria-selected="true"] {
-  background: #0f0f11;
-  color: #f8f2e9;
-  box-shadow: 0 8px 18px rgba(0, 0, 0, 0.16);
+  background: color-mix(in srgb, var(--surface-muted) 70%, var(--ink) 8%);
+  color: var(--ink);
+  box-shadow: 0 8px 18px rgb(0 0 0 / 0.16);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -22515,10 +22517,10 @@ a.home-v2-byos-import:focus-visible svg:last-child {
 
 /* Tab-style toggle groups — pill to semi-rounded */
 .install-switcher-toggle {
-  border-radius: var(--r-btn) !important;
+  border-radius: 16px !important;
 }
 .install-switcher-toggle button {
-  border-radius: var(--r-btn) !important;
+  border-radius: 12px !important;
 }
 
 /* Skills/plugins type tabs */
