@@ -195,7 +195,12 @@ export function SkillCommandLineCard({
     <article className="skill-install-command-card">
       <div className="skill-install-command-header">
         <h3 className="skill-install-panel-title">Install</h3>
-        <div className="install-switcher-toggle" role="tablist" aria-label="Install option">
+        <div
+          className="install-switcher-toggle"
+          role="tablist"
+          aria-label="Install option"
+          data-active={activeInstallTab}
+        >
           <button
             type="button"
             role="tab"

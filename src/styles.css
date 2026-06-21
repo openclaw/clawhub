@@ -5692,6 +5692,8 @@ code {
 }
 
 .install-switcher-toggle {
+  --install-switcher-active-index: 0;
+  position: relative;
   display: inline-flex;
   width: fit-content;
   align-items: center;
@@ -5703,12 +5705,31 @@ code {
   box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
+.install-switcher-toggle[data-active="prompt"] {
+  --install-switcher-active-index: 1;
+}
+
+.install-switcher-toggle::before {
+  position: absolute;
+  inset-block: 4px;
+  left: 4px;
+  width: calc((100% - 12px) / 2);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--surface-muted) 70%, var(--ink) 8%);
+  box-shadow: 0 8px 18px rgb(0 0 0 / 0.16);
+  content: "";
+  transform: translateX(calc(var(--install-switcher-active-index) * (100% + 4px)));
+  transition: transform 190ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
 [data-theme-resolved="light"] .install-switcher-toggle {
   border-color: color-mix(in srgb, var(--line) 92%, transparent);
   background: color-mix(in srgb, var(--surface-muted) 72%, var(--bg));
 }
 
 .install-switcher-pill {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -5726,9 +5747,7 @@ code {
   line-height: 1;
   text-transform: none;
   transition:
-    background-color 0.18s ease,
-    color 0.18s ease,
-    box-shadow 0.18s ease;
+    color 160ms ease;
   touch-action: manipulation;
 }
 
@@ -5743,14 +5762,15 @@ code {
 
 .install-switcher-pill.is-active,
 .install-switcher-pill[aria-selected="true"] {
-  background: color-mix(in srgb, var(--surface-muted) 70%, var(--ink) 8%);
+  background: transparent;
   color: var(--ink);
-  box-shadow: 0 8px 18px rgb(0 0 0 / 0.16);
+  box-shadow: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
   .skill-install-prompt-trigger,
   .skill-install-copy-button,
+  .install-switcher-toggle::before,
   .install-switcher-pill {
     transition: none;
     transform: none;
