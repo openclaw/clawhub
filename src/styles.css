@@ -5946,8 +5946,7 @@ code {
 }
 
 .related-skill-row:hover .related-skill-name {
-  text-decoration: underline;
-  text-underline-offset: 0.18em;
+  text-decoration: none;
 }
 
 .related-skill-row:hover {
