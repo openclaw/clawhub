@@ -7663,40 +7663,21 @@ code {
 
 .markdown ul,
 .markdown ol {
-  padding-left: 0;
+  padding-left: 1.4em;
   margin: var(--space-3) 0;
-  list-style: none;
-}
-
-.markdown ol {
-  counter-reset: markdown-list;
 }
 
 .markdown li {
-  position: relative;
-  padding-left: 0;
-  margin-bottom: var(--space-1);
+  padding-left: 0.2em;
+  margin-bottom: 0.4em;
 }
 
-.markdown ul > li::before {
-  content: "•";
-  position: absolute;
-  left: -0.8em;
+.markdown li::marker {
   color: var(--ink-soft);
-  font-size: 0.78em;
+  font-size: 0.82em;
+  font-variant-numeric: tabular-nums;
 }
 
-.markdown ol > li {
-  counter-increment: markdown-list;
-}
-
-.markdown ol > li::before {
-  content: counter(markdown-list) ".";
-  position: absolute;
-  right: calc(100% + 0.35em);
-  color: var(--ink-soft);
-  font-size: 0.78em;
-}
 .markdown li > ul,
 .markdown li > ol {
   margin-top: var(--space-1);
@@ -7717,7 +7698,9 @@ code {
 .markdown table {
   width: 100%;
   max-width: 100%;
-  border-collapse: collapse;
+  border: 1px solid var(--line);
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: var(--fs-sm);
   margin: var(--space-4) 0;
   overflow-x: auto;
@@ -7736,8 +7719,17 @@ code {
 .markdown th,
 .markdown td {
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--line);
+  border-right: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
   text-align: left;
+}
+
+.markdown tr > :last-child {
+  border-right: 0;
+}
+
+.markdown tbody tr:last-child > td {
+  border-bottom: 0;
 }
 
 .markdown th {
@@ -7860,20 +7852,21 @@ code {
 }
 
 .markdown :not(pre) > code {
-  background: var(--surface-muted);
-  padding: 2px 6px;
+  padding: 0.12em 0.35em;
   border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--surface-muted) 78%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
   font-size: 0.88em;
   font-family: var(--font-mono);
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  word-break: break-all;
+  overflow-wrap: anywhere;
+  word-break: normal;
 }
 
 .markdown pre {
-  white-space: pre-wrap;
+  white-space: pre;
   max-width: 100%;
-  overflow-x: hidden;
+  overflow-x: auto;
   background: var(--surface-muted);
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
@@ -7883,8 +7876,8 @@ code {
   line-height: 1.55;
   tab-size: 2;
   color: var(--ink);
-  overflow-wrap: anywhere;
-  word-break: break-word;
+  overflow-wrap: normal;
+  word-break: normal;
 }
 
 .markdown pre code {
