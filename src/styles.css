@@ -357,11 +357,14 @@ code {
 }
 
 .app-shell:has(.skill-detail-page)::before {
-  position: fixed;
-  inset: 0;
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
   z-index: 0;
   pointer-events: none;
   content: "";
+  height: 620px;
   background:
     radial-gradient(
       ellipse 58% 34% at 48% 0%,
