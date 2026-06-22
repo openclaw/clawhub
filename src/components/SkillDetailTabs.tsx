@@ -343,9 +343,13 @@ export function SkillDetailTabs({
           id="skill-tabpanel-compare"
           aria-labelledby="skill-tab-compare"
         >
-          <Suspense fallback={<SkillDiffSkeleton />}>
-            <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
-          </Suspense>
+          {diffVersions === undefined ? (
+            <SkillDiffSkeleton />
+          ) : (
+            <Suspense fallback={<SkillDiffSkeleton />}>
+              <SkillDiffCard skill={skill} versions={diffVersions} variant="embedded" />
+            </Suspense>
+          )}
         </div>
       ) : null}
 
