@@ -5027,6 +5027,11 @@ code {
   justify-content: center;
 }
 
+.skill-sidebar-action-button:hover:not(:disabled),
+.skill-sidebar-action-button:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink-soft) 36%, var(--line)) !important;
+}
+
 .skill-sidebar-action-divider {
   border: 0;
   border-top: 1px solid var(--line);
