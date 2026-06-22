@@ -18,6 +18,7 @@ import {
   Package,
   Server,
   Share2,
+  Sparkles,
   Tag,
   Upload,
   type LucideIcon,
@@ -49,6 +50,7 @@ import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -748,6 +750,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     : undefined;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+  const [isCatalogMetadataDialogOpen, setIsCatalogMetadataDialogOpen] = useState(false);
   const setCatalogMetadata = useMutation(api.packages.setPackageCatalogMetadata);
   useEffect(() => {
     const syncTabFromHash = () => setActiveTab(pluginDetailTabFromHash(window.location.hash));
@@ -837,6 +840,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         displayName: pkg.displayName,
       }).toString()}`
     : null;
+  const showCatalogMetadataEmptyState = Boolean(
+    manageContext && headerCategories.length === 0 && headerTopics.length === 0,
+  );
   const compatEntries = compatibility
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
@@ -1004,29 +1010,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         </div>
       </div>
     ) : null;
-  const catalogMetadataPanel = manageContext ? (
-    <Card>
-      <CardHeader>
-        <CardTitle>Catalog metadata</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <CatalogMetadataEditor
-          kind="plugin"
-          categories={manageContext.package.categories}
-          suggestedCategories={manageContext.suggestedCategories}
-          topics={manageContext.package.topics}
-          onSave={async (value) => {
-            await setCatalogMetadata({
-              packageId: manageContext.package._id,
-              categories: value.categories,
-              topics: value.topics,
-            });
-            toast.success("Catalog metadata updated.");
-          }}
-        />
-      </CardContent>
-    </Card>
-  ) : null;
   const sourceRepoLink = verification?.sourceRepo
     ? (() => {
         const raw = verification.sourceRepo;
@@ -1138,6 +1121,25 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                       <Badge variant="destructive">Download blocked</Badge>
                     </div>
                   ) : null}
+                  {newVersionHref ? (
+                    <div className="skill-title-actions skill-owner-hero-actions">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            asChild
+                            variant="outline"
+                            size="icon"
+                            className="skill-owner-hero-action"
+                          >
+                            <a href={newVersionHref} aria-label="New version">
+                              <Upload size={15} aria-hidden="true" />
+                            </a>
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>New version</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  ) : null}
                 </div>
               </div>
               <div className="skill-summary-block">
@@ -1240,16 +1242,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                       { label: "Type", value: familyLabel(pkg.family) },
                     ]}
                   />
-                  {newVersionHref ? (
-                    <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
-                      <Button asChild variant="outline" className="skill-sidebar-action-button">
-                        <a href={newVersionHref}>
-                          <Upload size={14} aria-hidden="true" />
-                          New version
-                        </a>
-                      </Button>
-                    </div>
-                  ) : null}
                 </DetailMobileDeferredSection>
               ) : null}
             </div>
@@ -1277,7 +1269,31 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 </div>
               </CardContent>
             </Card>
-            {catalogMetadataPanel}
+            {showCatalogMetadataEmptyState ? (
+              <div className="plugin-catalog-empty-alert" role="status">
+                <div className="plugin-catalog-empty-alert-icon" aria-hidden="true">
+                  <Sparkles size={15} />
+                </div>
+                <div className="plugin-catalog-empty-alert-copy">
+                  <div className="plugin-catalog-empty-alert-heading">
+                    <span>Categorize this plugin</span>
+                    <span className="plugin-catalog-empty-alert-visibility">
+                      Visible only to you
+                    </span>
+                  </div>
+                  <p>Add categories and topics.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="plugin-catalog-empty-alert-cta"
+                  onClick={() => setIsCatalogMetadataDialogOpen(true)}
+                >
+                  Categorize
+                </Button>
+              </div>
+            ) : null}
           </div>
           <PluginDetailTabs
             activeTab={activeTab}
@@ -1294,6 +1310,35 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           />
         </DetailHero>
       </DetailPageShell>
+      {manageContext ? (
+        <Dialog
+          open={isCatalogMetadataDialogOpen}
+          onOpenChange={setIsCatalogMetadataDialogOpen}
+        >
+          <DialogContent className="plugin-catalog-metadata-dialog">
+            <DialogHeader>
+              <DialogTitle>Catalog metadata</DialogTitle>
+              <DialogDescription>Choose categories and topics for this plugin.</DialogDescription>
+            </DialogHeader>
+            <CatalogMetadataEditor
+              kind="plugin"
+              categories={manageContext.package.categories}
+              suggestedCategories={manageContext.suggestedCategories}
+              topics={manageContext.package.topics}
+              onSave={async (value) => {
+                await setCatalogMetadata({
+                  packageId: manageContext.package._id,
+                  categories: value.categories,
+                  topics: value.topics,
+                });
+                toast.success("Catalog metadata updated.");
+                setIsCatalogMetadataDialogOpen(false);
+                await router.invalidate();
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </main>
   );
 }

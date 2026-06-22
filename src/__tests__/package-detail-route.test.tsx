@@ -94,6 +94,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("convex/react", () => ({
+  ConvexReactClient: class {
+    query = convexQueryMock;
+  },
   useConvex: () => convexClientMock,
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
@@ -138,6 +141,13 @@ vi.mock("../components/MarkdownPreview", () => ({
   }) => <div>{children}</div>,
 }));
 
+vi.mock("../components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
+}));
+
 async function loadRoute() {
   return (await import("../routes/plugins/$name")).Route as unknown as {
     __config: {
@@ -145,6 +155,12 @@ async function loadRoute() {
       component?: ComponentType;
     };
   };
+}
+
+function openRelease(version: string) {
+  fireEvent.click(
+    screen.getByRole("button", { name: new RegExp(`v${version.replaceAll(".", "\\.")}`) }),
+  );
 }
 
 describe("plugin detail route", () => {
@@ -230,8 +246,8 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Web Search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Research");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
   });
 
   it("renders populated active release history on the versions tab", async () => {
@@ -269,11 +285,11 @@ describe("plugin detail route", () => {
     render(<Component />);
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByText("v2.0.0")).toBeTruthy();
+    expect(screen.getAllByText("v2.0.0").length).toBeGreaterThan(0);
     expect(screen.getByText(new Date(publishedAt).toLocaleDateString())).toBeTruthy();
-    fireEvent.click(screen.getByText("v2.0.0"));
+    openRelease("2.0.0");
     expect(screen.getByText("Adds package release history.")).toBeTruthy();
-    fireEvent.click(screen.getByText("v2.0.0-beta.1"));
+    openRelease("2.0.0-beta.1");
     expect(screen.getByText("Previews package release history.")).toBeTruthy();
     expect(screen.getByText("latest")).toBeTruthy();
     expect(screen.getByText("stable")).toBeTruthy();
@@ -326,9 +342,9 @@ describe("plugin detail route", () => {
       cursor: "versions:next",
       limit: 20,
     });
-    fireEvent.click(screen.getByText("v2.0.0"));
+    openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
-    fireEvent.click(screen.getByText("v1.0.0"));
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded next page")).toBeTruthy();
     expect(
       document.querySelector('a[href="/api/v1/packages/demo-plugin/download?version=1.0.0"]'),
@@ -339,7 +355,7 @@ describe("plugin detail route", () => {
     fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByText("Loaded next page")).toBeTruthy();
+    expect(screen.getByRole("button", { name: /v1\.0\.0/ })).toBeTruthy();
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
   });
 
@@ -387,6 +403,7 @@ describe("plugin detail route", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
+    openRelease("1.0.0");
     expect(screen.getByText("Plugin A loaded release")).toBeTruthy();
 
     window.history.pushState(null, "", "/plugins/@scope/plugin-b");
@@ -424,6 +441,7 @@ describe("plugin detail route", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
+    openRelease("3.0.0");
     expect(screen.getByText("Plugin B release")).toBeTruthy();
     expect(screen.queryByText("Plugin A loaded release")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
@@ -459,6 +477,7 @@ describe("plugin detail route", () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded after empty page")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
@@ -614,6 +633,7 @@ describe("plugin detail route", () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
+    openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain(
       "Could not load more releases. Try again.",
@@ -627,6 +647,7 @@ describe("plugin detail route", () => {
       cursor: "versions:next",
       limit: 20,
     });
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded after retry")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -695,6 +716,7 @@ describe("plugin detail route", () => {
       });
     });
 
+    openRelease("3.0.0");
     expect(screen.getByText("Second plugin release")).toBeTruthy();
     expect(screen.queryByText("Stale first plugin release")).toBeNull();
   });
@@ -724,6 +746,7 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("tab", { name: "Versions" }).getAttribute("aria-selected")).toBe(
       "true",
     );
+    openRelease("1.0.0");
     expect(screen.getByText("Initial release")).toBeTruthy();
   });
 
@@ -861,8 +884,8 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Web Search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Research");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
   });
 
   it("renders the plugin 30-day downloads graph from a deferred activity query", async () => {

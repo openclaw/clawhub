@@ -17,6 +17,8 @@ type SkillInstallTab = {
 
 type EnvVarDeclaration = NonNullable<ClawdisSkillMetadata["envVars"]>[number];
 type SkillInstallSpec = NonNullable<ClawdisSkillMetadata["install"]>[number];
+type DependencyDeclaration = NonNullable<ClawdisSkillMetadata["dependencies"]>[number];
+type SkillLinks = NonNullable<ClawdisSkillMetadata["links"]>;
 type EnvironmentStatus = "required" | "optional" | "not declared";
 
 type EnvironmentRow = {
@@ -25,30 +27,6 @@ type EnvironmentRow = {
   description?: string;
   isPrimary: boolean;
 };
-
-function SkillInstallMetadataPanel({ children }: { children: ReactNode }) {
-  return <div className="skill-admin-panel skill-install-metadata-panel">{children}</div>;
-}
-
-function SkillInstallMetadataRow({
-  title,
-  description,
-  children,
-}: {
-  title: string;
-  description?: ReactNode;
-  children?: ReactNode;
-}) {
-  return (
-    <div className="skill-admin-row skill-install-metadata-row">
-      <div className="skill-admin-row-copy">
-        <h3>{title}</h3>
-        {typeof description === "string" ? <p>{description}</p> : description}
-      </div>
-      {children ? <div className="skill-install-metadata-value">{children}</div> : null}
-    </div>
-  );
-}
 
 function uniqueValues(values: string[] | undefined) {
   return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))];
@@ -245,9 +223,12 @@ function InstallSpecSection({ spec, index }: { spec: SkillInstallSpec; index: nu
     <RequirementSection title={title}>
       <div className="requirements-install-row">
         {command ? (
-          <pre className="requirements-code-block">
-            <code>{command}</code>
-          </pre>
+          <div className="requirements-subsection">
+            <h5>Command</h5>
+            <pre className="requirements-code-block">
+              <code>{command}</code>
+            </pre>
+          </div>
         ) : null}
         {bins.length ? (
           <div className="requirements-subsection">
@@ -263,6 +244,53 @@ function InstallSpecSection({ spec, index }: { spec: SkillInstallSpec; index: nu
   );
 }
 
+function DependencySection({ dependency }: { dependency: DependencyDeclaration }) {
+  const links = [
+    dependency.url ? { label: "Package", href: dependency.url } : null,
+    dependency.repository && dependency.repository !== dependency.url
+      ? { label: "Source", href: dependency.repository }
+      : null,
+  ].filter((link): link is { label: string; href: string } => Boolean(link));
+
+  return (
+    <RequirementSection title={dependency.name}>
+      <div className="requirements-dependency-meta">
+        <span className="requirements-badge">{dependency.type}</span>
+        {dependency.version ? (
+          <code className="requirements-token">{dependency.version}</code>
+        ) : null}
+      </div>
+      {links.length ? (
+        <div className="requirements-link-list">
+          {links.map((link) => (
+            <a
+              key={`${link.label}-${link.href}`}
+              href={link.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="requirements-link-token"
+            >
+              <span>{link.label}</span>
+              <code>{link.href}</code>
+            </a>
+          ))}
+        </div>
+      ) : null}
+    </RequirementSection>
+  );
+}
+
+function DependenciesPanel({ dependencies }: { dependencies: DependencyDeclaration[] }) {
+  return (
+    <>
+      <RequirementHeader title="Dependencies" />
+      {dependencies.map((dependency, index) => (
+        <DependencySection key={`${dependency.name}-${index}`} dependency={dependency} />
+      ))}
+    </>
+  );
+}
+
 function InstallSpecsPanel({ installSpecs }: { installSpecs: SkillInstallSpec[] }) {
   return (
     <>
@@ -270,6 +298,33 @@ function InstallSpecsPanel({ installSpecs }: { installSpecs: SkillInstallSpec[] 
       {installSpecs.map((spec, index) => (
         <InstallSpecSection key={`${spec.id ?? spec.kind}-${index}`} spec={spec} index={index} />
       ))}
+    </>
+  );
+}
+
+function LinkSection({ title, href }: { title: string; href: string }) {
+  return (
+    <RequirementSection title={title}>
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="requirements-link-token"
+      >
+        <code>{href}</code>
+      </a>
+    </RequirementSection>
+  );
+}
+
+function LinksPanel({ links }: { links: SkillLinks }) {
+  return (
+    <>
+      <RequirementHeader title="Links" />
+      {links.homepage ? <LinkSection title="Homepage" href={links.homepage} /> : null}
+      {links.repository ? <LinkSection title="Repository" href={links.repository} /> : null}
+      {links.documentation ? <LinkSection title="Docs" href={links.documentation} /> : null}
+      {links.changelog ? <LinkSection title="Changelog" href={links.changelog} /> : null}
     </>
   );
 }
@@ -285,16 +340,18 @@ export function buildSkillInstallTabs({
   const links = clawdis?.links;
   const hasRuntimeRequirements = Boolean(
     osLabels.length ||
-      requirements?.bins?.length ||
-      requirements?.anyBins?.length ||
-      requirements?.env?.length ||
-      requirements?.config?.length ||
-      clawdis?.primaryEnv ||
-      envVars.length,
+    requirements?.bins?.length ||
+    requirements?.anyBins?.length ||
+    requirements?.env?.length ||
+    requirements?.config?.length ||
+    clawdis?.primaryEnv ||
+    envVars.length,
   );
   const hasInstallSpecs = installSpecs.length > 0;
   const hasDependencies = dependencies.length > 0;
-  const hasLinks = Boolean(links?.homepage || links?.repository || links?.documentation);
+  const hasLinks = Boolean(
+    links?.homepage || links?.repository || links?.documentation || links?.changelog,
+  );
 
   if (!hasRuntimeRequirements && !hasInstallSpecs && !hasDependencies && !hasLinks) {
     return [];
@@ -314,39 +371,7 @@ export function buildSkillInstallTabs({
     tabs.push({
       id: "dependencies",
       label: "Dependencies",
-      panel: (
-        <div className="skill-install-tab-panel">
-          <SkillInstallMetadataPanel>
-            {dependencies.map((dep, index) => (
-              <SkillInstallMetadataRow
-                key={`${dep.name}-${index}`}
-                title={dep.name}
-                description={
-                  dep.url ? (
-                    <a href={dep.url} target="_blank" rel="noopener noreferrer">
-                      {dep.url}
-                    </a>
-                  ) : dep.repository ? (
-                    <a href={dep.repository} target="_blank" rel="noopener noreferrer">
-                      {dep.repository}
-                    </a>
-                  ) : null
-                }
-              >
-                <span>
-                  {dep.type}
-                  {dep.version ? ` ${dep.version}` : ""}
-                </span>
-                {dep.repository && dep.repository !== dep.url ? (
-                  <a href={dep.repository} target="_blank" rel="noopener noreferrer">
-                    Source
-                  </a>
-                ) : null}
-              </SkillInstallMetadataRow>
-            ))}
-          </SkillInstallMetadataPanel>
-        </div>
-      ),
+      panel: <DependenciesPanel dependencies={dependencies} />,
     });
   }
 
@@ -362,43 +387,7 @@ export function buildSkillInstallTabs({
     tabs.push({
       id: "links",
       label: "Links",
-      panel: (
-        <div className="skill-install-tab-panel">
-          <SkillInstallMetadataPanel>
-            {links?.homepage ? (
-              <SkillInstallMetadataRow title="Homepage">
-                <a
-                  href={links.homepage}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="break-all"
-                >
-                  {links.homepage}
-                </a>
-              </SkillInstallMetadataRow>
-            ) : null}
-            {links?.repository ? (
-              <SkillInstallMetadataRow title="Repository">
-                <a
-                  href={links.repository}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="break-all"
-                >
-                  {links.repository}
-                </a>
-              </SkillInstallMetadataRow>
-            ) : null}
-            {links?.documentation ? (
-              <SkillInstallMetadataRow title="Docs">
-                <a href={links.documentation} target="_blank" rel="noopener noreferrer">
-                  {links.documentation}
-                </a>
-              </SkillInstallMetadataRow>
-            ) : null}
-          </SkillInstallMetadataPanel>
-        </div>
-      ),
+      panel: links ? <LinksPanel links={links} /> : null,
     });
   }
 

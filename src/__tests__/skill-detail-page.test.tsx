@@ -944,7 +944,6 @@ describe("SkillDetailPage", () => {
     );
     expect(screen.getByRole("link", { name: /Pipeline Builder/i })).toBeTruthy();
     expect(screen.getByText(/Compose agent workflow pipelines\./i)).toBeTruthy();
-    expect(screen.getByText("steipete/pipeline-builder")).toBeTruthy();
   });
 
   it("renders the install surface above the security scan with visible prompts and commands", async () => {

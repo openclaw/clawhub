@@ -79,9 +79,7 @@ export function VersionReleaseRow({
           type="button"
           className="skill-version-release-chevron-button"
           aria-label={
-            isExpanded
-              ? `Hide changelog for ${versionLabel}`
-              : `Show changelog for ${versionLabel}`
+            isExpanded ? `Hide changelog for ${versionLabel}` : `Show changelog for ${versionLabel}`
           }
           aria-expanded={isExpanded}
           aria-controls={changelogId}

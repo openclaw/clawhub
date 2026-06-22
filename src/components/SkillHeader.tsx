@@ -13,7 +13,6 @@ import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
-import { useIsDesktopDetailLayout } from "./DetailMobileDeferredSection";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
@@ -171,10 +170,9 @@ export function SkillHeader({
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
-  const hasTitleActions = isStaff;
+  const hasOwnerHeroActions = Boolean(newVersionHref) || Boolean(settingsHref);
   const showReportAction = !canManage || isStaff;
-  const hasSidebarActions =
-    showReportAction || Boolean(newVersionHref) || Boolean(settingsHref) || hasTitleActions;
+  const hasSidebarActions = showReportAction || isStaff;
   const badges = getSkillBadges(skill);
   const isOfficial = badges.includes("Official") || owner?.official === true;
   const titleBadges = badges.filter((badge) => badge !== "Official");
@@ -189,7 +187,6 @@ export function SkillHeader({
   const headerCategories = (categories ?? (category ? [category] : [])).slice(0, 3);
   const hasSummaryToggle = headerDescription.length > SUMMARY_COLLAPSE_THRESHOLD;
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
-  const isDesktopDetailLayout = useIsDesktopDetailLayout();
   const [mobileDetailPanel, setMobileDetailPanel] = useState<MobileDetailPanel>("content");
 
   const renderSidebarActions = () =>
@@ -209,22 +206,6 @@ export function SkillHeader({
               Report
             </button>
           </SignedInActionTooltip>
-        ) : null}
-        {newVersionHref ? (
-          <Button asChild variant="outline" className="skill-sidebar-action-button">
-            <a href={newVersionHref}>
-              <Upload size={14} aria-hidden="true" />
-              New version
-            </a>
-          </Button>
-        ) : null}
-        {settingsHref ? (
-          <Button asChild variant="outline" className="skill-sidebar-action-button">
-            <a href={settingsHref}>
-              <Settings size={14} aria-hidden="true" />
-              Settings
-            </a>
-          </Button>
         ) : null}
         {isStaff ? (
           <Button asChild variant="outline" className="skill-sidebar-action-button">
@@ -416,9 +397,47 @@ export function SkillHeader({
                     </div>
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
+                  {hasOwnerHeroActions ? (
+                    <div className="skill-title-actions skill-owner-hero-actions">
+                      {newVersionHref ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              asChild
+                              variant="outline"
+                              size="icon"
+                              className="skill-owner-hero-action"
+                            >
+                              <a href={newVersionHref} aria-label="New version">
+                                <Upload size={15} aria-hidden="true" />
+                              </a>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>New version</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                      {settingsHref ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button
+                              asChild
+                              variant="outline"
+                              size="icon"
+                              className="skill-owner-hero-action"
+                            >
+                              <a href={settingsHref} aria-label="Settings">
+                                <Settings size={15} aria-hidden="true" />
+                              </a>
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>Settings</TooltipContent>
+                        </Tooltip>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
                 {owner || ownerHandle ? (
-                  <div className="skill-hero-mobile-creator" hidden={isDesktopDetailLayout}>
+                  <div className="skill-hero-mobile-creator">
                     <UserBadge
                       user={owner}
                       fallbackHandle={ownerHandle}
@@ -502,15 +521,11 @@ export function SkillHeader({
           />
         </div>
 
-        <div
-          className="detail-mobile-master-tabs"
-          data-active={isDesktopDetailLayout ? "desktop" : mobileDetailPanel}
-        >
+        <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
           <div
             className="detail-mobile-master-tab-list"
             role="tablist"
             aria-label="Skill mobile sections"
-            hidden={isDesktopDetailLayout}
           >
             <button
               id="skill-mobile-master-tab-content"
@@ -542,9 +557,9 @@ export function SkillHeader({
           <div
             className="detail-mobile-master-panel detail-mobile-master-panel-content"
             id="skill-mobile-master-panel-content"
-            role={isDesktopDetailLayout ? undefined : "tabpanel"}
-            aria-labelledby={isDesktopDetailLayout ? undefined : "skill-mobile-master-tab-content"}
-            hidden={!isDesktopDetailLayout && mobileDetailPanel !== "content"}
+            role="tabpanel"
+            aria-labelledby="skill-mobile-master-tab-content"
+            hidden={mobileDetailPanel !== "content"}
           >
             {postInstallContent}
 
@@ -589,17 +604,15 @@ export function SkillHeader({
               </div>
             ) : null}
           </div>
-          {!isDesktopDetailLayout ? (
-            <div
-              className="detail-mobile-master-panel detail-mobile-master-stats"
-              id="skill-mobile-master-panel-stats"
-              role="tabpanel"
-              aria-labelledby="skill-mobile-master-tab-stats"
-              hidden={mobileDetailPanel !== "stats"}
-            >
-              {mobileStatsContent}
-            </div>
-          ) : null}
+          <div
+            className="detail-mobile-master-panel detail-mobile-master-stats"
+            id="skill-mobile-master-panel-stats"
+            role="tabpanel"
+            aria-labelledby="skill-mobile-master-tab-stats"
+            hidden={mobileDetailPanel !== "stats"}
+          >
+            {mobileStatsContent}
+          </div>
         </div>
       </DetailHero>
     </>

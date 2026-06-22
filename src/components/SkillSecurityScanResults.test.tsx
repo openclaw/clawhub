@@ -797,7 +797,7 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByText("Jan 2, 2024 at 3:04 AM UTC")).toBeTruthy();
+    expect(screen.getByText("Jan 2, 2024 · 3:04 AM UTC")).toBeTruthy();
   });
 
   it("shows VirusTotal reports in the shared scanner report shell", () => {

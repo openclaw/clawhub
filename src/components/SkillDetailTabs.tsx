@@ -149,8 +149,7 @@ export function SkillDetailTabs({
       typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
     setActiveTab(tab);
     if (typeof window === "undefined") return;
-    const hash =
-      tab === "readme" ? "" : tab === "compare" ? "#diff" : `#${tab}`;
+    const hash = tab === "readme" ? "" : tab === "compare" ? "#diff" : `#${tab}`;
     window.history.replaceState(
       null,
       "",
@@ -308,11 +307,7 @@ export function SkillDetailTabs({
             <summary>About Skill Cards</summary>
             <p>
               Skill Cards follow{" "}
-              <a
-                href="https://docs.nvidia.com/skills/skill-cards"
-                target="_blank"
-                rel="noreferrer"
-              >
+              <a href="https://docs.nvidia.com/skills/skill-cards" target="_blank" rel="noreferrer">
                 NVIDIA&apos;s trust-card pattern for agent skills
               </a>
               , giving a compact release record of what a skill does, who published it, and what
@@ -338,9 +333,15 @@ export function SkillDetailTabs({
       ) : null}
 
       {showArchiveTabs && activeTab === "files" ? (
-        <Suspense fallback={<div className="tab-body stat">Loading file viewer...</div>}>
-          <SkillFilesPanel versionId={latestVersionId} latestFiles={latestFiles} />
-        </Suspense>
+        <div
+          role="tabpanel"
+          id="skill-tabpanel-files"
+          aria-labelledby="skill-tab-files"
+        >
+          <Suspense fallback={<div className="tab-body stat">Loading file viewer...</div>}>
+            <SkillFilesPanel versionId={latestVersionId} latestFiles={latestFiles} />
+          </Suspense>
+        </div>
       ) : null}
 
       {showArchiveTabs && activeTab === "compare" ? (
@@ -361,17 +362,23 @@ export function SkillDetailTabs({
       ) : null}
 
       {showArchiveTabs && activeTab === "versions" ? (
-        <SkillVersionsPanel
-          versions={versions}
-          latestVersionId={latestVersionId}
-          latestTaggedVersionId={skill.tags.latest ?? null}
-          canDeleteVersions={canDeleteVersions}
-          nixPlugin={nixPlugin}
-          skillSlug={skill.slug}
-          ownerHandle={ownerHandle}
-          suppressScanResults={suppressVersionScanResults}
-          suppressedMessage={scanResultsSuppressedMessage}
-        />
+        <div
+          role="tabpanel"
+          id="skill-tabpanel-versions"
+          aria-labelledby="skill-tab-versions"
+        >
+          <SkillVersionsPanel
+            versions={versions}
+            latestVersionId={latestVersionId}
+            latestTaggedVersionId={skill.tags.latest ?? null}
+            canDeleteVersions={canDeleteVersions}
+            nixPlugin={nixPlugin}
+            skillSlug={skill.slug}
+            ownerHandle={ownerHandle}
+            suppressScanResults={suppressVersionScanResults}
+            suppressedMessage={scanResultsSuppressedMessage}
+          />
+        </div>
       ) : null}
 
       {activeInstallTab ? (

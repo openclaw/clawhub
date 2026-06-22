@@ -1,5 +1,12 @@
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
-import { isValidElement, useEffect, useId, useMemo, useState } from "react";
+import {
+  isValidElement,
+  useEffect,
+  useId,
+  useMemo,
+  useState,
+  useSyncExternalStore,
+} from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown, { type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -55,32 +62,33 @@ function resolveShikiTheme(): ShikiTheme {
   return isDarkThemeResolved() ? "github-dark" : "github-light";
 }
 
+function subscribeShikiTheme(onStoreChange: () => void) {
+  if (typeof document === "undefined") return () => undefined;
+
+  const syncTheme = () => onStoreChange();
+  const removeThemeListener = onThemeChange(syncTheme);
+  const observer = new MutationObserver(syncTheme);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme-resolved"],
+  });
+
+  return () => {
+    removeThemeListener();
+    observer.disconnect();
+  };
+}
+
+function getShikiThemeServerSnapshot(): ShikiTheme {
+  return "github-light";
+}
+
 function useShikiTheme(): ShikiTheme {
-  const [theme, setTheme] = useState<ShikiTheme>(() =>
-    typeof document === "undefined" ? "github-light" : resolveShikiTheme(),
+  return useSyncExternalStore(
+    subscribeShikiTheme,
+    resolveShikiTheme,
+    getShikiThemeServerSnapshot,
   );
-
-  useEffect(() => {
-    const syncTheme = () => setTheme(resolveShikiTheme());
-    const removeThemeListener = onThemeChange(syncTheme);
-
-    if (typeof document === "undefined") {
-      return removeThemeListener;
-    }
-
-    const observer = new MutationObserver(syncTheme);
-    observer.observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme-resolved"],
-    });
-
-    return () => {
-      removeThemeListener();
-      observer.disconnect();
-    };
-  }, []);
-
-  return theme;
 }
 
 const SHIKI_LANGS = [

@@ -252,10 +252,7 @@ export function SkillCardPreview({ content, urlTransform }: SkillCardPreviewProp
           {model.riskPairs.length > 0 ? (
             <div className="skill-card-risk-list">
               {model.riskPairs.map((pair) => (
-                <article
-                  className="skill-card-risk-pair"
-                  key={`${pair.risk}:${pair.mitigation}`}
-                >
+                <article className="skill-card-risk-pair" key={`${pair.risk}:${pair.mitigation}`}>
                   <div className="skill-card-risk-row skill-card-risk-row-risk">
                     <span className="skill-card-review-label">Risk</span>
                     <MarkdownPreview
@@ -361,9 +358,7 @@ export function SkillCardPreview({ content, urlTransform }: SkillCardPreviewProp
           className="skill-card-section"
           key={`${section.title}:${section.body.slice(0, 48)}`}
         >
-          {section.title ? (
-            <h2 className="skill-card-section-header">{section.title}</h2>
-          ) : null}
+          {section.title ? <h2 className="skill-card-section-header">{section.title}</h2> : null}
           <MarkdownPreview
             className="skill-card-section-markdown"
             highlight={false}

@@ -244,8 +244,12 @@ describe("restored UI design contract", () => {
     const css = styles();
     const installCardSource = read("src/components/SkillInstallCard.tsx");
 
-    expect(installCardSource).toContain("runtime-requirements-panel");
-    expect(cssRule(css, ".runtime-requirements-panel .stat")).toContain("color: var(--ink)");
+    expect(installCardSource).toContain("requirements-env-row");
+    expect(cssRule(css, ".tab-body.skill-install-tabs")).toContain("color: var(--ink)");
+    expect(cssRule(css, ".requirements-env-main code")).toContain("color: var(--ink)");
+    expect(cssRule(css, ".requirements-token,\n.requirements-badge")).toContain(
+      "color: var(--ink)",
+    );
 
     const darkRatio = contrastRatio(
       tokenValue(css, ":root", "--ink"),
@@ -266,8 +270,8 @@ describe("restored UI design contract", () => {
 
     expect(shellSource).toContain('"skill-hero-layout has-sidebar"');
     expect(cssRule(css, ".skill-hero-layout")).toContain("grid-template-columns: minmax(0, 1fr)");
-    expect(cssRule(css, ".skill-hero-lower.has-sidebar")).toContain(
-      "grid-template-columns: minmax(0, 1fr) minmax(300px, 360px)",
+    expect(css).toContain(
+      ".skill-hero-lower.has-sidebar {\n  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);",
     );
     expect(cssRule(css, ".skill-hero-main-extra")).toContain("overflow-x: clip");
     expect(cssRule(css, ".skill-install-command-shell")).toContain("max-width: 100%");

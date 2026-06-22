@@ -1,6 +1,6 @@
 /* @vitest-environment jsdom */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -28,6 +28,12 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("SkillHeader", () => {
+  function sidebarStatsRoot(container: HTMLElement) {
+    const node = container.querySelector(".detail-sidebar-stats");
+    if (!node) throw new Error("Missing .detail-sidebar-stats");
+    return node as HTMLElement;
+  }
+
   function setViewportWidth(width: number) {
     vi.stubGlobal("matchMedia", (query: string) => {
       const minWidth = /\(min-width:\s*(\d+)px\)/.exec(query)?.[1];
@@ -150,9 +156,9 @@ describe("SkillHeader", () => {
     expect(onRequireSignIn).toHaveBeenCalledTimes(2);
     expect(onToggleStar).not.toHaveBeenCalled();
     expect(onOpenReport).not.toHaveBeenCalled();
-    expect(screen.getByText("Creator")).toBeTruthy();
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.getByText("2")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("Creator")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("2")).toBeTruthy();
     expect(container.querySelector('a[href="/user/local"]')).toBeTruthy();
     expect(
       container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/user/local"]'),
@@ -160,11 +166,11 @@ describe("SkillHeader", () => {
   });
 
   it("keeps desktop-width sidebar details expanded at 1071px", () => {
-    renderHeader();
+    const { container } = renderHeader();
 
-    expect(screen.getByText("Creator")).toBeTruthy();
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.queryByRole("tablist", { name: "Skill mobile sections" })).toBeNull();
+    expect(within(sidebarStatsRoot(container)).getByText("Creator")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
+    expect(container.querySelector(".detail-mobile-master-tab-list")).toBeTruthy();
   });
 
   it("uses mobile master tabs and creator placement below the title below 901px", () => {
@@ -172,14 +178,14 @@ describe("SkillHeader", () => {
     const { container } = renderHeader();
 
     const creator = container.querySelector(".skill-hero-mobile-creator");
+    const statsPanel = container.querySelector("#skill-mobile-master-panel-stats");
     expect(creator?.textContent).toContain("Local");
-    expect(screen.queryByText("Creator")).toBeNull();
+    expect(statsPanel?.textContent).not.toContain("Creator");
+    expect(statsPanel?.hasAttribute("hidden")).toBe(true);
 
     expect(screen.getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    const statsPanel = container.querySelector("#skill-mobile-master-panel-stats");
-    expect(statsPanel?.hasAttribute("hidden")).toBe(true);
 
     fireEvent.click(screen.getByRole("tab", { name: "Stats & details" }));
 
@@ -190,7 +196,7 @@ describe("SkillHeader", () => {
   });
 
   it("shows the 30-day downloads graph from activity data", () => {
-    renderHeader({
+    const { container } = renderHeader({
       activityTrend: {
         downloads: {
           range: "daily",
@@ -209,28 +215,34 @@ describe("SkillHeader", () => {
       },
     });
 
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.getByText("12")).toBeTruthy();
-    expect(screen.getByRole("tablist", { name: "Download period" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "30d" }).getAttribute("aria-selected")).toBe("true");
+    const sidebar = within(sidebarStatsRoot(container));
+
+    expect(sidebar.getByText("Downloads")).toBeTruthy();
+    expect(sidebar.getByText("12")).toBeTruthy();
+    expect(sidebar.getByRole("tablist", { name: "Download period" })).toBeTruthy();
+    expect(sidebar.getByRole("tab", { name: "30d" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByText("5")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
-    expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
+    expect(sidebar.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
+    expect(sidebar.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
   });
 
   it("reserves graph space while activity metrics are loading", () => {
     const { container } = renderHeader({ activityTrendLoading: true });
 
-    expect(screen.getByText("Downloads")).toBeTruthy();
+    const sidebar = within(sidebarStatsRoot(container));
+
+    expect(sidebar.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
+    expect(
+      container.querySelectorAll(".detail-sidebar-stats .metric-trend-card-skeleton"),
+    ).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
   });
 
   it("switches download period tabs and updates the chart label", () => {
-    renderHeader({
+    const { container } = renderHeader({
       skill: {
         ...skill,
         stats: { ...skill.stats, downloads: 500 },
@@ -253,14 +265,16 @@ describe("SkillHeader", () => {
       },
     });
 
-    expect(screen.getByText("30 days")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "All time" }));
-    expect(screen.getByRole("tab", { name: "All time" }).getAttribute("aria-selected")).toBe(
+    const sidebar = within(sidebarStatsRoot(container));
+
+    expect(sidebar.getByText("30 days")).toBeTruthy();
+    fireEvent.click(sidebar.getByRole("tab", { name: "All time" }));
+    expect(sidebar.getByRole("tab", { name: "All time" }).getAttribute("aria-selected")).toBe(
       "true",
     );
-    expect(screen.getByText("500")).toBeTruthy();
-    fireEvent.click(screen.getByRole("tab", { name: "7d" }));
-    expect(screen.getByText("7 days")).toBeTruthy();
+    expect(sidebar.getByText("500")).toBeTruthy();
+    fireEvent.click(sidebar.getByRole("tab", { name: "7d" }));
+    expect(sidebar.getByText("7 days")).toBeTruthy();
   });
 
   it("shows the nearest daily download graph point and line marker on hover", () => {
@@ -354,18 +368,18 @@ describe("SkillHeader", () => {
   });
 
   it("hides archive-only metadata for source-backed skills", () => {
-    renderHeader({ showArchiveMetadata: false });
+    const { container } = renderHeader({ showArchiveMetadata: false });
 
-    expect(screen.getByText("Downloads")).toBeTruthy();
-    expect(screen.getByText("Creator")).toBeTruthy();
-    expect(screen.getByText("Last updated")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("Creator")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("Last updated")).toBeTruthy();
     expect(screen.queryByText("Current version")).toBeNull();
     expect(screen.queryByText("License")).toBeNull();
     expect(screen.queryByText("MIT-0")).toBeNull();
   });
 
   it("shows the source repository for GitHub-backed skills", () => {
-    renderHeader({
+    const { container } = renderHeader({
       skill: {
         ...skill,
         installKind: "github",
@@ -376,8 +390,10 @@ describe("SkillHeader", () => {
       showArchiveMetadata: false,
     });
 
-    expect(screen.getByText("Repository")).toBeTruthy();
-    const repoLink = screen.getByRole("link", { name: "NVIDIA/skills" });
+    const sidebar = within(sidebarStatsRoot(container));
+
+    expect(sidebar.getByText("Repository")).toBeTruthy();
+    const repoLink = sidebar.getByRole("link", { name: "NVIDIA/skills" });
     expect(repoLink.getAttribute("href")).toBe("https://github.com/NVIDIA/skills");
   });
 
@@ -447,7 +463,7 @@ describe("SkillHeader", () => {
   });
 
   it("keeps the download action hidden on the detail header", () => {
-    renderHeader({
+    const { container } = renderHeader({
       latestVersion: {
         _id: "skillVersions:demo" as Id<"skillVersions">,
         _creationTime: 1,
@@ -461,7 +477,7 @@ describe("SkillHeader", () => {
     });
 
     expect(screen.queryByRole("link", { name: "Download" })).toBeNull();
-    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
   });
 
   it("falls back to legacy parsed frontmatter description when present", () => {

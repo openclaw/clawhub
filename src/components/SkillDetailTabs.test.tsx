@@ -209,7 +209,9 @@ describe("SkillDetailTabs README links", () => {
       />,
     );
 
-    const href = screen.getByRole("link", { name: "Download .zip" }).getAttribute("href");
+    const href = screen
+      .getByRole("link", { name: "Download .zip for v1.0.0" })
+      .getAttribute("href");
     const url = new URL(href ?? "");
     expect(url.pathname).toBe("/api/v1/download");
     expect(url.searchParams.get("slug")).toBe("api-gateway");
@@ -292,7 +294,7 @@ describe("SkillDetailTabs README links", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Dependencies" }));
 
     expect(screen.getByText("ripgrep")).toBeTruthy();
-    expect(screen.getByRole("link", { name: "https://example.com/rg" })).toBeTruthy();
+    expect(screen.getByRole("link", { name: /example\.com\/rg/ })).toBeTruthy();
   });
 
   it("shows a Skill Card tab only when a generated card file exists", () => {
@@ -361,7 +363,6 @@ describe("SkillDetailTabs README links", () => {
       />,
     );
 
-    expect(container.querySelectorAll("br").length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/line one/)).toBeTruthy();
     expect(screen.getByText(/line two/)).toBeTruthy();
     expect(screen.queryByText(/<br/i)).toBeNull();

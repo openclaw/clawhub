@@ -72,8 +72,8 @@ export function CatalogMetadataFields({
   };
 
   return (
-    <>
-      <div className="flex min-w-0 flex-col gap-2">
+    <div className="catalog-metadata-fields">
+      <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <Label htmlFor={`${fieldIdPrefix}Categories`}>Categories</Label>
           <div className="flex items-center gap-2">
@@ -149,7 +149,7 @@ export function CatalogMetadataFields({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
         <Label htmlFor={`${fieldIdPrefix}Topics`}>Topics</Label>
         <CatalogTopicInput
           id={`${fieldIdPrefix}Topics`}
@@ -158,6 +158,6 @@ export function CatalogMetadataFields({
           onChange={onTopicsChange}
         />
       </div>
-    </>
+    </div>
   );
 }

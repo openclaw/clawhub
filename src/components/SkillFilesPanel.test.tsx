@@ -76,6 +76,7 @@ describe("SkillFilesPanel", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: /a\.txt/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Back to file list" }));
     fireEvent.click(screen.getByRole("button", { name: /b\.txt/i }));
 
     resolvers["a.txt"]({ text: "alpha", size: 5, sha256: "b".repeat(64) });
@@ -85,7 +86,7 @@ describe("SkillFilesPanel", () => {
     expect(screen.queryByText("alpha")).toBeNull();
   });
 
-  it("shows a mobile preview list with see-all CTA", () => {
+  it("shows the complete file tree on mobile", () => {
     vi.stubGlobal("matchMedia", (query: string) => ({
       matches: query.includes("max-width: 899px"),
       media: query,
@@ -104,7 +105,7 @@ describe("SkillFilesPanel", () => {
       <SkillFilesPanel versionId={"skillVersions:1" as Id<"skillVersions">} latestFiles={files} />,
     );
 
-    expect(screen.queryByRole("button", { name: /folder\/file-10\.md/i })).toBeNull();
-    expect(screen.getByRole("button", { name: "See all" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: /folder\/file-10\.md/i })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "See all" })).toBeNull();
   });
 });
