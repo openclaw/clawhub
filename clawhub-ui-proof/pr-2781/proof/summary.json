@@ -1,0 +1,26 @@
+{
+  "baseline": "not run for feature proof",
+  "candidate": "ba6c4505a28509c79396ed87ed43dba2834a57ae",
+  "generatedAt": "2026-06-22T19:24:45Z",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "ba6c4505a28509c79396ed87ed43dba2834a57ae",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "Skill detail downloads label without tooltip",
+          "screenshot": "screenshots/remove-activity-tooltip-skill.png",
+          "slug": "remove-activity-tooltip-skill",
+          "status": "pass"
+        }
+      ]
+    }
+  ],
+  "mode": "feature",
+  "outputDir": "tmp/proof",
+  "provider": "local Playwright",
+  "scenario": "Manual local ClawHub skill detail proof",
+  "status": "pass"
+}
