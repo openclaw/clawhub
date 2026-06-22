@@ -72,6 +72,8 @@ export function buildDownloadsTrendForPeriod(
       return activityTrend;
     case "all-time":
       return { ...activityTrend, total: Math.max(0, Math.trunc(allTimeDownloads)) };
+    default:
+      return activityTrend;
   }
 }
 
@@ -83,6 +85,8 @@ export function getDownloadTrendPeriodLabel(period: DownloadTrendPeriod): string
       return "30 days";
     case "7d":
       return "7 days";
+    default:
+      return "30 days";
   }
 }
 
@@ -94,5 +98,7 @@ export function getDownloadTrendAriaLabel(period: DownloadTrendPeriod): string {
       return "Daily downloads over the last 30 days";
     case "7d":
       return "Daily downloads over the last 7 days";
+    default:
+      return "Daily downloads over the last 30 days";
   }
 }

@@ -17,18 +17,17 @@ import {
   DetailSecuritySummary,
   DetailSecuritySummaryLabel,
 } from "../../components/DetailSecuritySummary";
+import { useDownloadsSidebarMetricBlock } from "../../components/DownloadsMetricCard";
 import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { DownloadsMetricCard } from "../../components/DownloadsMetricCard";
 import { OfficialTag } from "../../components/OfficialBadge";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
 } from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
-import { UserBadge } from "../../components/UserBadge";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
@@ -41,14 +40,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { UserBadge } from "../../components/UserBadge";
 import { getActivityTrendEndDay } from "../../lib/activityTrend";
-import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
 import {
   buildPluginCategoryBrowseHref,
   PLUGIN_CATEGORIES,
   resolvePluginBrowseCategorySlug,
 } from "../../lib/categories";
+import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
@@ -659,6 +659,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
     detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
   );
+  const downloadsMetricBlock = useDownloadsSidebarMetricBlock({
+    allTimeDownloads: detail.package?.stats?.downloads ?? 0,
+    activityTrend: activityTrend?.downloads,
+    loading: activityTrendLoading,
+  });
   const inspectorFindings = useQuery(
     api.packages.listPackageInspectorWarningsForManager,
     manageContext ? { name: manageContext.package.name, limit: 100 } : "skip",
@@ -1124,35 +1129,13 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   ariaLabel="Plugin metadata"
                   density="compact"
                   blocks={[
-                    activityTrendLoading
-                      ? {
-                          key: "download-trend-loading",
+                    activityTrend || activityTrendLoading
+                      ? downloadsMetricBlock
+                      : {
                           label: <ActivityMetricLabel label="Downloads" />,
-                          value: (
-                            <DownloadsMetricCard
-                              allTimeDownloads={pkg.stats?.downloads ?? 0}
-                              loading
-                            />
-                          ),
+                          value: formatCompactStat(pkg.stats?.downloads ?? 0),
                           large: true,
-                        }
-                      : activityTrend
-                        ? {
-                            key: "download-trend",
-                            label: <ActivityMetricLabel label="Downloads" />,
-                            value: (
-                              <DownloadsMetricCard
-                                allTimeDownloads={pkg.stats?.downloads ?? 0}
-                                activityTrend={activityTrend.downloads}
-                              />
-                            ),
-                            large: true,
-                          }
-                        : {
-                            label: <ActivityMetricLabel label="Downloads" />,
-                            value: formatCompactStat(pkg.stats?.downloads ?? 0),
-                            large: true,
-                          },
+                        },
                     { label: "Repository", value: sourceRepoLink },
                     { label: "Creator", value: ownerMetadataValue },
                     securitySummary

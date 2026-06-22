@@ -120,7 +120,8 @@ type MermaidRenderState =
 function stringifyReactNode(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(stringifyReactNode).join("");
-  if (isValidElement<{ children?: ReactNode }>(node)) return stringifyReactNode(node.props.children);
+  if (isValidElement<{ children?: ReactNode }>(node))
+    return stringifyReactNode(node.props.children);
   return "";
 }
 
@@ -222,7 +223,7 @@ function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWith
   useClientLayoutEffect(() => {
     const pre = preRef.current;
     if (!pre) {
-      return;
+      return undefined;
     }
 
     const updateWrapAvailability = () => {

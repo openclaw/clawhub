@@ -5084,7 +5084,6 @@ code {
 .skill-sidebar-actions-secondary {
   margin-top: 0;
   padding-top: 10px;
-  border-top: 1px solid var(--line);
 }
 
 .skill-hero-sidebar-stack
@@ -5434,25 +5433,52 @@ code {
   line-height: 1.4;
 }
 
-.downloads-metric-card {
-  display: grid;
-  gap: 10px;
+.downloads-metric-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   width: 100%;
   min-width: 0;
 }
 
-.downloads-metric-tabs.clawhub-segmented {
-  --clawhub-segmented-h: 30px;
-  --clawhub-segmented-seg-h: 24px;
-  width: 100%;
+.downloads-metric-tabs {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 14px;
+  margin-left: auto;
 }
 
-.downloads-metric-tabs .clawhub-segmented-btn {
-  flex: 1 1 0;
-  min-width: 0;
-  padding-inline: 6px;
+.detail-inline-tab {
+  border: none;
+  background: none;
+  padding: 0 2px 3px;
   font-size: 12px;
   font-weight: 600;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: pointer;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+  transition:
+    color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.detail-inline-tab:hover,
+.detail-inline-tab:focus-visible {
+  color: var(--ink);
+  outline: none;
+}
+
+.detail-inline-tab.is-active {
+  color: var(--ink);
+  border-bottom-color: var(--ink);
+}
+
+.sidebar-metadata-row-large .sidebar-metadata-label:has(.downloads-metric-label-row) {
+  width: 100%;
 }
 
 .metric-trend-card {
@@ -6234,13 +6260,12 @@ code {
     gap: 4px;
   }
 
-  .downloads-metric-card {
-    gap: 8px;
+  .downloads-metric-tabs {
+    gap: 10px;
   }
 
-  .downloads-metric-tabs.clawhub-segmented {
-    --clawhub-segmented-h: 28px;
-    --clawhub-segmented-seg-h: 22px;
+  .detail-inline-tab {
+    font-size: 11px;
   }
 
   .metric-trend-chart {

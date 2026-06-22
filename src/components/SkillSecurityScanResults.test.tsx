@@ -461,9 +461,9 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getAllByText("Skill content").length).toBeGreaterThan(0);
     expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();
     expect(screen.queryByText("Confidence")).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "Back to skill" }).getAttribute("href"),
-    ).toBe("/local/todo-guard");
+    expect(screen.getByRole("link", { name: "Back to skill" }).getAttribute("href")).toBe(
+      "/local/todo-guard",
+    );
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
     expect(
       Array.from(
@@ -1123,7 +1123,7 @@ describe("SecurityScanResults static guidance", () => {
   });
 
   it("shows skills with legacy-only ClawScan analysis in the new ClawScan report shell", () => {
-    const { container } = render(
+    render(
       <SecurityAuditPage
         entity={{
           kind: "skill",
@@ -1145,9 +1145,9 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
     expect(screen.queryByText("Review Dimensions")).toBeNull();
     expect(screen.queryByText("Purpose & Capability")).toBeNull();
-    expect(
-      screen.getByRole("link", { name: "Back to skill" }).getAttribute("href"),
-    ).toBe("/local/legacy-skill");
+    expect(screen.getByRole("link", { name: "Back to skill" }).getAttribute("href")).toBe(
+      "/local/legacy-skill",
+    );
     expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
   });
 

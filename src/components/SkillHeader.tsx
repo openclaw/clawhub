@@ -15,7 +15,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
-import { DownloadsMetricCard } from "./DownloadsMetricCard";
+import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
 import { OfficialTag } from "./OfficialBadge";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
@@ -546,41 +546,24 @@ function SkillSidebarStats({
   activityTrendLoading?: boolean;
 }) {
   const githubRepositoryLink = getGitHubRepositoryLink(skill);
+  const downloadsMetricBlock = useDownloadsSidebarMetricBlock({
+    allTimeDownloads: skill.stats.downloads,
+    activityTrend: activityTrend?.downloads,
+    loading: activityTrendLoading,
+  });
 
   return (
     <SidebarMetadata
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
-        activityTrendLoading
-          ? {
-              key: "download-trend-loading",
+        activityTrend || activityTrendLoading
+          ? downloadsMetricBlock
+          : {
               label: <ActivityMetricLabel label="Downloads" />,
-              value: (
-                <DownloadsMetricCard
-                  allTimeDownloads={skill.stats.downloads}
-                  loading
-                />
-              ),
+              value: formattedStats.downloads,
               large: true,
-            }
-          : activityTrend
-            ? {
-                key: "download-trend",
-                label: <ActivityMetricLabel label="Downloads" />,
-                value: (
-                  <DownloadsMetricCard
-                    allTimeDownloads={skill.stats.downloads}
-                    activityTrend={activityTrend.downloads}
-                  />
-                ),
-                large: true,
-              }
-            : {
-                label: <ActivityMetricLabel label="Downloads" />,
-                value: formattedStats.downloads,
-                large: true,
-              },
+            },
         { label: "Repository", value: githubRepositoryLink },
         {
           label: "Creator",

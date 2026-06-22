@@ -3,8 +3,8 @@ import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
-import { Button } from "./ui/button";
 import { buildSkillHref } from "./skillDetailUtils";
+import { Button } from "./ui/button";
 
 export type RelatedSkillEntry = {
   skill: PublicSkill;
@@ -25,6 +25,12 @@ function ownerLabel(entry: RelatedSkillEntry) {
     entry.owner?.handle?.trim() ||
     String(entry.skill.ownerPublisherId ?? entry.skill.ownerUserId)
   );
+}
+
+function truncateRelatedSkillSummary(summary: string, maxLength = 80) {
+  const trimmed = summary.trim();
+  if (trimmed.length <= maxLength) return trimmed;
+  return `${trimmed.slice(0, maxLength - 1).trimEnd()}…`;
 }
 
 export function SkillRelatedSection({
@@ -82,7 +88,9 @@ export function SkillRelatedSection({
                       ) : null}
                     </span>
                     {entry.skill.summary ? (
-                      <span className="related-skill-summary">{entry.skill.summary}</span>
+                      <span className="related-skill-summary">
+                        {truncateRelatedSkillSummary(entry.skill.summary)}
+                      </span>
                     ) : null}
                   </span>
                   {isCompact ? (
