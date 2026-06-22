@@ -34,7 +34,7 @@ export function UserBadge({
     hasOwnProperty(user, "name") && typeof user.name === "string" ? user.name.trim() : undefined;
   const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
-  const href = user?.handle ? `/user/${encodeURIComponent(user.handle)}` : null;
+  const href = handle ? `/user/${encodeURIComponent(handle)}` : null;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;
   const hasUsefulName =
@@ -76,9 +76,19 @@ export function UserBadge({
     </>
   );
 
+  const profileLabel = hasUsefulName
+    ? `View ${displayName} profile`
+    : handle
+      ? `View @${handle} profile`
+      : "View profile";
+
   const badge =
     link && href ? (
-      <a className={`user-badge user-badge-${size} user-badge-link`} href={href}>
+      <a
+        className={`user-badge user-badge-${size} user-badge-link`}
+        href={href}
+        aria-label={profileLabel}
+      >
         {badgeContent}
       </a>
     ) : (

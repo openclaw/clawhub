@@ -41,7 +41,7 @@ describe("UserBadge", () => {
   it("links users to canonical publisher profiles", () => {
     renderBadge(user);
 
-    expect(screen.getByRole("link", { name: "@steipete" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "View @steipete profile" }).getAttribute("href")).toBe(
       "/user/steipete",
     );
   });
@@ -49,7 +49,7 @@ describe("UserBadge", () => {
   it("links org publishers to canonical publisher profiles", () => {
     renderBadge(orgPublisher);
 
-    expect(screen.getByRole("link", { name: "@openclaw" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "View @openclaw profile" }).getAttribute("href")).toBe(
       "/user/openclaw",
     );
   });
@@ -69,6 +69,31 @@ describe("UserBadge", () => {
     );
 
     expect(screen.getByText("Acme")).toBeTruthy();
+  });
+
+  it("links using fallbackHandle when the user record has no handle", () => {
+    const publisher: PublicPublisher = {
+      ...orgPublisher,
+      handle: undefined as unknown as string,
+      displayName: "OpenClaw",
+    };
+
+    render(
+      <TooltipProvider>
+        <UserBadge
+          user={publisher}
+          fallbackHandle="openclaw"
+          prefix=""
+          showName
+          showHandle={false}
+          disableTooltip
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "View OpenClaw profile" }).getAttribute("href")).toBe(
+      "/user/openclaw",
+    );
   });
 
   it("shows a compact Official badge for official publishers", () => {

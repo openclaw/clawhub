@@ -971,7 +971,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     : null;
   const ownerMetadataValue = owner ? (
     <UserBadge
-      user={owner}
+      user={{
+        ...owner,
+        ...(pkg.isOfficial ? { official: true as const } : {}),
+      }}
+      fallbackHandle={owner.handle ?? pkg.ownerHandle ?? null}
       prefix=""
       size="md"
       showName

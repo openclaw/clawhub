@@ -5318,6 +5318,28 @@ code {
   font-weight: inherit;
 }
 
+.sidebar-metadata-value .user-badge-link {
+  margin: -4px -8px;
+  padding: 4px 8px;
+  border-radius: var(--r-pill);
+  transition:
+    background-color 0.15s ease,
+    color 0.15s ease;
+}
+
+.sidebar-metadata-value .user-badge-link:hover,
+.sidebar-metadata-value .user-badge-link:focus-visible {
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  outline: none;
+}
+
+.sidebar-metadata-value .user-badge-link:hover .user-name,
+.sidebar-metadata-value .user-badge-link:focus-visible .user-name,
+.sidebar-metadata-value .user-badge-link:hover .user-handle,
+.sidebar-metadata-value .user-badge-link:focus-visible .user-handle {
+  text-decoration: none;
+}
+
 .sidebar-metadata-compact .sidebar-metadata-row {
   gap: 7px;
   padding: 16px 2px;
