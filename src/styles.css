@@ -4692,7 +4692,7 @@ code {
 .skill-hero-heading-stack {
   display: grid;
   justify-items: start;
-  gap: 14px;
+  gap: 18px;
   min-width: 0;
 }
 
@@ -8228,6 +8228,7 @@ code {
 
 .skill-readme-body {
   --skill-readme-line-height: 28px;
+  overflow-x: hidden;
 }
 
 .skill-readme-preview {
@@ -8248,7 +8249,11 @@ code {
   left: 0;
   height: 112px;
   pointer-events: none;
-  background: linear-gradient(to bottom, transparent, var(--bg) 88%);
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    color-mix(in srgb, var(--surface-muted) 58%, var(--bg)) 88%
+  );
 }
 
 .skill-readme-toggle {
@@ -8290,17 +8295,17 @@ code {
 }
 
 .skill-readme-body .markdown h1 {
-  margin: 0 0 var(--space-3);
+  margin: 0 0 var(--space-2);
   font-size: 28px;
 }
 
 .skill-readme-body .markdown h2 {
-  margin: var(--space-5) 0 var(--space-2);
+  margin: var(--space-5) 0 var(--space-1);
   font-size: 22px;
 }
 
 .skill-readme-body .markdown h3 {
-  margin: var(--space-5) 0 var(--space-2);
+  margin: var(--space-5) 0 var(--space-1);
   font-size: 18px;
 }
 
