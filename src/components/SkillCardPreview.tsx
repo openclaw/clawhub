@@ -256,7 +256,7 @@ export function SkillCardPreview({ content, urlTransform }: SkillCardPreviewProp
                   className="skill-card-risk-pair"
                   key={`${pair.risk}:${pair.mitigation}`}
                 >
-                  <div className="skill-card-risk-row">
+                  <div className="skill-card-risk-row skill-card-risk-row-risk">
                     <span className="skill-card-review-label">Risk</span>
                     <MarkdownPreview
                       className="skill-card-risk-copy"
@@ -267,7 +267,7 @@ export function SkillCardPreview({ content, urlTransform }: SkillCardPreviewProp
                     </MarkdownPreview>
                   </div>
                   {pair.mitigation ? (
-                    <div className="skill-card-risk-row">
+                    <div className="skill-card-risk-row skill-card-risk-row-mitigation">
                       <span className="skill-card-review-label">Mitigation</span>
                       <MarkdownPreview
                         className="skill-card-risk-copy"
