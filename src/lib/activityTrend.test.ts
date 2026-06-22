@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildDownloadsTrendForPeriod,
-  sliceMetricTrend,
-  type MetricTrend,
-} from "./activityTrend";
+import { buildDownloadsTrendForPeriod, sliceMetricTrend, type MetricTrend } from "./activityTrend";
 
 const sampleTrend: MetricTrend = {
   range: "daily",

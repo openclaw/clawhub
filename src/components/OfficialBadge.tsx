@@ -3,7 +3,7 @@ import { Badge } from "./ui/badge";
 
 export function OfficialTag() {
   return (
-    <Badge variant="official" className="official-tag" aria-label="Official">
+    <Badge variant="official" className="official-tag rounded-full" aria-label="Official">
       <BadgeCheck size={15} aria-hidden="true" className="official-badge-icon" />
       Official
     </Badge>

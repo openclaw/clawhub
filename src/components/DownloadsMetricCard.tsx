@@ -93,6 +93,7 @@ export function useDownloadsSidebarMetricBlock({
         ariaLabel={getDownloadTrendAriaLabel(period)}
         periodLabel={getDownloadTrendPeriodLabel(period)}
         unitLabel="download"
+        hideIdlePeriodLabel
       />
     ),
     large: true,

@@ -677,7 +677,7 @@ export function SecurityScanResults({
         {sha256hash ? (
           <div className="version-scan-badge">
             <VirusTotalIcon className="version-scan-icon version-scan-icon-vt" />
-            <ScanResultBadge status={vtStatus} />
+            <ScanResultBadge status={vtStatus} className="version-scan-status-badge" />
             {vtUrl ? (
               <a
                 href={vtUrl}
@@ -694,7 +694,7 @@ export function SecurityScanResults({
         {llmStatusInfo ? (
           <div className="version-scan-badge">
             <ClawScanIcon className="version-scan-icon version-scan-icon-oc" />
-            <ScanResultBadge status={llmDisplayStatus} />
+            <ScanResultBadge status={llmDisplayStatus} className="version-scan-status-badge" />
           </div>
         ) : null}
       </div>

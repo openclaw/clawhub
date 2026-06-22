@@ -77,7 +77,7 @@ describe("SkillDetailTabs README links", () => {
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Versions" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Settings" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Compare" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Diff" })).toBeNull();
   });
 
   it("hides archive-only tabs for source-backed skills", () => {
@@ -109,7 +109,7 @@ describe("SkillDetailTabs README links", () => {
     expect(screen.getByRole("tab", { name: "Skill Card" })).toBeTruthy();
     expect(screen.queryByRole("tab", { name: "Files" })).toBeNull();
     expect(screen.queryByRole("tab", { name: "Versions" })).toBeNull();
-    expect(screen.queryByRole("tab", { name: "Compare" })).toBeNull();
+    expect(screen.queryByRole("tab", { name: "Diff" })).toBeNull();
   });
 
   it("keeps relative skill README links inside the viewed skill", () => {
@@ -361,7 +361,9 @@ describe("SkillDetailTabs README links", () => {
       />,
     );
 
-    expect(container.querySelectorAll("br").length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelectorAll("br").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/line one/)).toBeTruthy();
+    expect(screen.getByText(/line two/)).toBeTruthy();
     expect(screen.queryByText(/<br/i)).toBeNull();
   });
 });

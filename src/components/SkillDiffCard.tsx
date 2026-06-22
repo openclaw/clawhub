@@ -1,7 +1,17 @@
-import type { DiffEditorProps } from "@monaco-editor/react";
+import type { DiffEditorProps, DiffOnMount, MonacoDiffEditor } from "@monaco-editor/react";
 import { DiffEditor, useMonaco } from "@monaco-editor/react";
 import { useAction } from "convex/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  AlignJustify,
+  ArrowDown,
+  ArrowLeftRight,
+  ArrowUp,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  Columns2,
+} from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import {
@@ -38,16 +48,71 @@ type SizeWarning = {
 };
 
 const EMPTY_DIFF_TEXT = "";
-const MOBILE_DIFF_BREAKPOINT = 768;
+const COMPACT_DIFF_THRESHOLD = 768;
+const EMPTY_DIFF_STATS = { additions: 0, deletions: 0, hunks: 0 };
+const FILE_STATUS_LABELS = {
+  added: "Added",
+  removed: "Removed",
+  changed: "Changed",
+  same: "Unchanged",
+} as const;
+
+function countChangedLines(startLineNumber: number, endLineNumber: number) {
+  if (endLineNumber === 0) return 0;
+  return Math.max(0, endLineNumber - startLineNumber + 1);
+}
 
 function getDefaultViewMode() {
   if (typeof window === "undefined") return "split";
-  return window.matchMedia(`(max-width: ${MOBILE_DIFF_BREAKPOINT}px)`).matches ? "inline" : "split";
+  return window.matchMedia(`(max-width: ${COMPACT_DIFF_THRESHOLD}px)`).matches ? "inline" : "split";
+}
+
+function useCompactDiffLayout(threshold = COMPACT_DIFF_THRESHOLD) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [isCompact, setIsCompact] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return window.matchMedia(`(max-width: ${threshold}px)`).matches;
+  });
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element || typeof ResizeObserver === "undefined") return () => {};
+
+    const mediaQuery = window.matchMedia(`(max-width: ${threshold}px)`);
+    const sync = (width: number) => {
+      setIsCompact(width < threshold || mediaQuery.matches);
+    };
+
+    const observer = new ResizeObserver(([entry]) => {
+      const width = entry.contentBoxSize?.[0]?.inlineSize ?? entry.contentRect.width;
+      sync(width);
+    });
+    observer.observe(element);
+    sync(element.getBoundingClientRect().width);
+
+    const onMediaChange = () => sync(element.getBoundingClientRect().width);
+    if (typeof mediaQuery.addEventListener === "function") {
+      mediaQuery.addEventListener("change", onMediaChange);
+      return () => {
+        observer.disconnect();
+        mediaQuery.removeEventListener("change", onMediaChange);
+      };
+    }
+
+    mediaQuery.addListener(onMediaChange);
+    return () => {
+      observer.disconnect();
+      mediaQuery.removeListener(onMediaChange);
+    };
+  }, [threshold]);
+
+  return { ref, isCompact };
 }
 
 export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCardProps) {
   const getFileText = useAction(api.skills.getFileText);
   const monaco = useMonaco();
+  const { ref: containerRef, isCompact } = useCompactDiffLayout();
   const [viewMode, setViewMode] = useState<"split" | "inline">(getDefaultViewMode);
   const [leftVersionId, setLeftVersionId] = useState<Id<"skillVersions"> | null>(null);
   const [rightVersionId, setRightVersionId] = useState<Id<"skillVersions"> | null>(null);
@@ -59,6 +124,9 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   const [sizeWarning, setSizeWarning] = useState<SizeWarning | null>(null);
   const cacheRef = useRef(new Map<string, string>());
   const userSelectedViewModeRef = useRef(false);
+  const diffEditorRef = useRef<MonacoDiffEditor | null>(null);
+  const diffUpdateDisposableRef = useRef<{ dispose: () => void } | null>(null);
+  const [diffStats, setDiffStats] = useState(EMPTY_DIFF_STATS);
 
   const versionEntries = useMemo(
     () => versions.map((entry) => ({ id: entry._id, version: entry.version })),
@@ -148,22 +216,74 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   const fileDiffItems = useMemo(() => {
     return buildFileDiffList(leftVersion?.files ?? [], rightVersion?.files ?? []);
   }, [leftVersion, rightVersion]);
+  const changedFileItems = useMemo(
+    () => fileDiffItems.filter((item) => item.status !== "same"),
+    [fileDiffItems],
+  );
+  const reviewFileItems = changedFileItems.length > 0 ? changedFileItems : fileDiffItems;
 
   useEffect(() => {
-    if (!fileDiffItems.length) {
+    if (!reviewFileItems.length) {
       setSelectedPath(null);
       return;
     }
     setSelectedPath((current) => {
-      if (current && fileDiffItems.some((item) => item.path === current)) return current;
-      return selectDefaultFilePath(fileDiffItems);
+      if (current && reviewFileItems.some((item) => item.path === current)) return current;
+      return selectDefaultFilePath(reviewFileItems);
     });
-  }, [fileDiffItems]);
+  }, [reviewFileItems]);
 
   const selectedItem = useMemo(
     () => fileDiffItems.find((item) => item.path === selectedPath) ?? null,
     [fileDiffItems, selectedPath],
   );
+  const selectedReviewIndex = reviewFileItems.findIndex((item) => item.path === selectedPath);
+  const hasMultipleReviewFiles = reviewFileItems.length > 1;
+  const canSelectPreviousFile = selectedReviewIndex > 0;
+  const canSelectNextFile =
+    selectedReviewIndex >= 0 && selectedReviewIndex < reviewFileItems.length - 1;
+
+  const selectRelativeFile = (offset: -1 | 1) => {
+    const nextItem = reviewFileItems[selectedReviewIndex + offset];
+    if (nextItem) setSelectedPath(nextItem.path);
+  };
+
+  useEffect(() => {
+    setDiffStats(EMPTY_DIFF_STATS);
+  }, [leftVersionId, rightVersionId, selectedPath]);
+
+  const handleDiffMount = useCallback<DiffOnMount>((editor) => {
+    diffEditorRef.current = editor;
+    diffUpdateDisposableRef.current?.dispose();
+
+    const syncDiffStats = () => {
+      const changes = editor.getLineChanges() ?? [];
+      let additions = 0;
+      let deletions = 0;
+      for (const change of changes) {
+        additions += countChangedLines(
+          change.modifiedStartLineNumber,
+          change.modifiedEndLineNumber,
+        );
+        deletions += countChangedLines(
+          change.originalStartLineNumber,
+          change.originalEndLineNumber,
+        );
+      }
+      setDiffStats({ additions, deletions, hunks: changes.length });
+    };
+
+    diffUpdateDisposableRef.current = editor.onDidUpdateDiff(syncDiffStats);
+    syncDiffStats();
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      diffUpdateDisposableRef.current?.dispose();
+      diffUpdateDisposableRef.current = null;
+      diffEditorRef.current = null;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -248,139 +368,219 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   }, [monaco]);
 
   useEffect(() => {
-    if (typeof window === "undefined") return () => {};
-    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_DIFF_BREAKPOINT}px)`);
-    const syncViewMode = () => {
-      if (!userSelectedViewModeRef.current) {
-        setViewMode(mediaQuery.matches ? "inline" : "split");
-      }
-    };
-
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", syncViewMode);
-      return () => mediaQuery.removeEventListener("change", syncViewMode);
+    if (!userSelectedViewModeRef.current) {
+      setViewMode(isCompact ? "inline" : "split");
     }
-
-    mediaQuery.addListener(syncViewMode);
-    return () => mediaQuery.removeListener(syncViewMode);
-  }, []);
+  }, [isCompact]);
 
   function updateViewMode(nextViewMode: "split" | "inline") {
     userSelectedViewModeRef.current = true;
     setViewMode(nextViewMode);
   }
 
-  const leftLabel = leftVersion ? `v${leftVersion.version}` : "—";
-  const rightLabel = rightVersion ? `v${rightVersion.version}` : "—";
   const diffUnavailable = versions.length < 2;
   const selectionReady = Boolean(leftVersionId && rightVersionId);
   const fileSelected = Boolean(selectedItem);
-  const diffOptions = useMemo(() => buildDiffOptions(viewMode), [viewMode]);
+  const diffOptions = useMemo(() => buildDiffOptions(viewMode, isCompact), [viewMode, isCompact]);
 
   const containerClass = variant === "card" ? "card diff-card" : "diff-card diff-card-embedded";
 
   return (
-    <div className={containerClass}>
-      <div className="diff-header">
-        <div>
-          <h2 className="section-title text-[1.2rem] m-0">Compare versions</h2>
-          <p className="section-subtitle m-0">Inline or side-by-side diff for any file.</p>
+    <div ref={containerRef} className={containerClass}>
+      {variant === "card" ? (
+        <div className="diff-header">
+          <div className="diff-header-copy">
+            <h2 className="section-title text-[1.2rem] m-0">Version diff</h2>
+            <p className="section-subtitle m-0">Inline or side-by-side diff for any file.</p>
+          </div>
         </div>
-        {!diffUnavailable ? (
-          <fieldset className="diff-toggle-group">
-            <legend className="sr-only">Diff layout</legend>
-            <button
-              className={`diff-toggle${viewMode === "split" ? " is-active" : ""}`}
-              type="button"
-              onClick={() => updateViewMode("split")}
-            >
-              Side-by-side
-            </button>
-            <button
-              className={`diff-toggle${viewMode === "inline" ? " is-active" : ""}`}
-              type="button"
-              onClick={() => updateViewMode("inline")}
-            >
-              Inline
-            </button>
-          </fieldset>
-        ) : null}
-      </div>
+      ) : null}
 
       {!diffUnavailable ? (
-        <>
-          <div className="diff-controls">
-            <div className="diff-select">
-              <label htmlFor="diff-left">Left</label>
-              <select
-                id="diff-left"
-                className="search-input"
-                value={leftVersionId ?? ""}
-                onChange={(event) => setLeftVersionId(event.target.value as Id<"skillVersions">)}
-              >
-                <option value="" disabled>
-                  Select version
-                </option>
-                {renderOptions(versionOptions)}
-              </select>
+        <div className="diff-toolbar">
+          <div className="diff-version-row">
+            <div className="diff-field">
+              <label className="diff-field-label" htmlFor="diff-left">
+                Base version
+              </label>
+              <div className="diff-select-control">
+                <select
+                  id="diff-left"
+                  className="search-input diff-version-select"
+                  value={leftVersionId ?? ""}
+                  onChange={(event) => setLeftVersionId(event.target.value as Id<"skillVersions">)}
+                >
+                  <option value="" disabled>
+                    Select base version
+                  </option>
+                  {renderOptions(versionOptions)}
+                </select>
+                <ChevronDown className="diff-select-chevron" size={16} aria-hidden="true" />
+              </div>
             </div>
             <Button
               className="diff-swap"
               type="button"
+              size="icon-sm"
+              variant="secondary"
+              aria-label="Swap base and target versions"
+              title="Swap base and target versions"
               onClick={() => {
                 setLeftVersionId(rightVersionId);
                 setRightVersionId(leftVersionId);
               }}
               disabled={!leftVersionId || !rightVersionId}
             >
-              Swap
+              <ArrowLeftRight size={14} aria-hidden="true" />
             </Button>
-            <div className="diff-select">
-              <label htmlFor="diff-right">Right</label>
-              <select
-                id="diff-right"
-                className="search-input"
-                value={rightVersionId ?? ""}
-                onChange={(event) => setRightVersionId(event.target.value as Id<"skillVersions">)}
-              >
-                <option value="" disabled>
-                  Select version
-                </option>
-                {renderOptions(versionOptions)}
-              </select>
+            <div className="diff-field">
+              <label className="diff-field-label" htmlFor="diff-right">
+                Target version
+              </label>
+              <div className="diff-select-control">
+                <select
+                  id="diff-right"
+                  className="search-input diff-version-select"
+                  value={rightVersionId ?? ""}
+                  onChange={(event) =>
+                    setRightVersionId(event.target.value as Id<"skillVersions">)
+                  }
+                >
+                  <option value="" disabled>
+                    Select target version
+                  </option>
+                  {renderOptions(versionOptions)}
+                </select>
+                <ChevronDown className="diff-select-chevron" size={16} aria-hidden="true" />
+              </div>
             </div>
           </div>
-
-          <div className="diff-meta">
-            <span>
-              Left {leftLabel} • Right {rightLabel}
-            </span>
+          <div className="diff-field diff-view-field">
+            <span className="diff-field-label">View</span>
+            <fieldset className="diff-toggle-group">
+              <legend className="sr-only">Diff layout</legend>
+              <button
+                className={`diff-toggle${viewMode === "split" ? " is-active" : ""}`}
+                type="button"
+                aria-pressed={viewMode === "split"}
+                onClick={() => updateViewMode("split")}
+              >
+                <Columns2 size={14} aria-hidden="true" />
+                Side-by-side
+              </button>
+              <button
+                className={`diff-toggle${viewMode === "inline" ? " is-active" : ""}`}
+                type="button"
+                aria-pressed={viewMode === "inline"}
+                onClick={() => updateViewMode("inline")}
+              >
+                <AlignJustify size={14} aria-hidden="true" />
+                Inline
+              </button>
+            </fieldset>
           </div>
-        </>
+        </div>
       ) : null}
 
       <div className="diff-layout">
-        <div className="diff-files">
-          {diffUnavailable ? (
-            <div className="diff-empty">
-              Publish another version to compare changes side by side.
-            </div>
-          ) : fileDiffItems.length === 0 ? (
-            <div className="diff-empty">No files to compare.</div>
-          ) : (
-            fileDiffItems.map((item) => (
-              <button
-                key={item.path}
-                type="button"
-                className={`diff-file${item.path === selectedPath ? " is-active" : ""}`}
-                onClick={() => setSelectedPath(item.path)}
+        {reviewFileItems.length > 0 ? (
+          <div className="diff-file-select-wrap">
+            <div className="diff-file-review-bar">
+              <div
+                className={`diff-file-navigation${hasMultipleReviewFiles ? " has-multiple-files" : ""}`}
               >
-                <span className={`diff-pill diff-pill-${item.status}`}>{item.status}</span>
-                <span className="diff-file-name">{item.path}</span>
-              </button>
-            ))
-          )}
-        </div>
+                {hasMultipleReviewFiles ? (
+                  <button
+                    type="button"
+                    className="diff-review-icon-button"
+                    aria-label="Previous file"
+                    title="Previous file"
+                    disabled={!canSelectPreviousFile}
+                    onClick={() => selectRelativeFile(-1)}
+                  >
+                    <ChevronLeft size={16} aria-hidden="true" />
+                  </button>
+                ) : null}
+                <div className="diff-select-control diff-file-select-control">
+                  <select
+                    id="diff-file"
+                    className="search-input diff-file-select"
+                    aria-label="File"
+                    value={selectedPath ?? ""}
+                    onChange={(event) => setSelectedPath(event.target.value)}
+                  >
+                    {reviewFileItems.map((item) => (
+                      <option key={item.path} value={item.path}>
+                        {item.path}
+                      </option>
+                    ))}
+                  </select>
+                  <ChevronDown className="diff-select-chevron" size={16} aria-hidden="true" />
+                </div>
+                {hasMultipleReviewFiles ? (
+                  <button
+                    type="button"
+                    className="diff-review-icon-button"
+                    aria-label="Next file"
+                    title="Next file"
+                    disabled={!canSelectNextFile}
+                    onClick={() => selectRelativeFile(1)}
+                  >
+                    <ChevronRight size={16} aria-hidden="true" />
+                  </button>
+                ) : null}
+              </div>
+              <div className="diff-file-review-context">
+                {selectedItem ? (
+                  <span className={`diff-pill diff-pill-${selectedItem.status}`}>
+                    {FILE_STATUS_LABELS[selectedItem.status]}
+                  </span>
+                ) : null}
+                {selectedItem &&
+                selectedItem.status !== "same" &&
+                !isLoading &&
+                diffStats.hunks > 0 ? (
+                  <span
+                    className="diff-line-stats"
+                    aria-label={`${diffStats.additions} additions and ${diffStats.deletions} deletions`}
+                  >
+                    <span className="diff-line-additions">+{diffStats.additions}</span>
+                    <span className="diff-line-deletions">-{diffStats.deletions}</span>
+                  </span>
+                ) : null}
+              </div>
+              <div className="diff-file-review-actions">
+                {selectedReviewIndex >= 0 ? (
+                  <span className="diff-file-count">
+                    {selectedReviewIndex + 1} of {reviewFileItems.length} files
+                  </span>
+                ) : null}
+                {diffStats.hunks > 1 ? (
+                  <span className="diff-hunk-navigation">
+                    <button
+                      type="button"
+                      className="diff-review-icon-button"
+                      aria-label="Previous change"
+                      title="Previous change"
+                      onClick={() => diffEditorRef.current?.goToDiff("previous")}
+                    >
+                      <ArrowUp size={15} aria-hidden="true" />
+                    </button>
+                    <button
+                      type="button"
+                      className="diff-review-icon-button"
+                      aria-label="Next change"
+                      title="Next change"
+                      onClick={() => diffEditorRef.current?.goToDiff("next")}
+                    >
+                      <ArrowDown size={15} aria-hidden="true" />
+                    </button>
+                  </span>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        ) : null}
         <div className="diff-view">
           {error ? (
             <div className="diff-empty">{error}</div>
@@ -390,11 +590,11 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
               {sizeWarning.path}
             </div>
           ) : diffUnavailable ? (
-            <div className="diff-empty">Publish another version to compare.</div>
+            <div className="diff-empty">Publish another version to view a diff.</div>
           ) : !selectionReady ? (
-            <div className="diff-empty">Select two versions to compare.</div>
+            <div className="diff-empty">Select two versions.</div>
           ) : !fileSelected ? (
-            <div className="diff-empty">Select a file to compare.</div>
+            <div className="diff-empty">Select a file.</div>
           ) : (
             <ClientOnly fallback={<div className="diff-empty">Preparing diff…</div>}>
               <DiffEditor
@@ -404,6 +604,7 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
                 theme={getMonacoThemeName()}
                 loading={<div className="diff-empty">Loading diff…</div>}
                 options={diffOptions}
+                onMount={handleDiffMount}
               />
               {isLoading ? <div className="diff-loading">Loading…</div> : null}
             </ClientOnly>
@@ -441,7 +642,11 @@ function getMonacoThemeName() {
   return isDarkThemeResolved() ? "clawhub-dark" : "clawhub-light";
 }
 
-function buildDiffOptions(viewMode: "split" | "inline"): DiffEditorProps["options"] {
+function buildDiffOptions(
+  viewMode: "split" | "inline",
+  isCompact: boolean,
+): DiffEditorProps["options"] {
+  const fontSize = isCompact ? 12 : 13;
   return {
     readOnly: true,
     renderSideBySide: viewMode === "split",
@@ -454,7 +659,8 @@ function buildDiffOptions(viewMode: "split" | "inline"): DiffEditorProps["option
     renderIndicators: true,
     diffAlgorithm: "advanced",
     fontFamily: "var(--font-mono)",
-    fontSize: 13,
+    fontSize,
+    lineHeight: Math.round(fontSize * 1.6),
   };
 }
 
@@ -471,18 +677,27 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
   const diffAddedStrong = styles.getPropertyValue("--diff-added-strong").trim() || seafoam;
   const diffRemoved = styles.getPropertyValue("--diff-removed").trim() || "#e47866";
   const diffRemovedStrong = styles.getPropertyValue("--diff-removed-strong").trim() || accent;
-  const diffDiagonal = styles.getPropertyValue("--diff-diagonal").trim() || "#22222233";
+  const diffDiagonal = toMonacoColor(
+    styles.getPropertyValue("--diff-diagonal").trim() || "#22222233",
+  );
+  const diffBorder = toMonacoColor(styles.getPropertyValue("--diff-border").trim() || line);
+  const lineNumber =
+    styles.getPropertyValue("--diff-line-number").trim() ||
+    styles.getPropertyValue("--ink-soft").trim() ||
+    "#4c463f";
   const background = surface;
   const gutter = surfaceMuted;
   const isDark = isDarkThemeResolved();
   const base = isDark ? "vs-dark" : "vs";
 
-  const diffInserted = withAlpha(diffAdded, isDark ? 0.22 : 0.2);
-  const diffInsertedText = withAlpha(diffAddedStrong, isDark ? 0.24 : 0.25);
-  const diffInsertedBorder = withAlpha(diffAddedStrong, isDark ? 0.45 : 0.5);
-  const diffRemovedBg = withAlpha(diffRemoved, isDark ? 0.22 : 0.2);
-  const diffRemovedText = withAlpha(diffRemovedStrong, isDark ? 0.2 : 0.22);
-  const diffRemovedBorder = withAlpha(diffRemovedStrong, isDark ? 0.45 : 0.5);
+  const diffInserted = withAlpha(diffAdded, isDark ? 0.26 : 0.14);
+  const diffInsertedText = withAlpha(diffAddedStrong, isDark ? 0.3 : 0.16);
+  const diffInsertedBorder = withAlpha(diffAddedStrong, isDark ? 0.45 : 0.32);
+  const diffRemovedBg = withAlpha(diffRemoved, isDark ? 0.26 : 0.12);
+  const diffRemovedText = withAlpha(diffRemovedStrong, isDark ? 0.28 : 0.14);
+  const diffRemovedBorder = withAlpha(diffRemovedStrong, isDark ? 0.45 : 0.28);
+  const overviewInserted = withAlpha(diffAddedStrong, isDark ? 0.55 : 0.4);
+  const overviewRemoved = withAlpha(diffRemovedStrong, isDark ? 0.55 : 0.4);
 
   monaco.editor.defineTheme(`clawhub-${isDark ? "dark" : "light"}`, {
     base,
@@ -494,8 +709,8 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
     colors: {
       "editor.background": background,
       "editor.foreground": ink,
-      "editorLineNumber.foreground": inkSoft,
-      "editorLineNumber.activeForeground": ink,
+      "editorLineNumber.foreground": lineNumber,
+      "editorLineNumber.activeForeground": withAlpha(ink, isDark ? 0.72 : 0.85),
       "editorGutter.background": gutter,
       "editor.selectionBackground": toRgba(accent, 0.18),
       "editor.inactiveSelectionBackground": toRgba(accent, 0.12),
@@ -510,13 +725,13 @@ function applyMonacoTheme(monaco: NonNullable<ReturnType<typeof useMonaco>>) {
       "diffEditor.removedTextBorder": diffRemovedBorder,
       "diffEditorGutter.insertedLineBackground": diffInserted,
       "diffEditorGutter.removedLineBackground": diffRemovedBg,
-      "diffEditorOverview.insertedForeground": diffInserted,
-      "diffEditorOverview.removedForeground": diffRemovedBg,
+      "diffEditorOverview.insertedForeground": overviewInserted,
+      "diffEditorOverview.removedForeground": overviewRemoved,
       "diffEditor.diagonalFill": diffDiagonal,
-      "diffEditor.border": line,
-      "scrollbarSlider.background": toRgba(inkSoft, 0.15),
-      "scrollbarSlider.hoverBackground": toRgba(inkSoft, 0.28),
-      "scrollbarSlider.activeBackground": toRgba(inkSoft, 0.4),
+      "diffEditor.border": diffBorder,
+      "scrollbarSlider.background": toRgba(inkSoft, isDark ? 0.22 : 0.15),
+      "scrollbarSlider.hoverBackground": toRgba(inkSoft, isDark ? 0.34 : 0.28),
+      "scrollbarSlider.activeBackground": toRgba(inkSoft, isDark ? 0.46 : 0.4),
     },
   });
 
@@ -549,4 +764,22 @@ function withAlpha(color: string, alpha: number) {
     .toString(16)
     .padStart(2, "0");
   return `#${value}${channel}`;
+}
+
+function toMonacoColor(color: string) {
+  const trimmed = color.trim();
+  if (trimmed.startsWith("#")) return trimmed;
+  const rgbaMatch = /^rgba?\(([^)]+)\)$/i.exec(trimmed);
+  if (!rgbaMatch) return trimmed;
+  const parts = rgbaMatch[1].split(",").map((part) => part.trim());
+  if (parts.length < 3) return trimmed;
+  const [r, g, b] = parts.map((part) => Number.parseFloat(part));
+  const alpha = parts.length >= 4 ? Number.parseFloat(parts[3]) : 1;
+  if ([r, g, b, alpha].some((value) => Number.isNaN(value))) return trimmed;
+  const channel = Math.round(alpha * 255)
+    .toString(16)
+    .padStart(2, "0");
+  return `#${[r, g, b]
+    .map((value) => Math.round(value).toString(16).padStart(2, "0"))
+    .join("")}${channel}`;
 }

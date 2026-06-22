@@ -1,14 +1,5 @@
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
-import { WrapText } from "lucide-react";
-import {
-  isValidElement,
-  useEffect,
-  useId,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { isValidElement, useEffect, useId, useMemo, useState } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown, { type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -16,7 +7,9 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
+import { isDarkThemeResolved, onThemeChange } from "../lib/theme";
 import { cn } from "../lib/utils";
+import { CodeWrapToggleButton, useCodeWrapToggle } from "./CodeWrapToggle";
 
 interface MarkdownPreviewProps {
   children: string;
@@ -55,8 +48,41 @@ function buildBaseRehype(assetBaseUrl: string | undefined): PluggableList {
   return [rehypeRaw, [rehypeSanitize, schema], [rehypeProxyImages, { assetBaseUrl }]];
 }
 
-const SHIKI_THEME = "github-dark";
-const useClientLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
+const SHIKI_THEMES = ["github-light", "github-dark"] as const;
+type ShikiTheme = (typeof SHIKI_THEMES)[number];
+
+function resolveShikiTheme(): ShikiTheme {
+  return isDarkThemeResolved() ? "github-dark" : "github-light";
+}
+
+function useShikiTheme(): ShikiTheme {
+  const [theme, setTheme] = useState<ShikiTheme>(() =>
+    typeof document === "undefined" ? "github-light" : resolveShikiTheme(),
+  );
+
+  useEffect(() => {
+    const syncTheme = () => setTheme(resolveShikiTheme());
+    const removeThemeListener = onThemeChange(syncTheme);
+
+    if (typeof document === "undefined") {
+      return removeThemeListener;
+    }
+
+    const observer = new MutationObserver(syncTheme);
+    observer.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["data-theme-resolved"],
+    });
+
+    return () => {
+      removeThemeListener();
+      observer.disconnect();
+    };
+  }, []);
+
+  return theme;
+}
+
 const SHIKI_LANGS = [
   "bash",
   "sh",
@@ -86,7 +112,7 @@ function loadHighlighter(): Promise<unknown> {
   if (!highlighterPromise) {
     highlighterPromise = import("shiki").then(({ createHighlighter }) =>
       createHighlighter({
-        themes: [SHIKI_THEME],
+        themes: [...SHIKI_THEMES],
         langs: SHIKI_LANGS,
       }),
     );
@@ -212,41 +238,7 @@ function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWith
     : "";
   const language = getCodeLanguage(`${className ?? ""} ${childClassName}`);
   const source = stringifyReactNode(children).replace(/\n$/, "");
-  const preRef = useRef<HTMLPreElement | null>(null);
-  const [isWrapped, setIsWrapped] = useState(false);
-  const [canWrap, setCanWrap] = useState(false);
-
-  useEffect(() => {
-    setIsWrapped(false);
-  }, [source]);
-
-  useClientLayoutEffect(() => {
-    const pre = preRef.current;
-    if (!pre) {
-      return undefined;
-    }
-
-    const updateWrapAvailability = () => {
-      if (!isWrapped) {
-        setCanWrap(pre.scrollWidth > pre.clientWidth + 1);
-      }
-    };
-
-    updateWrapAvailability();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", updateWrapAvailability);
-      return () => window.removeEventListener("resize", updateWrapAvailability);
-    }
-
-    const observer = new ResizeObserver(updateWrapAvailability);
-    observer.observe(pre);
-    return () => observer.disconnect();
-  }, [isWrapped, source]);
-
-  const toggleWrap = () => {
-    setIsWrapped((wrapped) => !wrapped);
-  };
+  const { preRef, isWrapped, canWrap, toggleWrap } = useCodeWrapToggle(source);
 
   return (
     <figure className={cn("markdown-code-block", isWrapped && "is-wrapped")}>
@@ -254,15 +246,7 @@ function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWith
         <span className="markdown-code-block-language">{language}</span>
         {canWrap ? (
           <span className="markdown-code-block-actions">
-            <button
-              type="button"
-              className="markdown-code-block-action"
-              aria-label={isWrapped ? "Disable line wrap" : "Enable line wrap"}
-              aria-pressed={isWrapped}
-              onClick={toggleWrap}
-            >
-              <WrapText className="h-3.5 w-3.5" aria-hidden="true" />
-            </button>
+            <CodeWrapToggleButton isWrapped={isWrapped} onToggle={toggleWrap} />
           </span>
         ) : null}
       </figcaption>
@@ -290,6 +274,7 @@ export function MarkdownPreview({
   assetBaseUrl,
 }: MarkdownPreviewProps) {
   const [highlighter, setHighlighter] = useState<unknown>(null);
+  const shikiTheme = useShikiTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -310,14 +295,15 @@ export function MarkdownPreview({
   const rehypePlugins = useMemo<PluggableList>(() => {
     const baseRehype = buildBaseRehype(assetBaseUrl);
     if (highlight && highlighter) {
-      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: SHIKI_THEME }]];
+      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: shikiTheme }]];
     }
     return baseRehype;
-  }, [highlight, highlighter, assetBaseUrl]);
+  }, [highlight, highlighter, assetBaseUrl, shikiTheme]);
 
   return (
     <div className={cn("markdown", className)}>
       <ReactMarkdown
+        key={shikiTheme}
         remarkPlugins={[remarkGfm]}
         rehypePlugins={rehypePlugins}
         components={MARKDOWN_COMPONENTS}

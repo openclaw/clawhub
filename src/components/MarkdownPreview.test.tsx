@@ -244,6 +244,38 @@ describe("MarkdownPreview — syntax highlighting", () => {
     expect(container.querySelector("pre")?.textContent).toContain("const x");
   });
 
+  it("uses github-light tokens when data-theme-resolved is light", async () => {
+    document.documentElement.dataset.themeResolved = "light";
+
+    const { container } = render(
+      <MarkdownPreview>{"```ts\nconst x: number = 1;\n```"}</MarkdownPreview>,
+    );
+
+    await waitFor(
+      () => {
+        const pre = container.querySelector("pre.shiki");
+        expect(pre?.className ?? "").toMatch(/github-light/);
+      },
+      { timeout: 8000 },
+    );
+  });
+
+  it("uses github-dark tokens when data-theme-resolved is dark", async () => {
+    document.documentElement.dataset.themeResolved = "dark";
+
+    const { container } = render(
+      <MarkdownPreview>{"```ts\nconst x: number = 1;\n```"}</MarkdownPreview>,
+    );
+
+    await waitFor(
+      () => {
+        const pre = container.querySelector("pre.shiki");
+        expect(pre?.className ?? "").toMatch(/github-dark/);
+      },
+      { timeout: 8000 },
+    );
+  });
+
   it("leaves the highlight prop honored — highlight={false} renders plain <pre><code>", () => {
     const { container } = render(
       <MarkdownPreview highlight={false}>{"```ts\nconst x = 1;\n```"}</MarkdownPreview>,

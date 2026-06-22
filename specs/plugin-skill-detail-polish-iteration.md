@@ -74,7 +74,7 @@ This note preserves the complete UI direction established during the June 2026 d
 - Keep detail tabs outside the major content card.
 - Restore a full baseline beneath the entire tab list, with a stronger active-tab indicator.
 - This final direction supersedes the temporary request to remove the tab baseline.
-- Skill tabs are `SKILL.md`, `Skill Card`, `Files`, `Compare`, and `Versions` when available.
+- Skill tabs are `SKILL.md`, `Skill Card`, `Files`, `Diff`, and `Versions` when available.
 - Plugin README tabs should be labeled `README.md`, not only `README`.
 - Content for each active tab belongs inside one major neutral-contrast container.
 - Do not place a red wash inside the tab content container.

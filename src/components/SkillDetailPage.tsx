@@ -72,7 +72,7 @@ function tabFromHash(hash: string): DetailTab {
   const normalized = hash.replace(/^#/, "").toLowerCase();
   if (normalized === "files") return "files";
   if (normalized === "skill-card" || normalized === "card") return "skill-card";
-  if (normalized === "compare") return "compare";
+  if (normalized === "compare" || normalized === "diff") return "compare";
   if (normalized === "versions") return "versions";
   if (
     normalized === "runtime" ||

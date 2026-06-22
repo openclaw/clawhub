@@ -13,6 +13,7 @@ import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
+import { useIsDesktopDetailLayout } from "./DetailMobileDeferredSection";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
@@ -50,6 +51,8 @@ type SkillCanonical = {
 
 const MAX_HEADER_TOPICS = 5;
 const SUMMARY_COLLAPSE_THRESHOLD = 220;
+
+type MobileDetailPanel = "content" | "stats";
 
 function formatHeaderTopic(topic: string) {
   return `#${topic.trim().toLowerCase().replace(/\s+/g, "-")}`;
@@ -186,6 +189,88 @@ export function SkillHeader({
   const headerCategories = (categories ?? (category ? [category] : [])).slice(0, 3);
   const hasSummaryToggle = headerDescription.length > SUMMARY_COLLAPSE_THRESHOLD;
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+  const isDesktopDetailLayout = useIsDesktopDetailLayout();
+  const [mobileDetailPanel, setMobileDetailPanel] = useState<MobileDetailPanel>("content");
+
+  const renderSidebarActions = () =>
+    hasSidebarActions ? (
+      <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
+        {showReportAction ? (
+          <SignedInActionTooltip
+            isAuthenticated={isAuthenticated}
+            message="You must be signed in to report a skill"
+          >
+            <button
+              type="button"
+              className="skill-sidebar-action-link"
+              onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
+            >
+              <Flag size={14} aria-hidden="true" />
+              Report
+            </button>
+          </SignedInActionTooltip>
+        ) : null}
+        {newVersionHref ? (
+          <Button asChild variant="outline" className="skill-sidebar-action-button">
+            <a href={newVersionHref}>
+              <Upload size={14} aria-hidden="true" />
+              New version
+            </a>
+          </Button>
+        ) : null}
+        {settingsHref ? (
+          <Button asChild variant="outline" className="skill-sidebar-action-button">
+            <a href={settingsHref}>
+              <Settings size={14} aria-hidden="true" />
+              Settings
+            </a>
+          </Button>
+        ) : null}
+        {isStaff ? (
+          <Button asChild variant="outline" className="skill-sidebar-action-button">
+            <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
+              <ShieldCheck size={14} aria-hidden="true" />
+              Manage
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    ) : null;
+
+  const desktopStatsContent = (
+    <>
+      <SkillSidebarDeferredStats
+        skill={skill}
+        owner={owner}
+        ownerHandle={ownerHandle}
+        formattedStats={formattedStats}
+        latestVersion={latestVersion}
+        showArchiveMetadata={showArchiveMetadata}
+        securityAuditSummary={securityAuditSummary}
+        activityTrend={activityTrend}
+        activityTrendLoading={activityTrendLoading}
+      />
+      {renderSidebarActions()}
+    </>
+  );
+
+  const mobileStatsContent = (
+    <>
+      <SkillSidebarDeferredStats
+        skill={skill}
+        owner={owner}
+        ownerHandle={ownerHandle}
+        formattedStats={formattedStats}
+        latestVersion={latestVersion}
+        showArchiveMetadata={showArchiveMetadata}
+        securityAuditSummary={securityAuditSummary}
+        activityTrend={activityTrend}
+        activityTrendLoading={activityTrendLoading}
+        hideCreator
+      />
+      {renderSidebarActions()}
+    </>
+  );
 
   return (
     <>
@@ -220,100 +305,45 @@ export function SkillHeader({
         topClassName={hasPluginBundle ? "has-plugin" : undefined}
         sidebar={
           <div className="skill-hero-sidebar-stack">
-            <div className="skill-sidebar-actions skill-sidebar-actions-primary">
-              <SignedInActionTooltip
-                isAuthenticated={isAuthenticated}
-                message="You must be signed in to star a skill"
-              >
+            <div className="skill-sidebar-mobile-priority">
+              <div className="skill-sidebar-actions skill-sidebar-actions-primary">
+                <SignedInActionTooltip
+                  isAuthenticated={isAuthenticated}
+                  message="You must be signed in to star a skill"
+                >
+                  <Button
+                    variant="outline"
+                    type="button"
+                    className="skill-sidebar-action-button"
+                    onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
+                    aria-pressed={Boolean(isAuthenticated && isStarred)}
+                    aria-label={isStarred ? "Unstar skill" : "Star skill"}
+                  >
+                    <Star
+                      size={14}
+                      aria-hidden="true"
+                      fill={isAuthenticated && isStarred ? "currentColor" : "none"}
+                    />
+                    {isAuthenticated && isStarred ? "Unstar" : "Star"}
+                    <span className="skill-action-count">{formattedStats.stars}</span>
+                  </Button>
+                </SignedInActionTooltip>
                 <Button
                   variant="outline"
                   type="button"
                   className="skill-sidebar-action-button"
-                  onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
-                  aria-pressed={Boolean(isAuthenticated && isStarred)}
-                  aria-label={isStarred ? "Unstar skill" : "Star skill"}
+                  onClick={() => {
+                    if (typeof window === "undefined") return;
+                    void navigator.clipboard.writeText(window.location.href);
+                    toast.success("Link copied");
+                  }}
                 >
-                  <Star
-                    size={14}
-                    aria-hidden="true"
-                    fill={isAuthenticated && isStarred ? "currentColor" : "none"}
-                  />
-                  {isAuthenticated && isStarred ? "Unstar" : "Star"}
-                  <span className="skill-action-count">{formattedStats.stars}</span>
+                  <Share2 size={14} aria-hidden="true" />
+                  Share
                 </Button>
-              </SignedInActionTooltip>
-              <Button
-                variant="outline"
-                type="button"
-                className="skill-sidebar-action-button"
-                onClick={() => {
-                  if (typeof window === "undefined") return;
-                  void navigator.clipboard.writeText(window.location.href);
-                  toast.success("Link copied");
-                }}
-              >
-                <Share2 size={14} aria-hidden="true" />
-                Share
-              </Button>
-            </div>
-            <SkillSidebarStats
-              skill={skill}
-              owner={owner}
-              ownerHandle={ownerHandle}
-              formattedStats={formattedStats}
-              latestVersion={latestVersion}
-              showArchiveMetadata={showArchiveMetadata}
-              securityAuditSummary={securityAuditSummary}
-              activityTrend={activityTrend}
-              activityTrendLoading={activityTrendLoading}
-            />
-            {hasSidebarActions ? (
-              <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
-                {showReportAction ? (
-                  <SignedInActionTooltip
-                    isAuthenticated={isAuthenticated}
-                    message="You must be signed in to report a skill"
-                  >
-                    <button
-                      type="button"
-                      className="skill-sidebar-action-link"
-                      onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
-                    >
-                      <Flag size={14} aria-hidden="true" />
-                      Report
-                    </button>
-                  </SignedInActionTooltip>
-                ) : null}
-                {newVersionHref ? (
-                  <Button asChild variant="outline" className="skill-sidebar-action-button">
-                    <a href={newVersionHref}>
-                      <Upload size={14} aria-hidden="true" />
-                      New version
-                    </a>
-                  </Button>
-                ) : null}
-                {settingsHref ? (
-                  <Button asChild variant="outline" className="skill-sidebar-action-button">
-                    <a href={settingsHref}>
-                      <Settings size={14} aria-hidden="true" />
-                      Settings
-                    </a>
-                  </Button>
-                ) : null}
-                {hasTitleActions ? (
-                  <>
-                    {isStaff ? (
-                      <Button asChild variant="outline" className="skill-sidebar-action-button">
-                        <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
-                          <ShieldCheck size={14} aria-hidden="true" />
-                          Manage
-                        </Link>
-                      </Button>
-                    ) : null}
-                  </>
-                ) : null}
               </div>
-            ) : null}
+            </div>
+            <div className="detail-sidebar-stats">{desktopStatsContent}</div>
           </div>
         }
         main={
@@ -387,6 +417,20 @@ export function SkillHeader({
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
                 </div>
+                {owner || ownerHandle ? (
+                  <div className="skill-hero-mobile-creator" hidden={isDesktopDetailLayout}>
+                    <UserBadge
+                      user={owner}
+                      fallbackHandle={ownerHandle}
+                      prefix=""
+                      size="md"
+                      showName
+                      showHandle={false}
+                      showMutedHandle
+                      disableTooltip
+                    />
+                  </div>
+                ) : null}
               </div>
               <div className="skill-summary-block">
                 <p
@@ -448,56 +492,115 @@ export function SkillHeader({
       >
         {priorityContent}
 
-        <SkillCommandLineCard
-          slug={skill.slug}
-          displayName={skill.displayName}
-          ownerHandle={ownerHandle}
-          ownerId={installOwnerId}
-          clawdis={clawdis}
-        />
+        <div className="detail-mobile-install">
+          <SkillCommandLineCard
+            slug={skill.slug}
+            displayName={skill.displayName}
+            ownerHandle={ownerHandle}
+            ownerId={installOwnerId}
+            clawdis={clawdis}
+          />
+        </div>
 
-        {postInstallContent}
+        <div
+          className="detail-mobile-master-tabs"
+          data-active={isDesktopDetailLayout ? "desktop" : mobileDetailPanel}
+        >
+          <div
+            className="detail-mobile-master-tab-list"
+            role="tablist"
+            aria-label="Skill mobile sections"
+            hidden={isDesktopDetailLayout}
+          >
+            <button
+              id="skill-mobile-master-tab-content"
+              className={`detail-mobile-master-tab${
+                mobileDetailPanel === "content" ? " is-active" : ""
+              }`}
+              type="button"
+              role="tab"
+              aria-selected={mobileDetailPanel === "content"}
+              aria-controls="skill-mobile-master-panel-content"
+              onClick={() => setMobileDetailPanel("content")}
+            >
+              SKILL.md
+            </button>
+            <button
+              id="skill-mobile-master-tab-stats"
+              className={`detail-mobile-master-tab${
+                mobileDetailPanel === "stats" ? " is-active" : ""
+              }`}
+              type="button"
+              role="tab"
+              aria-selected={mobileDetailPanel === "stats"}
+              aria-controls="skill-mobile-master-panel-stats"
+              onClick={() => setMobileDetailPanel("stats")}
+            >
+              Stats & details
+            </button>
+          </div>
+          <div
+            className="detail-mobile-master-panel detail-mobile-master-panel-content"
+            id="skill-mobile-master-panel-content"
+            role={isDesktopDetailLayout ? undefined : "tabpanel"}
+            aria-labelledby={isDesktopDetailLayout ? undefined : "skill-mobile-master-tab-content"}
+            hidden={!isDesktopDetailLayout && mobileDetailPanel !== "content"}
+          >
+            {postInstallContent}
 
-        {children}
+            {children}
 
-        {hasPluginBundle ? (
-          <div className="skill-panel bundle-card">
-            <div className="bundle-header">
-              <div className="bundle-title">Plugin bundle (nix)</div>
-              <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
-            </div>
-            <div className="bundle-includes">
-              <span>SKILL.md</span>
-              <span>CLI</span>
-              <span>Config</span>
-            </div>
-            {configRequirements ? (
-              <div className="bundle-section">
-                <div className="bundle-section-title">Config requirements</div>
-                <div className="bundle-meta">
-                  {configRequirements.requiredEnv?.length ? (
-                    <div className="stat">
-                      <strong>Required env</strong>
-                      <span>{configRequirements.requiredEnv.join(", ")}</span>
-                    </div>
-                  ) : null}
-                  {configRequirements.stateDirs?.length ? (
-                    <div className="stat">
-                      <strong>State dirs</strong>
-                      <span>{configRequirements.stateDirs.join(", ")}</span>
-                    </div>
-                  ) : null}
+            {hasPluginBundle ? (
+              <div className="skill-panel bundle-card">
+                <div className="bundle-header">
+                  <div className="bundle-title">Plugin bundle (nix)</div>
+                  <div className="bundle-subtitle">Skill pack · CLI binary · Config</div>
                 </div>
+                <div className="bundle-includes">
+                  <span>SKILL.md</span>
+                  <span>CLI</span>
+                  <span>Config</span>
+                </div>
+                {configRequirements ? (
+                  <div className="bundle-section">
+                    <div className="bundle-section-title">Config requirements</div>
+                    <div className="bundle-meta">
+                      {configRequirements.requiredEnv?.length ? (
+                        <div className="stat">
+                          <strong>Required env</strong>
+                          <span>{configRequirements.requiredEnv.join(", ")}</span>
+                        </div>
+                      ) : null}
+                      {configRequirements.stateDirs?.length ? (
+                        <div className="stat">
+                          <strong>State dirs</strong>
+                          <span>{configRequirements.stateDirs.join(", ")}</span>
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                ) : null}
+                {cliHelp ? (
+                  <details className="bundle-section bundle-details">
+                    <summary>CLI help (from plugin)</summary>
+                    <pre className="hero-install-code mono">{cliHelp}</pre>
+                  </details>
+                ) : null}
               </div>
             ) : null}
-            {cliHelp ? (
-              <details className="bundle-section bundle-details">
-                <summary>CLI help (from plugin)</summary>
-                <pre className="hero-install-code mono">{cliHelp}</pre>
-              </details>
-            ) : null}
           </div>
-        ) : null}
+          {!isDesktopDetailLayout ? (
+            <div
+              className="detail-mobile-master-panel detail-mobile-master-stats"
+              id="skill-mobile-master-panel-stats"
+              role="tabpanel"
+              aria-labelledby="skill-mobile-master-tab-stats"
+              hidden={mobileDetailPanel !== "stats"}
+            >
+              {mobileStatsContent}
+            </div>
+          ) : null}
+        </div>
       </DetailHero>
     </>
   );
@@ -524,7 +627,7 @@ function SignedInActionTooltip({
   );
 }
 
-function SkillSidebarStats({
+function SkillSidebarDeferredStats({
   skill,
   owner,
   ownerHandle,
@@ -534,6 +637,7 @@ function SkillSidebarStats({
   securityAuditSummary,
   activityTrend,
   activityTrendLoading = false,
+  hideCreator = false,
 }: {
   skill: Doc<"skills"> | PublicSkill;
   owner: PublicPublisher | null;
@@ -544,6 +648,7 @@ function SkillSidebarStats({
   securityAuditSummary?: ReactNode;
   activityTrend?: ActivityTrend | null;
   activityTrendLoading?: boolean;
+  hideCreator?: boolean;
 }) {
   const githubRepositoryLink = getGitHubRepositoryLink(skill);
   const downloadsMetricBlock = useDownloadsSidebarMetricBlock({
@@ -556,6 +661,7 @@ function SkillSidebarStats({
     <SidebarMetadata
       ariaLabel="Skill metadata"
       density="compact"
+      className="skill-sidebar-deferred-metadata"
       blocks={[
         activityTrend || activityTrendLoading
           ? downloadsMetricBlock
@@ -565,20 +671,25 @@ function SkillSidebarStats({
               large: true,
             },
         { label: "Repository", value: githubRepositoryLink },
-        {
-          label: "Creator",
-          value: (
-            <UserBadge
-              user={owner}
-              fallbackHandle={ownerHandle}
-              prefix=""
-              size="md"
-              showName
-              showHandle={false}
-              disableTooltip
-            />
-          ),
-        },
+        ...(hideCreator
+          ? []
+          : [
+              {
+                label: "Creator",
+                value: (
+                  <UserBadge
+                    user={owner}
+                    fallbackHandle={ownerHandle}
+                    prefix=""
+                    size="md"
+                    showName
+                    showHandle={false}
+                    showMutedHandle
+                    disableTooltip
+                  />
+                ),
+              },
+            ]),
         securityAuditSummary
           ? {
               key: "security-audit",

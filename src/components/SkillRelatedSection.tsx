@@ -45,7 +45,7 @@ export function SkillRelatedSection({
 
   return (
     <section
-      className={`related-skills-section${isCompact ? " related-skills-section-compact" : ""}`}
+      className={`related-skills-section${isCompact ? " related-skills-section-compact detail-mobile-related" : ""}`}
       aria-labelledby="related-skills-heading"
     >
       <div className="related-skills-header">
@@ -108,7 +108,7 @@ export function SkillRelatedSection({
             })}
       </div>
       <div className="related-skills-footer">
-        <Button asChild variant="outline" size="xs" className="related-skills-category-link">
+        <Button asChild variant="ghost" size="xs" className="related-skills-category-link">
           <a href={buildSkillCategoryBrowseHref(category)}>
             <BrowseCategoryIcon slug={category.slug} icon={category.icon} size={13} />
             More in {category.label}

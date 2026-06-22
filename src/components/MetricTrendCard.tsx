@@ -60,11 +60,13 @@ export function MetricTrendCard({
   ariaLabel,
   periodLabel,
   unitLabel,
+  hideIdlePeriodLabel = false,
 }: {
   trend: MetricTrend;
   ariaLabel: string;
   periodLabel?: string;
   unitLabel: "download" | "install";
+  hideIdlePeriodLabel?: boolean;
 }) {
   const descriptionId = useId();
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -80,6 +82,7 @@ export function MetricTrendCard({
   const activeLabel = activePoint
     ? `${formatActivityDate(activePoint.day)} · ${formatActivityValue(activePoint.value, unitLabel)}`
     : (periodLabel ?? `${trend.days} days`);
+  const showPointLabel = activeIndex !== null || !hideIdlePeriodLabel;
 
   function showNearestPoint(event: PointerEvent<SVGSVGElement> | MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -101,9 +104,15 @@ export function MetricTrendCard({
     <div className="metric-trend-card">
       <div className="metric-trend-value-row">
         <strong>{formatCompactStat(trend.total)}</strong>
-        <span className="metric-trend-point-label" id={descriptionId}>
-          {activeLabel}
-        </span>
+        {showPointLabel ? (
+          <span className="metric-trend-point-label" id={descriptionId}>
+            {activeLabel}
+          </span>
+        ) : (
+          <span className="sr-only" id={descriptionId}>
+            {activeLabel}
+          </span>
+        )}
       </div>
       <svg
         className="metric-trend-chart"

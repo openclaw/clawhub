@@ -811,24 +811,17 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
       density="compact"
       blocks={[
         {
-          grid: [
-            {
-              label: "Outcome",
-              value: <ScanResultBadge status={verdict} />,
-            },
-            {
-              label: "Latest audit",
-              inline: true,
-              value: (
-                <span className="sidebar-metadata-inline">
-                  <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="sidebar-metadata-inline-text">
-                    {formatAuditSidebarTime(latestCheckedAt)}
-                  </span>
-                </span>
-              ),
-            },
-          ],
+          label: "Outcome",
+          value: <ScanResultBadge status={verdict} />,
+        },
+        {
+          label: "Latest audit",
+          value: (
+            <span className="security-audit-latest-time">
+              <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{formatAuditSidebarTime(latestCheckedAt)}</span>
+            </span>
+          ),
         },
         { label: "Version", value: versionValue },
       ]}
@@ -903,25 +896,16 @@ export function SecurityAuditPageSkeleton() {
           <aside className="security-report-sidebar" aria-label="Security audit metadata">
             <div className="sidebar-metadata sidebar-metadata-compact">
               <div className="sidebar-metadata-row">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-5 w-40" />
-              </div>
-              <div className="sidebar-metadata-grid">
-                <div className="sidebar-metadata-row">
-                  <Skeleton className="h-3 w-16" />
-                  <Skeleton className="h-5 w-10" />
-                </div>
-                <div className="sidebar-metadata-row">
-                  <Skeleton className="h-3 w-14" />
-                  <Skeleton className="h-5 w-16" />
-                </div>
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-6 w-20 rounded-[var(--r-pill)]" />
               </div>
               <div className="sidebar-metadata-row">
-                <Skeleton className="h-3 w-24" />
-                <div className="security-report-badge-list">
-                  <Skeleton className="h-6 w-16 rounded-[var(--r-pill)]" />
-                  <Skeleton className="h-6 w-20 rounded-[var(--r-pill)]" />
-                </div>
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-5 w-32" />
+              </div>
+              <div className="sidebar-metadata-row">
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-5 w-16" />
               </div>
             </div>
           </aside>

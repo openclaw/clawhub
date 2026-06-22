@@ -6,12 +6,28 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { AlertTriangle, Download, Info, Share2, Upload } from "lucide-react";
+import {
+  AlertTriangle,
+  Braces,
+  Download,
+  FileArchive,
+  Files,
+  Fingerprint,
+  HardDrive,
+  Info,
+  Package,
+  Server,
+  Share2,
+  Tag,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { ActivityMetricLabel } from "../../components/ActivityMetricLabel";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
+import { DetailMobileDeferredSection } from "../../components/DetailMobileDeferredSection";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
   DetailSecuritySummary,
@@ -382,7 +398,7 @@ function PluginDetailTabs({
               : readmePanel;
 
   return (
-    <div className="tab-card">
+    <div className="tab-card detail-mobile-tabs">
       <div className="tab-header" role="tablist" aria-label="Plugin detail tabs">
         <button
           id="plugin-tab-readme"
@@ -493,6 +509,53 @@ type PluginManifestSummary = NonNullable<
 type BundledPluginSkill = PluginManifestSummary["bundledSkills"][number];
 type PluginConfigField = PluginManifestSummary["configFields"][number];
 type PluginMcpServer = PluginManifestSummary["mcpServers"][number];
+
+type PluginKvRowProps = {
+  label: string;
+  icon?: LucideIcon;
+  mono?: boolean;
+  hash?: boolean;
+  children: ReactNode;
+};
+
+function PluginKvRow({ label, icon: Icon, mono, hash, children }: PluginKvRowProps) {
+  const valueClassName = [
+    "plugin-kv-value",
+    mono ? "plugin-kv-value--mono" : null,
+    hash ? "plugin-kv-value--hash" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div className="plugin-kv-row">
+      <dt className="plugin-kv-label">
+        <span className="plugin-kv-label-inner">
+          {Icon ? <Icon size={14} className="plugin-kv-icon" aria-hidden="true" /> : null}
+          <span>{label}</span>
+        </span>
+      </dt>
+      <dd className={valueClassName}>{children}</dd>
+    </div>
+  );
+}
+
+function compatibilityFieldIcon(key: string): LucideIcon | undefined {
+  switch (key) {
+    case "pluginApiRange":
+      return Braces;
+    case "builtWithOpenClawVersion":
+      return Tag;
+    case "minGatewayVersion":
+      return Server;
+    default:
+      return undefined;
+  }
+}
+
+function formatCompatibilityLabel(key: string): string {
+  return key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
+}
 
 function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigField[] }) {
   return (
@@ -780,61 +843,52 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       <div className="plugin-tab-panel">
         <dl className="plugin-kv-grid">
           {manifestPluginApiRange ? (
-            <div className="plugin-kv-row">
-              <dt className="plugin-kv-label">OpenClaw plugin API</dt>
-              <dd className="plugin-kv-value font-mono text-xs">{manifestPluginApiRange}</dd>
-            </div>
+            <PluginKvRow label="OpenClaw plugin API" icon={Braces} mono>
+              {manifestPluginApiRange}
+            </PluginKvRow>
           ) : null}
           {artifact ? (
             <>
-              <div className="plugin-kv-row">
-                <dt className="plugin-kv-label">Artifact</dt>
-                <dd className="plugin-kv-value">
-                  {artifact.kind === "npm-pack" ? "ClawPack" : "Legacy ZIP"}
-                </dd>
-              </div>
+              <PluginKvRow label="Artifact" icon={Package}>
+                {artifact.kind === "npm-pack" ? "ClawPack" : "Legacy ZIP"}
+              </PluginKvRow>
               {artifact.kind === "legacy-zip" ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Compatibility note</dt>
-                  <dd className="plugin-kv-value">
-                    This plugin uses the legacy ZIP path and may have compatibility issues until the
-                    publisher uploads a ClawPack.
-                  </dd>
-                </div>
+                <PluginKvRow label="Compatibility note" icon={Info}>
+                  This plugin uses the legacy ZIP path and may have compatibility issues until the
+                  publisher uploads a ClawPack.
+                </PluginKvRow>
               ) : null}
               {artifact.kind === "npm-pack" && artifact.npmTarballName ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Tarball</dt>
-                  <dd className="plugin-kv-value font-mono text-xs">{artifact.npmTarballName}</dd>
-                </div>
+                <PluginKvRow label="Tarball" icon={FileArchive} mono>
+                  {artifact.npmTarballName}
+                </PluginKvRow>
               ) : null}
               {artifact.kind === "npm-pack" && formatArtifactSize(artifact.size) ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Size</dt>
-                  <dd className="plugin-kv-value">{formatArtifactSize(artifact.size)}</dd>
-                </div>
+                <PluginKvRow label="Size" icon={HardDrive}>
+                  {formatArtifactSize(artifact.size)}
+                </PluginKvRow>
               ) : null}
               {artifact.kind === "npm-pack" && typeof artifact.npmFileCount === "number" ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Files</dt>
-                  <dd className="plugin-kv-value">{artifact.npmFileCount}</dd>
-                </div>
+                <PluginKvRow label="Files" icon={Files}>
+                  {artifact.npmFileCount}
+                </PluginKvRow>
               ) : null}
               {artifact.kind === "npm-pack" && artifact.npmIntegrity ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Integrity</dt>
-                  <dd className="plugin-kv-value font-mono text-xs">{artifact.npmIntegrity}</dd>
-                </div>
+                <PluginKvRow label="Integrity" icon={Fingerprint} hash>
+                  {artifact.npmIntegrity}
+                </PluginKvRow>
               ) : null}
             </>
           ) : null}
           {compatEntries.map(([key, value]) => (
-            <div key={key} className="plugin-kv-row">
-              <dt className="plugin-kv-label">
-                {key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}
-              </dt>
-              <dd className="plugin-kv-value font-mono text-xs">{value}</dd>
-            </div>
+            <PluginKvRow
+              key={key}
+              label={formatCompatibilityLabel(key)}
+              icon={compatibilityFieldIcon(key)}
+              mono
+            >
+              {value}
+            </PluginKvRow>
           ))}
         </dl>
       </div>
@@ -985,6 +1039,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       size="md"
       showName
       showHandle={false}
+      showMutedHandle
       disableTooltip
     />
   ) : null;
@@ -1100,86 +1155,92 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           sidebar={
             <div className="skill-hero-sidebar-stack">
               {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref ? (
-                <div className="skill-sidebar-actions skill-sidebar-actions-primary">
-                  {pkg.latestVersion && !isDownloadBlocked ? (
-                    <Button asChild variant="outline" className="skill-sidebar-action-button">
-                      <a href={downloadPath}>
-                        <Download size={14} aria-hidden="true" />
-                        Download
-                      </a>
+                <div className="skill-sidebar-mobile-priority">
+                  <div className="skill-sidebar-actions skill-sidebar-actions-primary">
+                    {pkg.latestVersion && !isDownloadBlocked ? (
+                      <Button asChild variant="outline" className="skill-sidebar-action-button">
+                        <a href={downloadPath}>
+                          <Download size={14} aria-hidden="true" />
+                          Download
+                        </a>
+                      </Button>
+                    ) : null}
+                    <Button
+                      variant="outline"
+                      type="button"
+                      className="skill-sidebar-action-button"
+                      onClick={() => {
+                        if (typeof window === "undefined") return;
+                        void navigator.clipboard.writeText(window.location.href);
+                        toast.success("Link copied");
+                      }}
+                    >
+                      <Share2 size={14} aria-hidden="true" />
+                      Share
                     </Button>
-                  ) : null}
-                  <Button
-                    variant="outline"
-                    type="button"
-                    className="skill-sidebar-action-button"
-                    onClick={() => {
-                      if (typeof window === "undefined") return;
-                      void navigator.clipboard.writeText(window.location.href);
-                      toast.success("Link copied");
-                    }}
-                  >
-                    <Share2 size={14} aria-hidden="true" />
-                    Share
-                  </Button>
+                  </div>
                 </div>
               ) : null}
               {hasSourceMetadata ? (
-                <SidebarMetadata
-                  ariaLabel="Plugin metadata"
-                  density="compact"
-                  blocks={[
-                    activityTrend || activityTrendLoading
-                      ? downloadsMetricBlock
-                      : {
-                          label: <ActivityMetricLabel label="Downloads" />,
-                          value: formatCompactStat(pkg.stats?.downloads ?? 0),
-                          large: true,
-                        },
-                    { label: "Repository", value: sourceRepoLink },
-                    { label: "Creator", value: ownerMetadataValue },
-                    securitySummary
-                      ? {
-                          key: "security-audit",
-                          label: <DetailSecuritySummaryLabel />,
-                          value: securitySummary,
-                        }
-                      : { label: "", value: null },
-                    {
-                      grid: [
-                        {
-                          label: "Last updated",
-                          value: (
-                            <span title={new Date(pkg.updatedAt).toLocaleString()}>
-                              {timeAgo(pkg.updatedAt)}
-                            </span>
-                          ),
-                        },
-                        {
-                          label: "Current version",
-                          value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
-                        },
-                      ],
-                    },
-                    { label: "Type", value: familyLabel(pkg.family) },
-                  ]}
-                />
-              ) : null}
-
-              {newVersionHref ? (
-                <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
-                  <Button asChild variant="outline" className="skill-sidebar-action-button">
-                    <a href={newVersionHref}>
-                      <Upload size={14} aria-hidden="true" />
-                      New version
-                    </a>
-                  </Button>
-                </div>
+                <DetailMobileDeferredSection summary="Stats & details">
+                  <SidebarMetadata
+                    ariaLabel="Plugin metadata"
+                    density="compact"
+                    className="skill-sidebar-deferred-metadata"
+                    blocks={[
+                      activityTrend || activityTrendLoading
+                        ? downloadsMetricBlock
+                        : {
+                            label: <ActivityMetricLabel label="Downloads" />,
+                            value: formatCompactStat(pkg.stats?.downloads ?? 0),
+                            large: true,
+                          },
+                      { label: "Repository", value: sourceRepoLink },
+                      ...(ownerMetadataValue
+                        ? [{ label: "Creator", value: ownerMetadataValue }]
+                        : []),
+                      securitySummary
+                        ? {
+                            key: "security-audit",
+                            label: <DetailSecuritySummaryLabel />,
+                            value: securitySummary,
+                          }
+                        : { label: "", value: null },
+                      {
+                        grid: [
+                          {
+                            label: "Last updated",
+                            value: (
+                              <span title={new Date(pkg.updatedAt).toLocaleString()}>
+                                {timeAgo(pkg.updatedAt)}
+                              </span>
+                            ),
+                          },
+                          {
+                            label: "Current version",
+                            value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
+                          },
+                        ],
+                      },
+                      { label: "Type", value: familyLabel(pkg.family) },
+                    ]}
+                  />
+                  {newVersionHref ? (
+                    <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
+                      <Button asChild variant="outline" className="skill-sidebar-action-button">
+                        <a href={newVersionHref}>
+                          <Upload size={14} aria-hidden="true" />
+                          New version
+                        </a>
+                      </Button>
+                    </div>
+                  ) : null}
+                </DetailMobileDeferredSection>
               ) : null}
             </div>
           }
         >
-          <div className="plugin-install-stack">
+          <div className="plugin-install-stack detail-mobile-install">
             {incompatibilityAlert}
             <Card className="skill-install-command-card">
               <CardHeader>

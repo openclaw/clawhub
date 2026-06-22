@@ -1,9 +1,10 @@
 import { useAction } from "convex/react";
-import { ArrowLeft, FileText, Folder } from "lucide-react";
+import { ArrowLeft, FileText, Fingerprint, Folder } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { CodeWrapToggleButton, useCodeWrapToggle } from "./CodeWrapToggle";
 import { formatBytes } from "./skillDetailUtils";
 
 type SkillFile = Doc<"skillVersions">["files"][number];
@@ -100,7 +101,10 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   const [isLoading, setIsLoading] = useState(false);
   const isMounted = useRef(true);
   const requestId = useRef(0);
+  const fileListRef = useRef<HTMLDivElement>(null);
   const fileCache = useRef(new Map<string, { text: string; size: number; sha256: string }>());
+  const [viewerMinHeight, setViewerMinHeight] = useState<number | undefined>();
+  const { preRef, isWrapped, canWrap, toggleWrap } = useCodeWrapToggle(fileContent ?? "");
 
   useEffect(() => {
     isMounted.current = true;
@@ -111,6 +115,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   }, []);
 
   const fileTree = useMemo(() => buildFileTree(latestFiles), [latestFiles]);
+  const selectedFileName = selectedPath?.split("/").pop() ?? selectedPath ?? "";
 
   useEffect(() => {
     requestId.current += 1;
@@ -120,6 +125,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     setFileMeta(null);
     setFileError(null);
     setIsLoading(false);
+    setViewerMinHeight(undefined);
 
     if (versionId === null) return;
   }, [versionId]);
@@ -133,6 +139,9 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
 
       requestId.current += 1;
       const current = requestId.current;
+      if (fileListRef.current) {
+        setViewerMinHeight(fileListRef.current.offsetHeight);
+      }
       setSelectedPath(path);
       setFileError(null);
       if (cached) {
@@ -171,7 +180,11 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     setFileMeta(null);
     setFileError(null);
     setIsLoading(false);
+    setViewerMinHeight(undefined);
   };
+
+  const selectedFileSize =
+    fileMeta?.size ?? latestFiles.find((file) => file.path === selectedPath)?.size;
 
   const renderTreeNode = (node: FileTreeNode, level: number): ReactNode => {
     if (node.type === "directory") {
@@ -187,17 +200,21 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     }
 
     const formattedSize = formatBytes(node.size);
+    const isPrimary = node.path === "SKILL.md";
     return (
       <button
         key={node.path}
-        className={`file-tree-file${node.path === "SKILL.md" ? " is-primary" : ""}`}
+        className={`file-tree-file${isPrimary ? " is-primary" : ""}`}
         style={getFileTreeLevelStyle(level)}
         type="button"
         onClick={() => handleSelect(node.path)}
-        aria-label={`${node.path} ${formattedSize}`}
+        aria-label={`${node.path}${isPrimary ? " main" : ""} ${formattedSize}`}
       >
         <FileText size={14} aria-hidden="true" />
-        <span className="file-tree-name">{node.name}</span>
+        <span className="file-tree-name-wrap">
+          <span className="file-tree-name">{node.name}</span>
+          {isPrimary ? <span className="file-tree-main-badge">main</span> : null}
+        </span>
         <span className="file-meta">{formattedSize}</span>
       </button>
     );
@@ -207,13 +224,38 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     <div className="tab-body skill-files-panel">
       <div className={`file-browser${selectedPath ? " is-viewing-file" : ""}`}>
         {selectedPath ? (
-          <div className="file-viewer">
+          <div
+            className="file-viewer"
+            style={viewerMinHeight ? { minHeight: viewerMinHeight } : undefined}
+          >
             <div className="file-viewer-header">
-              <button className="file-viewer-back" type="button" onClick={handleBack}>
+              <button
+                className="file-viewer-back"
+                type="button"
+                onClick={handleBack}
+                aria-label="Back to file list"
+              >
                 <ArrowLeft size={15} aria-hidden="true" />
-                Back
+                <span className="file-viewer-back-label">Back</span>
               </button>
-              <div className="file-path">{selectedPath}</div>
+              <div className="file-viewer-title" aria-label={selectedPath}>
+                <span className="file-viewer-filename">{selectedFileName}</span>
+                {selectedFileSize !== undefined ? (
+                  <>
+                    <span className="file-viewer-title-sep" aria-hidden="true">
+                      ·
+                    </span>
+                    <span className="file-viewer-size">{formatBytes(selectedFileSize)}</span>
+                  </>
+                ) : null}
+              </div>
+              <div className="file-viewer-header-end">
+                {canWrap ? (
+                  <span className="markdown-code-block-actions">
+                    <CodeWrapToggleButton isWrapped={isWrapped} onToggle={toggleWrap} />
+                  </span>
+                ) : null}
+              </div>
             </div>
             <div className="file-viewer-body">
               {isLoading ? (
@@ -221,29 +263,31 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
               ) : fileError ? (
                 <div className="stat">Failed to load file: {fileError}</div>
               ) : fileContent ? (
-                <pre className="file-viewer-code">{fileContent}</pre>
+                <pre ref={preRef} className="file-viewer-code" data-wrap={isWrapped}>
+                  {fileContent}
+                </pre>
               ) : null}
             </div>
             {fileMeta ? (
               <div className="file-viewer-meta">
-                <span className="file-meta">{formatBytes(fileMeta.size)}</span>
-                <span className="file-meta">{fileMeta.sha256.slice(0, 12)}...</span>
+                <Fingerprint size={14} className="file-viewer-hash-icon" aria-hidden="true" />
+                <span className="file-viewer-hash">{fileMeta.sha256}</span>
               </div>
             ) : null}
           </div>
         ) : (
-          <div className="file-list">
-          <div className="file-list-header">
-            <h3 className="section-title text-[1.05rem] m-0">Files</h3>
-            <span className="file-list-count">{latestFiles.length} total</span>
-          </div>
-          <div className="file-list-body">
-            {latestFiles.length === 0 ? (
-              <div className="stat">No files available.</div>
-            ) : (
-              fileTree.map((node) => renderTreeNode(node, 0))
-            )}
-          </div>
+          <div className="file-list" ref={fileListRef}>
+            <div className="file-list-header">
+              <h3 className="section-title text-[1.05rem] m-0">Files</h3>
+              <span className="file-list-count">{latestFiles.length} total</span>
+            </div>
+            <div className="file-list-body">
+              {latestFiles.length === 0 ? (
+                <div className="stat">No files available.</div>
+              ) : (
+                fileTree.map((node) => renderTreeNode(node, 0))
+              )}
+            </div>
           </div>
         )}
       </div>

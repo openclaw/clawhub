@@ -17,6 +17,8 @@ type UserBadgeProps = {
   link?: boolean;
   showName?: boolean;
   showHandle?: boolean;
+  /** Sidebar creator row: `Display Name / @handle` with muted handle suffix. */
+  showMutedHandle?: boolean;
   disableTooltip?: boolean;
 };
 
@@ -28,6 +30,7 @@ export function UserBadge({
   link = true,
   showName = false,
   showHandle = true,
+  showMutedHandle = false,
   disableTooltip = false,
 }: UserBadgeProps) {
   const userName =
@@ -37,10 +40,15 @@ export function UserBadge({
   const href = handle ? `/user/${encodeURIComponent(handle)}` : null;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;
+  const showInlineMutedHandle = showMutedHandle && Boolean(handle) && Boolean(displayName);
+  const resolvedShowHandle = showMutedHandle ? !displayName && Boolean(handle) : showHandle;
   const hasUsefulName =
     showName &&
     Boolean(displayName) &&
-    (!showHandle || !handle || displayName!.toLowerCase() !== handle.toLowerCase());
+    (showMutedHandle ||
+      !resolvedShowHandle ||
+      !handle ||
+      displayName!.toLowerCase() !== handle.toLowerCase());
   const initial = (displayName ?? handle ?? "u").charAt(0).toUpperCase();
   const isOfficial = user && hasOwnProperty(user, "official") && user.official === true;
 
@@ -64,14 +72,21 @@ export function UserBadge({
       {hasUsefulName ? (
         <>
           <span className="user-name">{displayName}</span>
-          {showHandle ? (
+          {showInlineMutedHandle ? (
+            <>
+              <span className="user-name-sep" aria-hidden="true">
+                {" / "}
+              </span>
+              <span className="user-handle user-handle-muted">{label}</span>
+            </>
+          ) : resolvedShowHandle ? (
             <span className="user-name-sep" aria-hidden="true">
               ·
             </span>
           ) : null}
         </>
       ) : null}
-      {showHandle ? <span className="user-handle">{label}</span> : null}
+      {resolvedShowHandle ? <span className="user-handle">{label}</span> : null}
       {isOfficial ? <OfficialBadge /> : null}
     </>
   );

@@ -4,6 +4,7 @@ import { defaultUrlTransform } from "react-markdown";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import { resolveSkillReadmeHref } from "../lib/skillReadmeLinks";
 import { MarkdownPreview } from "./MarkdownPreview";
+import { SkillCardPreview } from "./SkillCardPreview";
 import { buildSkillInstallTabs, type SkillInstallTabId } from "./SkillInstallCard";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
 
@@ -97,7 +98,8 @@ export function SkillDetailTabs({
       typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
     setActiveTab(tab);
     if (typeof window === "undefined") return;
-    const hash = tab === "readme" ? "" : `#${tab}`;
+    const hash =
+      tab === "readme" ? "" : tab === "compare" ? "#diff" : `#${tab}`;
     window.history.replaceState(
       null,
       "",
@@ -110,7 +112,7 @@ export function SkillDetailTabs({
   };
 
   return (
-    <div className="tab-card">
+    <div className="tab-card detail-mobile-tabs skill-detail-tabs-card">
       <div className="tab-header" role="tablist" aria-label="Skill detail tabs">
         <button
           id="skill-tab-readme"
@@ -167,7 +169,7 @@ export function SkillDetailTabs({
               void import("./SkillDiffCard");
             }}
           >
-            Compare
+            Diff
           </button>
         ) : null}
         {showArchiveTabs ? (
@@ -246,7 +248,7 @@ export function SkillDetailTabs({
 
       {activeTab === "skill-card" ? (
         <div
-          className="tab-body"
+          className="tab-body skill-card-tab-body"
           role="tabpanel"
           id="skill-tabpanel-skill-card"
           aria-labelledby="skill-tab-skill-card"
@@ -260,14 +262,12 @@ export function SkillDetailTabs({
             or limits to review before use.
           </p>
           {skillCardContent ? (
-            <MarkdownPreview
-              highlight={false}
+            <SkillCardPreview
+              content={skillCardContent}
               urlTransform={(url, key) =>
                 key === "href" ? resolveReadmeHref(url) : defaultUrlTransform(url)
               }
-            >
-              {skillCardContent}
-            </MarkdownPreview>
+            />
           ) : skillCardError ? (
             <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
               <p className="empty-state-title">No Skill Card available</p>
@@ -287,7 +287,7 @@ export function SkillDetailTabs({
 
       {showArchiveTabs && activeTab === "compare" ? (
         <div
-          className="tab-body"
+          className="tab-body skill-diff-tab-body"
           role="tabpanel"
           id="skill-tabpanel-compare"
           aria-labelledby="skill-tab-compare"

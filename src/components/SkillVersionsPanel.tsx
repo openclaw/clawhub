@@ -1,6 +1,5 @@
 import { useMutation } from "convex/react";
 import { Download } from "lucide-react";
-import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -13,6 +12,7 @@ import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { VersionChangelog } from "./VersionChangelog";
 import { VersionDeleteDialog } from "./VersionDeleteDialog";
+import { VersionReleaseRow } from "./VersionReleaseRow";
 
 type SkillVersionsPanelProps = {
   versions: Doc<"skillVersions">[] | undefined;
@@ -81,23 +81,6 @@ export function SkillVersionsPanel({
     });
   };
 
-  const toggleVersionFromKeyboard = (
-    event: ReactKeyboardEvent<HTMLDivElement>,
-    versionId: string,
-  ) => {
-    if (event.key !== "Enter" && event.key !== " ") return;
-    event.preventDefault();
-    toggleVersion(versionId);
-  };
-
-  const stopVersionActionPropagation = (event: ReactMouseEvent<HTMLElement>) => {
-    event.stopPropagation();
-  };
-
-  const stopVersionKeyPropagation = (event: ReactKeyboardEvent<HTMLElement>) => {
-    event.stopPropagation();
-  };
-
   const handleDelete = async () => {
     if (!deletingVersion) return;
     const deleteContextId = deleteContextIdRef.current;
@@ -139,7 +122,10 @@ export function SkillVersionsPanel({
               <span>Version</span>
               <span>Checks</span>
               <span>Release</span>
-              <span>Package</span>
+              <span className="skill-versions-column-header-download">
+                <Download size={13} aria-hidden="true" />
+                <span className="sr-only">Download</span>
+              </span>
               <span />
             </div>
             {visibleVersions.map((version) => {
@@ -149,52 +135,42 @@ export function SkillVersionsPanel({
                 version.softDeletedAt === undefined && version.ownerDeletedAt === undefined;
               const isExpanded = expandedVersionIds.has(version._id);
               const isAutoChangelog = version.changelogSource === "auto";
+              const changelogId = `version-changelog-${version._id}`;
               return (
-                <article
+                <VersionReleaseRow
                   key={version._id}
-                  className={`skill-version-release${isLatest ? " is-latest" : ""}`}
-                  data-expanded={isExpanded ? "true" : "false"}
-                >
-                  <div
-                    className="skill-version-release-summary"
-                    role="button"
-                    tabIndex={0}
-                    aria-expanded={isExpanded}
-                    onClick={() => toggleVersion(version._id)}
-                    onKeyDown={(event) => toggleVersionFromKeyboard(event, version._id)}
-                  >
-                    <div className="skill-version-release-toggle">
-                      <span className="skill-version-release-version">v{version.version}</span>
-                      <span className="skill-version-release-meta">
-                        <span>{new Date(version.createdAt).toLocaleDateString()}</span>
-                      </span>
-                    </div>
-                    {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
-                      <div
-                        className="skill-version-release-scan"
-                        aria-label="Security checks"
-                        onClick={stopVersionActionPropagation}
-                        onKeyDown={stopVersionKeyPropagation}
-                      >
-                        <SecurityScanResults
-                          sha256hash={version.sha256hash}
-                          vtAnalysis={version.vtAnalysis}
-                          llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
-                          variant="badge"
-                        />
-                      </div>
-                    ) : null}
-                    <div className="skill-version-release-tags">
-                      {isLatest ? <Badge variant="compact">Latest</Badge> : null}
-                      {isAutoChangelog ? (
-                        <span className="version-channel-badge">auto</span>
+                  versionLabel={`v${version.version}`}
+                  dateLabel={new Date(version.createdAt).toLocaleDateString()}
+                  isLatest={isLatest}
+                  isExpanded={isExpanded}
+                  changelogId={changelogId}
+                  checksLabel="Checks"
+                  checks={
+                    !suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
+                      <SecurityScanResults
+                        sha256hash={version.sha256hash}
+                        vtAnalysis={version.vtAnalysis}
+                        llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
+                        variant="badge"
+                      />
+                    ) : null
+                  }
+                  release={
+                    <>
+                      {isLatest ? (
+                        <Badge variant="compact" className="version-release-channel-badge">
+                          Latest
+                        </Badge>
                       ) : null}
-                    </div>
-                    <div
-                      className="skill-version-release-actions"
-                      onClick={stopVersionActionPropagation}
-                      onKeyDown={stopVersionKeyPropagation}
-                    >
+                      {isAutoChangelog ? (
+                        <Badge variant="compact" className="version-release-channel-badge">
+                          auto
+                        </Badge>
+                      ) : null}
+                    </>
+                  }
+                  actions={
+                    <>
                       {!nixPlugin && isAvailable ? (
                         <a
                           href={buildVersionDownloadHref(
@@ -224,15 +200,11 @@ export function SkillVersionsPanel({
                           Delete
                         </Button>
                       ) : null}
-                    </div>
-                    <span className="skill-version-release-chevron" aria-hidden="true" />
-                  </div>
-                  {isExpanded ? (
-                    <div className="skill-version-release-changelog">
-                      <VersionChangelog text={version.changelog} />
-                    </div>
-                  ) : null}
-                </article>
+                    </>
+                  }
+                  onToggle={() => toggleVersion(version._id)}
+                  changelog={isExpanded ? <VersionChangelog text={version.changelog} /> : null}
+                />
               );
             })}
           </div>

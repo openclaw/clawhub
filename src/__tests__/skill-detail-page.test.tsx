@@ -187,7 +187,7 @@ describe("SkillDetailPage", () => {
     expect((await screen.findAllByRole("heading", { name: "Weather" })).length).toBeGreaterThan(0);
     expect(screen.getByText(/Get current weather\./i)).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Compare" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Diff" })).toBeNull();
   });
 
   it("loads skill activity graphs through a deferred one-shot query", async () => {
@@ -2355,7 +2355,7 @@ describe("SkillDetailPage", () => {
     expect(await screen.findByText("Weather")).toBeTruthy();
     expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: /compare/i })).toBeNull();
+    expect(screen.queryByRole("button", { name: /diff/i })).toBeNull();
 
     expect(
       useQueryMock.mock.calls.some((call) => {

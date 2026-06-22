@@ -2,7 +2,7 @@
 
 import { fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { SkillHeader } from "./SkillHeader";
@@ -28,6 +28,37 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("SkillHeader", () => {
+  function setViewportWidth(width: number) {
+    vi.stubGlobal("matchMedia", (query: string) => {
+      const minWidth = /\(min-width:\s*(\d+)px\)/.exec(query)?.[1];
+      const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(query)?.[1];
+      const matches = minWidth
+        ? width >= Number(minWidth)
+        : maxWidth
+          ? width <= Number(maxWidth)
+          : false;
+
+      return {
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      };
+    });
+  }
+
+  beforeEach(() => {
+    setViewportWidth(1071);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   const skill: PublicSkill = {
     _id: "skills:demo" as Id<"skills">,
     _creationTime: 1,
@@ -128,6 +159,36 @@ describe("SkillHeader", () => {
     ).toBeTruthy();
   });
 
+  it("keeps desktop-width sidebar details expanded at 1071px", () => {
+    renderHeader();
+
+    expect(screen.getByText("Creator")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.queryByRole("tablist", { name: "Skill mobile sections" })).toBeNull();
+  });
+
+  it("uses mobile master tabs and creator placement below the title below 901px", () => {
+    setViewportWidth(488);
+    const { container } = renderHeader();
+
+    const creator = container.querySelector(".skill-hero-mobile-creator");
+    expect(creator?.textContent).toContain("Local");
+    expect(screen.queryByText("Creator")).toBeNull();
+
+    expect(screen.getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    const statsPanel = container.querySelector("#skill-mobile-master-panel-stats");
+    expect(statsPanel?.hasAttribute("hidden")).toBe(true);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Stats & details" }));
+
+    expect(screen.getByRole("tab", { name: "Stats & details" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
+    expect(statsPanel?.hasAttribute("hidden")).toBe(false);
+  });
+
   it("shows the 30-day downloads graph from activity data", () => {
     renderHeader({
       activityTrend: {
@@ -194,7 +255,9 @@ describe("SkillHeader", () => {
 
     expect(screen.getByText("30 days")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "All time" }));
-    expect(screen.getByRole("tab", { name: "All time" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "All time" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.getByText("500")).toBeTruthy();
     fireEvent.click(screen.getByRole("tab", { name: "7d" }));
     expect(screen.getByText("7 days")).toBeTruthy();
