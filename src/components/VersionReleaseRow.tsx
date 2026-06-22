@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { MouseEvent, ReactNode } from "react";
 
 type VersionReleaseRowProps = {
   versionLabel: string;
@@ -31,12 +31,19 @@ export function VersionReleaseRow({
   changelog,
   onToggle,
 }: VersionReleaseRowProps) {
+  const handleSummaryClick = (event: MouseEvent<HTMLDivElement>) => {
+    const target = event.target;
+    if (!(target instanceof HTMLElement)) return;
+    if (target.closest("a, button")) return;
+    onToggle();
+  };
+
   return (
     <article
       className={`skill-version-release${isLatest ? " is-latest" : ""}`}
       data-expanded={isExpanded ? "true" : "false"}
     >
-      <div className="skill-version-release-summary">
+      <div className="skill-version-release-summary" onClick={handleSummaryClick}>
         <button
           type="button"
           className="skill-version-release-toggle"

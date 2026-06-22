@@ -488,17 +488,21 @@ function PluginDetailTabs({
           </button>
         ) : null}
       </div>
-      <div
-        className={`tab-body${effectiveActiveTab === "readme" ? " skill-readme-body" : ""}`}
-        role="tabpanel"
-        id={`plugin-tabpanel-${effectiveActiveTab}`}
-        aria-labelledby={`plugin-tab-${effectiveActiveTab}`}
-      >
-        {effectiveActiveTab === "versions" ? null : activePanel}
-        {hasMountedVersions || effectiveActiveTab === "versions" ? (
-          <div hidden={effectiveActiveTab !== "versions"}>{versionsPanel}</div>
-        ) : null}
-      </div>
+      {effectiveActiveTab === "versions" ? (
+        versionsPanel
+      ) : (
+        <div
+          className={`tab-body${effectiveActiveTab === "readme" ? " skill-readme-body" : ""}`}
+          role="tabpanel"
+          id={`plugin-tabpanel-${effectiveActiveTab}`}
+          aria-labelledby={`plugin-tab-${effectiveActiveTab}`}
+        >
+          {activePanel}
+        </div>
+      )}
+      {hasMountedVersions && effectiveActiveTab !== "versions" ? (
+        <div hidden>{versionsPanel}</div>
+      ) : null}
     </div>
   );
 }
@@ -836,6 +840,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       latestVersion={pkg.latestVersion ?? null}
       canDeleteVersions={canDeleteVersions === true}
       onVersionDeleted={() => router.invalidate()}
+      panelId="plugin-tabpanel-versions"
+      labelledBy="plugin-tab-versions"
     />
   );
   const compatibilityPanel =

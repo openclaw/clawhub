@@ -21,6 +21,8 @@ type PluginVersionsPanelProps = {
   latestVersion: string | null;
   canDeleteVersions: boolean;
   onVersionDeleted?: () => void | Promise<void>;
+  panelId?: string;
+  labelledBy?: string;
 };
 
 function buildPluginDownloadHref(packageName: string, version: string) {
@@ -36,6 +38,8 @@ export function PluginVersionsPanel({
   latestVersion,
   canDeleteVersions,
   onVersionDeleted,
+  panelId,
+  labelledBy,
 }: PluginVersionsPanelProps) {
   const isUnavailable = versions == null;
   const deleteOwnedRelease = useMutation(api.packages.deleteOwnedRelease);
@@ -127,12 +131,14 @@ export function PluginVersionsPanel({
 
   return (
     <>
-      <div className="tab-body skill-versions-panel">
+      <div
+        className="tab-body skill-versions-panel"
+        role={panelId ? "tabpanel" : undefined}
+        id={panelId}
+        aria-labelledby={labelledBy}
+      >
         <div className="skill-versions-header">
           <h2>Versions</h2>
-          <div className="skill-versions-header-copy">
-            <p>Review active release history and changelog.</p>
-          </div>
         </div>
         {isUnavailable ? (
           <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
