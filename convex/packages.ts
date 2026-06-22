@@ -79,9 +79,7 @@ import {
   normalizePublishFiles,
   readStorageText,
   readOptionalTextFile,
-  shouldReadPluginManifestSummaryTextFile,
   summarizePackageForSearch,
-  type PluginManifestSummaryTextSource,
   toConvexSafeJsonValue,
 } from "./lib/packageRegistry";
 import { extractPackageDigestFields, upsertPackageSearchDigest } from "./lib/packageSearchDigest";
@@ -7002,10 +7000,9 @@ function normalizeStoredPluginCategoryOverride(categories: readonly string[] | u
   }
 }
 
-async function withManifestSummaryTexts(
+async function withSkillMarkdownTextsForManifestSummary(
   ctx: Pick<ActionCtx, "storage">,
   files: ReturnType<typeof normalizePublishFiles>,
-  sources: readonly PluginManifestSummaryTextSource[],
 ) {
   const summaryFiles: Array<
     (typeof files)[number] & {
@@ -7013,7 +7010,8 @@ async function withManifestSummaryTexts(
     }
   > = [];
   for (const file of files) {
-    if (shouldReadPluginManifestSummaryTextFile(file.path, sources)) {
+    const lower = file.path.toLowerCase();
+    if (lower === "skill.md" || lower.endsWith("/skill.md")) {
       summaryFiles.push({
         ...file,
         text: await readStorageText(ctx, file.storageId),
@@ -7325,26 +7323,11 @@ async function publishPackageImpl(
   const integritySha256 = await hashSkillFiles(
     files.map((file) => ({ path: file.path, sha256: file.sha256 })),
   );
-  const manifestSummaryTextSources: PluginManifestSummaryTextSource[] = [
-    { manifest: pluginManifest },
-    ...(bundleManifest
-      ? [
-          {
-            manifest: bundleManifest,
-            ...(bundleManifestEntry?.file.path
-              ? { manifestPath: bundleManifestEntry.file.path }
-              : {}),
-          },
-        ]
-      : []),
-  ];
   const pluginManifestSummary = derivePluginManifestSummary({
     pluginManifest,
-    ...(packageJson ? { packageJson } : {}),
     ...(bundleManifest ? { skillManifest: bundleManifest } : {}),
-    ...(bundleManifestEntry?.file.path ? { skillManifestPath: bundleManifestEntry.file.path } : {}),
     compatibility: codeArtifacts?.compatibility ?? bundleArtifacts?.compatibility,
-    files: await withManifestSummaryTexts(ctx, files, manifestSummaryTextSources),
+    files: await withSkillMarkdownTextsForManifestSummary(ctx, files),
   });
 
   const publishResult = await runMutationRef<{

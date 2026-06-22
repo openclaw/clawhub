@@ -8,7 +8,6 @@ import {
   extractCodePluginArtifacts,
   normalizePluginManifestIcon,
   normalizePackageName,
-  shouldReadPluginManifestSummaryTextFile,
   summarizePackageForSearch,
   toConvexSafeJsonValue,
   tryNormalizePackageName,
@@ -78,6 +77,319 @@ describe("packageRegistry", () => {
     expect(result.verification.scanStatus).toBe("not-run");
   });
 
+  it("derives a safe bundled plugin manifest summary from dummy plugin metadata", () => {
+    const summary = derivePluginManifestSummary({
+      compatibility: { pluginApiRange: "^1.2.0" },
+      pluginManifest: {
+        name: "example-ai-plugin",
+        description: "Manifest description is diagnostic only",
+        version: "9.9.9",
+        family: "code-plugin",
+        openclaw: {
+          compat: {
+            pluginApi: "^2.0.0",
+          },
+        },
+        configSchema: {
+          type: "object",
+          required: ["EXAMPLE_PLUGIN_API_KEY"],
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              description: "API key used to connect to the example service.",
+              sensitive: true,
+            },
+            EXAMPLE_PLUGIN_MODEL: {
+              type: "string",
+              description: "Optional model override.",
+            },
+          },
+        },
+        mcpServers: {
+          exampleMcp: {
+            command: "node",
+            args: ["dist/mcp.js"],
+            env: { EXAMPLE_PLUGIN_API_KEY: "${EXAMPLE_PLUGIN_API_KEY}" },
+            transport: "stdio",
+          },
+        },
+        skills: [
+          "skills/research",
+          { path: "skills/write-report" },
+          "../outside",
+          "skills/missing",
+        ],
+        shared_deps: ["ignored"],
+        excluded_from_install: ["also-ignored"],
+        contracts: [{ ignored: true }],
+      },
+      files: [
+        {
+          path: "skills/research/SKILL.md",
+          size: 128,
+          sha256: "a".repeat(64),
+          text: "---\nname: research\n---\n# Research\n\nDeep research assistant.",
+        },
+        {
+          path: "skills/write-report/SKILL.md",
+          size: 256,
+          sha256: "b".repeat(64),
+          text: "---\nname: write-report\ndescription: Drafts a report.\n---\n# Write Report",
+        },
+        {
+          path: "skills/missing/README.md",
+          size: 12,
+          sha256: "c".repeat(64),
+          text: "not a skill",
+        },
+      ],
+    });
+
+    expect(summary).toEqual({
+      schemaVersion: 1,
+      compatibility: { pluginApiRange: "^2.0.0" },
+      manifestIdentity: {
+        name: "example-ai-plugin",
+        description: "Manifest description is diagnostic only",
+        version: "9.9.9",
+        family: "code-plugin",
+      },
+      configFields: [
+        {
+          name: "EXAMPLE_PLUGIN_API_KEY",
+          description: "API key used to connect to the example service.",
+          required: true,
+          sensitive: true,
+        },
+        {
+          name: "EXAMPLE_PLUGIN_MODEL",
+          description: "Optional model override.",
+          required: false,
+          sensitive: false,
+        },
+      ],
+      mcpServers: [{ name: "exampleMcp" }],
+      bundledSkills: [
+        {
+          name: "research",
+          rootPath: "skills/research",
+          skillMdPath: "skills/research/SKILL.md",
+          sha256: "a".repeat(64),
+          size: 128,
+        },
+        {
+          name: "write-report",
+          description: "Drafts a report.",
+          rootPath: "skills/write-report",
+          skillMdPath: "skills/write-report/SKILL.md",
+          sha256: "b".repeat(64),
+          size: 256,
+        },
+      ],
+    });
+    expect(JSON.stringify(summary)).not.toContain("command");
+    expect(JSON.stringify(summary)).not.toContain("transport");
+    expect(JSON.stringify(summary)).not.toContain("shared_deps");
+    expect(JSON.stringify(summary)).not.toContain("contracts");
+  });
+
+  it("derives bundled skills from the real bundle manifest when present", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        id: "example-ai-plugin",
+        openclaw: { compat: { pluginApi: "^2.0.0" } },
+        configSchema: {
+          type: "object",
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              sensitive: true,
+            },
+          },
+        },
+      },
+      skillManifest: {
+        name: "Example bundle manifest",
+        skills: [{ path: "skills/answer-review" }],
+      },
+      files: [
+        {
+          path: "skills/answer-review/SKILL.md",
+          size: 192,
+          sha256: "d".repeat(64),
+          text: "---\nname: answer-review\ndescription: Reviews generated answers.\n---\n# Answer Review",
+        },
+      ],
+    });
+
+    expect(summary.configFields).toEqual([
+      {
+        name: "EXAMPLE_PLUGIN_API_KEY",
+        required: false,
+        sensitive: true,
+      },
+    ]);
+    expect(summary.bundledSkills).toEqual([
+      {
+        name: "answer-review",
+        description: "Reviews generated answers.",
+        rootPath: "skills/answer-review",
+        skillMdPath: "skills/answer-review/SKILL.md",
+        sha256: "d".repeat(64),
+        size: 192,
+      },
+    ]);
+  });
+
+  it("derives config fields from direct plugin config maps", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        configSchema: {
+          EXAMPLE_DATABASE_URL: {
+            type: "string",
+            required: true,
+            description: "Database connection URL.",
+            uiHints: { sensitive: true },
+          },
+          EXAMPLE_MODEL: {
+            type: "string",
+            required: false,
+            description: "Optional model override.",
+          },
+        },
+      },
+      files: [],
+    });
+
+    expect(summary.configFields).toEqual([
+      {
+        name: "EXAMPLE_DATABASE_URL",
+        description: "Database connection URL.",
+        required: true,
+        sensitive: true,
+      },
+      {
+        name: "EXAMPLE_MODEL",
+        description: "Optional model override.",
+        required: false,
+        sensitive: false,
+      },
+    ]);
+  });
+
+  it("does not treat JSON Schema metadata as direct config fields", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        configSchema: {
+          type: "object",
+          $defs: {
+            sharedSecret: {
+              type: "string",
+              description: "Reusable schema, not a top-level config field.",
+            },
+          },
+          patternProperties: {
+            "^EXAMPLE_": { type: "string" },
+          },
+        },
+      },
+      files: [],
+    });
+
+    expect(summary.configFields).toEqual([]);
+  });
+
+  it("derives bundled skills from directory-style skill manifest roots", () => {
+    const summary = derivePluginManifestSummary({
+      pluginManifest: {
+        name: "example-ai-plugin",
+        openclaw: { compat: { pluginApi: "^2.0.0" } },
+        configSchema: {
+          type: "object",
+          required: ["EXAMPLE_PLUGIN_API_KEY"],
+          properties: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              description: "API key used to connect to the example service.",
+              sensitive: true,
+            },
+          },
+        },
+        mcpServers: {
+          exampleMcp: {
+            command: "node",
+            args: ["dist/mcp.js"],
+          },
+        },
+        customMetadata: {
+          ignored: true,
+        },
+      },
+      skillManifest: {
+        skills: ["./skills/"],
+      },
+      files: [
+        {
+          path: "skills/research/SKILL.md",
+          size: 128,
+          sha256: "a".repeat(64),
+          text: "---\nname: research\ndescription: Deep research assistant.\n---\n# Research",
+        },
+        {
+          path: "skills/write-report/SKILL.md",
+          size: 256,
+          sha256: "b".repeat(64),
+          text: "---\nname: write-report\ndescription: Drafts a concise report.\n---\n# Write Report",
+        },
+        {
+          path: "skills/code-audit/SKILL.md",
+          size: 384,
+          sha256: "c".repeat(64),
+          text: "---\nname: code-audit\ndescription: Reviews code changes.\n---\n# Code Audit",
+        },
+        {
+          path: "skills/not-a-skill/README.md",
+          size: 12,
+          sha256: "d".repeat(64),
+          text: "ignored",
+        },
+      ],
+    });
+
+    expect(summary.bundledSkills).toEqual([
+      {
+        name: "research",
+        description: "Deep research assistant.",
+        rootPath: "skills/research",
+        skillMdPath: "skills/research/SKILL.md",
+        sha256: "a".repeat(64),
+        size: 128,
+      },
+      {
+        name: "write-report",
+        description: "Drafts a concise report.",
+        rootPath: "skills/write-report",
+        skillMdPath: "skills/write-report/SKILL.md",
+        sha256: "b".repeat(64),
+        size: 256,
+      },
+      {
+        name: "code-audit",
+        description: "Reviews code changes.",
+        rootPath: "skills/code-audit",
+        skillMdPath: "skills/code-audit/SKILL.md",
+        sha256: "c".repeat(64),
+        size: 384,
+      },
+    ]);
+    expect(summary.configFields).toHaveLength(1);
+    expect(summary.mcpServers).toEqual([{ name: "exampleMcp" }]);
+    expect(JSON.stringify(summary)).not.toContain("command");
+    expect(JSON.stringify(summary)).not.toContain("customMetadata");
+  });
+
   it("allows missing host and environment metadata for code plugins", () => {
     const result = extractCodePluginArtifacts({
       packageName: "demo-plugin",
@@ -130,281 +442,6 @@ describe("packageRegistry", () => {
     ]) {
       expect(normalizePluginManifestIcon({ icon })).toBeUndefined();
     }
-  });
-
-  it("summarizes config fields declared in package metadata", () => {
-    const summary = derivePluginManifestSummary({
-      pluginManifest: {
-        id: "demo.plugin",
-      },
-      packageJson: {
-        name: "demo-plugin",
-        openclaw: {
-          configSchema: {
-            type: "object",
-            required: ["EXAMPLE_PLUGIN_API_KEY"],
-            properties: {
-              EXAMPLE_PLUGIN_API_KEY: {
-                type: "string",
-                description: "API key used by the example plugin.",
-                format: "password",
-              },
-            },
-          },
-        },
-      },
-      files: [],
-    });
-
-    expect(summary.configFields).toEqual([
-      {
-        name: "EXAMPLE_PLUGIN_API_KEY",
-        description: "API key used by the example plugin.",
-        required: true,
-        sensitive: true,
-      },
-    ]);
-  });
-
-  it("summarizes config fields declared in a referenced schema file", () => {
-    const summary = derivePluginManifestSummary({
-      pluginManifest: {
-        id: "demo.plugin",
-        configSchema: "./config.schema.json",
-      },
-      files: [
-        {
-          path: "config.schema.json",
-          size: 128,
-          sha256: "a".repeat(64),
-          text: JSON.stringify({
-            type: "object",
-            required: ["EXAMPLE_PLUGIN_API_KEY"],
-            properties: {
-              EXAMPLE_PLUGIN_API_KEY: {
-                type: "string",
-                description: "API key used by the example plugin.",
-                format: "password",
-              },
-            },
-          }),
-        },
-      ],
-    });
-
-    expect(summary.configFields).toEqual([
-      {
-        name: "EXAMPLE_PLUGIN_API_KEY",
-        description: "API key used by the example plugin.",
-        required: true,
-        sensitive: true,
-      },
-    ]);
-  });
-
-  it("summarizes MCP servers declared in a referenced manifest file", () => {
-    const summary = derivePluginManifestSummary({
-      pluginManifest: {
-        id: "demo.plugin",
-        mcpServers: "./.mcp.json",
-      },
-      files: [
-        {
-          path: ".mcp.json",
-          size: 128,
-          sha256: "a".repeat(64),
-          text: JSON.stringify({
-            mcpServers: {
-              filesystem: { command: "npx" },
-              github: { command: "npx" },
-            },
-          }),
-        },
-      ],
-    });
-
-    expect(summary.mcpServers).toEqual([{ name: "filesystem" }, { name: "github" }]);
-  });
-
-  it("prefers manifest-relative referenced files over same-named root files", () => {
-    const summary = derivePluginManifestSummary({
-      pluginManifest: {
-        id: "demo.plugin",
-      },
-      skillManifest: {
-        name: "Demo Bundle",
-        mcpServers: "./.mcp.json",
-      },
-      skillManifestPath: ".codex-plugin/plugin.json",
-      files: [
-        {
-          path: ".mcp.json",
-          size: 128,
-          sha256: "a".repeat(64),
-          text: JSON.stringify({
-            mcpServers: {
-              root: { command: "npx" },
-            },
-          }),
-        },
-        {
-          path: ".codex-plugin/.mcp.json",
-          size: 128,
-          sha256: "b".repeat(64),
-          text: JSON.stringify({
-            mcpServers: {
-              bundled: { command: "npx" },
-            },
-          }),
-        },
-      ],
-    });
-
-    expect(summary.mcpServers).toEqual([{ name: "bundled" }]);
-  });
-
-  it("summarizes config fields declared in a bundle manifest schema file", () => {
-    const summary = derivePluginManifestSummary({
-      pluginManifest: {
-        id: "demo.plugin",
-      },
-      skillManifest: {
-        name: "Demo Bundle",
-        configSchema: "./config.schema.json",
-      },
-      skillManifestPath: ".codex-plugin/plugin.json",
-      files: [
-        {
-          path: ".codex-plugin/config.schema.json",
-          size: 128,
-          sha256: "a".repeat(64),
-          text: JSON.stringify({
-            type: "object",
-            required: ["BUNDLE_PLUGIN_API_KEY"],
-            properties: {
-              BUNDLE_PLUGIN_API_KEY: {
-                type: "string",
-                description: "API key used by the bundle plugin.",
-                format: "password",
-              },
-            },
-          }),
-        },
-      ],
-    });
-
-    expect(summary.configFields).toEqual([
-      {
-        name: "BUNDLE_PLUGIN_API_KEY",
-        description: "API key used by the bundle plugin.",
-        required: true,
-        sensitive: true,
-      },
-    ]);
-  });
-
-  it("summarizes bundled skills declared as SKILL.md paths", () => {
-    const summary = derivePluginManifestSummary({
-      pluginManifest: {
-        id: "demo.plugin",
-      },
-      skillManifest: {
-        name: "Demo Bundle",
-        skills: ["skills/research/SKILL.md"],
-      },
-      files: [
-        {
-          path: "skills/research/SKILL.md",
-          size: 128,
-          sha256: "a".repeat(64),
-          text: "---\nname: Research\n---\n# Research\n",
-        },
-      ],
-    });
-
-    expect(summary.bundledSkills).toEqual([
-      expect.objectContaining({
-        name: "Research",
-        rootPath: "skills/research",
-        skillMdPath: "skills/research/SKILL.md",
-      }),
-    ]);
-  });
-
-  it("summarizes bundled skills declared at the package root", () => {
-    const summary = derivePluginManifestSummary({
-      pluginManifest: {
-        id: "demo.plugin",
-      },
-      skillManifest: {
-        name: "Demo Bundle",
-        skills: ["SKILL.md", "."],
-      },
-      files: [
-        {
-          path: "SKILL.md",
-          size: 128,
-          sha256: "a".repeat(64),
-          text: "---\nname: Root Skill\n---\n# Root Skill\n",
-        },
-      ],
-    });
-
-    expect(summary.bundledSkills).toEqual([
-      expect.objectContaining({
-        name: "Root Skill",
-        rootPath: ".",
-        skillMdPath: "SKILL.md",
-      }),
-    ]);
-  });
-
-  it("summarizes bundled skills declared as legacy skills.md paths", () => {
-    const sources = [
-      {
-        manifest: {
-          name: "Demo Bundle",
-          skills: ["skills/research/skills.md", "skills.md"],
-        },
-      },
-    ];
-    const summary = derivePluginManifestSummary({
-      pluginManifest: {
-        id: "demo.plugin",
-      },
-      skillManifest: sources[0]!.manifest,
-      files: [
-        {
-          path: "skills/research/skills.md",
-          size: 128,
-          sha256: "a".repeat(64),
-          text: "---\nname: Research Legacy\n---\n# Research\n",
-        },
-        {
-          path: "skills.md",
-          size: 128,
-          sha256: "b".repeat(64),
-          text: "---\nname: Root Legacy\n---\n# Root\n",
-        },
-      ],
-    });
-
-    expect(summary.bundledSkills).toEqual([
-      expect.objectContaining({
-        name: "Research Legacy",
-        rootPath: "skills/research",
-        skillMdPath: "skills/research/skills.md",
-      }),
-      expect.objectContaining({
-        name: "Root Legacy",
-        rootPath: ".",
-        skillMdPath: "skills.md",
-      }),
-    ]);
-    expect(shouldReadPluginManifestSummaryTextFile("skills/research/skills.md", sources)).toBe(
-      true,
-    );
-    expect(shouldReadPluginManifestSummaryTextFile("skills.md", sources)).toBe(true);
   });
 
   it("requires source metadata for code plugins", () => {

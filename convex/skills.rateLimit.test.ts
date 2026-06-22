@@ -1,14 +1,10 @@
 import { getFunctionName } from "convex/server";
 import { describe, expect, it, vi } from "vitest";
 
-vi.mock("@convex-dev/auth/server", async () => {
-  const actual =
-    await vi.importActual<typeof import("@convex-dev/auth/server")>("@convex-dev/auth/server");
-  return {
-    ...actual,
-    getAuthUserId: vi.fn(),
-  };
-});
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+  authTables: {},
+}));
 
 import { internal } from "./_generated/api";
 import {

@@ -22,14 +22,10 @@ import {
   requestSkillRescan,
 } from "./securityScan";
 
-vi.mock("@convex-dev/auth/server", async () => {
-  const actual =
-    await vi.importActual<typeof import("@convex-dev/auth/server")>("@convex-dev/auth/server");
-  return {
-    ...actual,
-    getAuthUserId: vi.fn(),
-  };
-});
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+  authTables: {},
+}));
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;

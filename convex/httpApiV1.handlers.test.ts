@@ -5,14 +5,10 @@ import { api, internal } from "./_generated/api";
 import { RATE_LIMITS } from "./lib/httpRateLimit";
 import { MAX_PUBLISH_FILE_BYTES } from "./lib/publishLimits";
 
-vi.mock("@convex-dev/auth/server", async () => {
-  const actual =
-    await vi.importActual<typeof import("@convex-dev/auth/server")>("@convex-dev/auth/server");
-  return {
-    ...actual,
-    getAuthUserId: vi.fn(),
-  };
-});
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+  authTables: {},
+}));
 
 vi.mock("./lib/apiTokenAuth", () => ({
   requireApiTokenUser: vi.fn(),
@@ -10518,29 +10514,6 @@ describe("httpApiV1 handlers", () => {
                 contentType: "text/markdown",
               },
             ],
-            pluginManifestSummary: {
-              schemaVersion: 1,
-              compatibility: { pluginApiRange: "^2.0.0" },
-              configFields: [
-                {
-                  name: "EXAMPLE_PLUGIN_API_KEY",
-                  description: "API key used by the example plugin.",
-                  required: true,
-                  sensitive: true,
-                },
-              ],
-              mcpServers: [{ name: "exampleMcp" }],
-              bundledSkills: [
-                {
-                  name: "research",
-                  description: "Deep research assistant.",
-                  rootPath: "skills/research",
-                  skillMdPath: "skills/research/SKILL.md",
-                  sha256: "b".repeat(64),
-                  size: 128,
-                },
-              ],
-            },
             verification: {
               tier: "source-linked",
               scope: "artifact-only",
@@ -10597,23 +10570,6 @@ describe("httpApiV1 handlers", () => {
         },
         verification: {
           scanStatus: "clean",
-        },
-        pluginManifestSummary: {
-          schemaVersion: 1,
-          compatibility: { pluginApiRange: "^2.0.0" },
-          configFields: [
-            {
-              name: "EXAMPLE_PLUGIN_API_KEY",
-              sensitive: true,
-            },
-          ],
-          mcpServers: [{ name: "exampleMcp" }],
-          bundledSkills: [
-            {
-              name: "research",
-              skillMdPath: "skills/research/SKILL.md",
-            },
-          ],
         },
         staticScan: {
           status: "malicious",

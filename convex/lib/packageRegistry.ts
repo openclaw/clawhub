@@ -45,13 +45,6 @@ type PluginManifestSummaryFile = {
   text?: string;
 };
 
-const SKILL_MARKDOWN_FILENAMES = ["SKILL.md", "skills.md"] as const;
-
-export type PluginManifestSummaryTextSource = {
-  manifest: JsonRecord;
-  manifestPath?: string;
-};
-
 function isRecord(value: unknown): value is JsonRecord {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
@@ -79,7 +72,7 @@ function normalizeNamedList(input: unknown): string[] {
           ? optionalString(value.name)
           : undefined,
     )
-    .filter((value): value is string => Boolean(value));
+    .filter(Boolean) as string[];
 }
 
 function uniq(items: Array<string | undefined | null>) {
@@ -91,7 +84,6 @@ function optionalString(value: unknown) {
 }
 
 function pathDerivedName(path: string) {
-  if (path === "." || path === "") return "Skill";
   const segment = path.split("/").filter(Boolean).at(-1) ?? path;
   return segment.trim() || path;
 }
@@ -106,14 +98,7 @@ function normalizeSkillRootPath(value: unknown) {
           optionalString(value.rootPath))
         : undefined;
   if (!raw) return null;
-  const normalized = sanitizePath(raw)?.replace(/^\.\//, "").replace(/\/+$/, "");
-  if (!normalized) return null;
-  const lower = normalized.toLowerCase();
-  if (lower === "." || lower === "skill.md" || lower === "skills.md") return ".";
-  if (lower.endsWith("/skill.md") || lower.endsWith("/skills.md")) {
-    return normalized.slice(0, normalized.lastIndexOf("/"));
-  }
-  return normalized;
+  return sanitizePath(raw)?.replace(/^\.\//, "").replace(/\/+$/, "") ?? null;
 }
 
 function normalizeSkillRootPaths(input: unknown) {
@@ -122,14 +107,11 @@ function normalizeSkillRootPaths(input: unknown) {
 }
 
 function findSkillMarkdownFile(files: PluginManifestSummaryFile[], rootPath: string) {
-  const expectedPaths = SKILL_MARKDOWN_FILENAMES.map((filename) =>
-    rootPath === "." || rootPath === "" ? filename : `${rootPath}/${filename}`,
-  );
-  const expectedPathSet = new Set(expectedPaths);
-  const expectedLowerPathSet = new Set(expectedPaths.map((path) => path.toLowerCase()));
+  const expected = `${rootPath}/SKILL.md`;
+  const expectedLower = expected.toLowerCase();
   return (
-    files.find((file) => expectedPathSet.has(file.path)) ??
-    files.find((file) => expectedLowerPathSet.has(file.path.toLowerCase())) ??
+    files.find((file) => file.path === expected) ??
+    files.find((file) => file.path.toLowerCase() === expectedLower) ??
     null
   );
 }
@@ -147,10 +129,7 @@ function findSkillMarkdownFiles(files: PluginManifestSummaryFile[], rootPath: st
   return files
     .filter((file) => {
       const lowerPath = file.path.toLowerCase();
-      return (
-        lowerPath.startsWith(directoryPrefix) &&
-        (lowerPath.endsWith("/skill.md") || lowerPath.endsWith("/skills.md"))
-      );
+      return lowerPath.startsWith(directoryPrefix) && lowerPath.endsWith("/skill.md");
     })
     .map((file) => ({
       rootPath: skillRootPathFromMarkdownFile(file.path),
@@ -238,35 +217,13 @@ function isLikelyDirectConfigFieldProperty(value: JsonRecord) {
   );
 }
 
-function extractConfigSchema(manifest: JsonRecord | undefined) {
-  if (!manifest) return undefined;
+function extractConfigFields(manifest: JsonRecord) {
   const openclaw = isRecord(manifest.openclaw) ? manifest.openclaw : undefined;
-  return isRecord(manifest.configSchema)
+  const schema = isRecord(manifest.configSchema)
     ? manifest.configSchema
     : isRecord(openclaw?.configSchema)
       ? openclaw.configSchema
       : undefined;
-}
-
-function extractReferencedConfigSchema(
-  source: PluginManifestSummaryTextSource,
-  files: PluginManifestSummaryFile[],
-) {
-  const inlineSchema = extractConfigSchema(source.manifest);
-  if (inlineSchema) return inlineSchema;
-  const rawConfigSchema = optionalString(source.manifest.configSchema);
-  if (!rawConfigSchema) return undefined;
-  return readReferencedManifestFile(files, rawConfigSchema, source.manifestPath) ?? undefined;
-}
-
-function extractConfigFields(params: {
-  source: PluginManifestSummaryTextSource;
-  files: PluginManifestSummaryFile[];
-  fallbackManifest?: JsonRecord;
-}) {
-  const schema =
-    extractReferencedConfigSchema(params.source, params.files) ??
-    extractConfigSchema(params.fallbackManifest);
   if (!schema) return [];
   const required = new Set(normalizeStringList(schema.required));
   const shouldReadDirectMap =
@@ -297,124 +254,15 @@ function extractConfigFields(params: {
     }));
 }
 
-function extractConfigFieldsFromSources(params: {
-  sources: readonly PluginManifestSummaryTextSource[];
-  files: PluginManifestSummaryFile[];
-  fallbackManifest?: JsonRecord;
-}) {
-  for (const source of params.sources) {
-    const fields = extractConfigFields({ source, files: params.files });
-    if (fields.length > 0) return fields;
-  }
-  return extractConfigFields({
-    source: { manifest: {} },
-    files: params.files,
-    fallbackManifest: params.fallbackManifest,
-  });
-}
-
-function extractInlineMcpServerNames(raw: unknown) {
+function extractMcpServerNames(manifest: JsonRecord) {
+  const raw = manifest.mcpServers ?? manifest.mcp;
   if (Array.isArray(raw)) return uniq(normalizeNamedList(raw));
-  if (isRecord(raw)) {
+  if (isRecord(raw))
     return Object.keys(raw)
       .map((name) => name.trim())
       .filter(Boolean)
       .sort();
-  }
   return [];
-}
-
-function normalizeReferencedManifestPath(path: string) {
-  const withoutLeadingCurrentDir = path
-    .trim()
-    .replace(/^\/+/, "")
-    .replace(/^(?:\.\/)+/, "");
-  const sanitized = sanitizePath(withoutLeadingCurrentDir);
-  return sanitized?.toLowerCase() ?? null;
-}
-
-function parseJsonRecordOrNull(text: string | undefined) {
-  if (!text) return null;
-  try {
-    const parsed: unknown = JSON.parse(text);
-    return isRecord(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function normalizeManifestDirectoryPath(manifestPath: string | undefined) {
-  const normalized = manifestPath ? normalizeReferencedManifestPath(manifestPath) : null;
-  if (!normalized?.includes("/")) return null;
-  return normalized.slice(0, normalized.lastIndexOf("/"));
-}
-
-function getReferencedManifestPathCandidates(path: string, manifestPath: string | undefined) {
-  const normalizedPath = normalizeReferencedManifestPath(path);
-  if (!normalizedPath) return [];
-  const manifestDir = normalizeManifestDirectoryPath(manifestPath);
-  return uniq([manifestDir ? `${manifestDir}/${normalizedPath}` : null, normalizedPath]);
-}
-
-function readReferencedManifestFile(
-  files: PluginManifestSummaryFile[],
-  path: string,
-  manifestPath: string | undefined,
-) {
-  const pathCandidates = getReferencedManifestPathCandidates(path, manifestPath);
-  if (pathCandidates.length === 0) return null;
-  const file = pathCandidates
-    .map((candidatePath) =>
-      files.find((entry) => normalizeReferencedManifestPath(entry.path) === candidatePath),
-    )
-    .find((entry) => entry !== undefined);
-  return parseJsonRecordOrNull(file?.text);
-}
-
-export function shouldReadPluginManifestSummaryTextFile(
-  path: string,
-  sources: readonly PluginManifestSummaryTextSource[],
-) {
-  const lower = path.toLowerCase();
-  if (
-    lower === "skill.md" ||
-    lower === "skills.md" ||
-    lower.endsWith("/skill.md") ||
-    lower.endsWith("/skills.md")
-  ) {
-    return true;
-  }
-
-  const normalizedPath = normalizeReferencedManifestPath(path);
-  if (!normalizedPath) return false;
-  return sources.some(({ manifest, manifestPath }) => {
-    const rawMcp = optionalString(manifest.mcpServers ?? manifest.mcp);
-    const rawConfigSchema = optionalString(manifest.configSchema);
-    return [rawMcp, rawConfigSchema].some(
-      (referencedPath) =>
-        referencedPath !== undefined &&
-        getReferencedManifestPathCandidates(referencedPath, manifestPath).includes(normalizedPath),
-    );
-  });
-}
-
-function extractMcpServerNames(
-  source: PluginManifestSummaryTextSource,
-  files: PluginManifestSummaryFile[],
-) {
-  const { manifest, manifestPath } = source;
-  const raw = manifest.mcpServers ?? manifest.mcp;
-  const inlineNames = extractInlineMcpServerNames(raw);
-  if (inlineNames.length > 0) return inlineNames;
-  if (typeof raw !== "string") return [];
-
-  const referencedManifest = readReferencedManifestFile(files, raw, manifestPath);
-  if (!referencedManifest) return [];
-  const referencedRaw = referencedManifest.mcpServers ?? referencedManifest.mcp;
-  const referencedNames = extractInlineMcpServerNames(referencedRaw);
-  return referencedNames.length > 0
-    ? referencedNames
-    : extractInlineMcpServerNames(referencedManifest);
 }
 
 function parseSkillMarkdownMetadata(text: string | undefined) {
@@ -428,9 +276,7 @@ function parseSkillMarkdownMetadata(text: string | undefined) {
 
 export function derivePluginManifestSummary(params: {
   pluginManifest: JsonRecord;
-  packageJson?: JsonRecord;
   skillManifest?: JsonRecord;
-  skillManifestPath?: string;
   files: PluginManifestSummaryFile[];
   compatibility?: PackageCompatibility;
 }) {
@@ -440,12 +286,6 @@ export function derivePluginManifestSummary(params: {
   );
   const manifestIdentity = extractManifestIdentity(params.pluginManifest);
   const skillManifest = params.skillManifest ?? params.pluginManifest;
-  const mcpSources: PluginManifestSummaryTextSource[] = [
-    { manifest: params.pluginManifest },
-    ...(params.skillManifest
-      ? [{ manifest: params.skillManifest, manifestPath: params.skillManifestPath }]
-      : []),
-  ];
   const skillRoots = uniq([
     ...normalizeSkillRootPaths(skillManifest.skills),
     ...normalizeSkillRootPaths(skillManifest.bundledSkills),
@@ -474,16 +314,8 @@ export function derivePluginManifestSummary(params: {
     schemaVersion: 1 as const,
     ...(compatibility ? { compatibility } : {}),
     ...(manifestIdentity ? { manifestIdentity } : {}),
-    configFields: extractConfigFieldsFromSources({
-      sources: mcpSources,
-      files: params.files,
-      fallbackManifest: params.packageJson,
-    }),
-    mcpServers: uniq(
-      mcpSources.flatMap((source) => extractMcpServerNames(source, params.files)),
-    ).map((name) => ({
-      name,
-    })),
+    configFields: extractConfigFields(params.pluginManifest),
+    mcpServers: extractMcpServerNames(params.pluginManifest).map((name) => ({ name })),
     bundledSkills,
   };
 }

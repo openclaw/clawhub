@@ -1,14 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { formatReservedSlugCooldownMessage } from "./lib/reservedSlugs";
 
-vi.mock("@convex-dev/auth/server", async () => {
-  const actual =
-    await vi.importActual<typeof import("@convex-dev/auth/server")>("@convex-dev/auth/server");
-  return {
-    ...actual,
-    getAuthUserId: vi.fn(),
-  };
-});
+vi.mock("@convex-dev/auth/server", () => ({
+  getAuthUserId: vi.fn(),
+  authTables: {},
+}));
 
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { checkSlugAvailability } from "./skills";

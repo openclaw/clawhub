@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { AlertTriangle, Download, Info, Upload } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { ActivityMetricLabel } from "../../components/ActivityMetricLabel";
@@ -477,32 +477,20 @@ function PluginManifestSkillsPanel({
   const [previewContent, setPreviewContent] = useState<string | null>(null);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [isPreviewLoading, setIsPreviewLoading] = useState(false);
-  const previewRequestId = useRef(0);
 
   async function openSkillPreview(skill: BundledPluginSkill) {
-    const requestId = previewRequestId.current + 1;
-    previewRequestId.current = requestId;
     setPreviewSkill(skill);
     setPreviewContent(null);
     setPreviewError(null);
     setIsPreviewLoading(true);
     try {
       const content = await fetchPackageFile(packageName, skill.skillMdPath, version);
-      if (previewRequestId.current !== requestId) return;
       setPreviewContent(content ?? "Skill markdown is unavailable.");
     } catch (error) {
-      if (previewRequestId.current !== requestId) return;
       setPreviewError(error instanceof Error ? error.message : "Failed to load skill markdown.");
     } finally {
-      if (previewRequestId.current === requestId) {
-        setIsPreviewLoading(false);
-      }
+      setIsPreviewLoading(false);
     }
-  }
-
-  function closeSkillPreview() {
-    previewRequestId.current += 1;
-    setPreviewSkill(null);
   }
 
   return (
@@ -529,7 +517,7 @@ function PluginManifestSkillsPanel({
           ))}
         </div>
       </section>
-      <Dialog open={Boolean(previewSkill)} onOpenChange={(open) => !open && closeSkillPreview()}>
+      <Dialog open={Boolean(previewSkill)} onOpenChange={(open) => !open && setPreviewSkill(null)}>
         <DialogContent className="max-h-[85vh] max-w-[min(920px,92vw)] overflow-auto">
           <DialogHeader>
             <DialogTitle>{previewSkill?.name ?? "Bundled skill"}</DialogTitle>

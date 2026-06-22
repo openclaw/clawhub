@@ -17,13 +17,6 @@ function sortValuesForPath(paths: unknown, path: string) {
   return property(property(sortParameter, "schema"), "enum");
 }
 
-function schemaProperties(spec: unknown, schemaName: string) {
-  const components = property(spec, "components");
-  const schemas = property(components, "schemas");
-  const schema = property(schemas, schemaName);
-  return property(schema, "properties");
-}
-
 describe("OpenAPI contract", () => {
   it("documents accepted skills sort aliases", async () => {
     const specPath = new URL("../../public/api/v1/openapi.json", import.meta.url);
@@ -56,16 +49,5 @@ describe("OpenAPI contract", () => {
     expect(sortValuesForPath(paths, "/api/v1/plugins")).toEqual(sortValues);
     expect(sortValuesForPath(paths, "/api/v1/code-plugins")).toEqual(sortValues);
     expect(sortValuesForPath(paths, "/api/v1/bundle-plugins")).toEqual(sortValues);
-  });
-
-  it("documents plugin manifest summaries on package version responses", async () => {
-    const specPath = new URL("../../public/api/v1/openapi.json", import.meta.url);
-    const spec: unknown = JSON.parse(await readFile(specPath, "utf8"));
-    const version = property(schemaProperties(spec, "PackageVersionResponse"), "version");
-    const manifestSummary = property(property(version, "properties"), "pluginManifestSummary");
-
-    expect(manifestSummary).toEqual({
-      anyOf: [{ $ref: "#/components/schemas/PluginManifestSummary" }, { type: "null" }],
-    });
   });
 });

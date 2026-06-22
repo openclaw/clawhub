@@ -5,23 +5,6 @@ import { EMBEDDING_DIMENSIONS } from "./lib/embeddings";
 
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 
-const authSessions = defineTable({
-  userId: v.id("users"),
-  expirationTime: v.number(),
-})
-  .index("userId", ["userId"])
-  .index("by_expiration_time", ["expirationTime"]);
-
-const authRefreshTokens = defineTable({
-  sessionId: v.id("authSessions"),
-  expirationTime: v.number(),
-  firstUsedTime: v.optional(v.number()),
-  parentRefreshTokenId: v.optional(v.id("authRefreshTokens")),
-})
-  .index("sessionId", ["sessionId"])
-  .index("sessionIdAndParentRefreshTokenId", ["sessionId", "parentRefreshTokenId"])
-  .index("by_expiration_time", ["expirationTime"]);
-
 const manualModerationOverride = v.object({
   verdict: v.literal("clean"),
   note: v.string(),
@@ -210,6 +193,23 @@ const users = defineTable({
   .index("by_ban_reason_deleted_at", ["banReason", "deletedAt"])
   .index("by_deactivated_purged_at", ["deactivatedAt", "purgedAt"])
   .index("by_active_handle", ["deletedAt", "deactivatedAt", "handle"]);
+
+const authSessions = defineTable({
+  userId: v.id("users"),
+  expirationTime: v.number(),
+})
+  .index("userId", ["userId"])
+  .index("by_expiration_time", ["expirationTime"]);
+
+const authRefreshTokens = defineTable({
+  sessionId: v.id("authSessions"),
+  expirationTime: v.number(),
+  firstUsedTime: v.optional(v.number()),
+  parentRefreshTokenId: v.optional(v.id("authRefreshTokens")),
+})
+  .index("sessionId", ["sessionId"])
+  .index("sessionIdAndParentRefreshTokenId", ["sessionId", "parentRefreshTokenId"])
+  .index("by_expiration_time", ["expirationTime"]);
 
 const publishers = defineTable({
   kind: v.union(v.literal("user"), v.literal("org")),
