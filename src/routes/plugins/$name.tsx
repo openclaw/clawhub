@@ -17,7 +17,6 @@ import {
   Info,
   Package,
   Server,
-  Share2,
   Sparkles,
   Tag,
   Upload,
@@ -57,7 +56,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { UserBadge } from "../../components/UserBadge";
 import { getActivityTrendEndDay } from "../../lib/activityTrend";
 import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
@@ -1121,25 +1119,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                       <Badge variant="destructive">Download blocked</Badge>
                     </div>
                   ) : null}
-                  {newVersionHref ? (
-                    <div className="skill-title-actions skill-owner-hero-actions">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Button
-                            asChild
-                            variant="outline"
-                            size="icon"
-                            className="skill-owner-hero-action"
-                          >
-                            <a href={newVersionHref} aria-label="New version">
-                              <Upload size={15} aria-hidden="true" />
-                            </a>
-                          </Button>
-                        </TooltipTrigger>
-                        <TooltipContent>New version</TooltipContent>
-                      </Tooltip>
-                    </div>
-                  ) : null}
                 </div>
               </div>
               <div className="skill-summary-block">
@@ -1182,19 +1161,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                         </a>
                       </Button>
                     ) : null}
-                    <Button
-                      variant="outline"
-                      type="button"
-                      className="skill-sidebar-action-button"
-                      onClick={() => {
-                        if (typeof window === "undefined") return;
-                        void navigator.clipboard.writeText(window.location.href);
-                        toast.success("Link copied");
-                      }}
-                    >
-                      <Share2 size={14} aria-hidden="true" />
-                      Share
-                    </Button>
+                    {newVersionHref ? (
+                      <Button asChild variant="outline" className="skill-sidebar-action-button">
+                        <a href={newVersionHref} aria-label="New version">
+                          <Upload size={14} aria-hidden="true" />
+                          New version
+                        </a>
+                      </Button>
+                    ) : null}
                   </div>
                 </div>
               ) : null}
@@ -1255,7 +1229,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               </CardHeader>
               <CardContent>
                 <div className="skill-install-command-wrap">
-                  <div className="skill-install-command-shell">
+                  <div className="skill-install-command-shell skill-install-command-shell-cli">
+                    <span className="skill-install-command-prompt" aria-hidden="true">
+                      $
+                    </span>
                     <pre className="skill-install-command">
                       <code>{installSnippet}</code>
                     </pre>

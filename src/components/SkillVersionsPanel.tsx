@@ -7,7 +7,6 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
-import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
 import { VersionChangelog } from "./VersionChangelog";
@@ -47,7 +46,6 @@ export function SkillVersionsPanel({
   nixPlugin,
   skillSlug,
   ownerHandle,
-  suppressScanResults,
   suppressedMessage,
 }: SkillVersionsPanelProps) {
   const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
@@ -110,15 +108,11 @@ export function SkillVersionsPanel({
           ) : null}
         </div>
         <div className="skill-versions-scroll">
-          <div className="skill-versions-list">
+          <div className="skill-versions-list skill-versions-list-without-checks">
             <div className="skill-versions-column-header" aria-hidden="true">
               <span>Version</span>
-              <span>Checks</span>
               <span>Release</span>
-              <span className="skill-versions-column-header-download">
-                <Download size={13} aria-hidden="true" />
-                <span className="sr-only">Download</span>
-              </span>
+              <span className="skill-versions-column-header-download">Download</span>
               <span />
             </div>
             {visibleVersions.map((version) => {
@@ -137,17 +131,6 @@ export function SkillVersionsPanel({
                   isLatest={isLatest}
                   isExpanded={isExpanded}
                   changelogId={changelogId}
-                  checksLabel="Checks"
-                  checks={
-                    !suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
-                      <SecurityScanResults
-                        sha256hash={version.sha256hash}
-                        vtAnalysis={version.vtAnalysis}
-                        llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
-                        variant="badge"
-                      />
-                    ) : null
-                  }
                   release={
                     <>
                       {isLatest ? (
@@ -172,14 +155,15 @@ export function SkillVersionsPanel({
                             ownerHandle,
                             version.version,
                           )}
-                          className="skill-version-release-download"
-                          aria-label={`Download .zip for v${version.version}`}
+                          className="skill-version-release-download skill-version-release-download-labeled"
+                          aria-label={`Download version v${version.version}`}
                         >
                           <Download
                             className="skill-version-release-download-icon"
                             size={14}
                             aria-hidden="true"
                           />
+                          <span>Download version</span>
                         </a>
                       ) : null}
                       {canDeleteVersions && isAvailable && !isLatest ? (

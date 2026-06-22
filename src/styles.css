@@ -1527,13 +1527,12 @@ code {
   min-width: 0;
 }
 
-.security-audit-hero-actions {
-  align-self: center;
+.security-audit-sidebar-actions {
+  width: 100%;
 }
 
-.security-audit-hero-action-status {
-  flex-basis: 100%;
-  text-align: right;
+.security-audit-sidebar-action-status {
+  width: 100%;
 }
 
 .security-scan-hero-subtext {
@@ -5193,7 +5192,7 @@ code {
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
   gap: 10px;
-  width: fit-content;
+  width: 100%;
   max-width: 100%;
   min-width: 0;
   padding: 9px 10px;
@@ -5254,14 +5253,31 @@ code {
   padding-inline: 10px;
 }
 
+.plugin-catalog-empty-alert-cta:hover,
+.plugin-catalog-empty-alert-cta:focus-visible {
+  border-color: color-mix(in srgb, #f6c76a 38%, var(--line));
+  background: color-mix(in srgb, #f6c76a 12%, var(--surface-muted));
+  color: var(--ink);
+}
+
 .plugin-catalog-metadata-dialog {
-  width: min(100%, 640px);
-  gap: 16px;
+  width: min(calc(100vw - 32px), 520px);
+  gap: 18px;
+  padding: 20px;
 }
 
 .plugin-catalog-metadata-dialog .catalog-metadata-settings-editor {
   width: 100%;
   min-width: 0;
+}
+
+.plugin-catalog-metadata-dialog .catalog-metadata-fields {
+  grid-template-columns: 1fr;
+  gap: 14px;
+}
+
+.plugin-catalog-metadata-dialog .summary-settings-footer {
+  align-items: center;
 }
 
 .skill-page-title {
@@ -5280,19 +5296,6 @@ code {
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-}
-
-.skill-owner-hero-actions {
-  flex: 0 0 auto;
-  gap: 8px;
-}
-
-.skill-owner-hero-action {
-  width: 36px;
-  height: 36px;
-  min-height: 36px;
-  padding: 0;
-  border-radius: 50%;
 }
 
 .skill-title-badges {
@@ -6505,16 +6508,35 @@ code {
 
 .skill-install-command-shell {
   position: relative;
-  display: grid;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
   width: 100%;
   max-width: 100%;
   min-width: 0;
   box-sizing: border-box;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
   border-radius: var(--radius-md);
   border: 1px solid var(--line);
   background: var(--surface-muted);
   padding: 16px 62px 16px 18px;
+}
+
+.skill-install-command-shell-cli {
+  --install-command-line-height: 1.5;
+  align-items: center;
+}
+
+.skill-install-command-prompt {
+  flex: 0 0 auto;
+  align-self: center;
+  font-family: var(--font-mono);
+  font-size: 0.82rem;
+  line-height: var(--install-command-line-height, 1.5);
+  color: color-mix(in srgb, var(--ink-soft) 70%, transparent);
+  user-select: none;
+  pointer-events: none;
 }
 
 [data-theme-resolved="light"] .skill-install-command-shell {
@@ -6523,23 +6545,42 @@ code {
 }
 
 .skill-install-command-wrap .skill-install-command {
-  display: block;
-  width: 100%;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  width: auto;
+  min-width: 0;
   min-height: 0;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
   border: 0;
   border-radius: 0;
   background: transparent;
   padding: 0;
+  margin: 0;
+  font-size: 0.82rem;
+  line-height: var(--install-command-line-height, 1.5);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .skill-install-command-wrap .skill-install-command code {
   display: block;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: visible;
+  line-height: var(--install-command-line-height, 1.5);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.skill-install-command-wrap .skill-install-prompt-compact {
+  display: block;
+  align-self: stretch;
+  line-height: 1.7;
+}
+
+.skill-install-command-wrap .skill-install-prompt-compact code {
+  line-height: 1.7;
 }
 
 .skill-install-command-reveal {
@@ -6579,10 +6620,17 @@ code {
 
 .skill-install-command-inline-button {
   position: absolute;
-  top: 12px;
+  top: 50%;
   right: 12px;
   width: 34px;
+  height: 34px;
   padding-inline: 0;
+  transform: translateY(-50%);
+}
+
+.skill-install-command-shell:not(.skill-install-command-shell-cli) .skill-install-command-inline-button {
+  top: 12px;
+  transform: none;
 }
 
 [data-theme-resolved="dark"] .skill-install-command-inline-button {
@@ -9596,6 +9644,11 @@ code {
   background: color-mix(in srgb, var(--surface) 28%, transparent);
 }
 
+.skill-versions-list-without-checks {
+  --skill-versions-grid-columns: minmax(150px, 176px) fit-content(168px) minmax(0, 1fr)
+    minmax(154px, max-content) 36px;
+}
+
 .skill-versions-column-header {
   grid-column: 1 / -1;
   display: grid;
@@ -9639,6 +9692,24 @@ code {
   width: 28px;
   min-height: 22px;
   color: color-mix(in srgb, var(--ink-soft) 72%, transparent);
+}
+
+.skill-versions-list-without-checks .skill-versions-column-header > span:nth-child(2) {
+  grid-column: 2;
+}
+
+.skill-versions-list-without-checks .skill-versions-column-header > span:nth-child(3) {
+  grid-column: 4;
+  justify-self: center;
+}
+
+.skill-versions-list-without-checks .skill-versions-column-header > span:nth-child(4) {
+  grid-column: 5;
+  justify-self: end;
+}
+
+.skill-versions-list-without-checks .skill-versions-column-header-download {
+  width: auto;
 }
 
 .skill-versions-column-header > span:nth-child(5) {
@@ -9892,6 +9963,27 @@ code {
 .skill-version-release-download-icon {
   flex: 0 0 auto;
   color: color-mix(in srgb, var(--ink-soft) 72%, transparent);
+}
+
+.skill-version-release-download-labeled {
+  width: auto;
+  padding: 0 10px;
+  gap: 6px;
+  font-size: 0.76rem;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.skill-versions-list-without-checks .skill-version-release-tags {
+  grid-column: 2;
+}
+
+.skill-versions-list-without-checks .skill-version-release-actions {
+  grid-column: 4;
+}
+
+.skill-versions-list-without-checks .skill-version-release-chevron-button {
+  grid-column: 5;
 }
 
 .version-channel-badge,
@@ -13979,16 +14071,6 @@ a.agentic-risk-finding-title:focus-visible {
   .skill-title-actions [data-slot="button"] {
     flex: 1 1 0;
     justify-content: center;
-  }
-
-  .skill-title-actions.skill-owner-hero-actions {
-    width: auto;
-    margin-left: auto;
-    justify-content: flex-end;
-  }
-
-  .skill-title-actions .skill-owner-hero-action {
-    flex: 0 0 36px;
   }
 
   .skill-install-actions,

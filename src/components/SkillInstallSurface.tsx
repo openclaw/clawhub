@@ -232,7 +232,16 @@ export function SkillCommandLineCard({
       </div>
 
       <div className="skill-install-command-wrap">
-        <div className="skill-install-command-shell">
+        <div
+          className={`skill-install-command-shell${
+            activeInstallTab === "cli" ? " skill-install-command-shell-cli" : ""
+          }`}
+        >
+          {activeInstallTab === "cli" ? (
+            <span className="skill-install-command-prompt" aria-hidden="true">
+              $
+            </span>
+          ) : null}
           <pre
             key={activeInstallTab}
             data-direction={installTabDirection}

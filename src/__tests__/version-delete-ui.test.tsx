@@ -273,7 +273,7 @@ describe("version Delete UI", () => {
     expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
   });
 
-  it("keeps unavailable staff-history skill versions visible without Download .zip or Delete actions", () => {
+  it("keeps unavailable staff-history skill versions visible without download or Delete actions", () => {
     useMutationMock.mockReturnValue(vi.fn());
     const unavailableVersions = [
       skillVersions[0],
@@ -299,22 +299,24 @@ describe("version Delete UI", () => {
     expect(screen.queryByRole("button", { name: "Delete version 0.9.0" })).toBeNull();
     expect(
       screen
-        .getAllByRole("link", { name: /Download \.zip for/ })
+        .getAllByRole("link", { name: /Download version v/ })
         .map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get("version")),
     ).toEqual(["2.0.0"]);
   });
 
-  it("keeps Download .zip and Delete actions on active skill version rows", () => {
+  it("keeps Download version and Delete actions on active skill version rows", () => {
     useMutationMock.mockReturnValue(vi.fn());
 
     renderSkillVersions();
 
     expect(screen.getByText("Latest")).toBeTruthy();
+    expect(screen.queryByText("Checks")).toBeNull();
+    expect(screen.getAllByText("Download version")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Delete version 2.0.0" })).toBeNull();
     expect(screen.getByRole("button", { name: "Delete version 1.0.0" })).toBeTruthy();
     expect(
       screen
-        .getAllByRole("link", { name: /Download \.zip for/ })
+        .getAllByRole("link", { name: /Download version v/ })
         .map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get("version")),
     ).toEqual(["2.0.0", "1.0.0"]);
   });

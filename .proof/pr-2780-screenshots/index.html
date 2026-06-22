@@ -1,0 +1,593 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ClawHub PR 2780 detail polish screenshots</title>
+  <style>
+    :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+    body { margin: 0; padding: 32px; background: #0b0d12; color: #f4f6fb; }
+    h1 { margin: 0 0 8px; font-size: 1.6rem; }
+    p { margin: 0 0 24px; color: #b8c0d4; max-width: 80ch; line-height: 1.5; }
+    h2 { margin: 32px 0 16px; font-size: 1.1rem; color: #dbe4ff; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 20px; }
+    figure { margin: 0; border: 1px solid #2a3142; border-radius: 14px; overflow: hidden; background: #121622; }
+    img { display: block; width: 100%; height: auto; background: #090b10; }
+    figcaption { padding: 10px 12px 12px; font-size: 0.92rem; color: #c6d0e5; }
+    figcaption strong { color: #fff; text-transform: capitalize; }
+    figcaption em { display: block; margin-top: 4px; color: #f6c76a; font-style: normal; }
+  </style>
+</head>
+<body>
+  <h1>ClawHub PR #2780 — skill & plugin detail polish</h1>
+  <p>Before/after captures from production (<code>clawhub.ai</code>) vs Vercel preview, in light and dark mode, one viewport per tab with breathing room (1440×1100, not tight element crops).</p>
+  
+      <section>
+        <h2>/plugins/@openclaw/whatsapp</h2>
+        <div class="grid">
+          <figure>
+            <img src="./before-plugin-openclaw-whatsapp-light-readme.png" alt="before-plugin-openclaw-whatsapp-light-readme.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · README
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-whatsapp-light-configuration.png" alt="before-plugin-openclaw-whatsapp-light-configuration.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Configuration
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-whatsapp-light-compatibility.png" alt="before-plugin-openclaw-whatsapp-light-compatibility.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Compatibility
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-whatsapp-light-versions.png" alt="before-plugin-openclaw-whatsapp-light-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-whatsapp-dark-readme.png" alt="before-plugin-openclaw-whatsapp-dark-readme.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · README
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-whatsapp-dark-configuration.png" alt="before-plugin-openclaw-whatsapp-dark-configuration.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Configuration
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-whatsapp-dark-compatibility.png" alt="before-plugin-openclaw-whatsapp-dark-compatibility.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Compatibility
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-whatsapp-dark-versions.png" alt="before-plugin-openclaw-whatsapp-dark-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-whatsapp-light-readme-md.png" alt="after-plugin-openclaw-whatsapp-light-readme-md.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · README.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-whatsapp-light-configuration.png" alt="after-plugin-openclaw-whatsapp-light-configuration.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Configuration
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-whatsapp-light-compatibility.png" alt="after-plugin-openclaw-whatsapp-light-compatibility.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Compatibility
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-whatsapp-light-versions.png" alt="after-plugin-openclaw-whatsapp-light-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-whatsapp-dark-readme-md.png" alt="after-plugin-openclaw-whatsapp-dark-readme-md.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · README.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-whatsapp-dark-configuration.png" alt="after-plugin-openclaw-whatsapp-dark-configuration.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Configuration
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-whatsapp-dark-compatibility.png" alt="after-plugin-openclaw-whatsapp-dark-compatibility.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Compatibility
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-whatsapp-dark-versions.png" alt="after-plugin-openclaw-whatsapp-dark-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Versions
+              
+            </figcaption>
+          </figure></div>
+      </section>
+
+      <section>
+        <h2>/plugins/@openclaw/codex</h2>
+        <div class="grid">
+          <figure>
+            <img src="./before-plugin-openclaw-codex-light-readme.png" alt="before-plugin-openclaw-codex-light-readme.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · README
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-codex-light-configuration.png" alt="before-plugin-openclaw-codex-light-configuration.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Configuration
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-codex-light-compatibility.png" alt="before-plugin-openclaw-codex-light-compatibility.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Compatibility
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-codex-light-versions.png" alt="before-plugin-openclaw-codex-light-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-codex-dark-readme.png" alt="before-plugin-openclaw-codex-dark-readme.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · README
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-codex-dark-configuration.png" alt="before-plugin-openclaw-codex-dark-configuration.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Configuration
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-codex-dark-compatibility.png" alt="before-plugin-openclaw-codex-dark-compatibility.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Compatibility
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-plugin-openclaw-codex-dark-versions.png" alt="before-plugin-openclaw-codex-dark-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-codex-light-readme-md.png" alt="after-plugin-openclaw-codex-light-readme-md.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · README.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-codex-light-configuration.png" alt="after-plugin-openclaw-codex-light-configuration.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Configuration
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-codex-light-compatibility.png" alt="after-plugin-openclaw-codex-light-compatibility.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Compatibility
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-codex-light-versions.png" alt="after-plugin-openclaw-codex-light-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-codex-dark-readme-md.png" alt="after-plugin-openclaw-codex-dark-readme-md.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · README.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-codex-dark-configuration.png" alt="after-plugin-openclaw-codex-dark-configuration.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Configuration
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-codex-dark-compatibility.png" alt="after-plugin-openclaw-codex-dark-compatibility.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Compatibility
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-plugin-openclaw-codex-dark-versions.png" alt="after-plugin-openclaw-codex-dark-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Versions
+              
+            </figcaption>
+          </figure></div>
+      </section>
+
+      <section>
+        <h2>/pskoett/self-improving-agent</h2>
+        <div class="grid">
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-light-skill-md.png" alt="before-skill-pskoett-self-improving-agent-light-skill-md.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · SKILL.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-light-skill-card.png" alt="before-skill-pskoett-self-improving-agent-light-skill-card.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Skill Card
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-light-files.png" alt="before-skill-pskoett-self-improving-agent-light-files.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Files
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-light-versions.png" alt="before-skill-pskoett-self-improving-agent-light-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-dark-skill-md.png" alt="before-skill-pskoett-self-improving-agent-dark-skill-md.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · SKILL.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-dark-skill-card.png" alt="before-skill-pskoett-self-improving-agent-dark-skill-card.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Skill Card
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-dark-files.png" alt="before-skill-pskoett-self-improving-agent-dark-files.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Files
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-dark-compare.png" alt="before-skill-pskoett-self-improving-agent-dark-compare.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Compare
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-pskoett-self-improving-agent-dark-versions.png" alt="before-skill-pskoett-self-improving-agent-dark-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-light-skill-md.png" alt="after-skill-pskoett-self-improving-agent-light-skill-md.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · SKILL.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-light-skill-card.png" alt="after-skill-pskoett-self-improving-agent-light-skill-card.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Skill Card
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-light-files.png" alt="after-skill-pskoett-self-improving-agent-light-files.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Files
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-light-diff.png" alt="after-skill-pskoett-self-improving-agent-light-diff.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Diff
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-light-versions.png" alt="after-skill-pskoett-self-improving-agent-light-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-dark-skill-md.png" alt="after-skill-pskoett-self-improving-agent-dark-skill-md.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · SKILL.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-dark-skill-card.png" alt="after-skill-pskoett-self-improving-agent-dark-skill-card.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Skill Card
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-dark-files.png" alt="after-skill-pskoett-self-improving-agent-dark-files.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Files
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-dark-diff.png" alt="after-skill-pskoett-self-improving-agent-dark-diff.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Diff
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-pskoett-self-improving-agent-dark-versions.png" alt="after-skill-pskoett-self-improving-agent-dark-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · Versions
+              
+            </figcaption>
+          </figure></div>
+      </section>
+
+      <section>
+        <h2>/ivangdavila/self-improving</h2>
+        <div class="grid">
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-light-skill-md.png" alt="before-skill-ivangdavila-self-improving-light-skill-md.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · SKILL.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-light-skill-card.png" alt="before-skill-ivangdavila-self-improving-light-skill-card.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Skill Card
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-light-files.png" alt="before-skill-ivangdavila-self-improving-light-files.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Files
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-light-compare.png" alt="before-skill-ivangdavila-self-improving-light-compare.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Compare
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-light-versions.png" alt="before-skill-ivangdavila-self-improving-light-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-light-runtime.png" alt="before-skill-ivangdavila-self-improving-light-runtime.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · light · Runtime
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-dark-skill-md.png" alt="before-skill-ivangdavila-self-improving-dark-skill-md.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · SKILL.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-dark-skill-card.png" alt="before-skill-ivangdavila-self-improving-dark-skill-card.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Skill Card
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-dark-files.png" alt="before-skill-ivangdavila-self-improving-dark-files.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Files
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-dark-versions.png" alt="before-skill-ivangdavila-self-improving-dark-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./before-skill-ivangdavila-self-improving-dark-runtime.png" alt="before-skill-ivangdavila-self-improving-dark-runtime.png" loading="lazy" />
+            <figcaption>
+              <strong>before</strong> · dark · Runtime
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-ivangdavila-self-improving-light-skill-md.png" alt="after-skill-ivangdavila-self-improving-light-skill-md.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · SKILL.md
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-ivangdavila-self-improving-light-skill-card.png" alt="after-skill-ivangdavila-self-improving-light-skill-card.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Skill Card
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-ivangdavila-self-improving-light-files.png" alt="after-skill-ivangdavila-self-improving-light-files.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Files
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-ivangdavila-self-improving-light-diff.png" alt="after-skill-ivangdavila-self-improving-light-diff.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Diff
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-ivangdavila-self-improving-light-versions.png" alt="after-skill-ivangdavila-self-improving-light-versions.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Versions
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-ivangdavila-self-improving-light-requirements.png" alt="after-skill-ivangdavila-self-improving-light-requirements.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · light · Requirements
+              
+            </figcaption>
+          </figure>
+
+          <figure>
+            <img src="./after-skill-ivangdavila-self-improving-dark-error.png" alt="after-skill-ivangdavila-self-improving-dark-error.png" loading="lazy" />
+            <figcaption>
+              <strong>after</strong> · dark · error
+              <em>(ENOSPC: no space left on device, open '/Users/vyctor/Code/clawhub-plugin-skill-polish/.proof/pr-2780-screenshots/after-skill-ivangdavila-self-improving-dark-skill-md.png')</em>
+            </figcaption>
+          </figure></div>
+      </section>
+</body>
+</html>

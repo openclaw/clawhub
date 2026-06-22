@@ -286,7 +286,7 @@ function getSecurityAuditBackLabel(entity: EntityRef) {
   return entity.kind === "plugin" ? "Back to plugin" : "Back to skill";
 }
 
-function SecurityAuditHeroActions({ props }: { props: SecurityAuditPageProps }) {
+function SecurityAuditSidebarActions({ props }: { props: SecurityAuditPageProps }) {
   const [rescanState, setRescanState] = useState<"idle" | "submitting" | "queued" | "error">(
     "idle",
   );
@@ -321,12 +321,11 @@ function SecurityAuditHeroActions({ props }: { props: SecurityAuditPageProps }) 
   if (!showActions) return null;
 
   return (
-    <div className="skill-title-actions skill-owner-hero-actions security-audit-hero-actions">
+    <div className="skill-sidebar-actions skill-sidebar-actions-secondary security-audit-sidebar-actions">
       <Button
         type="button"
         variant="outline"
-        size="icon"
-        className="skill-owner-hero-action security-audit-hero-action"
+        className="skill-sidebar-action-button"
         onClick={() => void requestRescan()}
         disabled={isRescanBusy}
         loading={isRescanBusy}
@@ -336,21 +335,22 @@ function SecurityAuditHeroActions({ props }: { props: SecurityAuditPageProps }) 
         {!isRescanBusy ? (
           <RefreshCw className="security-audit-rescan-icon" aria-hidden="true" />
         ) : null}
+        {isRescanBusy ? "Scanning" : "Rescan"}
       </Button>
       <Button
         type="button"
         variant="outline"
-        size="icon"
-        className="skill-owner-hero-action security-audit-hero-action"
+        className="skill-sidebar-action-button"
         onClick={downloadAuditExport}
         aria-label="Download security audit"
         title="Download"
       >
         <Download className="security-audit-action-icon" aria-hidden="true" />
+        Download
       </Button>
       {rescanState === "error" ? (
         <span
-          className="security-audit-rescan-error security-audit-hero-action-status"
+          className="security-audit-rescan-error security-audit-sidebar-action-status"
           role="status"
         >
           Rescan could not be queued.
@@ -374,7 +374,6 @@ function SecurityAuditHero({ props }: { props: SecurityAuditPageProps }) {
         <p className="security-audit-eyebrow">Security audit</p>
         <div className="security-scan-hero-title-row">
           <h1 className="skill-page-title">{props.entity.title}</h1>
-          <SecurityAuditHeroActions props={props} />
         </div>
         <p className="security-scan-hero-subtext">{SECURITY_AUDIT_SUBTEXT}</p>
       </div>
@@ -856,6 +855,7 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
           <aside className="security-report-sidebar" aria-label="Security audit metadata">
             <h2 className="sr-only">Security Audit Metadata</h2>
             <SecurityAuditSidebar {...props} />
+            <SecurityAuditSidebarActions props={props} />
           </aside>
         </div>
       </div>

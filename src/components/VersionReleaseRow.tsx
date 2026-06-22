@@ -6,7 +6,7 @@ type VersionReleaseRowProps = {
   isLatest?: boolean;
   isExpanded: boolean;
   changelogId: string;
-  checksLabel: string;
+  checksLabel?: string;
   releaseLabel?: string;
   actionsLabel?: string;
   checks?: ReactNode;
@@ -56,13 +56,15 @@ export function VersionReleaseRow({
             <span>{dateLabel}</span>
           </span>
         </button>
-        <div
-          className="skill-version-release-cell skill-version-release-scan"
-          data-label={checksLabel}
-          aria-label={checksLabel}
-        >
-          {checks}
-        </div>
+        {checksLabel ? (
+          <div
+            className="skill-version-release-cell skill-version-release-scan"
+            data-label={checksLabel}
+            aria-label={checksLabel}
+          >
+            {checks}
+          </div>
+        ) : null}
         <div
           className="skill-version-release-cell skill-version-release-tags"
           data-label={releaseLabel}

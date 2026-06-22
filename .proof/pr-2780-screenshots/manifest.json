@@ -1,0 +1,555 @@
+[
+  {
+    "fileName": "before-plugin-openclaw-whatsapp-light-readme.png",
+    "tab": "README",
+    "url": "https://clawhub.ai/plugins/@openclaw/whatsapp",
+    "phase": "before",
+    "theme": "light",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "before-plugin-openclaw-whatsapp-light-configuration.png",
+    "tab": "Configuration",
+    "url": "https://clawhub.ai/plugins/@openclaw/whatsapp",
+    "phase": "before",
+    "theme": "light",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "before-plugin-openclaw-whatsapp-light-compatibility.png",
+    "tab": "Compatibility",
+    "url": "https://clawhub.ai/plugins/@openclaw/whatsapp",
+    "phase": "before",
+    "theme": "light",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "before-plugin-openclaw-whatsapp-light-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub.ai/plugins/@openclaw/whatsapp",
+    "phase": "before",
+    "theme": "light",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "before-plugin-openclaw-whatsapp-dark-readme.png",
+    "tab": "README",
+    "url": "https://clawhub.ai/plugins/@openclaw/whatsapp",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "before-plugin-openclaw-whatsapp-dark-configuration.png",
+    "tab": "Configuration",
+    "url": "https://clawhub.ai/plugins/@openclaw/whatsapp",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "before-plugin-openclaw-whatsapp-dark-compatibility.png",
+    "tab": "Compatibility",
+    "url": "https://clawhub.ai/plugins/@openclaw/whatsapp",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "before-plugin-openclaw-whatsapp-dark-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub.ai/plugins/@openclaw/whatsapp",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "before-plugin-openclaw-codex-light-readme.png",
+    "tab": "README",
+    "url": "https://clawhub.ai/plugins/@openclaw/codex",
+    "phase": "before",
+    "theme": "light",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "before-plugin-openclaw-codex-light-configuration.png",
+    "tab": "Configuration",
+    "url": "https://clawhub.ai/plugins/@openclaw/codex",
+    "phase": "before",
+    "theme": "light",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "before-plugin-openclaw-codex-light-compatibility.png",
+    "tab": "Compatibility",
+    "url": "https://clawhub.ai/plugins/@openclaw/codex",
+    "phase": "before",
+    "theme": "light",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "before-plugin-openclaw-codex-light-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub.ai/plugins/@openclaw/codex",
+    "phase": "before",
+    "theme": "light",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "before-plugin-openclaw-codex-dark-readme.png",
+    "tab": "README",
+    "url": "https://clawhub.ai/plugins/@openclaw/codex",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "before-plugin-openclaw-codex-dark-configuration.png",
+    "tab": "Configuration",
+    "url": "https://clawhub.ai/plugins/@openclaw/codex",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "before-plugin-openclaw-codex-dark-compatibility.png",
+    "tab": "Compatibility",
+    "url": "https://clawhub.ai/plugins/@openclaw/codex",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "before-plugin-openclaw-codex-dark-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub.ai/plugins/@openclaw/codex",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-light-skill-md.png",
+    "tab": "SKILL.md",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-light-skill-card.png",
+    "tab": "Skill Card",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-light-files.png",
+    "tab": "Files",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-light-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-dark-skill-md.png",
+    "tab": "SKILL.md",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-dark-skill-card.png",
+    "tab": "Skill Card",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-dark-files.png",
+    "tab": "Files",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-dark-compare.png",
+    "tab": "Compare",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-pskoett-self-improving-agent-dark-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub.ai/pskoett/self-improving-agent",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-light-skill-md.png",
+    "tab": "SKILL.md",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-light-skill-card.png",
+    "tab": "Skill Card",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-light-files.png",
+    "tab": "Files",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-light-compare.png",
+    "tab": "Compare",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-light-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-light-runtime.png",
+    "tab": "Runtime",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-dark-skill-md.png",
+    "tab": "SKILL.md",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-dark-skill-card.png",
+    "tab": "Skill Card",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-dark-files.png",
+    "tab": "Files",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-dark-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "before-skill-ivangdavila-self-improving-dark-runtime.png",
+    "tab": "Runtime",
+    "url": "https://clawhub.ai/ivangdavila/self-improving",
+    "phase": "before",
+    "theme": "dark",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "after-plugin-openclaw-whatsapp-light-readme-md.png",
+    "tab": "README.md",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/whatsapp",
+    "phase": "after",
+    "theme": "light",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "after-plugin-openclaw-whatsapp-light-configuration.png",
+    "tab": "Configuration",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/whatsapp",
+    "phase": "after",
+    "theme": "light",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "after-plugin-openclaw-whatsapp-light-compatibility.png",
+    "tab": "Compatibility",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/whatsapp",
+    "phase": "after",
+    "theme": "light",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "after-plugin-openclaw-whatsapp-light-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/whatsapp",
+    "phase": "after",
+    "theme": "light",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "after-plugin-openclaw-whatsapp-dark-readme-md.png",
+    "tab": "README.md",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/whatsapp",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "after-plugin-openclaw-whatsapp-dark-configuration.png",
+    "tab": "Configuration",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/whatsapp",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "after-plugin-openclaw-whatsapp-dark-compatibility.png",
+    "tab": "Compatibility",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/whatsapp",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "after-plugin-openclaw-whatsapp-dark-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/whatsapp",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/whatsapp"
+  },
+  {
+    "fileName": "after-plugin-openclaw-codex-light-readme-md.png",
+    "tab": "README.md",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/codex",
+    "phase": "after",
+    "theme": "light",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "after-plugin-openclaw-codex-light-configuration.png",
+    "tab": "Configuration",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/codex",
+    "phase": "after",
+    "theme": "light",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "after-plugin-openclaw-codex-light-compatibility.png",
+    "tab": "Compatibility",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/codex",
+    "phase": "after",
+    "theme": "light",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "after-plugin-openclaw-codex-light-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/codex",
+    "phase": "after",
+    "theme": "light",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "after-plugin-openclaw-codex-dark-readme-md.png",
+    "tab": "README.md",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/codex",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "after-plugin-openclaw-codex-dark-configuration.png",
+    "tab": "Configuration",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/codex",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "after-plugin-openclaw-codex-dark-compatibility.png",
+    "tab": "Compatibility",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/codex",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "after-plugin-openclaw-codex-dark-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/plugins/@openclaw/codex",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/plugins/@openclaw/codex"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-light-skill-md.png",
+    "tab": "SKILL.md",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-light-skill-card.png",
+    "tab": "Skill Card",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-light-files.png",
+    "tab": "Files",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-light-diff.png",
+    "tab": "Diff",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-light-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "light",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-dark-skill-md.png",
+    "tab": "SKILL.md",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-dark-skill-card.png",
+    "tab": "Skill Card",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-dark-files.png",
+    "tab": "Files",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-dark-diff.png",
+    "tab": "Diff",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-pskoett-self-improving-agent-dark-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/pskoett/self-improving-agent",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/pskoett/self-improving-agent"
+  },
+  {
+    "fileName": "after-skill-ivangdavila-self-improving-light-skill-md.png",
+    "tab": "SKILL.md",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/ivangdavila/self-improving",
+    "phase": "after",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "after-skill-ivangdavila-self-improving-light-skill-card.png",
+    "tab": "Skill Card",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/ivangdavila/self-improving",
+    "phase": "after",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "after-skill-ivangdavila-self-improving-light-files.png",
+    "tab": "Files",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/ivangdavila/self-improving",
+    "phase": "after",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "after-skill-ivangdavila-self-improving-light-diff.png",
+    "tab": "Diff",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/ivangdavila/self-improving",
+    "phase": "after",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "after-skill-ivangdavila-self-improving-light-versions.png",
+    "tab": "Versions",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/ivangdavila/self-improving",
+    "phase": "after",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "after-skill-ivangdavila-self-improving-light-requirements.png",
+    "tab": "Requirements",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/ivangdavila/self-improving",
+    "phase": "after",
+    "theme": "light",
+    "route": "/ivangdavila/self-improving"
+  },
+  {
+    "fileName": "after-skill-ivangdavila-self-improving-dark-error.png",
+    "tab": "error",
+    "url": "https://clawhub-design-blo1jy4jj-victor-brzezowskis-projects.vercel.app/ivangdavila/self-improving",
+    "phase": "after",
+    "theme": "dark",
+    "route": "/ivangdavila/self-improving",
+    "error": "ENOSPC: no space left on device, open '/Users/vyctor/Code/clawhub-plugin-skill-polish/.proof/pr-2780-screenshots/after-skill-ivangdavila-self-improving-dark-skill-md.png'"
+  }
+]

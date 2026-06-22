@@ -116,7 +116,10 @@ export function SkillDetailSkeleton({ kind = "skill" }: SkillDetailSkeletonProps
                     </div>
                     <div className="skill-install-command-wrap">
                       <div className="skill-install-command-shell">
-                        <Skeleton className="h-5 w-full max-w-[520px]" />
+                        <span className="skill-install-command-prompt" aria-hidden="true">
+                          $
+                        </span>
+                        <Skeleton className="h-5 min-w-0 flex-1 max-w-[520px]" />
                         <Skeleton className="skill-install-command-inline-button h-[34px] rounded-[var(--r-btn)]" />
                       </div>
                     </div>

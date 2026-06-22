@@ -120,7 +120,7 @@ export function CatalogMetadataFields({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
-            className="w-[var(--radix-dropdown-menu-trigger-width)]"
+            className="z-[90] w-[var(--radix-dropdown-menu-trigger-width)]"
           >
             {categories.map((category) => {
               const checked = selected.has(category.slug);

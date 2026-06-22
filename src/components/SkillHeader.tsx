@@ -1,9 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import type { ClawdisSkillMetadata } from "clawhub-schema";
 import { PLATFORM_SKILL_LICENSE } from "clawhub-schema/licenseConstants";
-import { Flag, Settings, Share2, ShieldCheck, Star, Upload } from "lucide-react";
+import { Flag, Settings, ShieldCheck, Star, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
-import { toast } from "sonner";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges } from "../lib/badges";
@@ -170,9 +169,9 @@ export function SkillHeader({
 }: SkillHeaderProps) {
   const formattedStats = formatSkillStatsTriplet(skill.stats);
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
-  const hasOwnerHeroActions = Boolean(newVersionHref) || Boolean(settingsHref);
+  const hasOwnerActions = Boolean(newVersionHref) || Boolean(settingsHref);
   const showReportAction = !canManage || isStaff;
-  const hasSidebarActions = showReportAction || isStaff;
+  const hasSidebarActions = hasOwnerActions || showReportAction || isStaff;
   const badges = getSkillBadges(skill);
   const isOfficial = badges.includes("Official") || owner?.official === true;
   const titleBadges = badges.filter((badge) => badge !== "Official");
@@ -192,6 +191,22 @@ export function SkillHeader({
   const renderSidebarActions = () =>
     hasSidebarActions ? (
       <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
+        {newVersionHref ? (
+          <Button asChild variant="outline" className="skill-sidebar-action-button">
+            <a href={newVersionHref} aria-label="New version">
+              <Upload size={14} aria-hidden="true" />
+              New version
+            </a>
+          </Button>
+        ) : null}
+        {settingsHref ? (
+          <Button asChild variant="outline" className="skill-sidebar-action-button">
+            <a href={settingsHref} aria-label="Settings">
+              <Settings size={14} aria-hidden="true" />
+              Settings
+            </a>
+          </Button>
+        ) : null}
         {showReportAction ? (
           <SignedInActionTooltip
             isAuthenticated={isAuthenticated}
@@ -309,19 +324,6 @@ export function SkillHeader({
                     <span className="skill-action-count">{formattedStats.stars}</span>
                   </Button>
                 </SignedInActionTooltip>
-                <Button
-                  variant="outline"
-                  type="button"
-                  className="skill-sidebar-action-button"
-                  onClick={() => {
-                    if (typeof window === "undefined") return;
-                    void navigator.clipboard.writeText(window.location.href);
-                    toast.success("Link copied");
-                  }}
-                >
-                  <Share2 size={14} aria-hidden="true" />
-                  Share
-                </Button>
               </div>
             </div>
             <div className="detail-sidebar-stats">{desktopStatsContent}</div>
@@ -397,44 +399,6 @@ export function SkillHeader({
                     </div>
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
-                  {hasOwnerHeroActions ? (
-                    <div className="skill-title-actions skill-owner-hero-actions">
-                      {newVersionHref ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              asChild
-                              variant="outline"
-                              size="icon"
-                              className="skill-owner-hero-action"
-                            >
-                              <a href={newVersionHref} aria-label="New version">
-                                <Upload size={15} aria-hidden="true" />
-                              </a>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>New version</TooltipContent>
-                        </Tooltip>
-                      ) : null}
-                      {settingsHref ? (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Button
-                              asChild
-                              variant="outline"
-                              size="icon"
-                              className="skill-owner-hero-action"
-                            >
-                              <a href={settingsHref} aria-label="Settings">
-                                <Settings size={15} aria-hidden="true" />
-                              </a>
-                            </Button>
-                          </TooltipTrigger>
-                          <TooltipContent>Settings</TooltipContent>
-                        </Tooltip>
-                      ) : null}
-                    </div>
-                  ) : null}
                 </div>
                 {owner || ownerHandle ? (
                   <div className="skill-hero-mobile-creator">
