@@ -6780,8 +6780,9 @@ code {
 .tab-body {
   display: grid;
   gap: 20px;
+  min-width: 0;
   max-width: 100%;
-  overflow-x: auto;
+  overflow-x: hidden;
   border: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
   border-radius: var(--r-lg);
   padding: 22px;
@@ -6790,6 +6791,8 @@ code {
 
 .tab-body .markdown {
   line-height: 1.75;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .skill-readme-body .markdown p {
@@ -8506,6 +8509,15 @@ code {
 .skill-readme-body .markdown {
   font-size: 16px;
   line-height: 1.75;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.skill-readme-body .markdown img {
+  display: block;
+  width: auto;
+  max-width: 100%;
+  height: auto;
 }
 
 .skill-readme-body .markdown > p {
