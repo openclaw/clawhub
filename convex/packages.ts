@@ -2246,6 +2246,51 @@ function buildPackageTopicDigestQuery(
     );
 }
 
+async function hasVisiblePackageCategoryDigest(
+  ctx: DbReaderCtx,
+  args: {
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    category: PluginCategorySlug;
+    topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
+    sort?: "updated" | "downloads" | "recommended" | "installs";
+    viewerUserId?: Id<"users">;
+  },
+) {
+  const membershipCache = new Map<string, Promise<boolean>>();
+  const digests = await (
+    args.topic
+      ? buildPackageTopicDigestQuery(ctx, {
+          topic: args.topic,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          sort: args.sort,
+        })
+      : buildPackagePluginCategoryDigestQuery(ctx, {
+          category: args.category,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          sort: args.sort,
+        })
+  )
+    .order("desc")
+    .take(MAX_PUBLIC_LIST_PAGE_SIZE);
+
+  for (const digest of digests as PackageDigestLike[]) {
+    if (args.family && digest.family !== args.family) continue;
+    if (args.channel && digest.channel !== args.channel) continue;
+    if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
+    if (!digestMatchesFilters(digest, args)) continue;
+    if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
+    return true;
+  }
+  return false;
+}
+
 async function fetchHighlightedPackageDigests(
   ctx: DbReaderCtx,
   args: {
@@ -3756,6 +3801,7 @@ async function listOfficialFirstPackageCategoryPage(
     highlightedOnly?: boolean;
     category: PluginCategorySlug;
     topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
     sort?: "updated" | "downloads" | "recommended" | "installs";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
@@ -3786,24 +3832,18 @@ async function listOfficialFirstPackageCategoryPage(
         }),
       };
     }
-    if (collected.length >= targetCount) {
-      const communityProbe = await listPackagePageImpl(ctx, {
+    if (officialPage.isDone) {
+      const hasCommunityPage = await hasVisiblePackageCategoryDigest(ctx, {
         ...args,
-        officialFirst: false,
         isOfficial: false,
-        paginationOpts: {
-          cursor: null,
-          numItems: 1,
-        },
       });
-      const hasCommunityPage = communityProbe.page.length > 0 || !communityProbe.isDone;
       return {
         page: collected,
         isDone: !hasCommunityPage,
         continueCursor: hasCommunityPage
           ? encodeOfficialFirstPackageCategoryCursor({
               phase: "community",
-              cursor: communityProbe.page.length > 0 ? null : communityProbe.continueCursor,
+              cursor: null,
             })
           : "",
       };

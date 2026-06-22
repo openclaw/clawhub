@@ -1122,6 +1122,7 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
+  categoryRows?: Array<Record<string, unknown>>;
   packagePages?: Array<{
     page: Array<Record<string, unknown>>;
     isDone: boolean;
@@ -1184,6 +1185,9 @@ function makeDigestCtx(options: {
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
   setPages("packageTopicSearchDigest", options.topicPages ?? []);
   setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
+  if (options.categoryRows) {
+    rowsByTable.set("packagePluginCategorySearchDigest", options.categoryRows);
+  }
   setPages("packages", options.packagePages ?? []);
 
   const paginate = vi.fn();
@@ -4831,6 +4835,41 @@ describe("packages public queries", () => {
     expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
     expect(result.isDone).toBe(true);
     expect(result.continueCursor).toBe("");
+  });
+
+  it("checks official-first category community availability without a second paginate", async () => {
+    const officialDigest = makeDigest("official-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const communityDigest = makeDigest("community-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const { ctx, paginate, take } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [officialDigest],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      categoryRows: [officialDigest, communityDigest],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
+    expect(result.isDone).toBe(false);
+    expect(result.continueCursor).toMatch(/^pkgofficialfirst:/);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(1);
   });
 
   it("uses plugin category digests for category-filtered search", async () => {
