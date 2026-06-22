@@ -8687,6 +8687,18 @@ code {
   box-shadow: none;
 }
 
+.markdown .markdown-code-block pre.shiki,
+.tab-body .markdown .markdown-code-block pre.shiki {
+  background-color: transparent !important;
+  color: var(--ink);
+}
+
+.markdown .markdown-code-block pre.shiki code,
+.tab-body .markdown .markdown-code-block pre.shiki code {
+  background: transparent;
+  color: inherit;
+}
+
 .markdown .markdown-code-block pre[data-wrap="true"],
 .markdown .markdown-code-block pre[data-wrap="true"] code {
   white-space: pre-wrap;
