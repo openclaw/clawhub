@@ -244,9 +244,18 @@ function isFunctionUnavailableOutput(output: string) {
   );
 }
 
+function isLocalConvexModuleStillPreparingOutput(output: string) {
+  return (
+    output.includes("InvalidModules") &&
+    output.includes("ENOENT: no such file or directory") &&
+    output.includes("/modules/")
+  );
+}
+
 function isFunctionReadinessRetryableOutput(output: string) {
   return (
     isFunctionUnavailableOutput(output) ||
+    isLocalConvexModuleStillPreparingOutput(output) ||
     output.includes("Function execution timed out (maximum duration: 1s)")
   );
 }
