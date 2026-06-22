@@ -5,10 +5,21 @@ import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
+import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
 export const Route = createFileRoute("/")({
+  loader: loadInitialHomeListing,
   component: SkillsHome,
 });
+
+async function loadInitialHomeListing(): Promise<HomeListingInitialData | null> {
+  try {
+    return await fetchInitialHomeListing();
+  } catch (error) {
+    console.error("Failed to load initial home listing:", error);
+    return null;
+  }
+}
 
 const SLOT_WORDS = [
   "Equip",
@@ -28,6 +39,7 @@ const SLOT_WORDS = [
 const HACK_INDEX = SLOT_WORDS.indexOf("Hack");
 
 function SkillsHome() {
+  const initialListing = Route.useLoaderData();
   const clickTimesRef = useRef<number[]>([]);
   const [slotState, setSlotState] = useState<
     | null
@@ -370,7 +382,7 @@ function SkillsHome() {
         <p className="home-v2-sub">Discover skills and plugins from top creators</p>
       </section>
 
-      <HomeListingSection />
+      <HomeListingSection initialListing={initialListing} />
       <HomePopularPublishersSection />
       <HomeAppsSection />
       <HomeBringSkillsSection />

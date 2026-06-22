@@ -1,3 +1,5 @@
+import { CLAWHUB_DOCS_URL, CLAWHUB_REPOSITORY_URL, PublicRegistryPaths } from "./publicRegistry";
+
 /**
  * Shared navigation configuration used by Header and Footer to eliminate
  * triple duplication of nav link definitions.
@@ -48,18 +50,18 @@ const SKILLS_SEARCH = {
 export const PRIMARY_NAV_ITEMS: NavItem[] = [
   {
     label: "Skills",
-    to: "/skills",
+    to: PublicRegistryPaths.skills,
     search: SKILLS_SEARCH,
     activePathPrefixes: ["/skill/"],
   },
   {
     label: "Plugins",
-    to: "/plugins",
+    to: PublicRegistryPaths.plugins,
     activePathPrefixes: ["/plugin/"],
   },
   {
     label: "Publishers",
-    to: "/publishers",
+    to: PublicRegistryPaths.publishers,
     activePathPrefixes: ["/user/"],
   },
 ];
@@ -71,7 +73,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
 export const SECONDARY_NAV_ITEMS: NavItem[] = [
   {
     label: "Docs",
-    href: "https://docs.openclaw.ai/clawhub/",
+    href: CLAWHUB_DOCS_URL,
     activePathPrefixes: ["/docs"],
   },
 ];
@@ -83,7 +85,7 @@ export const SECONDARY_NAV_ITEMS: NavItem[] = [
 export const OPENCLAW_SITE_URL = "https://openclaw.ai";
 export const OPENCLAW_ECOSYSTEM_URL = `${OPENCLAW_SITE_URL}/ecosystem`;
 const OPENCLAW_BLOG_CLAWHUB_URL = `${OPENCLAW_SITE_URL}/blog#clawhub`;
-export const OPENCLAW_CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/";
+export const OPENCLAW_CLAWHUB_DOCS_URL = CLAWHUB_DOCS_URL;
 /** Compact mark for stack avatars (not the full wordmark). */
 export const OPENCLAW_LOGO_URL = `${OPENCLAW_SITE_URL}/favicon.svg`;
 
@@ -113,10 +115,15 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
   {
     title: "Browse",
     items: [
-      { kind: "link", label: "Skills", to: "/skills", search: SKILLS_SEARCH },
-      { kind: "link", label: "Plugins", to: "/plugins" },
-      { kind: "link", label: "Publishers", to: "/publishers" },
-      { kind: "link", label: "Audits", to: "/audits", search: { type: undefined } },
+      { kind: "link", label: "Skills", to: PublicRegistryPaths.skills, search: SKILLS_SEARCH },
+      { kind: "link", label: "Plugins", to: PublicRegistryPaths.plugins },
+      { kind: "link", label: "Publishers", to: PublicRegistryPaths.publishers },
+      {
+        kind: "link",
+        label: "Audits",
+        to: PublicRegistryPaths.audits,
+        search: { type: undefined },
+      },
     ],
   },
   {
@@ -125,13 +132,13 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
       {
         kind: "link",
         label: "Publish Skill",
-        to: "/skills/publish",
+        to: PublicRegistryPaths.publishSkill,
         search: { updateSlug: undefined },
       },
       {
         kind: "link",
         label: "Publish Plugin",
-        to: "/plugins/publish",
+        to: PublicRegistryPaths.publishPlugin,
         search: {
           ownerHandle: undefined,
           name: undefined,
@@ -164,7 +171,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
       {
         kind: "external",
         label: "GitHub",
-        href: "https://github.com/openclaw/clawhub",
+        href: CLAWHUB_REPOSITORY_URL,
         icon: "github",
       },
       {

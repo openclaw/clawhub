@@ -26,6 +26,7 @@ import {
 } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
+import { displayPluginPackageName } from "../lib/pluginRoutes";
 import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
@@ -97,7 +98,7 @@ function GitHubLogo({ className }: { className?: string }) {
   );
 }
 
-type TypeaheadTab = "skills" | "plugins";
+type TypeaheadSection = "skills" | "plugins";
 
 type TypeaheadItem =
   | {
@@ -113,7 +114,7 @@ type TypeaheadItem =
   | {
       kind: "footer";
       key: string;
-      section: TypeaheadTab;
+      section: TypeaheadSection;
       label: string;
     };
 
@@ -135,7 +136,6 @@ export default function Header() {
   );
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const [typeaheadOpen, setTypeaheadOpen] = useState(false);
-  const [typeaheadTab, setTypeaheadTab] = useState<TypeaheadTab>("skills");
   const [typeaheadActiveIndex, setTypeaheadActiveIndex] = useState(0);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -193,7 +193,10 @@ export default function Header() {
     return items;
   }, [hasNavSearchQuery, pluginResults, trimmedNavSearchQuery]);
 
-  const typeaheadItems = typeaheadTab === "skills" ? typeaheadSkillItems : typeaheadPluginItems;
+  const typeaheadItems = useMemo(
+    () => [...typeaheadSkillItems, ...typeaheadPluginItems],
+    [typeaheadPluginItems, typeaheadSkillItems],
+  );
   const activeTypeaheadItem = showTypeahead ? typeaheadItems[typeaheadActiveIndex] : undefined;
   const activeTypeaheadId = activeTypeaheadItem
     ? getTypeaheadOptionId(activeTypeaheadItem)
@@ -201,16 +204,11 @@ export default function Header() {
 
   useEffect(() => {
     setTypeaheadActiveIndex(0);
-    setTypeaheadTab("skills");
   }, [trimmedNavSearchQuery]);
 
   useEffect(() => {
     setTypeaheadActiveIndex((index) => Math.min(index, Math.max(typeaheadItems.length - 1, 0)));
   }, [typeaheadItems.length]);
-
-  useEffect(() => {
-    setTypeaheadActiveIndex(0);
-  }, [typeaheadTab]);
 
   useEffect(() => {
     if (!typeaheadOpen && !mobileSearchOpen) return () => {};
@@ -525,12 +523,9 @@ export default function Header() {
               {showTypeahead && !mobileSearchOpen ? (
                 <SearchTypeahead
                   activeIndex={typeaheadActiveIndex}
-                  activeTab={typeaheadTab}
-                  items={typeaheadItems}
                   loading={typeaheadSearching}
                   onHoverItem={setTypeaheadActiveIndex}
                   onSelectItem={navigateToTypeaheadItem}
-                  onTabChange={setTypeaheadTab}
                   pluginItems={typeaheadPluginItems}
                   query={trimmedNavSearchQuery}
                   skillItems={typeaheadSkillItems}
@@ -730,12 +725,9 @@ export default function Header() {
             {showMobileTypeahead ? (
               <SearchTypeahead
                 activeIndex={typeaheadActiveIndex}
-                activeTab={typeaheadTab}
-                items={typeaheadItems}
                 loading={typeaheadSearching}
                 onHoverItem={setTypeaheadActiveIndex}
                 onSelectItem={navigateToTypeaheadItem}
-                onTabChange={setTypeaheadTab}
                 pluginItems={typeaheadPluginItems}
                 query={trimmedNavSearchQuery}
                 skillItems={typeaheadSkillItems}
@@ -787,23 +779,17 @@ function HeaderNavTab({
 
 function SearchTypeahead({
   activeIndex,
-  activeTab,
-  items,
   loading,
   onHoverItem,
   onSelectItem,
-  onTabChange,
   pluginItems,
   query,
   skillItems,
 }: {
   activeIndex: number;
-  activeTab: TypeaheadTab;
-  items: TypeaheadItem[];
   loading: boolean;
   onHoverItem: (index: number) => void;
   onSelectItem: (item: TypeaheadItem) => void;
-  onTabChange: (tab: TypeaheadTab) => void;
   pluginItems: TypeaheadItem[];
   query: string;
   skillItems: TypeaheadItem[];
@@ -812,80 +798,17 @@ function SearchTypeahead({
   const hasSkillMatches = skillItems.some((item) => item.kind === "skill");
   const hasPluginMatches = pluginItems.some((item) => item.kind === "plugin");
   const hasMatches = hasSkillMatches || hasPluginMatches;
-  const activeTabHasItems = items.length > 0;
-  const emptyTabLabel = activeTab === "skills" ? "skills" : "plugins";
-  const skillsTabRef = useRef<HTMLButtonElement | null>(null);
-  const pluginsTabRef = useRef<HTMLButtonElement | null>(null);
-
-  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const nextTab = activeTab === "skills" ? "plugins" : "skills";
-    onTabChange(nextTab);
-    (nextTab === "skills" ? skillsTabRef : pluginsTabRef).current?.focus();
-  };
+  const pluginStartIndex = skillItems.length;
 
   return (
     <div className="navbar-search-typeahead" id="navbar-search-typeahead">
-      <div className="navbar-search-typeahead-top">
-        <div
-          className="navbar-search-typeahead-tabs clawhub-segmented"
-          role="tablist"
-          aria-label="Result type"
-        >
-          <button
-            ref={skillsTabRef}
-            type="button"
-            role="tab"
-            id="navbar-search-typeahead-tab-skills"
-            aria-selected={activeTab === "skills"}
-            aria-controls="navbar-search-typeahead-panel"
-            tabIndex={activeTab === "skills" ? 0 : -1}
-            className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "skills" ? " is-active" : ""}`}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onTabChange("skills")}
-            onKeyDown={handleTabKeyDown}
-          >
-            Skills
-          </button>
-          <button
-            ref={pluginsTabRef}
-            type="button"
-            role="tab"
-            id="navbar-search-typeahead-tab-plugins"
-            aria-selected={activeTab === "plugins"}
-            aria-controls="navbar-search-typeahead-panel"
-            tabIndex={activeTab === "plugins" ? 0 : -1}
-            className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "plugins" ? " is-active" : ""}`}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onTabChange("plugins")}
-            onKeyDown={handleTabKeyDown}
-          >
-            Plugins
-          </button>
-        </div>
-        <div className="navbar-search-typeahead-hint" aria-hidden="true">
-          <kbd>←</kbd>
-          <kbd>→</kbd>
-          <span>tabs</span>
-          <kbd>↑</kbd>
-          <kbd>↓</kbd>
-          <span>results</span>
-        </div>
-      </div>
-      <div
-        id="navbar-search-typeahead-panel"
-        className="navbar-search-typeahead-panel"
-        role="tabpanel"
-        aria-labelledby={
-          activeTab === "skills"
-            ? "navbar-search-typeahead-tab-skills"
-            : "navbar-search-typeahead-tab-plugins"
-        }
-      >
+      <div className="navbar-search-typeahead-panel">
         {!hasQuery ? (
-          <div className="navbar-search-typeahead-status">
-            Start typing to search skills and plugins
+          <div className="navbar-search-typeahead-status is-empty">
+            <span className="navbar-search-typeahead-status-icon" aria-hidden="true">
+              <Search size={17} />
+            </span>
+            <span>Start typing to search skills and plugins</span>
           </div>
         ) : null}
         {hasQuery && loading && !hasMatches ? (
@@ -902,22 +825,54 @@ function SearchTypeahead({
             role="listbox"
             aria-label="Search suggestions"
           >
-            {activeTabHasItems ? (
-              items.map((item, index) => (
-                <TypeaheadRow
-                  key={item.key}
-                  active={activeIndex === index}
-                  item={item}
-                  index={index}
-                  onHoverItem={onHoverItem}
-                  onSelectItem={onSelectItem}
-                />
-              ))
-            ) : (
-              <div className="navbar-search-typeahead-status">
-                No {emptyTabLabel} found for "{query}"
+            {hasSkillMatches ? (
+              <div
+                className="navbar-search-typeahead-section"
+                role="group"
+                aria-labelledby="navbar-search-typeahead-skills-heading"
+              >
+                <div
+                  id="navbar-search-typeahead-skills-heading"
+                  className="navbar-search-typeahead-heading"
+                >
+                  Skills
+                </div>
+                {skillItems.map((item, index) => (
+                  <TypeaheadRow
+                    key={item.key}
+                    active={activeIndex === index}
+                    item={item}
+                    index={index}
+                    onHoverItem={onHoverItem}
+                    onSelectItem={onSelectItem}
+                  />
+                ))}
               </div>
-            )}
+            ) : null}
+            {hasPluginMatches ? (
+              <div
+                className="navbar-search-typeahead-section"
+                role="group"
+                aria-labelledby="navbar-search-typeahead-plugins-heading"
+              >
+                <div
+                  id="navbar-search-typeahead-plugins-heading"
+                  className="navbar-search-typeahead-heading"
+                >
+                  Plugins
+                </div>
+                {pluginItems.map((item, index) => (
+                  <TypeaheadRow
+                    key={item.key}
+                    active={activeIndex === pluginStartIndex + index}
+                    item={item}
+                    index={pluginStartIndex + index}
+                    onHoverItem={onHoverItem}
+                    onSelectItem={onSelectItem}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -938,9 +893,17 @@ function TypeaheadRow({
   onHoverItem: (index: number) => void;
   onSelectItem: (item: TypeaheadItem) => void;
 }) {
+  const rowRef = useRef<HTMLButtonElement | null>(null);
   const body = getTypeaheadRowBody(item);
+
+  useEffect(() => {
+    if (!active) return;
+    rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
   return (
     <button
+      ref={rowRef}
       id={getTypeaheadOptionId(item)}
       className={`navbar-search-typeahead-row${active ? " is-active" : ""}${item.kind === "footer" ? " is-footer" : ""}`}
       type="button"
@@ -969,7 +932,7 @@ function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
     const label = item.result.skill.displayName || item.result.skill.slug;
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
-        <MarketplaceIcon kind="skill" label={label} size="xs" />
+        <MarketplaceIcon kind="skill" label={label} skill={item.result.skill} size="xs" />
       </span>
     );
   }
@@ -978,7 +941,12 @@ function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
     const label = item.result.plugin.displayName || item.result.plugin.name;
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
-        <MarketplaceIcon kind="plugin" label={label} size="xs" />
+        <MarketplaceIcon
+          kind="plugin"
+          label={label}
+          categorySlug={item.result.plugin.categories?.[0]}
+          size="xs"
+        />
       </span>
     );
   }
@@ -995,9 +963,10 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
     };
   }
   if (item.kind === "plugin") {
+    const packageName = displayPluginPackageName(item.result.plugin.name);
     const owner = item.result.plugin.ownerHandle
-      ? `@${item.result.plugin.ownerHandle} / ${item.result.plugin.name}`
-      : item.result.plugin.name;
+      ? `@${item.result.plugin.ownerHandle} / ${packageName}`
+      : packageName;
     return {
       title: item.result.plugin.displayName,
       meta: owner,

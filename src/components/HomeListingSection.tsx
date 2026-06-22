@@ -24,13 +24,26 @@ import {
 } from "react";
 import { api } from "../../convex/_generated/api";
 import { convexHttp } from "../convex/client";
-import { isSkillOfficial } from "../lib/badges";
+import { PLUGIN_CATEGORIES, SKILL_CATEGORIES, type BrowseCategory } from "../lib/categories";
 import {
-  getSkillCategoriesForSkill,
-  PLUGIN_CATEGORIES,
-  SKILL_CATEGORIES,
-  type BrowseCategory,
-} from "../lib/categories";
+  filterHomePluginsByTab as filterPluginsByTab,
+  filterHomeSkillsByTab as filterSkillsByTab,
+  fetchHomePluginListing as fetchPluginListing,
+  fetchHomeSkillListing as fetchSkillListing,
+  HOME_LISTING_PAGE_SIZE,
+  homeListingCacheKey as listingCacheKey,
+  isNewHomeSkillEligible as isNewSkillEligible,
+  itemMatchesAnyHomeCategory as itemMatchesAnyCategory,
+  skillMatchesAnyHomeCategory as skillMatchesAnyCategory,
+  sortHomeSkillEntries as sortSkillEntries,
+  uniqueHomePlugins as uniquePlugins,
+  uniqueHomeSkillEntries as uniqueSkillEntries,
+  type HomeListingCacheEntry,
+  type HomeListingInitialData,
+  type HomeListingKind as ListingKind,
+  type HomeListingTab as ListingTab,
+  type HomeSkillListingEntry as SkillPageEntry,
+} from "../lib/homeListingData";
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
@@ -38,15 +51,7 @@ import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 
-type ListingKind = "skills" | "plugins";
-type ListingTab = "popular" | "trending" | "officials" | "new";
 type ListingView = "list" | "grid";
-
-type SkillPageEntry = {
-  skill: PublicSkill;
-  ownerHandle?: string | null;
-  owner?: PublicUser | null;
-};
 
 const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "popular", label: "Top" },
@@ -60,9 +65,8 @@ const PLUGIN_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
   { id: "new", label: "New" },
 ];
 
-const LISTING_PAGE_SIZE = 20;
+const LISTING_PAGE_SIZE = HOME_LISTING_PAGE_SIZE;
 const LISTING_SEARCH_DEBOUNCE_MS = 220;
-const PLUGIN_CATALOG_PAGE_LIMIT = 100;
 
 const HOME_SKILL_LISTING_CATEGORIES: BrowseCategory[] = SKILL_CATEGORIES.map(
   ({ slug, label, icon }) => ({ slug, label, icon }),
@@ -83,71 +87,6 @@ type SkillSearchHit = {
   ownerHandle?: string | null;
   owner?: PublicUser | null;
 };
-
-function filterSkillsByTab(entries: SkillPageEntry[], tab: ListingTab) {
-  if (tab === "officials") {
-    return entries.filter((entry) => isSkillOfficial(entry.skill));
-  }
-  return entries;
-}
-
-function filterPluginsByTab(items: PackageListItem[], tab: ListingTab) {
-  if (tab === "officials") {
-    return items.filter((item) => item.isOfficial);
-  }
-  return items;
-}
-
-function isNewSkillEligible(skill: PublicSkill) {
-  return (
-    !skill.isSuspicious &&
-    skill.githubScanStatus !== "pending" &&
-    skill.githubScanStatus !== "suspicious"
-  );
-}
-
-function itemMatchesAnyCategory(
-  item: { categories?: readonly string[] | null },
-  categorySlugs: readonly string[],
-) {
-  if (categorySlugs.length === 0) return true;
-  const categories = item.categories ?? [];
-  return categorySlugs.some((slug) => categories.includes(slug));
-}
-
-function skillMatchesAnyCategory(skill: PublicSkill, categorySlugs: readonly string[]) {
-  if (categorySlugs.length === 0) return true;
-  const categories = getSkillCategoriesForSkill(skill);
-  return categorySlugs.some((slug) => categories.some((category) => category.slug === slug));
-}
-
-function uniqueSkillEntries(entries: SkillPageEntry[]) {
-  const byId = new Map<string, SkillPageEntry>();
-  for (const entry of entries) {
-    byId.set(String(entry.skill._id), entry);
-  }
-  return [...byId.values()];
-}
-
-function uniquePlugins(items: PackageListItem[]) {
-  const byName = new Map<string, PackageListItem>();
-  for (const item of items) {
-    byName.set(item.name, item);
-  }
-  return [...byName.values()];
-}
-
-function sortSkillEntries(entries: SkillPageEntry[], tab: ListingTab) {
-  return [...entries].sort((left, right) => {
-    if (tab === "new") {
-      return (
-        (right.skill.updatedAt ?? right.skill.createdAt ?? right.skill._creationTime ?? 0) -
-        (left.skill.updatedAt ?? left.skill.createdAt ?? left.skill._creationTime ?? 0)
-      );
-    }
-    return (right.skill.stats?.downloads ?? 0) - (left.skill.stats?.downloads ?? 0);
-  });
-}
 
 function HomeListingEmptyPanel({
   variant,
@@ -238,114 +177,6 @@ function skillLink(entry: SkillPageEntry) {
     entry.owner?.handle?.trim() ||
     String(entry.skill.ownerPublisherId ?? entry.skill.ownerUserId);
   return `/${encodeURIComponent(owner)}/${encodeURIComponent(entry.skill.slug)}`;
-}
-
-async function fetchSkillListing(
-  tab: ListingTab,
-  categorySlugs: readonly string[],
-  numItems: number,
-) {
-  if (tab === "trending") {
-    const requestLimit = categorySlugs.length > 0 ? 200 : numItems;
-    const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
-      limit: requestLimit,
-    });
-    const items = ((result as { items?: SkillPageEntry[] }).items ?? []).filter((entry) =>
-      skillMatchesAnyCategory(entry.skill, categorySlugs),
-    );
-    return {
-      page: uniqueSkillEntries(items).slice(0, numItems),
-      hasMore: items.length > numItems || (items.length >= numItems && numItems < 200),
-    };
-  }
-
-  const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
-  const results = await Promise.all(
-    categoriesToFetch.map(async (categorySlug) => {
-      const page: SkillPageEntry[] = [];
-      let cursor: string | null | undefined;
-      let hasMore = false;
-
-      while (page.length < numItems) {
-        const result = await convexHttp.query(api.skills.listPublicPageV4, {
-          cursor: cursor ?? undefined,
-          numItems: numItems - page.length,
-          sort: tab === "new" ? "newest" : "downloads",
-          dir: "desc",
-          officialFirst: tab === "officials" ? true : undefined,
-          categorySlug: categorySlug ?? undefined,
-        });
-        if (Array.isArray(result)) break;
-
-        const resultPage = ((result as { page?: SkillPageEntry[] }).page ?? []).filter(
-          (entry) =>
-            skillMatchesAnyCategory(entry.skill, categorySlugs) &&
-            (tab !== "new" || isNewSkillEligible(entry.skill)),
-        );
-        page.push(...resultPage);
-
-        const nextCursor = (result as { nextCursor?: string | null }).nextCursor ?? null;
-        hasMore = Boolean((result as { hasMore?: boolean }).hasMore ?? nextCursor);
-        if (!nextCursor || nextCursor === cursor) break;
-        cursor = nextCursor;
-      }
-
-      return { page, hasMore };
-    }),
-  );
-  const pages = results.flatMap((result) => result.page);
-  const sorted = sortSkillEntries(filterSkillsByTab(uniqueSkillEntries(pages), tab), tab);
-  const hasMore = sorted.length > numItems || results.some((result) => result.hasMore);
-  const page = sorted.slice(0, numItems);
-  return { page, hasMore };
-}
-
-async function fetchPluginListing(
-  tab: ListingTab,
-  categorySlugs: readonly string[],
-  limit: number,
-  signal: AbortSignal,
-) {
-  const openClawOfficials = tab === "officials";
-  const categoriesToFetch = categorySlugs.length > 0 ? categorySlugs : [null];
-  const results = await Promise.all(
-    categoriesToFetch.map(async (categorySlug) => {
-      const items: PackageListItem[] = [];
-      let cursor: string | null | undefined;
-      let hasMore = false;
-
-      while (items.length < limit) {
-        const result = await fetchPluginCatalog({
-          category: categorySlug ?? undefined,
-          cursor: cursor ?? undefined,
-          isOfficial: openClawOfficials ? true : undefined,
-          excludedScanStatuses: tab === "new" ? ["pending", "suspicious"] : undefined,
-          sort: tab === "new" ? "updated" : "downloads",
-          limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
-          signal,
-        });
-        items.push(...result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)));
-
-        hasMore = result.nextCursor != null;
-        if (!result.nextCursor || result.nextCursor === cursor) break;
-        cursor = result.nextCursor;
-      }
-
-      return { items, hasMore };
-    }),
-  );
-  let items = uniquePlugins(results.flatMap((result) => result.items));
-  items = filterPluginsByTab(items, tab);
-  if (tab === "new") {
-    items.sort((a, b) => b.updatedAt - a.updatedAt);
-  } else if (tab === "popular" || openClawOfficials) {
-    items.sort((a, b) => (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0));
-  }
-  const page = items.slice(0, limit);
-  return {
-    items: page,
-    hasMore: items.length > limit || results.some((result) => result.hasMore),
-  };
 }
 
 function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; showStats: boolean }) {
@@ -476,25 +307,54 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
   );
 }
 
-export function HomeListingSection() {
+type HomeListingSectionProps = {
+  initialListing?: HomeListingInitialData | null;
+};
+
+function createInitialListingCache(initialListing: HomeListingInitialData | null) {
+  const cache = new Map<string, HomeListingCacheEntry>();
+  if (!initialListing) return cache;
+  cache.set(
+    listingCacheKey({
+      kind: initialListing.kind,
+      tab: initialListing.tab,
+      categorySlugs: initialListing.categorySlugs,
+      fetchLimit: initialListing.fetchLimit,
+    }),
+    {
+      kind: "skills",
+      items: initialListing.items,
+      hasMore: initialListing.hasMore,
+    },
+  );
+  return cache;
+}
+
+export function HomeListingSection({ initialListing = null }: HomeListingSectionProps = {}) {
   const searchInputRef = useRef<HTMLInputElement>(null);
   const searchRequestRef = useRef(0);
+  const listingCacheRef = useRef<Map<string, HomeListingCacheEntry> | null>(null);
+  listingCacheRef.current ??= createInitialListingCache(initialListing);
+  const listingCache = listingCacheRef.current;
+
   const [kind, setKind] = useState<ListingKind>("skills");
   const [tab, setTab] = useState<ListingTab>("popular");
   const [view, setView] = useState<ListingView>("list");
   const [categorySlugs, setCategorySlugs] = useState<string[]>([]);
   const [visibleCount, setVisibleCount] = useState(LISTING_PAGE_SIZE);
   const [fetchLimit, setFetchLimit] = useState(LISTING_PAGE_SIZE);
-  const [skills, setSkills] = useState<SkillPageEntry[]>([]);
+  const [skills, setSkills] = useState<SkillPageEntry[]>(initialListing?.items ?? []);
   const [plugins, setPlugins] = useState<PackageListItem[]>([]);
-  const [status, setStatus] = useState<"loading" | "idle" | "error">("loading");
+  const [status, setStatus] = useState<"loading" | "idle" | "error">(
+    initialListing ? "idle" : "loading",
+  );
   const [loadingMore, setLoadingMore] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchSkills, setSearchSkills] = useState<SkillPageEntry[]>([]);
   const [searchPlugins, setSearchPlugins] = useState<PackageListItem[]>([]);
   const [searchStatus, setSearchStatus] = useState<"idle" | "loading" | "error">("idle");
-  const [listingHasMore, setListingHasMore] = useState(false);
+  const [listingHasMore, setListingHasMore] = useState(initialListing?.hasMore ?? false);
 
   const trimmedSearch = searchQuery.trim();
   const isSearchMode = trimmedSearch.length > 0;
@@ -566,6 +426,17 @@ export function HomeListingSection() {
 
   useEffect(() => {
     if (isSearchMode) return undefined;
+    const cacheKey = listingCacheKey({ kind, tab, categorySlugs, fetchLimit });
+    const cached = listingCache.get(cacheKey);
+    if (cached) {
+      if (cached.kind === "skills") setSkills(cached.items);
+      else setPlugins(cached.items);
+      setListingHasMore(cached.hasMore);
+      setStatus("idle");
+      setLoadingMore(false);
+      return undefined;
+    }
+
     const controller = new AbortController();
     // "Load more" only grows fetchLimit: keep the existing rows mounted and
     // append, instead of swapping in the skeleton (which collapses height and
@@ -582,12 +453,22 @@ export function HomeListingSection() {
       kind === "skills"
         ? fetchSkillListing(tab, categorySlugs, fetchLimit).then((result) => {
             if (controller.signal.aborted) return;
+            listingCache.set(cacheKey, {
+              kind: "skills",
+              items: result.page,
+              hasMore: result.hasMore,
+            });
             setSkills(result.page);
             setListingHasMore(result.hasMore);
             setStatus("idle");
           })
         : fetchPluginListing(tab, categorySlugs, fetchLimit, controller.signal).then((result) => {
             if (controller.signal.aborted) return;
+            listingCache.set(cacheKey, {
+              kind: "plugins",
+              items: result.items,
+              hasMore: result.hasMore,
+            });
             setPlugins(result.items);
             setListingHasMore(result.hasMore);
             setStatus("idle");
@@ -612,14 +493,13 @@ export function HomeListingSection() {
       });
 
     return () => controller.abort();
-  }, [categorySlugs, fetchLimit, isSearchMode, kind, tab]);
+  }, [categorySlugs, fetchLimit, isSearchMode, kind, listingCache, tab]);
 
   useEffect(() => {
     if (!isSearchMode) {
       setSearchSkills([]);
       setSearchPlugins([]);
       setSearchStatus("idle");
-      setListingHasMore(false);
       return undefined;
     }
 
@@ -664,11 +544,12 @@ export function HomeListingSection() {
                 ),
               );
               const sortedRows = tab === "new" ? sortSkillEntries(rows, tab) : rows;
-              setSearchSkills(sortedRows.slice(0, fetchLimit));
-              setListingHasMore(
+              const items = sortedRows.slice(0, fetchLimit);
+              const hasMore =
                 sortedRows.length > fetchLimit ||
-                  results.some((hits) => (hits as SkillSearchHit[]).length >= fetchLimit),
-              );
+                results.some((hits) => (hits as SkillSearchHit[]).length >= fetchLimit);
+              setSearchSkills(items);
+              setListingHasMore(hasMore);
               setSearchStatus("idle");
             })
           : Promise.all(
@@ -690,14 +571,13 @@ export function HomeListingSection() {
                   result.items.filter((item) => itemMatchesAnyCategory(item, categorySlugs)),
                 ),
               );
-              setSearchPlugins(
-                tab === "new" ? [...items].sort((a, b) => b.updatedAt - a.updatedAt) : items,
+              const sortedItems =
+                tab === "new" ? [...items].sort((a, b) => b.updatedAt - a.updatedAt) : items;
+              const hasMore = results.some(
+                (result) => result.nextCursor != null || result.items.length >= fetchLimit,
               );
-              setListingHasMore(
-                results.some(
-                  (result) => result.nextCursor != null || result.items.length >= fetchLimit,
-                ),
-              );
+              setSearchPlugins(sortedItems);
+              setListingHasMore(hasMore);
               setSearchStatus("idle");
             });
 

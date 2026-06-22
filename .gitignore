@@ -32,6 +32,7 @@ eval/results/
 playwright-report
 test-results
 .playwright
+/public/llms.txt
 convex/_generated/*
 !convex/_generated/ai/
 convex/_generated/ai/*
