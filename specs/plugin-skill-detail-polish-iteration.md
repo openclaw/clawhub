@@ -115,7 +115,8 @@ This note preserves the complete UI direction established during the June 2026 d
 
 ## Related skills
 
-- Render Related skills compactly in the right sidebar.
+- Render Related skills compactly below the main tab content in the left column, not in the
+  metadata sidebar.
 - Use the same metadata-heading typography as sidebar labels such as Current version and License.
 - Do not add a decorative heading underline unless it is the shared section divider.
 - Each related item shows title, creator, short summary, and installs/download signal as available.
@@ -124,7 +125,7 @@ This note preserves the complete UI direction established during the June 2026 d
 - Remove the bottom divider from the last related item.
 - Place `More in <Category>` after the list, not in the heading row.
 - Center that footer action, include the category icon, and remove its underline.
-- Apply the same mobile placement rule as the rest of the sidebar.
+- Keep Related skills after the tab content on mobile as well.
 
 ## Versions
 

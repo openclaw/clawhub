@@ -117,7 +117,6 @@ type SkillHeaderProps = {
   categories?: SkillCategory[] | null;
   priorityContent?: ReactNode;
   postInstallContent?: ReactNode;
-  sidebarContent?: ReactNode;
   securityAuditSummary?: ReactNode;
   newVersionHref?: string | null;
   settingsHref?: string | null;
@@ -154,7 +153,6 @@ export function SkillHeader({
   categories,
   priorityContent,
   postInstallContent,
-  sidebarContent,
   securityAuditSummary,
   newVersionHref,
   settingsHref,
@@ -308,7 +306,6 @@ export function SkillHeader({
                 ) : null}
               </div>
             ) : null}
-            {sidebarContent}
           </div>
         }
         main={
