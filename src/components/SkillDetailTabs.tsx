@@ -304,14 +304,20 @@ export function SkillDetailTabs({
           id="skill-tabpanel-skill-card"
           aria-labelledby="skill-tab-skill-card"
         >
-          <p className="skill-card-info-callout">
-            Skill Cards follow{" "}
-            <a href="https://docs.nvidia.com/skills/skill-cards" target="_blank" rel="noreferrer">
-              NVIDIA&apos;s trust-card pattern for agent skills
-            </a>
-            , giving a compact release record of what a skill does, who published it, and what risks
-            or limits to review before use.
-          </p>
+          <details className="skill-card-info-callout">
+            <summary>About Skill Cards</summary>
+            <p>
+              Based on{" "}
+              <a
+                href="https://docs.nvidia.com/skills/skill-cards"
+                target="_blank"
+                rel="noreferrer"
+              >
+                NVIDIA&apos;s trust-card pattern
+              </a>
+              , they provide a compact record of purpose, ownership, outputs, and risks to review.
+            </p>
+          </details>
           {skillCardContent ? (
             <SkillCardPreview
               content={skillCardContent}
