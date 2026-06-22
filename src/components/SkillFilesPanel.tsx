@@ -1,5 +1,5 @@
 import { useAction } from "convex/react";
-import { ChevronDown, FileCode2, FileText, Folder } from "lucide-react";
+import { ArrowLeft, FileText, Folder } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
@@ -12,9 +12,6 @@ type SkillFilesPanelProps = {
   versionId: Id<"skillVersions"> | null;
   latestFiles: SkillFile[];
 };
-
-const MOBILE_FILE_LIST_MAX_WIDTH = 899;
-const MOBILE_FILE_LIST_PREVIEW_COUNT = 8;
 
 type FileTreeFileNode = {
   type: "file";
@@ -101,8 +98,6 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   const [fileMeta, setFileMeta] = useState<{ size: number; sha256: string } | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [showAllMobileFiles, setShowAllMobileFiles] = useState(false);
   const isMounted = useRef(true);
   const requestId = useRef(0);
   const fileCache = useRef(new Map<string, { text: string; size: number; sha256: string }>());
@@ -115,36 +110,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return () => {};
-    }
-    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_FILE_LIST_MAX_WIDTH}px)`);
-    const syncMobileState = () => {
-      const nextIsMobile = mediaQuery.matches;
-      setIsMobile(nextIsMobile);
-      if (!nextIsMobile) {
-        setShowAllMobileFiles(false);
-      }
-    };
-    syncMobileState();
-    mediaQuery.addEventListener("change", syncMobileState);
-    return () => {
-      mediaQuery.removeEventListener("change", syncMobileState);
-    };
-  }, []);
-
-  useEffect(() => {
-    setShowAllMobileFiles(false);
-  }, [versionId]);
-
-  const visibleFiles = useMemo(() => {
-    if (!isMobile || showAllMobileFiles) return latestFiles;
-    return latestFiles.slice(0, MOBILE_FILE_LIST_PREVIEW_COUNT);
-  }, [isMobile, latestFiles, showAllMobileFiles]);
-
-  const hiddenFilesCount = latestFiles.length - visibleFiles.length;
-  const fileTree = useMemo(() => buildFileTree(visibleFiles), [visibleFiles]);
+  const fileTree = useMemo(() => buildFileTree(latestFiles), [latestFiles]);
 
   useEffect(() => {
     requestId.current += 1;
@@ -198,14 +164,14 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     [fileContent, getFileText, isLoading, selectedPath, versionId],
   );
 
-  useEffect(() => {
-    if (!versionId || latestFiles.length === 0) return;
-    if (selectedPath !== null) return;
-    const defaultPath =
-      latestFiles.find((file) => file.path === "SKILL.md")?.path ?? latestFiles[0]?.path ?? null;
-    if (!defaultPath) return;
-    handleSelect(defaultPath);
-  }, [handleSelect, latestFiles, selectedPath, versionId]);
+  const handleBack = () => {
+    requestId.current += 1;
+    setSelectedPath(null);
+    setFileContent(null);
+    setFileMeta(null);
+    setFileError(null);
+    setIsLoading(false);
+  };
 
   const renderTreeNode = (node: FileTreeNode, level: number): ReactNode => {
     if (node.type === "directory") {
@@ -224,11 +190,10 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     return (
       <button
         key={node.path}
-        className={`file-tree-file${selectedPath === node.path ? " is-active" : ""}`}
+        className={`file-tree-file${node.path === "SKILL.md" ? " is-primary" : ""}`}
         style={getFileTreeLevelStyle(level)}
         type="button"
         onClick={() => handleSelect(node.path)}
-        aria-current={selectedPath === node.path ? "true" : undefined}
         aria-label={`${node.path} ${formattedSize}`}
       >
         <FileText size={14} aria-hidden="true" />
@@ -240,58 +205,47 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
 
   return (
     <div className="tab-body skill-files-panel">
-      <div className="file-browser">
-        <div className={`file-list${isMobile && hiddenFilesCount > 0 ? " has-hidden-files" : ""}`}>
+      <div className={`file-browser${selectedPath ? " is-viewing-file" : ""}`}>
+        {selectedPath ? (
+          <div className="file-viewer">
+            <div className="file-viewer-header">
+              <button className="file-viewer-back" type="button" onClick={handleBack}>
+                <ArrowLeft size={15} aria-hidden="true" />
+                Back
+              </button>
+              <div className="file-path">{selectedPath}</div>
+            </div>
+            <div className="file-viewer-body">
+              {isLoading ? (
+                <div className="stat">Loading…</div>
+              ) : fileError ? (
+                <div className="stat">Failed to load file: {fileError}</div>
+              ) : fileContent ? (
+                <pre className="file-viewer-code">{fileContent}</pre>
+              ) : null}
+            </div>
+            {fileMeta ? (
+              <div className="file-viewer-meta">
+                <span className="file-meta">{formatBytes(fileMeta.size)}</span>
+                <span className="file-meta">{fileMeta.sha256.slice(0, 12)}...</span>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="file-list">
           <div className="file-list-header">
             <h3 className="section-title text-[1.05rem] m-0">Files</h3>
             <span className="file-list-count">{latestFiles.length} total</span>
           </div>
-          <div className={`file-list-body${showAllMobileFiles ? " is-expanded" : ""}`}>
+          <div className="file-list-body">
             {latestFiles.length === 0 ? (
               <div className="stat">No files available.</div>
             ) : (
               fileTree.map((node) => renderTreeNode(node, 0))
             )}
           </div>
-          {isMobile && hiddenFilesCount > 0 ? (
-            <div className="file-list-see-all-wrap">
-              <div className="file-list-see-all-gradient" aria-hidden="true" />
-              <button
-                className="file-list-see-all"
-                type="button"
-                onClick={() => setShowAllMobileFiles(true)}
-              >
-                <ChevronDown size={14} aria-hidden="true" />
-                <span>See all</span>
-              </button>
-            </div>
-          ) : null}
-        </div>
-        <div className="file-viewer">
-          <div className="file-viewer-header">
-            <div className="file-path">{selectedPath ?? "Select a file"}</div>
           </div>
-          <div className="file-viewer-body">
-            {isLoading ? (
-              <div className="stat">Loading…</div>
-            ) : fileError ? (
-              <div className="stat">Failed to load file: {fileError}</div>
-            ) : fileContent ? (
-              <pre className="file-viewer-code">{fileContent}</pre>
-            ) : (
-              <div className="file-viewer-empty">
-                <FileCode2 size={22} className="file-viewer-empty-icon" aria-hidden="true" />
-                <p className="file-viewer-empty-text">Select a file to preview.</p>
-              </div>
-            )}
-          </div>
-          {fileMeta ? (
-            <div className="file-viewer-meta">
-              <span className="file-meta">{formatBytes(fileMeta.size)}</span>
-              <span className="file-meta">{fileMeta.sha256.slice(0, 12)}...</span>
-            </div>
-          ) : null}
-        </div>
+        )}
       </div>
     </div>
   );

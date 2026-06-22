@@ -93,6 +93,8 @@ export function SkillDetailTabs({
   }, [readmeContent]);
 
   const selectTab = (tab: DetailTab) => {
+    const scrollPosition =
+      typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
     setActiveTab(tab);
     if (typeof window === "undefined") return;
     const hash = tab === "readme" ? "" : `#${tab}`;
@@ -101,6 +103,10 @@ export function SkillDetailTabs({
       "",
       `${window.location.pathname}${window.location.search}${hash}`,
     );
+    window.requestAnimationFrame(() => {
+      if (!scrollPosition) return;
+      window.scrollTo(scrollPosition.left, scrollPosition.top);
+    });
   };
 
   return (
@@ -223,7 +229,7 @@ export function SkillDetailTabs({
                   aria-expanded={isReadmeExpanded}
                   onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
                 >
-                  {isReadmeExpanded ? "Show less" : "See more"}
+                  {isReadmeExpanded ? "Show less" : "Read more"}
                 </button>
               ) : null}
             </>

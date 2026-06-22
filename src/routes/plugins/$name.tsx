@@ -293,6 +293,8 @@ function PluginDetailTabs({
 }) {
   const [hasMountedVersions, setHasMountedVersions] = useState(false);
   const selectTab = (tab: PluginDetailTab) => {
+    const scrollPosition =
+      typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
     setActiveTab(tab);
     if (typeof window === "undefined") return;
     const hash = tab === "readme" ? "" : tab === "mcpServers" ? "#mcp-servers" : `#${tab}`;
@@ -301,6 +303,10 @@ function PluginDetailTabs({
       "",
       `${window.location.pathname}${window.location.search}${hash}`,
     );
+    window.requestAnimationFrame(() => {
+      if (!scrollPosition) return;
+      window.scrollTo(scrollPosition.left, scrollPosition.top);
+    });
   };
 
   const effectiveActiveTab =
@@ -345,7 +351,7 @@ function PluginDetailTabs({
           aria-controls="plugin-tabpanel-readme"
           onClick={() => selectTab("readme")}
         >
-          README
+          README.md
         </button>
         {skillsPanel ? (
           <button

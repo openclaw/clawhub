@@ -6681,57 +6681,9 @@ code {
   padding: 6px;
 }
 
-.file-list-see-all-wrap {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  z-index: 2;
-  display: none;
-  place-items: center;
-  height: 92px;
-  pointer-events: none;
-}
-
-.file-list-see-all-gradient {
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    to bottom,
-    color-mix(in srgb, var(--bg) 0%, transparent) 0%,
-    color-mix(in srgb, var(--bg) 82%, transparent) 48%,
-    var(--bg) 100%
-  );
-  pointer-events: none;
-}
-
-.file-list-see-all {
-  position: relative;
-  z-index: 1;
-  justify-self: center;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  margin-top: 24px;
-  border: 1px solid var(--line);
-  border-radius: var(--r-btn);
-  background: var(--surface);
-  color: var(--ink);
-  padding: 8px 14px;
-  box-shadow: 0 12px 28px rgba(29, 26, 23, 0.14);
-  pointer-events: auto;
-}
-
 .file-browser {
   display: grid;
   gap: 18px;
-}
-
-@media (min-width: 900px) {
-  .file-browser {
-    grid-template-columns: minmax(220px, 0.58fr) minmax(0, 1.42fr);
-    align-items: start;
-  }
 }
 
 .file-tree-group {
@@ -6779,8 +6731,8 @@ code {
   outline: none;
 }
 
-.file-tree-file.is-active {
-  background: color-mix(in srgb, var(--ink) 8%, transparent);
+.file-tree-file.is-primary {
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
   color: var(--ink);
 }
 
@@ -6824,8 +6776,28 @@ code {
   gap: 12px;
   border-bottom: 1px solid var(--line);
   box-sizing: border-box;
-  height: 63px;
-  padding: 15px 16px 14px;
+  min-height: 54px;
+  padding: 10px 12px;
+}
+
+.file-viewer-back {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
+  min-height: 32px;
+  padding: 6px 9px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-btn);
+  background: var(--surface-muted);
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.file-viewer-back:hover {
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface-muted));
 }
 
 .file-viewer-header .file-path {
@@ -6834,7 +6806,7 @@ code {
 }
 
 .file-viewer-body {
-  max-height: 420px;
+  max-height: min(66vh, 720px);
   background: color-mix(in srgb, var(--surface) 82%, var(--bg) 18%);
   overflow: auto;
   padding: 12px 16px 16px;
