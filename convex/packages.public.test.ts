@@ -1300,6 +1300,7 @@ function makeDigestCtx(options: {
                   if (
                     indexName === "by_active_downloads" ||
                     indexName === "by_active_family_downloads" ||
+                    indexName === "by_active_family_official_downloads" ||
                     indexName === "by_active_installs" ||
                     indexName === "by_active_family_installs" ||
                     indexName === "by_active_family_official_installs" ||
@@ -2654,6 +2655,153 @@ describe("packages public queries", () => {
     ]);
     expect(paginate).toHaveBeenCalledTimes(1);
     expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 120 });
+  });
+
+  it("uses a family-and-official downloads index for official plugin pages", async () => {
+    const { ctx, indexFilters, indexNames, paginate } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:official-code-plugin",
+              name: "official-code-plugin",
+              normalizedName: "official-code-plugin",
+              displayName: "Official Code Plugin",
+              family: "code-plugin",
+              isOfficial: true,
+              channel: "official",
+              stats: { downloads: 200, installs: 100, stars: 0, versions: 1 },
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      isOfficial: true,
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 24 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-code-plugin"]);
+    expect(result.isDone).toBe(true);
+    expect(indexNames).toEqual(["by_active_family_official_downloads"]);
+    expect(indexFilters).toEqual([
+      {
+        indexName: "by_active_family_official_downloads",
+        filters: [
+          { field: "softDeletedAt", value: undefined },
+          { field: "family", value: "code-plugin" },
+          { field: "isOfficial", value: true },
+        ],
+      },
+    ]);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(paginate).toHaveBeenCalledWith({ cursor: null, numItems: 120 });
+  });
+
+  it("keeps new official downloads cursors on the family-and-official index", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:official-code-plugin-1",
+              name: "official-code-plugin-1",
+              normalizedName: "official-code-plugin-1",
+              displayName: "Official Code Plugin 1",
+              family: "code-plugin",
+              isOfficial: true,
+              channel: "official",
+            }),
+          ],
+          isDone: false,
+          continueCursor: "official-downloads-next",
+        },
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:official-code-plugin-2",
+              name: "official-code-plugin-2",
+              normalizedName: "official-code-plugin-2",
+              displayName: "Official Code Plugin 2",
+              family: "code-plugin",
+              isOfficial: true,
+              channel: "official",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const first = await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      isOfficial: true,
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+    const second = await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      isOfficial: true,
+      sort: "downloads",
+      paginationOpts: { cursor: first.continueCursor, numItems: 1 },
+    });
+
+    expect(first.page.map((entry) => entry.name)).toEqual(["official-code-plugin-1"]);
+    expect(second.page.map((entry) => entry.name)).toEqual(["official-code-plugin-2"]);
+    expect(indexNames).toEqual([
+      "by_active_family_official_downloads",
+      "by_active_family_official_downloads",
+    ]);
+  });
+
+  it("keeps legacy official downloads cursors on the family downloads index", async () => {
+    const legacyCursor = `pkgpage:${JSON.stringify({
+      cursor: "legacy-official-downloads-next",
+      offset: 0,
+      pageSize: 50,
+      done: false,
+      mode: "packages",
+    })}`;
+    const { ctx, indexNames } = makeDigestCtx({
+      packagePages: [
+        {
+          page: [],
+          isDone: false,
+          continueCursor: "legacy-official-downloads-next",
+        },
+        {
+          page: [
+            makePackageDoc({
+              _id: "packages:official-code-plugin",
+              name: "official-code-plugin",
+              normalizedName: "official-code-plugin",
+              displayName: "Official Code Plugin",
+              family: "code-plugin",
+              isOfficial: true,
+              channel: "official",
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    const result = await listPageForViewerInternalHandler(ctx, {
+      family: "code-plugin",
+      isOfficial: true,
+      sort: "downloads",
+      paginationOpts: { cursor: legacyCursor, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-code-plugin"]);
+    expect(indexNames).toEqual(["by_active_family_downloads"]);
   });
 
   it("normalizes public plugins from official publishers for official browse", async () => {

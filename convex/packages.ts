@@ -901,6 +901,7 @@ type PublicPageCursorState = {
   done: boolean;
   mode?: "packages" | "digest";
   sort?: "updated" | "downloads" | "recommended" | "installs";
+  packageIndex?: "family-official-downloads";
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 type OfficialFirstPackageCategoryCursorState = {
@@ -1549,6 +1550,8 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
         parsed.sort === "installs"
           ? parsed.sort
           : undefined,
+      packageIndex:
+        parsed.packageIndex === "family-official-downloads" ? parsed.packageIndex : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -3487,6 +3490,13 @@ async function listPackagePageImpl(
   }
   const pageCursor = decodedCursor.cursor;
   const offset = decodedCursor.offset;
+  const sortedPackageIndex =
+    family &&
+    args.sort === "downloads" &&
+    typeof isOfficial === "boolean" &&
+    (!args.paginationOpts.cursor || decodedCursor.packageIndex === "family-official-downloads")
+      ? ("family-official-downloads" as const)
+      : undefined;
   const effectivePageSize = Math.min(
     MAX_PUBLIC_LIST_PAGE_SIZE,
     Math.max(
@@ -3527,6 +3537,13 @@ async function listPackagePageImpl(
     let done = decodedCursor.done;
     const buildSortedQuery = () => {
       if (family) {
+        if (sortedPackageIndex === "family-official-downloads" && typeof isOfficial === "boolean") {
+          return ctx.db
+            .query("packages")
+            .withIndex("by_active_family_official_downloads", (q) =>
+              q.eq("softDeletedAt", undefined).eq("family", family).eq("isOfficial", isOfficial),
+            );
+        }
         if (args.sort === "installs" && typeof isOfficial === "boolean") {
           return ctx.db
             .query("packages")
@@ -3576,6 +3593,7 @@ async function listPackagePageImpl(
                   pageSize: scanPageSize,
                   done: page.isDone,
                   mode: "packages" as const,
+                  packageIndex: sortedPackageIndex,
                 }
               : {
                   cursor: page.continueCursor,
@@ -3583,6 +3601,7 @@ async function listPackagePageImpl(
                   pageSize: scanPageSize,
                   done: page.isDone,
                   mode: "packages" as const,
+                  packageIndex: sortedPackageIndex,
                 };
           return {
             page: collected,
@@ -3607,6 +3626,7 @@ async function listPackagePageImpl(
         pageSize,
         done,
         mode: "packages",
+        packageIndex: sortedPackageIndex,
       }),
     };
   }
