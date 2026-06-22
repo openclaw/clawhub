@@ -86,6 +86,7 @@ import { familyLabel } from "../../lib/packageLabels";
 import {
   buildPluginDetailHref,
   buildPluginSecurityAuditHref,
+  displayPluginPackageName,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
@@ -1065,7 +1066,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 </a>
                 <span aria-hidden="true">/</span>
                 <a href={buildPluginDetailHref(pkg.name)} aria-current="page">
-                  {pkg.name}
+                  {displayPluginPackageName(pkg.name)}
                 </a>
               </nav>
               <div className="skill-hero-heading-stack">

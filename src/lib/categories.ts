@@ -60,6 +60,9 @@ const LEGACY_SKILL_BROWSE_CATEGORY_ALIASES = {
 const SKILL_CATEGORIES_BY_SLUG = new Map(
   SKILL_CATEGORIES.map((category) => [category.slug, category]),
 );
+const PLUGIN_CATEGORIES_BY_SLUG = new Map(
+  PLUGIN_CATEGORIES.map((category) => [category.slug, category]),
+);
 
 export function resolvePluginBrowseCategorySlug(
   value: string | null | undefined,
@@ -126,6 +129,11 @@ export function getSkillIconCategoryForSkill(
 export function getSkillCategoryBySlug(slug: string | null | undefined) {
   if (!slug) return null;
   return SKILL_CATEGORIES.find((category) => category.slug === slug) ?? null;
+}
+
+export function getPluginCategoryBySlug(slug: string | null | undefined) {
+  const resolvedSlug = resolvePluginBrowseCategorySlug(slug);
+  return resolvedSlug ? (PLUGIN_CATEGORIES_BY_SLUG.get(resolvedSlug) ?? null) : null;
 }
 
 export function buildSkillCategoryBrowseHref(category: SkillCategory) {

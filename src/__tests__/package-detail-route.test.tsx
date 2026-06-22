@@ -852,6 +852,29 @@ describe("plugin detail route", () => {
     ).toBeTruthy();
   });
 
+  it("omits scoped package prefixes from plugin breadcrumbs", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          name: "@openclaw/firecrawl-plugin",
+          displayName: "OpenClaw Firecrawl Plugin",
+        },
+        owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const { container } = render(<Component />);
+
+    const packageCrumb = container.querySelector(
+      'nav[aria-label="Plugin breadcrumbs"] a[href="/plugins/@openclaw/firecrawl-plugin"]',
+    );
+    expect(packageCrumb?.textContent).toBe("firecrawl-plugin");
+  });
+
   it("labels official packages as Official", async () => {
     loaderDataMock = {
       ...loaderDataMock,
@@ -965,7 +988,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "About activity counts" })).toBeNull();
     expect(
       convexQueryMock.mock.calls.some(([query, args]) => {
         return (

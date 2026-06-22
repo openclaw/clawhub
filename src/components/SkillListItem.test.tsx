@@ -32,11 +32,19 @@ describe("SkillListItem", () => {
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
-  it("renders author topics", () => {
-    render(<SkillListItem skill={makeSkill({ topics: ["discord", "community"] })} />);
+  it("renders up to two author topics in browse rows", () => {
+    render(<SkillListItem skill={makeSkill({ topics: ["discord", "community", "automation"] })} />);
 
-    expect(screen.getByText("discord")).toBeTruthy();
-    expect(screen.getByText("community")).toBeTruthy();
+    expect(screen.getByText("#discord")).toBeTruthy();
+    expect(screen.getByText("#community")).toBeTruthy();
+    expect(screen.queryByText("#automation")).toBeNull();
+  });
+
+  it("keeps the creator inline without a second avatar", () => {
+    const { container } = render(<SkillListItem skill={makeSkill()} ownerHandle="creator" />);
+
+    expect(screen.getByText("@creator")).toBeTruthy();
+    expect(container.querySelector(".skill-list-item-main img")).toBeNull();
   });
 });
 

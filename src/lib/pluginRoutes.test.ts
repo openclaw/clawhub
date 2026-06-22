@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildPluginDetailHref,
   buildPluginSecurityAuditHref,
+  displayPluginPackageName,
   packageNameFromScopedRoute,
   parseScopedPackageName,
 } from "./pluginRoutes";
@@ -25,5 +26,10 @@ describe("plugin routes", () => {
     });
     expect(packageNameFromScopedRoute("@openclaw", "codex")).toBe("@openclaw/codex");
     expect(packageNameFromScopedRoute("openclaw", "codex")).toBeNull();
+  });
+
+  it("formats scoped package names for display without changing unscoped names", () => {
+    expect(displayPluginPackageName("@openclaw/firecrawl-plugin")).toBe("firecrawl-plugin");
+    expect(displayPluginPackageName("web-search-plus-plugin-v2")).toBe("web-search-plus-plugin-v2");
   });
 });

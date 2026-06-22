@@ -6,6 +6,7 @@ import {
   type PublicPublisherPublishedItem,
   readPublicDownloadCount,
 } from "../lib/publicUser";
+import { truncateText } from "../lib/truncateText";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
 
@@ -53,19 +54,27 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
           size={variant === "list" ? "sm" : "md"}
         />
         <div className="publisher-card-copy">
-          <span className="publisher-card-title-row">
-            <span className="publisher-card-name">{publisher.displayName}</span>
-            {publisher.official ? <OfficialBadge /> : null}
-            {variant === "list" ? <span className="publisher-card-handle">@{handle}</span> : null}
-            {publisher.kind === "org" ? <span className="publisher-card-kind">Org</span> : null}
+          <span className="publisher-card-identity">
+            <span className="publisher-card-title-row">
+              <span className="publisher-card-name">{publisher.displayName}</span>
+              {publisher.official ? <OfficialBadge /> : null}
+              {publisher.kind === "org" ? <span className="publisher-card-kind">Org</span> : null}
+            </span>
+            <span className="publisher-card-handle">@{handle}</span>
           </span>
-          {variant === "list" ? null : <span className="publisher-card-handle">@{handle}</span>}
-          {summaryInMain ? <p className="publisher-card-summary">{summary}</p> : null}
+          {summaryInMain ? (
+            <p className="publisher-card-summary">{truncateText(summary, 80)}</p>
+          ) : null}
           {variant === "highlight" && publisher.publishedItems.length > 0 ? (
             <div className="publisher-card-featured-items">
               {featuredItems.map((item) => (
                 <span key={`${item.kind}:${item.displayName}`}>
-                  <MarketplaceIcon kind={item.kind} label={item.displayName} size="xs" />
+                  <MarketplaceIcon
+                    kind={item.kind}
+                    label={item.displayName}
+                    skill={item.kind === "skill" ? item : undefined}
+                    size="xs"
+                  />
                   <span className="publisher-card-featured-label">{item.displayName}</span>
                   <span className="publisher-card-featured-downloads">
                     <Download size={12} aria-hidden="true" />
@@ -77,7 +86,7 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
           ) : null}
         </div>
       </div>
-      {summaryInMain ? null : <p className="publisher-card-summary">{summary}</p>}
+      {summaryInMain ? null : <p className="publisher-card-summary">{truncateText(summary, 80)}</p>}
       <div className="publisher-card-stats">
         <span className="publisher-card-stat">
           <PublishedRail items={publisher.publishedItems} />

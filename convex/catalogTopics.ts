@@ -10,7 +10,7 @@ import type { QueryCtx } from "./_generated/server";
 import { query } from "./functions";
 import { isPublicPluginDoc, isPublicSkillDoc } from "./lib/globalStats";
 
-const TOP_CATEGORY_TOPIC_LIMIT = 5;
+const TOP_CATEGORY_TOPIC_LIMIT = 8;
 const TOP_CATEGORY_TOPIC_SAMPLE_LIMIT = 240;
 const TOP_SKILL_CATEGORY_TOPIC_SCAN_LIMIT = TOP_CATEGORY_TOPIC_SAMPLE_LIMIT * 10;
 

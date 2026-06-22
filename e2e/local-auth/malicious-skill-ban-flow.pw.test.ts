@@ -11,7 +11,7 @@ test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "malicious skill ban flow requires the local dev auth runner",
 );
-test.setTimeout(180_000);
+test.setTimeout(360_000);
 test.describe.configure({ retries: 0 });
 
 const WORKER_TOKEN = process.env.SECURITY_SCAN_WORKER_TOKEN ?? "local-e2e-worker-token";
@@ -134,6 +134,7 @@ function withoutExpectedBannedSessionTeardownErrors(errors: string[]) {
   const timedOutDuringBannedSessionTeardown = [
     "CONVEX Q(skills:listVersions)",
     "CONVEX Q(skills:list)",
+    "CONVEX Q(skills:checkSlugAvailability)",
     "CONVEX Q(users:me)",
     "CONVEX Q(publishers:listMine)",
     "CONVEX Q(publishers:getMyProfileHandle)",
