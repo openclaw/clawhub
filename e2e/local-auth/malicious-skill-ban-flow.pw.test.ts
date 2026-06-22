@@ -134,6 +134,7 @@ function withoutExpectedBannedSessionTeardownErrors(errors: string[]) {
   const timedOutDuringBannedSessionTeardown = [
     "CONVEX Q(skills:listVersions)",
     "CONVEX Q(skills:list)",
+    "CONVEX Q(skills:checkSlugAvailability)",
     "CONVEX Q(users:me)",
     "CONVEX Q(publishers:listMine)",
     "CONVEX Q(publishers:getMyProfileHandle)",
