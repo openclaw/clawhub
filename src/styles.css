@@ -7022,8 +7022,8 @@ code {
 
 .related-skill-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(180px, 0.34fr);
-  gap: 24px;
+  grid-template-columns: 34px minmax(0, 1fr) minmax(180px, 0.34fr);
+  gap: 16px;
   align-items: center;
   min-width: 0;
   padding: 18px 0;
@@ -7033,7 +7033,7 @@ code {
 }
 
 .related-skills-section-compact .related-skill-row {
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
   gap: 12px;
   margin-inline: -10px;
   padding: 14px 10px;
@@ -7055,6 +7055,34 @@ code {
 
 .related-skill-row:hover {
   text-decoration: none;
+}
+
+.related-skill-icon {
+  display: flex;
+  align-self: start;
+}
+
+.related-skill-icon .marketplace-icon,
+.related-skill-icon .marketplace-icon:hover {
+  width: 34px;
+  height: 34px;
+  border: 1px solid color-mix(in srgb, var(--ink) 8%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--ink) 4%, transparent) !important;
+  color: var(--ink-soft);
+  box-shadow: none;
+  pointer-events: none;
+  transform: none;
+  transition: none;
+  --marketplace-icon-accent: var(--ink-soft);
+  --marketplace-icon-wash: transparent;
+}
+
+.related-skill-icon .marketplace-icon-glyph,
+.related-skill-icon .marketplace-icon-image {
+  width: 17px;
+  height: 17px;
+  filter: grayscale(1) brightness(1.18);
 }
 
 .related-skill-copy {
@@ -7136,6 +7164,7 @@ code {
   pointer-events: none;
 }
 
+.related-skill-icon-skeleton,
 .related-skill-title-skeleton,
 .related-skill-summary-skeleton,
 .related-skill-owner-skeleton {
@@ -7150,6 +7179,12 @@ code {
   );
   background-size: 220% 100%;
   animation: skeleton-shimmer 1.15s ease-in-out infinite;
+}
+
+.related-skill-icon-skeleton {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
 }
 
 .related-skill-title-skeleton {
@@ -9553,16 +9588,18 @@ code {
   }
 
   .related-skill-row {
-    grid-template-columns: 1fr;
-    gap: 8px;
+    grid-template-columns: 34px minmax(0, 1fr);
+    gap: 12px;
     padding: 16px 0;
   }
 
-  .related-skill-owner {
+  .related-skills-section:not(.related-skills-section-compact) .related-skill-owner,
+  .related-skills-section:not(.related-skills-section-compact) .related-skill-owner-skeleton {
+    grid-column: 2;
     text-align: left;
   }
 
-  .related-skill-owner-skeleton {
+  .related-skills-section:not(.related-skills-section-compact) .related-skill-owner-skeleton {
     justify-self: start;
   }
 

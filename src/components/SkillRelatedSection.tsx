@@ -3,6 +3,7 @@ import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
+import { MarketplaceIcon } from "./MarketplaceIcon";
 import { buildSkillHref } from "./skillDetailUtils";
 import { Button } from "./ui/button";
 
@@ -60,6 +61,7 @@ export function SkillRelatedSection({
                 key={`related-skill-skeleton-${index}`}
                 className="related-skill-row related-skill-row-skeleton"
               >
+                <span className="related-skill-icon-skeleton" aria-hidden="true" />
                 <span className="related-skill-copy">
                   <span className="related-skill-title-skeleton" />
                   <span className="related-skill-summary-skeleton" />
@@ -80,6 +82,14 @@ export function SkillRelatedSection({
 
               return (
                 <a key={entry.skill._id} href={href} className="related-skill-row">
+                  <span className="related-skill-icon" aria-hidden="true">
+                    <MarketplaceIcon
+                      kind="skill"
+                      label={entry.skill.displayName}
+                      skill={entry.skill}
+                      size="sm"
+                    />
+                  </span>
                   <span className="related-skill-copy">
                     <span className="related-skill-title-line">
                       <span className="related-skill-name">{entry.skill.displayName}</span>
