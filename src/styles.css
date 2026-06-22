@@ -5018,13 +5018,28 @@ code {
 }
 
 .skill-sidebar-actions-secondary {
-  padding-top: 4px;
+  margin-top: -18px;
+  padding-top: 8px;
   border-top: 1px solid var(--line);
+}
+
+.skill-hero-sidebar-stack
+  > .sidebar-metadata:has(+ .skill-sidebar-actions-secondary)
+  > .sidebar-metadata-row:last-child,
+.skill-hero-sidebar-stack
+  > .sidebar-metadata:has(+ .skill-sidebar-actions-secondary)
+  > .sidebar-metadata-grid:last-child
+  .sidebar-metadata-row {
+  padding-bottom: 10px;
 }
 
 .skill-sidebar-action-button {
   width: 100%;
   justify-content: center;
+}
+
+.skill-sidebar-actions-secondary .skill-sidebar-action-button {
+  justify-content: flex-start;
 }
 
 .skill-sidebar-action-button:hover:not(:disabled),
@@ -5957,8 +5972,30 @@ code {
 }
 
 @media (max-width: 1100px) {
+  .skill-hero {
+    gap: 12px;
+  }
+
+  .skill-hero-layout.has-sidebar {
+    gap: 16px;
+  }
+
+  .skill-hero-main {
+    gap: 14px;
+  }
+
+  .skill-hero-title {
+    gap: 12px;
+  }
+
+  .skill-hero-heading-stack {
+    gap: 10px;
+  }
+
   .skill-hero-layout.has-sidebar .skill-summary-block {
     max-width: none;
+    margin-bottom: 0;
+    gap: 4px;
   }
 
   .skill-hero-lower {
@@ -5967,11 +6004,101 @@ code {
 
   .skill-hero-lower.has-sidebar {
     grid-template-columns: minmax(0, 1fr);
-    gap: 60px;
+    gap: 20px;
   }
 
   .skill-hero-sidebar {
     order: -1;
+    gap: 8px;
+  }
+
+  .skill-hero-sidebar-stack {
+    gap: 12px;
+  }
+
+  .skill-sidebar-actions-primary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .skill-sidebar-actions-secondary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding-top: 0;
+    border-top: 0;
+  }
+
+  .skill-sidebar-actions-secondary > :only-child {
+    grid-column: 1 / -1;
+  }
+
+  .skill-sidebar-action-button {
+    min-height: 40px !important;
+    padding-top: 8px !important;
+    padding-bottom: 8px !important;
+    justify-content: center;
+  }
+
+  .skill-action-count {
+    height: 1.65em;
+    margin-left: 4px;
+    padding: 0 0.5em;
+    font-size: 12px;
+  }
+
+  .sidebar-metadata-compact .sidebar-metadata-row,
+  .skill-hero-sidebar .sidebar-metadata-row {
+    gap: 4px;
+    padding: 10px 0;
+  }
+
+  .sidebar-metadata-compact > .sidebar-metadata-row:first-child {
+    min-height: auto;
+  }
+
+  .sidebar-metadata-compact .sidebar-metadata-grid .sidebar-metadata-row,
+  .skill-hero-sidebar .sidebar-metadata-grid .sidebar-metadata-row {
+    padding: 10px 0;
+  }
+
+  .sidebar-metadata-compact .sidebar-metadata-grid .sidebar-metadata-row + .sidebar-metadata-row {
+    padding-left: 14px;
+  }
+
+  .sidebar-metadata-row-large .sidebar-metadata-value {
+    font-size: 1.35rem;
+    line-height: 1.15;
+  }
+
+  .metric-trend-card {
+    gap: 4px;
+  }
+
+  .metric-trend-chart {
+    height: 26px;
+  }
+
+  .metric-trend-card-skeleton {
+    height: 44px;
+  }
+
+  .metric-trend-point-label {
+    font-size: 0.75rem;
+  }
+
+  .security-audit-sidebar-value-row {
+    gap: 8px;
+    padding: 4px 8px;
+    margin: 0;
+  }
+
+  .security-audit-sidebar-verdict {
+    font-size: 0.92rem;
+  }
+
+  .security-audit-meter {
+    height: 5px;
+    gap: 4px;
   }
 }
 
@@ -7704,11 +7831,11 @@ code {
 
   .skill-hero-lower.has-sidebar {
     grid-template-columns: minmax(0, 1fr);
-    gap: 28px;
+    gap: 16px;
   }
 
   .skill-hero-main-extra {
-    gap: 32px;
+    gap: 24px;
   }
 
   .related-skills-header {
@@ -7743,16 +7870,35 @@ code {
   }
 
   .skill-hero-sidebar-stack {
-    gap: 18px;
+    gap: 10px;
   }
 
   .skill-hero-sidebar .sidebar-metadata-row {
-    padding: 12px 2px;
+    padding: 8px 0;
   }
 
-  .skill-hero-sidebar .sidebar-metadata-label,
+  .skill-hero-sidebar .sidebar-metadata-label {
+    font-size: 0.78rem;
+  }
+
   .skill-hero-sidebar .sidebar-metadata-value {
-    font-size: 12px;
+    font-size: 0.9rem;
+  }
+
+  .skill-hero-sidebar .sidebar-metadata-row-large .sidebar-metadata-value {
+    font-size: 1.2rem;
+  }
+
+  .skill-sidebar-action-button {
+    min-height: 38px !important;
+    padding-top: 7px !important;
+    padding-bottom: 7px !important;
+    font-size: 0.8125rem;
+  }
+
+  .skill-page-title {
+    font-size: clamp(1.55rem, 6.8vw, 1.85rem);
+    line-height: 1.1;
   }
 
   .skill-hero-sidebar-meta {
