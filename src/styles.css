@@ -5318,7 +5318,7 @@ code {
   display: block;
   width: 100%;
   height: 34px;
-  color: var(--accent);
+  color: color-mix(in srgb, var(--ink-soft) 72%, var(--ink));
   outline: none;
   touch-action: pan-y;
 }
@@ -5329,7 +5329,7 @@ code {
 }
 
 .metric-trend-area {
-  fill: color-mix(in srgb, var(--accent) 16%, transparent);
+  fill: color-mix(in srgb, var(--ink-soft) 24%, transparent);
 }
 
 .metric-trend-line {
@@ -5341,7 +5341,7 @@ code {
 }
 
 .metric-trend-marker-line {
-  stroke: color-mix(in srgb, var(--accent) 70%, transparent);
+  stroke: color-mix(in srgb, var(--ink-soft) 48%, transparent);
   stroke-width: 1.5;
 }
 
