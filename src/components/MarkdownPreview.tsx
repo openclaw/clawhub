@@ -1,5 +1,5 @@
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
-import { TextWrap, UnfoldHorizontal } from "lucide-react";
+import { WrapText } from "lucide-react";
 import {
   isValidElement,
   useEffect,
@@ -212,12 +212,24 @@ function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWith
   const language = getCodeLanguage(`${className ?? ""} ${childClassName}`);
   const source = stringifyReactNode(children).replace(/\n$/, "");
   const preRef = useRef<HTMLPreElement | null>(null);
+  const revealTimeoutRef = useRef<number | null>(null);
   const [isWrapped, setIsWrapped] = useState(false);
+  const [isRevealingWrap, setIsRevealingWrap] = useState(false);
   const [canWrap, setCanWrap] = useState(false);
 
   useEffect(() => {
     setIsWrapped(false);
+    setIsRevealingWrap(false);
   }, [source]);
+
+  useEffect(
+    () => () => {
+      if (revealTimeoutRef.current !== null) {
+        window.clearTimeout(revealTimeoutRef.current);
+      }
+    },
+    [],
+  );
 
   useClientLayoutEffect(() => {
     const pre = preRef.current;
@@ -243,10 +255,33 @@ function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWith
     return () => observer.disconnect();
   }, [isWrapped, source]);
 
-  const WrapIcon = isWrapped ? UnfoldHorizontal : TextWrap;
+  const toggleWrap = () => {
+    const nextWrapped = !isWrapped;
+    setIsWrapped(nextWrapped);
+
+    if (nextWrapped) {
+      if (revealTimeoutRef.current !== null) {
+        window.clearTimeout(revealTimeoutRef.current);
+      }
+
+      setIsRevealingWrap(true);
+      revealTimeoutRef.current = window.setTimeout(() => {
+        setIsRevealingWrap(false);
+        revealTimeoutRef.current = null;
+      }, 180);
+    } else {
+      setIsRevealingWrap(false);
+    }
+  };
 
   return (
-    <figure className={cn("markdown-code-block", isWrapped && "is-wrapped")}>
+    <figure
+      className={cn(
+        "markdown-code-block",
+        isWrapped && "is-wrapped",
+        isRevealingWrap && "is-revealing-wrap",
+      )}
+    >
       <figcaption className="markdown-code-block-toolbar">
         <span className="markdown-code-block-language">{language}</span>
         {canWrap ? (
@@ -256,9 +291,9 @@ function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWith
               className="markdown-code-block-action"
               aria-label={isWrapped ? "Disable line wrap" : "Enable line wrap"}
               aria-pressed={isWrapped}
-              onClick={() => setIsWrapped((wrapped) => !wrapped)}
+              onClick={toggleWrap}
             >
-              <WrapIcon className="h-3.5 w-3.5" aria-hidden="true" />
+              <WrapText className="h-3.5 w-3.5" aria-hidden="true" />
             </button>
           </span>
         ) : null}

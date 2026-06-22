@@ -8238,17 +8238,17 @@ code {
 }
 
 .skill-readme-body .markdown h1 {
-  margin: 0 0 var(--space-5);
+  margin: 0 0 var(--space-3);
   font-size: 28px;
 }
 
 .skill-readme-body .markdown h2 {
-  margin: var(--space-7) 0 var(--space-4);
+  margin: var(--space-5) 0 var(--space-2);
   font-size: 22px;
 }
 
 .skill-readme-body .markdown h3 {
-  margin: var(--space-6) 0 var(--space-3);
+  margin: var(--space-5) 0 var(--space-2);
   font-size: 18px;
 }
 
@@ -8387,8 +8387,11 @@ code {
 }
 
 .markdown-code-block-action:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
+  outline: none;
+}
+
+.markdown-code-block.is-revealing-wrap pre {
+  animation: codeBlockWrapReveal 140ms cubic-bezier(0.23, 1, 0.32, 1);
 }
 
 .markdown .markdown-code-block pre,
@@ -8422,6 +8425,22 @@ code {
 .markdown .markdown-code-block pre::-webkit-scrollbar-thumb {
   border-radius: var(--r-pill);
   background: color-mix(in srgb, var(--ink-soft) 38%, transparent);
+}
+
+@keyframes codeBlockWrapReveal {
+  from {
+    filter: blur(2px);
+  }
+
+  to {
+    filter: blur(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .markdown-code-block.is-revealing-wrap pre {
+    animation: none;
+  }
 }
 
 .tab-body .markdown table {
