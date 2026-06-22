@@ -3,6 +3,7 @@ import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
+import { Button } from "./ui/button";
 import { buildSkillHref } from "./skillDetailUtils";
 
 export type RelatedSkillEntry = {
@@ -99,14 +100,12 @@ export function SkillRelatedSection({
             })}
       </div>
       <div className="related-skills-footer">
-        <a className="related-skills-category-link" href={buildSkillCategoryBrowseHref(category)}>
-          <BrowseCategoryIcon
-            slug={category.slug}
-            icon={category.icon}
-            size={13}
-          />
-          More in {category.label}
-        </a>
+        <Button asChild variant="outline" size="xs" className="related-skills-category-link">
+          <a href={buildSkillCategoryBrowseHref(category)}>
+            <BrowseCategoryIcon slug={category.slug} icon={category.icon} size={13} />
+            More in {category.label}
+          </a>
+        </Button>
       </div>
     </section>
   );

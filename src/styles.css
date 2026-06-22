@@ -6102,13 +6102,19 @@ code {
   letter-spacing: 0;
 }
 
-.related-skills-section-compact .related-skills-category-link {
-  font-size: 12px;
-}
-
 .related-skills-footer {
   display: flex;
-  justify-content: center;
+  min-width: 0;
+  padding-top: 2px;
+}
+
+.related-skills-category-link {
+  width: 100%;
+}
+
+.related-skills-category-link:hover:not(:disabled),
+.related-skills-category-link:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, var(--ink-soft) 36%, var(--line)) !important;
 }
 
 .related-skills-header {
@@ -6128,24 +6134,6 @@ code {
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.01em;
-}
-
-.related-skills-category-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: color-mix(in srgb, var(--ink-soft) 78%, var(--bg));
-  font-family: var(--font-body);
-  font-size: var(--fs-xs);
-  font-weight: 650;
-  line-height: 1.2;
-  text-decoration: none;
-  white-space: nowrap;
-}
-
-.related-skills-category-link:hover {
-  color: var(--ink);
-  text-decoration: none;
 }
 
 .related-skills-list {
