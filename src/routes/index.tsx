@@ -316,7 +316,6 @@ function SkillsHome() {
                   : " home-v2-headline-jackpot"
                 : ""
             }`}
-            onClick={handleHeadlineClick}
           >
             {slotState.phase === "stopped" && slotState.isHackJackpot ? (
               <img
@@ -326,31 +325,45 @@ function SkillsHome() {
                 className="home-v2-hack-lobster"
               />
             ) : null}
-            <span className="home-v2-headline-inner">
-              {renderSlotReel(0)}
-              <span className="home-v2-sep" />
-              {renderSlotReel(1)}
-              <span className="home-v2-sep home-v2-sep-final" />
-              {renderSlotReel(2)}
-            </span>
+            <button
+              type="button"
+              className="home-v2-headline-trigger"
+              title="Spin hero headline"
+              onClick={handleHeadlineClick}
+            >
+              <span className="home-v2-headline-inner">
+                {renderSlotReel(0)}
+                <span className="home-v2-sep" />
+                {renderSlotReel(1)}
+                <span className="home-v2-sep home-v2-sep-final" />
+                {renderSlotReel(2)}
+              </span>
+            </button>
           </h1>
         ) : (
-          <h1 className="home-v2-headline" onClick={handleHeadlineClick}>
-            <span className="home-v2-headline-inner">
-              <span className="home-v2-action-word">Equip</span>
-              <span className="home-v2-sep" />
-              <span className="home-v2-action-word">Install</span>
-              <span className="home-v2-sep home-v2-sep-final" />
-              <span className="home-v2-cycle-wrap">
-                <span className="home-v2-cycle-track">
-                  <span className="home-v2-cycle-word">Unleash</span>
-                  <span className="home-v2-cycle-word">Ship</span>
-                  <span className="home-v2-cycle-word">Build</span>
-                  <span className="home-v2-cycle-word">Create</span>
-                  <span className="home-v2-cycle-word">Unleash</span>
+          <h1 className="home-v2-headline">
+            <button
+              type="button"
+              className="home-v2-headline-trigger"
+              title="Spin hero headline"
+              onClick={handleHeadlineClick}
+            >
+              <span className="home-v2-headline-inner">
+                <span className="home-v2-action-word">Equip</span>
+                <span className="home-v2-sep" />
+                <span className="home-v2-action-word">Install</span>
+                <span className="home-v2-sep home-v2-sep-final" />
+                <span className="home-v2-cycle-wrap">
+                  <span className="home-v2-cycle-track">
+                    <span className="home-v2-cycle-word">Unleash</span>
+                    <span className="home-v2-cycle-word">Ship</span>
+                    <span className="home-v2-cycle-word">Build</span>
+                    <span className="home-v2-cycle-word">Create</span>
+                    <span className="home-v2-cycle-word">Unleash</span>
+                  </span>
                 </span>
               </span>
-            </span>
+            </button>
           </h1>
         )}
 

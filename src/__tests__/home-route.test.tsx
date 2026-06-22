@@ -47,7 +47,7 @@ describe("home route", () => {
   }
 
   function clickHeroHeadlineTriple() {
-    const headline = screen.getByRole("heading", { level: 1 });
+    const headline = screen.getByRole("button", { name: /Equip/ });
     act(() => {
       fireEvent.click(headline);
       fireEvent.click(headline);
@@ -66,6 +66,7 @@ describe("home route", () => {
       "Discover skills and plugins from top creators",
     );
     expect(screen.queryByRole("link", { name: "200k+ publishers" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Equip/ }).tabIndex).toBe(0);
   });
 
   it("renders the catalog and new homepage sections without the old hero search", async () => {
