@@ -1191,7 +1191,6 @@ async function installSkillWithOptionalStaging(
     await rename(stage, target);
     stageMoved = true;
     await rm(backup, { recursive: true, force: true });
-    backupCreated = false;
   } catch (error) {
     if (backupCreated) {
       await rm(target, { recursive: true, force: true }).catch(() => {});

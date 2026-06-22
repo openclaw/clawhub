@@ -77,7 +77,6 @@ async function fetchWithRetry(
   options: { maxAttempts?: number; timeoutMs?: number } = {},
 ) {
   const maxAttempts = options.maxAttempts ?? MAX_RATE_LIMIT_RETRIES;
-  let lastError: unknown;
   for (let attempt = 1; ; attempt += 1) {
     try {
       const response = await fetchWithTimeout(input, init, options.timeoutMs);
@@ -97,8 +96,6 @@ async function fetchWithRetry(
       await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
     }
   }
-
-  throw lastError;
 }
 
 async function fetchHtml(pathname: string) {

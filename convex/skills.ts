@@ -2928,12 +2928,9 @@ export const checkSlugAvailability = query({
       };
     }
 
-    const requestedPublisherMatchesSkill = requestedPublisher
-      ? skill.ownerPublisherId
-        ? requestedPublisher._id === skill.ownerPublisherId
-        : requestedPublisher.kind === "user" &&
-          requestedPublisher.linkedUserId === skill.ownerUserId
-      : !requestedHandle;
+    const requestedPublisherMatchesSkill = skill.ownerPublisherId
+      ? requestedPublisher._id === skill.ownerPublisherId
+      : requestedPublisher.kind === "user" && requestedPublisher.linkedUserId === skill.ownerUserId;
 
     if (userId && skill.ownerUserId === userId && requestedPublisherMatchesSkill) {
       return {

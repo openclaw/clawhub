@@ -102,7 +102,7 @@ describe("SkillPublishSuccessDialog", () => {
     await waitFor(() => {
       expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining("/vyctor/agent-helper"));
     });
-    expect(screen.getByText("Copied")).toBeTruthy();
+    expect(await screen.findByText("Copied")).toBeTruthy();
   });
 
   it("copies a ready Discord message before opening the Discord channel", async () => {

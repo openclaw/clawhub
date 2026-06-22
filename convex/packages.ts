@@ -901,6 +901,7 @@ type PublicPageCursorState = {
   done: boolean;
   mode?: "packages" | "digest";
   sort?: "updated" | "downloads" | "recommended" | "installs";
+  packageIndex?: "family-official-downloads";
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
 type OfficialFirstPackageCategoryCursorState = {
@@ -1549,6 +1550,8 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
         parsed.sort === "installs"
           ? parsed.sort
           : undefined,
+      packageIndex:
+        parsed.packageIndex === "family-official-downloads" ? parsed.packageIndex : undefined,
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -3487,6 +3490,13 @@ async function listPackagePageImpl(
   }
   const pageCursor = decodedCursor.cursor;
   const offset = decodedCursor.offset;
+  const sortedPackageIndex =
+    family &&
+    args.sort === "downloads" &&
+    typeof isOfficial === "boolean" &&
+    (!args.paginationOpts.cursor || decodedCursor.packageIndex === "family-official-downloads")
+      ? ("family-official-downloads" as const)
+      : undefined;
   const effectivePageSize = Math.min(
     MAX_PUBLIC_LIST_PAGE_SIZE,
     Math.max(
@@ -3527,6 +3537,13 @@ async function listPackagePageImpl(
     let done = decodedCursor.done;
     const buildSortedQuery = () => {
       if (family) {
+        if (sortedPackageIndex === "family-official-downloads" && typeof isOfficial === "boolean") {
+          return ctx.db
+            .query("packages")
+            .withIndex("by_active_family_official_downloads", (q) =>
+              q.eq("softDeletedAt", undefined).eq("family", family).eq("isOfficial", isOfficial),
+            );
+        }
         if (args.sort === "installs" && typeof isOfficial === "boolean") {
           return ctx.db
             .query("packages")
@@ -3549,7 +3566,7 @@ async function listPackagePageImpl(
       return ctx.db.query("packages").withIndex(indexName, (q) => q.eq("softDeletedAt", undefined));
     };
 
-    while ((pageOffset > 0 || !done) && collected.length < targetCount) {
+    if (pageOffset > 0 || !done) {
       const scanPageSize = Math.min(
         MAX_PUBLIC_LIST_PAGE_SIZE,
         pageOffset > 0 && pageSize
@@ -3576,6 +3593,7 @@ async function listPackagePageImpl(
                   pageSize: scanPageSize,
                   done: page.isDone,
                   mode: "packages" as const,
+                  packageIndex: sortedPackageIndex,
                 }
               : {
                   cursor: page.continueCursor,
@@ -3583,6 +3601,7 @@ async function listPackagePageImpl(
                   pageSize: scanPageSize,
                   done: page.isDone,
                   mode: "packages" as const,
+                  packageIndex: sortedPackageIndex,
                 };
           return {
             page: collected,
@@ -3607,6 +3626,7 @@ async function listPackagePageImpl(
         pageSize,
         done,
         mode: "packages",
+        packageIndex: sortedPackageIndex,
       }),
     };
   }
@@ -3644,7 +3664,7 @@ async function listPackagePageImpl(
     ? MAX_PUBLIC_LIST_FILTER_SCAN_DOCUMENTS
     : MAX_PUBLIC_LIST_PAGE_SIZE;
 
-  while (
+  if (
     (pageOffset > 0 || !done) &&
     collected.length < targetCount &&
     digestScanPages < MAX_PUBLIC_LIST_FILTER_SCAN_PAGES &&
@@ -3657,61 +3677,61 @@ async function listPackagePageImpl(
         ? Math.max(pageSize, pageOffset + targetCount)
         : Math.max(effectivePageSize, targetCount),
     );
-    if (scanPageSize <= 0) break;
-    digestScanPages += 1;
-    remainingDigestScanBudget -= scanPageSize;
-    const currentCursor = cursor;
-    const page: {
-      page: PackageDigestLike[];
-      isDone: boolean;
-      continueCursor: string;
-    } = await buildDigestQuery()
-      .order("desc")
-      .paginate({ cursor: currentCursor, numItems: scanPageSize });
+    if (scanPageSize > 0) {
+      digestScanPages += 1;
+      remainingDigestScanBudget -= scanPageSize;
+      const currentCursor = cursor;
+      const page: {
+        page: PackageDigestLike[];
+        isDone: boolean;
+        continueCursor: string;
+      } = await buildDigestQuery()
+        .order("desc")
+        .paginate({ cursor: currentCursor, numItems: scanPageSize });
 
-    for (let index = pageOffset; index < page.page.length; index += 1) {
-      const digest = page.page[index] as PackageDigestLike;
-      if (!(await canViewPackage(digest))) continue;
-      if (family && digest.family !== family) continue;
-      if (channel && digest.channel !== channel) continue;
-      if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
-        continue;
+      for (let index = pageOffset; index < page.page.length; index += 1) {
+        const digest = page.page[index] as PackageDigestLike;
+        if (!(await canViewPackage(digest))) continue;
+        if (family && digest.family !== family) continue;
+        if (channel && digest.channel !== channel) continue;
+        if (typeof isOfficial === "boolean" && digest.isOfficial !== isOfficial) {
+          continue;
+        }
+        if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
+        collected.push(await toPublicPackageListItem(ctx, digest));
+        if (collected.length >= targetCount) {
+          const nextOffset = index + 1;
+          const nextState =
+            nextOffset < page.page.length
+              ? {
+                  cursor: currentCursor,
+                  offset: nextOffset,
+                  pageSize: scanPageSize,
+                  done: page.isDone,
+                  mode: "digest" as const,
+                  sort: effectiveDigestSort,
+                }
+              : {
+                  cursor: page.continueCursor,
+                  offset: 0,
+                  pageSize: scanPageSize,
+                  done: page.isDone,
+                  mode: "digest" as const,
+                  sort: effectiveDigestSort,
+                };
+          return {
+            page: collected,
+            isDone: nextState.done && nextState.offset === 0,
+            continueCursor: encodePublicPageCursor(nextState),
+          };
+        }
       }
-      if (!digestMatchesFilters(digest, { ...args, category, topic })) continue;
-      collected.push(await toPublicPackageListItem(ctx, digest));
-      if (collected.length >= targetCount) {
-        const nextOffset = index + 1;
-        const nextState =
-          nextOffset < page.page.length
-            ? {
-                cursor: currentCursor,
-                offset: nextOffset,
-                pageSize: scanPageSize,
-                done: page.isDone,
-                mode: "digest" as const,
-                sort: effectiveDigestSort,
-              }
-            : {
-                cursor: page.continueCursor,
-                offset: 0,
-                pageSize: scanPageSize,
-                done: page.isDone,
-                mode: "digest" as const,
-                sort: effectiveDigestSort,
-              };
-        return {
-          page: collected,
-          isDone: nextState.done && nextState.offset === 0,
-          continueCursor: encodePublicPageCursor(nextState),
-        };
-      }
+
+      done = page.isDone;
+      cursor = page.continueCursor;
+      pageOffset = 0;
+      pageSize = scanPageSize;
     }
-
-    done = page.isDone;
-    cursor = page.continueCursor;
-    pageOffset = 0;
-    pageSize = scanPageSize;
-    if (!requiresDigestPostFilterScan) break;
   }
 
   return {

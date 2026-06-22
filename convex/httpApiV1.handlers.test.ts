@@ -2237,6 +2237,30 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("uses the public site origin for production ambiguous skill choices", async () => {
+    vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
+    const runQuery = vi.fn().mockResolvedValue({
+      skill: null,
+      ambiguous: true,
+      ambiguousMatches: [
+        { slug: "demo", ownerHandle: "openclaw" },
+        { slug: "demo", ownerHandle: "patrick" },
+      ],
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://wry-manatee-359.convex.site/api/v1/skills/demo"),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.matches).toEqual([
+      expect.objectContaining({ url: "https://clawhub.ai/openclaw/demo" }),
+      expect.objectContaining({ url: "https://clawhub.ai/patrick/demo" }),
+    ]);
+  });
+
   it("get skill returns pending-scan message for owner api token", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -2557,6 +2581,42 @@ describe("httpApiV1 handlers", () => {
       archive: {
         version: "1.0.0",
         downloadUrl: "https://example.com/api/v1/download?slug=demo&version=1.0.0",
+      },
+    });
+  });
+
+  it("skill install resolver threads ownerHandle through scoped archive installs", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:demo",
+        slug: "demo",
+        displayName: "Demo Skill",
+        latestVersionSummary: { version: "1.0.0" },
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/install?ownerHandle=acme"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.skills.getSkillBySlugInternal,
+      expect.objectContaining({ slug: "demo", ownerHandle: "acme" }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      api.skills.getBySlug,
+      expect.objectContaining({ slug: "demo", ownerHandle: "acme" }),
+    );
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      slug: "demo",
+      installKind: "archive",
+      archive: {
+        version: "1.0.0",
+        downloadUrl: "https://example.com/api/v1/download?slug=demo&ownerHandle=acme&version=1.0.0",
       },
     });
   });

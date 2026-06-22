@@ -9,7 +9,7 @@ on:
       batch-limit:
         description: "Maximum Skill Card jobs to run in parallel per worker shard"
         required: true
-        default: "6"
+        default: "4"
       max-jobs:
         description: "Optional total jobs cap per worker shard"
         required: false
@@ -22,6 +22,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: clawhub-skill-card-worker
+  cancel-in-progress: false
+
 jobs:
   skill-card-worker:
     name: Skill Card worker shard ${{ matrix.shard }}
@@ -31,12 +35,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3]
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       # Shared Convex worker credential used by security and Skill Card workers.
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-      SKILL_CARD_WORKER_LIMIT: ${{ github.event.inputs['batch-limit'] || '6' }}
+      SKILL_CARD_WORKER_LIMIT: ${{ github.event.inputs['batch-limit'] || '4' }}
       SKILL_CARD_WORKER_MAX_JOBS: ${{ github.event.inputs['max-jobs'] || '' }}
       SKILL_CARD_WORKER_MAX_RUNTIME_MINUTES: ${{ github.event.inputs['max-runtime-minutes'] || '40' }}
       SKILL_CARD_WORKER_LEASE_MINUTES: "60"
