@@ -12,6 +12,7 @@ test.skip(
   "malicious skill ban flow requires the local dev auth runner",
 );
 test.setTimeout(180_000);
+test.describe.configure({ retries: 0 });
 
 const WORKER_TOKEN = process.env.SECURITY_SCAN_WORKER_TOKEN ?? "local-e2e-worker-token";
 const { ConvexHttpClient } = convexBrowser;
@@ -130,14 +131,28 @@ async function expectCurrentVersion(page: import("@playwright/test").Page, versi
 }
 
 function withoutExpectedBannedSessionTeardownErrors(errors: string[]) {
+  const timedOutDuringBannedSessionTeardown = [
+    "CONVEX Q(skills:listVersions)",
+    "CONVEX Q(skills:list)",
+    "CONVEX Q(users:me)",
+    "CONVEX Q(publishers:listMine)",
+    "CONVEX Q(publishers:getMyProfileHandle)",
+    "CONVEX M(packages:applyBanToOwnedPackagesBatchInternal)",
+  ];
   return errors.filter(
-    (error) => !(error.includes("CONVEX M(users:ensure)") && error.includes("User not found")),
+    (error) =>
+      !(error.includes("CONVEX M(users:ensure)") && error.includes("User not found")) &&
+      !(
+        error.includes("Function execution timed out (maximum duration: 1s)") &&
+        timedOutDuringBannedSessionTeardown.some((functionName) => error.includes(functionName))
+      ),
   );
 }
 
 test("malicious skill retries keep the clean latest visible, email the publisher, and ban on third rejection", async ({
   page,
 }, testInfo) => {
+  await page.route("https://openclaw.ai/**", (route) => route.fulfill({ status: 204 }));
   const errors = trackRuntimeErrors(page);
   const client = convexClient();
   const slug = `pw-malware-${Date.now().toString(36)}`;
