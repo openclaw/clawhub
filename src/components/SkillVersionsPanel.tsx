@@ -135,16 +135,24 @@ export function SkillVersionsPanel({
         </div>
         <div className="skill-versions-scroll">
           <div className="skill-versions-list">
+            <div className="skill-versions-column-header" aria-hidden="true">
+              <span>Version</span>
+              <span>Checks</span>
+              <span>Release</span>
+              <span>Package</span>
+              <span />
+            </div>
             {visibleVersions.map((version) => {
               const isLatest =
                 version._id === latestVersionId || version._id === latestTaggedVersionId;
               const isAvailable =
                 version.softDeletedAt === undefined && version.ownerDeletedAt === undefined;
               const isExpanded = expandedVersionIds.has(version._id);
+              const isAutoChangelog = version.changelogSource === "auto";
               return (
                 <article
                   key={version._id}
-                  className="skill-version-release"
+                  className={`skill-version-release${isLatest ? " is-latest" : ""}`}
                   data-expanded={isExpanded ? "true" : "false"}
                 >
                   <div
@@ -159,9 +167,6 @@ export function SkillVersionsPanel({
                       <span className="skill-version-release-version">v{version.version}</span>
                       <span className="skill-version-release-meta">
                         <span>{new Date(version.createdAt).toLocaleDateString()}</span>
-                        {version.changelogSource === "auto" ? (
-                          <span className="skill-version-release-source">auto</span>
-                        ) : null}
                       </span>
                     </div>
                     {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
@@ -179,12 +184,17 @@ export function SkillVersionsPanel({
                         />
                       </div>
                     ) : null}
+                    <div className="skill-version-release-tags">
+                      {isLatest ? <Badge variant="compact">Latest</Badge> : null}
+                      {isAutoChangelog ? (
+                        <span className="version-channel-badge">auto</span>
+                      ) : null}
+                    </div>
                     <div
                       className="skill-version-release-actions"
                       onClick={stopVersionActionPropagation}
                       onKeyDown={stopVersionKeyPropagation}
                     >
-                      {isLatest ? <Badge variant="compact">Latest</Badge> : null}
                       {!nixPlugin && isAvailable ? (
                         <a
                           href={buildVersionDownloadHref(

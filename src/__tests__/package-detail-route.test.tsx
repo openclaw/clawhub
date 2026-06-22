@@ -260,8 +260,11 @@ describe("plugin detail route", () => {
     render(<Component />);
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByText(`v2.0.0 · ${new Date(publishedAt).toLocaleDateString()}`)).toBeTruthy();
+    expect(screen.getByText("v2.0.0")).toBeTruthy();
+    expect(screen.getByText(new Date(publishedAt).toLocaleDateString())).toBeTruthy();
+    fireEvent.click(screen.getByText("v2.0.0"));
     expect(screen.getByText("Adds package release history.")).toBeTruthy();
+    fireEvent.click(screen.getByText("v2.0.0-beta.1"));
     expect(screen.getByText("Previews package release history.")).toBeTruthy();
     expect(screen.getByText("latest")).toBeTruthy();
     expect(screen.getByText("stable")).toBeTruthy();
@@ -271,7 +274,7 @@ describe("plugin detail route", () => {
         'a[href="/api/v1/packages/demo-plugin/download?version=2.0.0-beta.1"]',
       ),
     ).toBeNull();
-    expect(screen.queryByText("Zip")).toBeNull();
+    expect(screen.queryByText("Download .zip")).toBeNull();
   });
 
   it("loads and appends the next active release page", async () => {
@@ -314,15 +317,17 @@ describe("plugin detail route", () => {
       cursor: "versions:next",
       limit: 20,
     });
+    fireEvent.click(screen.getByText("v2.0.0"));
     expect(screen.getByText("Current page")).toBeTruthy();
+    fireEvent.click(screen.getByText("v1.0.0"));
     expect(screen.getByText("Loaded next page")).toBeTruthy();
     expect(
       document.querySelector('a[href="/api/v1/packages/demo-plugin/download?version=1.0.0"]'),
     ).toBeNull();
-    expect(screen.queryByText("Zip")).toBeNull();
+    expect(screen.queryByText("Download .zip")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "README" }));
+    fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
     expect(screen.getByText("Loaded next page")).toBeTruthy();
@@ -402,7 +407,9 @@ describe("plugin detail route", () => {
     };
     rerender(<PluginDetailPage name="@scope/plugin-b" loaderData={loaderDataMock} />);
 
-    expect(screen.getByRole("tab", { name: "README" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "README.md" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.getByText("Plugin B README")).toBeTruthy();
     expect(screen.queryByText("Plugin A loaded release")).toBeNull();
 
@@ -513,7 +520,7 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "README",
+      "README.md",
       "Skills",
       "MCP Servers",
       "Configuration",

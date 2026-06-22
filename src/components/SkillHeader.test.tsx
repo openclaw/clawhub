@@ -119,7 +119,7 @@ describe("SkillHeader", () => {
     expect(onRequireSignIn).toHaveBeenCalledTimes(2);
     expect(onToggleStar).not.toHaveBeenCalled();
     expect(onOpenReport).not.toHaveBeenCalled();
-    expect(screen.getByText("Owner")).toBeTruthy();
+    expect(screen.getByText("Creator")).toBeTruthy();
     expect(screen.getByText("Installs")).toBeTruthy();
     expect(screen.getByText("3")).toBeTruthy();
     expect(container.querySelector('a[href="/user/local"]')).toBeTruthy();
@@ -186,7 +186,7 @@ describe("SkillHeader", () => {
     renderHeader({ showArchiveMetadata: false });
 
     expect(screen.getByText("Installs")).toBeTruthy();
-    expect(screen.getByText("Owner")).toBeTruthy();
+    expect(screen.getByText("Creator")).toBeTruthy();
     expect(screen.getByText("Last updated")).toBeTruthy();
     expect(screen.queryByText("Current version")).toBeNull();
     expect(screen.queryByText("License")).toBeNull();

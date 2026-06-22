@@ -4606,33 +4606,11 @@ code {
   min-width: 0;
 }
 
-.skill-hero-layout.has-sidebar .skill-summary-block {
-  max-width: calc(100% - min(360px, max(300px, 26.5vw)) - clamp(56px, 7vw, 96px));
-}
-
 @media (min-width: 1101px) {
-  .skill-hero-layout.has-sidebar {
+  .skill-hero-lower.has-sidebar {
+    display: grid;
     grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
     column-gap: clamp(56px, 7vw, 96px);
-  }
-
-  .skill-hero-layout.has-sidebar > .skill-hero-main {
-    grid-column: 1;
-    grid-row: 1;
-  }
-
-  .skill-hero-lower.has-sidebar {
-    display: contents;
-  }
-
-  .skill-hero-lower.has-sidebar > .skill-hero-main-extra {
-    grid-column: 1;
-    grid-row: 2;
-  }
-
-  .skill-hero-lower.has-sidebar > .skill-hero-sidebar {
-    grid-column: 2;
-    grid-row: 1 / span 2;
   }
 }
 
@@ -4647,7 +4625,6 @@ code {
 .skill-hero-lower.has-sidebar {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: clamp(56px, 7vw, 96px);
-  --detail-summary-row-height: 64px;
 }
 
 .skill-hero-main-extra {
@@ -7093,7 +7070,27 @@ code {
   border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
   border-radius: var(--r-md);
   overflow: hidden;
-  background: color-mix(in srgb, var(--surface) 38%, transparent);
+  background: color-mix(in srgb, var(--surface) 28%, transparent);
+}
+
+.skill-versions-column-header {
+  display: grid;
+  grid-template-columns:
+    minmax(130px, 0.42fr)
+    minmax(150px, 0.52fr)
+    minmax(120px, 0.38fr)
+    minmax(150px, auto)
+    28px;
+  gap: 18px;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent);
+  color: color-mix(in srgb, var(--ink-soft) 72%, transparent);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  text-transform: uppercase;
 }
 
 .skill-version-release {
@@ -7101,8 +7098,8 @@ code {
   gap: 0;
   min-width: 0;
   border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
-  background: color-mix(in srgb, var(--surface) 34%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 68%, transparent);
+  background: color-mix(in srgb, var(--surface) 20%, transparent);
   transition: background-color 160ms ease;
 }
 
@@ -7110,13 +7107,22 @@ code {
   border-bottom: 0;
 }
 
+.skill-version-release.is-latest {
+  background: color-mix(in srgb, var(--ink) 2.2%, var(--surface) 28%);
+}
+
 .skill-version-release-summary {
   display: grid;
-  grid-template-columns: minmax(140px, 0.22fr) minmax(190px, 1fr) auto 22px;
+  grid-template-columns:
+    minmax(130px, 0.42fr)
+    minmax(150px, 0.52fr)
+    minmax(120px, 0.38fr)
+    minmax(150px, auto)
+    28px;
   gap: 18px;
   align-items: center;
   min-width: 0;
-  padding: 18px 16px;
+  padding: 15px 16px;
   cursor: pointer;
   transition: background-color 160ms ease;
 }
@@ -7126,7 +7132,7 @@ code {
 }
 
 .skill-version-release[data-expanded="true"] {
-  background: color-mix(in srgb, var(--surface) 48%, var(--bg) 52%);
+  background: color-mix(in srgb, var(--ink) 3.5%, var(--surface) 34%);
 }
 
 .skill-version-release-summary:focus-visible {
@@ -7165,12 +7171,8 @@ code {
   line-height: 1.35;
 }
 
-.skill-version-release-source {
-  color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
-}
-
 .skill-version-release-chevron {
-  grid-column: 4;
+  grid-column: 5;
   justify-self: end;
   width: 10px;
   height: 10px;
@@ -7188,11 +7190,11 @@ code {
 }
 
 .skill-version-release-changelog {
-  margin: -2px 16px 18px;
-  padding: 12px 14px;
+  margin: 0 16px 16px;
+  padding: 14px 16px;
   border-radius: var(--r-sm);
-  background: color-mix(in srgb, var(--ink) 3%, var(--surface) 52%);
-  color: var(--ink-soft);
+  background: color-mix(in srgb, var(--ink) 4.5%, transparent);
+  color: color-mix(in srgb, var(--ink) 72%, transparent);
   font-size: 0.84rem;
   line-height: 1.45;
   overflow-wrap: anywhere;
@@ -7257,12 +7259,21 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.skill-version-release-tags {
+  grid-column: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 6px;
   min-width: 0;
 }
 
 .skill-version-release-actions {
-  grid-column: 3;
+  grid-column: 4;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -7275,9 +7286,9 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 8px;
   min-height: 32px;
-  padding: 7px 10px;
+  padding: 7px 12px;
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--surface);
@@ -7295,7 +7306,57 @@ code {
 
 .skill-version-release-download-icon {
   flex: 0 0 auto;
+  color: color-mix(in srgb, var(--ink-soft) 72%, transparent);
+}
+
+.version-channel-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 2px 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 76%, transparent);
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink) 3%, transparent);
   color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
+  font-size: 0.72rem;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.skill-version-release .version-scan-badge {
+  min-width: 0;
+}
+
+.skill-version-release .version-scan-badge .scan-result-status.scan-status-clean {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  min-height: 22px;
+  justify-content: center;
+  gap: 0;
+  padding: 0;
+  border-color: color-mix(in srgb, var(--status-success-fg) 24%, var(--line));
+  border-radius: var(--r-pill);
+  font-size: 0;
+}
+
+.skill-version-release .version-scan-badge .scan-result-status.scan-status-clean::before {
+  content: "✓";
+  font-size: 0.74rem;
+  line-height: 1;
+}
+
+.skill-version-release .version-scan-badge .scan-status-pending {
+  border-color: color-mix(in srgb, var(--ink-soft) 34%, var(--line));
+  background: color-mix(in srgb, var(--ink-soft) 10%, transparent);
+  color: color-mix(in srgb, var(--ink) 68%, transparent);
+}
+
+.skill-version-release .version-scan-badge .scan-status-warn,
+.skill-version-release .version-scan-badge .scan-status-suspicious {
+  border-color: color-mix(in srgb, #f6c343 40%, var(--line));
+  background: color-mix(in srgb, #f6c343 18%, transparent);
+  color: #f4c542;
 }
 
 @media (max-width: 760px) {
@@ -7303,6 +7364,10 @@ code {
     align-items: flex-start;
     flex-direction: column;
     gap: 6px;
+  }
+
+  .skill-versions-column-header {
+    display: none;
   }
 
   .skill-version-release {
@@ -7319,6 +7384,7 @@ code {
   }
 
   .skill-version-release-scan,
+  .skill-version-release-tags,
   .skill-version-release-actions {
     grid-column: 1 / -1;
   }

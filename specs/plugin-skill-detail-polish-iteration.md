@@ -131,16 +131,19 @@ This note preserves the complete UI direction established during the June 2026 d
 - Versions are rendered by ClawHub, not by an iframe or VirusTotal embed; therefore the layout is fully controlled by this app.
 - Present release history like a changelog rather than a tall nested card stack.
 - Keep each release compact and horizontally organized.
+- Use an explicit row grid with quiet column headings so scan/audit/tag/action columns stay understandable.
 - The collapsed row must keep the important facts visible: version, date, release channel/latest state, package download, scan state, and security review/audit state when available.
 - Make the entire release row toggle expansion, except nested links/actions.
 - Put a chevron at the far right and rotate it when expanded so collapsibility is unmistakable.
 - Expanded content contains the changelog without an extra heavy card or left accent border.
 - Give rows and expanded content enough neutral contrast to show grouping without creating cards inside cards.
+- Use compact icon-only pass states in dense release rows, and reserve labeled badges for states that need attention such as Review and Pending.
+- Highlight the latest/current release subtly through row background and/or a compact badge, not a heavy decorative treatment.
 - Remove the old internal scroll region and let the page flow naturally.
 - Label the package action `Download .zip` with a muted download icon and correct icon/label spacing.
 - Preserve `Latest`, beta/channel, pending/pass/review, scan, and audit indicators when data exists.
 - Never hide changelog text merely because a plugin release lacks scan metadata.
-- Use the same component and behavior for skill and plugin Versions; omit only unavailable fields.
+- Use the same component and behavior for skill and plugin Versions; omit only unavailable fields. If plugin releases do not expose per-release checks, use that column for package tags instead of showing an empty checks concept.
 
 ## Files
 
@@ -179,5 +182,5 @@ This note preserves the complete UI direction established during the June 2026 d
 - Verify every tab, summary expansion, CLI/Prompt transition, code wrapping, version collapse, download link, related-skill hover, file-tree navigation, and Back action.
 - Confirm scroll position is preserved when switching tabs.
 - Confirm no debug borders, accidental heading rules, duplicated metadata, fixed wash, or unintended horizontal page scroll remain.
-- Run the repository static, unit, type/build, and relevant browser gates only after the iteration is complete.
-- Run pre-handoff review and resolve accepted actionable findings.
+- Run the repository static, unit, type/build, and relevant browser gates only after the iteration is complete, unless the user explicitly narrows verification for the handoff.
+- Run pre-handoff review and resolve accepted actionable findings unless the user explicitly opts out.

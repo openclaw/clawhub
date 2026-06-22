@@ -159,6 +159,13 @@ export function PluginVersionsPanel({
         ) : releases.length > 0 || nextCursor ? (
           <div className="skill-versions-scroll">
             <div className="skill-versions-list">
+              <div className="skill-versions-column-header" aria-hidden="true">
+                <span>Version</span>
+                <span>Tags</span>
+                <span>Release</span>
+                <span>Package</span>
+                <span />
+              </div>
               {releases.map((release) => {
                 const hasLatestTag = release.distTags?.includes("latest");
                 const isLatest = release.version === latestVersion || hasLatestTag;
@@ -166,7 +173,7 @@ export function PluginVersionsPanel({
                 return (
                   <article
                     key={release.version}
-                    className="skill-version-release"
+                    className={`skill-version-release${isLatest ? " is-latest" : ""}`}
                     data-expanded={isExpanded ? "true" : "false"}
                   >
                     <div
@@ -183,26 +190,28 @@ export function PluginVersionsPanel({
                           <span>{new Date(release.createdAt).toLocaleDateString()}</span>
                         </span>
                       </div>
-                      {release.distTags && release.distTags.length > 0 ? (
-                        <div
-                          className="skill-version-release-scan"
-                          aria-label="Release tags"
-                          onClick={stopVersionActionPropagation}
-                          onKeyDown={stopVersionKeyPropagation}
-                        >
-                          {release.distTags.map((tag) => (
-                            <Badge key={tag} variant="compact">
-                              {tag}
-                            </Badge>
-                          ))}
-                        </div>
-                      ) : null}
+                      <div
+                        className="skill-version-release-scan"
+                        aria-label="Release tags"
+                        onClick={stopVersionActionPropagation}
+                        onKeyDown={stopVersionKeyPropagation}
+                      >
+                        {release.distTags && release.distTags.length > 0
+                          ? release.distTags.map((tag) => (
+                              <Badge key={tag} variant="compact">
+                                {tag}
+                              </Badge>
+                            ))
+                          : null}
+                      </div>
+                      <div className="skill-version-release-tags">
+                        {isLatest && !hasLatestTag ? <Badge variant="compact">Latest</Badge> : null}
+                      </div>
                       <div
                         className="skill-version-release-actions"
                         onClick={stopVersionActionPropagation}
                         onKeyDown={stopVersionKeyPropagation}
                       >
-                        {isLatest && !hasLatestTag ? <Badge variant="compact">Latest</Badge> : null}
                         <a
                           href={buildPluginDownloadHref(packageName, release.version)}
                           className="skill-version-release-download"

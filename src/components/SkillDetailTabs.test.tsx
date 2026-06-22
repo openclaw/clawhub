@@ -209,7 +209,7 @@ describe("SkillDetailTabs README links", () => {
       />,
     );
 
-    const href = screen.getByRole("link", { name: "Zip" }).getAttribute("href");
+    const href = screen.getByRole("link", { name: "Download .zip" }).getAttribute("href");
     const url = new URL(href ?? "");
     expect(url.pathname).toBe("/api/v1/download");
     expect(url.searchParams.get("slug")).toBe("api-gateway");

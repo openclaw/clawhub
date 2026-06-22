@@ -831,7 +831,7 @@ describe("SkillDetailPage", () => {
     const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
       label?.startsWith("Security audit"),
     );
-    expect(securityAuditLabelIndex).toBe(sidebarLabels.indexOf("Owner") + 1);
+    expect(securityAuditLabelIndex).toBe(sidebarLabels.indexOf("Creator") + 1);
     expect(
       screen.getByRole("button", {
         name: "Security checks across malware telemetry and agentic risk",
