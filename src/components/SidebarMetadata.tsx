@@ -6,6 +6,7 @@ type SidebarMetadataItem = {
   key?: string;
   value: ReactNode;
   large?: boolean;
+  inline?: boolean;
 };
 
 type SidebarMetadataBlock =
@@ -25,7 +26,13 @@ function getSidebarMetadataItemKey(item: SidebarMetadataItem, fallback: string) 
 function SidebarMetadataRow({ item }: { item: SidebarMetadataItem }) {
   if (item.value === null || item.value === undefined || item.value === "") return null;
   return (
-    <div className={cn("sidebar-metadata-row", item.large && "sidebar-metadata-row-large")}>
+    <div
+      className={cn(
+        "sidebar-metadata-row",
+        item.large && "sidebar-metadata-row-large",
+        item.inline && "sidebar-metadata-row-inline",
+      )}
+    >
       <dt className="sidebar-metadata-label">{item.label}</dt>
       <dd className="sidebar-metadata-value">{item.value}</dd>
     </div>

@@ -189,6 +189,11 @@
     "Bricolage Grotesque", "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-body: "Manrope", "Inter", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* Metric trend sparklines */
+  --metric-trend-line: color-mix(in srgb, #8eb8e8 78%, var(--ink));
+  --metric-trend-area: color-mix(in srgb, #8eb8e8 20%, transparent);
+  --metric-trend-marker: color-mix(in srgb, #8eb8e8 42%, transparent);
 }
 
 /* Light theme — OpenClaw black, white, red */
@@ -241,6 +246,11 @@
   --shadow-dialog: 0 24px 48px -12px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(0, 0, 0, 0.05);
   --shadow-hover: 0 8px 24px -4px rgba(0, 0, 0, 0.1);
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04);
+
+  /* Metric trend sparklines */
+  --metric-trend-line: color-mix(in srgb, #4a7fd0 84%, var(--ink));
+  --metric-trend-area: color-mix(in srgb, #4a7fd0 14%, transparent);
+  --metric-trend-marker: color-mix(in srgb, #4a7fd0 30%, transparent);
 }
 
 pre,
@@ -1847,6 +1857,10 @@ code {
 
 .security-report-sidebar .sidebar-metadata-compact > .sidebar-metadata-grid:first-child {
   min-height: auto;
+}
+
+.security-report-sidebar .sidebar-metadata-row-inline {
+  padding-block: 12px;
 }
 
 .security-audit-page .security-audit-rescan-button,

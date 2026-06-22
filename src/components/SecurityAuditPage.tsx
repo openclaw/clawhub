@@ -815,10 +815,11 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
             },
             {
               label: "Latest audit",
+              inline: true,
               value: (
                 <span className="sidebar-metadata-inline">
-                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-                  {formatTime(latestCheckedAt)}
+                  <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="sidebar-metadata-inline-text">{formatTime(latestCheckedAt)}</span>
                 </span>
               ),
             },

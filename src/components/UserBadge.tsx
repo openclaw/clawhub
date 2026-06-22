@@ -71,19 +71,13 @@ export function UserBadge({
           ) : null}
         </>
       ) : null}
-      {showHandle && link && href ? (
-        <a className="user-handle" href={href}>
-          {label}
-        </a>
-      ) : showHandle ? (
-        <span className="user-handle">{label}</span>
-      ) : null}
+      {showHandle ? <span className="user-handle">{label}</span> : null}
       {isOfficial ? <OfficialBadge /> : null}
     </>
   );
 
   const badge =
-    !showHandle && link && href ? (
+    link && href ? (
       <a className={`user-badge user-badge-${size} user-badge-link`} href={href}>
         {badgeContent}
       </a>
