@@ -907,7 +907,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "About activity counts" })).toBeNull();
     expect(
       convexQueryMock.mock.calls.some(([query, args]) => {
         return (

@@ -5085,57 +5085,6 @@ code {
   display: inline-flex;
   min-width: 0;
   align-items: center;
-  gap: 6px;
-}
-
-.activity-metric-info {
-  display: inline-flex;
-  position: relative;
-  width: 44px;
-  height: 44px;
-  align-items: center;
-  justify-content: center;
-  margin: -12px;
-  padding: 0;
-  border: 0;
-  border-radius: 999px;
-  background: transparent;
-  color: var(--ink-soft);
-  cursor: help;
-}
-
-.activity-metric-info::before {
-  position: absolute;
-  inset: 12px;
-  border: 1px solid var(--line);
-  border-radius: 999px;
-  background: var(--surface);
-  content: "";
-}
-
-.activity-metric-info svg {
-  position: relative;
-  z-index: 1;
-}
-
-.activity-metric-info:hover,
-.activity-metric-info:focus-visible {
-  color: var(--accent);
-}
-
-.activity-metric-info:hover::before,
-.activity-metric-info:focus-visible::before {
-  border-color: var(--accent);
-}
-
-.activity-metric-info:focus-visible {
-  outline: 2px solid var(--input-focus-border);
-  outline-offset: 2px;
-}
-
-.activity-metric-tooltip {
-  max-width: 260px;
-  line-height: 1.4;
 }
 
 .metric-trend-card {
