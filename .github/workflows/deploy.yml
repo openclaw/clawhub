@@ -105,7 +105,7 @@ jobs:
             echo "PLAYWRIGHT_AUTH_STORAGE_STATE_JSON not set; authenticated smoke will be skipped."
           fi
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
         with:
