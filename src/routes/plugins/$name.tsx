@@ -62,6 +62,7 @@ import { familyLabel } from "../../lib/packageLabels";
 import {
   buildPluginDetailHref,
   buildPluginSecurityAuditHref,
+  displayPluginPackageName,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
@@ -950,7 +951,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 <span aria-hidden="true">/</span>
                 <a href="/plugins">plugins</a>
                 <span aria-hidden="true">/</span>
-                <a href={buildPluginDetailHref(pkg.name)}>{pkg.name}</a>
+                <a href={buildPluginDetailHref(pkg.name)}>{displayPluginPackageName(pkg.name)}</a>
               </nav>
               <div className="skill-hero-title-row">
                 <h1 className="skill-page-title">{pkg.displayName}</h1>

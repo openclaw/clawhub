@@ -487,6 +487,34 @@ describe("Header", () => {
     });
   });
 
+  it("omits scoped package prefixes from plugin typeahead metadata", () => {
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      pluginResults: [
+        {
+          ...defaultUnifiedSearchResult.pluginResults[0],
+          plugin: {
+            ...defaultUnifiedSearchResult.pluginResults[0].plugin,
+            name: "@openclaw/firecrawl-plugin",
+            displayName: "OpenClaw Firecrawl Plugin",
+            ownerHandle: "openclaw",
+          },
+        },
+      ],
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "firecrawl" } });
+    fireEvent.click(screen.getByRole("tab", { name: "Plugins" }));
+
+    expect(screen.getByText("OpenClaw Firecrawl Plugin")).toBeTruthy();
+    expect(screen.getByText("@openclaw / firecrawl-plugin")).toBeTruthy();
+    expect(screen.queryByText("@openclaw / @openclaw/firecrawl-plugin")).toBeNull();
+  });
+
   it("falls back to typed skill search when a typeahead skill has no owner handle", () => {
     navigateMock.mockReset();
     useUnifiedSearchMock.mockReturnValue({

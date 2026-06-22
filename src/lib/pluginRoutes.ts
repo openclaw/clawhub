@@ -12,6 +12,10 @@ export function parseScopedPackageName(name: string): { scope: string; name: str
   return { scope, name: packageName };
 }
 
+export function displayPluginPackageName(name: string) {
+  return parseScopedPackageName(name)?.name ?? name;
+}
+
 export function buildPluginDetailHref(name: string) {
   const scoped = parseScopedPackageName(name);
   if (!scoped) return `/plugins/${encodeURIComponent(name)}`;

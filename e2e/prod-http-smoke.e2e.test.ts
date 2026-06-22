@@ -91,7 +91,6 @@ async function fetchWithRetry(
       }
       return response;
     } catch (error) {
-      lastError = error;
       if (attempt >= maxAttempts) throw error;
       await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
     }

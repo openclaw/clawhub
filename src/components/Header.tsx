@@ -26,6 +26,7 @@ import {
 } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
+import { displayPluginPackageName } from "../lib/pluginRoutes";
 import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
@@ -995,9 +996,10 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
     };
   }
   if (item.kind === "plugin") {
+    const packageName = displayPluginPackageName(item.result.plugin.name);
     const owner = item.result.plugin.ownerHandle
-      ? `@${item.result.plugin.ownerHandle} / ${item.result.plugin.name}`
-      : item.result.plugin.name;
+      ? `@${item.result.plugin.ownerHandle} / ${packageName}`
+      : packageName;
     return {
       title: item.result.plugin.displayName,
       meta: owner,
