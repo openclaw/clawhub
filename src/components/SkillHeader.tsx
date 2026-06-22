@@ -215,6 +215,42 @@ export function SkillHeader({
         topClassName={hasPluginBundle ? "has-plugin" : undefined}
         sidebar={
           <div className="skill-hero-sidebar-stack">
+            <div className="skill-sidebar-actions skill-sidebar-actions-primary">
+              <SignedInActionTooltip
+                isAuthenticated={isAuthenticated}
+                message="You must be signed in to star a skill"
+              >
+                <Button
+                  variant="outline"
+                  type="button"
+                  className="skill-sidebar-action-button"
+                  onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
+                  aria-pressed={Boolean(isAuthenticated && isStarred)}
+                  aria-label={isStarred ? "Unstar skill" : "Star skill"}
+                >
+                  <Star
+                    size={14}
+                    aria-hidden="true"
+                    fill={isAuthenticated && isStarred ? "currentColor" : "none"}
+                  />
+                  {isAuthenticated && isStarred ? "Unstar" : "Star"}
+                  <span className="skill-action-count">{formattedStats.stars}</span>
+                </Button>
+              </SignedInActionTooltip>
+              <Button
+                variant="outline"
+                type="button"
+                className="skill-sidebar-action-button"
+                onClick={() => {
+                  if (typeof window === "undefined") return;
+                  void navigator.clipboard.writeText(window.location.href);
+                  toast.success("Link copied");
+                }}
+              >
+                <Share2 size={14} aria-hidden="true" />
+                Share
+              </Button>
+            </div>
             <SkillSidebarStats
               skill={skill}
               owner={owner}
@@ -225,42 +261,7 @@ export function SkillHeader({
               securityAuditSummary={securityAuditSummary}
             />
             {hasSidebarActions ? (
-              <div className="skill-sidebar-actions">
-                <SignedInActionTooltip
-                  isAuthenticated={isAuthenticated}
-                  message="You must be signed in to star a skill"
-                >
-                  <Button
-                    variant="outline"
-                    type="button"
-                    className="skill-sidebar-action-button"
-                    onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
-                    aria-pressed={Boolean(isAuthenticated && isStarred)}
-                    aria-label={isStarred ? "Unstar skill" : "Star skill"}
-                  >
-                    <Star
-                      size={14}
-                      aria-hidden="true"
-                      fill={isAuthenticated && isStarred ? "currentColor" : "none"}
-                    />
-                    {isAuthenticated && isStarred ? "Unstar" : "Star"}
-                    <span className="skill-action-count">{formattedStats.stars}</span>
-                  </Button>
-                </SignedInActionTooltip>
-                <Button
-                  variant="outline"
-                  type="button"
-                  className="skill-sidebar-action-button"
-                  onClick={() => {
-                    if (typeof window === "undefined") return;
-                    void navigator.clipboard.writeText(window.location.href);
-                    toast.success("Link copied");
-                  }}
-                >
-                  <Share2 size={14} aria-hidden="true" />
-                  Share
-                </Button>
-                <hr className="skill-sidebar-action-divider" />
+              <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
                 {showReportAction ? (
                   <SignedInActionTooltip
                     isAuthenticated={isAuthenticated}
@@ -565,27 +566,36 @@ function SkillSidebarStats({
               value: securityAuditSummary,
             }
           : { label: "", value: null },
-        {
-          label: "Last updated",
-          value: (
-            <span title={new Date(skill.updatedAt).toLocaleString()}>
-              {timeAgo(skill.updatedAt)}
-            </span>
-          ),
-        },
         ...(showArchiveMetadata
           ? [
               {
                 grid: [
                   {
+                    label: "Last updated",
+                    value: (
+                      <span title={new Date(skill.updatedAt).toLocaleString()}>
+                        {timeAgo(skill.updatedAt)}
+                      </span>
+                    ),
+                  },
+                  {
                     label: "Current version",
                     value: latestVersion?.version ? `v${latestVersion.version}` : "None",
                   },
-                  { label: "License", value: PLATFORM_SKILL_LICENSE },
                 ],
               },
+              { label: "License", value: PLATFORM_SKILL_LICENSE },
             ]
-          : []),
+          : [
+              {
+                label: "Last updated",
+                value: (
+                  <span title={new Date(skill.updatedAt).toLocaleString()}>
+                    {timeAgo(skill.updatedAt)}
+                  </span>
+                ),
+              },
+            ]),
       ]}
     />
   );

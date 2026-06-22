@@ -356,7 +356,7 @@ code {
   flex-direction: column;
 }
 
-.app-shell:has(.skill-detail-page)::before {
+.app-shell:has(.skill-detail-page, .plugin-detail-page)::before {
   position: absolute;
   top: 0;
   right: 0;
@@ -378,11 +378,11 @@ code {
     );
 }
 
-.app-shell:has(.skill-detail-page) .navbar.navbar-calm {
+.app-shell:has(.skill-detail-page, .plugin-detail-page) .navbar.navbar-calm {
   background: transparent;
 }
 
-.app-shell:has(.skill-detail-page) .navbar.navbar-calm.navbar-calm-scrolled {
+.app-shell:has(.skill-detail-page, .plugin-detail-page) .navbar.navbar-calm.navbar-calm-scrolled {
   background: color-mix(in srgb, var(--nav-bg) 78%, transparent);
 }
 
@@ -4610,6 +4610,32 @@ code {
   max-width: calc(100% - min(360px, max(300px, 26.5vw)) - clamp(56px, 7vw, 96px));
 }
 
+@media (min-width: 1101px) {
+  .skill-hero-layout.has-sidebar {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    column-gap: clamp(56px, 7vw, 96px);
+  }
+
+  .skill-hero-layout.has-sidebar > .skill-hero-main {
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .skill-hero-lower.has-sidebar {
+    display: contents;
+  }
+
+  .skill-hero-lower.has-sidebar > .skill-hero-main-extra {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .skill-hero-lower.has-sidebar > .skill-hero-sidebar {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+}
+
 .skill-hero-lower {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -4621,7 +4647,7 @@ code {
 .skill-hero-lower.has-sidebar {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: clamp(56px, 7vw, 96px);
-  --detail-summary-row-height: 78px;
+  --detail-summary-row-height: 64px;
 }
 
 .skill-hero-main-extra {
@@ -4976,7 +5002,7 @@ code {
 
 .skill-hero-sidebar-stack {
   display: grid;
-  gap: 40px;
+  gap: 24px;
   min-width: 0;
 }
 
@@ -5000,6 +5026,15 @@ code {
 .skill-sidebar-actions {
   display: grid;
   gap: 10px;
+}
+
+.skill-sidebar-actions-primary {
+  gap: 8px;
+}
+
+.skill-sidebar-actions-secondary {
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
 }
 
 .skill-sidebar-action-button {
@@ -5225,6 +5260,13 @@ code {
   line-height: 1.35;
 }
 
+.sidebar-metadata-value .official-badge {
+  width: auto;
+  height: auto;
+  border: 0;
+  background: transparent;
+}
+
 .sidebar-metadata-compact .sidebar-metadata-grid .sidebar-metadata-row + .sidebar-metadata-row {
   padding-left: 18px;
 }
@@ -5265,13 +5307,13 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 1.65em;
-  height: 1.65em;
+  min-width: 2em;
+  height: 1.8em;
   margin-left: 6px;
-  padding: 0 0.52em;
+  padding: 0 0.62em;
   border-radius: var(--r-pill);
   background: color-mix(in srgb, currentColor 12%, transparent);
-  font-size: 0.72em;
+  font-size: 0.76em;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
 }
@@ -5817,6 +5859,10 @@ code {
 }
 
 @media (max-width: 1100px) {
+  .skill-hero-layout.has-sidebar .skill-summary-block {
+    max-width: none;
+  }
+
   .skill-hero-lower {
     grid-template-columns: 1fr;
   }
@@ -5824,6 +5870,10 @@ code {
   .skill-hero-lower.has-sidebar {
     grid-template-columns: minmax(0, 1fr);
     gap: 60px;
+  }
+
+  .skill-hero-sidebar {
+    order: -1;
   }
 }
 

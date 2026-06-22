@@ -431,7 +431,7 @@ function PluginDetailTabs({
         ) : null}
       </div>
       <div
-        className="tab-body"
+        className={`tab-body${effectiveActiveTab === "readme" ? " skill-readme-body" : ""}`}
         role="tabpanel"
         id={`plugin-tabpanel-${effectiveActiveTab}`}
         aria-labelledby={`plugin-tab-${effectiveActiveTab}`}
@@ -621,6 +621,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
     : undefined;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   const setCatalogMetadata = useMutation(api.packages.setPackageCatalogMetadata);
   useEffect(() => {
     const syncTabFromHash = () => setActiveTab(pluginDetailTabFromHash(window.location.hash));
@@ -677,6 +678,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     .map((topic) => topic.trim())
     .filter(Boolean)
     .slice(0, 5);
+  const headerSummary = pkg.summary ?? "No summary provided.";
+  const hasSummaryToggle = headerSummary.length > 220;
   const owner = detail.owner;
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
@@ -1035,7 +1038,25 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   ) : null}
                 </div>
               </div>
-              <p className="section-subtitle">{pkg.summary ?? "No summary provided."}</p>
+              <div className="skill-summary-block">
+                <p
+                  className={`section-subtitle skill-summary-line${
+                    hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
+                  }`}
+                >
+                  {headerSummary}
+                </p>
+                {hasSummaryToggle ? (
+                  <button
+                    type="button"
+                    className="skill-summary-toggle"
+                    aria-expanded={isSummaryExpanded}
+                    onClick={() => setIsSummaryExpanded((expanded) => !expanded)}
+                  >
+                    {isSummaryExpanded ? "Show less" : "Read more"}
+                  </button>
+                ) : null}
+              </div>
 
               {rateLimited?.scope === "metadata" ? (
                 <div className="skill-hero-badges">
@@ -1046,48 +1067,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           }
           sidebar={
             <div className="skill-hero-sidebar-stack">
-              {hasSourceMetadata ? (
-                <SidebarMetadata
-                  ariaLabel="Plugin metadata"
-                  density="compact"
-                  blocks={[
-                    {
-                      label: "Installs",
-                      value: formatCompactStat(pkg.stats?.installs ?? 0),
-                      large: true,
-                    },
-                    { label: "Repository", value: sourceRepoLink },
-                    { label: "Creator", value: ownerMetadataValue },
-                    securitySummary
-                      ? {
-                          key: "security-audit",
-                          label: <DetailSecuritySummaryLabel />,
-                          value: securitySummary,
-                        }
-                      : { label: "", value: null },
-                    {
-                      label: "Last updated",
-                      value: (
-                        <span title={new Date(pkg.updatedAt).toLocaleString()}>
-                          {timeAgo(pkg.updatedAt)}
-                        </span>
-                      ),
-                    },
-                    {
-                      grid: [
-                        {
-                          label: "Current version",
-                          value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
-                        },
-                        { label: "Type", value: familyLabel(pkg.family) },
-                      ],
-                    },
-                  ]}
-                />
-              ) : null}
-
               {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref ? (
-                <div className="skill-sidebar-actions">
+                <div className="skill-sidebar-actions skill-sidebar-actions-primary">
                   {pkg.latestVersion && !isDownloadBlocked ? (
                     <Button asChild variant="outline" className="skill-sidebar-action-button">
                       <a href={downloadPath}>
@@ -1109,17 +1090,56 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     <Share2 size={14} aria-hidden="true" />
                     Share
                   </Button>
-                  {newVersionHref ? (
-                    <>
-                      <hr className="skill-sidebar-action-divider" />
-                      <Button asChild variant="outline" className="skill-sidebar-action-button">
-                        <a href={newVersionHref}>
-                          <Upload size={14} aria-hidden="true" />
-                          New version
-                        </a>
-                      </Button>
-                    </>
-                  ) : null}
+                </div>
+              ) : null}
+              {hasSourceMetadata ? (
+                <SidebarMetadata
+                  ariaLabel="Plugin metadata"
+                  density="compact"
+                  blocks={[
+                    {
+                      label: "Installs",
+                      value: formatCompactStat(pkg.stats?.installs ?? 0),
+                      large: true,
+                    },
+                    { label: "Repository", value: sourceRepoLink },
+                    { label: "Creator", value: ownerMetadataValue },
+                    securitySummary
+                      ? {
+                          key: "security-audit",
+                          label: <DetailSecuritySummaryLabel />,
+                          value: securitySummary,
+                        }
+                      : { label: "", value: null },
+                    {
+                      grid: [
+                        {
+                          label: "Last updated",
+                          value: (
+                            <span title={new Date(pkg.updatedAt).toLocaleString()}>
+                              {timeAgo(pkg.updatedAt)}
+                            </span>
+                          ),
+                        },
+                        {
+                          label: "Current version",
+                          value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
+                        },
+                      ],
+                    },
+                    { label: "Type", value: familyLabel(pkg.family) },
+                  ]}
+                />
+              ) : null}
+
+              {newVersionHref ? (
+                <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
+                  <Button asChild variant="outline" className="skill-sidebar-action-button">
+                    <a href={newVersionHref}>
+                      <Upload size={14} aria-hidden="true" />
+                      New version
+                    </a>
+                  </Button>
                 </div>
               ) : null}
             </div>
