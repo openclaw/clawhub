@@ -4014,8 +4014,19 @@ async function buildPackageActivityTrend(ctx: DbReaderCtx, pkg: Doc<"packages">,
     )
     .take(ACTIVITY_TREND_DAYS);
 
+  const allTimeDownloads = Math.max(0, Math.trunc(pkg.stats?.downloads ?? 0));
+  const allTimeInstalls = Math.max(0, Math.trunc(pkg.stats?.installs ?? 0));
+  const dailyTotals = rows.reduce(
+    (totals, row) => ({
+      downloads: totals.downloads + Math.max(0, Math.trunc(row.downloads)),
+      installs: totals.installs + Math.max(0, Math.trunc(row.installs)),
+    }),
+    { downloads: 0, installs: 0 },
+  );
+  const dailyRowsCoverAllTimeActivity =
+    dailyTotals.downloads >= allTimeDownloads && dailyTotals.installs >= allTimeInstalls;
   const packageDailyStatsRolloutTime = getPackageDailyStatsRolloutTime();
-  const hasAllTimeActivity = (pkg.stats?.downloads ?? 0) > 0 || (pkg.stats?.installs ?? 0) > 0;
+  const hasAllTimeActivity = allTimeDownloads > 0 || allTimeInstalls > 0;
   const packageCreatedAt = pkg.createdAt ?? pkg._creationTime;
   const hasUntrustedHistoricalActivity =
     hasAllTimeActivity &&
@@ -4023,7 +4034,7 @@ async function buildPackageActivityTrend(ctx: DbReaderCtx, pkg: Doc<"packages">,
   const hasCompleteDailyWindow =
     packageDailyStatsRolloutTime !== null &&
     startDay * ACTIVITY_TREND_DAY_MS >= packageDailyStatsRolloutTime;
-  if (hasUntrustedHistoricalActivity && !hasCompleteDailyWindow) {
+  if (hasUntrustedHistoricalActivity && !hasCompleteDailyWindow && !dailyRowsCoverAllTimeActivity) {
     return null;
   }
 

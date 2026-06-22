@@ -685,6 +685,79 @@ describe("package stat events", () => {
     }
   });
 
+  it("uses package activity rows without a rollout env when they cover all-time totals", async () => {
+    const now = Date.UTC(2026, 5, 20) + 1;
+    const { startDay, endDay } = getActivityTrendRange(now);
+    setPackageDailyStatsRolloutAt(undefined);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    try {
+      const packageIndexBuilder = { eq: vi.fn(() => packageIndexBuilder) };
+      const dailyIndexBuilder = {
+        eq: vi.fn(() => dailyIndexBuilder),
+        gte: vi.fn(() => dailyIndexBuilder),
+        lte: vi.fn(() => dailyIndexBuilder),
+      };
+      const packageWithIndex = vi.fn(
+        (_indexName: string, buildQuery: (q: typeof packageIndexBuilder) => unknown) => {
+          buildQuery(packageIndexBuilder);
+          return {
+            unique: vi.fn(async () => ({
+              _id: "packages:one",
+              _creationTime: Date.UTC(2026, 4, 1),
+              createdAt: Date.UTC(2026, 4, 1),
+              normalizedName: "demo-plugin",
+              channel: "public",
+              scanStatus: "clean",
+              stats: { downloads: 143, installs: 12, stars: 0, versions: 1 },
+            })),
+          };
+        },
+      );
+      const takeDailyStats = vi.fn(async () => [
+        { day: endDay - 2, downloads: 41, installs: 3 },
+        { day: endDay - 1, downloads: 52, installs: 4 },
+        { day: endDay, downloads: 50, installs: 5 },
+      ]);
+      const dailyWithIndex = vi.fn(
+        (_indexName: string, buildQuery: (q: typeof dailyIndexBuilder) => unknown) => {
+          buildQuery(dailyIndexBuilder);
+          return { take: takeDailyStats };
+        },
+      );
+      const ctx = {
+        db: {
+          query: vi.fn((tableName: string) => {
+            if (tableName === "packages") return { withIndex: packageWithIndex };
+            if (tableName === "packageDailyStats") return { withIndex: dailyWithIndex };
+            throw new Error(`Unexpected table ${tableName}`);
+          }),
+          get: vi.fn(),
+          normalizeId: vi.fn(),
+          insert: vi.fn(),
+          patch: vi.fn(),
+          replace: vi.fn(),
+          delete: vi.fn(),
+          system: {
+            get: vi.fn(),
+            query: vi.fn(),
+          },
+        },
+      };
+
+      const trend = await getActivityTrendHandler(ctx, { name: "demo-plugin", endDay });
+
+      expect(takeDailyStats).toHaveBeenCalledWith(ACTIVITY_TREND_DAYS);
+      expect(trend?.downloads.total).toBe(143);
+      expect(trend?.downloads.points).toHaveLength(ACTIVITY_TREND_DAYS);
+      expect(trend?.downloads.points[0]).toEqual({ day: startDay, value: 0 });
+      expect(trend?.downloads.points.at(-1)).toEqual({ day: endDay, value: 50 });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("returns null until the actual package daily rollout window is complete", async () => {
     const now = Date.UTC(2026, 6, 18) + 1;
     const { endDay } = getActivityTrendRange(now);

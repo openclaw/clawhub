@@ -446,7 +446,13 @@ describe("devSeed local fixtures", () => {
       skipped: ["skill:corpus-demo", "plugin:demo-plugin"],
     });
     expect(tables.skillDailyStats).toHaveLength(30);
-    expect(tables.packageDailyStats ?? []).toHaveLength(0);
+    expect((tables.packageDailyStats ?? []).length).toBeGreaterThan(0);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.downloads), 0),
+    ).toBe(57);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0),
+    ).toBe(13);
   });
 
   it("seeds daily activity for new public corpus packages", async () => {
@@ -809,6 +815,18 @@ describe("devSeed local fixtures", () => {
         }),
       ]),
     );
+    const scannedPackageId = tables.packages?.find((pkg) => pkg.name === scannedPluginName)?._id;
+    const scannedPackageDailyStats = (tables.packageDailyStats ?? []).filter(
+      (row) => row.packageId === scannedPackageId,
+    );
+    expect(tables.packageDailyStats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packageId: scannedPackageId,
+        }),
+      ]),
+    );
+    expect(scannedPackageDailyStats.reduce((sum, row) => sum + Number(row.downloads), 0)).toBe(7);
     expect(tables.packageInspectorWarnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

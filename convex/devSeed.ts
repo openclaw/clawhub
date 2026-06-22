@@ -866,6 +866,13 @@ export const backfillExistingPublicCorpusBatchRows = internalMutation({
         missingKeys.push(publicCorpusSeedRowKey(row));
         continue;
       }
+      await ensurePublicCorpusPackageDailyStats(ctx, {
+        packageId: existing._id,
+        key: row.name,
+        downloads: existing.stats?.downloads ?? 0,
+        installs: existing.stats?.installs ?? 0,
+        now,
+      });
       skipped.push(`plugin:${row.name}`);
     }
 
@@ -1076,6 +1083,13 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
           .unique();
         if (existing) {
+          await ensurePublicCorpusPackageDailyStats(ctx, {
+            packageId: existing._id,
+            key: row.name,
+            downloads: existing.stats?.downloads ?? 0,
+            installs: existing.stats?.installs ?? 0,
+            now,
+          });
           skipped.push(`plugin:${row.name}`);
           continue;
         }
@@ -2243,6 +2257,13 @@ export async function seedLocalModerationFixturesHandler(
       if (pkg.ownerUserId !== userId || pkg.ownerPublisherId !== publisherId) {
         await ctx.db.patch(pkg._id, ownerPatch);
       }
+      await ensurePublicCorpusPackageDailyStats(ctx, {
+        packageId: pkg._id,
+        key: pkg.name,
+        downloads: pkg.stats?.downloads ?? 0,
+        installs: pkg.stats?.installs ?? 0,
+        now,
+      });
     }
     if (existingSkill.latestVersionId) {
       const latestVersion = await ctx.db.get(existingSkill.latestVersionId);
@@ -2640,6 +2661,13 @@ export async function seedLocalModerationFixturesHandler(
     ...seededPackageRecommendationPatch({ downloads: 2, installs: 0, stars: 0 }),
     updatedAt: now,
   });
+  await ensurePublicCorpusPackageDailyStats(ctx, {
+    packageId,
+    key: flaggedPluginName,
+    downloads: 2,
+    installs: 0,
+    now,
+  });
   const scannedPackageId = await ctx.db.insert("packages", {
     name: scannedPluginName,
     normalizedName: normalizePackageName(scannedPluginName),
@@ -2736,6 +2764,13 @@ export async function seedLocalModerationFixturesHandler(
     stats: { downloads: 7, installs: 1, stars: 1, versions: 1 },
     ...seededPackageRecommendationPatch({ downloads: 7, installs: 1, stars: 1 }),
     updatedAt: now,
+  });
+  await ensurePublicCorpusPackageDailyStats(ctx, {
+    packageId: scannedPackageId,
+    key: scannedPluginName,
+    downloads: 7,
+    installs: 1,
+    now,
   });
   await ctx.db.insert("packageInspectorWarnings", {
     packageId: scannedPackageId,
