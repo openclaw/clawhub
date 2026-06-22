@@ -5426,7 +5426,7 @@ code {
   padding: 0 0.62em;
   border-radius: var(--r-pill);
   background: color-mix(in srgb, currentColor 12%, transparent);
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 750;
   font-variant-numeric: tabular-nums;
 }
@@ -8465,6 +8465,14 @@ code {
 .markdown ol {
   padding-left: 1.4em;
   margin: var(--space-3) 0;
+}
+
+.markdown ul {
+  list-style-type: disc;
+}
+
+.markdown ol {
+  list-style-type: decimal;
 }
 
 .markdown li {
