@@ -5446,14 +5446,15 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 2em;
-  height: 1.8em;
+  min-width: 1.75em;
+  height: 1.45em;
   margin-left: 6px;
-  padding: 0 0.62em;
+  padding: 0 0.5em;
   border-radius: var(--r-pill);
   background: color-mix(in srgb, currentColor 12%, transparent);
   font-size: 13px;
   font-weight: 750;
+  line-height: 1;
   font-variant-numeric: tabular-nums;
 }
 
@@ -6066,9 +6067,9 @@ code {
   }
 
   .skill-action-count {
-    height: 1.65em;
+    height: 1.35em;
     margin-left: 4px;
-    padding: 0 0.5em;
+    padding: 0 0.45em;
     font-size: 12px;
   }
 
