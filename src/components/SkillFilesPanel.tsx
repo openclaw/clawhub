@@ -45,6 +45,9 @@ function createDirectoryNode(name: string, path: string): MutableDirectoryNode {
 }
 
 function sortTreeNodes(left: FileTreeNode, right: FileTreeNode) {
+  const leftIsPrimary = left.type === "file" && left.path === "SKILL.md";
+  const rightIsPrimary = right.type === "file" && right.path === "SKILL.md";
+  if (leftIsPrimary !== rightIsPrimary) return leftIsPrimary ? -1 : 1;
   if (left.type !== right.type) return left.type === "file" ? -1 : 1;
   return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
 }
