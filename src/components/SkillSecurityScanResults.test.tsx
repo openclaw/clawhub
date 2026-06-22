@@ -461,9 +461,10 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getAllByText("Skill content").length).toBeGreaterThan(0);
     expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();
     expect(screen.queryByText("Confidence")).toBeNull();
-    expect(container.querySelector('nav[aria-label="Breadcrumb"]')?.textContent).toContain(
-      "Security Audit",
-    );
+    expect(
+      screen.getByRole("link", { name: "Back to skill" }).getAttribute("href"),
+    ).toBe("/local/todo-guard");
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
     expect(
       Array.from(
         container.querySelectorAll(".security-report-sidebar .sidebar-metadata-label"),
@@ -1145,8 +1146,9 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("Review Dimensions")).toBeNull();
     expect(screen.queryByText("Purpose & Capability")).toBeNull();
     expect(
-      container.querySelector('nav[aria-label="Breadcrumb"] a[href="/user/local"]'),
-    ).toBeTruthy();
+      screen.getByRole("link", { name: "Back to skill" }).getAttribute("href"),
+    ).toBe("/local/legacy-skill");
+    expect(screen.queryByRole("navigation", { name: "Breadcrumb" })).toBeNull();
   });
 
   it("shows only SkillSpector pending when no agentic-risk source exists yet", () => {

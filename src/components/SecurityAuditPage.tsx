@@ -1,4 +1,13 @@
-import { Check, Clock, Download, ExternalLink, Info, RefreshCw, TriangleAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Clock,
+  Download,
+  ExternalLink,
+  Info,
+  RefreshCw,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -273,35 +282,19 @@ function formatTime(value?: number | null) {
   return `${UTC_MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()} at ${hour12}:${minute} ${period} UTC`;
 }
 
-function extractDetailPathParts(detailPath: string) {
-  return detailPath.split("/").filter(Boolean).map(decodeURIComponent);
-}
-
-function getOwnerLabel(entity: EntityRef) {
-  if (entity.owner?.handle) return entity.owner.handle;
-  const parts = extractDetailPathParts(entity.detailPath);
-  if (entity.kind === "skill") return parts[0] ?? "unknown";
-  return entity.owner?._id ?? "plugins";
+function getSecurityAuditBackLabel(entity: EntityRef) {
+  return entity.kind === "plugin" ? "Back to plugin" : "Back to skill";
 }
 
 function SecurityAuditHero({ props }: { props: SecurityAuditPageProps }) {
-  const ownerLabel = getOwnerLabel(props.entity);
-  const listingLabel = props.entity.kind === "skill" ? "skills" : "plugins";
-  const ownerHref =
-    props.entity.kind === "skill" ? `/user/${encodeURIComponent(ownerLabel)}` : "/plugins";
-
   return (
     <header className="security-scan-hero">
-      <nav className="skill-hero-breadcrumbs" aria-label="Breadcrumb">
-        <a href={`/${listingLabel}`}>{listingLabel}</a>
-        <span aria-hidden="true">/</span>
-        <a href={ownerHref}>{ownerLabel}</a>
-        <span aria-hidden="true">/</span>
-        <a href={props.entity.detailPath}>{props.entity.name}</a>
-        <span aria-hidden="true">/</span>
-        <span>Security Audit</span>
-      </nav>
+      <a href={props.entity.detailPath} className="skill-settings-back-link security-audit-back-link">
+        <ArrowLeft size={16} aria-hidden="true" />
+        {getSecurityAuditBackLabel(props.entity)}
+      </a>
       <div className="security-scan-hero-heading">
+        <p className="security-audit-eyebrow">Security audit</p>
         <h1 className="skill-page-title">{props.entity.title}</h1>
         <p className="security-scan-hero-subtext">{SECURITY_AUDIT_SUBTEXT}</p>
       </div>
@@ -815,17 +808,21 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
       density="compact"
       blocks={[
         {
-          label: "Outcome",
-          value: <ScanResultBadge status={verdict} />,
-        },
-        {
-          label: "Latest audit",
-          value: (
-            <span className="sidebar-metadata-inline">
-              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-              {formatTime(latestCheckedAt)}
-            </span>
-          ),
+          grid: [
+            {
+              label: "Outcome",
+              value: <ScanResultBadge status={verdict} />,
+            },
+            {
+              label: "Latest audit",
+              value: (
+                <span className="sidebar-metadata-inline">
+                  <Clock className="h-3.5 w-3.5" aria-hidden="true" />
+                  {formatTime(latestCheckedAt)}
+                </span>
+              ),
+            },
+          ],
         },
         { label: "Version", value: versionValue },
       ]}
@@ -837,7 +834,7 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
   const orderedScanners = getAuditScannerOrder(props);
 
   return (
-    <main className="section detail-page-section security-report-section">
+    <main className="section detail-page-section security-report-section security-audit-page">
       <div className="security-report-shell">
         <SecurityAuditHero props={props} />
 
@@ -861,7 +858,7 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
 
 export function SecurityAuditPageSkeleton() {
   return (
-    <main className="section detail-page-section security-report-section">
+    <main className="section detail-page-section security-report-section security-audit-page">
       <div
         className="security-report-shell security-scanner-skeleton"
         role="status"
@@ -869,21 +866,11 @@ export function SecurityAuditPageSkeleton() {
         aria-busy="true"
       >
         <header className="security-scan-hero">
-          <div className="skill-hero-breadcrumbs">
-            <Skeleton className="h-4 w-12" />
-            <Skeleton className="h-4 w-3" />
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="h-4 w-3" />
-            <Skeleton className="h-4 w-40 max-w-[42vw]" />
-            <Skeleton className="h-4 w-3" />
-            <Skeleton className="h-4 w-28" />
-          </div>
+          <Skeleton className="h-5 w-28" />
           <div className="security-scan-hero-heading">
+            <Skeleton className="h-4 w-24" />
             <Skeleton className="h-12 w-full max-w-[520px]" />
-            <div className="security-scan-hero-subtext">
-              <Skeleton className="h-8 w-24 rounded-[var(--r-pill)]" />
-              <Skeleton className="h-5 w-full max-w-[340px]" />
-            </div>
+            <Skeleton className="h-5 w-full max-w-[340px]" />
           </div>
         </header>
 
