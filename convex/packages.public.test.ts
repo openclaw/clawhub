@@ -4837,6 +4837,44 @@ describe("packages public queries", () => {
     expect(result.continueCursor).toBe("");
   });
 
+  it("keeps community continuation when the bounded probe is saturated by excluded rows", async () => {
+    const officialDigest = makeDigest("official-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const excludedCommunityDigests = Array.from({ length: 200 }, (_, index) =>
+      makeDigest(`pending-community-security-${index}`, {
+        scanStatus: "pending",
+        pluginCategory: "security",
+        pluginCategoryTags: ["security"],
+      }),
+    );
+    const { ctx, paginate, take } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [officialDigest],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      categoryRows: excludedCommunityDigests,
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      excludedScanStatuses: ["pending"],
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
+    expect(result.isDone).toBe(false);
+    expect(result.continueCursor).toMatch(/^pkgofficialfirst:/);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledWith(200);
+  });
+
   it("fills under-limit official-first category pages with community digests", async () => {
     const officialDigest = makeDigest("official-security", {
       isOfficial: true,
@@ -4879,6 +4917,75 @@ describe("packages public queries", () => {
     expect(result.continueCursor).toBe("");
     expect(paginate).toHaveBeenCalledTimes(1);
     expect(take).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps highlighted-only filtering while filling official-first category pages", async () => {
+    const officialHighlighted = makeDigest("official-highlighted-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const communityHighlighted = makeDigest("community-highlighted-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const communityUnhighlighted = makeDigest("community-unhighlighted-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const { ctx } = makeDigestCtx({
+      highlightedBadges: [
+        { packageId: officialHighlighted.packageId },
+        { packageId: communityHighlighted.packageId },
+      ],
+      exactDigests: [officialHighlighted, communityHighlighted],
+      categoryRows: [communityUnhighlighted],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      highlightedOnly: true,
+      paginationOpts: { cursor: null, numItems: 3 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "official-highlighted-security",
+      "community-highlighted-security",
+    ]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
+  });
+
+  it("does not advertise unhighlighted community rows after a full highlighted official page", async () => {
+    const officialHighlighted = makeDigest("official-highlighted-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const communityUnhighlighted = makeDigest("community-unhighlighted-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const { ctx } = makeDigestCtx({
+      highlightedBadges: [{ packageId: officialHighlighted.packageId }],
+      exactDigests: [officialHighlighted],
+      categoryRows: [communityUnhighlighted],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      highlightedOnly: true,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-highlighted-security"]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
   });
 
   it("checks official-first category community availability without a second paginate", async () => {

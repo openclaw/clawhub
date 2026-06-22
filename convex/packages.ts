@@ -2246,7 +2246,7 @@ function buildPackageTopicDigestQuery(
     );
 }
 
-async function hasVisiblePackageCategoryDigest(
+async function mayHaveVisiblePackageCategoryDigest(
   ctx: DbReaderCtx,
   args: {
     family?: PackageFamily;
@@ -2288,7 +2288,8 @@ async function hasVisiblePackageCategoryDigest(
     if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
     return true;
   }
-  return false;
+  // A saturated bounded probe cannot prove that later rows are also invisible.
+  return digests.length >= MAX_PUBLIC_LIST_PAGE_SIZE;
 }
 
 async function takeVisiblePackageCategoryDigestPage(
@@ -3904,14 +3905,26 @@ async function listOfficialFirstPackageCategoryPage(
       };
     }
     if (collected.length >= targetCount) {
-      const hasCommunityPage = await hasVisiblePackageCategoryDigest(ctx, {
-        ...args,
-        isOfficial: false,
-      });
+      const mayHaveCommunityPage = args.highlightedOnly
+        ? (
+            await listPackagePageImpl(ctx, {
+              ...args,
+              officialFirst: false,
+              isOfficial: false,
+              paginationOpts: {
+                cursor: null,
+                numItems: 1,
+              },
+            })
+          ).page.length > 0
+        : await mayHaveVisiblePackageCategoryDigest(ctx, {
+            ...args,
+            isOfficial: false,
+          });
       return {
         page: collected,
-        isDone: !hasCommunityPage,
-        continueCursor: hasCommunityPage
+        isDone: !mayHaveCommunityPage,
+        continueCursor: mayHaveCommunityPage
           ? encodeOfficialFirstPackageCategoryCursor({
               phase: "community",
               cursor: null,
@@ -3919,11 +3932,21 @@ async function listOfficialFirstPackageCategoryPage(
           : "",
       };
     }
-    const communityPage = await takeVisiblePackageCategoryDigestPage(ctx, {
-      ...args,
-      isOfficial: false,
-      numItems: targetCount - collected.length,
-    });
+    const communityPage = args.highlightedOnly
+      ? await listPackagePageImpl(ctx, {
+          ...args,
+          officialFirst: false,
+          isOfficial: false,
+          paginationOpts: {
+            cursor: null,
+            numItems: targetCount - collected.length,
+          },
+        })
+      : await takeVisiblePackageCategoryDigestPage(ctx, {
+          ...args,
+          isOfficial: false,
+          numItems: targetCount - collected.length,
+        });
     collected.push(...communityPage.page);
     return {
       page: collected,
