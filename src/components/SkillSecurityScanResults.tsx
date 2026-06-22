@@ -673,7 +673,7 @@ export function SecurityScanResults({
 
   if (variant === "badge") {
     return (
-      <>
+      <div className="version-scan-badge-row">
         {sha256hash ? (
           <div className="version-scan-badge">
             <VirusTotalIcon className="version-scan-icon version-scan-icon-vt" />
@@ -697,7 +697,7 @@ export function SecurityScanResults({
             <ScanResultBadge status={llmDisplayStatus} />
           </div>
         ) : null}
-      </>
+      </div>
     );
   }
 

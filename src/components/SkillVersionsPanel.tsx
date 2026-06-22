@@ -211,7 +211,6 @@ export function SkillVersionsPanel({
                             size={14}
                             aria-hidden="true"
                           />
-                          <span>Download .zip</span>
                         </a>
                       ) : null}
                       {canDeleteVersions && isAvailable && !isLatest ? (

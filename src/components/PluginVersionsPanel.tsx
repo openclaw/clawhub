@@ -222,7 +222,6 @@ export function PluginVersionsPanel({
                             size={14}
                             aria-hidden="true"
                           />
-                          <span>Download .zip</span>
                         </a>
                         {canDeleteVersions && !isLatest ? (
                           <Button

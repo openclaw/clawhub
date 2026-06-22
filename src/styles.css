@@ -7426,9 +7426,10 @@ code {
 .skill-version-release-scan {
   grid-column: 2;
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -7446,27 +7447,26 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: flex-end;
+  justify-content: flex-start;
   gap: 8px;
-  min-width: max-content;
+  min-width: 0;
 }
 
 .skill-version-release-download {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
   min-height: 32px;
-  padding: 7px 12px;
+  padding: 0;
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--surface);
   color: var(--ink);
-  font-size: 0.75rem;
-  font-weight: 650;
   line-height: 1;
   text-decoration: none;
-  white-space: nowrap;
 }
 
 .skill-version-release-download:hover {
@@ -10785,10 +10785,19 @@ code {
 }
 
 .version-scan-badge {
-  display: flex;
+  display: inline-flex;
+  flex: 0 0 auto;
   align-items: center;
   gap: 4px;
   font-size: 0.75rem;
+}
+
+.version-scan-badge-row {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
 
 .version-scan-badge .scan-result-status {
