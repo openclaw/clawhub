@@ -4837,6 +4837,50 @@ describe("packages public queries", () => {
     expect(result.continueCursor).toBe("");
   });
 
+  it("fills under-limit official-first category pages with community digests", async () => {
+    const officialDigest = makeDigest("official-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const firstCommunityDigest = makeDigest("community-security-one", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const secondCommunityDigest = makeDigest("community-security-two", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const { ctx, paginate, take } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [officialDigest],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      categoryRows: [officialDigest, firstCommunityDigest, secondCommunityDigest],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 3 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "official-security",
+      "community-security-one",
+      "community-security-two",
+    ]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(1);
+  });
+
   it("checks official-first category community availability without a second paginate", async () => {
     const officialDigest = makeDigest("official-security", {
       isOfficial: true,

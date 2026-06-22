@@ -2291,6 +2291,77 @@ async function hasVisiblePackageCategoryDigest(
   return false;
 }
 
+async function takeVisiblePackageCategoryDigestPage(
+  ctx: DbReaderCtx,
+  args: {
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    category: PluginCategorySlug;
+    topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
+    sort?: "updated" | "downloads" | "recommended" | "installs";
+    viewerUserId?: Id<"users">;
+    numItems: number;
+  },
+): Promise<PublicPackageListPage> {
+  const targetCount = Math.max(0, Math.min(args.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+  if (targetCount === 0) {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+  const membershipCache = new Map<string, Promise<boolean>>();
+  const scanPageSize = MAX_PUBLIC_LIST_PAGE_SIZE;
+  const digests = await (
+    args.topic
+      ? buildPackageTopicDigestQuery(ctx, {
+          topic: args.topic,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          sort: args.sort,
+        })
+      : buildPackagePluginCategoryDigestQuery(ctx, {
+          category: args.category,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          sort: args.sort,
+        })
+  )
+    .order("desc")
+    .take(scanPageSize);
+
+  const page: PublicPackageListItem[] = [];
+  let consumed = 0;
+  for (let index = 0; index < digests.length; index += 1) {
+    consumed = index + 1;
+    const digest = digests[index] as PackageDigestLike;
+    if (args.family && digest.family !== args.family) continue;
+    if (args.channel && digest.channel !== args.channel) continue;
+    if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
+    if (!digestMatchesFilters(digest, args)) continue;
+    if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
+    page.push(await toPublicPackageListItem(ctx, digest));
+    if (page.length >= targetCount) break;
+  }
+
+  const hasMore = consumed < digests.length || digests.length >= scanPageSize;
+  return {
+    page,
+    isDone: !hasMore,
+    continueCursor: hasMore
+      ? encodePublicPageCursor({
+          cursor: null,
+          offset: consumed,
+          pageSize: scanPageSize,
+          done: false,
+          mode: "digest",
+          sort: args.sort,
+        })
+      : "",
+  };
+}
+
 async function fetchHighlightedPackageDigests(
   ctx: DbReaderCtx,
   args: {
@@ -3832,7 +3903,7 @@ async function listOfficialFirstPackageCategoryPage(
         }),
       };
     }
-    if (officialPage.isDone) {
+    if (collected.length >= targetCount) {
       const hasCommunityPage = await hasVisiblePackageCategoryDigest(ctx, {
         ...args,
         isOfficial: false,
@@ -3848,6 +3919,22 @@ async function listOfficialFirstPackageCategoryPage(
           : "",
       };
     }
+    const communityPage = await takeVisiblePackageCategoryDigestPage(ctx, {
+      ...args,
+      isOfficial: false,
+      numItems: targetCount - collected.length,
+    });
+    collected.push(...communityPage.page);
+    return {
+      page: collected,
+      isDone: communityPage.isDone,
+      continueCursor: communityPage.isDone
+        ? ""
+        : encodeOfficialFirstPackageCategoryCursor({
+            phase: "community",
+            cursor: communityPage.continueCursor,
+          }),
+    };
   }
 
   const communityPage = await listPackagePageImpl(ctx, {
