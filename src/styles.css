@@ -7210,10 +7210,6 @@ code {
   height: 18px;
 }
 
-.runtime-requirements-panel .stat {
-  color: var(--ink);
-}
-
 .skill-install-tabs {
   overflow: hidden;
 }
@@ -7243,6 +7239,205 @@ code {
 
 .skill-install-tab-panel code {
   white-space: pre-wrap;
+}
+
+.requirements-panel-title,
+.file-list-header .section-title,
+.skill-versions-header h2 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 1.05rem;
+  font-weight: 650;
+  line-height: 1.25;
+  letter-spacing: 0;
+}
+
+.requirements-section h4,
+.requirements-subsection h5 {
+  margin: 0;
+  color: var(--ink);
+  font-family: var(--font-display);
+  letter-spacing: 0;
+}
+
+.requirements-env-row p,
+.requirements-muted {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+.requirements-section {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px 0 0;
+  border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.requirements-panel-title + .requirements-section {
+  margin-top: -2px;
+}
+
+.requirements-section h4 {
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  line-height: 1.3;
+}
+
+.requirements-subsection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.requirements-subsection + .requirements-subsection {
+  margin-top: 6px;
+}
+
+.requirements-subsection h5 {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  font-weight: 650;
+  line-height: 1.2;
+}
+
+.requirements-token-list {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.requirements-token-list-alternatives {
+  gap: 6px;
+}
+
+.requirements-token-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.requirements-token,
+.requirements-badge {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  max-width: 100%;
+  min-height: 24px;
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 5%, transparent);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.requirements-token {
+  padding: 4px 9px;
+}
+
+.requirements-token-separator {
+  color: var(--ink-soft);
+  font-size: var(--fs-xs);
+  line-height: 1;
+}
+
+.requirements-path-list,
+.requirements-install-row,
+.requirements-env-list {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.requirements-path-token,
+.requirements-code-block {
+  width: 100%;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.requirements-path-token {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.requirements-code-block {
+  margin: 0;
+  padding: 14px 16px;
+  border: 1px solid color-mix(in srgb, var(--ink) 10%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--ink) 6%, transparent);
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  line-height: 1.55;
+}
+
+.requirements-code-block code {
+  white-space: inherit;
+}
+
+.requirements-env-row {
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+}
+
+.requirements-env-main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.requirements-env-main code {
+  color: var(--ink);
+  font-family: var(--font-mono);
+  font-size: var(--fs-sm);
+  font-weight: 650;
+  line-height: 1.25;
+  overflow-wrap: anywhere;
+}
+
+.requirements-badge {
+  padding: 3px 8px;
+  color: var(--ink-soft);
+  font-family: var(--font-sans);
+  font-size: 0.72rem;
+  font-weight: 650;
+}
+
+.requirements-badge-required {
+  border-color: color-mix(in srgb, #f6c76a 28%, transparent);
+  background: color-mix(in srgb, #f6c76a 11%, transparent);
+  color: color-mix(in srgb, #f6c76a 78%, var(--ink));
+}
+
+.requirements-badge-optional,
+.requirements-badge-not-declared {
+  border-color: color-mix(in srgb, var(--ink-soft) 14%, transparent);
+  background: color-mix(in srgb, var(--ink-soft) 7%, transparent);
+}
+
+.requirements-badge-primary {
+  border-color: color-mix(in srgb, #7dd3fc 26%, transparent);
+  background: color-mix(in srgb, #7dd3fc 10%, transparent);
+  color: color-mix(in srgb, #7dd3fc 72%, var(--ink));
 }
 
 .skill-install-metadata-panel {
@@ -8444,13 +8639,6 @@ code {
   padding: 0 2px;
 }
 
-.file-list-header .section-title {
-  margin: 0;
-  font-family: var(--font-sans);
-  font-size: 0.9rem;
-  letter-spacing: 0;
-}
-
 .file-list-count {
   color: var(--ink-soft);
   font-size: 0.78rem;
@@ -8878,16 +9066,6 @@ code {
   min-width: 0;
 }
 
-.skill-versions-header h2 {
-  margin: 0;
-  color: var(--ink);
-  font-family: var(--font-display);
-  font-size: 1.2rem;
-  font-weight: 700;
-  line-height: 1.2;
-}
-
-.skill-versions-header-copy,
 .skill-versions-suppressed-message {
   min-width: 0;
   color: var(--ink-soft);
@@ -8895,7 +9073,6 @@ code {
   line-height: 1.4;
 }
 
-.skill-versions-header-copy p,
 .skill-versions-suppressed-message {
   margin: 0;
 }

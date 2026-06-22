@@ -15,6 +15,17 @@ type SkillInstallTab = {
   panel: ReactNode;
 };
 
+type EnvVarDeclaration = NonNullable<ClawdisSkillMetadata["envVars"]>[number];
+type SkillInstallSpec = NonNullable<ClawdisSkillMetadata["install"]>[number];
+type EnvironmentStatus = "required" | "optional" | "not declared";
+
+type EnvironmentRow = {
+  name: string;
+  status: EnvironmentStatus;
+  description?: string;
+  isPrimary: boolean;
+};
+
 function SkillInstallMetadataPanel({ children }: { children: ReactNode }) {
   return <div className="skill-admin-panel skill-install-metadata-panel">{children}</div>;
 }
@@ -39,6 +50,230 @@ function SkillInstallMetadataRow({
   );
 }
 
+function uniqueValues(values: string[] | undefined) {
+  return [...new Set((values ?? []).map((value) => value.trim()).filter(Boolean))];
+}
+
+function RequirementHeader({ title }: { title: string }) {
+  return <h3 className="requirements-panel-title">{title}</h3>;
+}
+
+function RequirementSection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="requirements-section">
+      <h4>{title}</h4>
+      {children}
+    </section>
+  );
+}
+
+function TokenList({ items }: { items: string[] }) {
+  return (
+    <div className="requirements-token-list">
+      {items.map((item) => (
+        <span key={item} className="requirements-token">
+          {item}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function AlternativeTokenList({ items }: { items: string[] }) {
+  return (
+    <div className="requirements-token-list requirements-token-list-alternatives">
+      {items.map((item, index) => (
+        <span key={item} className="requirements-token-group">
+          {index > 0 ? <span className="requirements-token-separator">or</span> : null}
+          <span className="requirements-token">{item}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function mergeEnvironmentStatus(
+  current: EnvironmentStatus | undefined,
+  next: EnvironmentStatus,
+): EnvironmentStatus {
+  if (current === "required" || next === "required") return "required";
+  if (current === "optional" || next === "optional") return "optional";
+  return "not declared";
+}
+
+function buildEnvironmentRows({
+  requiredEnv,
+  envVars,
+  primaryEnv,
+}: {
+  requiredEnv: string[];
+  envVars: EnvVarDeclaration[];
+  primaryEnv?: string;
+}) {
+  const rows = new Map<string, EnvironmentRow>();
+
+  const upsert = (
+    rawName: string | undefined,
+    values: Partial<Omit<EnvironmentRow, "name">> & { status?: EnvironmentStatus },
+  ) => {
+    const name = rawName?.trim();
+    if (!name) return;
+    const existing = rows.get(name);
+    rows.set(name, {
+      name,
+      status: mergeEnvironmentStatus(existing?.status, values.status ?? "not declared"),
+      description: values.description ?? existing?.description,
+      isPrimary: existing?.isPrimary || values.isPrimary === true,
+    });
+  };
+
+  for (const name of requiredEnv) {
+    upsert(name, { status: "required" });
+  }
+  for (const env of envVars) {
+    upsert(env.name, {
+      status:
+        env.required === true ? "required" : env.required === false ? "optional" : "not declared",
+      description: env.description,
+    });
+  }
+  upsert(primaryEnv, { isPrimary: true });
+
+  return [...rows.values()];
+}
+
+function EnvironmentRows({ rows }: { rows: EnvironmentRow[] }) {
+  return (
+    <div className="requirements-env-list">
+      {rows.map((row) => (
+        <div key={row.name} className="requirements-env-row">
+          <div className="requirements-env-main">
+            <code>{row.name}</code>
+            <span
+              className={`requirements-badge requirements-badge-${row.status.replace(" ", "-")}`}
+            >
+              {row.status}
+            </span>
+            {row.isPrimary ? (
+              <span className="requirements-badge requirements-badge-primary">
+                primary credential
+              </span>
+            ) : null}
+          </div>
+          {row.description ? <p>{row.description}</p> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function RuntimeRequirementsPanel({
+  clawdis,
+  osLabels,
+}: {
+  clawdis: ClawdisSkillMetadata;
+  osLabels: string[];
+}) {
+  const requirements = clawdis.requires;
+  const requiredBins = uniqueValues(requirements?.bins);
+  const alternativeBins = uniqueValues(requirements?.anyBins);
+  const configPaths = uniqueValues(requirements?.config);
+  const requiredEnv = uniqueValues(requirements?.env);
+  const envRows = buildEnvironmentRows({
+    requiredEnv,
+    envVars: clawdis.envVars ?? [],
+    primaryEnv: clawdis.primaryEnv,
+  });
+  const hasRequiredBins = requiredBins.length > 0;
+  const hasAlternativeBins = alternativeBins.length > 0;
+  const hasBothToolGroups = hasRequiredBins && hasAlternativeBins;
+
+  return (
+    <>
+      <RequirementHeader title="Requirements" />
+      {osLabels.length ? (
+        <RequirementSection title="Platform">
+          <TokenList items={osLabels} />
+        </RequirementSection>
+      ) : null}
+      {hasBothToolGroups ? (
+        <RequirementSection title="Tools">
+          <div className="requirements-subsection">
+            <h5>All required</h5>
+            <TokenList items={requiredBins} />
+          </div>
+          <div className="requirements-subsection">
+            <h5>At least one required</h5>
+            <AlternativeTokenList items={alternativeBins} />
+          </div>
+        </RequirementSection>
+      ) : hasRequiredBins ? (
+        <RequirementSection title={requiredBins.length === 1 ? "Required tool" : "Required tools"}>
+          <TokenList items={requiredBins} />
+        </RequirementSection>
+      ) : hasAlternativeBins ? (
+        <RequirementSection title="At least one required">
+          <AlternativeTokenList items={alternativeBins} />
+        </RequirementSection>
+      ) : null}
+      {configPaths.length ? (
+        <RequirementSection title="Configuration">
+          <div className="requirements-path-list">
+            {configPaths.map((path) => (
+              <code key={path} className="requirements-path-token">
+                {path}
+              </code>
+            ))}
+          </div>
+        </RequirementSection>
+      ) : null}
+      {envRows.length ? (
+        <RequirementSection title="Credentials & environment">
+          <EnvironmentRows rows={envRows} />
+        </RequirementSection>
+      ) : null}
+    </>
+  );
+}
+
+function InstallSpecSection({ spec, index }: { spec: SkillInstallSpec; index: number }) {
+  const command = formatInstallCommand(spec);
+  const bins = uniqueValues(spec.bins);
+  const title = spec.label ?? formatInstallLabel(spec);
+
+  return (
+    <RequirementSection title={title}>
+      <div className="requirements-install-row">
+        {command ? (
+          <pre className="requirements-code-block">
+            <code>{command}</code>
+          </pre>
+        ) : null}
+        {bins.length ? (
+          <div className="requirements-subsection">
+            <h5>{bins.length === 1 ? "Binary" : "Binaries"}</h5>
+            <TokenList items={bins} />
+          </div>
+        ) : null}
+        {!command && !bins.length ? (
+          <p className="requirements-muted">Install declaration {index + 1}</p>
+        ) : null}
+      </div>
+    </RequirementSection>
+  );
+}
+
+function InstallSpecsPanel({ installSpecs }: { installSpecs: SkillInstallSpec[] }) {
+  return (
+    <>
+      <RequirementHeader title="Install" />
+      {installSpecs.map((spec, index) => (
+        <InstallSpecSection key={`${spec.id ?? spec.kind}-${index}`} spec={spec} index={index} />
+      ))}
+    </>
+  );
+}
+
 export function buildSkillInstallTabs({
   clawdis,
   osLabels,
@@ -50,12 +285,12 @@ export function buildSkillInstallTabs({
   const links = clawdis?.links;
   const hasRuntimeRequirements = Boolean(
     osLabels.length ||
-    requirements?.bins?.length ||
-    requirements?.anyBins?.length ||
-    requirements?.env?.length ||
-    requirements?.config?.length ||
-    clawdis?.primaryEnv ||
-    envVars.length,
+      requirements?.bins?.length ||
+      requirements?.anyBins?.length ||
+      requirements?.env?.length ||
+      requirements?.config?.length ||
+      clawdis?.primaryEnv ||
+      envVars.length,
   );
   const hasInstallSpecs = installSpecs.length > 0;
   const hasDependencies = dependencies.length > 0;
@@ -70,54 +305,8 @@ export function buildSkillInstallTabs({
   if (hasRuntimeRequirements) {
     tabs.push({
       id: "runtime",
-      label: "Runtime",
-      panel: (
-        <div className="skill-install-tab-panel runtime-requirements-panel">
-          <SkillInstallMetadataPanel>
-            {osLabels.length ? (
-              <SkillInstallMetadataRow title="OS" description={osLabels.join(" · ")} />
-            ) : null}
-            {requirements?.bins?.length ? (
-              <SkillInstallMetadataRow title="Bins" description={requirements.bins.join(", ")} />
-            ) : null}
-            {requirements?.anyBins?.length ? (
-              <SkillInstallMetadataRow
-                title="Any bin"
-                description={requirements.anyBins.join(", ")}
-              />
-            ) : null}
-            {requirements?.env?.length ? (
-              <SkillInstallMetadataRow title="Env" description={requirements.env.join(", ")} />
-            ) : null}
-            {requirements?.config?.length ? (
-              <SkillInstallMetadataRow
-                title="Config"
-                description={requirements.config.join(", ")}
-              />
-            ) : null}
-            {clawdis?.primaryEnv ? (
-              <SkillInstallMetadataRow title="Primary env" description={clawdis.primaryEnv} />
-            ) : null}
-            {envVars.length > 0 ? (
-              <SkillInstallMetadataRow title="Environment variables">
-                <div className="skill-install-env-list">
-                  {envVars.map((env, index) => (
-                    <div key={`${env.name}-${index}`} className="skill-install-env-row">
-                      <code>{env.name}</code>
-                      {env.required === false ? (
-                        <span>optional</span>
-                      ) : env.required === true ? (
-                        <span>required</span>
-                      ) : null}
-                      {env.description ? <p>{env.description}</p> : null}
-                    </div>
-                  ))}
-                </div>
-              </SkillInstallMetadataRow>
-            ) : null}
-          </SkillInstallMetadataPanel>
-        </div>
-      ),
+      label: "Requirements",
+      panel: clawdis ? <RuntimeRequirementsPanel clawdis={clawdis} osLabels={osLabels} /> : null,
     });
   }
 
@@ -165,28 +354,7 @@ export function buildSkillInstallTabs({
     tabs.push({
       id: "install",
       label: "Install",
-      panel: (
-        <div className="skill-install-tab-panel">
-          <SkillInstallMetadataPanel>
-            {installSpecs.map((spec, index) => {
-              const command = formatInstallCommand(spec);
-              return (
-                <SkillInstallMetadataRow
-                  key={`${spec.id ?? spec.kind}-${index}`}
-                  title={spec.label ?? formatInstallLabel(spec)}
-                  description={spec.bins?.length ? `Bins: ${spec.bins.join(", ")}` : undefined}
-                >
-                  {command ? (
-                    <pre className="hero-install-code skill-install-command">
-                      <code>{command}</code>
-                    </pre>
-                  ) : null}
-                </SkillInstallMetadataRow>
-              );
-            })}
-          </SkillInstallMetadataPanel>
-        </div>
-      ),
+      panel: <InstallSpecsPanel installSpecs={installSpecs} />,
     });
   }
 

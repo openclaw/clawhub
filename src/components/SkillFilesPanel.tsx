@@ -281,7 +281,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
         ) : (
           <div className="file-list" ref={fileListRef}>
             <div className="file-list-header">
-              <h3 className="section-title text-[1.05rem] m-0">Files</h3>
+              <h3 className="section-title">Files</h3>
               <span className="file-list-count">{latestFiles.length} total</span>
             </div>
             <div className="file-list-body">

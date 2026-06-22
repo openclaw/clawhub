@@ -105,13 +105,6 @@ export function SkillVersionsPanel({
       <div className="tab-body skill-versions-panel">
         <div className="skill-versions-header">
           <h2>Versions</h2>
-          <div className="skill-versions-header-copy">
-            <p>
-              {nixPlugin
-                ? "Review release history and changelog."
-                : "Download older releases or scan the changelog."}
-            </p>
-          </div>
           {suppressedMessage ? (
             <p className="skill-versions-suppressed-message">{suppressedMessage}</p>
           ) : null}

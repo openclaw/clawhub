@@ -283,7 +283,7 @@ describe("SkillDetailTabs README links", () => {
 
     render(<TestSkillDetailTabs />);
 
-    expect(screen.getByRole("tab", { name: "Runtime" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "Requirements" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Dependencies" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Install" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Links" })).toBeTruthy();
