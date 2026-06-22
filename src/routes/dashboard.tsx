@@ -331,7 +331,7 @@ function SkillRow({ skill, ownerHandle }: { skill: DashboardSkill; ownerHandle: 
     buildSkillHref(ownerHandle, skill.ownerPublisherId ?? skill.ownerUserId ?? null, skill.slug);
   const settingsHref = skill.settingsHref ?? `${detailHref}/settings`;
   const stats = [
-    { label: "Installs", value: formatCompactNumber(skill.stats?.installsAllTime ?? 0) },
+    { label: "Downloads", value: formatCompactNumber(skill.stats?.downloads ?? 0) },
     { label: "Current version", value: formatVersion(skill.latestVersion?.version) },
     { label: "Last updated", value: formatShortDate(skill.updatedAt) },
   ];
@@ -357,7 +357,7 @@ function PackageRow({ pkg }: { pkg: DashboardPackage }) {
   const validationCount = pkg.inspectorWarningCount ?? 0;
   const titleId = `dashboard-package-title-${pkg._id}`;
   const stats = [
-    { label: "Installs", value: formatCompactNumber(pkg.stats.installs ?? 0) },
+    { label: "Downloads", value: formatCompactNumber(pkg.stats.downloads ?? 0) },
     { label: "Current version", value: formatVersion(pkg.latestVersion) },
     { label: "Last updated", value: formatShortDate(pkg.updatedAt) },
   ];

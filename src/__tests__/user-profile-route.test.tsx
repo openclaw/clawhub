@@ -46,7 +46,7 @@ const publisher = {
   official: true,
   publishedItems: [],
   stats: {
-    downloads: 0,
+    downloads: 42,
     installs: 27,
     packages: 0,
     skills: 136,
@@ -73,19 +73,19 @@ describe("user profile route", () => {
     });
   });
 
-  it("shows total installs instead of downloads in the publisher header", async () => {
+  it("shows total downloads in the publisher header", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
 
     const stats = screen.getByLabelText("Publisher stats");
-    expect(within(stats).getByText("27")).toBeTruthy();
-    expect(within(stats).getByText("installs")).toBeTruthy();
-    expect(within(stats).queryByText("downloads")).toBeNull();
+    expect(within(stats).getByText("42")).toBeTruthy();
+    expect(within(stats).getByText("downloads")).toBeTruthy();
+    expect(within(stats).queryByText("installs")).toBeNull();
   });
 
-  it("uses the legacy sort alias while the backend rollout remains compatible", async () => {
+  it("uses downloads sort for published catalog pages", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 

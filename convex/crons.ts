@@ -39,7 +39,7 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     "package-stat-events",
     { minutes: 15 },
     internal.packages.processPackageStatEventsInternal,
-    { batchSize: 500 },
+    { batchSize: 100 },
   );
 
   // Syncs accumulated stat deltas to skill documents every 6 hours.
@@ -61,6 +61,18 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
       batchSize: 1000,
       maxBatches: 20,
       confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+    },
+  );
+
+  crons.interval(
+    "package-stat-events-prune",
+    { hours: 24 },
+    internal.packages.pruneProcessedPackageStatEventsInternal,
+    {
+      retentionDays: 7,
+      batchSize: 1000,
+      maxBatches: 20,
+      confirmationToken: "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS",
     },
   );
 

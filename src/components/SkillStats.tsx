@@ -1,4 +1,4 @@
-import { PackageCheck, Star } from "lucide-react";
+import { Download, Star } from "lucide-react";
 import { formatSkillStatsTriplet, type SkillStatsTriplet } from "../lib/numberFormat";
 
 export function SkillStatsTripletLine({ stats }: { stats: SkillStatsTriplet }) {
@@ -11,8 +11,8 @@ export function SkillStatsTripletLine({ stats }: { stats: SkillStatsTriplet }) {
       </span>
       <span className="skill-stats-dot">·</span>
       <span className="skill-stats-item">
-        <PackageCheck size={14} aria-hidden="true" />
-        {formatted.installsAllTime}
+        <Download size={14} aria-hidden="true" />
+        {formatted.downloads}
       </span>
     </span>
   );

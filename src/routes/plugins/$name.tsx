@@ -10,6 +10,7 @@ import { AlertTriangle, BadgeCheck, Download, Info, Share2, Upload } from "lucid
 import { useEffect, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
+import { ActivityMetricLabel } from "../../components/ActivityMetricLabel";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
@@ -20,6 +21,7 @@ import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
+import { MetricTrendCard, MetricTrendCardSkeleton } from "../../components/MetricTrendCard";
 import { OfficialTag } from "../../components/OfficialBadge";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
@@ -38,6 +40,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { getActivityTrendEndDay } from "../../lib/activityTrend";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
 import {
@@ -69,6 +72,7 @@ import {
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
+import { useDeferredPackageActivityTrend } from "../../lib/useDeferredActivityTrend";
 
 type PluginDetailRateLimitState = {
   scope: "detail" | "metadata";
@@ -613,6 +617,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     api.packages.getPackageInspectorValidationSummaryPublic,
     detail.package ? { name: detail.package.name } : "skip",
   ) as PluginInspectorValidationSummary | undefined;
+  const activityTrendEndDay = getActivityTrendEndDay();
+  const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
+    detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
+  );
   const inspectorFindings = useQuery(
     api.packages.listPackageInspectorWarningsForManager,
     manageContext ? { name: manageContext.package.name, limit: 100 } : "skip",
@@ -1097,11 +1105,31 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   ariaLabel="Plugin metadata"
                   density="compact"
                   blocks={[
-                    {
-                      label: "Installs",
-                      value: formatCompactStat(pkg.stats?.installs ?? 0),
-                      large: true,
-                    },
+                    activityTrendLoading
+                      ? {
+                          key: "download-trend-loading",
+                          label: <ActivityMetricLabel label="30-day Downloads" />,
+                          value: <MetricTrendCardSkeleton />,
+                          large: true,
+                        }
+                      : activityTrend
+                        ? {
+                            key: "download-trend",
+                            label: <ActivityMetricLabel label="30-day Downloads" />,
+                            value: (
+                              <MetricTrendCard
+                                trend={activityTrend.downloads}
+                                ariaLabel="Daily downloads over the last 30 days"
+                                unitLabel="download"
+                              />
+                            ),
+                            large: true,
+                          }
+                        : {
+                            label: <ActivityMetricLabel label="Downloads" />,
+                            value: formatCompactStat(pkg.stats?.downloads ?? 0),
+                            large: true,
+                          },
                     { label: "Repository", value: sourceRepoLink },
                     { label: "Creator", value: ownerMetadataValue },
                     securitySummary

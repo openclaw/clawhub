@@ -24,6 +24,7 @@ import {
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
+  authTables: {},
 }));
 
 type WrappedHandler<TArgs, TResult = unknown> = {

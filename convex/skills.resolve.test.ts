@@ -3,8 +3,8 @@ import { hashSkillFiles } from "./lib/skills";
 import { resolveVersionByHash } from "./skills";
 
 vi.mock("@convex-dev/auth/server", () => ({
-  authTables: {},
   getAuthUserId: vi.fn(),
+  authTables: {},
 }));
 
 type WrappedHandler<TArgs, TResult = unknown> = {

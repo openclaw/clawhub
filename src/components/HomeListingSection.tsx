@@ -145,7 +145,7 @@ function sortSkillEntries(entries: SkillPageEntry[], tab: ListingTab) {
         (left.skill.updatedAt ?? left.skill.createdAt ?? left.skill._creationTime ?? 0)
       );
     }
-    return (right.skill.stats?.installsAllTime ?? 0) - (left.skill.stats?.installsAllTime ?? 0);
+    return (right.skill.stats?.downloads ?? 0) - (left.skill.stats?.downloads ?? 0);
   });
 }
 
@@ -270,7 +270,7 @@ async function fetchSkillListing(
         const result = await convexHttp.query(api.skills.listPublicPageV4, {
           cursor: cursor ?? undefined,
           numItems: numItems - page.length,
-          sort: tab === "new" ? "newest" : "installs",
+          sort: tab === "new" ? "newest" : "downloads",
           dir: "desc",
           officialFirst: tab === "officials" ? true : undefined,
           categorySlug: categorySlug ?? undefined,
@@ -320,7 +320,7 @@ async function fetchPluginListing(
           cursor: cursor ?? undefined,
           isOfficial: openClawOfficials ? true : undefined,
           excludedScanStatuses: tab === "new" ? ["pending", "suspicious"] : undefined,
-          sort: tab === "new" ? "updated" : "installs",
+          sort: tab === "new" ? "updated" : "downloads",
           limit: Math.min(limit - items.length, PLUGIN_CATALOG_PAGE_LIMIT),
           signal,
         });
@@ -339,7 +339,7 @@ async function fetchPluginListing(
   if (tab === "new") {
     items.sort((a, b) => b.updatedAt - a.updatedAt);
   } else if (tab === "popular" || openClawOfficials) {
-    items.sort((a, b) => (b.stats?.installs ?? 0) - (a.stats?.installs ?? 0));
+    items.sort((a, b) => (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0));
   }
   const page = items.slice(0, limit);
   return {
@@ -373,7 +373,7 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
         <div className="home-v2-listing-row-stats" aria-label="Popularity">
           <span>
             <Download size={13} aria-hidden="true" />
-            {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
+            {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
           </span>
         </div>
       ) : null}
@@ -404,7 +404,7 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
       <div className="home-v2-listing-row-stats" aria-label="Popularity">
         <span>
           <Download size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.installs ?? 0)}
+          {formatCompactStat(plugin.stats?.downloads ?? 0)}
         </span>
       </div>
     </Link>
@@ -436,7 +436,7 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
         <div className="home-v2-listing-card-stats" aria-label="Popularity">
           <span>
             <Download size={13} aria-hidden="true" />
-            {formatCompactStat(entry.skill.stats?.installsAllTime ?? 0)}
+            {formatCompactStat(entry.skill.stats?.downloads ?? 0)}
           </span>
         </div>
       ) : null}
@@ -469,7 +469,7 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
       <div className="home-v2-listing-card-stats" aria-label="Popularity">
         <span>
           <Download size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.installs ?? 0)}
+          {formatCompactStat(plugin.stats?.downloads ?? 0)}
         </span>
       </div>
     </Link>
@@ -678,7 +678,7 @@ export function HomeListingSection() {
                   category: categorySlug ?? undefined,
                   isOfficial: tab === "officials" ? true : undefined,
                   excludedScanStatuses: tab === "new" ? ["pending", "suspicious"] : undefined,
-                  sort: tab === "new" ? "updated" : "installs",
+                  sort: tab === "new" ? "updated" : "downloads",
                   limit: fetchLimit,
                   signal: controller.signal,
                 }),

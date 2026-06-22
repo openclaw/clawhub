@@ -1324,12 +1324,13 @@ export const getHoverStats = query({
         ? (publisher.totalInstalls ??
           (await getPublisherInstallFallback(ctx, publisher._id, user._id)))
         : 0;
+    const totalDownloads = publisher?.totalDownloads ?? user?.totalDownloads ?? totalInstalls;
 
     return {
       publishedSkills: publisher?.publishedSkills ?? user?.publishedSkills ?? 0,
       totalStars: publisher?.totalStars ?? user?.totalStars ?? 0,
       // Older cached frontend bundles still read this field during rollout.
-      totalDownloads: publisher?.totalDownloads ?? user?.totalDownloads ?? 0,
+      totalDownloads,
       totalInstalls,
     };
   },

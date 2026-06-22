@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
-import { PackageCheck } from "lucide-react";
+import { Download } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
 import { CatalogTopicList } from "./CatalogTopicList";
@@ -28,7 +28,7 @@ function getPluginTaxonomyDisplay(item: PackageListItem) {
 }
 
 export function PluginListItem({ item, variant = "list" }: PluginListItemProps) {
-  const installs = formatCompactStat(item.stats?.installs ?? 0);
+  const downloads = formatCompactStat(item.stats?.downloads ?? 0);
   const taxonomy = getPluginTaxonomyDisplay(item);
 
   if (variant === "card") {
@@ -59,7 +59,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
               <span className="skill-list-item-meta-item">v{item.latestVersion}</span>
             ) : null}
             <span className="skill-list-item-meta-item">
-              <PackageCheck size={14} aria-hidden="true" /> {installs}
+              <Download size={14} aria-hidden="true" /> {downloads}
             </span>
             <span className="skill-list-item-meta-item">
               {item.ownerHandle ? `@${item.ownerHandle}` : "community"}
@@ -99,7 +99,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
             <span className="skill-list-item-meta-item">v{item.latestVersion}</span>
           ) : null}
           <span className="skill-list-item-meta-item">
-            <PackageCheck size={14} aria-hidden="true" /> {installs}
+            <Download size={14} aria-hidden="true" /> {downloads}
           </span>
           <span className="skill-list-item-meta-item">
             {item.ownerHandle ? `@${item.ownerHandle}` : "community"}

@@ -55,6 +55,7 @@ import type * as lib_clawpack from "../lib/clawpack.js";
 import type * as lib_contentTypes from "../lib/contentTypes.js";
 import type * as lib_devAuth from "../lib/devAuth.js";
 import type * as lib_devSeed from "../lib/devSeed.js";
+import type * as lib_downloadTrend from "../lib/downloadTrend.js";
 import type * as lib_emailRendering from "../lib/emailRendering.js";
 import type * as lib_emails from "../lib/emails.js";
 import type * as lib_embeddingVisibility from "../lib/embeddingVisibility.js";
@@ -202,6 +203,7 @@ declare const fullApi: ApiFromModules<{
   "lib/contentTypes": typeof lib_contentTypes;
   "lib/devAuth": typeof lib_devAuth;
   "lib/devSeed": typeof lib_devSeed;
+  "lib/downloadTrend": typeof lib_downloadTrend;
   "lib/emailRendering": typeof lib_emailRendering;
   "lib/emails": typeof lib_emails;
   "lib/embeddingVisibility": typeof lib_embeddingVisibility;

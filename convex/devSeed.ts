@@ -4,8 +4,10 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
+import { ACTIVITY_TREND_DAYS } from "./lib/downloadTrend";
 import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
+import { toDayKey } from "./lib/leaderboards";
 import { normalizePackageName } from "./lib/packageRegistry";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
 import {
@@ -13,6 +15,7 @@ import {
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
 import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
+import { readCanonicalStat } from "./lib/skillStats";
 import { generateToken, hashToken } from "./lib/tokens";
 
 type SeedSkillSpec = {
@@ -35,6 +38,17 @@ type SeedActionResult = {
 };
 
 type SeedMutationResult = Record<string, unknown>;
+type PublicCorpusExistingRowsResult = {
+  ok: true;
+  skipped: string[];
+  missingKeys: string[];
+};
+
+type PublicCorpusSeedBatchResult = {
+  ok: boolean;
+  seeded: string[];
+  skipped: string[];
+};
 
 function seededPackageRecommendationScore(stats: {
   downloads: number;
@@ -810,6 +824,62 @@ export const seedLocalFixtures: ReturnType<typeof internalAction> = internalActi
   handler: seedLocalFixturesHandler,
 });
 
+export const backfillExistingPublicCorpusBatchRows = internalMutation({
+  args: {
+    rows: v.array(publicCorpusSeedRowValidator),
+  },
+  handler: async (ctx, args): Promise<PublicCorpusExistingRowsResult> => {
+    const now = Date.now();
+    const skipped: string[] = [];
+    const missingKeys: string[] = [];
+
+    for (const row of args.rows) {
+      if (row.kind === "skill") {
+        const existing = await ctx.db
+          .query("skills")
+          .withIndex("by_slug", (q) => q.eq("slug", row.slug))
+          .unique();
+        if (!existing) {
+          missingKeys.push(publicCorpusSeedRowKey(row));
+          continue;
+        }
+
+        if (existing.batch === PUBLIC_CORPUS_BATCH) {
+          await ensurePublicCorpusSkillDailyStats(ctx, {
+            skillId: existing._id,
+            key: row.slug,
+            downloads: readCanonicalStat(existing, "downloads"),
+            installs: readCanonicalStat(existing, "installsAllTime"),
+            now,
+          });
+        }
+        skipped.push(`skill:${row.slug}`);
+        continue;
+      }
+
+      const normalizedName = normalizePackageName(row.name);
+      const existing = await ctx.db
+        .query("packages")
+        .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
+        .unique();
+      if (!existing) {
+        missingKeys.push(publicCorpusSeedRowKey(row));
+        continue;
+      }
+      await ensurePublicCorpusPackageDailyStats(ctx, {
+        packageId: existing._id,
+        key: row.name,
+        downloads: existing.stats?.downloads ?? 0,
+        installs: existing.stats?.installs ?? 0,
+        now,
+      });
+      skipped.push(`plugin:${row.name}`);
+    }
+
+    return { ok: true, skipped, missingKeys };
+  },
+});
+
 export const seedPublicCorpusBatch: ReturnType<typeof internalAction> = internalAction({
   args: {
     reset: v.optional(v.boolean()),
@@ -817,8 +887,21 @@ export const seedPublicCorpusBatch: ReturnType<typeof internalAction> = internal
     rows: v.array(publicCorpusSeedRowValidator),
   },
   handler: async (ctx, args) => {
+    const existingResult: PublicCorpusExistingRowsResult | null = args.reset
+      ? null
+      : await ctx.runMutation(internal.devSeed.backfillExistingPublicCorpusBatchRows, {
+          rows: args.rows,
+        });
+    const missingKeys = new Set(existingResult?.missingKeys ?? []);
+    const rowsToPrepare = args.reset
+      ? args.rows
+      : args.rows.filter((row) => missingKeys.has(publicCorpusSeedRowKey(row)));
+    if (!args.reset && rowsToPrepare.length === 0) {
+      return { ok: true, seeded: [], skipped: existingResult?.skipped ?? [] };
+    }
+
     const preparedRows = await Promise.all(
-      args.rows.map(async (row) => {
+      rowsToPrepare.map(async (row) => {
         if (row.kind === "skill") {
           const storageId = await ctx.storage.store(
             new Blob([row.skillMd], { type: "text/markdown" }),
@@ -839,13 +922,28 @@ export const seedPublicCorpusBatch: ReturnType<typeof internalAction> = internal
       }),
     );
 
-    return await ctx.runMutation(internal.devSeed.seedPublicCorpusBatchMutation, {
-      reset: args.reset,
-      resetOwnerHandles: args.resetOwnerHandles,
-      rows: preparedRows,
-    });
+    const seedResult: PublicCorpusSeedBatchResult = await ctx.runMutation(
+      internal.devSeed.seedPublicCorpusBatchMutation,
+      {
+        reset: args.reset,
+        resetOwnerHandles: args.resetOwnerHandles,
+        rows: preparedRows,
+      },
+    );
+
+    return {
+      ok: true,
+      seeded: seedResult.seeded,
+      skipped: [...(existingResult?.skipped ?? []), ...seedResult.skipped],
+    };
   },
 });
+
+function publicCorpusSeedRowKey(
+  row: { kind: "skill"; slug: string } | { kind: "plugin"; name: string },
+) {
+  return row.kind === "skill" ? `skill:${row.slug}` : `plugin:${row.name}`;
+}
 
 export const seedPublicCorpusBatchMutation = internalMutation({
   args: {
@@ -868,6 +966,15 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           .withIndex("by_slug", (q) => q.eq("slug", row.slug))
           .unique();
         if (existing) {
+          if (existing.batch === PUBLIC_CORPUS_BATCH) {
+            await ensurePublicCorpusSkillDailyStats(ctx, {
+              skillId: existing._id,
+              key: row.slug,
+              downloads: readCanonicalStat(existing, "downloads"),
+              installs: readCanonicalStat(existing, "installsAllTime"),
+              now,
+            });
+          }
           skipped.push(`skill:${row.slug}`);
           continue;
         }
@@ -961,6 +1068,13 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           },
           updatedAt: now,
         });
+        await ensurePublicCorpusSkillDailyStats(ctx, {
+          skillId,
+          key: row.slug,
+          downloads: stats.downloads,
+          installs: stats.installsAllTime,
+          now,
+        });
         seeded.push(`skill:${row.slug}`);
       } else {
         const normalizedName = normalizePackageName(row.name);
@@ -969,6 +1083,13 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
           .unique();
         if (existing) {
+          await ensurePublicCorpusPackageDailyStats(ctx, {
+            packageId: existing._id,
+            key: row.name,
+            downloads: existing.stats?.downloads ?? 0,
+            installs: existing.stats?.installs ?? 0,
+            now,
+          });
           skipped.push(`plugin:${row.name}`);
           continue;
         }
@@ -1050,6 +1171,13 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           stats: { ...stats, versions: 1 },
           updatedAt: now,
         });
+        await ensurePublicCorpusPackageDailyStats(ctx, {
+          packageId,
+          key: row.name,
+          downloads: stats.downloads,
+          installs: stats.installs,
+          now,
+        });
         seeded.push(`plugin:${row.name}`);
       }
     }
@@ -1082,6 +1210,122 @@ function publicCorpusSkillStats(slug: string) {
     installsCurrent: score % 25,
     installsAllTime: score % 120,
   };
+}
+
+type PublicCorpusDailyStatTotals = {
+  downloads: number;
+  installs: number;
+};
+
+type PublicCorpusDailyStatRow = {
+  day: number;
+  downloads: number;
+  installs: number;
+};
+
+async function ensurePublicCorpusSkillDailyStats(
+  ctx: Pick<MutationCtx, "db">,
+  params: {
+    skillId: Id<"skills">;
+    key: string;
+    downloads: number;
+    installs: number;
+    now: number;
+  },
+) {
+  const rows = publicCorpusDailyStats(params.key, params, params.now);
+
+  for (const row of rows) {
+    const existing = await ctx.db
+      .query("skillDailyStats")
+      .withIndex("by_skill_day", (q) => q.eq("skillId", params.skillId).eq("day", row.day))
+      .unique();
+    if (existing) continue;
+
+    await ctx.db.insert("skillDailyStats", {
+      skillId: params.skillId,
+      day: row.day,
+      downloads: row.downloads,
+      installs: row.installs,
+      updatedAt: params.now,
+    });
+  }
+}
+
+async function ensurePublicCorpusPackageDailyStats(
+  ctx: Pick<MutationCtx, "db">,
+  params: {
+    packageId: Id<"packages">;
+    key: string;
+    downloads: number;
+    installs: number;
+    now: number;
+  },
+) {
+  const rows = publicCorpusDailyStats(params.key, params, params.now);
+
+  for (const row of rows) {
+    const existing = await ctx.db
+      .query("packageDailyStats")
+      .withIndex("by_package_day", (q) => q.eq("packageId", params.packageId).eq("day", row.day))
+      .unique();
+    if (existing) continue;
+
+    await ctx.db.insert("packageDailyStats", {
+      packageId: params.packageId,
+      day: row.day,
+      downloads: row.downloads,
+      installs: row.installs,
+      updatedAt: params.now,
+    });
+  }
+}
+
+function publicCorpusDailyStats(
+  key: string,
+  totals: PublicCorpusDailyStatTotals,
+  now: number,
+): PublicCorpusDailyStatRow[] {
+  const endDay = toDayKey(now);
+  const startDay = endDay - (ACTIVITY_TREND_DAYS - 1);
+  const downloads = distributePublicCorpusDailyTotal(
+    totals.downloads,
+    publicCorpusStableNumber(`${key}:downloads`),
+  );
+  const installs = distributePublicCorpusDailyTotal(
+    totals.installs,
+    publicCorpusStableNumber(`${key}:installs`),
+  );
+
+  return Array.from({ length: ACTIVITY_TREND_DAYS }, (_, index) => ({
+    day: startDay + index,
+    downloads: downloads[index] ?? 0,
+    installs: installs[index] ?? 0,
+  })).filter((row) => row.downloads > 0 || row.installs > 0);
+}
+
+function distributePublicCorpusDailyTotal(total: number, seed: number) {
+  const normalizedTotal = Math.max(0, Math.trunc(total));
+  const values = Array.from({ length: ACTIVITY_TREND_DAYS }, () => 0);
+  if (normalizedTotal === 0) return values;
+
+  const weights = Array.from(
+    { length: ACTIVITY_TREND_DAYS },
+    (_, index) => 1 + ((seed + index * 17) % 5) + Math.floor(index / 10),
+  );
+  const totalWeight = weights.reduce((sum, weight) => sum + weight, 0);
+  for (const [index, weight] of weights.entries()) {
+    values[index] = Math.floor((normalizedTotal * weight) / totalWeight);
+  }
+
+  let remainder = normalizedTotal - values.reduce((sum, value) => sum + value, 0);
+  for (let offset = 0; remainder > 0; offset += 1) {
+    const index = (seed + offset * 7) % ACTIVITY_TREND_DAYS;
+    values[index] = (values[index] ?? 0) + 1;
+    remainder -= 1;
+  }
+
+  return values;
 }
 
 function publicCorpusPackageStats(name: string) {
@@ -1325,6 +1569,7 @@ async function deleteSkillAndVersions(ctx: MutationCtx, skillId: Id<"skills">) {
   await deleteGitHubSkillScansForSkill(ctx, skillId);
   await deleteSkillEmbeddingsForSkill(ctx, skillId);
   await deleteSkillBadgesForSkill(ctx, skillId);
+  await deleteSkillDailyStatsForSkill(ctx, skillId);
   await ctx.db.delete(skillId);
 }
 
@@ -1334,6 +1579,7 @@ async function deletePackageAndReleases(ctx: MutationCtx, packageId: Id<"package
     .withIndex("by_package", (q) => q.eq("packageId", packageId))
     .collect();
   await deletePackageBadgesForPackage(ctx, packageId);
+  await deletePackageDailyStatsForPackage(ctx, packageId);
   await ctx.db.delete(packageId);
   for (const release of releases) await ctx.db.delete(release._id);
 }
@@ -1376,6 +1622,22 @@ async function deletePackageBadgesForPackage(ctx: MutationCtx, packageId: Id<"pa
     .withIndex("by_package", (q) => q.eq("packageId", packageId))
     .collect();
   for (const badge of badges) await ctx.db.delete(badge._id);
+}
+
+async function deleteSkillDailyStatsForSkill(ctx: MutationCtx, skillId: Id<"skills">) {
+  const rows = await ctx.db
+    .query("skillDailyStats")
+    .withIndex("by_skill_day", (q) => q.eq("skillId", skillId))
+    .collect();
+  for (const row of rows) await ctx.db.delete(row._id);
+}
+
+async function deletePackageDailyStatsForPackage(ctx: MutationCtx, packageId: Id<"packages">) {
+  const rows = await ctx.db
+    .query("packageDailyStats")
+    .withIndex("by_package_day", (q) => q.eq("packageId", packageId))
+    .collect();
+  for (const row of rows) await ctx.db.delete(row._id);
 }
 
 async function deleteSeedSkillFixture(ctx: MutationCtx, slug = FLAGGED_SKILL_SLUG) {
@@ -1995,6 +2257,13 @@ export async function seedLocalModerationFixturesHandler(
       if (pkg.ownerUserId !== userId || pkg.ownerPublisherId !== publisherId) {
         await ctx.db.patch(pkg._id, ownerPatch);
       }
+      await ensurePublicCorpusPackageDailyStats(ctx, {
+        packageId: pkg._id,
+        key: pkg.name,
+        downloads: pkg.stats?.downloads ?? 0,
+        installs: pkg.stats?.installs ?? 0,
+        now,
+      });
     }
     if (existingSkill.latestVersionId) {
       const latestVersion = await ctx.db.get(existingSkill.latestVersionId);
@@ -2392,6 +2661,13 @@ export async function seedLocalModerationFixturesHandler(
     ...seededPackageRecommendationPatch({ downloads: 2, installs: 0, stars: 0 }),
     updatedAt: now,
   });
+  await ensurePublicCorpusPackageDailyStats(ctx, {
+    packageId,
+    key: flaggedPluginName,
+    downloads: 2,
+    installs: 0,
+    now,
+  });
   const scannedPackageId = await ctx.db.insert("packages", {
     name: scannedPluginName,
     normalizedName: normalizePackageName(scannedPluginName),
@@ -2488,6 +2764,13 @@ export async function seedLocalModerationFixturesHandler(
     stats: { downloads: 7, installs: 1, stars: 1, versions: 1 },
     ...seededPackageRecommendationPatch({ downloads: 7, installs: 1, stars: 1 }),
     updatedAt: now,
+  });
+  await ensurePublicCorpusPackageDailyStats(ctx, {
+    packageId: scannedPackageId,
+    key: scannedPluginName,
+    downloads: 7,
+    installs: 1,
+    now,
   });
   await ctx.db.insert("packageInspectorWarnings", {
     packageId: scannedPackageId,

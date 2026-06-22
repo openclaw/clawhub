@@ -53,10 +53,18 @@ import {
   appendPackageModerationEventLog,
 } from "./lib/artifactModeration";
 import { sha256Hex } from "./lib/clawpack";
+import {
+  ACTIVITY_TREND_DAYS,
+  ACTIVITY_TREND_DAY_MS,
+  buildDailyMetricTrends,
+  clampActivityTrendEndDay,
+  getActivityTrendRangeForEndDay,
+} from "./lib/downloadTrend";
 import { buildPackageInspectorFindingsEmail } from "./lib/emails";
 import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
+import { toDayKey } from "./lib/leaderboards";
 import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
@@ -309,6 +317,75 @@ const skillSpectorAnalysisValidator = v.object({
   error: v.optional(v.string()),
   checkedAt: v.number(),
 });
+
+const PACKAGE_DAILY_STATS_ROLLOUT_AT_ENV = "PACKAGE_DAILY_STATS_ROLLOUT_AT";
+const PACKAGE_STAT_EVENT_BATCH_SIZE = 100;
+export const PROCESSED_PACKAGE_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN =
+  "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS";
+const DEFAULT_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS = 7;
+const MIN_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS = 1;
+const MAX_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS = 90;
+const DEFAULT_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_BATCH_SIZE = 1_000;
+const MAX_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_BATCH_SIZE = 5_000;
+const DEFAULT_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_MAX_BATCHES = 20;
+const MAX_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_MAX_BATCHES = 100;
+
+type ProcessedPackageStatEventPruneBatchResult = {
+  cutoffProcessedAt: number;
+  dryRun: boolean;
+  matched: number;
+  deleted: number;
+  hasMore: boolean;
+};
+
+type ProcessedPackageStatEventPruneResult = {
+  cutoffProcessedAt: number;
+  retentionDays: number;
+  dryRun: boolean;
+  batches: number;
+  matched: number;
+  deleted: number;
+  stoppedReason: "empty" | "max_batches";
+  scheduledContinuation: boolean;
+};
+
+function clampPackageStatInt(value: number, min: number, max: number) {
+  if (!Number.isFinite(value)) return min;
+  return Math.max(min, Math.min(Math.floor(value), max));
+}
+
+function normalizeProcessedPackageStatEventRetentionDays(retentionDays: number | undefined) {
+  return clampPackageStatInt(
+    retentionDays ?? DEFAULT_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS,
+    MIN_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS,
+    MAX_PROCESSED_PACKAGE_STAT_EVENT_RETENTION_DAYS,
+  );
+}
+
+function normalizeProcessedPackageStatEventPruneBatchSize(batchSize: number | undefined) {
+  return clampPackageStatInt(
+    batchSize ?? DEFAULT_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_BATCH_SIZE,
+    1,
+    MAX_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_BATCH_SIZE,
+  );
+}
+
+function normalizeProcessedPackageStatEventPruneMaxBatches(maxBatches: number | undefined) {
+  return clampPackageStatInt(
+    maxBatches ?? DEFAULT_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_MAX_BATCHES,
+    1,
+    MAX_PROCESSED_PACKAGE_STAT_EVENT_PRUNE_MAX_BATCHES,
+  );
+}
+
+function getPackageDailyStatsRolloutTime() {
+  const raw = process.env[PACKAGE_DAILY_STATS_ROLLOUT_AT_ENV]?.trim();
+  if (!raw) return null;
+
+  const numeric = Number(raw);
+  const parsed = Number.isFinite(numeric) ? numeric : Date.parse(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
 
 function inferOwnerHandleFromScopedPackageName(name: string) {
   const match = /^@([^/]+)\//.exec(name);
@@ -1779,6 +1856,29 @@ function buildPackagePluginCategoryDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   if (args.sort === "downloads") {
+    if (family && channel && typeof isOfficial === "boolean") {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_family_channel_official_category_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("channel", channel)
+            .eq("isOfficial", isOfficial)
+            .eq("pluginCategory", args.category),
+        );
+    }
+    if (family && channel) {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_family_channel_category_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("channel", channel)
+            .eq("pluginCategory", args.category),
+        );
+    }
     if (family && typeof isOfficial === "boolean") {
       return ctx.db
         .query("packagePluginCategorySearchDigest")
@@ -1790,11 +1890,32 @@ function buildPackagePluginCategoryDigestQuery(
             .eq("pluginCategory", args.category),
         );
     }
+    if (channel && typeof isOfficial === "boolean") {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_channel_official_category_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("channel", channel)
+            .eq("isOfficial", isOfficial)
+            .eq("pluginCategory", args.category),
+        );
+    }
     if (family) {
       return ctx.db
         .query("packagePluginCategorySearchDigest")
         .withIndex("by_active_family_category_downloads", (q) =>
           q.eq("softDeletedAt", undefined).eq("family", family).eq("pluginCategory", args.category),
+        );
+    }
+    if (channel) {
+      return ctx.db
+        .query("packagePluginCategorySearchDigest")
+        .withIndex("by_active_channel_category_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("channel", channel)
+            .eq("pluginCategory", args.category),
         );
     }
     if (typeof isOfficial === "boolean") {
@@ -1961,6 +2082,65 @@ function buildPackageTopicDigestQuery(
   const channel = args.channel;
   const isOfficial = args.isOfficial;
   if (args.sort === "downloads") {
+    if (family && channel && typeof isOfficial === "boolean") {
+      return ctx.db
+        .query("packageTopicSearchDigest")
+        .withIndex("by_active_family_channel_official_topic_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("channel", channel)
+            .eq("isOfficial", isOfficial)
+            .eq("topic", args.topic),
+        );
+    }
+    if (family && channel) {
+      return ctx.db
+        .query("packageTopicSearchDigest")
+        .withIndex("by_active_family_channel_topic_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("channel", channel)
+            .eq("topic", args.topic),
+        );
+    }
+    if (family && typeof isOfficial === "boolean") {
+      return ctx.db
+        .query("packageTopicSearchDigest")
+        .withIndex("by_active_family_official_topic_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("family", family)
+            .eq("isOfficial", isOfficial)
+            .eq("topic", args.topic),
+        );
+    }
+    if (channel && typeof isOfficial === "boolean") {
+      return ctx.db
+        .query("packageTopicSearchDigest")
+        .withIndex("by_active_channel_official_topic_downloads", (q) =>
+          q
+            .eq("softDeletedAt", undefined)
+            .eq("channel", channel)
+            .eq("isOfficial", isOfficial)
+            .eq("topic", args.topic),
+        );
+    }
+    if (family) {
+      return ctx.db
+        .query("packageTopicSearchDigest")
+        .withIndex("by_active_family_topic_downloads", (q) =>
+          q.eq("softDeletedAt", undefined).eq("family", family).eq("topic", args.topic),
+        );
+    }
+    if (channel) {
+      return ctx.db
+        .query("packageTopicSearchDigest")
+        .withIndex("by_active_channel_topic_downloads", (q) =>
+          q.eq("softDeletedAt", undefined).eq("channel", channel).eq("topic", args.topic),
+        );
+    }
     if (typeof isOfficial === "boolean") {
       return ctx.db
         .query("packageTopicSearchDigest")
@@ -2743,7 +2923,7 @@ export const listAuditPage = query({
     const numItems = Math.max(1, Math.min(args.paginationOpts.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
     const result = await ctx.db
       .query("packages")
-      .withIndex("by_active_installs", (q) => q.eq("softDeletedAt", undefined))
+      .withIndex("by_active_downloads", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
       .paginate({ cursor: args.paginationOpts.cursor, numItems });
 
@@ -3822,6 +4002,54 @@ export const getPackageByNameInternal = internalQuery({
   },
 });
 
+async function buildPackageActivityTrend(ctx: DbReaderCtx, pkg: Doc<"packages">, endDay: number) {
+  const safeEndDay = clampActivityTrendEndDay(endDay, Date.now());
+  const { startDay, endDay: normalizedEndDay } = getActivityTrendRangeForEndDay(safeEndDay);
+  const rows = await ctx.db
+    .query("packageDailyStats")
+    .withIndex("by_package_day", (q) =>
+      q.eq("packageId", pkg._id).gte("day", startDay).lte("day", normalizedEndDay),
+    )
+    .take(ACTIVITY_TREND_DAYS);
+
+  const allTimeDownloads = Math.max(0, Math.trunc(pkg.stats?.downloads ?? 0));
+  const allTimeInstalls = Math.max(0, Math.trunc(pkg.stats?.installs ?? 0));
+  const dailyTotals = rows.reduce(
+    (totals, row) => ({
+      downloads: totals.downloads + Math.max(0, Math.trunc(row.downloads)),
+      installs: totals.installs + Math.max(0, Math.trunc(row.installs)),
+    }),
+    { downloads: 0, installs: 0 },
+  );
+  const dailyRowsCoverAllTimeActivity =
+    dailyTotals.downloads >= allTimeDownloads && dailyTotals.installs >= allTimeInstalls;
+  const packageDailyStatsRolloutTime = getPackageDailyStatsRolloutTime();
+  const hasAllTimeActivity = allTimeDownloads > 0 || allTimeInstalls > 0;
+  const packageCreatedAt = pkg.createdAt ?? pkg._creationTime;
+  const hasUntrustedHistoricalActivity =
+    hasAllTimeActivity &&
+    (packageDailyStatsRolloutTime === null || packageCreatedAt < packageDailyStatsRolloutTime);
+  const hasCompleteDailyWindow =
+    packageDailyStatsRolloutTime !== null &&
+    startDay * ACTIVITY_TREND_DAY_MS >= packageDailyStatsRolloutTime;
+  if (hasUntrustedHistoricalActivity && !hasCompleteDailyWindow && !dailyRowsCoverAllTimeActivity) {
+    return null;
+  }
+
+  return buildDailyMetricTrends(rows, normalizedEndDay);
+}
+
+export const getActivityTrendForName = query({
+  args: { name: v.string(), endDay: v.number() },
+  handler: async (ctx, args) => {
+    const viewerUserId = await getOptionalViewerUserId(ctx);
+    const pkg = await getReadablePackageByName(ctx, args.name, viewerUserId);
+    if (!pkg) return null;
+
+    return await buildPackageActivityTrend(ctx, pkg, args.endDay);
+  },
+});
+
 export const recordPackageDownloadInternal = internalMutation({
   args: { packageId: v.id("packages") },
   handler: async (ctx, args) => {
@@ -3881,10 +4109,55 @@ export const recordPackageInstallInternal = internalMutation({
   },
 });
 
+async function bumpDailyPackageStats(
+  ctx: MutationCtx,
+  params: {
+    packageId: Id<"packages">;
+    day: number;
+    downloads: number;
+    installs: number;
+    now: number;
+  },
+) {
+  if (params.downloads === 0 && params.installs === 0) return;
+
+  const existing = await ctx.db
+    .query("packageDailyStats")
+    .withIndex("by_package_day", (q) => q.eq("packageId", params.packageId).eq("day", params.day))
+    .unique();
+
+  if (existing) {
+    await ctx.db.patch(existing._id, {
+      downloads: Math.max(0, existing.downloads + params.downloads),
+      installs: Math.max(0, existing.installs + params.installs),
+      updatedAt: params.now,
+    });
+    return;
+  }
+
+  await ctx.db.insert("packageDailyStats", {
+    packageId: params.packageId,
+    day: params.day,
+    downloads: Math.max(0, params.downloads),
+    installs: Math.max(0, params.installs),
+    updatedAt: params.now,
+  });
+}
+
+type PackageDailyStatsDelta = {
+  packageId: Id<"packages">;
+  day: number;
+  downloads: number;
+  installs: number;
+};
+
 export const processPackageStatEventsInternal = internalMutation({
   args: { batchSize: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const batchSize = Math.max(1, Math.min(args.batchSize ?? 500, 1_000));
+    const batchSize = Math.max(
+      1,
+      Math.min(args.batchSize ?? PACKAGE_STAT_EVENT_BATCH_SIZE, PACKAGE_STAT_EVENT_BATCH_SIZE),
+    );
     const now = Date.now();
     const events = await ctx.db
       .query("packageStatEvents")
@@ -3894,12 +4167,34 @@ export const processPackageStatEventsInternal = internalMutation({
     if (events.length === 0) return { processed: 0, packagesUpdated: 0 };
 
     const statsByPackage = new Map<Id<"packages">, { downloads: number; installs: number }>();
+    const dailyStatsByPackageDay = new Map<string, PackageDailyStatsDelta>();
+    const dailyStatsByPackage = new Map<Id<"packages">, PackageDailyStatsDelta[]>();
     for (const event of events) {
       const stats = statsByPackage.get(event.packageId) ?? { downloads: 0, installs: 0 };
+      const day = toDayKey(event.occurredAt);
+      const dailyKey = `${event.packageId}:${day}`;
+      let dailyStats = dailyStatsByPackageDay.get(dailyKey);
+      if (!dailyStats) {
+        dailyStats = {
+          packageId: event.packageId,
+          day,
+          downloads: 0,
+          installs: 0,
+        };
+        dailyStatsByPackageDay.set(dailyKey, dailyStats);
+        const packageDailyStats = dailyStatsByPackage.get(event.packageId);
+        if (packageDailyStats) {
+          packageDailyStats.push(dailyStats);
+        } else {
+          dailyStatsByPackage.set(event.packageId, [dailyStats]);
+        }
+      }
       if (event.kind === "install") {
         stats.installs += 1;
+        dailyStats.installs += 1;
       } else {
         stats.downloads += 1;
+        dailyStats.downloads += 1;
       }
       statsByPackage.set(event.packageId, stats);
     }
@@ -3908,6 +4203,9 @@ export const processPackageStatEventsInternal = internalMutation({
     for (const [packageId, stats] of statsByPackage) {
       const pkg = await ctx.db.get(packageId);
       if (!pkg) continue;
+      for (const dailyStats of dailyStatsByPackage.get(packageId) ?? []) {
+        await bumpDailyPackageStats(ctx, { ...dailyStats, now });
+      }
       const nextStats = {
         downloads: (pkg.stats?.downloads ?? 0) + stats.downloads,
         installs: (pkg.stats?.installs ?? 0) + stats.installs,
@@ -3934,6 +4232,117 @@ export const processPackageStatEventsInternal = internalMutation({
     return { processed: events.length, packagesUpdated };
   },
 });
+
+export const pruneProcessedPackageStatEventBatchInternal = internalMutation({
+  args: {
+    cutoffProcessedAt: v.number(),
+    dryRun: v.boolean(),
+    batchSize: v.optional(v.number()),
+    confirmationToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args): Promise<ProcessedPackageStatEventPruneBatchResult> => {
+    if (
+      !args.dryRun &&
+      args.confirmationToken !== PROCESSED_PACKAGE_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN
+    ) {
+      throw new Error(
+        `Apply requires confirmationToken=${PROCESSED_PACKAGE_STAT_EVENT_PRUNE_CONFIRMATION_TOKEN}`,
+      );
+    }
+
+    const batchSize = normalizeProcessedPackageStatEventPruneBatchSize(args.batchSize);
+    const events = await ctx.db
+      .query("packageStatEvents")
+      .withIndex("by_unprocessed", (q) =>
+        q.gt("processedAt", 0).lt("processedAt", args.cutoffProcessedAt),
+      )
+      .take(batchSize);
+
+    if (!args.dryRun) {
+      for (const event of events) {
+        await ctx.db.delete(event._id);
+      }
+    }
+
+    return {
+      cutoffProcessedAt: args.cutoffProcessedAt,
+      dryRun: args.dryRun,
+      matched: events.length,
+      deleted: args.dryRun ? 0 : events.length,
+      hasMore: events.length === batchSize,
+    };
+  },
+});
+
+export const pruneProcessedPackageStatEventsInternal: ReturnType<typeof internalAction> =
+  internalAction({
+    args: {
+      dryRun: v.optional(v.boolean()),
+      retentionDays: v.optional(v.number()),
+      batchSize: v.optional(v.number()),
+      maxBatches: v.optional(v.number()),
+      confirmationToken: v.optional(v.string()),
+    },
+    handler: async (ctx, args): Promise<ProcessedPackageStatEventPruneResult> => {
+      const dryRun = args.dryRun ?? false;
+      const retentionDays = normalizeProcessedPackageStatEventRetentionDays(args.retentionDays);
+      const batchSize = normalizeProcessedPackageStatEventPruneBatchSize(args.batchSize);
+      const maxBatches = normalizeProcessedPackageStatEventPruneMaxBatches(args.maxBatches);
+      const cutoffProcessedAt = Date.now() - retentionDays * 24 * 60 * 60 * 1_000;
+
+      let batches = 0;
+      let matched = 0;
+      let deleted = 0;
+      let hasMore = false;
+      let stoppedReason: "empty" | "max_batches" = "empty";
+      const batchLimit = dryRun ? 1 : maxBatches;
+
+      for (let index = 0; index < batchLimit; index += 1) {
+        const batch = (await ctx.runMutation(
+          internal.packages.pruneProcessedPackageStatEventBatchInternal,
+          {
+            cutoffProcessedAt,
+            dryRun,
+            batchSize,
+            confirmationToken: args.confirmationToken,
+          },
+        )) as ProcessedPackageStatEventPruneBatchResult;
+
+        batches += 1;
+        matched += batch.matched;
+        deleted += batch.deleted;
+        hasMore = batch.hasMore;
+
+        if (!batch.hasMore) {
+          stoppedReason = "empty";
+          break;
+        }
+
+        stoppedReason = "max_batches";
+      }
+
+      if (!dryRun && hasMore && stoppedReason === "max_batches") {
+        await ctx.scheduler.runAfter(0, internal.packages.pruneProcessedPackageStatEventsInternal, {
+          dryRun,
+          retentionDays,
+          batchSize,
+          maxBatches,
+          confirmationToken: args.confirmationToken,
+        });
+      }
+
+      return {
+        cutoffProcessedAt,
+        retentionDays,
+        dryRun,
+        batches,
+        matched,
+        deleted,
+        stoppedReason,
+        scheduledContinuation: !dryRun && hasMore && stoppedReason === "max_batches",
+      };
+    },
+  });
 
 export const getTrustedPublisherByPackageIdInternal = internalQuery({
   args: { packageId: v.id("packages") },
@@ -4254,6 +4663,12 @@ async function hardDeletePackageDoc(
     .withIndex("by_package", (q) => q.eq("packageId", pkg._id))
     .collect();
   for (const statEvent of statEvents) await ctx.db.delete(statEvent._id);
+
+  const dailyStats = await ctx.db
+    .query("packageDailyStats")
+    .withIndex("by_package_day", (q) => q.eq("packageId", pkg._id))
+    .collect();
+  for (const dailyStat of dailyStats) await ctx.db.delete(dailyStat._id);
 
   for (const release of releases) await ctx.db.delete(release._id);
   await ctx.db.delete(pkg._id);

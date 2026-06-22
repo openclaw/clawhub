@@ -1470,6 +1470,20 @@
             }
           },
           {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "updated",
+                "recommended",
+                "downloads",
+                "installs"
+              ]
+            }
+          },
+          {
             "name": "channel",
             "in": "query",
             "required": false,
@@ -1541,6 +1555,20 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "updated",
+                "recommended",
+                "downloads",
+                "installs"
+              ]
             }
           },
           {
@@ -1660,6 +1688,20 @@
             "required": false,
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "updated",
+                "recommended",
+                "downloads",
+                "installs"
+              ]
             }
           },
           {
@@ -2469,6 +2511,20 @@
             }
           },
           {
+            "name": "sort",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "updated",
+                "recommended",
+                "downloads",
+                "installs"
+              ]
+            }
+          },
+          {
             "name": "channel",
             "in": "query",
             "required": false,
@@ -2737,6 +2793,7 @@
                 "updated",
                 "createdAt",
                 "newest",
+                "downloads",
                 "stars",
                 "rating",
                 "installsCurrent",

@@ -113,7 +113,7 @@ Stores your API token + cached registry URL.
 - Lists newest skills via `/api/v1/skills?limit=...&sort=createdAt` (sorted by `createdAt` desc).
 - Flags:
   - `--limit <n>` (1-200, default: 25)
-  - `--sort newest|updated|rating|installs|installsAllTime|trending` (default: newest)
+  - `--sort newest|updated|rating|downloads|trending` (default: newest). Legacy install sort aliases still work for compatibility.
   - `--json` (machine-readable output)
 - Output: `<slug>  v<version>  <age>  <summary>` (summary truncated to 50 chars).
 

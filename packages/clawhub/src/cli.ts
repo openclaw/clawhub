@@ -351,11 +351,7 @@ registerCommand(program, ["explore"])
     (value) => Number.parseInt(value, 10),
     25,
   )
-  .option(
-    "--sort <order>",
-    "Sort by newest, rating, installs, installsAllTime, or trending",
-    "newest",
-  )
+  .option("--sort <order>", "Sort by newest, rating, downloads, or trending", "newest")
   .option("--json", "Output JSON")
   .action(async (options) => {
     const opts = await resolveGlobalOpts();

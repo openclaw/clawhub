@@ -1,15 +1,7 @@
 import { createFileRoute, Link, notFound } from "@tanstack/react-router";
 import { normalizeCatalogTopic } from "clawhub-schema";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import {
-  Building2,
-  Package,
-  PackageCheck,
-  Star,
-  Users,
-  Wrench,
-  type LucideIcon,
-} from "lucide-react";
+import { Building2, Download, Package, Star, Users, Wrench, type LucideIcon } from "lucide-react";
 import { type ReactNode, useMemo, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import { EmptyState } from "../../components/EmptyState";
@@ -28,7 +20,7 @@ import type {
   PublicPublisherCatalogItem,
   PublicPublisherListItem,
 } from "../../lib/publicUser";
-import { readPublicInstallCount } from "../../lib/publicUser";
+import { readPublicDownloadCount } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/user/$handle")({
   loader: async ({ params }) => {
@@ -241,9 +233,9 @@ function PublisherProfile() {
             </div>
             <div className="publisher-profile-hero-stats" aria-label="Publisher stats">
               <PublisherStat
-                icon={PackageCheck}
-                value={formatCompactStat(publisher.stats.installs)}
-                label="installs"
+                icon={Download}
+                value={formatCompactStat(publisher.stats.downloads)}
+                label="downloads"
               />
               <PublisherStat
                 icon={Star}
@@ -586,8 +578,8 @@ export function PublishedItemCard({
         <div className="skill-card-footer">
           <div className="skill-card-footer-inline publisher-published-card-stats">
             <span className="skill-list-item-meta-item">
-              <PackageCheck size={14} aria-hidden="true" />
-              <strong>{formatCompactStat(readPublicInstallCount(item))}</strong> installs
+              <Download size={14} aria-hidden="true" />
+              <strong>{formatCompactStat(readPublicDownloadCount(item))}</strong> downloads
             </span>
             <span className="skill-list-item-meta-item">
               <Star size={14} aria-hidden="true" />
@@ -617,8 +609,8 @@ export function PublishedItemCard({
       </div>
       <div className="skill-list-item-meta publisher-published-row-stats">
         <span className="skill-list-item-meta-item">
-          <PackageCheck size={14} aria-hidden="true" />
-          <strong>{formatCompactStat(readPublicInstallCount(item))}</strong> installs
+          <Download size={14} aria-hidden="true" />
+          <strong>{formatCompactStat(readPublicDownloadCount(item))}</strong> downloads
         </span>
         <span className="skill-list-item-meta-item">
           <Star size={14} aria-hidden="true" />

@@ -5,14 +5,17 @@ import { Flag, Settings, Share2, ShieldCheck, Star, Upload } from "lucide-react"
 import { useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
+import { ActivityMetricLabel } from "./ActivityMetricLabel";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
+import { MetricTrendCard, MetricTrendCardSkeleton } from "./MetricTrendCard";
 import { OfficialTag } from "./OfficialBadge";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
@@ -118,6 +121,8 @@ type SkillHeaderProps = {
   priorityContent?: ReactNode;
   postInstallContent?: ReactNode;
   securityAuditSummary?: ReactNode;
+  activityTrend?: ActivityTrend | null;
+  activityTrendLoading?: boolean;
   newVersionHref?: string | null;
   settingsHref?: string | null;
   showArchiveMetadata?: boolean;
@@ -154,6 +159,8 @@ export function SkillHeader({
   priorityContent,
   postInstallContent,
   securityAuditSummary,
+  activityTrend,
+  activityTrendLoading = false,
   newVersionHref,
   settingsHref,
   showArchiveMetadata = true,
@@ -257,6 +264,8 @@ export function SkillHeader({
               latestVersion={latestVersion}
               showArchiveMetadata={showArchiveMetadata}
               securityAuditSummary={securityAuditSummary}
+              activityTrend={activityTrend}
+              activityTrendLoading={activityTrendLoading}
             />
             {hasSidebarActions ? (
               <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
@@ -524,6 +533,8 @@ function SkillSidebarStats({
   latestVersion,
   showArchiveMetadata,
   securityAuditSummary,
+  activityTrend,
+  activityTrendLoading = false,
 }: {
   skill: Doc<"skills"> | PublicSkill;
   owner: PublicPublisher | null;
@@ -532,6 +543,8 @@ function SkillSidebarStats({
   latestVersion: SkillHeaderLatestVersion;
   showArchiveMetadata: boolean;
   securityAuditSummary?: ReactNode;
+  activityTrend?: ActivityTrend | null;
+  activityTrendLoading?: boolean;
 }) {
   const githubRepositoryLink = getGitHubRepositoryLink(skill);
 
@@ -540,7 +553,31 @@ function SkillSidebarStats({
       ariaLabel="Skill metadata"
       density="compact"
       blocks={[
-        { label: "Installs", value: formattedStats.installsAllTime },
+        activityTrendLoading
+          ? {
+              key: "download-trend-loading",
+              label: <ActivityMetricLabel label="30-day Downloads" />,
+              value: <MetricTrendCardSkeleton />,
+              large: true,
+            }
+          : activityTrend
+            ? {
+                key: "download-trend",
+                label: <ActivityMetricLabel label="30-day Downloads" />,
+                value: (
+                  <MetricTrendCard
+                    trend={activityTrend.downloads}
+                    ariaLabel="Daily downloads over the last 30 days"
+                    unitLabel="download"
+                  />
+                ),
+                large: true,
+              }
+            : {
+                label: <ActivityMetricLabel label="Downloads" />,
+                value: formattedStats.downloads,
+                large: true,
+              },
         { label: "Repository", value: githubRepositoryLink },
         {
           label: "Creator",

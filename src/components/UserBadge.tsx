@@ -1,4 +1,4 @@
-import { Package, PackageCheck, Star } from "lucide-react";
+import { Download, Package, Star } from "lucide-react";
 import { useEffect, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
@@ -110,8 +110,8 @@ type HoverStats = {
   totalDownloads?: number;
 };
 
-export function getHoverTotalInstalls(stats: HoverStats) {
-  return stats.totalInstalls ?? stats.totalDownloads ?? 0;
+export function getHoverTotalDownloads(stats: HoverStats) {
+  return stats.totalDownloads ?? stats.totalInstalls ?? 0;
 }
 
 function UserStatsTooltipContent({
@@ -171,10 +171,10 @@ function UserStatsTooltipContent({
             </span>
             <span
               className="flex items-center gap-1 text-fs-xs text-ink-soft"
-              title="Total installs"
+              title="Total downloads"
             >
-              <PackageCheck size={12} />
-              {formatCompactStat(getHoverTotalInstalls(stats))}
+              <Download size={12} />
+              {formatCompactStat(getHoverTotalDownloads(stats))}
             </span>
           </>
         )}

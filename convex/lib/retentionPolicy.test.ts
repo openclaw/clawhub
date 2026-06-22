@@ -39,4 +39,19 @@ describe("retention policies", () => {
       expirationIndex: "by_expires_at",
     });
   });
+
+  it("documents package daily stats as durable analytics", () => {
+    expect(getRetentionPolicy("packageDailyStats")).toMatchObject({
+      classification: "permanent",
+    });
+  });
+
+  it("documents package stat events as processed-event retention", () => {
+    expect(getRetentionPolicy("packageStatEvents")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "processedAt",
+      expirationIndex: "by_unprocessed",
+      prune: "packages.pruneProcessedPackageStatEventsInternal",
+    });
+  });
 });

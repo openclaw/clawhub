@@ -278,11 +278,8 @@ export function useSkillsBrowseModel({
       switch (sort) {
         case "relevance":
           return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier;
-        case "installs":
-          return (
-            ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
-              multiplier || tieBreak()
-          );
+        case "downloads":
+          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak();
         case "stars":
           return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak();
         case "updated":

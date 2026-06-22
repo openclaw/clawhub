@@ -1422,17 +1422,9 @@ export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Requ
   );
 }
 
-type SkillListSort =
-  | "recommended"
-  | "createdAt"
-  | "updated"
-  | "downloads"
-  | "stars"
-  | "installsCurrent"
-  | "installsAllTime"
-  | "trending";
+type SkillListSort = "recommended" | "createdAt" | "updated" | "downloads" | "stars" | "trending";
 
-type PublicListSort = "recommended" | "newest" | "updated" | "downloads" | "stars" | "installs";
+type PublicListSort = "recommended" | "newest" | "updated" | "downloads" | "stars";
 
 function parseListSort(value: string | null): SkillListSort | null {
   if (value === null) return "updated";
@@ -1451,10 +1443,10 @@ function parseListSort(value: string | null): SkillListSort | null {
     normalized === "installscurrent" ||
     normalized === "installs-current"
   ) {
-    return "installsCurrent";
+    return "downloads";
   }
   if (normalized === "installsalltime" || normalized === "installs-all-time") {
-    return "installsAllTime";
+    return "downloads";
   }
   if (normalized === "trending") return "trending";
   if (normalized === "updated") return "updated";
@@ -1462,11 +1454,19 @@ function parseListSort(value: string | null): SkillListSort | null {
 }
 
 function toPublicListSort(sort: Exclude<SkillListSort, "trending">): PublicListSort {
-  if (sort === "recommended") return "recommended";
-  if (sort === "createdAt") return "newest";
-  if (sort === "updated") return "updated";
-  if (sort === "stars") return sort;
-  return "installs";
+  switch (sort) {
+    case "recommended":
+      return "recommended";
+    case "createdAt":
+      return "newest";
+    case "updated":
+      return "updated";
+    case "downloads":
+      return "downloads";
+    case "stars":
+      return "stars";
+  }
+  throw new Error("Unhandled skill list sort");
 }
 
 export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {

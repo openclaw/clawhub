@@ -18,7 +18,7 @@ import {
 const BROWSE_SORT_OPTIONS = [
   { value: "recommended", label: "Recommended" },
   { value: "stars", label: "Most starred" },
-  { value: "installs", label: "Most installed" },
+  { value: "downloads", label: "Most downloaded" },
   { value: "updated", label: "Recently updated" },
   { value: "newest", label: "Newest" },
   { value: "name", label: "Name" },

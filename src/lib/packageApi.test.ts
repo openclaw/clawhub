@@ -646,13 +646,13 @@ describe("fetchPluginCatalog", () => {
     expect(url.searchParams.get("sort")).toBe("updated");
 
     await fetchPluginCatalog({
-      sort: "installs",
+      sort: "downloads",
       limit: 20,
     });
 
-    const installsUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
-    expect(installsUrl.pathname).toBe("/api/v1/plugins");
-    expect(installsUrl.searchParams.get("sort")).toBe("installs");
+    const downloadsUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
+    expect(downloadsUrl.pathname).toBe("/api/v1/plugins");
+    expect(downloadsUrl.searchParams.get("sort")).toBe("downloads");
   });
 
   it("uses the dedicated plugins search endpoint for search mode", async () => {

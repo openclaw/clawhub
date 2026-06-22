@@ -142,7 +142,7 @@ Query params:
 
 - `limit` (optional): integer (1–200)
 - `cursor` (optional): pagination cursor for any non-`trending` sort
-- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `stars` (alias: `rating`), `installsCurrent` (alias: `installs`), `installsAllTime`, `trending`
+- `sort` (optional): `updated` (default), `recommended` (alias: `default`), `createdAt` (alias: `newest`), `downloads`, `stars` (alias: `rating`), legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
 - `nonSuspiciousOnly` (optional): `true` to hide suspicious (`flagged.suspicious`) skills
 - `nonSuspicious` (optional): legacy alias for `nonSuspiciousOnly`
 
@@ -165,6 +165,7 @@ Response:
       "slug": "gifgrep",
       "displayName": "GifGrep",
       "summary": "…",
+      "topics": ["Productivity"],
       "tags": { "latest": "1.2.3" },
       "stats": {},
       "createdAt": 0,
@@ -187,6 +188,7 @@ Response:
     "slug": "gifgrep",
     "displayName": "GifGrep",
     "summary": "…",
+    "topics": ["Productivity"],
     "tags": { "latest": "1.2.3" },
     "stats": {},
     "createdAt": 0,
@@ -539,7 +541,7 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `sort` (optional): `updated` (default), `recommended`, `installs`
+- `sort` (optional): `updated` (default), `recommended`, `downloads`, legacy alias `installs`
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages (`/api/v1/plugins`,
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
@@ -589,7 +591,7 @@ Query params:
 - `limit` (optional): integer (1-100)
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
-- `sort` (optional): `recommended` (default), `installs`, `updated`
+- `sort` (optional): `recommended` (default), `downloads`, `updated`, legacy alias `installs`
 - `category` (optional): plugin category filter. Current values:
   `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
   `tools`, `runtime`, `gateway`, `security`, `other`.

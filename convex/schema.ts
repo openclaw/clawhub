@@ -1764,6 +1764,14 @@ const packageStatEvents = defineTable({
   .index("by_unprocessed", ["processedAt"])
   .index("by_package", ["packageId"]);
 
+const packageDailyStats = defineTable({
+  packageId: v.id("packages"),
+  day: v.number(),
+  downloads: v.number(),
+  installs: v.number(),
+  updatedAt: v.number(),
+}).index("by_package_day", ["packageId", "day"]);
+
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
   provider: v.literal("github-actions"),
@@ -1915,6 +1923,53 @@ const packageTopicSearchDigest = defineTable({
     "stats.downloads",
     "updatedAt",
   ])
+  .index("by_active_family_topic_downloads", [
+    "softDeletedAt",
+    "family",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_channel_topic_downloads", [
+    "softDeletedAt",
+    "channel",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_topic_downloads", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_topic_downloads", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_topic_downloads", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_official_topic_downloads", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "isOfficial",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
   .index("by_active_official_topic_installs", [
     "softDeletedAt",
     "isOfficial",
@@ -2010,6 +2065,21 @@ const packagePluginCategorySearchDigest = defineTable({
     "stats.downloads",
     "updatedAt",
   ])
+  .index("by_active_channel_category_downloads", [
+    "softDeletedAt",
+    "channel",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
   .index("by_active_family_category_installs", [
     "softDeletedAt",
     "family",
@@ -2048,6 +2118,23 @@ const packagePluginCategorySearchDigest = defineTable({
   .index("by_active_family_official_category_downloads", [
     "softDeletedAt",
     "family",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_category_downloads", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_official_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "channel",
     "isOfficial",
     "pluginCategory",
     "stats.downloads",
@@ -2776,6 +2863,7 @@ export default defineSchema({
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
+  packageDailyStats,
   packageTrustedPublishers,
   packagePublishTokens,
   packagePublishUploadTickets,

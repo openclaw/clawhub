@@ -847,10 +847,11 @@ export async function cmdUninstall(
   }
 }
 
-type ExploreSort = "newest" | "rating" | "installs" | "installsAllTime" | "trending";
+type ExploreSort = "newest" | "rating" | "downloads" | "installs" | "installsAllTime" | "trending";
 type ApiExploreSort =
   | "createdAt"
   | "updated"
+  | "downloads"
   | "stars"
   | "installsCurrent"
   | "installsAllTime"
@@ -1081,12 +1082,10 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
   if (normalized === "rating" || normalized === "stars" || normalized === "star") {
     return { sort: "rating", apiSort: "stars" };
   }
-  if (
-    normalized === "installs" ||
-    normalized === "install" ||
-    normalized === "downloads" ||
-    normalized === "download"
-  ) {
+  if (normalized === "downloads" || normalized === "download") {
+    return { sort: "downloads", apiSort: "downloads" };
+  }
+  if (normalized === "installs" || normalized === "install") {
     return { sort: "installs", apiSort: "installsAllTime" };
   }
   if (
@@ -1103,7 +1102,7 @@ function resolveExploreSort(raw?: string): { sort: ExploreSort; apiSort: ApiExpl
     return { sort: "trending", apiSort: "trending" };
   }
   return fail(
-    `Invalid sort "${raw}". Use newest, updated, rating, installs, installsAllTime, or trending.`,
+    `Invalid sort "${raw}". Use newest, updated, rating, downloads, installs, installs-current, installs-all-time, or trending.`,
   );
 }
 

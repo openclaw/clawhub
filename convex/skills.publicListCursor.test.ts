@@ -1106,6 +1106,31 @@ describe("public skill list deterministic cursors", () => {
     expect(result.items[0]).toMatchObject({ latestVersion: null });
   });
 
+  it("carries author topics through the public API list", async () => {
+    getPageMock.mockResolvedValueOnce({
+      page: [
+        makeSearchDigest({
+          topics: ["Calendar", "Official"],
+        }),
+      ],
+      hasMore: false,
+      indexKeys: [],
+    });
+
+    const result = await listPublicApiPageV1Handler({} as never, {
+      numItems: 10,
+      sort: "updated",
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({
+      skill: {
+        slug: "demo",
+        topics: ["Calendar", "Official"],
+      },
+    });
+  });
+
   it("keeps verified legacy API list latest versions without owner markers", async () => {
     getPageMock.mockResolvedValueOnce({
       page: [
@@ -1295,6 +1320,35 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
+  it("orders public audit skills by downloads", async () => {
+    const digest = makeSearchDigest({ latestVersionId: undefined });
+    const withIndex = vi.fn(() => ({
+      order: vi.fn(() => ({
+        paginate: vi.fn().mockResolvedValue({
+          page: [digest],
+          isDone: true,
+          continueCursor: "",
+        }),
+      })),
+    }));
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table !== "skillSearchDigest") throw new Error(`unexpected table ${table}`);
+          return { withIndex };
+        }),
+        get: vi.fn(),
+      },
+    };
+
+    const result = await listAuditPageHandler(ctx as never, {
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(result.page).toHaveLength(1);
+    expect(withIndex).toHaveBeenCalledWith("by_active_stats_downloads", expect.any(Function));
+  });
+
   it("drops audit latest versions that resolve to another skill", async () => {
     const digest = makeSearchDigest({
       latestVersionId: "skillVersions:other",
@@ -1341,10 +1395,6 @@ describe("public skill list deterministic cursors", () => {
 
     expect(result.page).toHaveLength(1);
     expect(result.page[0]).toMatchObject({ latestVersion: null });
-    expect(withIndex).toHaveBeenCalledWith(
-      "by_active_stats_installs_all_time",
-      expect.any(Function),
-    );
   });
 });
 

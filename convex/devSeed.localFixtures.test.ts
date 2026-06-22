@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import {
+  backfillExistingPublicCorpusBatchRows,
   currentUserSeedPackageName,
   currentUserSeedSkillSlug,
   seedFeaturedPluginPackagesMutation,
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
   seedLocalModerationFixturesHandler,
+  seedPublicCorpusBatch,
   seedPublicCorpusBatchMutation,
   seedSkillMutation,
 } from "./devSeed";
@@ -27,8 +29,14 @@ const seedGitHubBackedSkillSourceHandler = (
 const seedLocalFixturesHandler = (
   seedLocalFixtures as unknown as WrappedHandler<{ reset?: boolean }>
 )._handler;
+const seedPublicCorpusBatchActionHandler = (
+  seedPublicCorpusBatch as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
 const seedPublicCorpusBatchHandler = (
   seedPublicCorpusBatchMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const backfillExistingPublicCorpusBatchRowsHandler = (
+  backfillExistingPublicCorpusBatchRows as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
 
 function chainEq(constraints: Record<string, unknown>) {
@@ -261,6 +269,293 @@ describe("devSeed local fixtures", () => {
       }),
     );
     expect(tables.skillEmbeddings?.[0]).not.toHaveProperty("ownerPublisherId");
+    expect(
+      (tables.skillDailyStats ?? []).reduce((sum, row) => sum + Number(row.downloads), 0),
+    ).toBe(tables.skills?.[0]?.statsDownloads);
+    expect((tables.skillDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0)).toBe(
+      tables.skills?.[0]?.statsInstallsAllTime,
+    );
+  });
+
+  it("backfills daily activity for existing public corpus skills", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const publisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      linkedUserId: userId,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+
+    await db.insert("skills", {
+      slug: "corpus-demo",
+      displayName: "Corpus Demo",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      batch: "public-corpus-v1",
+      tags: {},
+      badges: {},
+      statsDownloads: 143,
+      statsStars: 7,
+      statsInstallsCurrent: 18,
+      statsInstallsAllTime: 23,
+      stats: {
+        downloads: 143,
+        stars: 7,
+        installsCurrent: 18,
+        installsAllTime: 23,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const result = await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "skill",
+            slug: "corpus-demo",
+            displayName: "Corpus Demo",
+            version: "0.1.0",
+            skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+            storageId: "storage:corpus-demo",
+            embedding: [0, 1, 2],
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    const rows = tables.skillDailyStats ?? [];
+    expect(result).toEqual({ ok: true, seeded: [], skipped: ["skill:corpus-demo"] });
+    expect(rows).toHaveLength(30);
+    expect(rows.reduce((sum, row) => sum + Number(row.downloads), 0)).toBe(143);
+    expect(rows.reduce((sum, row) => sum + Number(row.installs), 0)).toBe(23);
+  });
+
+  it("pre-skips existing public corpus rows before storage and embedding prep", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const publisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      linkedUserId: userId,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+
+    await db.insert("skills", {
+      slug: "corpus-demo",
+      displayName: "Corpus Demo",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      batch: "public-corpus-v1",
+      tags: {},
+      badges: {},
+      statsDownloads: 143,
+      statsStars: 7,
+      statsInstallsCurrent: 18,
+      statsInstallsAllTime: 23,
+      stats: {
+        downloads: 143,
+        stars: 7,
+        installsCurrent: 18,
+        installsAllTime: 23,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await db.insert("packages", {
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+      displayName: "Demo Plugin",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      stats: { downloads: 57, installs: 13, stars: 2, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const mutationCtx = createMutationCtx(db);
+    const storageStore = async () => {
+      throw new Error("existing public corpus rows should not store files");
+    };
+    const result = await seedPublicCorpusBatchActionHandler(
+      {
+        storage: { store: storageStore },
+        runMutation: async (_ref: unknown, args: Record<string, unknown>) =>
+          backfillExistingPublicCorpusBatchRowsHandler(mutationCtx as never, args),
+      } as never,
+      {
+        rows: [
+          {
+            kind: "skill",
+            slug: "corpus-demo",
+            displayName: "Corpus Demo",
+            version: "0.1.0",
+            skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+          {
+            kind: "plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "0.1.0",
+            readme: "# Demo plugin",
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      seeded: [],
+      skipped: ["skill:corpus-demo", "plugin:demo-plugin"],
+    });
+    expect(tables.skillDailyStats).toHaveLength(30);
+    expect((tables.packageDailyStats ?? []).length).toBeGreaterThan(0);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.downloads), 0),
+    ).toBe(57);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0),
+    ).toBe(13);
+  });
+
+  it("seeds daily activity for new public corpus packages", async () => {
+    const { db, tables } = createDb();
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "0.1.0",
+            readme: "# Demo plugin",
+            storageId: "storage:demo-plugin",
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    const pkg = tables.packages?.find((candidate) => candidate.name === "demo-plugin");
+    const stats = pkg?.stats;
+    const downloads =
+      stats &&
+      typeof stats === "object" &&
+      "downloads" in stats &&
+      typeof stats.downloads === "number"
+        ? stats.downloads
+        : null;
+    const installs =
+      stats &&
+      typeof stats === "object" &&
+      "installs" in stats &&
+      typeof stats.installs === "number"
+        ? stats.installs
+        : null;
+    expect(pkg).toBeTruthy();
+    expect(downloads).not.toBeNull();
+    expect(installs).not.toBeNull();
+    expect((tables.packageDailyStats ?? []).length).toBeGreaterThan(0);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.downloads), 0),
+    ).toBe(downloads);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0),
+    ).toBe(installs);
+  });
+
+  it("removes public corpus daily activity rows during reset", async () => {
+    const { db, tables } = createDb();
+    const rows = [
+      {
+        kind: "skill",
+        slug: "corpus-demo",
+        displayName: "Corpus Demo",
+        version: "0.1.0",
+        skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+        storageId: "storage:corpus-demo",
+        embedding: [0, 1, 2],
+        dummyOwner: {
+          handle: "corpus-owner",
+          displayName: "Corpus Owner",
+          image: "https://example.invalid/avatar.png",
+        },
+      },
+      {
+        kind: "plugin",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        version: "0.1.0",
+        readme: "# Demo plugin",
+        storageId: "storage:demo-plugin",
+        dummyOwner: {
+          handle: "corpus-owner",
+          displayName: "Corpus Owner",
+          image: "https://example.invalid/avatar.png",
+        },
+      },
+    ];
+
+    await seedPublicCorpusBatchHandler(createMutationCtx(db) as never, { rows } as never);
+    const firstSkillId = tables.skills?.[0]?._id;
+    const firstPackageId = tables.packages?.[0]?._id;
+    const firstSkillDailyRows = tables.skillDailyStats?.length ?? 0;
+    const firstPackageDailyRows = tables.packageDailyStats?.length ?? 0;
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      { reset: true, resetOwnerHandles: ["corpus-owner"], rows } as never,
+    );
+
+    expect(firstSkillDailyRows).toBeGreaterThan(0);
+    expect(firstPackageDailyRows).toBeGreaterThan(0);
+    expect(tables.skillDailyStats).toHaveLength(firstSkillDailyRows);
+    expect(tables.packageDailyStats).toHaveLength(firstPackageDailyRows);
+    expect(tables.skillDailyStats?.some((row) => row.skillId === firstSkillId)).toBe(false);
+    expect(tables.packageDailyStats?.some((row) => row.packageId === firstPackageId)).toBe(false);
   });
 
   it("seeds a GitHub-backed source and skills without creating mirrored versions", async () => {
@@ -520,6 +815,18 @@ describe("devSeed local fixtures", () => {
         }),
       ]),
     );
+    const scannedPackageId = tables.packages?.find((pkg) => pkg.name === scannedPluginName)?._id;
+    const scannedPackageDailyStats = (tables.packageDailyStats ?? []).filter(
+      (row) => row.packageId === scannedPackageId,
+    );
+    expect(tables.packageDailyStats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packageId: scannedPackageId,
+        }),
+      ]),
+    );
+    expect(scannedPackageDailyStats.reduce((sum, row) => sum + Number(row.downloads), 0)).toBe(7);
     expect(tables.packageInspectorWarnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

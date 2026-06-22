@@ -3,7 +3,7 @@ export const sortKeys = [
   "recommended",
   "default",
   "newest",
-  "installs",
+  "downloads",
   "stars",
   "name",
   "updated",
@@ -16,7 +16,7 @@ export type SortDir = "asc" | "desc";
 export function parseSort(value: unknown): SortKey {
   if (typeof value !== "string") return "recommended";
   if (value === "default") return "recommended";
-  if (value === "downloads") return "installs";
+  if (value === "installs") return "downloads";
   if ((sortKeys as readonly string[]).includes(value)) return value as SortKey;
   return "recommended";
 }

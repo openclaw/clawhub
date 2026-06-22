@@ -8,6 +8,7 @@ vi.mock("./skillStatEvents", () => ({
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
+  authTables: {},
 }));
 
 vi.mock("./functions", () => ({

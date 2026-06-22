@@ -63,8 +63,8 @@ import {
 } from "./packages";
 
 vi.mock("@convex-dev/auth/server", () => ({
-  authTables: {},
   getAuthUserId: vi.fn(),
+  authTables: {},
 }));
 
 type WrappedHandler<TArgs, TResult> = {
@@ -4097,6 +4097,33 @@ describe("packages public queries", () => {
     expect(indexNames).toEqual(["by_active_family_category_installs"]);
   });
 
+  it("uses channel-aware plugin category download indexes", async () => {
+    const { ctx, indexNames } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [
+            makeDigest("community-tools", {
+              channel: "community",
+              pluginCategory: "tools",
+              pluginCategoryTags: ["tools"],
+            }),
+          ],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+    });
+
+    await listPublicPageHandler(ctx, {
+      channel: "community",
+      category: "tools",
+      sort: "downloads",
+      paginationOpts: { cursor: null, numItems: 10 },
+    });
+
+    expect(indexNames).toEqual(["by_active_channel_category_downloads"]);
+  });
+
   it("uses family-aware official category sort indexes for official-first sources", async () => {
     const { ctx, indexNames } = makeDigestCtx({
       categoryPages: [
@@ -4234,7 +4261,7 @@ describe("packages public queries", () => {
     ]);
   });
 
-  it("uses topic digest sort indexes for filtered listings", async () => {
+  it("uses family-aware topic digest sort indexes for filtered listings", async () => {
     const { ctx, indexNames } = makeDigestCtx({
       topicPages: [
         {
@@ -4246,12 +4273,13 @@ describe("packages public queries", () => {
     });
 
     await listPublicPageHandler(ctx, {
+      family: "code-plugin",
       topic: "calendar",
       sort: "downloads",
       paginationOpts: { cursor: null, numItems: 10 },
     });
 
-    expect(indexNames).toEqual(["by_active_topic_downloads"]);
+    expect(indexNames).toEqual(["by_active_family_topic_downloads"]);
   });
 
   it("keeps metadata recommendation fallback cursors on the updated digest index", async () => {

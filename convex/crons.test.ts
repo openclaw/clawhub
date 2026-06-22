@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => {
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
+  const packageStatEventPruneRef = Symbol("package-stat-event-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   return {
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => {
     installTelemetryDedupePruneRef,
     rateLimitCountersPruneRef,
     skillStatEventPruneRef,
+    packageStatEventPruneRef,
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
   };
@@ -41,6 +43,7 @@ vi.mock("./_generated/api", () => ({
     },
     packages: {
       processPackageStatEventsInternal: Symbol("package-stat-events"),
+      pruneProcessedPackageStatEventsInternal: mocks.packageStatEventPruneRef,
       backfillPackageReleaseScansInternal: Symbol("package-scan-backfill"),
     },
     publisherAbuse: {
@@ -161,6 +164,22 @@ describe("crons", () => {
         batchSize: 1000,
         maxBatches: 20,
         confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+      },
+    );
+  });
+
+  it("prunes processed package stat events daily with a seven-day retention window", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "package-stat-events-prune",
+      { hours: 24 },
+      mocks.packageStatEventPruneRef,
+      {
+        retentionDays: 7,
+        batchSize: 1000,
+        maxBatches: 20,
+        confirmationToken: "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS",
       },
     );
   });

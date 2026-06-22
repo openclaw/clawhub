@@ -44,6 +44,12 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
+import {
+  ACTIVITY_TREND_DAYS,
+  buildDailyMetricTrends,
+  clampActivityTrendEndDay,
+  getActivityTrendRangeForEndDay,
+} from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
@@ -2262,6 +2268,23 @@ function toPublicSkillListVersionFromSummary(
   };
 }
 
+async function buildSkillActivityTrend(
+  ctx: Pick<QueryCtx, "db">,
+  skill: Doc<"skills">,
+  endDay: number,
+) {
+  const safeEndDay = clampActivityTrendEndDay(endDay, Date.now());
+  const { startDay, endDay: normalizedEndDay } = getActivityTrendRangeForEndDay(safeEndDay);
+  const rows = await ctx.db
+    .query("skillDailyStats")
+    .withIndex("by_skill_day", (q) =>
+      q.eq("skillId", skill._id).gte("day", startDay).lte("day", normalizedEndDay),
+    )
+    .take(ACTIVITY_TREND_DAYS);
+
+  return buildDailyMetricTrends(rows, normalizedEndDay);
+}
+
 async function buildManagementSkillEntries(ctx: QueryCtx, skills: Doc<"skills">[]) {
   const ownerCache = new Map<Id<"users">, Promise<Doc<"users"> | null>>();
   const badgeMapBySkillId = await getSkillBadgeMaps(
@@ -3113,6 +3136,22 @@ export const getSkillBySlugInternal = internalQuery({
   handler: async (ctx, args) => {
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     return resolved.skill;
+  },
+});
+
+export const getActivityTrendForSlug = query({
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()), endDay: v.number() },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
+    const skill = resolved.skill;
+    if (!skill || !isPublicSkillDoc(skill)) return null;
+    const ownerPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    if (!toPublicPublisher(ownerPublisher)) return null;
+
+    return await buildSkillActivityTrend(ctx, skill, args.endDay);
   },
 });
 
@@ -5826,7 +5865,7 @@ export const listAuditPage = query({
     const { numItems, cursor } = normalizePublicListPagination(args.paginationOpts);
     const result = await ctx.db
       .query("skillSearchDigest")
-      .withIndex("by_active_stats_installs_all_time", (q) => q.eq("softDeletedAt", undefined))
+      .withIndex("by_active_stats_downloads", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
       .paginate({ cursor, numItems });
 
@@ -6101,16 +6140,22 @@ type SkillCatalogCursorState = {
   recommendedFallback?: SkillCatalogRecommendedFallbackSort;
 };
 
-type SkillCatalogRecommendedFallbackSort = "updated" | "installs";
+type SkillCatalogRecommendedFallbackSort = "updated" | "downloads";
 
-const SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT = "installs" as const;
+const SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT = "downloads" as const;
 
 function normalizeSkillCatalogRecommendedFallbackSort(
   value: unknown,
 ): SkillCatalogRecommendedFallbackSort | undefined {
+  if (value === "installs") return "downloads";
   return value === "updated" || value === SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
     ? value
     : undefined;
+}
+
+function readSkillCatalogCursorField(input: unknown, field: string): unknown {
+  if (input === null || typeof input !== "object") return undefined;
+  return Object.getOwnPropertyDescriptor(input, field)?.value;
 }
 
 function encodeSkillCatalogCursor(state: SkillCatalogCursorState) {
@@ -6124,15 +6169,26 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
     return { cursor: raw, offset: 0, pageSize: null, done: false };
   }
   try {
-    const parsed = JSON.parse(
-      raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length),
-    ) as Partial<SkillCatalogCursorState>;
+    const parsed: unknown = JSON.parse(raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length));
+    const recommendedFallbackValue = readSkillCatalogCursorField(parsed, "recommendedFallback");
+    const resetLegacyInstallCursorState = recommendedFallbackValue === "installs";
+    const cursorValue = readSkillCatalogCursorField(parsed, "cursor");
+    const offsetValue = readSkillCatalogCursorField(parsed, "offset");
+    const pageSizeValue = readSkillCatalogCursorField(parsed, "pageSize");
+    const doneValue = readSkillCatalogCursorField(parsed, "done");
     return {
-      cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
-      offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
-      pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
-      done: parsed.done === true,
-      recommendedFallback: normalizeSkillCatalogRecommendedFallbackSort(parsed.recommendedFallback),
+      cursor:
+        !resetLegacyInstallCursorState && typeof cursorValue === "string" ? cursorValue : null,
+      offset:
+        !resetLegacyInstallCursorState && typeof offsetValue === "number" && offsetValue > 0
+          ? offsetValue
+          : 0,
+      pageSize:
+        !resetLegacyInstallCursorState && typeof pageSizeValue === "number" && pageSizeValue > 0
+          ? pageSizeValue
+          : null,
+      done: !resetLegacyInstallCursorState && doneValue === true,
+      recommendedFallback: normalizeSkillCatalogRecommendedFallbackSort(recommendedFallbackValue),
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };

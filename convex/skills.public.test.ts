@@ -16,6 +16,7 @@ const { getAuthUserId } = await import("@convex-dev/auth/server");
 const { getSkillBadgeMap } = await import("./lib/badges");
 const skillsModule = await import("./skills");
 const {
+  getActivityTrendForSlug,
   getBySlug,
   getVerifyTargetBySlugInternal,
   listSkillReportsInternal,
@@ -80,6 +81,24 @@ const getBySlugHandler = (
           userId: string | null;
         };
       } | null;
+    } | null
+  >
+)._handler;
+
+const getActivityTrendForSlugHandler = (
+  getActivityTrendForSlug as unknown as WrappedHandler<
+    {
+      slug: string;
+      ownerHandle?: string;
+      endDay: number;
+    },
+    {
+      downloads: {
+        range: "daily";
+        days: number;
+        total: number;
+        points: Array<{ day: number; value: number }>;
+      };
     } | null
   >
 )._handler;
@@ -211,6 +230,7 @@ function makeCtx(args: {
   membership?: Record<string, unknown> | null;
   latestVersion?: Record<string, unknown> | null;
   githubScan?: Record<string, unknown> | null;
+  skillDailyStats?: Array<Record<string, unknown>>;
   skillsById?: Record<string, Record<string, unknown>>;
   ownersById?: Record<string, Record<string, unknown>>;
 }) {
@@ -235,6 +255,13 @@ function makeCtx(args: {
       return {
         withIndex: vi.fn(() => ({
           unique: vi.fn().mockResolvedValue(args.githubScan ?? null),
+        })),
+      };
+    }
+    if (table === "skillDailyStats") {
+      return {
+        withIndex: vi.fn(() => ({
+          take: vi.fn().mockResolvedValue(args.skillDailyStats ?? []),
         })),
       };
     }
@@ -554,6 +581,64 @@ describe("skills.getBySlug", () => {
     const result = await getBySlugHandler(ctx, { slug: "demo" } as never);
 
     expect(result).toBeNull();
+  });
+
+  it("hides activity trends when the skill owner is not public", async () => {
+    const ctx = makeCtx({
+      skill: makeSkill(),
+      owner: makeOwner("users:1", "demo-owner", { deletedAt: 123 }),
+      skillDailyStats: [{ day: 25, downloads: 4, installs: 2 }],
+    });
+
+    const result = await getActivityTrendForSlugHandler(ctx, { slug: "demo", endDay: 25 } as never);
+
+    expect(result).toBeNull();
+  });
+
+  it("returns daily activity trends for public skills", async () => {
+    const ctx = makeCtx({
+      skill: makeSkill(),
+      owner: makeOwner("users:1", "demo-owner"),
+      skillDailyStats: [
+        { day: 24, downloads: 4, installs: 2 },
+        { day: 25, downloads: 3, installs: 1 },
+      ],
+    });
+
+    const result = await getActivityTrendForSlugHandler(ctx, { slug: "demo", endDay: 25 } as never);
+
+    expect(result?.downloads.range).toBe("daily");
+    expect(result?.downloads.days).toBe(30);
+    expect(result?.downloads.total).toBe(7);
+    expect(result?.downloads.points).toHaveLength(30);
+    expect(result?.downloads.points[0]).toEqual({ day: -4, value: 0 });
+    expect(result?.downloads.points.at(-1)).toEqual({ day: 25, value: 3 });
+    expect(result && "installs" in result).toBe(false);
+  });
+
+  it("clamps future activity trend end days to the current UTC day", async () => {
+    const now = Date.UTC(2026, 5, 19, 12);
+    const todayDay = Math.floor(now / 86_400_000);
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+
+    try {
+      const ctx = makeCtx({
+        skill: makeSkill(),
+        owner: makeOwner("users:1", "demo-owner"),
+        skillDailyStats: [{ day: todayDay, downloads: 5, installs: 2 }],
+      });
+
+      const result = await getActivityTrendForSlugHandler(ctx, {
+        slug: "demo",
+        endDay: todayDay + 10,
+      } as never);
+
+      expect(result?.downloads.points.at(-1)).toEqual({ day: todayDay, value: 5 });
+      expect(result?.downloads.total).toBe(5);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("does not honor stale personal memberships for hidden skill owner views", async () => {

@@ -122,9 +122,10 @@ export const RETENTION_POLICIES = {
   packageStatEvents: ephemeral("Package stat event log only needs to survive processing.", {
     expirationField: "processedAt",
     expirationIndex: "by_unprocessed",
-    prune: "pending packageStatEvents retention work",
-    retention: "After stat processing succeeds.",
+    prune: "packages.pruneProcessedPackageStatEventsInternal",
+    retention: "Processed and older than 7 days.",
   }),
+  packageDailyStats: permanent("Daily aggregate package stats are product analytics."),
   packageTrustedPublishers: permanent("Trusted publishing configuration."),
   packagePublishTokens: ephemeral("Package publish tokens expire and can be revoked.", {
     expirationField: "expiresAt",
