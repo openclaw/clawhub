@@ -839,7 +839,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
     const { container } = render(<Component />);
 
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
@@ -898,12 +898,12 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const downloadsLabel = screen.getByText("30-day Downloads");
+    const downloadsLabel = screen.getByText("Downloads");
     const currentVersionLabel = screen.getByText("Current version");
     expect(downloadsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
     await waitFor(() =>
       expect(

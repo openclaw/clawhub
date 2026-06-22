@@ -148,8 +148,10 @@ describe("SkillHeader", () => {
       },
     });
 
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.getByText("12")).toBeTruthy();
+    expect(screen.getByRole("tablist", { name: "Download period" })).toBeTruthy();
+    expect(screen.getByRole("tab", { name: "30d" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByText("5")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
@@ -160,10 +162,42 @@ describe("SkillHeader", () => {
   it("reserves graph space while activity metrics are loading", () => {
     const { container } = renderHeader({ activityTrendLoading: true });
 
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
+  });
+
+  it("switches download period tabs and updates the chart label", () => {
+    renderHeader({
+      skill: {
+        ...skill,
+        stats: { ...skill.stats, downloads: 500 },
+      },
+      activityTrend: {
+        downloads: {
+          range: "daily",
+          days: 30,
+          total: 12,
+          points: [
+            { day: 20_451, value: 1 },
+            { day: 20_452, value: 2 },
+            { day: 20_453, value: 3 },
+            { day: 20_454, value: 1 },
+            { day: 20_455, value: 1 },
+            { day: 20_456, value: 2 },
+            { day: 20_457, value: 2 },
+          ],
+        },
+      },
+    });
+
+    expect(screen.getByText("30 days")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "All time" }));
+    expect(screen.getByRole("tab", { name: "All time" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByText("500")).toBeTruthy();
+    fireEvent.click(screen.getByRole("tab", { name: "7d" }));
+    expect(screen.getByText("7 days")).toBeTruthy();
   });
 
   it("shows the nearest daily download graph point and line marker on hover", () => {

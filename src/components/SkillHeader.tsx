@@ -15,7 +15,7 @@ import { timeAgo } from "../lib/timeAgo";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
 import { DetailHero } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
-import { MetricTrendCard, MetricTrendCardSkeleton } from "./MetricTrendCard";
+import { DownloadsMetricCard } from "./DownloadsMetricCard";
 import { OfficialTag } from "./OfficialBadge";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
@@ -274,15 +274,14 @@ export function SkillHeader({
                     isAuthenticated={isAuthenticated}
                     message="You must be signed in to report a skill"
                   >
-                    <Button
-                      variant="ghost"
+                    <button
                       type="button"
-                      className="skill-sidebar-action-button"
+                      className="skill-sidebar-action-link"
                       onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
                     >
                       <Flag size={14} aria-hidden="true" />
                       Report
-                    </Button>
+                    </button>
                   </SignedInActionTooltip>
                 ) : null}
                 {newVersionHref ? (
@@ -556,19 +555,23 @@ function SkillSidebarStats({
         activityTrendLoading
           ? {
               key: "download-trend-loading",
-              label: <ActivityMetricLabel label="30-day Downloads" />,
-              value: <MetricTrendCardSkeleton />,
+              label: <ActivityMetricLabel label="Downloads" />,
+              value: (
+                <DownloadsMetricCard
+                  allTimeDownloads={skill.stats.downloads}
+                  loading
+                />
+              ),
               large: true,
             }
           : activityTrend
             ? {
                 key: "download-trend",
-                label: <ActivityMetricLabel label="30-day Downloads" />,
+                label: <ActivityMetricLabel label="Downloads" />,
                 value: (
-                  <MetricTrendCard
-                    trend={activityTrend.downloads}
-                    ariaLabel="Daily downloads over the last 30 days"
-                    unitLabel="download"
+                  <DownloadsMetricCard
+                    allTimeDownloads={skill.stats.downloads}
+                    activityTrend={activityTrend.downloads}
                   />
                 ),
                 large: true,

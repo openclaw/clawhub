@@ -58,10 +58,12 @@ function getNearestPointIndex(params: {
 export function MetricTrendCard({
   trend,
   ariaLabel,
+  periodLabel,
   unitLabel,
 }: {
   trend: MetricTrend;
   ariaLabel: string;
+  periodLabel?: string;
   unitLabel: "download" | "install";
 }) {
   const descriptionId = useId();
@@ -77,7 +79,7 @@ export function MetricTrendCard({
       : null;
   const activeLabel = activePoint
     ? `${formatActivityDate(activePoint.day)} · ${formatActivityValue(activePoint.value, unitLabel)}`
-    : `${trend.days} days`;
+    : (periodLabel ?? `${trend.days} days`);
 
   function showNearestPoint(event: PointerEvent<SVGSVGElement> | MouseEvent<SVGSVGElement>) {
     const rect = event.currentTarget.getBoundingClientRect();

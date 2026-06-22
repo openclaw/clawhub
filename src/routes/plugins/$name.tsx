@@ -6,7 +6,7 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { AlertTriangle, BadgeCheck, Download, Info, Share2, Upload } from "lucide-react";
+import { AlertTriangle, Download, Info, Share2, Upload } from "lucide-react";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -21,13 +21,14 @@ import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { MetricTrendCard, MetricTrendCardSkeleton } from "../../components/MetricTrendCard";
+import { DownloadsMetricCard } from "../../components/DownloadsMetricCard";
 import { OfficialTag } from "../../components/OfficialBadge";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
 } from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
+import { UserBadge } from "../../components/UserBadge";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
@@ -969,29 +970,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       })()
     : null;
   const ownerMetadataValue = owner ? (
-    <span className="user-badge user-badge-md">
-      <span className="user-avatar" aria-hidden="true">
-        {owner.image ? (
-          <img className="user-avatar-img" src={owner.image} alt="" loading="lazy" />
-        ) : (
-          <span className="user-avatar-fallback">
-            {(owner.displayName ?? owner.handle ?? "p").charAt(0).toUpperCase()}
-          </span>
-        )}
-      </span>
-      {owner.handle ? (
-        <a className="user-name" href={`/user/${encodeURIComponent(owner.handle)}`}>
-          {owner.displayName ?? owner.handle}
-        </a>
-      ) : (
-        <span className="user-name">{owner.displayName ?? "unknown"}</span>
-      )}
-      {pkg.isOfficial ? (
-        <span className="owner-official-icon" aria-label="Official" title="Official">
-          <BadgeCheck size={14} aria-hidden="true" />
-        </span>
-      ) : null}
-    </span>
+    <UserBadge
+      user={owner}
+      prefix=""
+      size="md"
+      showName
+      showHandle={false}
+      disableTooltip
+    />
   ) : null;
   const hasSourceMetadata = Boolean(
     sourceRepoLink || ownerMetadataValue || latestRelease || pkg.latestVersion,
@@ -1137,19 +1123,23 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     activityTrendLoading
                       ? {
                           key: "download-trend-loading",
-                          label: <ActivityMetricLabel label="30-day Downloads" />,
-                          value: <MetricTrendCardSkeleton />,
+                          label: <ActivityMetricLabel label="Downloads" />,
+                          value: (
+                            <DownloadsMetricCard
+                              allTimeDownloads={pkg.stats?.downloads ?? 0}
+                              loading
+                            />
+                          ),
                           large: true,
                         }
                       : activityTrend
                         ? {
                             key: "download-trend",
-                            label: <ActivityMetricLabel label="30-day Downloads" />,
+                            label: <ActivityMetricLabel label="Downloads" />,
                             value: (
-                              <MetricTrendCard
-                                trend={activityTrend.downloads}
-                                ariaLabel="Daily downloads over the last 30 days"
-                                unitLabel="download"
+                              <DownloadsMetricCard
+                                allTimeDownloads={pkg.stats?.downloads ?? 0}
+                                activityTrend={activityTrend.downloads}
                               />
                             ),
                             large: true,

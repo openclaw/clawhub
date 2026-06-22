@@ -281,7 +281,7 @@ describe("SkillDetailPage", () => {
     );
 
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();

@@ -378,6 +378,11 @@ code {
     );
 }
 
+[data-theme-resolved="light"]
+  .app-shell:has(.skill-detail-page, .plugin-detail-page, .security-audit-page)::before {
+  display: none;
+}
+
 .app-shell:has(.skill-detail-page, .plugin-detail-page, .security-audit-page) .navbar.navbar-calm {
   background: transparent;
 }
@@ -451,7 +456,7 @@ code {
   border-bottom: 1px solid var(--line);
 }
 
-.app-shell:has(.skill-detail-page, .plugin-detail-page) .navbar {
+.app-shell:has(.skill-detail-page, .plugin-detail-page, .security-audit-page) .navbar {
   border-bottom: 0;
 }
 
@@ -3599,7 +3604,10 @@ code {
   text-decoration: none;
 }
 
-.user-badge-link:hover .user-name {
+.user-badge-link:hover .user-name,
+.user-badge-link:focus-visible .user-name,
+.user-badge-link:hover .user-handle,
+.user-badge-link:focus-visible .user-handle {
   text-decoration: underline;
 }
 
@@ -5068,6 +5076,31 @@ code {
   justify-content: flex-start;
 }
 
+.skill-sidebar-action-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: fit-content;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.875rem;
+  font-weight: 600;
+  line-height: 1.2;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.skill-sidebar-action-link:hover,
+.skill-sidebar-action-link:focus-visible {
+  color: var(--ink);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  outline: none;
+}
+
 .skill-sidebar-action-button:hover:not(:disabled),
 .skill-sidebar-action-button:focus-visible:not(:disabled) {
   border-color: color-mix(in srgb, var(--ink-soft) 36%, var(--line)) !important;
@@ -5302,6 +5335,34 @@ code {
   padding-left: 18px;
 }
 
+.sidebar-metadata-row-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.sidebar-metadata-row-inline .sidebar-metadata-label {
+  flex: 0 0 auto;
+  margin: 0;
+  white-space: nowrap;
+}
+
+.sidebar-metadata-row-inline .sidebar-metadata-value {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.sidebar-metadata-inline-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-metadata-inline {
   display: inline-flex;
   min-width: 0;
@@ -5319,6 +5380,27 @@ code {
 .activity-metric-tooltip {
   max-width: 260px;
   line-height: 1.4;
+}
+
+.downloads-metric-card {
+  display: grid;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+}
+
+.downloads-metric-tabs.clawhub-segmented {
+  --clawhub-segmented-h: 30px;
+  --clawhub-segmented-seg-h: 24px;
+  width: 100%;
+}
+
+.downloads-metric-tabs .clawhub-segmented-btn {
+  flex: 1 1 0;
+  min-width: 0;
+  padding-inline: 6px;
+  font-size: 12px;
+  font-weight: 600;
 }
 
 .metric-trend-card {
@@ -5359,7 +5441,7 @@ code {
   display: block;
   width: 100%;
   height: 34px;
-  color: color-mix(in srgb, var(--ink-soft) 72%, var(--ink));
+  color: var(--metric-trend-line, color-mix(in srgb, #6b9fd4 76%, var(--ink)));
   outline: none;
   touch-action: pan-y;
 }
@@ -5370,7 +5452,7 @@ code {
 }
 
 .metric-trend-area {
-  fill: color-mix(in srgb, var(--ink-soft) 24%, transparent);
+  fill: var(--metric-trend-area, color-mix(in srgb, #6b9fd4 18%, transparent));
 }
 
 .metric-trend-line {
@@ -5382,7 +5464,7 @@ code {
 }
 
 .metric-trend-marker-line {
-  stroke: color-mix(in srgb, var(--ink-soft) 48%, transparent);
+  stroke: var(--metric-trend-marker, color-mix(in srgb, #6b9fd4 36%, transparent));
   stroke-width: 1.5;
 }
 
@@ -5935,7 +6017,7 @@ code {
   width: calc((100% - 12px) / 2);
   border-radius: 12px;
   background: color-mix(in srgb, var(--surface-muted) 70%, var(--ink) 8%);
-  box-shadow: 0 8px 18px rgb(0 0 0 / 0.16);
+  box-shadow: inset 0 1px 0 color-mix(in srgb, var(--ink) 7%, transparent);
   content: "";
   transform: translateX(calc(var(--install-switcher-active-index) * (100% + 4px)));
   transition: transform 190ms cubic-bezier(0.23, 1, 0.32, 1);
@@ -6099,6 +6181,15 @@ code {
 
   .metric-trend-card {
     gap: 4px;
+  }
+
+  .downloads-metric-card {
+    gap: 8px;
+  }
+
+  .downloads-metric-tabs.clawhub-segmented {
+    --clawhub-segmented-h: 28px;
+    --clawhub-segmented-seg-h: 22px;
   }
 
   .metric-trend-chart {
