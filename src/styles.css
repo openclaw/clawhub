@@ -4621,6 +4621,7 @@ code {
 .skill-hero-lower.has-sidebar {
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: clamp(56px, 7vw, 96px);
+  --detail-summary-row-height: 78px;
 }
 
 .skill-hero-main-extra {
@@ -5210,6 +5211,8 @@ code {
 }
 
 .sidebar-metadata-compact > .sidebar-metadata-row:first-child {
+  min-height: var(--detail-summary-row-height, auto);
+  box-sizing: border-box;
   padding-top: 0;
 }
 
@@ -5586,6 +5589,8 @@ code {
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
+  min-height: var(--detail-summary-row-height, auto);
+  box-sizing: border-box;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--line);
 }
@@ -5644,6 +5649,27 @@ code {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.skill-install-command-reveal {
+  --install-command-enter-x: 10px;
+  transition:
+    opacity 170ms cubic-bezier(0.23, 1, 0.32, 1),
+    transform 170ms cubic-bezier(0.23, 1, 0.32, 1),
+    filter 170ms cubic-bezier(0.23, 1, 0.32, 1);
+  will-change: opacity, transform, filter;
+}
+
+.skill-install-command-reveal[data-direction="left"] {
+  --install-command-enter-x: -10px;
+}
+
+@starting-style {
+  .skill-install-command-reveal {
+    opacity: 0;
+    transform: translateX(var(--install-command-enter-x));
+    filter: blur(4px);
+  }
 }
 
 .skill-install-command-wrap .skill-install-prompt-compact {
@@ -5781,10 +5807,12 @@ code {
 @media (prefers-reduced-motion: reduce) {
   .skill-install-prompt-trigger,
   .skill-install-copy-button,
+  .skill-install-command-reveal,
   .install-switcher-toggle::before,
   .install-switcher-pill {
     transition: none;
     transform: none;
+    filter: none;
   }
 }
 
@@ -6530,7 +6558,7 @@ code {
   align-items: center;
   gap: 22px;
   padding: 0;
-  border-bottom: 0;
+  border-bottom: 1px solid var(--line);
   background: transparent;
   overflow: visible;
   scrollbar-width: none;
@@ -6546,6 +6574,7 @@ code {
   border-bottom: 2px solid transparent;
   background: transparent;
   padding: 10px 0;
+  margin-bottom: -1px;
   border-radius: 0;
   font-weight: 600;
   color: var(--ink-soft);
@@ -6572,8 +6601,12 @@ code {
 }
 
 .tab-body .markdown {
-  font-size: 1.05rem;
   line-height: 1.75;
+}
+
+.skill-readme-body .markdown p {
+  font-size: 14px;
+  line-height: 1.68;
 }
 
 .skill-card-info-callout {
@@ -10967,6 +11000,7 @@ a.agentic-risk-finding-title:focus-visible {
   .skill-install-preview-meta,
   .skill-install-command-header {
     align-items: stretch;
+    min-height: 0;
   }
 
   .skill-install-copy-feedback {

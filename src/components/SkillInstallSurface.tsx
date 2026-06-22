@@ -179,6 +179,7 @@ export function SkillCommandLineCard({
   clawdis,
 }: SkillInstallSurfaceProps) {
   const [activeInstallTab, setActiveInstallTab] = useState<"cli" | "prompt">("cli");
+  const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
   const openClawCommand = formatOpenClawInstallCommand(installTarget);
   const promptPreview = formatOpenClawPrompt({
@@ -190,6 +191,14 @@ export function SkillCommandLineCard({
     clawdis,
   });
   const activeInstallText = activeInstallTab === "prompt" ? promptPreview : openClawCommand;
+  const selectInstallTab = (tab: "cli" | "prompt") => {
+    if (tab === activeInstallTab) {
+      return;
+    }
+
+    setInstallTabDirection(tab === "prompt" ? "right" : "left");
+    setActiveInstallTab(tab);
+  };
 
   return (
     <article className="skill-install-command-card">
@@ -206,7 +215,7 @@ export function SkillCommandLineCard({
             role="tab"
             aria-selected={activeInstallTab === "cli"}
             className={`install-switcher-pill${activeInstallTab === "cli" ? " is-active" : ""}`}
-            onClick={() => setActiveInstallTab("cli")}
+            onClick={() => selectInstallTab("cli")}
           >
             CLI
           </button>
@@ -215,7 +224,7 @@ export function SkillCommandLineCard({
             role="tab"
             aria-selected={activeInstallTab === "prompt"}
             className={`install-switcher-pill${activeInstallTab === "prompt" ? " is-active" : ""}`}
-            onClick={() => setActiveInstallTab("prompt")}
+            onClick={() => selectInstallTab("prompt")}
           >
             Prompt
           </button>
@@ -225,9 +234,11 @@ export function SkillCommandLineCard({
       <div className="skill-install-command-wrap">
         <div className="skill-install-command-shell">
           <pre
+            key={activeInstallTab}
+            data-direction={installTabDirection}
             className={`skill-install-command${
               activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""
-            }`}
+            } skill-install-command-reveal`}
             tabIndex={0}
           >
             <code translate="no">{activeInstallText}</code>
