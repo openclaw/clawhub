@@ -13,7 +13,7 @@ export function ActivityMetricLabel({ label }: { label: string }) {
           <TooltipTrigger asChild>
             <button
               type="button"
-              className="activity-metric-info"
+              className="security-audit-sidebar-info"
               aria-label="About activity counts"
             >
               <Info size={13} aria-hidden="true" />
