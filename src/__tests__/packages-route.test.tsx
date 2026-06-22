@@ -548,7 +548,7 @@ describe("plugins route", () => {
     expect(navigateMock).not.toHaveBeenCalled();
   });
 
-  it("keeps downloads sort in filtered next-page links", async () => {
+  it("keeps downloads sort in filtered load-more requests", async () => {
     searchMock = { category: "security" };
     loaderDataMock = {
       items: [
@@ -570,17 +570,18 @@ describe("plugins route", () => {
     const Component = route.__config.component as ComponentType;
 
     render(<Component />);
-    fireEvent.click(screen.getByRole("button", { name: "Next page" }));
-
-    expect(navigateMock).toHaveBeenCalled();
-    const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
-      search: (prev: Record<string, unknown>) => Record<string, unknown>;
-    };
-    expect(lastCall.search({ category: "security" })).toEqual({
-      category: "security",
-      cursor: "cursor:next",
-      sort: "downloads",
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
+
+    expect(fetchPluginCatalogMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        category: "security",
+        cursor: "cursor:next",
+        sort: "downloads",
+      }),
+    );
+    expect(navigateMock).not.toHaveBeenCalled();
   });
 
   it("renders plugin download counts in browse results", async () => {

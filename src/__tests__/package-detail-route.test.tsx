@@ -854,8 +854,8 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Web Search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Research");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
   });
 
   it("renders the plugin 30-day downloads graph from a deferred activity query", async () => {
