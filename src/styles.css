@@ -4600,18 +4600,26 @@ code {
   min-width: 0;
 }
 
+@media (min-width: 1101px) {
+  .skill-hero-layout.has-sidebar {
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    column-gap: clamp(56px, 7vw, 96px);
+  }
+
+  .skill-hero-layout.has-sidebar > .skill-hero-main {
+    grid-column: 1;
+  }
+
+  .skill-hero-layout.has-sidebar > .skill-hero-lower.has-sidebar {
+    grid-column: 1 / -1;
+    grid-template-columns: subgrid;
+  }
+}
+
 .skill-hero-main {
   display: grid;
   gap: 20px;
   min-width: 0;
-}
-
-@media (min-width: 1101px) {
-  .skill-hero-lower.has-sidebar {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
-    column-gap: clamp(56px, 7vw, 96px);
-  }
 }
 
 .skill-hero-lower {
