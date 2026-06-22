@@ -99,7 +99,7 @@ type JobDiagnosticInput = {
   status: "completed" | "failed";
 };
 
-const DEFAULT_BATCH_LIMIT = 6;
+const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
 const MAX_DIAGNOSTIC_TEXT_CHARS = 20_000;

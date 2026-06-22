@@ -19,7 +19,7 @@ env:
 jobs:
   static:
     name: static
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
 
     steps:
@@ -34,7 +34,7 @@ jobs:
 
   unit:
     name: unit
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
 
     steps:
@@ -47,7 +47,7 @@ jobs:
 
   packages:
     name: packages
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
 
     steps:
@@ -60,7 +60,7 @@ jobs:
 
   types-build:
     name: types-build
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 15
 
     steps:
@@ -73,7 +73,7 @@ jobs:
 
   e2e-http:
     name: e2e-http
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 20
 
     steps:
@@ -86,7 +86,7 @@ jobs:
 
   playwright-smoke:
     name: playwright-smoke
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 25
 
     steps:
@@ -118,10 +118,11 @@ jobs:
 
   playwright-local-auth-shard:
     name: playwright-local-auth / ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix:
         include:
           - name: delete-account

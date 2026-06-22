@@ -10,7 +10,7 @@ on:
       batch-limit:
         description: "Maximum Codex scans to run in parallel per worker shard"
         required: true
-        default: "6"
+        default: "4"
       max-jobs:
         description: "Optional total jobs cap per worker shard"
         required: false
@@ -25,6 +25,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: clawhub-security-scan
+  cancel-in-progress: false
+
 jobs:
   codex-security-scan:
     name: Codex security scan shard ${{ matrix.shard }}
@@ -34,12 +38,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+        shard: [0, 1, 2, 3]
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '6' }}
+      CODEX_SECURITY_SCAN_LIMIT: ${{ inputs.limit || inputs['batch-limit'] || '4' }}
       CODEX_SECURITY_SCAN_MAX_JOBS: ${{ inputs['max-jobs'] || '' }}
       CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES: ${{ inputs['max-runtime-minutes'] || '40' }}
       CODEX_SECURITY_SCAN_LEASE_MINUTES: "60"
