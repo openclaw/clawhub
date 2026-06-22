@@ -8324,6 +8324,106 @@ code {
   background: color-mix(in srgb, var(--surface-muted) 82%, var(--ink) 4%);
 }
 
+.markdown-code-block {
+  margin: var(--space-3) 0 var(--space-5);
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 88%, var(--ink) 8%);
+  border-radius: var(--r-md);
+  background: color-mix(in srgb, var(--surface-muted) 82%, var(--ink) 4%);
+}
+
+.markdown-code-block-toolbar {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
+  padding: 3px 8px 3px 12px;
+  background: color-mix(in srgb, var(--surface-muted) 74%, var(--bg));
+}
+
+.markdown-code-block-language {
+  min-width: 0;
+  color: var(--ink-soft);
+  font-family: var(--font-body);
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1;
+}
+
+.markdown-code-block-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  color: var(--ink-soft);
+}
+
+.markdown-code-block-action {
+  display: inline-flex;
+  width: 24px;
+  height: 24px;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: var(--r-xs);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  transition:
+    background 140ms ease,
+    color 140ms ease,
+    transform 120ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+
+.markdown-code-block-action:hover,
+.markdown-code-block-action[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+}
+
+.markdown-code-block-action:active {
+  transform: scale(0.96);
+}
+
+.markdown-code-block-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.markdown .markdown-code-block pre,
+.tab-body .markdown .markdown-code-block pre {
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.markdown .markdown-code-block pre[data-wrap="true"],
+.markdown .markdown-code-block pre[data-wrap="true"] code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.markdown .markdown-code-block pre[data-wrap="true"] {
+  overflow-x: hidden;
+}
+
+.markdown .markdown-code-block pre::-webkit-scrollbar {
+  height: 8px;
+}
+
+.markdown .markdown-code-block pre::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--surface-muted) 72%, var(--bg));
+}
+
+.markdown .markdown-code-block pre::-webkit-scrollbar-thumb {
+  border-radius: var(--r-pill);
+  background: color-mix(in srgb, var(--ink-soft) 38%, transparent);
+}
+
 .tab-body .markdown table {
   border-color: color-mix(in srgb, var(--line) 88%, var(--ink) 8%);
   background: color-mix(in srgb, var(--surface-muted) 48%, transparent);

@@ -1,5 +1,14 @@
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
-import { isValidElement, useEffect, useId, useMemo, useState } from "react";
+import { TextWrap, UnfoldHorizontal } from "lucide-react";
+import {
+  isValidElement,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown, { type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -47,6 +56,7 @@ function buildBaseRehype(assetBaseUrl: string | undefined): PluggableList {
 }
 
 const SHIKI_THEME = "github-dark";
+const useClientLayoutEffect = typeof window === "undefined" ? useEffect : useLayoutEffect;
 const SHIKI_LANGS = [
   "bash",
   "sh",
@@ -110,7 +120,13 @@ type MermaidRenderState =
 function stringifyReactNode(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(stringifyReactNode).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) return stringifyReactNode(node.props.children);
   return "";
+}
+
+function getCodeLanguage(className: string) {
+  const match = /\blanguage-([a-z0-9_+-]+)\b/i.exec(className);
+  return match?.[1]?.toLowerCase() ?? "text";
 }
 
 function removeMermaidRenderArtifacts(diagramId: string) {
@@ -185,7 +201,78 @@ function MarkdownPre({ children, ...props }: ComponentPropsWithoutRef<"pre">) {
     }
   }
 
-  return <pre {...props}>{children}</pre>;
+  return <MarkdownCodeBlock {...props}>{children}</MarkdownCodeBlock>;
+}
+
+function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWithoutRef<"pre">) {
+  const child = Array.isArray(children) ? children[0] : children;
+  const childClassName = isValidElement<{ className?: string }>(child)
+    ? (child.props.className ?? "")
+    : "";
+  const language = getCodeLanguage(`${className ?? ""} ${childClassName}`);
+  const source = stringifyReactNode(children).replace(/\n$/, "");
+  const preRef = useRef<HTMLPreElement | null>(null);
+  const [isWrapped, setIsWrapped] = useState(false);
+  const [canWrap, setCanWrap] = useState(false);
+
+  useEffect(() => {
+    setIsWrapped(false);
+  }, [source]);
+
+  useClientLayoutEffect(() => {
+    const pre = preRef.current;
+    if (!pre) {
+      return;
+    }
+
+    const updateWrapAvailability = () => {
+      if (!isWrapped) {
+        setCanWrap(pre.scrollWidth > pre.clientWidth + 1);
+      }
+    };
+
+    updateWrapAvailability();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateWrapAvailability);
+      return () => window.removeEventListener("resize", updateWrapAvailability);
+    }
+
+    const observer = new ResizeObserver(updateWrapAvailability);
+    observer.observe(pre);
+    return () => observer.disconnect();
+  }, [isWrapped, source]);
+
+  const WrapIcon = isWrapped ? UnfoldHorizontal : TextWrap;
+
+  return (
+    <figure className={cn("markdown-code-block", isWrapped && "is-wrapped")}>
+      <figcaption className="markdown-code-block-toolbar">
+        <span className="markdown-code-block-language">{language}</span>
+        {canWrap ? (
+          <span className="markdown-code-block-actions">
+            <button
+              type="button"
+              className="markdown-code-block-action"
+              aria-label={isWrapped ? "Disable line wrap" : "Enable line wrap"}
+              aria-pressed={isWrapped}
+              onClick={() => setIsWrapped((wrapped) => !wrapped)}
+            >
+              <WrapIcon className="h-3.5 w-3.5" aria-hidden="true" />
+            </button>
+          </span>
+        ) : null}
+      </figcaption>
+      <pre
+        {...props}
+        ref={preRef}
+        className={cn("markdown-code-block-pre", className)}
+        data-wrap={isWrapped}
+      >
+        {children}
+      </pre>
+    </figure>
+  );
 }
 
 const MARKDOWN_COMPONENTS = {
