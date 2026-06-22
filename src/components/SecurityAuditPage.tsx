@@ -272,14 +272,14 @@ const UTC_MONTH_LABELS = [
   "Dec",
 ] as const;
 
-function formatTime(value?: number | null) {
+function formatAuditSidebarTime(value?: number | null) {
   if (!value) return "Not checked yet";
   const date = new Date(value);
   const hour = date.getUTCHours();
   const hour12 = hour % 12 || 12;
   const minute = date.getUTCMinutes().toString().padStart(2, "0");
   const period = hour >= 12 ? "PM" : "AM";
-  return `${UTC_MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()} at ${hour12}:${minute} ${period} UTC`;
+  return `${UTC_MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()} · ${hour12}:${minute} ${period} UTC`;
 }
 
 function getSecurityAuditBackLabel(entity: EntityRef) {
@@ -289,7 +289,10 @@ function getSecurityAuditBackLabel(entity: EntityRef) {
 function SecurityAuditHero({ props }: { props: SecurityAuditPageProps }) {
   return (
     <header className="security-scan-hero">
-      <a href={props.entity.detailPath} className="skill-settings-back-link security-audit-back-link">
+      <a
+        href={props.entity.detailPath}
+        className="skill-settings-back-link security-audit-back-link"
+      >
         <ArrowLeft size={16} aria-hidden="true" />
         {getSecurityAuditBackLabel(props.entity)}
       </a>
@@ -819,7 +822,9 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
               value: (
                 <span className="sidebar-metadata-inline">
                   <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="sidebar-metadata-inline-text">{formatTime(latestCheckedAt)}</span>
+                  <span className="sidebar-metadata-inline-text">
+                    {formatAuditSidebarTime(latestCheckedAt)}
+                  </span>
                 </span>
               ),
             },

@@ -1863,6 +1863,22 @@ code {
   padding-block: 12px;
 }
 
+.security-report-sidebar .sidebar-metadata-grid .sidebar-metadata-row-inline {
+  flex-wrap: wrap;
+  row-gap: 4px;
+}
+
+@media (max-width: 640px) {
+  .security-report-sidebar .sidebar-metadata-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .security-report-sidebar .sidebar-metadata-grid .sidebar-metadata-row + .sidebar-metadata-row {
+    padding-left: 0;
+  }
+}
+
 .security-audit-page .security-audit-rescan-button,
 .security-audit-page .security-audit-download-button {
   min-height: 40px;
@@ -5066,8 +5082,8 @@ code {
 }
 
 .skill-sidebar-actions-secondary {
-  margin-top: -18px;
-  padding-top: 8px;
+  margin-top: 0;
+  padding-top: 10px;
   border-top: 1px solid var(--line);
 }
 
@@ -6083,8 +6099,7 @@ code {
   font-weight: 700;
   line-height: 1;
   text-transform: none;
-  transition:
-    color 160ms ease;
+  transition: color 160ms ease;
   touch-action: manipulation;
 }
 
@@ -6385,12 +6400,14 @@ code {
 
 .related-skills-footer {
   display: flex;
+  justify-content: center;
   min-width: 0;
-  padding-top: 2px;
+  padding-top: 8px;
 }
 
 .related-skills-category-link {
-  width: 100%;
+  width: auto;
+  min-height: 34px;
 }
 
 .related-skills-category-link:hover:not(:disabled),
