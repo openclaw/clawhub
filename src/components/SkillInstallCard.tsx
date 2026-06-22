@@ -305,12 +305,7 @@ function InstallSpecsPanel({ installSpecs }: { installSpecs: SkillInstallSpec[] 
 function LinkSection({ title, href }: { title: string; href: string }) {
   return (
     <RequirementSection title={title}>
-      <a
-        href={href}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="requirements-link-token"
-      >
+      <a href={href} target="_blank" rel="noopener noreferrer" className="requirements-link-token">
         <code>{href}</code>
       </a>
     </RequirementSection>

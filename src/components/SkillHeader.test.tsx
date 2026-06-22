@@ -224,7 +224,9 @@ describe("SkillHeader", () => {
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByText("5")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
-    expect(sidebar.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
+    expect(
+      sidebar.getByRole("img", { name: "Daily downloads over the last 30 days" }),
+    ).toBeTruthy();
     expect(sidebar.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
   });
 

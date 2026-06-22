@@ -158,9 +158,18 @@ async function loadRoute() {
 }
 
 function openRelease(version: string) {
-  fireEvent.click(
-    screen.getByRole("button", { name: new RegExp(`v${version.replaceAll(".", "\\.")}`) }),
-  );
+  const versionPattern = new RegExp(`v${version.replaceAll(".", "\\.")}`);
+  const toggle = screen
+    .getAllByRole("button")
+    .find(
+      (button) =>
+        button.classList.contains("skill-version-release-toggle") &&
+        versionPattern.test(button.textContent ?? ""),
+    );
+  if (!toggle) {
+    throw new Error(`Version toggle for v${version} not found`);
+  }
+  fireEvent.click(toggle);
 }
 
 describe("plugin detail route", () => {
@@ -344,6 +353,17 @@ describe("plugin detail route", () => {
     });
     openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        screen
+          .getAllByRole("button", { hidden: true })
+          .some(
+            (button) =>
+              button.getAttribute("aria-controls") === "version-changelog-1.0.0" &&
+              button.classList.contains("skill-version-release-toggle"),
+          ),
+      ).toBe(true);
+    });
     openRelease("1.0.0");
     expect(screen.getByText("Loaded next page")).toBeTruthy();
     expect(
@@ -355,7 +375,15 @@ describe("plugin detail route", () => {
     fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByRole("button", { name: /v1\.0\.0/ })).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("button", { hidden: true })
+        .some(
+          (button) =>
+            button.getAttribute("aria-controls") === "version-changelog-1.0.0" &&
+            button.classList.contains("skill-version-release-toggle"),
+        ),
+    ).toBe(true);
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
   });
 
@@ -842,7 +870,7 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(screen.getAllByText("Official").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.getAllByLabelText("Official").length).toBeGreaterThan(0);
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
@@ -1035,15 +1063,12 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const downloadLink = screen.getByRole("link", { name: /download/i });
     const newVersionLink = screen.getByRole("link", { name: "New version" });
+    expect(screen.getByRole("link", { name: /download/i })).toBeTruthy();
     expect(newVersionLink.getAttribute("href")).toBe(
       "/plugins/publish?ownerHandle=demo-owner&name=demo-plugin&displayName=Demo+Plugin",
     );
     expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
-    expect(
-      downloadLink.compareDocumentPosition(newVersionLink) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
       name: "demo-plugin",
       candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],

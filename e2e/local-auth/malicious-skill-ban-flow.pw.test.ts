@@ -121,7 +121,7 @@ async function completeScan(
 }
 
 async function expectCurrentVersion(page: import("@playwright/test").Page, version: string) {
-  const metadata = page.locator(".sidebar-metadata");
+  const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
   await expect(metadata.getByText("Current version", { exact: true })).toBeVisible({
     timeout: 30_000,
   });

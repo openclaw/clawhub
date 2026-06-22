@@ -1,12 +1,5 @@
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
-import {
-  isValidElement,
-  useEffect,
-  useId,
-  useMemo,
-  useState,
-  useSyncExternalStore,
-} from "react";
+import { isValidElement, useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown, { type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -84,11 +77,7 @@ function getShikiThemeServerSnapshot(): ShikiTheme {
 }
 
 function useShikiTheme(): ShikiTheme {
-  return useSyncExternalStore(
-    subscribeShikiTheme,
-    resolveShikiTheme,
-    getShikiThemeServerSnapshot,
-  );
+  return useSyncExternalStore(subscribeShikiTheme, resolveShikiTheme, getShikiThemeServerSnapshot);
 }
 
 const SHIKI_LANGS = [

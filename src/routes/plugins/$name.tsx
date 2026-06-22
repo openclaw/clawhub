@@ -50,7 +50,6 @@ import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../../components/ui/card";
-import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import {
   Dialog,
   DialogContent,
@@ -58,6 +57,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { Tooltip, TooltipContent, TooltipTrigger } from "../../components/ui/tooltip";
 import { UserBadge } from "../../components/UserBadge";
 import { getActivityTrendEndDay } from "../../lib/activityTrend";
 import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
@@ -310,7 +310,7 @@ function PluginDetailTabs({
   setActiveTab: (tab: PluginDetailTab) => void;
   readme: string | null;
   readmeAssetBaseUrl?: string;
-  versionsPanel: ReactNode;
+  versionsPanel: (hidden: boolean) => ReactNode;
   compatibilityPanel: ReactNode | null;
   configurationPanel: ReactNode | null;
   mcpServersPanel: ReactNode | null;
@@ -318,7 +318,7 @@ function PluginDetailTabs({
   validationPanel: ReactNode | null;
   validationCount: number;
 }) {
-  const [hasMountedVersions, setHasMountedVersions] = useState(false);
+  const [hasMountedVersions, setHasMountedVersions] = useState(activeTab === "versions");
   const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
   const readmeLineCount = useMemo(() => readme?.split(/\r\n|\n|\r/).length ?? 0, [readme]);
   const isReadmeLong = readmeLineCount > PLUGIN_README_COLLAPSED_LINE_COUNT;
@@ -490,9 +490,7 @@ function PluginDetailTabs({
           </button>
         ) : null}
       </div>
-      {effectiveActiveTab === "versions" ? (
-        versionsPanel
-      ) : (
+      {effectiveActiveTab !== "versions" ? (
         <div
           className={`tab-body${effectiveActiveTab === "readme" ? " skill-readme-body" : ""}`}
           role="tabpanel"
@@ -501,10 +499,10 @@ function PluginDetailTabs({
         >
           {activePanel}
         </div>
-      )}
-      {hasMountedVersions && effectiveActiveTab !== "versions" ? (
-        <div hidden>{versionsPanel}</div>
       ) : null}
+      {hasMountedVersions || effectiveActiveTab === "versions"
+        ? versionsPanel(effectiveActiveTab !== "versions")
+        : null}
     </div>
   );
 }
@@ -847,7 +845,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
   const manifestPluginApiRange = pluginManifestSummary?.compatibility?.pluginApiRange;
-  const versionsPanel = (
+  const versionsPanel = (hidden: boolean) => (
     <PluginVersionsPanel
       packageName={pkg.name}
       versions={versions}
@@ -856,6 +854,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       onVersionDeleted={() => router.invalidate()}
       panelId="plugin-tabpanel-versions"
       labelledBy="plugin-tab-versions"
+      hidden={hidden}
     />
   );
   const compatibilityPanel =
@@ -1311,10 +1310,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         </DetailHero>
       </DetailPageShell>
       {manageContext ? (
-        <Dialog
-          open={isCatalogMetadataDialogOpen}
-          onOpenChange={setIsCatalogMetadataDialogOpen}
-        >
+        <Dialog open={isCatalogMetadataDialogOpen} onOpenChange={setIsCatalogMetadataDialogOpen}>
           <DialogContent className="plugin-catalog-metadata-dialog">
             <DialogHeader>
               <DialogTitle>Catalog metadata</DialogTitle>

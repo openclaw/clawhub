@@ -333,11 +333,7 @@ export function SkillDetailTabs({
       ) : null}
 
       {showArchiveTabs && activeTab === "files" ? (
-        <div
-          role="tabpanel"
-          id="skill-tabpanel-files"
-          aria-labelledby="skill-tab-files"
-        >
+        <div role="tabpanel" id="skill-tabpanel-files" aria-labelledby="skill-tab-files">
           <Suspense fallback={<div className="tab-body stat">Loading file viewer...</div>}>
             <SkillFilesPanel versionId={latestVersionId} latestFiles={latestFiles} />
           </Suspense>
@@ -362,11 +358,7 @@ export function SkillDetailTabs({
       ) : null}
 
       {showArchiveTabs && activeTab === "versions" ? (
-        <div
-          role="tabpanel"
-          id="skill-tabpanel-versions"
-          aria-labelledby="skill-tab-versions"
-        >
+        <div role="tabpanel" id="skill-tabpanel-versions" aria-labelledby="skill-tab-versions">
           <SkillVersionsPanel
             versions={versions}
             latestVersionId={latestVersionId}

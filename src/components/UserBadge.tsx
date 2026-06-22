@@ -5,12 +5,22 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { convexHttp } from "../convex/client";
 import { hasOwnProperty } from "../lib/hasOwnProperty";
 import { formatCompactStat } from "../lib/numberFormat";
-import type { PublicPublisher, PublicUser } from "../lib/publicUser";
 import { OfficialBadge } from "./OfficialBadge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
+type UserBadgeUser = {
+  _id?: string;
+  kind?: "user" | "org";
+  linkedUserId?: string;
+  handle?: string | null;
+  name?: string | null;
+  displayName?: string | null;
+  image?: string | null;
+  official?: boolean;
+};
+
 type UserBadgeProps = {
-  user: PublicUser | PublicPublisher | null | undefined;
+  user: UserBadgeUser | null | undefined;
   fallbackHandle?: string | null;
   prefix?: string;
   size?: "sm" | "md";
@@ -55,9 +65,7 @@ export function UserBadge({
   // Resolve userId for stats query — PublicUser has _id directly,
   // PublicPublisher has linkedUserId
   const userId =
-    user && hasOwnProperty(user, "kind")
-      ? ((user as PublicPublisher).linkedUserId ?? null)
-      : (user?._id ?? null);
+    user && hasOwnProperty(user, "kind") ? (user.linkedUserId ?? null) : (user?._id ?? null);
 
   const badgeContent = (
     <>

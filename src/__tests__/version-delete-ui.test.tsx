@@ -163,7 +163,18 @@ function expectIrreversibleConfirmation(version: string) {
 }
 
 function getVersionRowButton(version: string) {
-  return screen.getByRole("button", { name: new RegExp(`v${version.replaceAll(".", "\\.")}`) });
+  const versionPattern = new RegExp(`v${version.replaceAll(".", "\\.")}`);
+  const toggle = screen
+    .getAllByRole("button", { hidden: true })
+    .find(
+      (button) =>
+        button.classList.contains("skill-version-release-toggle") &&
+        versionPattern.test(button.textContent ?? ""),
+    );
+  if (!toggle) {
+    throw new Error(`Version toggle for v${version} not found`);
+  }
+  return toggle;
 }
 
 describe("version Delete UI", () => {

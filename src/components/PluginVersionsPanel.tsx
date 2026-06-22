@@ -23,6 +23,7 @@ type PluginVersionsPanelProps = {
   onVersionDeleted?: () => void | Promise<void>;
   panelId?: string;
   labelledBy?: string;
+  hidden?: boolean;
 };
 
 function buildPluginDownloadHref(packageName: string, version: string) {
@@ -40,6 +41,7 @@ export function PluginVersionsPanel({
   onVersionDeleted,
   panelId,
   labelledBy,
+  hidden = false,
 }: PluginVersionsPanelProps) {
   const isUnavailable = versions == null;
   const deleteOwnedRelease = useMutation(api.packages.deleteOwnedRelease);
@@ -136,6 +138,7 @@ export function PluginVersionsPanel({
         role={panelId ? "tabpanel" : undefined}
         id={panelId}
         aria-labelledby={labelledBy}
+        hidden={hidden}
       >
         <div className="skill-versions-header">
           <h2>Versions</h2>

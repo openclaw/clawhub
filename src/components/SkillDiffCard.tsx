@@ -442,9 +442,7 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
                   id="diff-right"
                   className="search-input diff-version-select"
                   value={rightVersionId ?? ""}
-                  onChange={(event) =>
-                    setRightVersionId(event.target.value as Id<"skillVersions">)
-                  }
+                  onChange={(event) => setRightVersionId(event.target.value as Id<"skillVersions">)}
                 >
                   <option value="" disabled>
                     Select target version

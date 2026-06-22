@@ -58,7 +58,9 @@ function stripMutableState(node: MutableDirectoryNode): FileTreeDirectoryNode {
     name: node.name,
     path: node.path,
     children: node.children
-      .map((child) => (child.type === "directory" ? stripMutableState(child) : child))
+      .map((child) =>
+        child.type === "directory" ? stripMutableState(child as MutableDirectoryNode) : child,
+      )
       .sort(sortTreeNodes),
   };
 }

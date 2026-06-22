@@ -4173,6 +4173,7 @@ code {
 
 .plugin-detail-page .skill-hero-main-extra {
   gap: var(--space-7);
+  overflow-x: clip;
 }
 
 .plugin-install-bar {
@@ -6516,15 +6517,14 @@ code {
   .detail-mobile-install .skill-install-command-header {
     padding-bottom: 12px;
     border-bottom-color: transparent;
-    background:
-      linear-gradient(
-          90deg,
-          transparent,
-          color-mix(in srgb, var(--line) 62%, transparent) 12%,
-          color-mix(in srgb, var(--line) 62%, transparent) 88%,
-          transparent
-        )
-        bottom / 100% 1px no-repeat;
+    background: linear-gradient(
+        90deg,
+        transparent,
+        color-mix(in srgb, var(--line) 62%, transparent) 12%,
+        color-mix(in srgb, var(--line) 62%, transparent) 88%,
+        transparent
+      )
+      bottom / 100% 1px no-repeat;
   }
 
   .detail-mobile-install .skill-install-command-shell {

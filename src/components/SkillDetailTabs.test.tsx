@@ -340,7 +340,7 @@ describe("SkillDetailTabs README links", () => {
   });
 
   it("renders safe raw HTML in generated Skill Cards", () => {
-    const { container } = render(
+    render(
       <SkillDetailTabs
         activeTab="skill-card"
         setActiveTab={vi.fn()}

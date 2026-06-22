@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
@@ -41,6 +41,10 @@ const useMutationMock = vi.fn();
 const convexQueryMock = vi.fn();
 const convexClientMock = { query: convexQueryMock };
 const getReadmeMock = vi.fn();
+
+function getDesktopSkillTabs() {
+  return within(screen.getByRole("tablist", { name: "Skill detail tabs", hidden: true }));
+}
 
 vi.mock("convex/react", () => ({
   ConvexReactClient: class {},
@@ -281,9 +285,11 @@ describe("SkillDetailPage", () => {
     );
 
     expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.getByText("Downloads")).toBeTruthy();
+    expect(screen.getAllByText("Downloads").length).toBeGreaterThan(0);
     expect(screen.queryByText("30-day Installs")).toBeNull();
-    expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
+    expect(
+      container.querySelectorAll(".detail-sidebar-stats .metric-trend-card-skeleton"),
+    ).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(
       useQueryMock.mock.calls.some(
@@ -445,8 +451,8 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    expect(await screen.findByText("Pending")).toBeTruthy();
-    expect(screen.getByText("Security audit")).toBeTruthy();
+    expect((await screen.findAllByText("Pending")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
     expect(screen.queryByText("Loading README...")).toBeNull();
   });
 
@@ -793,9 +799,9 @@ describe("SkillDetailPage", () => {
     const { rerender } = render(<SkillDetailPage slug="weather" initialData={baseInitialData} />);
 
     expect(await screen.findByRole("tab", { name: "Files" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected")).toBe(
-      "true",
-    );
+    expect(
+      getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" }).getAttribute("aria-selected"),
+    ).toBe("true");
 
     rerender(
       <SkillDetailPage
@@ -1018,7 +1024,9 @@ describe("SkillDetailPage", () => {
     );
 
     await screen.findByRole("heading", { name: "Install" });
-    const sidebarMetadata = document.querySelector('dl[aria-label="Skill metadata"]');
+    const sidebarMetadata = document.querySelector(
+      '.detail-sidebar-stats dl[aria-label="Skill metadata"]',
+    );
     expect(sidebarMetadata).toBeTruthy();
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
@@ -1030,7 +1038,7 @@ describe("SkillDetailPage", () => {
     expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
     expect(screen.getByRole("tab", { name: "Prompt" })).toBeTruthy();
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
-    expect(screen.getByText("Security audit")).toBeTruthy();
+    expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
       "/steipete/weather/security-audit",
     );
@@ -1152,8 +1160,8 @@ describe("SkillDetailPage", () => {
       />,
     );
 
-    await screen.findByText("Security audit");
-    expect(screen.getByText("Cleared")).toBeTruthy();
+    expect((await screen.findAllByText("Security audit")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Cleared").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" })).toBeTruthy();
     expect(screen.queryByText(/reviewed by staff and cleared/i)).toBeNull();
     expect(screen.queryByRole("link", { name: /Suspicious/i })).toBeNull();
@@ -2352,8 +2360,8 @@ describe("SkillDetailPage", () => {
 
     render(<SkillDetailPage slug="weather" />);
     expect(await screen.findByText("Weather")).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Files" })).toBeTruthy();
+    expect(getDesktopSkillTabs().getByRole("tab", { name: "SKILL.md" })).toBeTruthy();
+    expect(getDesktopSkillTabs().getByRole("tab", { name: "Files" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: /diff/i })).toBeNull();
 
     expect(
