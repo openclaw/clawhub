@@ -7148,16 +7148,23 @@ code {
   white-space: nowrap;
 }
 
-.related-skill-install-stat {
+.related-skill-stats {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  color: var(--ink-soft);
+  white-space: nowrap;
+}
+
+.related-skill-stat {
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
-  color: var(--ink-soft);
   font-size: 12px;
   font-weight: 650;
   line-height: 1;
-  white-space: nowrap;
 }
 
 .related-skill-row-skeleton {
@@ -9621,6 +9628,11 @@ code {
     grid-template-columns: 34px minmax(0, 1fr);
     gap: 12px;
     padding: 16px 0;
+  }
+
+  .related-skills-section-compact .related-skill-row {
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    padding: 14px 10px;
   }
 
   .related-skills-section:not(.related-skills-section-compact) .related-skill-owner,
