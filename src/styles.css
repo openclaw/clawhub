@@ -7068,9 +7068,10 @@ code {
 .skill-versions-list {
   display: grid;
   gap: 0;
-  border: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
   border-radius: var(--r-md);
   overflow: hidden;
+  background: color-mix(in srgb, var(--surface) 38%, transparent);
 }
 
 .skill-version-release {
@@ -7078,8 +7079,9 @@ code {
   gap: 0;
   min-width: 0;
   border: 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 72%, transparent);
-  background: transparent;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background: color-mix(in srgb, var(--surface) 34%, transparent);
+  transition: background-color 160ms ease;
 }
 
 .skill-version-release:last-child {
@@ -7088,16 +7090,26 @@ code {
 
 .skill-version-release-summary {
   display: grid;
-  grid-template-columns: minmax(150px, 0.34fr) minmax(160px, 1fr) auto;
-  gap: 16px;
+  grid-template-columns: minmax(140px, 0.22fr) minmax(190px, 1fr) auto 22px;
+  gap: 18px;
   align-items: center;
   min-width: 0;
-  padding: 14px 16px;
+  padding: 18px 16px;
+  cursor: pointer;
   transition: background-color 160ms ease;
 }
 
 .skill-version-release-summary:hover {
-  background: color-mix(in srgb, var(--ink) 3%, transparent);
+  background: color-mix(in srgb, var(--ink) 4%, transparent);
+}
+
+.skill-version-release[data-expanded="true"] {
+  background: color-mix(in srgb, var(--surface) 48%, var(--bg) 52%);
+}
+
+.skill-version-release-summary:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 20%, transparent);
+  outline-offset: -3px;
 }
 
 .skill-version-release-toggle {
@@ -7109,14 +7121,8 @@ code {
   border: 0;
   background: transparent;
   color: inherit;
-  cursor: pointer;
   padding: 0;
   text-align: left;
-}
-
-.skill-version-release-toggle:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--ink) 22%, transparent);
-  outline-offset: 4px;
 }
 
 .skill-version-release-version {
@@ -7141,37 +7147,46 @@ code {
   color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
 }
 
-.skill-version-release-toggle-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  color: color-mix(in srgb, var(--ink-soft) 84%, transparent);
-  font-size: 0.76rem;
-  font-weight: 650;
-}
-
 .skill-version-release-chevron {
-  display: inline-block;
-  width: 0.44em;
-  height: 0.44em;
-  border-right: 1.5px solid currentColor;
-  border-bottom: 1.5px solid currentColor;
-  transform: rotate(-45deg);
-  transition: transform 160ms ease;
+  grid-column: 4;
+  justify-self: end;
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid color-mix(in srgb, var(--ink-soft) 74%, transparent);
+  border-bottom: 2px solid color-mix(in srgb, var(--ink-soft) 74%, transparent);
+  transform: rotate(45deg);
+  transition:
+    border-color 160ms ease,
+    transform 160ms ease;
 }
 
-.skill-version-release-toggle[aria-expanded="true"] .skill-version-release-chevron {
-  transform: rotate(45deg) translateY(-1px);
+.skill-version-release[data-expanded="true"] .skill-version-release-chevron {
+  border-color: color-mix(in srgb, var(--ink) 88%, transparent);
+  transform: rotate(225deg) translate(-2px, -2px);
 }
 
 .skill-version-release-changelog {
-  margin: 0 16px 16px;
-  padding: 12px 0 0;
-  border-top: 1px solid color-mix(in srgb, var(--line) 58%, transparent);
+  margin: -2px 16px 18px;
+  padding: 12px 14px;
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--ink) 3%, var(--surface) 52%);
   color: var(--ink-soft);
-  font-size: 0.88rem;
-  line-height: 1.5;
+  font-size: 0.84rem;
+  line-height: 1.45;
   overflow-wrap: anywhere;
+  animation: version-changelog-reveal 140ms ease both;
+}
+
+@keyframes version-changelog-reveal {
+  from {
+    filter: blur(4px);
+    transform: translateY(-2px);
+  }
+
+  to {
+    filter: blur(0);
+    transform: translateY(0);
+  }
 }
 
 .version-changelog-list {
@@ -7238,8 +7253,9 @@ code {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 34px;
-  padding: 6px 12px;
+  gap: 7px;
+  min-height: 32px;
+  padding: 7px 10px;
   border: 1px solid var(--line);
   border-radius: var(--r-pill);
   background: var(--surface);
@@ -7255,6 +7271,11 @@ code {
   text-decoration: none;
 }
 
+.skill-version-release-download-icon {
+  flex: 0 0 auto;
+  color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
+}
+
 @media (max-width: 760px) {
   .skill-versions-header {
     align-items: flex-start;
@@ -7267,18 +7288,27 @@ code {
   }
 
   .skill-version-release-summary {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: 10px;
   }
 
-  .skill-version-release-toggle,
+  .skill-version-release-toggle {
+    grid-column: 1;
+  }
+
   .skill-version-release-scan,
   .skill-version-release-actions {
-    grid-column: 1;
+    grid-column: 1 / -1;
   }
 
   .skill-version-release-actions {
     justify-content: flex-start;
+  }
+
+  .skill-version-release-chevron {
+    grid-column: 2;
+    grid-row: 1;
+    justify-self: end;
   }
 
   .navbar-inner {

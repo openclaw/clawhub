@@ -1,4 +1,6 @@
 import { useMutation } from "convex/react";
+import { Download } from "lucide-react";
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -79,6 +81,23 @@ export function SkillVersionsPanel({
     });
   };
 
+  const toggleVersionFromKeyboard = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    versionId: string,
+  ) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    toggleVersion(versionId);
+  };
+
+  const stopVersionActionPropagation = (event: ReactMouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+  };
+
+  const stopVersionKeyPropagation = (event: ReactKeyboardEvent<HTMLElement>) => {
+    event.stopPropagation();
+  };
+
   const handleDelete = async () => {
     if (!deletingVersion) return;
     const deleteContextId = deleteContextIdRef.current;
@@ -123,14 +142,20 @@ export function SkillVersionsPanel({
                 version.softDeletedAt === undefined && version.ownerDeletedAt === undefined;
               const isExpanded = expandedVersionIds.has(version._id);
               return (
-                <article key={version._id} className="skill-version-release">
-                  <div className="skill-version-release-summary">
-                    <button
-                      className="skill-version-release-toggle"
-                      type="button"
-                      aria-expanded={isExpanded}
-                      onClick={() => toggleVersion(version._id)}
-                    >
+                <article
+                  key={version._id}
+                  className="skill-version-release"
+                  data-expanded={isExpanded ? "true" : "false"}
+                >
+                  <div
+                    className="skill-version-release-summary"
+                    role="button"
+                    tabIndex={0}
+                    aria-expanded={isExpanded}
+                    onClick={() => toggleVersion(version._id)}
+                    onKeyDown={(event) => toggleVersionFromKeyboard(event, version._id)}
+                  >
+                    <div className="skill-version-release-toggle">
                       <span className="skill-version-release-version">v{version.version}</span>
                       <span className="skill-version-release-meta">
                         <span>{new Date(version.createdAt).toLocaleDateString()}</span>
@@ -138,13 +163,14 @@ export function SkillVersionsPanel({
                           <span className="skill-version-release-source">auto</span>
                         ) : null}
                       </span>
-                      <span className="skill-version-release-toggle-label">
-                        <span className="skill-version-release-chevron" aria-hidden="true" />
-                        {isExpanded ? "Hide changelog" : "Show changelog"}
-                      </span>
-                    </button>
+                    </div>
                     {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
-                      <div className="skill-version-release-scan" aria-label="Security checks">
+                      <div
+                        className="skill-version-release-scan"
+                        aria-label="Security checks"
+                        onClick={stopVersionActionPropagation}
+                        onKeyDown={stopVersionKeyPropagation}
+                      >
                         <SecurityScanResults
                           sha256hash={version.sha256hash}
                           vtAnalysis={version.vtAnalysis}
@@ -153,7 +179,11 @@ export function SkillVersionsPanel({
                         />
                       </div>
                     ) : null}
-                    <div className="skill-version-release-actions">
+                    <div
+                      className="skill-version-release-actions"
+                      onClick={stopVersionActionPropagation}
+                      onKeyDown={stopVersionKeyPropagation}
+                    >
                       {isLatest ? <Badge variant="compact">Latest</Badge> : null}
                       {!nixPlugin && isAvailable ? (
                         <a
@@ -164,8 +194,14 @@ export function SkillVersionsPanel({
                             version.version,
                           )}
                           className="skill-version-release-download"
+                          aria-label={`Download .zip for v${version.version}`}
                         >
-                          Zip
+                          <Download
+                            className="skill-version-release-download-icon"
+                            size={14}
+                            aria-hidden="true"
+                          />
+                          <span>Download .zip</span>
                         </a>
                       ) : null}
                       {canDeleteVersions && isAvailable && !isLatest ? (
@@ -180,6 +216,7 @@ export function SkillVersionsPanel({
                         </Button>
                       ) : null}
                     </div>
+                    <span className="skill-version-release-chevron" aria-hidden="true" />
                   </div>
                   {isExpanded ? (
                     <div className="skill-version-release-changelog">

@@ -1,5 +1,7 @@
 import type { ApiV1PackageVersionListResponse } from "clawhub-schema";
 import { useMutation } from "convex/react";
+import { Download } from "lucide-react";
+import type { KeyboardEvent as ReactKeyboardEvent, MouseEvent as ReactMouseEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -69,6 +71,23 @@ export function PluginVersionsPanel({
       }
       return next;
     });
+  };
+
+  const toggleVersionFromKeyboard = (
+    event: ReactKeyboardEvent<HTMLDivElement>,
+    version: string,
+  ) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    toggleVersion(version);
+  };
+
+  const stopVersionActionPropagation = (event: ReactMouseEvent<HTMLElement>) => {
+    event.stopPropagation();
+  };
+
+  const stopVersionKeyPropagation = (event: ReactKeyboardEvent<HTMLElement>) => {
+    event.stopPropagation();
   };
 
   const loadMore = async () => {
@@ -145,25 +164,32 @@ export function PluginVersionsPanel({
                 const isLatest = release.version === latestVersion || hasLatestTag;
                 const isExpanded = expandedVersions.has(release.version);
                 return (
-                  <article key={release.version} className="skill-version-release">
-                    <div className="skill-version-release-summary">
-                      <button
-                        className="skill-version-release-toggle"
-                        type="button"
-                        aria-expanded={isExpanded}
-                        onClick={() => toggleVersion(release.version)}
-                      >
+                  <article
+                    key={release.version}
+                    className="skill-version-release"
+                    data-expanded={isExpanded ? "true" : "false"}
+                  >
+                    <div
+                      className="skill-version-release-summary"
+                      role="button"
+                      tabIndex={0}
+                      aria-expanded={isExpanded}
+                      onClick={() => toggleVersion(release.version)}
+                      onKeyDown={(event) => toggleVersionFromKeyboard(event, release.version)}
+                    >
+                      <div className="skill-version-release-toggle">
                         <span className="skill-version-release-version">v{release.version}</span>
                         <span className="skill-version-release-meta">
                           <span>{new Date(release.createdAt).toLocaleDateString()}</span>
                         </span>
-                        <span className="skill-version-release-toggle-label">
-                          <span className="skill-version-release-chevron" aria-hidden="true" />
-                          {isExpanded ? "Hide changelog" : "Show changelog"}
-                        </span>
-                      </button>
+                      </div>
                       {release.distTags && release.distTags.length > 0 ? (
-                        <div className="skill-version-release-scan" aria-label="Release tags">
+                        <div
+                          className="skill-version-release-scan"
+                          aria-label="Release tags"
+                          onClick={stopVersionActionPropagation}
+                          onKeyDown={stopVersionKeyPropagation}
+                        >
                           {release.distTags.map((tag) => (
                             <Badge key={tag} variant="compact">
                               {tag}
@@ -171,13 +197,23 @@ export function PluginVersionsPanel({
                           ))}
                         </div>
                       ) : null}
-                      <div className="skill-version-release-actions">
+                      <div
+                        className="skill-version-release-actions"
+                        onClick={stopVersionActionPropagation}
+                        onKeyDown={stopVersionKeyPropagation}
+                      >
                         {isLatest && !hasLatestTag ? <Badge variant="compact">Latest</Badge> : null}
                         <a
                           href={buildPluginDownloadHref(packageName, release.version)}
                           className="skill-version-release-download"
+                          aria-label={`Download .zip for v${release.version}`}
                         >
-                          Zip
+                          <Download
+                            className="skill-version-release-download-icon"
+                            size={14}
+                            aria-hidden="true"
+                          />
+                          <span>Download .zip</span>
                         </a>
                         {canDeleteVersions && !isLatest ? (
                           <Button
@@ -191,6 +227,7 @@ export function PluginVersionsPanel({
                           </Button>
                         ) : null}
                       </div>
+                      <span className="skill-version-release-chevron" aria-hidden="true" />
                     </div>
                     {isExpanded ? (
                       <div className="skill-version-release-changelog">
