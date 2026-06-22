@@ -857,7 +857,7 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
 
 export function SecurityAuditPageSkeleton() {
   return (
-    <main className="section detail-page-section security-report-section security-audit-page">
+    <main className="section detail-page-section security-report-section security-audit-page security-audit-page-skeleton">
       <div
         className="security-report-shell security-scanner-skeleton"
         role="status"
@@ -873,13 +873,13 @@ export function SecurityAuditPageSkeleton() {
           </div>
         </header>
 
-        <div className="security-report-layout">
+        <div className="security-report-layout security-report-skeleton-layout">
           <div className="security-report-main">
             {Array.from({ length: 3 }).map((_, index) => (
               <section
                 // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
                 key={index}
-                className="security-report-panel"
+                className="security-report-panel security-report-skeleton-panel"
               >
                 <div className="security-report-panel-header">
                   <Skeleton className="h-6 w-32" />
@@ -893,7 +893,10 @@ export function SecurityAuditPageSkeleton() {
             ))}
           </div>
 
-          <aside className="security-report-sidebar" aria-label="Security audit metadata">
+          <aside
+            className="security-report-sidebar security-report-skeleton-sidebar"
+            aria-label="Security audit metadata"
+          >
             <div className="sidebar-metadata sidebar-metadata-compact">
               <div className="sidebar-metadata-row">
                 <Skeleton className="h-3 w-14" />

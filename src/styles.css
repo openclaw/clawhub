@@ -1866,6 +1866,23 @@ code {
   color: var(--ink);
 }
 
+.security-scanner-skeleton,
+.security-scanner-skeleton * {
+  min-width: 0;
+}
+
+.security-scanner-skeleton .security-scan-hero {
+  padding-top: 0;
+}
+
+.security-report-skeleton-panel {
+  gap: 18px;
+}
+
+.security-report-skeleton-sidebar {
+  align-self: start;
+}
+
 .security-report-sidebar .sidebar-metadata-compact > .sidebar-metadata-grid:first-child {
   min-height: auto;
 }
@@ -2028,6 +2045,14 @@ code {
     grid-template-columns: 1fr;
     gap: 8px;
   }
+
+  .security-report-skeleton-layout {
+    gap: 26px;
+  }
+
+  .security-report-skeleton-sidebar {
+    padding: 0 0 18px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -2041,6 +2066,14 @@ code {
 
   .security-report-metadata {
     grid-template-columns: 1fr;
+  }
+
+  .security-audit-page-skeleton .security-report-main {
+    gap: 30px;
+  }
+
+  .security-report-skeleton-panel {
+    gap: 14px;
   }
 }
 
@@ -6389,9 +6422,9 @@ code {
   }
 
   .skill-hero-main-extra
-    > :not(.detail-mobile-tabs):not(.detail-mobile-related):not(
-      .detail-mobile-install
-    ):not(.detail-mobile-master-tabs) {
+    > :not(.detail-mobile-tabs):not(.detail-mobile-related):not(.detail-mobile-install):not(
+      .detail-mobile-master-tabs
+    ) {
     order: 0;
   }
 
@@ -6568,9 +6601,7 @@ code {
     color: var(--ink);
   }
 
-  .skill-detail-page
-    .skill-detail-tabs-card.detail-mobile-tabs
-    .skill-diff-tab-body {
+  .skill-detail-page .skill-detail-tabs-card.detail-mobile-tabs .skill-diff-tab-body {
     overflow: visible;
     padding: 0;
     border: 0;
@@ -6778,6 +6809,41 @@ code {
   gap: 8px;
 }
 
+.detail-skeleton,
+.detail-skeleton * {
+  min-width: 0;
+}
+
+.detail-skeleton .skill-hero-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.detail-skeleton-install-tabs {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.detail-skeleton-tabs {
+  width: 100%;
+}
+
+.detail-skeleton-tabs .tab-header {
+  flex-wrap: nowrap;
+  overflow: hidden;
+}
+
+.detail-skeleton-tabs .tab-body {
+  overflow: hidden;
+}
+
+.detail-skeleton .skill-install-command-inline-button {
+  width: 34px;
+}
+
 .detail-skeleton-deferred-summary {
   display: none;
 }
@@ -6807,6 +6873,52 @@ code {
 
   .detail-skeleton-deferred[data-kind="plugin"] .detail-skeleton-deferred-body {
     display: none;
+  }
+
+  .detail-skeleton .skill-hero-lower.has-sidebar {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .detail-skeleton .skill-hero-main-extra,
+  .detail-skeleton .skill-hero-sidebar {
+    display: contents;
+  }
+
+  .detail-skeleton-tabs .tab-header {
+    overflow-x: auto;
+  }
+
+  .detail-skeleton .skill-install-command-header {
+    align-items: flex-start;
+  }
+
+  .detail-skeleton .skill-install-command-shell {
+    padding-right: 58px;
+  }
+}
+
+@media (max-width: 640px) {
+  .detail-skeleton .skill-hero-breadcrumbs {
+    gap: 6px;
+  }
+
+  .detail-skeleton .skill-hero-title-row {
+    gap: 10px;
+  }
+
+  .detail-skeleton-install-tabs {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .detail-skeleton-tabs .tab-header {
+    gap: 10px;
+  }
+
+  .detail-skeleton-tabs .tab-body {
+    padding-right: var(--detail-mobile-surface-padding);
+    padding-left: var(--detail-mobile-surface-padding);
   }
 }
 
@@ -9094,8 +9206,8 @@ code {
 }
 
 .skill-versions-list {
-  --skill-versions-grid-columns: minmax(150px, 176px) minmax(180px, 220px)
-    fit-content(168px) minmax(0, 1fr) minmax(44px, max-content) 36px;
+  --skill-versions-grid-columns: minmax(150px, 176px) minmax(180px, 220px) fit-content(168px)
+    minmax(0, 1fr) minmax(44px, max-content) 36px;
   display: grid;
   grid-template-columns: var(--skill-versions-grid-columns);
   gap: 0;
