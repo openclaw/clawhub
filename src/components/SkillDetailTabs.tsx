@@ -7,6 +7,7 @@ import { MarkdownPreview } from "./MarkdownPreview";
 import { SkillCardPreview } from "./SkillCardPreview";
 import { buildSkillInstallTabs, type SkillInstallTabId } from "./SkillInstallCard";
 import { SkillVersionsPanel } from "./SkillVersionsPanel";
+import { Skeleton } from "./ui/skeleton";
 
 const SkillDiffCard = lazy(() =>
   import("./SkillDiffCard").then((module) => ({ default: module.SkillDiffCard })),
@@ -17,6 +18,56 @@ const SkillFilesPanel = lazy(() =>
 );
 
 const README_COLLAPSED_LINE_COUNT = 50;
+
+function SkillDiffSkeleton() {
+  return (
+    <div className="skill-diff-skeleton" role="status" aria-label="Loading diff viewer">
+      <div className="diff-skeleton-toolbar">
+        <div className="diff-skeleton-version-row">
+          <div className="diff-skeleton-field">
+            <Skeleton className="diff-skeleton-label" />
+            <Skeleton className="diff-skeleton-control" />
+          </div>
+          <Skeleton className="diff-skeleton-swap" />
+          <div className="diff-skeleton-field">
+            <Skeleton className="diff-skeleton-label" />
+            <Skeleton className="diff-skeleton-control" />
+          </div>
+        </div>
+        <div className="diff-skeleton-field diff-skeleton-view">
+          <Skeleton className="diff-skeleton-label diff-skeleton-label-short" />
+          <Skeleton className="diff-skeleton-toggle" />
+        </div>
+      </div>
+      <div className="diff-skeleton-file-bar">
+        <Skeleton className="diff-skeleton-arrow" />
+        <Skeleton className="diff-skeleton-file-select" />
+        <Skeleton className="diff-skeleton-arrow" />
+        <Skeleton className="diff-skeleton-badge" />
+        <Skeleton className="diff-skeleton-count" />
+      </div>
+      <div className="diff-skeleton-editor">
+        <div className="diff-skeleton-gutter" aria-hidden="true">
+          <Skeleton />
+          <Skeleton />
+          <Skeleton />
+          <Skeleton />
+          <Skeleton />
+          <Skeleton />
+        </div>
+        <div className="diff-skeleton-code" aria-hidden="true">
+          <Skeleton className="w-[18%]" />
+          <Skeleton className="w-[58%]" />
+          <Skeleton className="w-[82%]" />
+          <Skeleton className="w-[72%]" />
+          <Skeleton className="mt-4 w-[34%]" />
+          <Skeleton className="w-[66%]" />
+          <Skeleton className="w-[48%]" />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 type SkillFile = Doc<"skillVersions">["files"][number];
 
@@ -292,7 +343,7 @@ export function SkillDetailTabs({
           id="skill-tabpanel-compare"
           aria-labelledby="skill-tab-compare"
         >
-          <Suspense fallback={<div className="stat">Loading diff viewer...</div>}>
+          <Suspense fallback={<SkillDiffSkeleton />}>
             <SkillDiffCard skill={skill} versions={diffVersions ?? []} variant="embedded" />
           </Suspense>
         </div>
