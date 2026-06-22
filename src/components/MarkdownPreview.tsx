@@ -212,24 +212,12 @@ function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWith
   const language = getCodeLanguage(`${className ?? ""} ${childClassName}`);
   const source = stringifyReactNode(children).replace(/\n$/, "");
   const preRef = useRef<HTMLPreElement | null>(null);
-  const revealTimeoutRef = useRef<number | null>(null);
   const [isWrapped, setIsWrapped] = useState(false);
-  const [isRevealingWrap, setIsRevealingWrap] = useState(false);
   const [canWrap, setCanWrap] = useState(false);
 
   useEffect(() => {
     setIsWrapped(false);
-    setIsRevealingWrap(false);
   }, [source]);
-
-  useEffect(
-    () => () => {
-      if (revealTimeoutRef.current !== null) {
-        window.clearTimeout(revealTimeoutRef.current);
-      }
-    },
-    [],
-  );
 
   useClientLayoutEffect(() => {
     const pre = preRef.current;
@@ -256,32 +244,11 @@ function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWith
   }, [isWrapped, source]);
 
   const toggleWrap = () => {
-    const nextWrapped = !isWrapped;
-    setIsWrapped(nextWrapped);
-
-    if (nextWrapped) {
-      if (revealTimeoutRef.current !== null) {
-        window.clearTimeout(revealTimeoutRef.current);
-      }
-
-      setIsRevealingWrap(true);
-      revealTimeoutRef.current = window.setTimeout(() => {
-        setIsRevealingWrap(false);
-        revealTimeoutRef.current = null;
-      }, 180);
-    } else {
-      setIsRevealingWrap(false);
-    }
+    setIsWrapped((wrapped) => !wrapped);
   };
 
   return (
-    <figure
-      className={cn(
-        "markdown-code-block",
-        isWrapped && "is-wrapped",
-        isRevealingWrap && "is-revealing-wrap",
-      )}
-    >
+    <figure className={cn("markdown-code-block", isWrapped && "is-wrapped")}>
       <figcaption className="markdown-code-block-toolbar">
         <span className="markdown-code-block-language">{language}</span>
         {canWrap ? (
