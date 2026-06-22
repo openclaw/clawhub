@@ -8889,6 +8889,40 @@ describe("httpApiV1 handlers", () => {
     }
   });
 
+  it("plugins list accepts category official-first browse with scan-status exclusions", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        return false;
+      }
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/plugins?limit=25&category=security&officialFirst=true&sort=downloads&excludeScanStatus=pending,suspicious",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json).toEqual({ items: [], nextCursor: null });
+    const familyCalls = runQuery.mock.calls.filter(([, args]) => "family" in args);
+    expect(familyCalls).toHaveLength(2);
+    for (const [, args] of familyCalls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          category: "security",
+          excludedScanStatuses: ["pending", "suspicious"],
+          officialFirst: true,
+          sort: "downloads",
+          paginationOpts: { cursor: null, numItems: 25 },
+        }),
+      );
+    }
+  });
+
   it("plugin and package lists reject invalid sort values", async () => {
     const runQuery = vi.fn();
     const runMutation = vi.fn().mockResolvedValue(okRate());
