@@ -7,7 +7,7 @@ import {
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
 import { AlertTriangle, BadgeCheck, Download, Info, Share2, Upload } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { ActivityMetricLabel } from "../../components/ActivityMetricLabel";
@@ -272,10 +272,13 @@ function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
     : "readme";
 }
 
+const PLUGIN_README_COLLAPSED_LINE_COUNT = 50;
+
 function PluginDetailTabs({
   activeTab,
   setActiveTab,
-  readmePanel,
+  readme,
+  readmeAssetBaseUrl,
   versionsPanel,
   compatibilityPanel,
   configurationPanel,
@@ -286,7 +289,8 @@ function PluginDetailTabs({
 }: {
   activeTab: PluginDetailTab;
   setActiveTab: (tab: PluginDetailTab) => void;
-  readmePanel: ReactNode;
+  readme: string | null;
+  readmeAssetBaseUrl?: string;
   versionsPanel: ReactNode;
   compatibilityPanel: ReactNode | null;
   configurationPanel: ReactNode | null;
@@ -296,6 +300,13 @@ function PluginDetailTabs({
   validationCount: number;
 }) {
   const [hasMountedVersions, setHasMountedVersions] = useState(false);
+  const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
+  const readmeLineCount = useMemo(() => readme?.split(/\r\n|\n|\r/).length ?? 0, [readme]);
+  const isReadmeLong = readmeLineCount > PLUGIN_README_COLLAPSED_LINE_COUNT;
+
+  useEffect(() => {
+    setIsReadmeExpanded(false);
+  }, [readme]);
   const selectTab = (tab: PluginDetailTab) => {
     const scrollPosition =
       typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
@@ -330,6 +341,32 @@ function PluginDetailTabs({
   useEffect(() => {
     if (effectiveActiveTab === "versions") setHasMountedVersions(true);
   }, [effectiveActiveTab]);
+  const readmePanel = readme ? (
+    <>
+      <div
+        className={`skill-readme-preview${
+          isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
+        }`}
+      >
+        <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
+      </div>
+      {isReadmeLong ? (
+        <button
+          type="button"
+          className="skill-readme-toggle"
+          aria-expanded={isReadmeExpanded}
+          onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
+        >
+          {isReadmeExpanded ? "Show less" : "Read more"}
+        </button>
+      ) : null}
+    </>
+  ) : (
+    <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
+      <p className="empty-state-title">No README available</p>
+      <p className="empty-state-body">This plugin doesn't have a README yet.</p>
+    </div>
+  );
   const activePanel =
     effectiveActiveTab === "compatibility" && compatibilityPanel
       ? compatibilityPanel
@@ -723,14 +760,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
   const manifestPluginApiRange = pluginManifestSummary?.compatibility?.pluginApiRange;
-  const readmePanel = readme ? (
-    <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
-  ) : (
-    <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
-      <p className="empty-state-title">No README available</p>
-      <p className="empty-state-body">This plugin doesn't have a README yet.</p>
-    </div>
-  );
   const versionsPanel = (
     <PluginVersionsPanel
       packageName={pkg.name}
@@ -1200,7 +1229,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           <PluginDetailTabs
             activeTab={activeTab}
             setActiveTab={setActiveTab}
-            readmePanel={readmePanel}
+            readme={readme}
+            readmeAssetBaseUrl={readmeAssetBaseUrl}
             versionsPanel={versionsPanel}
             compatibilityPanel={compatibilityPanel}
             configurationPanel={configurationPanel}
