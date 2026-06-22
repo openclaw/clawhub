@@ -71,7 +71,7 @@
     "verify:convex-contract": "bun scripts/verify-convex-contract.ts"
   },
   "dependencies": {
-    "@auth/core": "0.41.1",
+    "@auth/core": "0.41.2",
     "@convex-dev/auth": "0.0.94",
     "@convex-dev/migrations": "0.3.5",
     "@fontsource/bricolage-grotesque": "5.2.10",
@@ -105,7 +105,7 @@
     "fflate": "0.8.3",
     "h3": "2.0.1-rc.22",
     "ignore": "7.0.5",
-    "lucide-react": "1.20.0",
+    "lucide-react": "1.21.0",
     "mermaid": "^11.15.0",
     "mime": "4.1.0",
     "monaco-editor": "0.55.1",
@@ -115,8 +115,8 @@
     "rehype-raw": "7.0.0",
     "rehype-sanitize": "6.0.0",
     "remark-gfm": "4.0.1",
-    "resend": "6.12.4",
-    "semver": "7.8.4",
+    "resend": "6.14.0",
+    "semver": "7.8.5",
     "shiki": "4.2.0",
     "sonner": "2.0.7",
     "tailwind-merge": "3.6.0",
