@@ -3195,6 +3195,7 @@ async function hasStaffPublisherManager(
       .query("publisherMembers")
       .withIndex("by_publisher_and_role", (q) => q.eq("publisherId", publisherId).eq("role", role))
       .take(MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN + 1);
+    if (members.length > MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN) return true;
 
     for (const member of members) {
       const user = await ctx.db.get(member.userId);

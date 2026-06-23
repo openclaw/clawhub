@@ -3618,12 +3618,20 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
   it("bans large non-staff org publisher candidates", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
     const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx({
-      publisherMembers: Array.from({ length: 101 }, (_, index) => ({
-        _id: `publisherMembers:community-admin-${index}`,
-        publisherId: "publishers:candidate",
-        userId: `users:community-admin-${index}`,
-        role: "admin",
-      })),
+      publisherMembers: [
+        ...Array.from({ length: 101 }, (_, index) => ({
+          _id: `publisherMembers:community-publisher-${index}`,
+          publisherId: "publishers:candidate",
+          userId: `users:community-publisher-${index}`,
+          role: "publisher",
+        })),
+        {
+          _id: "publisherMembers:community-admin",
+          publisherId: "publishers:candidate",
+          userId: "users:community-admin",
+          role: "admin",
+        },
+      ],
     });
 
     get.mockImplementation(async (id: string) => {
@@ -3635,7 +3643,7 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
           email: "target@example.com",
         };
       }
-      if (id.startsWith("users:community-admin-")) {
+      if (id === "users:community-admin") {
         return { _id: id, role: "user" };
       }
       if (id === "publisherAbuseReviewNominations:candidate") {
@@ -3706,6 +3714,74 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
       trigger: "publisher_abuse",
       hiddenArtifacts: 5,
     });
+  });
+
+  it("does not ban when an org publisher manager scan is truncated", async () => {
+    const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx({
+      publisherMembers: Array.from({ length: 101 }, (_, index) => ({
+        _id: `publisherMembers:community-admin-${index}`,
+        publisherId: "publishers:candidate",
+        userId: `users:community-admin-${index}`,
+        role: "admin",
+      })),
+    });
+
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+        };
+      }
+      if (id.startsWith("users:community-admin-")) {
+        return { _id: id, role: "user" };
+      }
+      if (id === "publisherAbuseReviewNominations:candidate") {
+        return publisherAbuseAutobanNomination();
+      }
+      if (id === "publishers:candidate") {
+        return {
+          _id: "publishers:candidate",
+          kind: "org",
+          linkedUserId: "users:target",
+        };
+      }
+      return null;
+    });
+    runMutation
+      .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
+      .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
+      .mockResolvedValueOnce(undefined);
+
+    const handler = (
+      autobanPublisherAbuseOwnerInternal as unknown as {
+        _handler: (
+          ctx: unknown,
+          args: {
+            ownerUserId: string;
+            nominationId: string;
+            scoreId: string;
+            reason: string;
+          },
+        ) => Promise<unknown>;
+      }
+    )._handler;
+
+    await expect(
+      handler(ctx, {
+        ownerUserId: "users:target",
+        nominationId: "publisherAbuseReviewNominations:candidate",
+        scoreId: "publisherAbuseScores:candidate",
+        reason: "publisher_abuse: potential ban candidate",
+      }),
+    ).resolves.toEqual({ ok: false, reason: "nomination_not_actionable" });
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
   });
 
   it("reruns package cleanup for already-banned publisher abuse owners", async () => {

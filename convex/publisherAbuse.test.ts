@@ -4383,6 +4383,13 @@ describe("publisher abuse dry-run persistence", () => {
       displayName: "Large Community Bulk",
       linkedUserId: "users:large-community-bulk",
     };
+    const tooManyManagerOrgPublisher = {
+      ...officialOrgPublisher,
+      _id: "publishers:too-many-managers",
+      handle: "too-many-managers",
+      displayName: "Too Many Managers",
+      linkedUserId: "users:too-many-managers",
+    };
     const staffPublisher = {
       ...officialOrgPublisher,
       _id: "publishers:staff-bulk",
@@ -4412,6 +4419,9 @@ describe("publisher abuse dry-run persistence", () => {
           if (id.startsWith("users:large-community-admin-")) {
             return { _id: id, role: "user" };
           }
+          if (id.startsWith("users:too-many-manager-")) {
+            return { _id: id, role: "user" };
+          }
           return null;
         }),
         insert,
@@ -4426,6 +4436,7 @@ describe("publisher abuse dry-run persistence", () => {
                     staffPublisher,
                     communityOrgPublisher,
                     largeCommunityOrgPublisher,
+                    tooManyManagerOrgPublisher,
                   ],
                   isDone: true,
                   continueCursor: "",
@@ -4480,13 +4491,29 @@ describe("publisher abuse dry-run persistence", () => {
                   take: async () =>
                     constraints.publisherId === largeCommunityOrgPublisher._id &&
                     constraints.role === "admin"
-                      ? Array.from({ length: 101 }, (_, index) => ({
-                          _id: `publisherMembers:large-community-admin-${index}`,
-                          publisherId: largeCommunityOrgPublisher._id,
-                          userId: `users:large-community-admin-${index}`,
-                          role: "admin",
-                        }))
-                      : [],
+                      ? [
+                          ...Array.from({ length: 101 }, (_, index) => ({
+                            _id: `publisherMembers:large-community-publisher-${index}`,
+                            publisherId: largeCommunityOrgPublisher._id,
+                            userId: `users:large-community-publisher-${index}`,
+                            role: "publisher",
+                          })),
+                          {
+                            _id: "publisherMembers:large-community-admin",
+                            publisherId: largeCommunityOrgPublisher._id,
+                            userId: "users:large-community-admin-0",
+                            role: "admin",
+                          },
+                        ].filter((member) => member.role === constraints.role)
+                      : constraints.publisherId === tooManyManagerOrgPublisher._id &&
+                          constraints.role === "admin"
+                        ? Array.from({ length: 101 }, (_, index) => ({
+                            _id: `publisherMembers:too-many-manager-${index}`,
+                            publisherId: tooManyManagerOrgPublisher._id,
+                            userId: `users:too-many-manager-${index}`,
+                            role: "admin",
+                          }))
+                        : [],
                 };
               },
             };
@@ -4497,7 +4524,7 @@ describe("publisher abuse dry-run persistence", () => {
     };
 
     await expect(collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
-      expect.objectContaining({ isDone: false, scanned: 4, phase: "finalizing" }),
+      expect.objectContaining({ isDone: false, scanned: 5, phase: "finalizing" }),
     );
 
     expect(officialLookupIds).toEqual([
@@ -4505,6 +4532,7 @@ describe("publisher abuse dry-run persistence", () => {
       staffPublisher._id,
       communityOrgPublisher._id,
       largeCommunityOrgPublisher._id,
+      tooManyManagerOrgPublisher._id,
     ]);
     expect(insert).toHaveBeenCalledTimes(2);
     expect(insert).toHaveBeenCalledWith(
@@ -4537,10 +4565,16 @@ describe("publisher abuse dry-run persistence", () => {
         ownerPublisherId: staffPublisher._id,
       }),
     );
+    expect(insert).not.toHaveBeenCalledWith(
+      "publisherAbuseScores",
+      expect.objectContaining({
+        ownerPublisherId: tooManyManagerOrgPublisher._id,
+      }),
+    );
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseScoreRuns:run",
       expect.objectContaining({
-        scannedPublishers: 4,
+        scannedPublishers: 5,
         scoredPublishers: 2,
       }),
     );
