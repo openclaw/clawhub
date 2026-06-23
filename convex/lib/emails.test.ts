@@ -121,7 +121,7 @@ describe("moderation notification email copy", () => {
     );
     expect(email.text).toContain("Artifacts hidden");
     expect(email.text).not.toContain("publisher_abuse:");
-    expect(email.text).not.toContain(`Appeal: ${APPEALS_URL}`);
+    expect(email.text).toContain(`Appeal: ${APPEALS_URL}`);
     expect(email.html).toContain("Submit an appeal");
     expect(email.html).toContain("Bulk or spam publishing");
     expect(email.html).toContain("Artificially inflating installs, downloads, stars");
@@ -143,6 +143,7 @@ describe("moderation notification email copy", () => {
         "Your account was identified by ClawHub's publisher abuse review workflow for activity that appears inconsistent with our Acceptable Usage policy.",
     });
     expect(email.text).toContain("Bulk or spam publishing");
+    expect(email.text).toContain(`Appeal: ${APPEALS_URL}`);
     expect(email.text).not.toContain("ClawHub security checks classified the uploaded skill");
   });
 

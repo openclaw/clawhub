@@ -120,7 +120,6 @@ type BanReasonSummary = {
   scannerLabel: string | null;
   findingSummary: string;
   policyReasonItems?: string[];
-  omitTextAppealUrl?: boolean;
 };
 
 function normalizeReasonInput(args: Pick<BanNotificationEmailArgs, "reason" | "trigger">) {
@@ -135,7 +134,6 @@ function summarizeBanReason(args: BanNotificationEmailArgs): BanReasonSummary {
       scannerLabel: null,
       findingSummary: PUBLISHER_ABUSE_FINDING_SUMMARY,
       policyReasonItems: PUBLISHER_ABUSE_POLICY_ITEMS,
-      omitTextAppealUrl: true,
     };
   }
 
@@ -334,7 +332,7 @@ export async function buildBanNotificationEmail(
     "- Existing API tokens for the account have been revoked.",
     "- Published listings owned by the account may be hidden from public view.",
   );
-  if (!summary.omitTextAppealUrl) lines.push("", `Appeal: ${APPEALS_URL}`);
+  lines.push("", `Appeal: ${APPEALS_URL}`);
 
   lines.push("", "ClawHub Security");
 
