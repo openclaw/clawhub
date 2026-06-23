@@ -194,6 +194,86 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Diff" })).toBeNull();
   });
 
+  it("keeps loader-backed skill content visible while staff live query resolves", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:staff", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="github"
+        canonicalOwner="steipete"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "github",
+              displayName: "Github",
+              summary: "Interact with GitHub using the `gh` CLI.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installsCurrent: 5,
+                installsAllTime: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# GitHub Skill",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("status", { name: /Loading skill details/i })).toBeNull();
+    expect(screen.getAllByRole("heading", { name: "Github" }).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Interact with GitHub using the `gh` CLI\./i)).toBeTruthy();
+  });
+
   it("loads skill activity graphs through a deferred one-shot query", async () => {
     const activityTrend = {
       installs: {
