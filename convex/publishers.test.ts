@@ -1608,6 +1608,13 @@ describe("publishers membership controls", () => {
                 ),
               };
             }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
             if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
@@ -1627,7 +1634,7 @@ describe("publishers membership controls", () => {
                 }),
               };
             }
-            if (table === "skills" && indexName === "by_owner_publisher_active_installs") {
+            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
               return indexedRows([
                 {
                   _id: "skills:vyctor-demo",
@@ -1641,7 +1648,7 @@ describe("publishers membership controls", () => {
                 },
               ]);
             }
-            if (table === "packages" && indexName === "by_owner_publisher_active_installs") {
+            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
               return indexedRows([]);
             }
             if (table === "officialPublishers" && indexName === "by_publisher") {
