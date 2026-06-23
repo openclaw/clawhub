@@ -30,6 +30,12 @@ an artifact digest, and releases blocked by ClawHub security or moderation
 state. The feed contains no registry URLs, credentials, source tokens, or
 bootstrap trust keys.
 
+The feed intentionally emits RFC 19's canonical entry shape rather than
+OpenClaw's current legacy bundled-catalog entries. The staged OpenClaw hosted
+feeds stack must add its RFC-entry adapter before `registry.openclaw.ai` is
+enabled as the default client feed; publishing this snapshot is otherwise
+safe, but pre-adapter clients will fall back to their bundled catalog.
+
 ## Publication
 
 `convex/catalogFeed.ts` builds the feed from indexed package queries and stores

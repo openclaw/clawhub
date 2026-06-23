@@ -67,6 +67,8 @@ async function buildEntry(
   const release = await ctx.db.get(pkg.latestReleaseId);
   if (!release || release.packageId !== pkg._id || release.softDeletedAt) return null;
 
+  // Keep ClawHub on RFC 19's canonical feed entry shape. OpenClaw's staged
+  // consumer must land its legacy-catalog adapter before this URL is enabled.
   const scanStatus = resolvePackageReleaseScanStatus(release);
   if (isPackageBlockedFromPublic(scanStatus)) return null;
   const artifactSha256 = getPackageReleaseArtifactSha256(release);
