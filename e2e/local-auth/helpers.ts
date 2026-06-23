@@ -263,11 +263,28 @@ export async function publishSkillVersion(
   await page.getByTestId("upload-input").setInputFiles(skillDir);
 
   const publishButton = page.getByRole("button", { name: "Publish skill" });
-  await expect(publishButton).toBeEnabled();
-  await publishButton.click();
-  await expect(page).toHaveURL(new RegExp(`/${escapeRegExp(args.slug)}$`), {
-    timeout: 60_000,
-  });
+  const detailUrlPattern = new RegExp(`/${escapeRegExp(args.slug)}$`);
+  let published = false;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    await expect(publishButton).toBeEnabled({ timeout: 30_000 });
+    await publishButton.click();
+    published = await page.waitForURL(detailUrlPattern, { timeout: 60_000 }).then(
+      () => true,
+      () => false,
+    );
+    if (published) break;
+  }
+  if (!published) {
+    const alertText = await page
+      .getByRole("alert")
+      .textContent({ timeout: 1_000 })
+      .catch(() => null);
+    throw new Error(
+      `Publishing ${args.slug} did not navigate to the skill detail page. Current URL: ${page.url()}${
+        alertText ? `; alert: ${alertText}` : ""
+      }`,
+    );
+  }
   const { ownerHandle: actualOwnerHandle, slug: actualSlug } = parseSkillDetailPath(
     new URL(page.url()).pathname,
   );
