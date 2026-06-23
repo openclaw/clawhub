@@ -146,7 +146,8 @@ function withoutExpectedBannedSessionTeardownErrors(errors: string[]) {
       !(
         error.includes("Function execution timed out (maximum duration: 1s)") &&
         timedOutDuringBannedSessionTeardown.some((functionName) => error.includes(functionName))
-      ),
+      ) &&
+      !(error.includes("CONVEX A(auth:signIn)") && error.includes("account has been banned")),
   );
 }
 
@@ -230,17 +231,26 @@ test("malicious skill retries keep the clean latest visible, email the publisher
 
   await page.getByRole("button", { name: "Open local dev personas" }).click();
   await page.getByRole("menuitem", { name: /sign out/i }).click();
-  await page.goto("/dashboard?error_description=This%20account%20has%20been%20banned", {
-    waitUntil: "domcontentloaded",
-  });
+  const abusePublisherMenuItem = page.getByRole("menuitem", { name: /use abuse publisher/i });
+  if (!(await abusePublisherMenuItem.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "Open local dev personas" }).click();
+  }
+  await abusePublisherMenuItem.click();
   await expect(page).toHaveURL(/\/account-banned$/, { timeout: 30_000 });
   await expect(
     page.getByRole("heading", { name: "Your ClawHub account has been banned" }),
   ).toBeVisible();
+  await expect(page.getByText(/check your email/i)).toBeVisible();
   await expect(page.getByRole("link", { name: "Open an appeal" })).toHaveAttribute(
     "href",
     "https://appeals.openclaw.ai/",
   );
+  const bannedPageScreenshot = testInfo.outputPath("account-banned-page.png");
+  await page.screenshot({ path: bannedPageScreenshot, fullPage: true });
+  await testInfo.attach("account-banned-page", {
+    path: bannedPageScreenshot,
+    contentType: "image/png",
+  });
 
   await expectHealthyPage(page, withoutExpectedBannedSessionTeardownErrors(errors));
 });

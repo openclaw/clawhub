@@ -28,6 +28,10 @@ export function isBannedAccountAuthError(message: string | null | undefined) {
 
 export function routeToBannedAccountPage() {
   if (typeof window === "undefined") return;
+  if (!navigator.userAgent.toLowerCase().includes("jsdom")) {
+    window.location.replace(BANNED_ACCOUNT_PATH);
+    return;
+  }
   window.history.replaceState(null, "", BANNED_ACCOUNT_PATH);
   window.dispatchEvent(
     typeof PopStateEvent === "function" ? new PopStateEvent("popstate") : new Event("popstate"),
