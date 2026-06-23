@@ -32,12 +32,12 @@ async function tempDir() {
   return dir;
 }
 
-function fakeWorkerSecretFields() {
+function unsafeFixtureLabels() {
   return {
-    apiKeyLabel: ["API", "key"].join(" "),
-    proseApiKey: ["prose", "secret"].join("-"),
-    runtimeApiKey: "sk-short-secret",
-    workerToken: "worker-token-secret",
+    label: ["API", "key"].join(" "),
+    pathSegment: ["unsafe", "label"].join("-"),
+    runtimeValue: "sk-short-fixture",
+    workerValue: "worker-token-fixture",
   };
 }
 
@@ -360,7 +360,7 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("omits signed artifact URLs from download failure errors", async () => {
-    const secrets = fakeWorkerSecretFields();
+    const unsafeLabels = unsafeFixtureLabels();
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("forbidden", { status: 403 }));
@@ -423,10 +423,10 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(message).not.toContain("X-Amz-Signature");
     expect(message).not.toContain("Authorization");
 
-    const secretLabelPath =
-      `secrets/token=${secrets.workerToken}-api_key=${secrets.proseApiKey}-` +
+    const unsafePath =
+      `unsafe/token=${unsafeLabels.workerValue}-api_key=${unsafeLabels.pathSegment}-` +
       `X-Amz-Signature=${"a".repeat(32)}.md`;
-    const secretLabelPathError = await writeArtifactWorkspace(
+    const unsafePathError = await writeArtifactWorkspace(
       {
         job: {
           _id: "job124b",
@@ -439,8 +439,8 @@ describe("run-codex-scan-worker diagnostics", () => {
         target: {
           files: [
             {
-              path: secretLabelPath,
-              sha256: "secret-label-fixture",
+              path: unsafePath,
+              sha256: "unsafe-label-fixture",
               size: 61,
               url: "https://signed.example.invalid/package?token=secret",
             },
@@ -449,21 +449,19 @@ describe("run-codex-scan-worker diagnostics", () => {
       },
       await tempDir(),
     ).catch((caught: unknown) => caught);
-    const secretLabelPathMessage =
-      secretLabelPathError instanceof Error
-        ? secretLabelPathError.message
-        : String(secretLabelPathError);
-    expect(secretLabelPathMessage).toContain("Download failed 403 for artifact file");
-    expect(secretLabelPathMessage).not.toContain(secrets.workerToken);
-    expect(secretLabelPathMessage).not.toContain(`api_key=${secrets.proseApiKey}`);
-    expect(secretLabelPathMessage).not.toContain(secrets.proseApiKey);
-    expect(secretLabelPathMessage).not.toContain("X-Amz-Signature");
+    const unsafePathMessage =
+      unsafePathError instanceof Error ? unsafePathError.message : String(unsafePathError);
+    expect(unsafePathMessage).toContain("Download failed 403 for artifact file");
+    expect(unsafePathMessage).not.toContain(unsafeLabels.workerValue);
+    expect(unsafePathMessage).not.toContain(`api_key=${unsafeLabels.pathSegment}`);
+    expect(unsafePathMessage).not.toContain(unsafeLabels.pathSegment);
+    expect(unsafePathMessage).not.toContain("X-Amz-Signature");
 
     fetchMock.mockRejectedValueOnce(
       new Error(
         `fetch failed https://signed.example.invalid/file?token=secret Authorization: Bearer abc ` +
-          `OPENAI_API_KEY=${secrets.runtimeApiKey} ` +
-          `${secrets.apiKeyLabel}: ${secrets.proseApiKey} ` +
+          `OPENAI_API_KEY=${unsafeLabels.runtimeValue} ` +
+          `${unsafeLabels.label}: ${unsafeLabels.pathSegment} ` +
           `X-Amz-Signature=${"b".repeat(32)}`,
       ),
     );
@@ -506,16 +504,16 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(networkMessage).not.toContain("Bearer abc");
     expect(networkMessage).not.toContain(" abc");
     expect(networkMessage).not.toContain("OPENAI_API_KEY");
-    expect(networkMessage).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
-    expect(networkMessage).not.toContain(secrets.proseApiKey);
-    expect(networkMessage).not.toContain(secrets.runtimeApiKey);
+    expect(networkMessage).not.toContain(`${unsafeLabels.label}: ${unsafeLabels.pathSegment}`);
+    expect(networkMessage).not.toContain(unsafeLabels.pathSegment);
+    expect(networkMessage).not.toContain(unsafeLabels.runtimeValue);
     expect(networkMessage).not.toContain("X-Amz-Signature");
     expect(networkCauseMessage).not.toContain("https://");
     expect(networkCauseMessage).not.toContain("signed.example.invalid");
     expect(networkCauseMessage).not.toContain("token=secret");
     expect(networkCauseMessage).not.toContain("Authorization");
-    expect(networkCauseMessage).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
-    expect(networkCauseMessage).not.toContain(secrets.proseApiKey);
+    expect(networkCauseMessage).not.toContain(`${unsafeLabels.label}: ${unsafeLabels.pathSegment}`);
+    expect(networkCauseMessage).not.toContain(unsafeLabels.pathSegment);
 
     fetchMock.mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
     const clawpackError = await writeArtifactWorkspace(
@@ -624,7 +622,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           '{"verdict":"benign","scan_findings_in_context":[{"ruleId":"x","expected_for_purpose":true,"note":"quoted artifact payload should not persist"}]}',
         stderr: "workspace read failed https://signed.example.invalid/file?token=secret",
         stdout:
-          '{"type":"error","message":"Codex CLI provider returned HTTP 429 for https://signed.example.invalid/file?token=secret with api_key=sk-short-secret"}\n{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I could not inspect the artifact because the provider returned a transient error."}}\n{"type":"tool_call","status":"failed","api_key":"sk-short-secret","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"]}\n',
+          '{"type":"error","message":"Codex CLI provider returned HTTP 429 for https://signed.example.invalid/file?token=secret with api_key=sk-short-fixture"}\n{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I could not inspect the artifact because the provider returned a transient error."}}\n{"type":"tool_call","status":"failed","api_key":"sk-short-fixture","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"]}\n',
       },
       skillSpector: {
         args: ["scan", "artifact", "--format", "json"],
@@ -679,15 +677,15 @@ describe("run-codex-scan-worker diagnostics", () => {
     const jobDir = join(diagnosticsRoot, "job123");
     const stdoutText = await readFile(join(jobDir, "codex.stdout.redacted.jsonl"), "utf8");
     expect(stdoutText).toContain('"tool_call"');
-    expect(stdoutText).toContain("Codex CLI provider returned HTTP 429");
-    expect(stdoutText).toContain(
+    expect(stdoutText).not.toContain("Codex CLI provider returned HTTP 429");
+    expect(stdoutText).not.toContain(
       "I could not inspect the artifact because the provider returned a transient error.",
     );
     expect(stdoutText).not.toContain("token=secret");
     expect(stdoutText).not.toContain("signed.example.invalid");
-    expect(stdoutText).not.toContain("sk-short-secret");
+    expect(stdoutText).not.toContain("sk-short-fixture");
     expect(stdoutText).not.toContain("quoted array artifact payload");
-    expect(stdoutText).toContain('"api_key":"[redacted-secret]"');
+    expect(stdoutText).toContain('"api_key":"[redacted 16 chars]"');
     expect(stdoutText).toContain('"content":"[redacted 1 item(s)]"');
     await expect(readFile(join(jobDir, "codex.stderr.redacted.log"), "utf8")).resolves.toContain(
       "workspace read failed",

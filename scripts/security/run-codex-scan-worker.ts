@@ -20,6 +20,7 @@ import {
   maskKnownWorkerSecrets,
   redactWorkerErrorMessage,
   redactWorkerText,
+  safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
 
 type ClaimedJob = {
@@ -209,44 +210,55 @@ function sanitizeWorkerErrorMessage(value: string) {
 
 const DIAGNOSTIC_CONTENT_KEY_PATTERN =
   /^(code[_-]?snippet|content|detail|evidence|explanation|finding|findings|guidance|match|message|note|notes|output|rawResult|recommendation|result|snippet|stderr|stdout|summary|text|userImpact|user_impact)$/i;
-const DIAGNOSTIC_SECRET_KEY_PATTERN =
-  /(api[_-]?key|authorization|password|secret|token|webhook|credential)/i;
-const CODEX_EVENT_DIAGNOSTIC_TEXT_KEYS = new Set(["message", "text"]);
+const DIAGNOSTIC_METADATA_TEXT_KEYS = new Set([
+  "category",
+  "confidence",
+  "event",
+  "id",
+  "issueid",
+  "kind",
+  "name",
+  "phase",
+  "role",
+  "ruleid",
+  "scanner",
+  "severity",
+  "source",
+  "state",
+  "status",
+  "tool",
+  "type",
+  "verdict",
+]);
 
-function redactDiagnosticValue(value: unknown, key = "", preserveDiagnosticText = false): unknown {
-  if (DIAGNOSTIC_SECRET_KEY_PATTERN.test(key)) return "[redacted-secret]";
+function isDiagnosticMetadataTextKey(key: string) {
+  return DIAGNOSTIC_METADATA_TEXT_KEYS.has(key.replace(/[_-]/g, "").toLowerCase());
+}
+
+function redactDiagnosticValue(value: unknown, key = ""): unknown {
   if (typeof value === "string") {
     const redacted = redactDiagnosticText(value, 2_000);
-    if (preserveDiagnosticText && CODEX_EVENT_DIAGNOSTIC_TEXT_KEYS.has(key)) return redacted;
-    if (!DIAGNOSTIC_CONTENT_KEY_PATTERN.test(key)) return redacted;
+    if (isDiagnosticMetadataTextKey(key)) return redacted;
     return `[redacted ${redacted.length} chars]`;
   }
   if (Array.isArray(value)) {
     if (DIAGNOSTIC_CONTENT_KEY_PATTERN.test(key)) return `[redacted ${value.length} item(s)]`;
-    return value.map((item) => redactDiagnosticValue(item, "", preserveDiagnosticText));
+    return value.map((item) => redactDiagnosticValue(item));
   }
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([entryKey, entryValue]) => [
       entryKey,
-      redactDiagnosticValue(entryValue, entryKey, preserveDiagnosticText),
+      redactDiagnosticValue(entryValue, entryKey),
     ]),
   );
 }
 
-function redactStructuredDiagnosticText(
-  value: string,
-  options?: { preserveDiagnosticText?: boolean },
-) {
+function redactStructuredDiagnosticText(value: string) {
   const trimmed = value.trim();
-  const preserveDiagnosticText = options?.preserveDiagnosticText === true;
   if (!trimmed) return "";
   try {
-    return JSON.stringify(
-      redactDiagnosticValue(JSON.parse(trimmed), "", preserveDiagnosticText),
-      null,
-      2,
-    );
+    return JSON.stringify(redactDiagnosticValue(JSON.parse(trimmed)), null, 2);
   } catch {
     // Codex --json writes JSONL. Redact parseable lines structurally, then fall back to text redaction.
     const lines = value.split("\n");
@@ -255,9 +267,7 @@ function redactStructuredDiagnosticText(
         .map((line) => {
           if (!line.trim()) return line;
           try {
-            return JSON.stringify(
-              redactDiagnosticValue(JSON.parse(line), "", preserveDiagnosticText),
-            );
+            return JSON.stringify(redactDiagnosticValue(JSON.parse(line)));
           } catch {
             return redactDiagnosticText(line, 2_000);
           }
@@ -306,9 +316,7 @@ function sanitizedTargetForArtifactContext(target: ClaimedJob["target"]) {
 
 async function writeDiagnosticText(jobDir: string, fileName: string, value: string | undefined) {
   if (value === undefined) return undefined;
-  const redacted = redactStructuredDiagnosticText(value, {
-    preserveDiagnosticText: fileName === "codex.stdout.redacted.jsonl",
-  });
+  const redacted = redactStructuredDiagnosticText(value);
   await writeFile(join(jobDir, fileName), redacted.endsWith("\n") ? redacted : `${redacted}\n`);
   return fileName;
 }
@@ -397,7 +405,7 @@ function safeOutputPath(workspace: string, artifactPath: string) {
 }
 
 function artifactDownloadDescription(kind: "file" | "clawpack", artifactPath: string) {
-  const safePath = redactDiagnosticText(artifactPath.replace(/[\r\n]+/g, " "), 240);
+  const safePath = safeWorkerArtifactPathLabel(artifactPath);
   return kind === "file" ? `artifact file ${safePath}` : `artifact tarball ${safePath}`;
 }
 
@@ -407,13 +415,9 @@ async function download(url: string, artifact: { kind: "file" | "clawpack"; path
   let response: Response;
   try {
     response = await fetch(url);
-  } catch (error) {
-    const message = sanitizeWorkerErrorMessage(
-      error instanceof Error ? error.message : String(error),
-    );
-    // eslint-disable-next-line preserve-caught-error -- raw fetch errors can include signed artifact URLs.
-    throw new Error(`Download failed for ${description}: ${message || "network error"}`, {
-      cause: new Error(message || "network error"),
+  } catch {
+    throw new Error(`Download failed for ${description}: network error`, {
+      cause: new Error("network error"),
     });
   }
   if (!response.ok) throw new Error(`Download failed ${response.status} for ${description}`);

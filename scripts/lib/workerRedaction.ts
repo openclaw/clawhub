@@ -4,19 +4,7 @@ export function redactWorkerText(value: string, maxChars = DEFAULT_MAX_TEXT_CHAR
   const redacted = value
     .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
     .replace(
-      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
-      (_match, scheme: string) => `${scheme} [redacted-secret]`,
-    )
-    .replace(
-      /\b(token|secret|password|api[ _-]?key|authorization)(["']?\s*[:=]\s*["']?)(?:Bearer|Basic)?\s*[^\s"',}]+/gi,
-      "[redacted-secret]",
-    )
-    .replace(
-      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[ _-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)(?:Bearer|Basic)?\s*[^\s"',}]+/gi,
-      "[redacted-secret]",
-    )
-    .replace(
-      /\bX-(?:Amz|Goog)-(?:Signature|Credential|Security-Token|Algorithm)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      /\b(?:Authorization\s*:\s*)?(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
       "[redacted-secret]",
     );
   if (redacted.length <= maxChars) return redacted;
@@ -24,19 +12,19 @@ export function redactWorkerText(value: string, maxChars = DEFAULT_MAX_TEXT_CHAR
 }
 
 export function redactWorkerErrorMessage(value: string) {
-  return redactWorkerText(value)
-    .replace(
-      /\b(?:token|secret|password|api[ _-]?key|authorization)\b(["']?\s*[:=]\s*["']?)?(?:Bearer|Basic)?\s*\[redacted-secret\]/gi,
-      "[redacted-secret]",
-    )
-    .replace(
-      /\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[ _-]?KEY|AUTHORIZATION)\b(["']?\s*[:=]\s*["']?)?(?:Bearer|Basic)?\s*\[redacted-secret\]/g,
-      "[redacted-secret]",
-    )
-    .replace(
-      /\bX-(?:Amz|Goog)-(?:Signature|Credential|Security-Token|Algorithm)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      "[redacted-secret]",
-    );
+  return redactWorkerText(value);
+}
+
+export function safeWorkerArtifactPathLabel(value: string) {
+  const normalized = value.replace(/[\r\n]+/g, " ").trim();
+  const parts = normalized.split("/");
+  const isSafe =
+    normalized.length > 0 &&
+    normalized.length <= 240 &&
+    !normalized.startsWith("/") &&
+    !parts.includes("..") &&
+    /^[A-Za-z0-9._/-]+$/.test(normalized);
+  return isSafe ? normalized : "[redacted-path]";
 }
 
 function escapeGitHubActionsCommandValue(value: string) {

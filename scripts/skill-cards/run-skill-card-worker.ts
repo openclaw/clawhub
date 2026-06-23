@@ -13,7 +13,7 @@ import {
   maskGitHubActionsSecret,
   maskKnownWorkerSecrets,
   redactWorkerErrorMessage,
-  redactWorkerText,
+  safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
 
 type ClaimedSkillCardJob = {
@@ -142,7 +142,7 @@ function safeOutputPath(workspace: string, artifactPath: string) {
 }
 
 function artifactDownloadDescription(artifactPath: string) {
-  return `artifact file ${redactWorkerText(artifactPath.replace(/[\r\n]+/g, " "), 240)}`;
+  return `artifact file ${safeWorkerArtifactPathLabel(artifactPath)}`;
 }
 
 async function download(url: string, artifact: { path: string }) {
@@ -151,13 +151,9 @@ async function download(url: string, artifact: { path: string }) {
   let response: Response;
   try {
     response = await fetch(url);
-  } catch (error) {
-    const message = redactWorkerErrorMessage(
-      error instanceof Error ? error.message : String(error),
-    );
-    // eslint-disable-next-line preserve-caught-error -- raw fetch errors can include signed artifact URLs.
-    throw new Error(`Download failed for ${description}: ${message || "network error"}`, {
-      cause: new Error(message || "network error"),
+  } catch {
+    throw new Error(`Download failed for ${description}: network error`, {
+      cause: new Error("network error"),
     });
   }
   if (!response.ok) throw new Error(`Download failed ${response.status} for ${description}`);

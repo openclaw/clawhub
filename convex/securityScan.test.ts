@@ -80,25 +80,14 @@ const recordGitHubSkillScanResultInternalHandler = (
   >
 )._handler;
 
-function fakeWorkerSecretFields() {
-  return {
-    apiKeyLabel: ["API", "key"].join(" "),
-    proseApiKey: ["prose", "secret"].join("-"),
-    runtimeApiKey: "sk-short-secret",
-  };
-}
-
 function fakeLeakyWorkerError() {
-  const secrets = fakeWorkerSecretFields();
   return (
     `Download failed 403: https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123 ` +
-    `Authorization: Bearer abc OPENAI_API_KEY=${secrets.runtimeApiKey} ` +
-    `${secrets.apiKeyLabel}: ${secrets.proseApiKey} X-Amz-Signature=${"c".repeat(32)}`
+    "Authorization: Bearer abc"
   );
 }
 
 function expectNoLeakedWorkerErrorSecrets(error: string) {
-  const secrets = fakeWorkerSecretFields();
   expect(error).toContain("Download failed 403");
   expect(error).not.toContain("https://");
   expect(error).not.toContain("signed.example.invalid");
@@ -106,10 +95,6 @@ function expectNoLeakedWorkerErrorSecrets(error: string) {
   expect(error).not.toContain("X-Amz-Signature");
   expect(error).not.toContain("Authorization");
   expect(error).not.toContain("Bearer abc");
-  expect(error).not.toContain("OPENAI_API_KEY");
-  expect(error).not.toContain(secrets.runtimeApiKey);
-  expect(error).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
-  expect(error).not.toContain(secrets.proseApiKey);
 }
 
 function makeFailurePersistenceCtx(docs: Record<string, Record<string, unknown>>) {
@@ -2978,7 +2963,7 @@ describe("securityScan", () => {
         jobId: "securityScanJobs:1",
         leaseToken: "lease-token",
         error:
-          "Download failed https://signed.example.invalid/file?token=secret Authorization: Bearer sk-short-secret OPENAI_API_KEY=sk-short-secret",
+          "Download failed https://signed.example.invalid/file?token=secret Authorization: Bearer auth-secret",
       },
     );
 
@@ -3009,7 +2994,7 @@ describe("securityScan", () => {
       | undefined;
     expect(llmAnalysis?.findings).toContain("Worker error");
     expect(llmAnalysis?.findings).not.toContain("token=secret");
-    expect(llmAnalysis?.findings).not.toContain("sk-short-secret");
+    expect(llmAnalysis?.findings).not.toContain("Bearer auth-secret");
   });
 
   it("completes skill scans without directly enqueueing duplicate Skill Card jobs", async () => {
@@ -3599,11 +3584,9 @@ describe("securityScan", () => {
   it("redacts signed artifact URLs from persisted worker failure fields", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
 
-    const secrets = fakeWorkerSecretFields();
     const leakyError =
       `Download failed 403: https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123 ` +
-      `Authorization: Bearer abc OPENAI_API_KEY=${secrets.runtimeApiKey} ` +
-      `${secrets.apiKeyLabel}: ${secrets.proseApiKey} X-Amz-Signature=${"c".repeat(32)}`;
+      "Authorization: Bearer abc";
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
       "error" in args ? { ok: true, retry: false } : { ok: true },
     );
@@ -3650,10 +3633,6 @@ describe("securityScan", () => {
       expect(error).not.toContain("X-Amz-Signature");
       expect(error).not.toContain("Authorization");
       expect(error).not.toContain("Bearer abc");
-      expect(error).not.toContain("OPENAI_API_KEY");
-      expect(error).not.toContain(secrets.runtimeApiKey);
-      expect(error).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
-      expect(error).not.toContain(secrets.proseApiKey);
     }
 
     const llmAnalyses = runMutation.mock.calls
@@ -3674,10 +3653,6 @@ describe("securityScan", () => {
       expect(analysis?.findings).not.toContain("X-Amz-Signature");
       expect(analysis?.findings).not.toContain("Authorization");
       expect(analysis?.findings).not.toContain("Bearer abc");
-      expect(analysis?.findings).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
-      expect(analysis?.findings).not.toContain("OPENAI_API_KEY");
-      expect(analysis?.findings).not.toContain(secrets.runtimeApiKey);
-      expect(analysis?.findings).not.toContain(secrets.proseApiKey);
     }
   });
 

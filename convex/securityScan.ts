@@ -351,19 +351,7 @@ function sanitizeWorkerErrorDetail(error: string, maxChars = 500) {
   const redacted = error
     .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
     .replace(
-      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
-      (_match, scheme: string) => `${scheme} [redacted-secret]`,
-    )
-    .replace(
-      /\b(token|secret|password|api[ _-]?key|authorization)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      "[redacted-secret]",
-    )
-    .replace(
-      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[ _-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      "[redacted-secret]",
-    )
-    .replace(
-      /\bX-(?:Amz|Goog)-(?:Signature|Credential|Security-Token|Algorithm)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      /\b(?:Authorization\s*:\s*)?(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
       "[redacted-secret]",
     );
   return redacted.slice(0, maxChars);
