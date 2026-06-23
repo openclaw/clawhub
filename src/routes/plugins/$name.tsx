@@ -25,9 +25,7 @@ import {
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
-import { ActivityMetricLabel } from "../../components/ActivityMetricLabel";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
-import { DetailMobileDeferredSection } from "../../components/DetailMobileDeferredSection";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
   DetailSecuritySummary,
@@ -65,7 +63,6 @@ import {
   resolvePluginBrowseCategorySlug,
 } from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
-import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
@@ -91,6 +88,7 @@ import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { useDeferredPackageActivityTrend } from "../../lib/useDeferredActivityTrend";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 
 type PluginDetailRateLimitState = {
   scope: "detail" | "metadata";
@@ -746,6 +744,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
     : undefined;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
+  const [mobileDetailPanel, setMobileDetailPanel] = useState<"content" | "stats">("content");
+  const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   const [isCatalogMetadataDialogOpen, setIsCatalogMetadataDialogOpen] = useState(false);
   const setCatalogMetadata = useMutation(api.packages.setPackageCatalogMetadata);
@@ -1049,10 +1049,99 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />
   ) : null;
+  const pluginSidebarDownloadActions =
+    pkg.latestVersion && !isDownloadBlocked ? (
+      <div className="plugin-sidebar-download-actions">
+        <Button asChild variant="outline" size="sm" className="plugin-sidebar-download-button">
+          <a href={downloadPath}>
+            <Download size={13} aria-hidden="true" />
+            Download
+          </a>
+        </Button>
+      </div>
+    ) : null;
+  const hasDownloadsGraph = activityTrendLoading || Boolean(activityTrend?.downloads);
+  const pluginDownloadsMetricBlock =
+    !hasDownloadsGraph && pluginSidebarDownloadActions
+      ? {
+          ...downloadsMetricBlock,
+          value: (
+            <div className="plugin-downloads-metric-value-row">
+              <div className="plugin-downloads-metric-content">{downloadsMetricBlock.value}</div>
+              {pluginSidebarDownloadActions}
+            </div>
+          ),
+        }
+      : downloadsMetricBlock;
+  const pluginDownloadMetadataBlock =
+    hasDownloadsGraph && pluginSidebarDownloadActions
+      ? {
+          key: "plugin-download",
+          label: "",
+          value: pluginSidebarDownloadActions,
+        }
+      : null;
+  const pluginSidebarMetadataBlocks = hasSourceMetadata
+    ? [
+        pluginDownloadsMetricBlock,
+        { label: "Repository", value: sourceRepoLink },
+        ...(ownerMetadataValue ? [{ label: "Creator", value: ownerMetadataValue }] : []),
+        securitySummary
+          ? {
+              key: "security-audit",
+              label: <DetailSecuritySummaryLabel />,
+              value: securitySummary,
+            }
+          : { label: "", value: null },
+        {
+          grid: [
+            {
+              label: "Last updated",
+              value: (
+                <span title={new Date(pkg.updatedAt).toLocaleString()}>
+                  {timeAgo(pkg.updatedAt)}
+                </span>
+              ),
+            },
+            {
+              label: "Current version",
+              value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
+            },
+          ],
+        },
+        { label: "Type", value: familyLabel(pkg.family) },
+        ...(pluginDownloadMetadataBlock ? [pluginDownloadMetadataBlock] : []),
+      ]
+    : [
+        pluginDownloadsMetricBlock,
+        ...(pluginDownloadMetadataBlock ? [pluginDownloadMetadataBlock] : []),
+      ];
+  const pluginSidebarStatsContent =
+    hasSourceMetadata || pluginSidebarDownloadActions ? (
+      <SidebarMetadata
+        ariaLabel="Plugin metadata"
+        density="compact"
+        className="skill-sidebar-deferred-metadata"
+        blocks={pluginSidebarMetadataBlocks}
+      />
+    ) : null;
+  const managementToolbar = newVersionHref ? (
+    <div className="skill-management-toolbar">
+      <div className="skill-management-toolbar-inner">
+        <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
+          <a href={newVersionHref} aria-label="New version">
+            <Upload size={13} aria-hidden="true" />
+            New version
+          </a>
+        </Button>
+      </div>
+    </div>
+  ) : null;
 
   return (
     <main className="section detail-page-section plugin-detail-page">
       <DetailPageShell>
+        {managementToolbar}
         <DetailHero
           main={
             <div className="skill-hero-title">
@@ -1150,73 +1239,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           }
           sidebar={
             <div className="skill-hero-sidebar-stack">
-              {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref ? (
-                <div className="skill-sidebar-mobile-priority">
-                  <div className="skill-sidebar-actions skill-sidebar-actions-primary">
-                    {pkg.latestVersion && !isDownloadBlocked ? (
-                      <Button asChild variant="outline" className="skill-sidebar-action-button">
-                        <a href={downloadPath}>
-                          <Download size={14} aria-hidden="true" />
-                          Download
-                        </a>
-                      </Button>
-                    ) : null}
-                    {newVersionHref ? (
-                      <Button asChild variant="outline" className="skill-sidebar-action-button">
-                        <a href={newVersionHref} aria-label="New version">
-                          <Upload size={14} aria-hidden="true" />
-                          New version
-                        </a>
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-              {hasSourceMetadata ? (
-                <DetailMobileDeferredSection summary="Stats & details">
-                  <SidebarMetadata
-                    ariaLabel="Plugin metadata"
-                    density="compact"
-                    className="skill-sidebar-deferred-metadata"
-                    blocks={[
-                      activityTrend || activityTrendLoading
-                        ? downloadsMetricBlock
-                        : {
-                            label: <ActivityMetricLabel label="Downloads" />,
-                            value: formatCompactStat(pkg.stats?.downloads ?? 0),
-                            large: true,
-                          },
-                      { label: "Repository", value: sourceRepoLink },
-                      ...(ownerMetadataValue
-                        ? [{ label: "Creator", value: ownerMetadataValue }]
-                        : []),
-                      securitySummary
-                        ? {
-                            key: "security-audit",
-                            label: <DetailSecuritySummaryLabel />,
-                            value: securitySummary,
-                          }
-                        : { label: "", value: null },
-                      {
-                        grid: [
-                          {
-                            label: "Last updated",
-                            value: (
-                              <span title={new Date(pkg.updatedAt).toLocaleString()}>
-                                {timeAgo(pkg.updatedAt)}
-                              </span>
-                            ),
-                          },
-                          {
-                            label: "Current version",
-                            value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
-                          },
-                        ],
-                      },
-                      { label: "Type", value: familyLabel(pkg.family) },
-                    ]}
-                  />
-                </DetailMobileDeferredSection>
+              {pluginSidebarStatsContent && !isMobileDetailLayout ? (
+                <div className="detail-sidebar-stats">{pluginSidebarStatsContent}</div>
               ) : null}
             </div>
           }
@@ -1224,8 +1248,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           <div className="plugin-install-stack detail-mobile-install">
             {incompatibilityAlert}
             <Card className="skill-install-command-card">
-              <CardHeader>
-                <CardTitle>Install</CardTitle>
+              <CardHeader className="detail-hero-summary-row plugin-install-card-header">
+                <CardTitle className="skill-install-panel-title">Install</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="skill-install-command-wrap">
@@ -1272,19 +1296,74 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               </div>
             ) : null}
           </div>
-          <PluginDetailTabs
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            readme={readme}
-            readmeAssetBaseUrl={readmeAssetBaseUrl}
-            versionsPanel={versionsPanel}
-            compatibilityPanel={compatibilityPanel}
-            configurationPanel={configurationPanel}
-            mcpServersPanel={mcpServersPanel}
-            skillsPanel={skillsPanel}
-            validationPanel={validationPanel}
-            validationCount={validationCount}
-          />
+          <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
+            <div
+              className="detail-mobile-master-tab-list"
+              role="tablist"
+              aria-label="Plugin mobile sections"
+            >
+              <button
+                id="plugin-mobile-master-tab-content"
+                className={`detail-mobile-master-tab${
+                  mobileDetailPanel === "content" ? " is-active" : ""
+                }`}
+                type="button"
+                role="tab"
+                aria-selected={mobileDetailPanel === "content"}
+                aria-controls="plugin-mobile-master-panel-content"
+                onClick={() => setMobileDetailPanel("content")}
+              >
+                About
+              </button>
+              {pluginSidebarStatsContent && isMobileDetailLayout ? (
+                <button
+                  id="plugin-mobile-master-tab-stats"
+                  className={`detail-mobile-master-tab${
+                    mobileDetailPanel === "stats" ? " is-active" : ""
+                  }`}
+                  type="button"
+                  role="tab"
+                  aria-selected={mobileDetailPanel === "stats"}
+                  aria-controls="plugin-mobile-master-panel-stats"
+                  onClick={() => setMobileDetailPanel("stats")}
+                >
+                  Stats
+                </button>
+              ) : null}
+            </div>
+            <div
+              className="detail-mobile-master-panel detail-mobile-master-panel-content"
+              id="plugin-mobile-master-panel-content"
+              role="tabpanel"
+              aria-labelledby="plugin-mobile-master-tab-content"
+              hidden={mobileDetailPanel !== "content"}
+            >
+              <PluginDetailTabs
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                readme={readme}
+                readmeAssetBaseUrl={readmeAssetBaseUrl}
+                versionsPanel={versionsPanel}
+                compatibilityPanel={compatibilityPanel}
+                configurationPanel={configurationPanel}
+                mcpServersPanel={mcpServersPanel}
+                skillsPanel={skillsPanel}
+                validationPanel={validationPanel}
+                validationCount={validationCount}
+              />
+            </div>
+            {pluginSidebarStatsContent && isMobileDetailLayout ? (
+              <div
+                className="detail-mobile-master-panel detail-mobile-master-stats"
+                id="plugin-mobile-master-panel-stats"
+                role="tabpanel"
+                aria-labelledby="plugin-mobile-master-tab-stats"
+                hidden={mobileDetailPanel !== "stats"}
+              >
+                {pluginSidebarStatsContent}
+              </div>
+            ) : null}
+          </div>
         </DetailHero>
       </DetailPageShell>
       {manageContext ? (

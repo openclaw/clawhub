@@ -5070,7 +5070,16 @@ code {
 
   .skill-hero-layout.has-sidebar > .skill-hero-lower.has-sidebar {
     grid-column: 1 / -1;
-    grid-template-columns: subgrid;
+    grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+    column-gap: clamp(56px, 7vw, 96px);
+  }
+
+  .skill-hero-lower.has-sidebar > .skill-hero-main-extra {
+    grid-column: 1;
+  }
+
+  .skill-hero-lower.has-sidebar > .skill-hero-sidebar {
+    grid-column: 2;
   }
 }
 
@@ -5089,6 +5098,11 @@ code {
 }
 
 .skill-hero-lower.has-sidebar {
+  --detail-hero-summary-content-height: 40px;
+  --detail-hero-summary-row-padding-bottom: 12px;
+  --detail-hero-summary-row-block-size: calc(
+    var(--detail-hero-summary-content-height) + var(--detail-hero-summary-row-padding-bottom)
+  );
   grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
   gap: clamp(56px, 7vw, 96px);
 }
@@ -5130,8 +5144,12 @@ code {
 }
 
 .skill-hero-title-row {
+  display: flex;
   width: 100%;
   margin-bottom: -4px;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .skill-hero-heading-stack {
@@ -5175,12 +5193,113 @@ code {
   white-space: nowrap;
 }
 
-.skill-hero-title-row {
+.skill-sidebar-star-band .skill-sidebar-star-action {
+  display: inline-flex;
+  width: fit-content;
+  max-width: 100%;
+  justify-content: flex-start;
+  min-height: var(--detail-hero-summary-content-height, 40px);
+  padding: 0;
+  color: var(--ink-soft);
+  font-weight: 620;
+}
+
+.detail-hero-summary-row {
   display: flex;
+  align-items: center;
+  box-sizing: border-box;
   width: 100%;
+  min-height: var(--detail-hero-summary-row-block-size, 52px);
+  padding-bottom: var(--detail-hero-summary-row-padding-bottom, 12px);
+  border-bottom: 1px solid var(--line);
+}
+
+.skill-sidebar-star-band.detail-hero-summary-row {
+  padding-inline: 2px;
+}
+
+.skill-sidebar-star-band .skill-sidebar-star-action:hover,
+.skill-sidebar-star-band .skill-sidebar-star-action:focus-visible {
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.plugin-install-card-header.detail-hero-summary-row {
+  flex-direction: row;
   align-items: center;
   gap: 12px;
+}
+
+.plugin-downloads-metric-value-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
+.plugin-downloads-metric-content {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.plugin-sidebar-download-actions {
+  display: flex;
+  flex: 0 0 auto;
   flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.plugin-sidebar-download-actions .plugin-sidebar-download-button {
+  width: auto;
+  flex: 0 0 auto;
+  justify-content: center;
+  min-height: 32px;
+  padding: 5px 10px;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.plugin-sidebar-download-actions .plugin-sidebar-download-button svg {
+  color: color-mix(in srgb, var(--ink-soft) 84%, transparent);
+}
+
+.sidebar-metadata-compact
+  > .sidebar-metadata-row:not(.sidebar-metadata-row-large):has(.plugin-sidebar-download-actions) {
+  gap: 0;
+  padding-block: 12px;
+}
+
+.sidebar-metadata-compact
+  > .sidebar-metadata-row:not(.sidebar-metadata-row-large):has(.plugin-sidebar-download-actions)
+  .sidebar-metadata-label {
+  display: none;
+}
+
+.sidebar-metadata-compact
+  > .sidebar-metadata-row:not(.sidebar-metadata-row-large):has(.plugin-sidebar-download-actions)
+  .plugin-sidebar-download-actions,
+.sidebar-metadata-compact
+  > .sidebar-metadata-row:not(.sidebar-metadata-row-large):has(.plugin-sidebar-download-actions)
+  .plugin-sidebar-download-button {
+  width: 100%;
+  justify-content: center;
+}
+
+.sidebar-metadata-row-large:has(.plugin-downloads-metric-value-row) {
+  gap: 10px;
+}
+
+.sidebar-metadata-row-large:has(.plugin-downloads-metric-value-row) .sidebar-metadata-value {
+  width: 100%;
+}
+
+.sidebar-metadata-row-large:has(.metric-trend-card) .plugin-downloads-metric-value-row {
+  align-items: flex-start;
 }
 
 .skill-hero-mobile-creator {
@@ -5291,11 +5410,73 @@ code {
 
 .skill-title-actions {
   display: flex;
+  flex: 0 0 auto;
   gap: 10px;
   margin-left: auto;
   flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
+}
+
+.skill-management-toolbar {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-height: 0;
+  padding: 0 2px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.skill-management-toolbar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  width: 100%;
+}
+
+.skill-management-toolbar-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px !important;
+  height: auto;
+  padding: 5px 10px !important;
+  border: 0;
+  border-radius: var(--r-btn);
+  background: transparent;
+  color: var(--ink-soft);
+  font: inherit;
+  font-size: 0.78rem !important;
+  font-weight: 650 !important;
+  line-height: 1;
+  cursor: pointer;
+  text-decoration: none;
+  white-space: nowrap;
+  transition:
+    color 0.15s,
+    background 0.15s;
+}
+
+.skill-management-toolbar-action svg {
+  color: color-mix(in srgb, var(--ink-soft) 84%, transparent);
+}
+
+.skill-management-toolbar-action:hover,
+.skill-management-toolbar-action:focus-visible {
+  color: var(--ink);
+  background: color-mix(in srgb, var(--ink-soft) 10%, transparent);
+  text-decoration: none;
+  outline: none;
+}
+
+.skill-management-toolbar-action:hover svg,
+.skill-management-toolbar-action:focus-visible svg {
+  color: color-mix(in srgb, var(--ink) 72%, var(--ink-soft));
+}
+
+.skill-management-toolbar-action-subtle {
+  color: color-mix(in srgb, var(--ink-soft) 64%, var(--bg));
 }
 
 .skill-title-badges {
@@ -5600,6 +5781,16 @@ code {
   justify-content: flex-start;
 }
 
+.skill-sidebar-actions-secondary .skill-sidebar-action-link {
+  color: color-mix(in srgb, var(--ink-soft) 72%, var(--bg));
+  font-weight: 560;
+}
+
+.skill-sidebar-actions-secondary .skill-sidebar-action-link:hover,
+.skill-sidebar-actions-secondary .skill-sidebar-action-link:focus-visible {
+  color: var(--ink-soft);
+}
+
 .skill-sidebar-action-link {
   display: inline-flex;
   align-items: center;
@@ -5880,9 +6071,19 @@ code {
 }
 
 .sidebar-metadata-compact > .sidebar-metadata-row:first-child {
-  min-height: var(--detail-summary-row-height, auto);
   box-sizing: border-box;
   padding-top: 0;
+}
+
+.skill-hero-sidebar-stack:has(.skill-sidebar-star-band)
+  .sidebar-metadata-compact
+  > .sidebar-metadata-row:first-child,
+.skill-hero-sidebar-stack:has(.skill-sidebar-star-band)
+  .sidebar-metadata-compact
+  > .sidebar-metadata-grid:first-child
+  .sidebar-metadata-row:first-child {
+  min-height: 0;
+  padding-top: var(--space-4);
 }
 
 .sidebar-metadata-compact .sidebar-metadata-label {
@@ -6478,15 +6679,9 @@ code {
 }
 
 .skill-install-command-header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: 12px;
   flex-wrap: wrap;
-  min-height: var(--detail-summary-row-height, auto);
-  box-sizing: border-box;
-  padding-bottom: 12px;
-  border-bottom: 1px solid var(--line);
 }
 
 [data-theme-resolved="light"] .skill-install-command-card {
@@ -6623,12 +6818,17 @@ code {
   top: 50%;
   right: 12px;
   width: 34px;
+  min-width: 34px;
+  max-width: 34px;
   height: 34px;
+  min-height: 34px;
   padding-inline: 0;
+  padding-block: 0;
   transform: translateY(-50%);
 }
 
-.skill-install-command-shell:not(.skill-install-command-shell-cli) .skill-install-command-inline-button {
+.skill-install-command-shell:not(.skill-install-command-shell-cli)
+  .skill-install-command-inline-button {
   top: 12px;
   transform: none;
 }
@@ -6813,6 +7013,10 @@ code {
     display: none;
   }
 
+  .plugin-detail-page .skill-hero-sidebar-stack {
+    display: none;
+  }
+
   .detail-mobile-install {
     order: 1;
     width: 100%;
@@ -6875,6 +7079,32 @@ code {
     border-color: color-mix(in srgb, var(--line) 72%, transparent);
     background: color-mix(in srgb, var(--surface-muted) 76%, var(--bg));
     padding: 12px 52px 12px 14px;
+  }
+
+  .detail-mobile-install .skill-install-command-shell-cli {
+    overflow-x: hidden;
+  }
+
+  .detail-mobile-install .skill-install-command-shell-cli .skill-install-command,
+  .detail-mobile-install .skill-install-command-shell-cli .skill-install-command code {
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .detail-mobile-install .skill-install-command-shell-cli .skill-install-command-inline-button {
+    position: absolute;
+    top: 50%;
+    right: 12px;
+    width: 34px;
+    height: 34px;
+    min-height: 34px !important;
+    max-width: 34px;
+    margin-top: 0;
+    padding: 0 !important;
+    transform: translateY(-50%);
+    flex: none;
+    justify-content: center;
   }
 
   .skill-hero-main-extra
@@ -7261,6 +7491,19 @@ code {
   .skill-hero-lower.has-sidebar {
     display: grid;
     flex-direction: unset;
+  }
+
+  .skill-hero-sidebar-stack {
+    gap: 0;
+  }
+
+  .skill-hero-lower.has-sidebar .detail-hero-summary-row {
+    height: var(--detail-hero-summary-row-block-size);
+    min-height: var(--detail-hero-summary-row-block-size);
+  }
+
+  .skill-install-command-header.detail-hero-summary-row {
+    flex-wrap: nowrap;
   }
 }
 
@@ -14084,25 +14327,75 @@ a.agentic-risk-finding-title:focus-visible {
     width: 100%;
   }
 
-  .skill-install-command-wrap .skill-install-command {
+  .skill-install-command-shell-cli {
+    flex-wrap: nowrap;
+    align-items: center;
+    overflow-x: hidden;
+    padding: 12px 52px 12px 14px;
+  }
+
+  .skill-install-command-shell-cli .skill-install-command-prompt {
+    flex: 0 0 auto;
+  }
+
+  .skill-install-command-shell-cli .skill-install-command {
+    display: block;
+    flex: 1 1 auto;
+    width: auto;
+    min-width: 0;
+    max-width: none;
+    padding-right: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    text-overflow: clip;
+    white-space: nowrap;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .skill-install-command-shell-cli .skill-install-command code {
+    display: inline;
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  .skill-install-command-shell-cli .skill-install-command-inline-button {
+    position: absolute;
+    top: 50%;
+    right: 10px;
+    width: 34px;
+    height: 34px;
+    min-height: 34px !important;
+    max-width: 34px;
+    margin-top: 0;
+    padding: 0 !important;
+    transform: translateY(-50%);
+    flex: none;
+    justify-content: center;
+  }
+
+  .skill-install-command-shell:not(.skill-install-command-shell-cli) .skill-install-command {
     padding-right: 0;
     overflow: visible;
     text-overflow: clip;
     white-space: pre-wrap;
   }
 
-  .skill-install-command-wrap .skill-install-command code {
+  .skill-install-command-shell:not(.skill-install-command-shell-cli) .skill-install-command code {
     overflow: visible;
     text-overflow: clip;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
   }
 
-  .skill-install-command-shell {
+  .skill-install-command-shell:not(.skill-install-command-shell-cli) {
     padding-right: 18px;
   }
 
-  .skill-install-command-inline-button {
+  .skill-install-command-shell:not(.skill-install-command-shell-cli)
+    .skill-install-command-inline-button {
     position: static;
     width: 100%;
     margin-top: 8px;
@@ -14110,7 +14403,7 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .skill-install-prompt-trigger,
-  .skill-install-copy-button {
+  .skill-install-copy-button:not(.skill-install-command-inline-button) {
     width: 100%;
     justify-content: center;
   }
@@ -17160,10 +17453,16 @@ body:has(.browse-page-borderless-header) .navbar {
   :is(.skill-detail-page, .plugin-detail-page) .detail-mobile-tabs .tab-body {
     gap: 16px;
     padding: var(--detail-mobile-surface-padding);
-    padding-top: 0;
     border: 0;
     border-radius: 0;
     background: transparent;
+  }
+
+  .plugin-detail-page
+    .detail-mobile-master-panel-content
+    .detail-mobile-tabs
+    .tab-body.skill-readme-body {
+    padding-top: calc(var(--detail-mobile-surface-padding) + 2px);
   }
 
   :is(.skill-detail-page, .plugin-detail-page) .tab-body {

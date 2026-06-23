@@ -143,12 +143,18 @@ export function SkillDetailSkeleton({ kind = "skill" }: SkillDetailSkeletonProps
 
               <aside className="skill-hero-sidebar">
                 <div className="skill-hero-sidebar-stack">
-                  <div className="skill-sidebar-mobile-priority">
-                    <div className="skill-sidebar-actions skill-sidebar-actions-primary">
-                      <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
-                      <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
+                  {!isPlugin ? (
+                    <div className="skill-sidebar-star-band detail-hero-summary-row">
+                      <Skeleton className="h-5 w-full max-w-[220px]" />
                     </div>
-                  </div>
+                  ) : (
+                    <div className="skill-sidebar-mobile-priority">
+                      <div className="skill-sidebar-actions skill-sidebar-actions-primary">
+                        <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
+                        <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
+                      </div>
+                    </div>
+                  )}
 
                   <div
                     className="detail-skeleton-deferred"

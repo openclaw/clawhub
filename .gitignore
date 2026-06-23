@@ -4,6 +4,7 @@ node_modules
 *.bun-build
 .artifacts/
 artifacts/
+.proof/
 .cache/
 .data/
 bin/docs-list

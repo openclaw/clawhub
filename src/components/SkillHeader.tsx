@@ -171,7 +171,6 @@ export function SkillHeader({
   const installOwnerId = owner?._id ?? skill.ownerPublisherId ?? skill.ownerUserId ?? null;
   const hasOwnerActions = Boolean(newVersionHref) || Boolean(settingsHref);
   const showReportAction = !canManage || isStaff;
-  const hasSidebarActions = hasOwnerActions || showReportAction || isStaff;
   const badges = getSkillBadges(skill);
   const isOfficial = badges.includes("Official") || owner?.official === true;
   const titleBadges = badges.filter((badge) => badge !== "Official");
@@ -188,48 +187,79 @@ export function SkillHeader({
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   const [mobileDetailPanel, setMobileDetailPanel] = useState<MobileDetailPanel>("content");
 
-  const renderSidebarActions = () =>
-    hasSidebarActions ? (
+  const renderStarAction = () => (
+    <SignedInActionTooltip
+      isAuthenticated={isAuthenticated}
+      message="You must be signed in to star a skill"
+    >
+      <button
+        type="button"
+        className="skill-sidebar-action-link skill-sidebar-star-action"
+        onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
+        aria-pressed={Boolean(isAuthenticated && isStarred)}
+        aria-label={isStarred ? "Unstar skill" : "Star skill"}
+      >
+        <Star
+          size={14}
+          aria-hidden="true"
+          fill={isAuthenticated && isStarred ? "currentColor" : "none"}
+        />
+        {isAuthenticated && isStarred ? "Unstar" : "Star"}
+        <span className="skill-action-count">{formattedStats.stars}</span>
+      </button>
+    </SignedInActionTooltip>
+  );
+
+  const renderSidebarActions = () => {
+    if (!showReportAction) return null;
+    return (
       <div className="skill-sidebar-actions skill-sidebar-actions-secondary">
-        {newVersionHref ? (
-          <Button asChild variant="outline" className="skill-sidebar-action-button">
-            <a href={newVersionHref} aria-label="New version">
-              <Upload size={14} aria-hidden="true" />
-              New version
-            </a>
-          </Button>
-        ) : null}
-        {settingsHref ? (
-          <Button asChild variant="outline" className="skill-sidebar-action-button">
-            <a href={settingsHref} aria-label="Settings">
-              <Settings size={14} aria-hidden="true" />
-              Settings
-            </a>
-          </Button>
-        ) : null}
-        {showReportAction ? (
-          <SignedInActionTooltip
-            isAuthenticated={isAuthenticated}
-            message="You must be signed in to report a skill"
+        <SignedInActionTooltip
+          isAuthenticated={isAuthenticated}
+          message="You must be signed in to report a skill"
+        >
+          <button
+            type="button"
+            className="skill-sidebar-action-link"
+            onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
           >
-            <button
-              type="button"
-              className="skill-sidebar-action-link"
-              onClick={isAuthenticated ? onOpenReport : onRequireSignIn}
-            >
-              <Flag size={14} aria-hidden="true" />
-              Report
-            </button>
-          </SignedInActionTooltip>
-        ) : null}
-        {isStaff ? (
-          <Button asChild variant="outline" className="skill-sidebar-action-button">
-            <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
-              <ShieldCheck size={14} aria-hidden="true" />
-              Manage
-            </Link>
-          </Button>
-        ) : null}
+            <Flag size={14} aria-hidden="true" />
+            Report
+          </button>
+        </SignedInActionTooltip>
+      </div>
+    );
+  };
+
+  const managementToolbar =
+    hasOwnerActions || isStaff ? (
+      <div className="skill-management-toolbar">
+        <div className="skill-management-toolbar-inner">
+          {newVersionHref ? (
+            <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
+              <a href={newVersionHref} aria-label="New version">
+                <Upload size={13} aria-hidden="true" />
+                New version
+              </a>
+            </Button>
+          ) : null}
+          {settingsHref ? (
+            <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
+              <a href={settingsHref} aria-label="Settings">
+                <Settings size={13} aria-hidden="true" />
+                Settings
+              </a>
+            </Button>
+          ) : null}
+          {isStaff ? (
+            <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
+              <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
+                <ShieldCheck size={13} aria-hidden="true" />
+                Manage
+              </Link>
+            </Button>
+          ) : null}
+        </div>
       </div>
     ) : null;
 
@@ -297,34 +327,14 @@ export function SkillHeader({
         </div>
       ) : null}
 
+      {managementToolbar}
+
       <DetailHero
         topClassName={hasPluginBundle ? "has-plugin" : undefined}
         sidebar={
           <div className="skill-hero-sidebar-stack">
-            <div className="skill-sidebar-mobile-priority">
-              <div className="skill-sidebar-actions skill-sidebar-actions-primary">
-                <SignedInActionTooltip
-                  isAuthenticated={isAuthenticated}
-                  message="You must be signed in to star a skill"
-                >
-                  <Button
-                    variant="outline"
-                    type="button"
-                    className="skill-sidebar-action-button"
-                    onClick={isAuthenticated ? onToggleStar : onRequireSignIn}
-                    aria-pressed={Boolean(isAuthenticated && isStarred)}
-                    aria-label={isStarred ? "Unstar skill" : "Star skill"}
-                  >
-                    <Star
-                      size={14}
-                      aria-hidden="true"
-                      fill={isAuthenticated && isStarred ? "currentColor" : "none"}
-                    />
-                    {isAuthenticated && isStarred ? "Unstar" : "Star"}
-                    <span className="skill-action-count">{formattedStats.stars}</span>
-                  </Button>
-                </SignedInActionTooltip>
-              </div>
+            <div className="skill-sidebar-star-band detail-hero-summary-row">
+              {renderStarAction()}
             </div>
             <div className="detail-sidebar-stats">{desktopStatsContent}</div>
           </div>

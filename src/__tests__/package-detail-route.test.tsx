@@ -173,7 +173,31 @@ function openRelease(version: string) {
 }
 
 describe("plugin detail route", () => {
+  function setViewportWidth(width: number) {
+    vi.stubGlobal("matchMedia", (query: string) => {
+      const minWidth = /\(min-width:\s*(\d+)px\)/.exec(query)?.[1];
+      const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(query)?.[1];
+      const matches = minWidth
+        ? width >= Number(minWidth)
+        : maxWidth
+          ? width <= Number(maxWidth)
+          : false;
+
+      return {
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      };
+    });
+  }
+
   beforeEach(() => {
+    setViewportWidth(1071);
     paramsMock = { name: "demo-plugin" };
     pathnameMock = "/plugins/demo-plugin";
     window.location.hash = "";
@@ -227,6 +251,46 @@ describe("plugin detail route", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("uses mobile About and Stats tabs below 901px", async () => {
+    setViewportWidth(488);
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+          stats: { downloads: 597, installs: 0, stars: 0, versions: 1 },
+        },
+        owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
+      },
+      version: loaderDataMock.version,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const { container } = render(<Component />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".detail-mobile-master-tab-list")).toBeTruthy();
+    });
+
+    expect(screen.getByRole("tab", { name: "About" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Stats" }).getAttribute("aria-selected")).toBe("false");
+    expect(
+      container.querySelector("#plugin-mobile-master-panel-stats")?.hasAttribute("hidden"),
+    ).toBe(true);
+    expect(container.querySelector(".detail-sidebar-stats")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Stats" }));
+
+    expect(screen.getByRole("tab", { name: "Stats" }).getAttribute("aria-selected")).toBe("true");
+    expect(
+      container.querySelector("#plugin-mobile-master-panel-stats")?.hasAttribute("hidden"),
+    ).toBe(false);
+    expect(screen.getByText("Downloads")).toBeTruthy();
   });
 
   it("hides download actions when the plugin has no latest release", async () => {
@@ -575,14 +639,11 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "README.md",
-      "Skills",
-      "MCP Servers",
-      "Configuration",
-      "Compatibility",
-      "Versions",
-    ]);
+    expect(
+      Array.from(document.querySelectorAll(".detail-mobile-tabs .tab-button"), (tab) =>
+        tab.textContent?.trim(),
+      ),
+    ).toEqual(["README.md", "Skills", "MCP Servers", "Configuration", "Compatibility", "Versions"]);
     expect(screen.getByRole("tab", { name: "Compatibility" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Configuration" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "MCP Servers" })).toBeTruthy();
@@ -948,7 +1009,13 @@ describe("plugin detail route", () => {
           latestVersion: "1.0.0",
           stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
         },
-        owner: null,
+        owner: {
+          _id: "users:demo",
+          handle: "demo-owner",
+          name: "Demo Owner",
+          displayName: "Demo Owner",
+          image: null,
+        },
       },
     };
     convexQueryMock.mockResolvedValueOnce({
@@ -988,7 +1055,6 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "About activity counts" })).toBeNull();
     expect(
       convexQueryMock.mock.calls.some(([query, args]) => {
         return (
@@ -1007,6 +1073,28 @@ describe("plugin detail route", () => {
         ([query]) => getFunctionName(query as never) === "packages:getActivityTrendForName",
       ),
     ).toBe(false);
+
+    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
+    expect(sidebarMetadata).toBeTruthy();
+    const sidebarRows = Array.from(
+      sidebarMetadata?.querySelectorAll(".sidebar-metadata-row") ?? [],
+      (row) => ({
+        text: row.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        hasDownload: Boolean(row.querySelector(".plugin-sidebar-download-button")),
+      }),
+    );
+    const downloadsRow = sidebarRows.find((row) => row.text.includes("Downloads"));
+    const creatorRow = sidebarRows.find((row) => row.text.includes("Creator"));
+    const downloadOnlyRow = sidebarRows.find((row) => row.hasDownload);
+    const typeRow = sidebarRows.find((row) => row.text.includes("Code Plugin"));
+    expect(downloadsRow?.hasDownload).toBe(false);
+    expect(downloadOnlyRow).toBeTruthy();
+    expect(creatorRow).toBeTruthy();
+    expect(typeRow).toBeTruthy();
+    expect(sidebarRows.at(-1)).toEqual(downloadOnlyRow);
+    expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
+      "/api/v1/packages/demo-plugin/download?version=1.0.0",
+    );
   });
 
   it("falls back to all-time plugin stats when activity graphs are unavailable", async () => {
@@ -1037,6 +1125,12 @@ describe("plugin detail route", () => {
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
+
+    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
+    const downloadsRow = sidebarMetadata?.querySelector(".sidebar-metadata-row-large");
+    expect(downloadsRow?.textContent).toContain("Downloads");
+    expect(downloadsRow?.querySelector(".plugin-sidebar-download-button")).toBeTruthy();
+    expect(sidebarMetadata?.querySelectorAll(".plugin-sidebar-download-button")).toHaveLength(1);
   });
 
   it("shows plugin settings when the viewer can manage the plugin", async () => {

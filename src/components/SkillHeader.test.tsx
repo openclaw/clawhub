@@ -422,6 +422,41 @@ describe("SkillHeader", () => {
     expect(screen.getByRole("button", { name: "Report" })).toBeTruthy();
   });
 
+  it("shows Manage in the management toolbar for staff", () => {
+    const { container } = renderHeader({
+      isStaff: true,
+      skill: { ...skill, slug: "release-checker" },
+    });
+
+    const toolbar = container.querySelector(".skill-management-toolbar");
+    expect(toolbar).toBeTruthy();
+    const manageLink = within(toolbar as HTMLElement).getByRole("link", { name: "Manage" });
+    expect(manageLink.getAttribute("href")).toContain("skill=release-checker");
+    expect(within(sidebarStatsRoot(container)).queryByRole("link", { name: "Manage" })).toBeNull();
+  });
+
+  it("places Report in the sidebar instead of the management toolbar", () => {
+    const { container } = renderHeader();
+
+    const toolbar = container.querySelector(".skill-management-toolbar");
+    expect(toolbar).toBeNull();
+    expect(
+      within(sidebarStatsRoot(container)).getByRole("button", { name: "Report" }),
+    ).toBeTruthy();
+  });
+
+  it("places Star in the sidebar without an outline button", () => {
+    const { container } = renderHeader();
+
+    const starBand = container.querySelector(".skill-sidebar-star-band");
+    expect(starBand).toBeTruthy();
+    const starButton = within(starBand as HTMLElement).getByRole("button", {
+      name: "Star skill",
+    });
+    expect(starButton.className).toContain("skill-sidebar-star-action");
+    expect(container.querySelector(".skill-hero-title-row .skill-title-actions")).toBeNull();
+  });
+
   it("does not render a separate warning banner for scanner warnings", () => {
     renderHeader({
       modInfo: {

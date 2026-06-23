@@ -202,7 +202,7 @@ export function SkillCommandLineCard({
 
   return (
     <article className="skill-install-command-card">
-      <div className="skill-install-command-header">
+      <div className="skill-install-command-header detail-hero-summary-row">
         <h3 className="skill-install-panel-title">Install</h3>
         <div
           className="install-switcher-toggle"
