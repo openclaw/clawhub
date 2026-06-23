@@ -4,7 +4,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { consumePostPublishFlash, setPostPublishFlash } from "./postPublishFlash";
 
 describe("postPublishFlash", () => {
+  const originalSessionStorage = window.sessionStorage;
+
   beforeEach(() => {
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: originalSessionStorage,
+    });
     window.sessionStorage.clear();
     vi.restoreAllMocks();
   });
@@ -24,8 +30,15 @@ describe("postPublishFlash", () => {
   });
 
   it("reports when storage is unavailable", () => {
-    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
-      throw new Error("storage disabled");
+    const unavailableSessionStorage: Pick<Storage, "setItem"> = {
+      setItem: () => {
+        throw new Error("storage disabled");
+      },
+    };
+
+    Object.defineProperty(window, "sessionStorage", {
+      configurable: true,
+      value: unavailableSessionStorage,
     });
 
     expect(setPostPublishFlash("steipete", "weather")).toBe(false);

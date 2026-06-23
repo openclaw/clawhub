@@ -14,13 +14,14 @@ vi.mock("@tanstack/react-router", async () => {
 });
 
 describe("AccountBannedPage", () => {
-  it("renders appeal-only banned account guidance", () => {
+  it("renders banned account guidance with email and appeal next steps", () => {
     render(<AccountBannedPage />);
 
     expect(
       screen.getByRole("heading", { name: "Your ClawHub account has been banned" }),
     ).toBeTruthy();
     expect(screen.getByText("This account cannot sign in to ClawHub.")).toBeTruthy();
+    expect(screen.getByText(/check your email/i)).toBeTruthy();
 
     const appealLink = screen.getByRole("link", { name: "Open an appeal" });
     expect(appealLink.getAttribute("href")).toBe("https://appeals.openclaw.ai/");

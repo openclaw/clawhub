@@ -102,6 +102,54 @@ export async function handleDeletedUserSignIn(
   throw new ConvexError(DELETED_ACCOUNT_REAUTH_MESSAGE);
 }
 
+type AuthProfile = Record<string, unknown> & {
+  email?: string;
+  phone?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
+};
+
+function userDataFromAuthProfile(args: {
+  provider: { type: string; allowDangerousEmailAccountLinking?: boolean };
+  profile: AuthProfile;
+}) {
+  const {
+    emailVerified: profileEmailVerified,
+    phoneVerified: profilePhoneVerified,
+    ...profile
+  } = args.profile;
+  const emailVerified =
+    profileEmailVerified ??
+    ((args.provider.type === "oauth" || args.provider.type === "oidc") &&
+      args.provider.allowDangerousEmailAccountLinking !== false);
+  const phoneVerified = profilePhoneVerified ?? false;
+
+  return {
+    ...(emailVerified ? { emailVerificationTime: Date.now() } : null),
+    ...(phoneVerified ? { phoneVerificationTime: Date.now() } : null),
+    ...profile,
+  };
+}
+
+async function schedulePostUserCreatedOrUpdated(
+  ctx: GenericMutationCtx<DataModel>,
+  userId: Id<"users">,
+  user: Parameters<typeof shouldScheduleGitHubProfileSync>[0],
+) {
+  await ctx.scheduler.runAfter(0, internal.publishers.ensurePersonalPublisherInternal, {
+    userId,
+  });
+
+  // Schedule GitHub profile sync to handle username renames (fixes #303).
+  // This runs as a background action so it doesn't block sign-in.
+  const now = Date.now();
+  if (shouldScheduleGitHubProfileSync(user, now)) {
+    await ctx.scheduler.runAfter(0, internal.users.syncGitHubProfileAction, {
+      userId,
+    });
+  }
+}
+
 export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   providers: [
     createGitHubAuthProvider(),
@@ -125,30 +173,37 @@ export const { auth, signIn, signOut, store, isAuthenticated } = convexAuth({
   ],
   callbacks: {
     /**
-     * Block sign-in for deleted/deactivated users and sync GitHub profile.
+     * Create/update users and sync GitHub profile.
      *
-     * Performance note: This callback runs on every OAuth sign-in, but the
-     * audit log query ONLY executes when a legacy deleted user attempts to sign
-     * in (user.deletedAt is set). For active users, this is a single field check.
+     * Banned/deleted users keep the OAuth callback non-mutating so code
+     * redemption can fail in beforeSessionCreation and render /account-banned.
      *
      * The GitHub profile sync is scheduled as a background action to handle
      * the case where a user renames their GitHub account (fixes #303).
      */
-    async afterUserCreatedOrUpdated(ctx, args) {
-      const user = await ctx.db.get(args.userId);
-      await handleDeletedUserSignIn(ctx, args, user);
-      await ctx.scheduler.runAfter(0, internal.publishers.ensurePersonalPublisherInternal, {
-        userId: args.userId,
-      });
-
-      // Schedule GitHub profile sync to handle username renames (fixes #303)
-      // This runs as a background action so it doesn't block sign-in
-      const now = Date.now();
-      if (shouldScheduleGitHubProfileSync(user, now)) {
-        await ctx.scheduler.runAfter(0, internal.users.syncGitHubProfileAction, {
-          userId: args.userId,
-        });
+    async createOrUpdateUser(ctx, args) {
+      const userData = userDataFromAuthProfile(args);
+      if (args.existingUserId !== null) {
+        const userId = args.existingUserId as Id<"users">;
+        const existingUser = await ctx.db.get(userId);
+        if (existingUser?.deletedAt || existingUser?.deactivatedAt) {
+          return userId;
+        }
+        await ctx.db.patch(userId, userData);
+        await schedulePostUserCreatedOrUpdated(ctx, userId, existingUser);
+        return userId;
       }
+
+      const userId = await ctx.db.insert("users", userData);
+      const user = await ctx.db.get(userId);
+      await schedulePostUserCreatedOrUpdated(ctx, userId, user);
+      return userId;
+    },
+    async beforeSessionCreation(ctx, args) {
+      await handleDeletedUserSignIn(ctx, {
+        userId: args.userId,
+        existingUserId: args.userId,
+      });
     },
   },
 });
