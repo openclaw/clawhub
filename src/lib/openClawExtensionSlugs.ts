@@ -1,4 +1,1 @@
-export {
-  getOpenClawExtensionPackageName,
-  getOpenClawPackageCandidateNames,
-} from "clawhub-schema";
+export { getOpenClawExtensionPackageName, getOpenClawPackageCandidateNames } from "clawhub-schema";
