@@ -8,7 +8,18 @@ import {
   resolveStoredPluginCategories,
 } from "clawhub-schema";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { ArrowUpRight, Building2, Flag, MoreHorizontal, Search } from "lucide-react";
+import {
+  ArrowRight,
+  ArrowUpRight,
+  Building2,
+  Download,
+  Flag,
+  MoreHorizontal,
+  Package,
+  Search,
+  Star,
+  type LucideIcon,
+} from "lucide-react";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
@@ -125,9 +136,10 @@ type ProfileCatalogTab = "skills" | "plugins" | "stars";
 type ProfileCatalogSort = "downloads" | "recent" | "stars";
 
 const VISIBLE_ORG_CHIPS = 2;
-const VISIBLE_MEMBER_CHIPS = 4;
+const VISIBLE_MEMBER_STACK = 8;
 const CATALOG_SEARCH_THRESHOLD = 8;
 const PUBLISHER_REPORT_DISCORD_URL = "https://discord.gg/clawd";
+const DEFAULT_PUBLISHER_BIO = "Publisher on Clawhub.";
 
 const PROFILE_CATALOG_SORT_OPTIONS = [
   { value: "downloads", label: "Most downloaded" },
@@ -227,12 +239,234 @@ function PublisherProfileBio({ bio }: { bio: string }) {
   );
 }
 
+type PublisherMemberEntry = PublisherMemberResult["members"][number];
+
+type PublisherStatCard = {
+  key: string;
+  value: string;
+  label: string;
+  icon: LucideIcon;
+};
+
+export function buildPublisherStatCards(
+  publisher: PublicPublisherListItem,
+  publishedCount: number,
+): PublisherStatCard[] {
+  return [
+    {
+      key: "downloads",
+      value: formatCompactStat(publisher.stats.downloads),
+      label: "downloads",
+      icon: Download,
+    },
+    {
+      key: "stars",
+      value: formatCompactStat(publisher.stats.stars),
+      label: "stars",
+      icon: Star,
+    },
+    {
+      key: "published",
+      value: formatCompactStat(publishedCount),
+      label: "published",
+      icon: Package,
+    },
+  ];
+}
+
+function PublisherProfileStatCards({ cards }: { cards: PublisherStatCard[] }) {
+  return (
+    <dl className="publisher-profile-stat-cards" aria-label="Publisher stats">
+      {cards.map((card) => {
+        const Icon = card.icon;
+        return (
+          <div key={card.key} className="publisher-profile-stat">
+            <Icon size={15} aria-hidden="true" className="publisher-profile-stat-icon" />
+            <dd className="publisher-profile-stat-value">{card.value}</dd>
+            <dt className="publisher-profile-stat-label">{card.label}</dt>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+function PublisherProfileMemberMenuRow({
+  entry,
+  publisherHandle,
+  showRole,
+}: {
+  entry: PublisherMemberEntry;
+  publisherHandle: string;
+  showRole: boolean;
+}) {
+  const name = entry.user.displayName ?? entry.user.handle ?? "User";
+
+  return (
+    <Link
+      to="/user/$handle"
+      params={{ handle: entry.user.handle ?? publisherHandle }}
+      className="publisher-profile-member-menu-row"
+    >
+      <MarketplaceIcon kind="user" label={name} imageUrl={entry.user.image} size="xs" />
+      <span
+        className={`publisher-profile-member-menu-copy${showRole ? "" : " publisher-profile-member-menu-copy-single"}`}
+      >
+        <span className="publisher-profile-member-menu-name">
+          {name}
+          {entry.user.official ? <OfficialBadge /> : null}
+        </span>
+        {showRole ? (
+          <span className="publisher-profile-member-menu-role">{entry.role}</span>
+        ) : null}
+      </span>
+      <ArrowRight
+        size={14}
+        aria-hidden="true"
+        className="publisher-profile-member-menu-arrow"
+      />
+    </Link>
+  );
+}
+
+function PublisherProfileMembers({
+  members,
+  publisherHandle,
+  showMemberRoles,
+}: {
+  members: PublisherMemberEntry[];
+  publisherHandle: string;
+  showMemberRoles: boolean;
+}) {
+  const stackMembers = members.slice(0, VISIBLE_MEMBER_STACK);
+  const hiddenMemberCount = Math.max(0, members.length - VISIBLE_MEMBER_STACK);
+
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          className="publisher-profile-members-trigger"
+          aria-label={`Show ${members.length} members`}
+        >
+          <span className="publisher-profile-member-avatar-stack" aria-hidden="true">
+            {stackMembers.map((entry, index) => {
+              const name = entry.user.displayName ?? entry.user.handle ?? "User";
+              return (
+                <span
+                  key={`${entry.user._id}:${entry.role}`}
+                  className="publisher-profile-member-avatar-stack-item"
+                  style={{ zIndex: stackMembers.length - index }}
+                  title={name}
+                >
+                  <MarketplaceIcon kind="user" label={name} imageUrl={entry.user.image} size="xs" />
+                </span>
+              );
+            })}
+          </span>
+          {hiddenMemberCount > 0 ? (
+            <span className="publisher-profile-members-more">+{hiddenMemberCount} more</span>
+          ) : null}
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent
+        align="start"
+        sideOffset={6}
+        className="publisher-profile-members-menu !overflow-hidden !rounded-2xl p-0 shadow-none"
+        aria-label={`${members.length} members`}
+      >
+        <div className="publisher-profile-members-menu-list">
+          {members.map((entry) => (
+            <DropdownMenuItem key={`${entry.user._id}:${entry.role}`} asChild>
+              <PublisherProfileMemberMenuRow
+                entry={entry}
+                publisherHandle={publisherHandle}
+                showRole={showMemberRoles}
+              />
+            </DropdownMenuItem>
+          ))}
+        </div>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
 function PublisherProfile() {
   const { handle } = Route.useParams();
   const { publisher: loaderPublisher } = Route.useLoaderData() as {
     publisher: PublicPublisherListItem;
   };
   return <PublisherProfilePage handle={handle} loaderPublisher={loaderPublisher} />;
+}
+
+function PublisherProfileChromeActions({
+  isAuthenticated,
+  onReport,
+  requireSignIn,
+}: {
+  isAuthenticated: boolean;
+  onReport: () => void;
+  requireSignIn: () => void;
+}) {
+  return (
+    <div className="publisher-profile-chrome-actions">
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            aria-label="Profile actions"
+            className="publisher-profile-chrome-more-trigger rounded-full focus-visible:ring-0 focus-visible:ring-offset-0"
+          >
+            <MoreHorizontal size={16} aria-hidden="true" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="publisher-profile-chrome-more-menu">
+          <DropdownMenuItem
+            onSelect={() => {
+              if (!isAuthenticated) {
+                requireSignIn();
+                return;
+              }
+              onReport();
+            }}
+          >
+            <Flag size={14} aria-hidden="true" />
+            Report profile
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </div>
+  );
+}
+
+function PublisherProfileChromeIdentity({
+  publisher,
+}: {
+  publisher: PublicPublisherListItem;
+}) {
+  return (
+    <div className="publisher-profile-chrome-identity">
+      <div className="publisher-profile-avatar">
+        <MarketplaceIcon
+          kind={publisher.kind === "org" ? "org" : "user"}
+          label={publisher.displayName}
+          imageUrl={publisher.image}
+          size="md"
+        />
+      </div>
+      <div className="publisher-profile-heading">
+        <div className="publisher-profile-title-row">
+          <h1>
+            <span className="publisher-profile-title-text">{publisher.displayName}</span>
+          </h1>
+          {publisher.official ? <OfficialTag /> : null}
+        </div>
+        <span className="publisher-profile-handle">@{publisher.handle}</span>
+      </div>
+    </div>
+  );
 }
 
 export function PublisherProfilePage({
@@ -249,7 +483,6 @@ export function PublisherProfilePage({
   const [catalogSearch, setCatalogSearch] = useState("");
   const [selectedCatalogGroup, setSelectedCatalogGroup] = useState("all");
   const [showAllOrgs, setShowAllOrgs] = useState(false);
-  const [showAllMembers, setShowAllMembers] = useState(false);
   const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
   const [reportReason, setReportReason] = useState("");
   const [reportError, setReportError] = useState<string | null>(null);
@@ -287,6 +520,21 @@ export function PublisherProfilePage({
     | PublisherMemberResult
     | null
     | undefined;
+
+  const myPublisherMemberships = useQuery(
+    api.publishers.listMine,
+    isAuthenticated ? {} : "skip",
+  ) as Array<{ publisher: { handle: string; kind: "user" | "org" }; role: string }> | undefined;
+
+  const viewerCanSeeMemberRoles = useMemo(() => {
+    if (!myPublisherMemberships) return false;
+    return myPublisherMemberships.some(
+      (entry) =>
+        entry.publisher.kind === "org" &&
+        entry.publisher.handle === handle &&
+        (entry.role === "owner" || entry.role === "admin"),
+    );
+  }, [myPublisherMemberships, handle]);
 
   const {
     results: publishedResults,
@@ -430,7 +678,6 @@ export function PublisherProfilePage({
   const publishedCount = publisher.stats.skills + publisher.stats.packages;
   const affiliations = publisher.affiliations ?? [];
   const memberEntries = members?.members ?? [];
-  const memberCount = memberEntries.length;
   const activeStatus = catalogTab === "stars" ? starredStatus : publishedStatus;
   const activeLoadMore = catalogTab === "stars" ? loadMoreStarred : loadMore;
   const isLoadingCatalog = activeStatus === "LoadingFirstPage";
@@ -452,13 +699,10 @@ export function PublisherProfilePage({
 
   const visibleOrgs = showAllOrgs ? affiliations : affiliations.slice(0, VISIBLE_ORG_CHIPS);
   const hiddenOrgCount = Math.max(0, affiliations.length - VISIBLE_ORG_CHIPS);
-  const visibleMembers = showAllMembers
-    ? memberEntries
-    : memberEntries.slice(0, VISIBLE_MEMBER_CHIPS);
-  const hiddenMemberCount = Math.max(0, memberEntries.length - VISIBLE_MEMBER_CHIPS);
   const showOrganizations = publisher.kind === "user" && affiliations.length > 0;
   const showMembers = publisher.kind === "org" && memberEntries.length > 0;
-  const showDetailsAside = showOrganizations;
+  const publisherStatCards = buildPublisherStatCards(publisher, publishedCount);
+  const profileBio = publisher.bio?.trim() || DEFAULT_PUBLISHER_BIO;
 
   return (
     <main className="publisher-profile-route">
@@ -466,98 +710,47 @@ export function PublisherProfilePage({
         <div className="publisher-profile-page">
           <section className="publisher-profile-chrome" aria-label="Publisher profile">
             <div className="publisher-profile-chrome-top">
-              <div className="publisher-profile-chrome-identity">
-                <div className="publisher-profile-avatar">
-                  <MarketplaceIcon
-                    kind={publisher.kind === "org" ? "org" : "user"}
-                    label={publisher.displayName}
-                    imageUrl={publisher.image}
-                    size="md"
-                  />
-                </div>
-                <div className="publisher-profile-heading">
-                  <div className="publisher-profile-title-row">
-                    <h1>
-                      <span className="publisher-profile-title-text">{publisher.displayName}</span>
-                    </h1>
-                    {publisher.official ? <OfficialTag /> : null}
-                  </div>
-                  <span className="publisher-profile-handle">@{publisher.handle}</span>
-                  <div className="publisher-profile-stat-strip" aria-label="Publisher stats">
-                    <span>
-                      <strong>{formatCompactStat(publisher.stats.downloads)}</strong> downloads
-                    </span>
-                    <span className="publisher-profile-stat-sep" aria-hidden="true">
-                      ·
-                    </span>
-                    <span>
-                      <strong>{formatCompactStat(publisher.stats.stars)}</strong> stars
-                    </span>
-                    <span className="publisher-profile-stat-sep" aria-hidden="true">
-                      ·
-                    </span>
-                    <span>
-                      <strong>{formatCompactStat(publishedCount)}</strong> published
-                    </span>
-                    {publisher.kind === "org" ? (
-                      <>
-                        <span className="publisher-profile-stat-sep" aria-hidden="true">
-                          ·
-                        </span>
-                        <span>
-                          <strong>{formatCompactStat(memberCount)}</strong>{" "}
-                          {memberCount === 1 ? "member" : "members"}
-                        </span>
-                      </>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-
-              <div className="publisher-profile-chrome-actions">
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      type="button"
-                      size="icon-sm"
-                      variant="ghost"
-                      aria-label="Profile actions"
-                      className="publisher-profile-chrome-more-trigger focus-visible:ring-0 focus-visible:ring-offset-0"
-                    >
-                      <MoreHorizontal size={16} aria-hidden="true" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="publisher-profile-chrome-more-menu">
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        if (!isAuthenticated) {
-                          requireSignIn();
-                          return;
-                        }
-                        openReportDialog();
-                      }}
-                    >
-                      <Flag size={14} aria-hidden="true" />
-                      Report profile
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+              <PublisherProfileChromeIdentity publisher={publisher} />
+              <PublisherProfileChromeActions
+                isAuthenticated={isAuthenticated}
+                onReport={openReportDialog}
+                requireSignIn={() => {
+                  void signIn("github");
+                }}
+              />
             </div>
 
-            <div
-              className={`publisher-profile-details${showDetailsAside ? " publisher-profile-details-has-aside" : ""}`}
-            >
-              <div className="publisher-profile-details-main">
-                {publisher.bio ? (
+            <div className="publisher-profile-chrome-divider" aria-hidden="true" />
+
+            <div className="publisher-profile-chrome-body">
+              <div className="publisher-profile-chrome-content">
+                <div className="publisher-profile-about-row">
                   <section className="publisher-profile-detail-block" aria-label="About">
                     <h2 className="publisher-profile-detail-label">About</h2>
-                    <PublisherProfileBio bio={publisher.bio} />
+                    <PublisherProfileBio bio={profileBio} />
                   </section>
-                ) : null}
+                  <PublisherProfileStatCards cards={publisherStatCards} />
+                </div>
 
                 <div className="publisher-profile-details-inline">
-                  <section className="publisher-profile-detail-block" aria-label="Links">
+                  {showMembers ? (
+                    <section
+                      className="publisher-profile-detail-block publisher-profile-detail-block-fit publisher-profile-details-members"
+                      aria-label="Members"
+                    >
+                      <h2 className="publisher-profile-detail-label">Members</h2>
+                      <PublisherProfileMembers
+                        members={memberEntries}
+                        publisherHandle={publisher.handle}
+                        showMemberRoles={viewerCanSeeMemberRoles}
+                      />
+                    </section>
+                  ) : null}
+
+                  <section
+                    className="publisher-profile-detail-block publisher-profile-details-links"
+                    aria-label="Links"
+                  >
                     <h2 className="publisher-profile-detail-label">Links</h2>
                     <div className="publisher-profile-meta-row">
                       <a
@@ -576,88 +769,44 @@ export function PublisherProfilePage({
                       </a>
                     </div>
                   </section>
-
-                  {showMembers ? (
-                    <section className="publisher-profile-detail-block" aria-label="Members">
-                      <h2 className="publisher-profile-detail-label">Members</h2>
-                      <div className="publisher-profile-meta-chips">
-                        {visibleMembers.map((entry) => (
-                          <Link
-                            key={`${entry.user._id}:${entry.role}`}
-                            to="/user/$handle"
-                            params={{ handle: entry.user.handle ?? publisher.handle }}
-                            className="publisher-profile-meta-chip"
-                          >
-                            <MarketplaceIcon
-                              kind="user"
-                              label={entry.user.displayName ?? entry.user.handle ?? "User"}
-                              imageUrl={entry.user.image}
-                              size="xs"
-                            />
-                            <span className="publisher-profile-meta-chip-copy">
-                              <strong>
-                                {entry.user.displayName ?? entry.user.handle ?? "User"}
-                                {entry.user.official ? <OfficialBadge /> : null}
-                              </strong>
-                              <small>{entry.role}</small>
-                            </span>
-                          </Link>
-                        ))}
-                        {!showAllMembers && hiddenMemberCount > 0 ? (
-                          <button
-                            type="button"
-                            className="publisher-profile-meta-chip publisher-profile-meta-chip-more"
-                            onClick={() => setShowAllMembers(true)}
-                          >
-                            +{hiddenMemberCount}
-                          </button>
-                        ) : null}
-                      </div>
-                    </section>
-                  ) : null}
                 </div>
+
+                {showOrganizations ? (
+                  <section className="publisher-profile-detail-block" aria-label="Organizations">
+                    <h2 className="publisher-profile-detail-label">Organizations</h2>
+                    <div className="publisher-profile-meta-chips">
+                      {visibleOrgs.map((entry) => (
+                        <Link
+                          key={entry.publisher._id}
+                          to="/user/$handle"
+                          params={{ handle: entry.publisher.handle }}
+                          className="publisher-profile-meta-chip"
+                        >
+                          <MarketplaceIcon
+                            kind="org"
+                            label={entry.publisher.displayName}
+                            imageUrl={entry.publisher.image}
+                            size="xs"
+                          />
+                          <span className="publisher-profile-meta-chip-copy">
+                            <strong>{entry.publisher.displayName}</strong>
+                            <small>{entry.role}</small>
+                          </span>
+                        </Link>
+                      ))}
+                      {!showAllOrgs && hiddenOrgCount > 0 ? (
+                        <button
+                          type="button"
+                          className="publisher-profile-meta-chip publisher-profile-meta-chip-more"
+                          onClick={() => setShowAllOrgs(true)}
+                        >
+                          +{hiddenOrgCount}
+                        </button>
+                      ) : null}
+                    </div>
+                  </section>
+                ) : null}
               </div>
-
-              {showDetailsAside ? (
-                <div className="publisher-profile-details-aside">
-                  {showOrganizations ? (
-                    <section className="publisher-profile-detail-block" aria-label="Organizations">
-                      <h2 className="publisher-profile-detail-label">Organizations</h2>
-                      <div className="publisher-profile-meta-chips">
-                        {visibleOrgs.map((entry) => (
-                          <Link
-                            key={entry.publisher._id}
-                            to="/user/$handle"
-                            params={{ handle: entry.publisher.handle }}
-                            className="publisher-profile-meta-chip"
-                          >
-                            <MarketplaceIcon
-                              kind="org"
-                              label={entry.publisher.displayName}
-                              imageUrl={entry.publisher.image}
-                              size="xs"
-                            />
-                            <span className="publisher-profile-meta-chip-copy">
-                              <strong>{entry.publisher.displayName}</strong>
-                              <small>{entry.role}</small>
-                            </span>
-                          </Link>
-                        ))}
-                        {!showAllOrgs && hiddenOrgCount > 0 ? (
-                          <button
-                            type="button"
-                            className="publisher-profile-meta-chip publisher-profile-meta-chip-more"
-                            onClick={() => setShowAllOrgs(true)}
-                          >
-                            +{hiddenOrgCount}
-                          </button>
-                        ) : null}
-                      </div>
-                    </section>
-                  ) : null}
-
-                </div>
-              ) : null}
             </div>
           </section>
 
@@ -918,6 +1067,18 @@ function PublisherCatalogItems({ items }: { items: PublicPublisherCatalogItem[] 
   );
 }
 
+function PublisherCatalogGroupSection({ group }: { group: PublisherCatalogGroup }) {
+  return (
+    <section className="publisher-profile-manifest-section" aria-labelledby={`catalog-group-${group.key}`}>
+      <header className="publisher-profile-manifest-heading">
+        <h3 id={`catalog-group-${group.key}`}>{group.title}</h3>
+        {group.description ? <p>{group.description}</p> : null}
+      </header>
+      <PublisherCatalogItems items={group.items} />
+    </section>
+  );
+}
+
 export function PublisherGroupedCatalog({
   groups,
   selectedGroup,
@@ -931,7 +1092,6 @@ export function PublisherGroupedCatalog({
 }) {
   const activeGroup =
     selectedGroup === "all" ? null : (groups.find((group) => group.key === selectedGroup) ?? null);
-  const visibleItems = activeGroup?.items ?? groups.flatMap((group) => group.items);
   const groupTabOptions = buildPublisherGroupTabOptions(groups);
 
   return (
@@ -947,10 +1107,15 @@ export function PublisherGroupedCatalog({
           }}
         />
       </div>
-      {activeGroup?.description ? (
-        <p className="publisher-profile-group-description">{activeGroup.description}</p>
+      {selectedGroup === "all" ? (
+        <div className="publisher-profile-catalog-sections">
+          {groups.map((group) => (
+            <PublisherCatalogGroupSection key={group.key} group={group} />
+          ))}
+        </div>
+      ) : activeGroup ? (
+        <PublisherCatalogGroupSection group={activeGroup} />
       ) : null}
-      <PublisherCatalogItems items={visibleItems} />
       {footer}
     </div>
   );

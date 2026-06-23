@@ -40,6 +40,7 @@ vi.mock("@tanstack/react-router", () => ({
     __config: config,
     useLoaderData: () => loaderDataMock(),
     useParams: () => ({ handle: "nvidia" }),
+    useSearch: () => ({}),
   }),
   Link: ({
     children,
@@ -112,7 +113,7 @@ describe("user profile route", () => {
 
     const stats = screen.getByLabelText("Publisher stats");
     expect(within(stats).getByText("42")).toBeTruthy();
-    expect(within(stats).getByText("downloads")).toBeTruthy();
+    expect(within(stats).getByText(/downloads/i)).toBeTruthy();
     expect(within(stats).queryByText("installs")).toBeNull();
   });
 
@@ -235,13 +236,17 @@ describe("user profile route", () => {
     expect(within(groupTabs).getByRole("radio", { name: /gpu development 1/i })).toBeTruthy();
     expect(within(groupTabs).getByRole("radio", { name: /travel 1/i })).toBeTruthy();
     expect(within(groupTabs).getByRole("radio", { name: /uncategorized 1/i })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "GPU development · 1" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "GPU development" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Travel" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Uncategorized" })).toBeTruthy();
     expect(screen.getByText("GPU Helper")).toBeTruthy();
     expect(screen.getByText("Travel Helper")).toBeTruthy();
     expect(screen.getByText("Orphan Helper")).toBeTruthy();
 
     fireEvent.click(within(groupTabs).getByRole("radio", { name: /travel 1/i }));
 
+    expect(screen.getByRole("heading", { name: "Travel" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "GPU development" })).toBeNull();
     expect(screen.getByText("Travel Helper")).toBeTruthy();
     expect(screen.queryByText("GPU Helper")).toBeNull();
     expect(screen.queryByText("Orphan Helper")).toBeNull();
