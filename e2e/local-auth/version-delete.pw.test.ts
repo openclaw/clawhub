@@ -7,7 +7,7 @@ import {
   trackRuntimeErrors,
   waitForHydration,
 } from "../helpers/runtimeErrors";
-import { signInAsLocalPersona } from "./helpers";
+import { buildPluginDetailHref, buildSkillDetailHref, signInAsLocalPersona } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -285,7 +285,9 @@ test("owners can permanently delete individual non-latest skill and plugin versi
 
   await signInAsLocalPersona(page, "user");
 
-  await page.goto(`/${fixture.handle}/${fixture.skillSlug}`, { waitUntil: "domcontentloaded" });
+  await page.goto(buildSkillDetailHref(fixture.handle, fixture.skillSlug), {
+    waitUntil: "domcontentloaded",
+  });
   await waitForHydration(page);
   await expect(page.locator(".skill-page-title")).toHaveText(skillDisplayName);
   await page.getByRole("tab", { name: "Versions" }).click();
@@ -311,7 +313,7 @@ test("owners can permanently delete individual non-latest skill and plugin versi
     fullPage: true,
   });
 
-  await page.goto(`/plugins/${encodeURIComponent(fixture.packageName)}`, {
+  await page.goto(buildPluginDetailHref(fixture.packageName, { ownerHandle: fixture.handle }), {
     waitUntil: "domcontentloaded",
   });
   await waitForHydration(page);
@@ -395,7 +397,7 @@ test("owners can permanently delete individual non-latest skill and plugin versi
   const publicPage = await publicContext.newPage();
   const publicErrors = trackRuntimeErrors(publicPage);
   try {
-    await publicPage.goto(`/${fixture.handle}/${fixture.skillSlug}`, {
+    await publicPage.goto(buildSkillDetailHref(fixture.handle, fixture.skillSlug), {
       waitUntil: "domcontentloaded",
     });
     await waitForHydration(publicPage);
@@ -403,9 +405,12 @@ test("owners can permanently delete individual non-latest skill and plugin versi
     await publicPage.getByRole("tab", { name: "Versions" }).click();
     await expectPublicVersionsList(publicPage);
 
-    await publicPage.goto(`/plugins/${encodeURIComponent(fixture.packageName)}`, {
-      waitUntil: "domcontentloaded",
-    });
+    await publicPage.goto(
+      buildPluginDetailHref(fixture.packageName, { ownerHandle: fixture.handle }),
+      {
+        waitUntil: "domcontentloaded",
+      },
+    );
     await waitForHydration(publicPage);
     await expect(publicPage.locator(".skill-page-title")).toHaveText(packageDisplayName);
     await publicPage.getByRole("tab", { name: "Versions" }).click();

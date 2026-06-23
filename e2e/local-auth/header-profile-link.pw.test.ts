@@ -16,14 +16,14 @@ test("signed-in avatar menu links to the active user profile", async ({ page }, 
 
   const profileLink = page.getByRole("menuitem", { name: "Profile" });
   await expect(profileLink).toBeVisible();
-  await expect(profileLink).toHaveAttribute("href", "/user/local");
+  await expect(profileLink).toHaveAttribute("href", "/local");
   await page.screenshot({
     path: testInfo.outputPath("signed-in-avatar-menu.png"),
     fullPage: true,
   });
 
   await profileLink.click();
-  await page.waitForURL("**/user/local");
+  await page.waitForURL("**/local");
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: "Local Owner" })).toBeVisible();
   await expectHealthyPage(page, errors);

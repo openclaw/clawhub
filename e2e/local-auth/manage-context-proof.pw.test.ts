@@ -2,7 +2,11 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
-import { signInAsLocalPersona } from "./helpers";
+import {
+  buildPluginDetailHref,
+  buildPluginSecurityAuditHref,
+  signInAsLocalPersona,
+} from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -231,7 +235,9 @@ test("plugin manage context query returns only slim catalog metadata", async ({ 
   const errors = trackRuntimeErrors(page);
 
   await signInAsLocalPersona(page, "owner");
-  await page.goto("/plugins/local-scanned-runtime-plugin", { waitUntil: "domcontentloaded" });
+  await page.goto(buildPluginDetailHref("local-scanned-runtime-plugin", { ownerHandle: "local" }), {
+    waitUntil: "domcontentloaded",
+  });
   await waitForHydration(page);
 
   await expect(
@@ -241,9 +247,12 @@ test("plugin manage context query returns only slim catalog metadata", async ({ 
 
   await expectSlimManageContextPayload(page);
 
-  await page.goto("/plugins/local-scanned-runtime-plugin/security-audit", {
-    waitUntil: "domcontentloaded",
-  });
+  await page.goto(
+    buildPluginSecurityAuditHref("local-scanned-runtime-plugin", { ownerHandle: "local" }),
+    {
+      waitUntil: "domcontentloaded",
+    },
+  );
   await waitForHydration(page);
 
   await expect(

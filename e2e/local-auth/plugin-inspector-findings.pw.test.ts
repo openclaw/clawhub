@@ -2,7 +2,12 @@ import { writeFile } from "node:fs/promises";
 import { expect, type Page, test, type TestInfo } from "@playwright/test";
 import { strToU8, zipSync } from "fflate";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
-import { signInAsLocalPersona } from "./helpers";
+import {
+  buildPluginDetailHref,
+  buildPluginValidationHref,
+  escapeRegExp,
+  signInAsLocalPersona,
+} from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -136,12 +141,12 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
 
   await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
-  const dashboardWarningLink = page.locator(`a[href="/plugins/${warningName}#validation"]`);
+  const dashboardWarningLink = page.locator(`a[href="${buildPluginValidationHref(warningName)}"]`);
   await expect(dashboardWarningLink).toBeVisible({ timeout: 30_000 });
   await captureProof(page, testInfo, "03-dashboard-warning-count");
   await dashboardWarningLink.click();
 
-  await expect(page).toHaveURL(new RegExp(`/plugins/${warningName}#validation$`));
+  await expect(page).toHaveURL(new RegExp(`/plugins/${escapeRegExp(warningName)}#validation$`));
   await expect(page.getByRole("tab", { name: /Validation \(\d+\)/ })).toHaveAttribute(
     "aria-selected",
     "true",

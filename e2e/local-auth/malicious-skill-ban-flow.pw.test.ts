@@ -5,7 +5,7 @@ import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
-import { publishSkillVersion, signInAsLocalPublisher } from "./helpers";
+import { buildSkillDetailHref, publishSkillVersion, signInAsLocalPublisher } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -203,7 +203,7 @@ test("malicious skill retries keep the clean latest visible, email the publisher
           ).length === 1,
       );
     }
-    await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+    await page.goto(buildSkillDetailHref(ownerHandle, slug), { waitUntil: "domcontentloaded" });
     await waitForHydration(page);
     if (version !== finalMaliciousVersion) {
       await expectCurrentVersion(page, "1.0.0");

@@ -7,7 +7,7 @@ import {
   trackRuntimeErrors,
   waitForHydration,
 } from "../helpers/runtimeErrors";
-import { escapeRegExp, signInAsLocalPersona } from "./helpers";
+import { buildPublisherProfileHref, escapeRegExp, signInAsLocalPersona } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
@@ -182,7 +182,7 @@ test("users can permanently delete their account and personal publisher resource
 
   await signInAsLocalPersona(page, "user");
 
-  await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
+  await page.goto(buildPublisherProfileHref(fixture.handle), { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: "Local User" })).toBeVisible();
   await expect(page.getByText(skillDisplayName)).toBeVisible();
@@ -235,7 +235,7 @@ test("users can permanently delete their account and personal publisher resource
   await expectHealthyPage(page, errors);
   errors.length = 0;
 
-  await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
+  await page.goto(buildPublisherProfileHref(fixture.handle), { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expect(
     page.getByRole("heading", { name: /publisher not found|we couldn't find that page/i }),
@@ -300,7 +300,7 @@ test("users can permanently delete their account and personal publisher resource
     recreationState.activePublisher?.publisherId,
   );
 
-  await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
+  await page.goto(buildPublisherProfileHref(fixture.handle), { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: "Local User" })).toBeVisible();
   await expect(page.getByText(skillDisplayName)).toHaveCount(0);

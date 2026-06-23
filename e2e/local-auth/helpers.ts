@@ -1,6 +1,8 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, type Page, type TestInfo } from "@playwright/test";
+import { buildPublisherProfileHref, buildSkillDetailHref } from "../../src/lib/ownerRoute";
+import { buildPluginDetailHref, buildPluginSecurityAuditHref } from "../../src/lib/pluginRoutes";
 import { waitForHydration } from "../helpers/runtimeErrors";
 
 type DevPersona = "owner" | "user" | "admin" | "abusePublisher";
@@ -60,6 +62,13 @@ function devPersonaMenuLabel(persona: DevPersona) {
   if (persona === "abusePublisher") return "abuse publisher";
   return persona;
 }
+
+export {
+  buildPluginDetailHref,
+  buildPluginSecurityAuditHref,
+  buildPublisherProfileHref,
+  buildSkillDetailHref,
+};
 
 export function skillMd(args: { slug: string; displayName: string; versionLabel: string }) {
   return `---
@@ -253,12 +262,13 @@ export async function publishSkillVersion(
   const publishButton = page.getByRole("button", { name: "Publish skill" });
   await expect(publishButton).toBeEnabled();
   await publishButton.click();
-  await expect(page).toHaveURL(new RegExp(`/[^/]+/${escapeRegExp(args.slug)}$`), {
-    timeout: 60_000,
-  });
-  const [, actualOwnerHandle, actualSlug] = new URL(page.url()).pathname
-    .split("/")
-    .map(decodeURIComponent);
+  await expect(page).toHaveURL(
+    new RegExp(`${escapeRegExp(buildSkillDetailHref(args.ownerHandle, args.slug))}(?:\\?|$)`),
+    { timeout: 60_000 },
+  );
+  const match = new URL(page.url()).pathname.match(/^\/([^/]+)\/skills\/([^/?#]+)/);
+  expect(match).not.toBeNull();
+  const [, actualOwnerHandle, actualSlug] = match!;
   expect(actualOwnerHandle).toBeTruthy();
   expect(actualOwnerHandle?.toLowerCase()).toContain(args.ownerHandle.toLowerCase());
   expect(actualSlug).toBe(args.slug);
