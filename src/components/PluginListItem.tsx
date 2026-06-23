@@ -1,6 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
-import { Download, Star } from "lucide-react";
+import { Download } from "lucide-react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
@@ -41,7 +41,6 @@ function getPluginCategories(item: PackageListItem) {
 
 export function PluginListItem({ item, variant = "list" }: PluginListItemProps) {
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
-  const stars = formatCompactStat(item.stats?.stars ?? 0);
   const taxonomy = getPluginTaxonomyDisplay(item);
   const categories = getPluginCategories(item);
   const primaryCategory = categories[0] ?? null;
@@ -78,9 +77,6 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
           <div className="skill-card-bottom-row">
             <div className="skill-card-bottom-meta">
               <div className="skill-list-item-meta plugin-card-meta">
-                <span className="skill-list-item-meta-item">
-                  <Star size={14} aria-hidden="true" /> {stars}
-                </span>
                 <span className="skill-list-item-meta-item">
                   <Download size={14} aria-hidden="true" /> {downloads}
                 </span>
@@ -126,9 +122,6 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
         {categoryLabel ? <span className="skill-list-item-category">{categoryLabel}</span> : null}
       </div>
       <div className="skill-list-item-meta">
-        <span className="skill-list-item-meta-item">
-          <Star size={14} aria-hidden="true" /> {stars}
-        </span>
         <span className="skill-list-item-meta-item">
           <Download size={14} aria-hidden="true" /> {downloads}
         </span>

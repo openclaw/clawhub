@@ -241,11 +241,7 @@ function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
           {truncateText(plugin.summary || "Gateway plugin for OpenClaw workflows.", 80)}
         </p>
       </div>
-      <div className="home-v2-listing-row-stats" aria-label="Popularity">
-        <span>
-          <Star size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.stars ?? 0)}
-        </span>
+      <div className="home-v2-listing-row-stats" aria-label="Downloads">
         <span>
           <Download size={13} aria-hidden="true" />
           {formatCompactStat(plugin.stats?.downloads ?? 0)}
@@ -315,11 +311,7 @@ function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
       <p className="home-v2-listing-card-summary">
         {truncateText(plugin.summary || "Gateway plugin for OpenClaw workflows.", 80)}
       </p>
-      <div className="home-v2-listing-card-stats" aria-label="Popularity">
-        <span>
-          <Star size={13} aria-hidden="true" />
-          {formatCompactStat(plugin.stats?.stars ?? 0)}
-        </span>
+      <div className="home-v2-listing-card-stats" aria-label="Downloads">
         <span>
           <Download size={13} aria-hidden="true" />
           {formatCompactStat(plugin.stats?.downloads ?? 0)}
