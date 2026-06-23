@@ -50,9 +50,6 @@ export async function resolveOpenClawPluginSlug(
 }
 
 export async function resolveTopLevelSlugRoute(slug: string): Promise<SlugRouteTarget | null> {
-  const plugin = await resolveOpenClawPluginSlug(slug);
-  if (plugin) return plugin;
-
   const publisher = await resolvePublisherHandle(slug);
   if (publisher) {
     return {
@@ -61,6 +58,9 @@ export async function resolveTopLevelSlugRoute(slug: string): Promise<SlugRouteT
       publisher,
     };
   }
+
+  const plugin = await resolveOpenClawPluginSlug(slug);
+  if (plugin) return plugin;
 
   const data = await fetchSkillPageData(slug);
   const owner = data.initialData?.result?.owner?.handle ?? data.owner;

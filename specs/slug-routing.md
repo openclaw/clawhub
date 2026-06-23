@@ -49,8 +49,9 @@ Plugins:
 - Encoded security compatibility page: `/plugins/%40scope%2Fname/security-audit`
 - Legacy scanner pages redirect to the corresponding plugin security audit page.
 
-Bare `/<handle>` routes are profile routes after static routes and official
-OpenClaw plugin aliases have won precedence.
+Bare `/<handle>` routes are profile routes after static routes and existing
+publisher handles have won precedence. Official OpenClaw plugin aliases remain
+available at the root only when no active publisher owns that handle.
 
 Encoded compatibility routes are npm-style package-name routes. They redirect
 with `308` to the readable scoped route so the address bar shows
@@ -91,9 +92,10 @@ The effective precedence is:
 
 1. Static app routes win first, such as `/search`, `/settings`, `/plugins`, and
    `/api/...`.
-2. A top-level path matching an official OpenClaw extension alias redirects to
-   that plugin package.
-3. Any other top-level path may resolve as a publisher profile.
+2. A top-level path matching an active publisher handle resolves as that
+   publisher profile.
+3. Any other top-level path matching an official OpenClaw extension alias
+   redirects to that plugin package.
 4. Unknown top-level paths may still resolve through the historical skill slug
    fallback and redirect to `/<owner>/skills/<slug>`.
 5. `/openclaw/<alias>` and `/@openclaw/<alias>` only resolve official OpenClaw
@@ -107,9 +109,12 @@ The effective precedence is:
    `/plugins/<name>` probes package candidates in this order: official OpenClaw
    alias package, `@openclaw/<name>`, then the unscoped package name.
 
-This means official OpenClaw aliases are reserved before skills at the root.
-That is intentional: `https://clawhub.ai/codex` must show the official OpenClaw
-Codex plugin even if a skill named `codex` exists.
+This means official OpenClaw aliases are reserved before skills at the root, but
+not before existing publisher handles. That is intentional:
+`https://clawhub.ai/codex` should show the official OpenClaw Codex plugin when
+no `codex` publisher exists, while `https://clawhub.ai/tencent` must show a
+`tencent` publisher profile if that publisher exists instead of shadowing it
+with the `tencent` plugin alias.
 
 ## Collision policy
 
