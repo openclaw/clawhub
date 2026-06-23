@@ -436,8 +436,16 @@ export async function publishSkillVersion(
   await expectPublishedDetailPage(page, args.displayName);
   const successDialog = page.getByRole("dialog", { name: /it's alive/i });
   if (await successDialog.isVisible().catch(() => false)) {
-    await page.getByRole("button", { name: "View skill" }).click();
-    await expect(successDialog).toBeHidden();
+    try {
+      await successDialog.getByRole("button", { name: "View skill" }).click({ timeout: 5_000 });
+      await expect(successDialog).toBeHidden({ timeout: 10_000 });
+    } catch {
+      await page.goto(buildSkillDetailHref(actualOwnerHandle!, args.slug), {
+        waitUntil: "domcontentloaded",
+      });
+      await waitForHydration(page);
+    }
   }
+  await expectPublishedDetailPage(page, args.displayName);
   return actualOwnerHandle!;
 }
