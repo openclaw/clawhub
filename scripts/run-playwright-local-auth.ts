@@ -19,7 +19,8 @@ const DEFAULT_CONVEX_DEPLOYMENT = "anonymous-agent";
 const DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT = "anonymous:anonymous-agent";
 const DEFAULT_PLAYWRIGHT_PORT = 4173;
 const DEFAULT_E2E_WORKER_TOKEN = "local-e2e-worker-token";
-const DEFAULT_START_TIMEOUT_MS = 120_000;
+const DEFAULT_START_TIMEOUT_MS = 300_000;
+const DEFAULT_REACHABILITY_REQUEST_TIMEOUT_MS = 5_000;
 const STOP_TIMEOUT_MS = 30_000;
 const FUNCTION_READY_TIMEOUT_MS = 120_000;
 const POLL_MS = 500;
@@ -28,6 +29,10 @@ const LOCAL_ENV_FILE = ".env.local";
 const START_TIMEOUT_MS = readPositiveIntegerEnv(
   "PLAYWRIGHT_WEB_SERVER_TIMEOUT_MS",
   DEFAULT_START_TIMEOUT_MS,
+);
+const REACHABILITY_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv(
+  "PLAYWRIGHT_WEB_SERVER_REQUEST_TIMEOUT_MS",
+  DEFAULT_REACHABILITY_REQUEST_TIMEOUT_MS,
 );
 
 type LocalDeploymentConfig = {
@@ -62,17 +67,30 @@ function readPositiveIntegerEnv(name: string, fallback: number) {
 }
 
 async function checkReachable(url: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REACHABILITY_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { method: "GET" });
+    const response = await fetch(url, {
+      method: "GET",
+      signal: controller.signal,
+    });
     return {
       detail: `HTTP ${response.status}`,
       reachable: response.status < 500,
     };
   } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return {
+        detail: `request timed out after ${REACHABILITY_REQUEST_TIMEOUT_MS}ms`,
+        reachable: false,
+      };
+    }
     return {
       detail: error instanceof Error ? error.message : String(error),
       reachable: false,
     };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
