@@ -99,6 +99,12 @@ description: Automation workflow for recurring reports.
       preserveActiveJob: true,
       preserveExistingJob: true,
     });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(15_000, expect.anything(), {
+      versionId: "skillVersions:demo",
+      source: "publish",
+      preserveActiveJob: true,
+      preserveExistingJob: true,
+    });
   });
 
   it("resolves the target publisher handle before scheduling publish webhooks", async () => {
@@ -415,6 +421,16 @@ description: Security scanner smoke fixture.
       expect.objectContaining({
         versionId: "skillVersions:demo",
         source: "publish",
+      }),
+    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      15_000,
+      expect.anything(),
+      expect.objectContaining({
+        versionId: "skillVersions:demo",
+        source: "publish",
+        preserveActiveJob: true,
+        preserveExistingJob: true,
       }),
     );
   });
