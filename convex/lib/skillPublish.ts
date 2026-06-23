@@ -371,7 +371,7 @@ export async function publishVersionForUser(
     versionId: publishResult.versionId,
   });
 
-  await ctx.runMutation(internal.securityScan.enqueueSkillVersionScanInternal, {
+  await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
     versionId: publishResult.versionId,
     source: "publish",
   });

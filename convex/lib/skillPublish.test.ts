@@ -246,6 +246,79 @@ description: Research helper for literature reviews.
     );
   });
 
+  it("schedules security scan enqueue after publish instead of awaiting it inline", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Security scanner smoke fixture.
+---
+# Security Scanner Smoke
+`,
+      ],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      throw new Error("publish should not await follow-up scan enqueue mutations");
+    });
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler,
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "security-scanner-smoke",
+        displayName: "Security Scanner Smoke",
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 90,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        versionId: "skillVersions:demo",
+        source: "publish",
+      }),
+    );
+  });
+
   it("merges github source into metadata", () => {
     const merged = __test.mergeSourceIntoMetadata(
       { clawdis: { emoji: "x" } },

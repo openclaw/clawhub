@@ -1172,6 +1172,109 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("users/publisher-reclaim dry-runs deleted org handle reclaim for admins", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:tencent",
+        handle: "tencent",
+        dryRun: true,
+        hardDeleted: false,
+        activeSkills: 0,
+        activePackages: 0,
+        memberCount: 1,
+        githubSources: 0,
+        githubSourceContents: 0,
+        officialPublisher: false,
+        confirmationToken: "reclaim-deleted-org:tencent",
+      };
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-reclaim", {
+        method: "POST",
+        body: JSON.stringify({ handle: " Tencent ", reason: "Free spam org handle" }),
+      }),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      handle: "tencent",
+      dryRun: true,
+      hardDeleted: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+        dryRun: true,
+      }),
+    );
+  });
+
+  it("users/publisher-reclaim requires the confirmation token before apply", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error('Confirmation token must be "reclaim-deleted-org:tencent"');
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-reclaim", {
+        method: "POST",
+        body: JSON.stringify({ handle: "tencent", reason: "Free spam org handle", dryRun: false }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe('Confirmation token must be "reclaim-deleted-org:tencent"');
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        handle: "tencent",
+        dryRun: false,
+        confirmationToken: undefined,
+      }),
+    );
+  });
+
+  it("users/publisher-reclaim forbids non-admin api tokens", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return okRate();
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "moderator" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-reclaim", {
+        method: "POST",
+        body: JSON.stringify({ handle: "tencent", reason: "Free spam org handle" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
   it("users/reserve forbids non-admin api tokens", async () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();

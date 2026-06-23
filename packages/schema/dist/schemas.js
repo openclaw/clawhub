@@ -189,6 +189,20 @@ export const ApiV1PublisherDeleteResponseSchema = type({
     activePackages: "number",
     memberCount: "number",
 });
+export const ApiV1PublisherReclaimResponseSchema = type({
+    ok: "true",
+    publisherId: "string",
+    handle: "string",
+    dryRun: "boolean",
+    hardDeleted: "boolean",
+    activeSkills: "number",
+    activePackages: "number",
+    memberCount: "number",
+    githubSources: "number",
+    githubSourceContents: "number",
+    officialPublisher: "boolean",
+    confirmationToken: "string",
+});
 export const ApiV1StaffEmailSendResponseSchema = type({
     ok: "true",
     sent: "true",

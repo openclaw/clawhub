@@ -18,6 +18,7 @@ import {
   ApiRoutes,
   ApiV1PublisherDeleteResponseSchema,
   ApiV1PublisherEnsureResponseSchema,
+  ApiV1PublisherReclaimResponseSchema,
   ApiV1PublisherRemoveMemberResponseSchema,
 } from "../../../clawhub/src/schema/index.js";
 
@@ -37,6 +38,13 @@ type OrgRemoveMemberOptions = {
 
 type OrgDeleteOptions = {
   apply?: boolean;
+  reason?: string;
+  json?: boolean;
+};
+
+type OrgReclaimOptions = {
+  apply?: boolean;
+  confirm?: string;
   reason?: string;
   json?: boolean;
 };
@@ -223,6 +231,56 @@ export async function cmdDeleteOrg(
       result.deleted
         ? `Deleted @${result.handle}; ${result.memberCount} member(s) retained for history`
         : `Dry run OK for @${result.handle}: ${result.activeSkills} active skill(s), ${result.activePackages} active package(s), ${result.memberCount} member(s)`,
+    );
+    if (options.json) {
+      process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    }
+    return result;
+  } catch (error) {
+    spinner?.fail(formatError(error));
+    throw error;
+  }
+}
+
+export async function cmdReclaimDeletedOrgHandle(
+  opts: GlobalOpts,
+  handle: string,
+  options: OrgReclaimOptions = {},
+) {
+  const orgHandle = normalizeHandleOrFail(handle, "Org handle");
+  const reason = options.reason?.trim();
+  if (!reason) fail("--reason required");
+  const dryRun = options.apply !== true;
+  const confirmationToken = options.confirm?.trim();
+  if (!dryRun && !confirmationToken) fail("--confirm required when using --apply");
+
+  const token = await requireAuthToken();
+  const registry = await getRegistry(opts, { cache: true });
+  const spinner = options.json
+    ? null
+    : createCrabLoader(`${dryRun ? "Planning reclaim for" : "Reclaiming"} @${orgHandle}`);
+  try {
+    const result = await apiRequest(
+      registry,
+      {
+        method: "POST",
+        path: `${ApiRoutes.users}/publisher-reclaim`,
+        token,
+        ...(dryRun ? {} : { retryCount: 0 }),
+        body: {
+          handle: orgHandle,
+          reason,
+          dryRun,
+          ...(confirmationToken ? { confirmationToken } : {}),
+        },
+      },
+      ApiV1PublisherReclaimResponseSchema,
+    );
+
+    spinner?.succeed(
+      result.hardDeleted
+        ? `Reclaimed @${result.handle}; hard-deleted ${result.memberCount} member row(s)`
+        : `Dry run OK for @${result.handle}: pass --apply --confirm ${result.confirmationToken} to hard-delete ${result.memberCount} member row(s)`,
     );
     if (options.json) {
       process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);

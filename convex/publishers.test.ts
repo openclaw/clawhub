@@ -18,6 +18,7 @@ import {
   recoverPersonalPublisherInternal,
   createOrg,
   deleteOrg,
+  reclaimDeletedOrgHandleInternal,
   removeMember,
   addOfficialPublisherInternal,
   createOrgPublisherForUserInternal,
@@ -352,6 +353,32 @@ const deleteSoleOwnerOrgsForAccountDeletionInternalHandler = (
       deletedOrgs: number;
       hiddenSkills: number;
       deletedPackages: number;
+    }
+  >
+)._handler;
+
+const reclaimDeletedOrgHandleInternalHandler = (
+  reclaimDeletedOrgHandleInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      reason: string;
+      dryRun?: boolean;
+      confirmationToken?: string;
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      dryRun: boolean;
+      hardDeleted: boolean;
+      activeSkills: number;
+      activePackages: number;
+      memberCount: number;
+      githubSources: number;
+      githubSourceContents: number;
+      officialPublisher: boolean;
+      confirmationToken: string;
     }
   >
 )._handler;
@@ -812,6 +839,189 @@ describe("publishers membership controls", () => {
     ).rejects.toThrow("Only org owners can delete an organization");
     expect(patch).not.toHaveBeenCalled();
     expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  function makeReclaimDeletedOrgCtx(
+    options: {
+      publisher?: Record<string, unknown> | null;
+      activeSkills?: Array<Record<string, unknown>>;
+      activePackages?: Array<Record<string, unknown>>;
+    } = {},
+  ) {
+    const publisher = options.publisher ?? {
+      _id: "publishers:tencent",
+      kind: "org",
+      handle: "tencent",
+      displayName: "TENCENT",
+      deletedAt: 2_000,
+      deactivatedAt: 2_000,
+      createdAt: 1,
+      updatedAt: 2_000,
+    };
+    const members = [
+      {
+        _id: "publisherMembers:owner",
+        publisherId: "publishers:tencent",
+        userId: "users:spammer",
+        role: "owner",
+      },
+    ];
+    const deleted = vi.fn();
+    const insert = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_handle") throw new Error(`unexpected index ${indexName}`);
+            return { unique: vi.fn(async () => publisher) };
+          }),
+        };
+      }
+      if (table === "skills") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_owner_publisher_active_updated") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { take: vi.fn(async () => options.activeSkills ?? []) };
+          }),
+        };
+      }
+      if (table === "packages") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_owner_publisher_active_updated") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { take: vi.fn(async () => options.activePackages ?? []) };
+          }),
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_publisher") throw new Error(`unexpected index ${indexName}`);
+            return { collect: vi.fn(async () => members) };
+          }),
+        };
+      }
+      if (table === "githubSkillSources" || table === "githubSkillContents") {
+        return emptyOwnedResourcesQuery();
+      }
+      if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+      throw new Error(`unexpected table ${table}`);
+    });
+    return {
+      ctx: {
+        scheduler: { runAfter: vi.fn() },
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:admin") return { _id: id, role: "admin" };
+            return null;
+          }),
+          query,
+          insert,
+          delete: deleted,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          normalizeId: vi.fn(() => null),
+        },
+      },
+      deleted,
+      insert,
+    };
+  }
+
+  it("dry-runs hard deletion for a deleted empty org handle", async () => {
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+
+    const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      handle: "Tencent",
+      reason: "Free spam org handle",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      publisherId: "publishers:tencent",
+      handle: "tencent",
+      dryRun: true,
+      hardDeleted: false,
+      activeSkills: 0,
+      activePackages: 0,
+      memberCount: 1,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+    expect(deleted).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("requires the confirmation token before hard deleting", async () => {
+    const { ctx, deleted } = makeReclaimDeletedOrgCtx();
+
+    await expect(
+      reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+        dryRun: false,
+      }),
+    ).rejects.toThrow('Confirmation token must be "reclaim-deleted-org:tencent"');
+    expect(deleted).not.toHaveBeenCalled();
+  });
+
+  it("hard deletes the deleted org publisher row and records an audit log", async () => {
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+
+    const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      handle: "tencent",
+      reason: "Free spam org handle",
+      dryRun: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      hardDeleted: true,
+      memberCount: 1,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "publisher.org.reclaim_deleted_handle",
+        targetType: "publisher",
+        targetId: "publishers:tencent",
+        metadata: expect.objectContaining({
+          handle: "tencent",
+          reason: "Free spam org handle",
+        }),
+      }),
+    );
+    expect(deleted).toHaveBeenCalledWith("publisherMembers:owner");
+    expect(deleted).toHaveBeenCalledWith("publishers:tencent");
+  });
+
+  it("refuses to reclaim an active org handle", async () => {
+    const { ctx } = makeReclaimDeletedOrgCtx({
+      publisher: {
+        _id: "publishers:tencent",
+        kind: "org",
+        handle: "tencent",
+        displayName: "TENCENT",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    });
+
+    await expect(
+      reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+      }),
+    ).rejects.toThrow("Publisher is active; use org delete before reclaiming the handle");
   });
 
   it("deletes sole-owner account orgs when other owner memberships are inactive", async () => {
