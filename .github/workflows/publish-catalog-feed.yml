@@ -1,0 +1,53 @@
+name: Publish Hosted Catalog Feed
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      expires_in_days:
+        description: "How long the published feed remains fresh"
+        required: true
+        default: "7"
+        type: string
+
+concurrency:
+  group: publish-catalog-feed
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment:
+      name: Production
+      url: https://registry.openclaw.ai/feeds/plugins
+    env:
+      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
+      EXPIRES_IN_DAYS: ${{ inputs.expires_in_days || '7' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6
+        with:
+          bun-version: 1.3.10
+
+      - name: Install
+        run: bun install --frozen-lockfile
+
+      - name: Publish current production catalog
+        run: |
+          set -euo pipefail
+          if [[ -z "$CONVEX_DEPLOY_KEY" ]]; then
+            echo "::error::Missing Production environment secret CONVEX_DEPLOY_KEY"
+            exit 1
+          fi
+          if ! [[ "$EXPIRES_IN_DAYS" =~ ^[1-9][0-9]*$ ]]; then
+            echo "::error::expires_in_days must be a positive integer"
+            exit 1
+          fi
+          expires_at="$(node -e 'const days = Number(process.env.EXPIRES_IN_DAYS); console.log(new Date(Date.now() + days * 86400000).toISOString())')"
+          bunx convex run catalogFeed:publish "{\"expiresAt\":\"$expires_at\"}" --prod

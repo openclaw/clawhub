@@ -50,6 +50,10 @@
     {
       "source": "/api/:path*",
       "destination": "https://wry-manatee-359.convex.site/api/:path*"
+    },
+    {
+      "source": "/feeds/plugins",
+      "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/plugins"
     }
   ],
   "images": {

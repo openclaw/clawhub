@@ -169,6 +169,20 @@ The CLI can discover the API base from:
 
 Keep production rewrites and discovery metadata aligned before release.
 
+### Hosted catalog feed
+
+Refresh the OpenClaw hosted plugin feed after the production Convex deployment
+has the catalog projection:
+
+```bash
+gh workflow run publish-catalog-feed.yml --repo openclaw/clawhub --ref main
+```
+
+The workflow stores the current feed snapshot in Convex and serves it through
+`/feeds/plugins` with public edge-cache validators. Attach
+`registry.openclaw.ai` to the same Vercel project before configuring OpenClaw's
+default feed URL.
+
 ## 5) Post-deploy checks
 
 Run the contract verifier and smoke tests against production after deploy:

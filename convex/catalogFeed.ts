@@ -62,7 +62,7 @@ async function buildEntry(
   ctx: CatalogQueryCtx,
   pkg: Doc<"packages">,
 ): Promise<CatalogFeedEntry | null> {
-  if (pkg.channel !== "official" || !pkg.latestReleaseId) return null;
+  if (pkg.softDeletedAt || pkg.channel !== "official" || !pkg.latestReleaseId) return null;
   const release = await ctx.db.get(pkg.latestReleaseId);
   if (!release || release.softDeletedAt) return null;
 
@@ -135,33 +135,11 @@ async function listFamilyEntries(
   }
 }
 
-async function listOfficialEntriesFromDb(ctx: CatalogQueryCtx) {
-  const entries = (
-    await Promise.all(CATALOG_FEED_FAMILIES.map((family) => listFamilyEntries(ctx, family)))
-  ).flat();
-  return entries.sort((left, right) => left.id.localeCompare(right.id));
-}
-
 export const listOfficialEntries = internalQuery({
-  args: {},
-  handler: async (ctx) => await listOfficialEntriesFromDb(ctx),
-});
-
-export const buildFeed = internalQuery({
   args: {
-    generatedAt: v.string(),
-    expiresAt: v.string(),
-    sequence: v.number(),
+    family: v.union(v.literal("code-plugin"), v.literal("bundle-plugin")),
   },
-  handler: async (ctx, args) => ({
-    schemaVersion: CATALOG_FEED_SCHEMA_VERSION,
-    id: CATALOG_FEED_ID,
-    generatedAt: args.generatedAt,
-    sequence: args.sequence,
-    expiresAt: args.expiresAt,
-    description: CATALOG_FEED_DESCRIPTION,
-    entries: await listOfficialEntriesFromDb(ctx),
-  }),
+  handler: async (ctx, args) => await listFamilyEntries(ctx, args.family),
 });
 
 export const storePublication = internalMutation({
@@ -216,20 +194,25 @@ export const publish = internalAction({
   },
   handler: async (ctx, args): Promise<CatalogFeedPublicationResult> => {
     const generatedAt = new Date().toISOString();
-    const feed: { entries: CatalogFeedEntry[] } = await ctx.runQuery(
-      internal.catalogFeed.buildFeed,
-      {
-        generatedAt,
-        expiresAt: args.expiresAt,
-        sequence: 0,
-      },
+    const familyEntries: CatalogFeedEntry[][] = await Promise.all(
+      CATALOG_FEED_FAMILIES.map(async (family) => {
+        const entries: CatalogFeedEntry[] = await ctx.runQuery(
+          internal.catalogFeed.listOfficialEntries,
+          { family },
+        );
+        return entries;
+      }),
     );
+    const entries = familyEntries.flat();
+    if (entries.length > MAX_CATALOG_FEED_ENTRIES) {
+      throw new Error(`Catalog feed exceeds ${MAX_CATALOG_FEED_ENTRIES} entries`);
+    }
     const result: CatalogFeedPublicationResult = await ctx.runMutation(
       internal.catalogFeed.storePublication,
       {
         generatedAt,
         expiresAt: args.expiresAt,
-        entries: feed.entries,
+        entries: entries.sort((left, right) => left.id.localeCompare(right.id)),
       },
     );
     return result;
