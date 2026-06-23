@@ -3,10 +3,20 @@ export const CATALOG_TOPIC_LIMIT = 5;
 export const CATALOG_TOPIC_MAX_LENGTH = 48;
 export const INTERNAL_UNCATEGORIZED_CATEGORY = "other";
 export const RESERVED_CATALOG_TOPIC_SLUGS = [
+    "approved",
+    "audited",
+    "certified",
+    "clawhub",
+    "community",
+    "curated",
+    "endorsed",
     "featured",
     "official",
+    "officials",
+    "openclaw",
     "recommended",
     "staff-pick",
+    "trusted",
     "trusted-publisher",
     "verified",
 ];

@@ -9,7 +9,7 @@ export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: 
 } | null;
 export declare const PackageFamilySchema: import("arktype/internal/variants/string.ts").StringType<"skill" | "code-plugin" | "bundle-plugin", {}>;
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
-export declare const PackageChannelSchema: import("arktype/internal/variants/string.ts").StringType<"official" | "community" | "private", {}>;
+export declare const PackageChannelSchema: import("arktype/internal/variants/string.ts").StringType<"community" | "official" | "private", {}>;
 export type PackageChannel = (typeof PackageChannelSchema)[inferred];
 export declare const PackageVerificationTierSchema: import("arktype/internal/variants/string.ts").StringType<"structural" | "source-linked" | "provenance-verified" | "rebuild-verified", {}>;
 export type PackageVerificationTier = (typeof PackageVerificationTierSchema)[inferred];
@@ -265,7 +265,7 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
     manualOverrideReason?: string | undefined;
-    channel?: "official" | "community" | "private" | undefined;
+    channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
     categories?: string[] | undefined;
     topics?: string[] | undefined;
@@ -312,7 +312,7 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
     manualOverrideReason?: string | undefined;
-    channel?: "official" | "community" | "private" | undefined;
+    channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
     categories?: string[] | undefined;
     topics?: string[] | undefined;
@@ -336,7 +336,7 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     name: string;
     displayName: string;
     family: "skill" | "code-plugin" | "bundle-plugin";
-    channel: "official" | "community" | "private";
+    channel: "community" | "official" | "private";
     isOfficial: boolean;
     createdAt: number;
     updatedAt: number;
@@ -361,7 +361,7 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
         createdAt: number;
         updatedAt: number;
@@ -390,7 +390,7 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             name: string;
             displayName: string;
             family: "skill" | "code-plugin" | "bundle-plugin";
-            channel: "official" | "community" | "private";
+            channel: "community" | "official" | "private";
             isOfficial: boolean;
             createdAt: number;
             updatedAt: number;
@@ -417,7 +417,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
         createdAt: number;
         updatedAt: number;
@@ -843,7 +843,7 @@ export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
         reportCount: number;
         lastReportedAt?: number | null | undefined;
@@ -897,7 +897,7 @@ export declare const ApiV1PackageTransferResponseSchema: import("arktype/interna
     packageId: string;
     name: string;
     ownerUserId: string;
-    channel: "official" | "community" | "private";
+    channel: "community" | "official" | "private";
     isOfficial: boolean;
     ownerPublisherId?: string | undefined;
 }, {}>;
@@ -914,7 +914,7 @@ export declare const PackageRepairNamePackageSchema: import("arktype/internal/va
     packageId: string;
     name: string;
     ownerUserId: string;
-    channel: "official" | "community" | "private";
+    channel: "community" | "official" | "private";
     runtimeId?: string | null | undefined;
     ownerPublisherId?: string | null | undefined;
     softDeletedAt?: number | null | undefined;
@@ -935,7 +935,7 @@ export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/inter
         packageId: string;
         name: string;
         ownerUserId: string;
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         runtimeId?: string | null | undefined;
         ownerPublisherId?: string | null | undefined;
         softDeletedAt?: number | null | undefined;
@@ -944,7 +944,7 @@ export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/inter
         packageId: string;
         name: string;
         ownerUserId: string;
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         runtimeId?: string | null | undefined;
         ownerPublisherId?: string | null | undefined;
         softDeletedAt?: number | null | undefined;
@@ -979,7 +979,7 @@ export declare const ApiV1PackageRepairRuntimeIdResponseSchema: import("arktype/
         packageId: string;
         name: string;
         ownerUserId: string;
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         runtimeId?: string | null | undefined;
         ownerPublisherId?: string | null | undefined;
         softDeletedAt?: number | null | undefined;
@@ -1084,7 +1084,7 @@ export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
         version: string;
         createdAt: number;
