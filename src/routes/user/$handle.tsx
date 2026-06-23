@@ -1,27 +1,70 @@
+import { useAuthActions } from "@convex-dev/auth/react";
 import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
-import { normalizeCatalogTopic } from "clawhub-schema";
+import {
+  getCatalogTopicSlugs,
+  isPluginCategorySlug,
+  isSkillCategorySlug,
+  normalizeCatalogTopic,
+  resolveStoredPluginCategories,
+} from "clawhub-schema";
 import { usePaginatedQuery, useQuery } from "convex/react";
-import { Building2, Download, Package, Star, Users, Wrench, type LucideIcon } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { ArrowUpRight, Building2, Flag, MoreHorizontal, Search } from "lucide-react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
+import {
+  BrowseActions,
+  BrowseControls,
+  BrowseControlsDivider,
+  BrowseControlsRow,
+  BrowseSearchInput,
+  BrowseSearchPanel,
+  BrowseSearchTrigger,
+  BrowseChipTabs,
+  BrowseSegmentedTabs,
+  BrowseSortSelect,
+  useBrowseSearchDisclosure,
+} from "../../components/BrowseControls";
 import { EmptyState } from "../../components/EmptyState";
 import { Container } from "../../components/layout/Container";
 import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import { OfficialBadge, OfficialTag } from "../../components/OfficialBadge";
+import { PluginListItem } from "../../components/PluginListItem";
+import { SkillListItem } from "../../components/SkillListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
+import { SkillReportDialog } from "../../components/SkillReportDialog";
 import { Button } from "../../components/ui/button";
-import { Card, CardContent } from "../../components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "../../components/ui/dropdown-menu";
 import { Skeleton } from "../../components/ui/skeleton";
+import { formatBrowseCount } from "../../lib/browseCount";
+import {
+  getSkillCategoriesForSkill,
+  getSkillCategoryForSkill,
+  PLUGIN_CATEGORIES,
+  resolvePluginBrowseCategorySlug,
+  resolveSkillBrowseCategorySlug,
+  SKILL_CATEGORIES,
+  type BrowseCategory,
+} from "../../lib/categories";
+import type { PackageListItem } from "../../lib/packageApi";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
 import { buildPublisherProfileHref, isLegacyPublisherProfileHandle } from "../../lib/ownerRoute";
+import { useAuthStatus } from "../../lib/useAuthStatus";
 import type {
   PublicPublisher,
   PublicPublisherCatalogDisplay,
   PublicPublisherCatalogItem,
   PublicPublisherListItem,
+  PublicSkill,
 } from "../../lib/publicUser";
 import { readPublicDownloadCount } from "../../lib/publicUser";
+import type { Id } from "../../../convex/_generated/dataModel";
 
 export const Route = createFileRoute("/user/$handle")({
   beforeLoad: ({ params }) => {
@@ -33,7 +76,10 @@ export const Route = createFileRoute("/user/$handle")({
     });
   },
   loader: async ({ params }) => {
-    const publisher = await loadPublisherProfile(params.handle);
+    const { convexHttp } = await import("../../convex/client");
+    const publisher = (await convexHttp.query(api.publishers.getProfileByHandle, {
+      handle: params.handle,
+    })) as PublicPublisherListItem | null;
     if (!publisher) throw notFound();
     return { publisher };
   },
@@ -61,13 +107,6 @@ export const Route = createFileRoute("/user/$handle")({
   component: PublisherProfile,
 });
 
-export async function loadPublisherProfile(handle: string) {
-  const { convexHttp } = await import("../../convex/client");
-  return (await convexHttp.query(api.publishers.getProfileByHandle, {
-    handle,
-  })) as PublicPublisherListItem | null;
-}
-
 type PublisherMemberResult = {
   publisher: PublicPublisher | null;
   members: Array<{
@@ -82,20 +121,109 @@ type PublisherMemberResult = {
   }>;
 };
 
-type PublishedView = "list" | "grid";
 type ProfileCatalogTab = "skills" | "plugins" | "stars";
+type ProfileCatalogSort = "downloads" | "recent" | "stars";
 
-const roleColor: Record<string, "accent" | "default" | "compact"> = {
-  owner: "accent",
-  admin: "default",
-  publisher: "compact",
-};
+const VISIBLE_ORG_CHIPS = 2;
+const VISIBLE_MEMBER_CHIPS = 4;
+const CATALOG_SEARCH_THRESHOLD = 8;
+const PUBLISHER_REPORT_DISCORD_URL = "https://discord.gg/clawd";
+
+const PROFILE_CATALOG_SORT_OPTIONS = [
+  { value: "downloads", label: "Most downloaded" },
+  { value: "recent", label: "Recent" },
+  { value: "stars", label: "Stars" },
+] as const;
+
+const DEFAULT_PROFILE_CATALOG_SORT: ProfileCatalogSort = "downloads";
+
+function formatCatalogTabCount(value: number) {
+  return formatBrowseCount(value) ?? formatCompactStat(value);
+}
+
+function buildCatalogTabOptions(publisher: PublicPublisherListItem) {
+  const options = [
+    {
+      value: "skills",
+      label: "Skills",
+      count: formatCatalogTabCount(publisher.stats.skills),
+    },
+    {
+      value: "plugins",
+      label: "Plugins",
+      count: formatCatalogTabCount(publisher.stats.packages),
+    },
+  ];
+  if (publisher.kind === "user") {
+    options.push({
+      value: "stars",
+      label: "Starred",
+      count: formatCatalogTabCount(publisher.starredCount ?? 0),
+    });
+  }
+  return options;
+}
 
 function GitHubIcon({ size = 14 }: { size?: number }) {
   return (
     <svg viewBox="0 0 24 24" fill="currentColor" width={size} height={size} aria-hidden="true">
       <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.16 1.18.92-.26 1.9-.38 2.88-.39.98 0 1.96.13 2.88.39 2.19-1.49 3.15-1.18 3.15-1.18.63 1.58.24 2.75.12 3.04.74.8 1.18 1.83 1.18 3.08 0 4.42-2.69 5.39-5.25 5.67.42.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
     </svg>
+  );
+}
+
+function PublisherProfileBio({ bio }: { bio: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const [canExpand, setCanExpand] = useState(false);
+  const bioRef = useRef<HTMLParagraphElement>(null);
+
+  useEffect(() => {
+    setExpanded(false);
+  }, [bio]);
+
+  useLayoutEffect(() => {
+    const node = bioRef.current;
+    if (!node) return undefined;
+
+    const measure = () => {
+      if (expanded) {
+        setCanExpand(true);
+        return;
+      }
+      setCanExpand(node.scrollHeight > node.clientHeight + 1);
+    };
+
+    measure();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", measure);
+      return () => window.removeEventListener("resize", measure);
+    }
+
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [bio, expanded]);
+
+  return (
+    <div className="publisher-profile-bio-block">
+      <p
+        ref={bioRef}
+        className={`publisher-profile-bio${expanded ? "" : " is-clamped"}`}
+      >
+        {bio}
+      </p>
+      {canExpand ? (
+        <button
+          type="button"
+          className="publisher-profile-bio-toggle"
+          aria-expanded={expanded}
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? "Show less" : "See more"}
+        </button>
+      ) : null}
+    </div>
   );
 }
 
@@ -114,27 +242,52 @@ export function PublisherProfilePage({
   handle: string;
   loaderPublisher: PublicPublisherListItem;
 }) {
+  const { isAuthenticated } = useAuthStatus();
+  const { signIn } = useAuthActions();
   const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>("skills");
-  const publishedKind: "skill" | "plugin" = catalogTab === "plugins" ? "plugin" : "skill";
+  const [catalogSort, setCatalogSort] = useState<ProfileCatalogSort>(DEFAULT_PROFILE_CATALOG_SORT);
+  const [catalogSearch, setCatalogSearch] = useState("");
+  const [selectedCatalogGroup, setSelectedCatalogGroup] = useState("all");
+  const [showAllOrgs, setShowAllOrgs] = useState(false);
+  const [showAllMembers, setShowAllMembers] = useState(false);
+  const [isReportDialogOpen, setIsReportDialogOpen] = useState(false);
+  const [reportReason, setReportReason] = useState("");
+  const [reportError, setReportError] = useState<string | null>(null);
+  const [isSubmittingReport, setIsSubmittingReport] = useState(false);
+  const searchInputRef = useRef<HTMLInputElement>(null);
+  const browseSearch = useBrowseSearchDisclosure({
+    value: catalogSearch,
+    onClear: () => setCatalogSearch(""),
+    inputRef: searchInputRef,
+  });
+
+  const activeCatalogSort =
+    catalogSort === DEFAULT_PROFILE_CATALOG_SORT ? undefined : catalogSort;
+
+  const apiSort = catalogSort === "stars" ? "downloads" : catalogSort;
+
+  const publishedQueryArgs = useMemo(() => {
+    const base = { handle, sort: apiSort as "downloads" | "recent" };
+    if (catalogTab === "plugins") return { ...base, kind: "plugin" as const };
+    return { ...base, kind: "skill" as const };
+  }, [handle, catalogTab, apiSort]);
+
   const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
     | PublicPublisherListItem
     | null
     | undefined;
   const publisher = queriedPublisher === undefined ? loaderPublisher : queriedPublisher;
-  // The backend normalizes this legacy validator-compatible alias to install ranking.
-  const publishedQueryArgs: {
-    handle: string;
-    kind: "skill" | "plugin";
-    sort: "downloads";
-  } = { handle, kind: publishedKind, sort: "downloads" };
+
   const publishedDisplay = useQuery(
     api.publishers.getPublishedDisplayManifest,
-    publishedQueryArgs,
+    catalogTab === "skills" ? publishedQueryArgs : "skip",
   ) as PublicPublisherCatalogDisplay | null | undefined;
+
   const members = useQuery(api.publishers.listMembers, { publisherHandle: handle }) as
     | PublisherMemberResult
     | null
     | undefined;
+
   const {
     results: publishedResults,
     status: publishedStatus,
@@ -142,35 +295,116 @@ export function PublisherProfilePage({
   } = usePaginatedQuery(api.publishers.listPublishedPage, publishedQueryArgs, {
     initialNumItems: 12,
   });
+
   const {
     results: starredResults,
     status: starredStatus,
     loadMore: loadMoreStarred,
   } = usePaginatedQuery(
     api.publishers.listStarredPage,
-    { handle, sort: "downloads" },
-    {
-      initialNumItems: 12,
-    },
+    { handle, sort: apiSort },
+    { initialNumItems: 12 },
   );
+
   const publishedItems = (publishedResults ?? []) as PublicPublisherCatalogItem[];
   const starredItems = (starredResults ?? []) as PublicPublisherCatalogItem[];
+  const activeItems = catalogTab === "stars" ? starredItems : publishedItems;
+
+  const sortedItems = useMemo(() => {
+    if (catalogSort !== "stars") return activeItems;
+    return [...activeItems].sort(
+      (left, right) =>
+        right.stars - left.stars ||
+        readPublicDownloadCount(right) - readPublicDownloadCount(left) ||
+        right.updatedAt - left.updatedAt,
+    );
+  }, [activeItems, catalogSort]);
+
+  const filteredItems = useMemo(() => {
+    const query = catalogSearch.trim().toLowerCase();
+    if (!query) return sortedItems;
+    return sortedItems.filter((item) => {
+      const haystack = `${item.displayName} ${item.summary ?? ""}`.toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [catalogSearch, sortedItems]);
+
+  const activePublishedDisplay = catalogTab === "skills" ? publishedDisplay : null;
+
+  const catalogGroups = useMemo(() => {
+    if (catalogTab === "stars") return [];
+    if (activePublishedDisplay && catalogSearch.trim().length === 0) {
+      return displaySectionsToCatalogGroups(activePublishedDisplay);
+    }
+    return groupPublisherCatalogItemsByTopic(filteredItems);
+  }, [activePublishedDisplay, catalogSearch, catalogTab, filteredItems]);
+
+  useEffect(() => {
+    setSelectedCatalogGroup("all");
+  }, [catalogTab, catalogSearch]);
+
+  const closeReportDialog = () => {
+    setIsReportDialogOpen(false);
+    setReportReason("");
+    setReportError(null);
+    setIsSubmittingReport(false);
+  };
+
+  const openReportDialog = () => {
+    setReportReason("");
+    setReportError(null);
+    setIsSubmittingReport(false);
+    setIsReportDialogOpen(true);
+  };
+
+  const requireSignIn = () => {
+    const redirectTo = typeof window === "undefined" ? undefined : window.location.href;
+    void signIn("github", redirectTo ? { redirectTo } : undefined);
+  };
+
+  const submitPublisherReport = async (publisher: PublicPublisherListItem) => {
+    const trimmedReason = reportReason.trim();
+    if (!trimmedReason) {
+      setReportError("Report reason required.");
+      return;
+    }
+
+    setIsSubmittingReport(true);
+    setReportError(null);
+    try {
+      const reportText = [
+        `Publisher report: @${publisher.handle}`,
+        `Name: ${publisher.displayName}`,
+        `Profile: ${window.location.href}`,
+        "",
+        trimmedReason,
+      ].join("\n");
+      await navigator.clipboard.writeText(reportText);
+      window.open(PUBLISHER_REPORT_DISCORD_URL, "_blank", "noopener,noreferrer");
+      closeReportDialog();
+      toast.success("Report copied. Paste it for moderators on Discord.");
+    } catch (error) {
+      console.error("Failed to prepare publisher report", error);
+      setReportError("Could not copy the report. Try again.");
+      setIsSubmittingReport(false);
+    }
+  };
 
   if (publisher === undefined) {
     return (
-      <main className="py-10">
-        <Container>
+      <main className="publisher-profile-route py-10">
+        <Container className="publisher-profile-container">
           <div className="publisher-profile-page">
-            <Card className="publisher-profile-hero">
-              <CardContent className="publisher-profile-hero-inner">
-                <Skeleton className="h-20 w-20 rounded-[var(--r-md)]" />
+            <div className="publisher-profile-chrome">
+              <div className="publisher-profile-chrome-inner">
+                <Skeleton className="h-[72px] w-[72px] rounded-[var(--r-md)]" />
                 <div className="publisher-profile-heading">
-                  <Skeleton className="h-3.5 w-32" />
-                  <Skeleton className="h-7 w-56" />
+                  <Skeleton className="h-8 w-56" />
+                  <Skeleton className="h-4 w-32" />
                   <Skeleton className="h-4 w-80 max-w-full" />
                 </div>
-              </CardContent>
-            </Card>
+              </div>
+            </div>
             <BrowseResultsSkeleton count={6} variant="list" />
           </div>
         </Container>
@@ -180,8 +414,8 @@ export function PublisherProfilePage({
 
   if (!publisher) {
     return (
-      <main className="py-10">
-        <Container>
+      <main className="publisher-profile-route py-10">
+        <Container className="publisher-profile-container">
           <EmptyState
             icon={Building2}
             title="Publisher not found"
@@ -195,351 +429,545 @@ export function PublisherProfilePage({
 
   const publishedCount = publisher.stats.skills + publisher.stats.packages;
   const affiliations = publisher.affiliations ?? [];
-  const visibleAffiliations = affiliations.slice(0, 1);
-  const memberCount = members?.members.length ?? 0;
-  const activeCatalogTab = catalogTab;
-  const activeItems = activeCatalogTab === "stars" ? starredItems : publishedItems;
-  const topicGroups = useMemo(
-    () => (activeCatalogTab === "stars" ? [] : groupPublisherCatalogItemsByTopic(activeItems)),
-    [activeCatalogTab, activeItems],
-  );
-  const activeStatus = activeCatalogTab === "stars" ? starredStatus : publishedStatus;
-  const activeLoadMore = activeCatalogTab === "stars" ? loadMoreStarred : loadMore;
-  const activePublishedDisplay = activeCatalogTab === "skills" ? publishedDisplay : null;
+  const memberEntries = members?.members ?? [];
+  const memberCount = memberEntries.length;
+  const activeStatus = catalogTab === "stars" ? starredStatus : publishedStatus;
+  const activeLoadMore = catalogTab === "stars" ? loadMoreStarred : loadMore;
   const isLoadingCatalog = activeStatus === "LoadingFirstPage";
+  const catalogCount =
+    catalogTab === "stars"
+      ? (publisher.starredCount ?? starredItems.length)
+      : catalogTab === "plugins"
+        ? publisher.stats.packages
+        : publisher.stats.skills;
+  const showCatalogSearch = catalogCount >= CATALOG_SEARCH_THRESHOLD;
+  const catalogTabOptions = buildCatalogTabOptions(publisher);
+
+  const showCatalogLoadMore = shouldShowPublisherCatalogLoadMore({
+    activeStatus,
+    catalogSearch,
+    selectedCatalogGroup,
+    activePublishedDisplay,
+  });
+
+  const visibleOrgs = showAllOrgs ? affiliations : affiliations.slice(0, VISIBLE_ORG_CHIPS);
+  const hiddenOrgCount = Math.max(0, affiliations.length - VISIBLE_ORG_CHIPS);
+  const visibleMembers = showAllMembers
+    ? memberEntries
+    : memberEntries.slice(0, VISIBLE_MEMBER_CHIPS);
+  const hiddenMemberCount = Math.max(0, memberEntries.length - VISIBLE_MEMBER_CHIPS);
+  const showOrganizations = publisher.kind === "user" && affiliations.length > 0;
+  const showMembers = publisher.kind === "org" && memberEntries.length > 0;
+  const showDetailsAside = showOrganizations;
 
   return (
     <main className="publisher-profile-route">
-      <Container>
+      <Container className="publisher-profile-container">
         <div className="publisher-profile-page">
-          <section className="publisher-profile-hero">
-            <div className="publisher-profile-hero-main">
-              <div className="publisher-profile-avatar">
-                <MarketplaceIcon
-                  kind={publisher.kind === "org" ? "org" : "user"}
-                  label={publisher.displayName}
-                  imageUrl={publisher.image}
-                  size="md"
-                />
-              </div>
-              <div className="publisher-profile-heading">
-                <span className="publisher-profile-handle">@{publisher.handle}</span>
-                <div className="publisher-profile-title-row">
-                  <h1>{publisher.displayName}</h1>
-                  {publisher.official ? <OfficialTag /> : null}
-                  {publisher.kind === "user"
-                    ? visibleAffiliations.map((entry) => (
-                        <Link
-                          key={entry.publisher._id}
-                          to="/$slug"
-                          params={{ slug: entry.publisher.handle }}
-                          className="publisher-profile-affiliation-badge"
-                        >
-                          <MarketplaceIcon
-                            kind="org"
-                            label={entry.publisher.displayName}
-                            imageUrl={entry.publisher.image}
-                            size="xs"
-                          />
-                          {entry.publisher.displayName}
-                        </Link>
-                      ))
-                    : null}
-                  {publisher.kind === "user" && affiliations.length > visibleAffiliations.length ? (
-                    <span className="publisher-profile-affiliation-more">
-                      +{affiliations.length - visibleAffiliations.length}
-                    </span>
-                  ) : null}
+          <section className="publisher-profile-chrome" aria-label="Publisher profile">
+            <div className="publisher-profile-chrome-top">
+              <div className="publisher-profile-chrome-identity">
+                <div className="publisher-profile-avatar">
+                  <MarketplaceIcon
+                    kind={publisher.kind === "org" ? "org" : "user"}
+                    label={publisher.displayName}
+                    imageUrl={publisher.image}
+                    size="md"
+                  />
                 </div>
-                {publisher.bio ? <p>{publisher.bio}</p> : null}
-              </div>
-            </div>
-            <div className="publisher-profile-hero-stats" aria-label="Publisher stats">
-              <PublisherStat
-                icon={Download}
-                value={formatCompactStat(publisher.stats.downloads)}
-                label="downloads"
-              />
-              <PublisherStat
-                icon={Star}
-                value={formatCompactStat(publisher.stats.stars)}
-                label="stars"
-              />
-              <PublisherStat
-                icon={Package}
-                value={formatCompactStat(publishedCount)}
-                label="published"
-              />
-              {publisher.kind === "org" ? (
-                <PublisherStat
-                  icon={Users}
-                  value={formatCompactStat(memberCount)}
-                  label={memberCount === 1 ? "member" : "members"}
-                />
-              ) : null}
-            </div>
-          </section>
-
-          <div className="publisher-profile-layout">
-            <aside className="publisher-profile-sidebar">
-              {publisher.kind !== "org" ? (
-                <section className="publisher-profile-panel">
-                  <h2>Details</h2>
-                  <div className="publisher-profile-detail-list">
-                    <ProfileDetail
-                      icon={GitHubIcon}
-                      label="GitHub"
-                      value={`@${publisher.handle}`}
-                      href={`https://github.com/${publisher.handle}`}
-                    />
+                <div className="publisher-profile-heading">
+                  <div className="publisher-profile-title-row">
+                    <h1>
+                      <span className="publisher-profile-title-text">{publisher.displayName}</span>
+                    </h1>
+                    {publisher.official ? <OfficialTag /> : null}
                   </div>
-                </section>
-              ) : null}
-
-              {publisher.kind === "user" && affiliations.length > 0 ? (
-                <section className="publisher-profile-panel">
-                  <div className="publisher-profile-panel-heading">
-                    <h2>Orgs</h2>
-                    <span>{formatCompactStat(affiliations.length)}</span>
-                  </div>
-                  <div className="publisher-profile-orgs" aria-label="Organizations">
-                    {affiliations.map((entry) => (
-                      <Link
-                        key={entry.publisher._id}
-                        to="/$slug"
-                        params={{ slug: entry.publisher.handle }}
-                        className="publisher-profile-org"
-                      >
-                        <MarketplaceIcon
-                          kind="org"
-                          label={entry.publisher.displayName}
-                          imageUrl={entry.publisher.image}
-                          size="sm"
-                        />
-                        <span className="publisher-profile-org-copy">
-                          <strong className="publisher-profile-org-name">
-                            <span className="publisher-profile-org-name-text">
-                              {entry.publisher.displayName}
-                            </span>
-                            {entry.publisher.official ? <OfficialBadge /> : null}
-                          </strong>
-                          <small>@{entry.publisher.handle}</small>
+                  <span className="publisher-profile-handle">@{publisher.handle}</span>
+                  <div className="publisher-profile-stat-strip" aria-label="Publisher stats">
+                    <span>
+                      <strong>{formatCompactStat(publisher.stats.downloads)}</strong> downloads
+                    </span>
+                    <span className="publisher-profile-stat-sep" aria-hidden="true">
+                      ·
+                    </span>
+                    <span>
+                      <strong>{formatCompactStat(publisher.stats.stars)}</strong> stars
+                    </span>
+                    <span className="publisher-profile-stat-sep" aria-hidden="true">
+                      ·
+                    </span>
+                    <span>
+                      <strong>{formatCompactStat(publishedCount)}</strong> published
+                    </span>
+                    {publisher.kind === "org" ? (
+                      <>
+                        <span className="publisher-profile-stat-sep" aria-hidden="true">
+                          ·
                         </span>
-                        <span className="publisher-profile-org-role">{entry.role}</span>
-                      </Link>
-                    ))}
-                  </div>
-                </section>
-              ) : null}
-
-              {publisher.kind === "org" ? (
-                <section className="publisher-profile-panel">
-                  <h2>Members</h2>
-                  {(members?.members ?? []).length > 0 ? (
-                    <div className="publisher-profile-members">
-                      {members?.members.map((entry) => (
-                        <Link
-                          key={`${entry.user._id}:${entry.role}`}
-                          to="/$slug"
-                          params={{ slug: entry.user.handle ?? publisher.handle }}
-                          className="publisher-profile-member"
-                        >
-                          <MarketplaceIcon
-                            kind="user"
-                            label={entry.user.displayName ?? entry.user.handle ?? "User"}
-                            imageUrl={entry.user.image}
-                            size="sm"
-                          />
-                          <span className="publisher-profile-member-copy">
-                            <strong className="publisher-profile-member-name">
-                              <span className="publisher-profile-member-name-text">
-                                {entry.user.displayName ?? entry.user.handle ?? "User"}
-                              </span>
-                              {entry.user.official ? <OfficialBadge /> : null}
-                            </strong>
-                            {entry.user.handle ? <small>@{entry.user.handle}</small> : null}
-                          </span>
-                          <span
-                            className={`publisher-profile-member-role publisher-profile-member-role-${roleColor[entry.role] ?? "default"}`}
-                          >
-                            {entry.role}
-                          </span>
-                        </Link>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="publisher-profile-empty-copy">No members listed.</p>
-                  )}
-                </section>
-              ) : null}
-            </aside>
-
-            <section className="publisher-profile-main" aria-labelledby="publisher-published-title">
-              <div className="publisher-profile-section-header">
-                <div>
-                  <h2 id="publisher-published-title" className="sr-only">
-                    Publisher catalog
-                  </h2>
-                  <div className="publisher-profile-catalog-tabs" aria-label="Catalog">
-                    <button
-                      type="button"
-                      className={activeCatalogTab === "skills" ? "is-active" : undefined}
-                      onClick={() => setCatalogTab("skills")}
-                    >
-                      <Wrench size={14} aria-hidden="true" />
-                      Skills <span>{formatCompactStat(publisher.stats.skills)}</span>
-                    </button>
-                    <button
-                      type="button"
-                      className={activeCatalogTab === "plugins" ? "is-active" : undefined}
-                      onClick={() => setCatalogTab("plugins")}
-                    >
-                      <Package size={14} aria-hidden="true" />
-                      Plugins <span>{formatCompactStat(publisher.stats.packages)}</span>
-                    </button>
-                    {publisher.kind === "user" ? (
-                      <button
-                        type="button"
-                        className={activeCatalogTab === "stars" ? "is-active" : undefined}
-                        onClick={() => setCatalogTab("stars")}
-                      >
-                        <Star size={14} aria-hidden="true" />
-                        Stars <span>{formatCompactStat(publisher.starredCount ?? 0)}</span>
-                      </button>
+                        <span>
+                          <strong>{formatCompactStat(memberCount)}</strong>{" "}
+                          {memberCount === 1 ? "member" : "members"}
+                        </span>
+                      </>
                     ) : null}
                   </div>
                 </div>
               </div>
 
-              {isLoadingCatalog ? (
-                <BrowseResultsSkeleton count={6} variant="list" />
-              ) : activePublishedDisplay ? (
-                <PublishedCatalogSections display={activePublishedDisplay} view="list" />
-              ) : topicGroups.length > 1 ? (
-                <TopicGroupedCatalogSections groups={topicGroups} view="list" />
-              ) : activeItems.length > 0 ? (
-                <>
-                  <div className="results-list">
-                    {activeItems.map((item) => (
-                      <PublishedItemCard key={`${item.kind}:${item._id}`} item={item} view="list" />
-                    ))}
-                  </div>
-                  {activeStatus === "CanLoadMore" ? (
+              <div className="publisher-profile-chrome-actions">
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      size="icon-sm"
+                      variant="ghost"
+                      aria-label="Profile actions"
+                      className="publisher-profile-chrome-more-trigger focus-visible:ring-0 focus-visible:ring-offset-0"
+                    >
+                      <MoreHorizontal size={16} aria-hidden="true" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="publisher-profile-chrome-more-menu">
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        if (!isAuthenticated) {
+                          requireSignIn();
+                          return;
+                        }
+                        openReportDialog();
+                      }}
+                    >
+                      <Flag size={14} aria-hidden="true" />
+                      Report profile
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              </div>
+            </div>
+
+            <div
+              className={`publisher-profile-details${showDetailsAside ? " publisher-profile-details-has-aside" : ""}`}
+            >
+              <div className="publisher-profile-details-main">
+                {publisher.bio ? (
+                  <section className="publisher-profile-detail-block" aria-label="About">
+                    <h2 className="publisher-profile-detail-label">About</h2>
+                    <PublisherProfileBio bio={publisher.bio} />
+                  </section>
+                ) : null}
+
+                <div className="publisher-profile-details-inline">
+                  <section className="publisher-profile-detail-block" aria-label="Links">
+                    <h2 className="publisher-profile-detail-label">Links</h2>
+                    <div className="publisher-profile-meta-row">
+                      <a
+                        className="publisher-profile-meta-link"
+                        href={`https://github.com/${publisher.handle}`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        <GitHubIcon size={14} />
+                        GitHub
+                        <ArrowUpRight
+                          className="publisher-profile-meta-link-external-icon"
+                          size={12}
+                          aria-hidden="true"
+                        />
+                      </a>
+                    </div>
+                  </section>
+
+                  {showMembers ? (
+                    <section className="publisher-profile-detail-block" aria-label="Members">
+                      <h2 className="publisher-profile-detail-label">Members</h2>
+                      <div className="publisher-profile-meta-chips">
+                        {visibleMembers.map((entry) => (
+                          <Link
+                            key={`${entry.user._id}:${entry.role}`}
+                            to="/user/$handle"
+                            params={{ handle: entry.user.handle ?? publisher.handle }}
+                            className="publisher-profile-meta-chip"
+                          >
+                            <MarketplaceIcon
+                              kind="user"
+                              label={entry.user.displayName ?? entry.user.handle ?? "User"}
+                              imageUrl={entry.user.image}
+                              size="xs"
+                            />
+                            <span className="publisher-profile-meta-chip-copy">
+                              <strong>
+                                {entry.user.displayName ?? entry.user.handle ?? "User"}
+                                {entry.user.official ? <OfficialBadge /> : null}
+                              </strong>
+                              <small>{entry.role}</small>
+                            </span>
+                          </Link>
+                        ))}
+                        {!showAllMembers && hiddenMemberCount > 0 ? (
+                          <button
+                            type="button"
+                            className="publisher-profile-meta-chip publisher-profile-meta-chip-more"
+                            onClick={() => setShowAllMembers(true)}
+                          >
+                            +{hiddenMemberCount}
+                          </button>
+                        ) : null}
+                      </div>
+                    </section>
+                  ) : null}
+                </div>
+              </div>
+
+              {showDetailsAside ? (
+                <div className="publisher-profile-details-aside">
+                  {showOrganizations ? (
+                    <section className="publisher-profile-detail-block" aria-label="Organizations">
+                      <h2 className="publisher-profile-detail-label">Organizations</h2>
+                      <div className="publisher-profile-meta-chips">
+                        {visibleOrgs.map((entry) => (
+                          <Link
+                            key={entry.publisher._id}
+                            to="/user/$handle"
+                            params={{ handle: entry.publisher.handle }}
+                            className="publisher-profile-meta-chip"
+                          >
+                            <MarketplaceIcon
+                              kind="org"
+                              label={entry.publisher.displayName}
+                              imageUrl={entry.publisher.image}
+                              size="xs"
+                            />
+                            <span className="publisher-profile-meta-chip-copy">
+                              <strong>{entry.publisher.displayName}</strong>
+                              <small>{entry.role}</small>
+                            </span>
+                          </Link>
+                        ))}
+                        {!showAllOrgs && hiddenOrgCount > 0 ? (
+                          <button
+                            type="button"
+                            className="publisher-profile-meta-chip publisher-profile-meta-chip-more"
+                            onClick={() => setShowAllOrgs(true)}
+                          >
+                            +{hiddenOrgCount}
+                          </button>
+                        ) : null}
+                      </div>
+                    </section>
+                  ) : null}
+
+                </div>
+              ) : null}
+            </div>
+          </section>
+
+          <div className="publisher-profile-tab-bar">
+            <BrowseControls>
+              <BrowseControlsRow>
+                <BrowseSegmentedTabs
+                  ariaLabel="Catalog"
+                  options={catalogTabOptions}
+                  value={catalogTab}
+                  onChange={(value) => {
+                    if (!value) return;
+                    setCatalogTab(value as ProfileCatalogTab);
+                    setCatalogSearch("");
+                  }}
+                />
+                <BrowseActions>
+                  <BrowseSortSelect
+                    options={PROFILE_CATALOG_SORT_OPTIONS}
+                    value={activeCatalogSort}
+                    onChange={(value) =>
+                      setCatalogSort((value ?? DEFAULT_PROFILE_CATALOG_SORT) as ProfileCatalogSort)
+                    }
+                  />
+                  {showCatalogSearch ? (
+                    <>
+                      <BrowseControlsDivider />
+                      <BrowseSearchTrigger
+                        open={browseSearch.open}
+                        onOpen={browseSearch.openSearch}
+                        label="Filter catalog"
+                      />
+                    </>
+                  ) : null}
+                </BrowseActions>
+                {showCatalogSearch ? (
+                  <BrowseSearchPanel open={browseSearch.open}>
+                    <BrowseSearchInput
+                      inputRef={searchInputRef}
+                      label="catalog search"
+                      placeholder="Filter items..."
+                      value={catalogSearch}
+                      onChange={setCatalogSearch}
+                      onClear={browseSearch.closeSearch}
+                      closeLabel="Close search"
+                    />
+                  </BrowseSearchPanel>
+                ) : null}
+              </BrowseControlsRow>
+            </BrowseControls>
+          </div>
+
+          <div className="publisher-profile-catalog-panel">
+            <section
+              className="publisher-profile-catalog browse-page"
+              aria-label="Publisher catalog"
+            >
+            {isLoadingCatalog ? (
+              <BrowseResultsSkeleton count={6} variant="list" />
+            ) : catalogGroups.length > 1 ? (
+              <PublisherGroupedCatalog
+                groups={catalogGroups}
+                selectedGroup={selectedCatalogGroup}
+                onSelectedGroupChange={setSelectedCatalogGroup}
+                footer={
+                  showCatalogLoadMore ? (
                     <div className="publisher-profile-load-more">
                       <Button type="button" onClick={() => activeLoadMore(12)}>
                         Load more
                       </Button>
                     </div>
-                  ) : null}
-                  {activeStatus === "LoadingMore" ? (
+                  ) : activeStatus === "LoadingMore" ? (
                     <div className="publisher-profile-loading">Loading more...</div>
-                  ) : null}
-                </>
-              ) : (
-                <EmptyState
-                  title={
-                    activeCatalogTab === "stars"
+                  ) : null
+                }
+              />
+            ) : filteredItems.length > 0 ? (
+              <>
+                <PublisherCatalogItems items={filteredItems} />
+                {showCatalogLoadMore ? (
+                  <div className="publisher-profile-load-more">
+                    <Button type="button" onClick={() => activeLoadMore(12)}>
+                      Load more
+                    </Button>
+                  </div>
+                ) : null}
+                {activeStatus === "LoadingMore" ? (
+                  <div className="publisher-profile-loading">Loading more...</div>
+                ) : null}
+              </>
+            ) : (
+              <EmptyState
+                icon={catalogSearch.trim().length > 0 ? Search : undefined}
+                title={
+                  catalogSearch.trim().length > 0
+                    ? "No matching items"
+                    : catalogTab === "stars"
                       ? "No starred items yet"
-                      : activeCatalogTab === "plugins"
+                      : catalogTab === "plugins"
                         ? "No published plugins yet"
                         : "No published skills yet"
-                  }
-                />
-              )}
+                }
+              />
+            )}
             </section>
           </div>
         </div>
       </Container>
+
+      <SkillReportDialog
+        isOpen={isAuthenticated && isReportDialogOpen}
+        isSubmitting={isSubmittingReport}
+        reportReason={reportReason}
+        reportError={reportError}
+        title="Report profile"
+        description="Describe the issue so moderators can review this publisher."
+        submitLabel="Copy report"
+        onReasonChange={setReportReason}
+        onCancel={closeReportDialog}
+        onSubmit={() => void submitPublisherReport(publisher)}
+      />
     </main>
   );
 }
 
-export function groupPublisherCatalogItemsByTopic(items: PublicPublisherCatalogItem[]) {
+const UNCATEGORIZED_GROUP_KEY = "other";
+const UNCATEGORIZED_GROUP_TITLE = "Uncategorized";
+
+export function getPublisherCatalogItemCategorySlugs(item: PublicPublisherCatalogItem): string[] {
+  const slugs = new Set<string>();
+  if (item.kind === "skill") {
+    for (const category of getSkillCategoriesForSkill(item)) {
+      slugs.add(category.slug);
+    }
+  } else {
+    for (const slug of resolveStoredPluginCategories({
+      categories: item.categories,
+      inferredCategories: item.inferredCategories,
+      displayName: item.displayName,
+      summary: item.summary ?? undefined,
+    })) {
+      slugs.add(slug);
+    }
+    for (const raw of item.categories ?? []) {
+      const resolved = resolvePluginBrowseCategorySlug(raw);
+      if (resolved) slugs.add(resolved);
+    }
+  }
+  const isCategorySlug = item.kind === "skill" ? isSkillCategorySlug : isPluginCategorySlug;
+  for (const topicSlug of getCatalogTopicSlugs(item.topics)) {
+    if (isCategorySlug(topicSlug)) slugs.add(topicSlug);
+  }
+  return [...slugs];
+}
+
+export function publisherCatalogItemMatchesCategory(
+  item: PublicPublisherCatalogItem,
+  categorySlug: string,
+): boolean {
+  const resolved =
+    item.kind === "skill"
+      ? resolveSkillBrowseCategorySlug(categorySlug)
+      : resolvePluginBrowseCategorySlug(categorySlug);
+  if (!resolved) return false;
+  return getPublisherCatalogItemCategorySlugs(item).includes(resolved);
+}
+
+export function buildPublisherCatalogCategoryOptions(
+  items: readonly PublicPublisherCatalogItem[],
+  kind: "skill" | "plugin",
+): BrowseCategory[] {
+  const source = kind === "plugin" ? PLUGIN_CATEGORIES : SKILL_CATEGORIES;
+  const presentSlugs = new Set(items.flatMap((item) => getPublisherCatalogItemCategorySlugs(item)));
+  return source.filter((category) => presentSlugs.has(category.slug));
+}
+
+export type PublisherCatalogGroup = {
+  key: string;
+  title: string;
+  description?: string | null;
+  items: PublicPublisherCatalogItem[];
+};
+
+export function displaySectionsToCatalogGroups(
+  display: PublicPublisherCatalogDisplay,
+): PublisherCatalogGroup[] {
+  return display.sections.map((section) => ({
+    key: section.key,
+    title: section.title === "Other" ? UNCATEGORIZED_GROUP_TITLE : section.title,
+    description: section.description,
+    items: section.items,
+  }));
+}
+
+export function groupPublisherCatalogItemsByTopic(
+  items: PublicPublisherCatalogItem[],
+): PublisherCatalogGroup[] {
   const groups = new Map<string, { title: string; items: PublicPublisherCatalogItem[] }>();
   for (const item of items) {
     const rawTopic = item.topics?.[0]?.trim();
-    const title = rawTopic || "Other";
+    const title = rawTopic || UNCATEGORIZED_GROUP_TITLE;
     const key = rawTopic
       ? (normalizeCatalogTopic(rawTopic) ?? rawTopic.toLocaleLowerCase("en-US"))
-      : "other";
+      : UNCATEGORIZED_GROUP_KEY;
     const group = groups.get(key) ?? { title, items: [] };
     group.items.push(item);
     groups.set(key, group);
   }
-  return [...groups.entries()].map(([key, value]) => ({ key, ...value }));
+  return [...groups.entries()]
+    .map(([key, value]) => ({ key, ...value }))
+    .sort((left, right) => {
+      if (left.key === UNCATEGORIZED_GROUP_KEY) return 1;
+      if (right.key === UNCATEGORIZED_GROUP_KEY) return -1;
+      return left.title.localeCompare(right.title);
+    });
 }
 
-function TopicGroupedCatalogSections({
-  groups,
-  view,
+export function buildPublisherGroupTabOptions(groups: PublisherCatalogGroup[]) {
+  const totalCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+  return [
+    { value: "all", label: "All", count: formatCatalogTabCount(totalCount) },
+    ...groups.map((group) => ({
+      value: group.key,
+      label: group.title,
+      count: formatCatalogTabCount(group.items.length),
+    })),
+  ];
+}
+
+export function shouldShowPublisherCatalogLoadMore({
+  activeStatus,
+  catalogSearch,
+  selectedCatalogGroup,
+  activePublishedDisplay,
 }: {
-  groups: ReturnType<typeof groupPublisherCatalogItemsByTopic>;
-  view: PublishedView;
+  activeStatus: string;
+  catalogSearch: string;
+  selectedCatalogGroup: string;
+  activePublishedDisplay: PublicPublisherCatalogDisplay | null | undefined;
 }) {
   return (
-    <div className="publisher-profile-source-catalog">
-      {groups.map((group) => (
-        <section key={group.key} className="publisher-profile-manifest-section">
-          <div className="publisher-profile-manifest-heading">
-            <h3>{group.title}</h3>
-          </div>
-          <div className={view === "list" ? "results-list" : "grid publisher-published-grid"}>
-            {group.items.map((item) => (
-              <PublishedItemCard key={`${item.kind}:${item._id}`} item={item} view={view} />
-            ))}
-          </div>
-        </section>
-      ))}
+    activeStatus === "CanLoadMore" &&
+    catalogSearch.trim().length === 0 &&
+    selectedCatalogGroup === "all" &&
+    !activePublishedDisplay
+  );
+}
+
+function PublisherCatalogItems({ items }: { items: PublicPublisherCatalogItem[] }) {
+  return (
+    <div className="browse-list-stack">
+      <div className="results-list">
+        {items.map((item) => (
+          <PublishedItemCard key={`${item.kind}:${item._id}`} item={item} />
+        ))}
+      </div>
     </div>
   );
 }
 
-function PublisherStat({
-  icon: Icon,
-  value,
-  label,
+export function PublisherGroupedCatalog({
+  groups,
+  selectedGroup,
+  onSelectedGroupChange,
+  footer,
 }: {
-  icon: LucideIcon;
-  value: string;
-  label: string;
+  groups: PublisherCatalogGroup[];
+  selectedGroup: string;
+  onSelectedGroupChange: (value: string) => void;
+  footer?: ReactNode;
 }) {
+  const activeGroup =
+    selectedGroup === "all" ? null : (groups.find((group) => group.key === selectedGroup) ?? null);
+  const visibleItems = activeGroup?.items ?? groups.flatMap((group) => group.items);
+  const groupTabOptions = buildPublisherGroupTabOptions(groups);
+
   return (
-    <span className="publisher-profile-stat">
-      <Icon size={16} aria-hidden="true" />
-      <strong>{value}</strong>
-      {label}
-    </span>
+    <div className="publisher-profile-grouped-catalog">
+      <div className="publisher-profile-group-tabs">
+        <BrowseChipTabs
+          ariaLabel="Catalog groups"
+          options={groupTabOptions}
+          value={selectedGroup}
+          onChange={(value) => {
+            if (!value) return;
+            onSelectedGroupChange(value);
+          }}
+        />
+      </div>
+      {activeGroup?.description ? (
+        <p className="publisher-profile-group-description">{activeGroup.description}</p>
+      ) : null}
+      <PublisherCatalogItems items={visibleItems} />
+      {footer}
+    </div>
   );
 }
 
-function ProfileDetail({
-  icon: Icon,
-  label,
-  value,
-  href,
-}: {
-  icon: (props: { size?: number; "aria-hidden"?: boolean }) => ReactNode;
-  label: string;
-  value: string;
-  href?: string;
-}) {
-  const content = (
-    <>
-      <span>
-        <Icon size={14} aria-hidden={true} />
-        {label}
-      </span>
-      <strong>{value}</strong>
-    </>
-  );
-
-  return href ? (
-    <a className="publisher-profile-detail" href={href} target="_blank" rel="noreferrer">
-      {content}
-    </a>
-  ) : (
-    <div className="publisher-profile-detail">{content}</div>
-  );
+export function formatRelativeUpdatedAt(timestampMs: number, now = Date.now()) {
+  const diffMs = Math.max(0, now - timestampMs);
+  const minutes = Math.floor(diffMs / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.floor(hours / 24);
+  if (days < 30) return `${days}d ago`;
+  const months = Math.floor(days / 30);
+  if (months < 12) return `${months}mo ago`;
+  return `${Math.floor(months / 12)}y ago`;
 }
 
 // Exported for unit testing. The publisher profile route is the only
@@ -547,99 +975,146 @@ function ProfileDetail({
 // `item.icon` reach `MarketplaceIcon`.
 export function PublishedCatalogSections({
   display,
-  view,
+  selectedGroup = "all",
+  onSelectedGroupChange,
+  footer,
 }: {
   display: PublicPublisherCatalogDisplay;
-  view: PublishedView;
+  selectedGroup?: string;
+  onSelectedGroupChange?: (value: string) => void;
+  footer?: ReactNode;
 }) {
-  return (
-    <div className="publisher-profile-source-catalog">
-      {display.sections.map((section) => (
-        <section key={section.key} className="publisher-profile-manifest-section">
-          <div className="publisher-profile-manifest-heading">
-            <div>
-              <h3>{section.title}</h3>
-              {section.description ? <p>{section.description}</p> : null}
-            </div>
-          </div>
-          <div className={view === "list" ? "results-list" : "grid publisher-published-grid"}>
-            {section.items.map((item) => (
-              <PublishedItemCard key={`${item.kind}:${item._id}`} item={item} view={view} />
-            ))}
-          </div>
-        </section>
-      ))}
-    </div>
-  );
-}
+  const groups = displaySectionsToCatalogGroups(display);
+  const [internalSelectedGroup, setInternalSelectedGroup] = useState("all");
+  const activeSelectedGroup = onSelectedGroupChange ? selectedGroup : internalSelectedGroup;
+  const handleSelectedGroupChange = onSelectedGroupChange ?? setInternalSelectedGroup;
 
-export function PublishedItemCard({
-  item,
-  view,
-}: {
-  item: PublicPublisherCatalogItem;
-  view: PublishedView;
-}) {
-  if (view === "grid") {
+  if (groups.length <= 1) {
+    const items = groups[0]?.items ?? [];
     return (
-      <Link to={item.href} className="card skill-card">
-        <div className="skill-card-header">
-          <MarketplaceIcon
-            kind={item.kind}
-            label={item.displayName}
-            imageUrl={item.kind === "plugin" ? item.icon : null}
-            icon={item.kind === "skill" ? item.icon : null}
-            skill={item.kind === "skill" ? item : null}
-            size="md"
-          />
-          <h3 className="skill-card-title">{item.displayName}</h3>
-          {item.isOfficial ? <OfficialBadge /> : null}
-        </div>
-        <p className="skill-card-summary">
-          {item.summary ?? `${item.kind === "plugin" ? "Plugin" : "Skill"} published on ClawHub.`}
-        </p>
-        <div className="skill-card-footer">
-          <div className="skill-card-footer-inline publisher-published-card-stats">
-            <span className="skill-list-item-meta-item">
-              <Download size={14} aria-hidden="true" />
-              <strong>{formatCompactStat(readPublicDownloadCount(item))}</strong> downloads
-            </span>
-            <span className="skill-list-item-meta-item">
-              <Star size={14} aria-hidden="true" />
-              {formatCompactStat(item.stars)}
-            </span>
-          </div>
-        </div>
-      </Link>
+      <>
+        <PublisherCatalogItems items={items} />
+        {footer}
+      </>
     );
   }
 
   return (
-    <Link to={item.href} className="skill-list-item publisher-published-row">
-      <MarketplaceIcon
-        kind={item.kind}
-        label={item.displayName}
-        imageUrl={item.kind === "plugin" ? item.icon : null}
-        icon={item.kind === "skill" ? item.icon : null}
-        skill={item.kind === "skill" ? item : null}
-      />
-      <div className="skill-list-item-body">
-        <span className="skill-list-item-main">
-          <span className="skill-list-item-name">{item.displayName}</span>
-          {item.isOfficial ? <OfficialBadge /> : null}
-        </span>
-        {item.summary ? <p className="skill-list-item-summary">{item.summary}</p> : null}
-      </div>
-      <div className="skill-list-item-meta publisher-published-row-stats">
-        <span className="skill-list-item-meta-item">
-          <Download size={14} aria-hidden="true" />
-          <strong>{formatCompactStat(readPublicDownloadCount(item))}</strong> downloads
-        </span>
-        <span className="skill-list-item-meta-item">
-          <Star size={14} aria-hidden="true" />
-          {formatCompactStat(item.stars)}
-        </span>
-      </div>
-    </Link>
+    <PublisherGroupedCatalog
+      groups={groups}
+      selectedGroup={activeSelectedGroup}
+      onSelectedGroupChange={handleSelectedGroupChange}
+      footer={footer}
+    />
   );
+}
+
+export function getCatalogItemTypeLabel(item: PublicPublisherCatalogItem) {
+  if (item.kind === "plugin") return "Plugin";
+  const category = getSkillCategoryForSkill({
+    slug: item.slug ?? item._id,
+    displayName: item.displayName,
+    summary: item.summary,
+    categories: item.categories,
+    inferredCategories: item.inferredCategories,
+    latestVersionId: item.latestVersionId,
+    inferredFromVersionId: item.inferredFromVersionId,
+  });
+  const subtype =
+    item.topics?.[0]?.trim() || category?.label || UNCATEGORIZED_GROUP_TITLE;
+  return `Skill · ${subtype}`;
+}
+
+export function getCatalogItemShortTypeLabel(item: PublicPublisherCatalogItem) {
+  if (item.kind === "plugin") return "plugin";
+  if (item.topics?.[0]?.trim()) return item.topics[0].trim().toLowerCase();
+  const category = getSkillCategoryForSkill({
+    slug: item.slug ?? item._id,
+    displayName: item.displayName,
+    summary: item.summary,
+    categories: item.categories,
+    inferredCategories: item.inferredCategories,
+    latestVersionId: item.latestVersionId,
+    inferredFromVersionId: item.inferredFromVersionId,
+  });
+  return (category?.label ?? UNCATEGORIZED_GROUP_TITLE).toLowerCase();
+}
+
+function parseCatalogItemSlug(item: PublicPublisherCatalogItem) {
+  if (item.slug?.trim()) return item.slug.trim();
+  const segments = item.href.split("/").filter(Boolean);
+  return segments[segments.length - 1] ?? item._id;
+}
+
+function parsePluginName(item: PublicPublisherCatalogItem) {
+  const segments = item.href.split("/").filter(Boolean);
+  const pluginsIndex = segments.indexOf("plugins");
+  if (pluginsIndex >= 0 && segments[pluginsIndex + 1]) {
+    return decodeURIComponent(segments[pluginsIndex + 1]);
+  }
+  return parseCatalogItemSlug(item);
+}
+
+export function catalogItemToPublicSkill(item: PublicPublisherCatalogItem): PublicSkill {
+  return {
+    _id: item._id as Id<"skills">,
+    _creationTime: item.updatedAt,
+    slug: parseCatalogItemSlug(item),
+    displayName: item.displayName,
+    summary: item.summary,
+    icon: item.icon,
+    ownerUserId: "users:unknown" as Id<"users">,
+    categories: item.categories,
+    inferredCategories: item.inferredCategories,
+    latestVersionId: item.latestVersionId as Id<"skillVersions"> | undefined,
+    inferredFromVersionId: item.inferredFromVersionId as Id<"skillVersions"> | undefined,
+    topics: item.topics,
+    badges: item.isOfficial
+      ? { official: { byUserId: "users:system" as Id<"users">, at: 0 } }
+      : {},
+    stats: {
+      downloads: readPublicDownloadCount(item),
+      stars: item.stars,
+      versions: 0,
+      comments: 0,
+      installsCurrent: 0,
+      installsAllTime: item.installs ?? 0,
+    },
+    isSuspicious: false,
+    createdAt: item.updatedAt,
+    updatedAt: item.updatedAt,
+    tags: {},
+  };
+}
+
+function catalogItemToPackageListItem(item: PublicPublisherCatalogItem): PackageListItem {
+  return {
+    name: parsePluginName(item),
+    displayName: item.displayName,
+    family: "code-plugin",
+    channel: item.isOfficial ? "official" : "community",
+    isOfficial: item.isOfficial,
+    summary: item.summary,
+    icon: item.icon,
+    createdAt: item.updatedAt,
+    updatedAt: item.updatedAt,
+    categories: item.categories,
+    topics: item.topics,
+    stats: {
+      downloads: readPublicDownloadCount(item),
+      installs: item.installs ?? 0,
+      stars: item.stars,
+      versions: 0,
+    },
+  };
+}
+
+export function PublishedItemCard({ item }: { item: PublicPublisherCatalogItem }) {
+  if (item.kind === "plugin") {
+    const plugin = catalogItemToPackageListItem(item);
+    return <PluginListItem item={plugin} variant="list" />;
+  }
+
+  const skill = catalogItemToPublicSkill(item);
+  return <SkillListItem skill={skill} href={item.href} />;
 }

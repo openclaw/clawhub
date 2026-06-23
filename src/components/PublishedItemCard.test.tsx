@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { PublishedCatalogSections, PublishedItemCard } from "../routes/user/$handle";
 
@@ -51,129 +51,88 @@ const basePlugin = {
 
 describe("PublishedItemCard", () => {
   it("renders downloads", () => {
-    render(<PublishedItemCard item={{ ...baseSkill, icon: null }} view="list" />);
+    render(<PublishedItemCard item={{ ...baseSkill, icon: null }} />);
 
     expect(screen.getByText("42")).toBeTruthy();
-    expect(screen.getByText("downloads")).toBeTruthy();
-    expect(screen.queryByText("installs")).toBeNull();
-    expect(screen.queryByText("8")).toBeNull();
+    expect(screen.queryByText("downloads")).toBeNull();
   });
 
   it("renders the legacy backend metric as downloads", () => {
     render(
       <PublishedItemCard
         item={{ ...baseSkill, downloads: 42, installs: undefined, icon: null } as never}
-        view="list"
       />,
     );
 
     expect(screen.getByText("42")).toBeTruthy();
-    expect(screen.getByText("downloads")).toBeTruthy();
-    expect(screen.queryByText("installs")).toBeNull();
+    expect(screen.queryByText("downloads")).toBeNull();
   });
 
-  describe("grid view", () => {
-    it("renders the category icon for a skill even when a legacy custom icon is set", () => {
-      render(<PublishedItemCard item={{ ...baseSkill, icon: "lucide:Plug" }} view="grid" />);
-      const icon = document.querySelector(".marketplace-icon-glyph");
-      expect(icon).toBeTruthy();
-      expect(document.querySelector("svg")?.classList.contains("lucide-wrench")).toBe(true);
-    });
-
-    it("renders Slash when skill category data is missing", () => {
-      render(
-        <PublishedItemCard
-          item={{ ...baseSkill, categories: undefined, icon: null }}
-          view="grid"
-        />,
-      );
-      expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
-      expect(document.querySelector("svg")?.classList.contains("lucide-slash")).toBe(true);
-    });
-
-    it("always uses the default kind icon for plugins regardless of icon field (F7)", () => {
-      render(<PublishedItemCard item={{ ...basePlugin, icon: null }} view="grid" />);
-      expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
-    });
-
-    it("renders plugin manifest icons for publisher plugin cards", () => {
-      render(
-        <PublishedItemCard
-          item={{ ...basePlugin, icon: "https://cdn.example.test/icons/plugin.svg" }}
-          view="grid"
-        />,
-      );
-
-      const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
-      expect(image).toBeTruthy();
-      expect(image?.getAttribute("src")).toBe("https://cdn.example.test/icons/plugin.svg");
-      expect(document.querySelector(".marketplace-icon-glyph")).toBeNull();
-    });
-
-    it("renders the compact official mark for official published items", () => {
-      render(
-        <PublishedItemCard item={{ ...baseSkill, icon: null, isOfficial: true }} view="grid" />,
-      );
-      expect(screen.getByLabelText("Official")).toBeTruthy();
-      expect(screen.queryByText("Official")).toBeNull();
-    });
-
-    it("does not add source-backed chrome to GitHub-backed skill cards", () => {
-      render(
-        <PublishedItemCard
-          item={{
-            ...baseSkill,
-            icon: null,
-            sourceBacked: true,
-            sourceRepo: "NVIDIA/skills",
-          }}
-          view="grid"
-        />,
-      );
-
-      expect(screen.queryByText("Source-backed")).toBeNull();
-    });
+  it("renders the category icon for a skill even when a legacy custom icon is set", () => {
+    render(<PublishedItemCard item={{ ...baseSkill, icon: "lucide:Plug" }} />);
+    expect(document.querySelector("svg")?.classList.contains("lucide-wrench")).toBe(true);
   });
 
-  describe("list view", () => {
-    it("renders the category icon for a skill even when a legacy custom icon is set", () => {
-      render(<PublishedItemCard item={{ ...baseSkill, icon: "lucide:Plug" }} view="list" />);
-      expect(document.querySelector("svg")?.classList.contains("lucide-wrench")).toBe(true);
-    });
+  it("renders Slash when skill category data is missing", () => {
+    render(
+      <PublishedItemCard item={{ ...baseSkill, categories: undefined, icon: null }} />,
+    );
+    expect(document.querySelector("svg")?.classList.contains("lucide-slash")).toBe(true);
+  });
 
-    it("renders Slash when skill category data is missing", () => {
-      render(
-        <PublishedItemCard
-          item={{ ...baseSkill, categories: undefined, icon: null }}
-          view="list"
-        />,
-      );
-      expect(document.querySelector("svg")?.classList.contains("lucide-slash")).toBe(true);
-    });
+  it("always uses the default kind icon for plugins regardless of icon field (F7)", () => {
+    render(<PublishedItemCard item={{ ...basePlugin, icon: null }} />);
+    expect(document.querySelector(".marketplace-icon-glyph")).toBeTruthy();
+  });
 
-    it("renders the compact official mark for official published rows", () => {
-      render(
-        <PublishedItemCard item={{ ...baseSkill, icon: null, isOfficial: true }} view="list" />,
-      );
-      expect(screen.getByLabelText("Official")).toBeTruthy();
-      expect(screen.queryByText("Official")).toBeNull();
-    });
+  it("renders plugin manifest icons for publisher plugin rows", () => {
+    render(
+      <PublishedItemCard
+        item={{ ...basePlugin, icon: "https://cdn.example.test/icons/plugin.svg" }}
+      />,
+    );
 
-    it("does not render artifact-kind prefixes as owner handles", () => {
-      render(<PublishedItemCard item={{ ...baseSkill, icon: null }} view="list" />);
+    const image = document.querySelector<HTMLImageElement>(".marketplace-icon-image");
+    expect(image).toBeTruthy();
+    expect(image?.getAttribute("src")).toBe("https://cdn.example.test/icons/plugin.svg");
+    expect(document.querySelector(".marketplace-icon-glyph")).toBeNull();
+  });
 
-      expect(screen.queryByText("@skill")).toBeNull();
-      expect(screen.queryByText("/")).toBeNull();
-      expect(screen.getByText("Test Skill")).toBeTruthy();
-    });
+  it("renders the compact official mark for official published rows", () => {
+    render(<PublishedItemCard item={{ ...baseSkill, icon: null, isOfficial: true }} />);
+    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.queryByText("Official")).toBeNull();
+  });
 
-    it("does not render plugin artifact-kind prefixes as owner handles", () => {
-      render(<PublishedItemCard item={{ ...basePlugin, icon: null }} view="list" />);
+  it("does not add source-backed chrome to GitHub-backed skill rows", () => {
+    render(
+      <PublishedItemCard
+        item={{
+          ...baseSkill,
+          icon: null,
+          sourceBacked: true,
+          sourceRepo: "NVIDIA/skills",
+        }}
+      />,
+    );
 
-      expect(screen.queryByText("@plugin")).toBeNull();
-      expect(screen.queryByText("/")).toBeNull();
-      expect(screen.getByText("Test Plugin")).toBeTruthy();
-    });
+    expect(screen.queryByText("Source-backed")).toBeNull();
+  });
+
+  it("does not render artifact-kind prefixes as owner handles", () => {
+    render(<PublishedItemCard item={{ ...baseSkill, icon: null }} />);
+
+    expect(screen.queryByText("@skill")).toBeNull();
+    expect(screen.queryByText("/")).toBeNull();
+    expect(screen.getByText("Test Skill")).toBeTruthy();
+  });
+
+  it("does not render plugin artifact-kind prefixes as owner handles", () => {
+    render(<PublishedItemCard item={{ ...basePlugin, icon: null }} />);
+
+    expect(screen.queryByText("@plugin")).toBeNull();
+    expect(screen.queryByText("/")).toBeNull();
+    expect(screen.getByText("Test Plugin")).toBeTruthy();
   });
 });
 
@@ -181,7 +140,6 @@ describe("PublishedCatalogSections", () => {
   it("renders manifest groups without source-backed catalog chrome", () => {
     render(
       <PublishedCatalogSections
-        view="list"
         display={{
           mode: "grouped",
           sourceRepos: ["NVIDIA/skills"],
@@ -225,12 +183,19 @@ describe("PublishedCatalogSections", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Agentic AI" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Other skills" })).toBeTruthy();
+    expect(screen.getByRole("radiogroup", { name: "Catalog groups" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /agentic ai 1/i })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: /other skills 1/i })).toBeTruthy();
     expect(screen.getByText("AIQ Deploy")).toBeTruthy();
     expect(screen.getByText("Other Skill")).toBeTruthy();
     expect(screen.queryByText("Source-backed from NVIDIA/skills")).toBeNull();
     expect(screen.queryByText("Source-backed")).toBeNull();
     expect(screen.queryByText("NVIDIA/skills")).toBeNull();
+
+    fireEvent.click(screen.getByRole("radio", { name: /agentic ai 1/i }));
+
+    expect(screen.getByText("Agentic AI skills.")).toBeTruthy();
+    expect(screen.getByText("AIQ Deploy")).toBeTruthy();
+    expect(screen.queryByText("Other Skill")).toBeNull();
   });
 });
