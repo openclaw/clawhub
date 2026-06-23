@@ -19,9 +19,22 @@ permissions:
   contents: read
 
 jobs:
+  validate-ref:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require main ref for production publication
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF}" != "refs/heads/main" ]]; then
+            echo "Production catalog publications must run from main."
+            exit 1
+          fi
+
   publish:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    needs: validate-ref
     environment:
       name: Production
       url: https://registry.openclaw.ai/feeds/plugins
