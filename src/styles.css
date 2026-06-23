@@ -159,7 +159,6 @@
   --page-narrow: 900px;
   --page-min: 320px;
 
-  /* Sticky chrome offset — calm navbar-top height (min-height + vertical padding). */
   --site-header-height: calc(52px + 24px);
 
   /* Spacing scale */
@@ -5132,9 +5131,6 @@ code {
 .skill-hero-action-grid > * {
   min-width: 0;
 }
-
-/* .skill-hero-top.has-plugin no longer uses a 2-column grid, so no
-   collapse override is needed here. */
 
 .skill-hero-title {
   display: grid;

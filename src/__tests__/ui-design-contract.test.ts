@@ -279,8 +279,8 @@ describe("restored UI design contract", () => {
 
     expect(shellSource).toContain('"skill-hero-layout has-sidebar"');
     expect(cssRule(css, ".skill-hero-layout")).toContain("grid-template-columns: minmax(0, 1fr)");
-    expect(css).toContain(
-      ".skill-hero-lower.has-sidebar {\n  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);",
+    expect(cssRule(css, ".skill-hero-lower.has-sidebar")).toContain(
+      "grid-template-columns: minmax(0, 1fr) minmax(300px, 360px)",
     );
     expect(cssRule(css, ".skill-hero-main-extra")).toContain("overflow-x: clip");
     expect(cssRule(css, ".skill-install-command-shell")).toContain("max-width: 100%");

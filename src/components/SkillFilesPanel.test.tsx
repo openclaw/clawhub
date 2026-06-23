@@ -55,6 +55,22 @@ describe("SkillFilesPanel", () => {
     });
   });
 
+  it("renders an empty file after it loads", async () => {
+    const { container } = render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        latestFiles={[makeFile("empty.txt", 0)]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /empty\.txt/i }));
+
+    await waitFor(() => {
+      expect(container.querySelector("pre.file-viewer-code")).not.toBeNull();
+    });
+    expect(container.querySelector("pre.file-viewer-code")?.textContent).toBe("");
+  });
+
   it("ignores stale responses when newer file selection is active", async () => {
     const resolvers: Record<
       string,

@@ -110,9 +110,9 @@ describe("UserBadge", () => {
   });
 
   it("links using fallbackHandle when the user record has no handle", () => {
-    const publisher: PublicPublisher = {
+    const publisher = {
       ...orgPublisher,
-      handle: undefined as unknown as string,
+      handle: undefined,
       displayName: "OpenClaw",
     };
 

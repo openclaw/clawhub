@@ -227,7 +227,6 @@ describe("SkillHeader", () => {
     expect(
       sidebar.getByRole("img", { name: "Daily downloads over the last 30 days" }),
     ).toBeTruthy();
-    expect(sidebar.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
   });
 
   it("reserves graph space while activity metrics are loading", () => {

@@ -1010,9 +1010,7 @@ describe("plugin detail route", () => {
           stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
         },
         owner: {
-          _id: "users:demo",
           handle: "demo-owner",
-          name: "Demo Owner",
           displayName: "Demo Owner",
           image: null,
         },

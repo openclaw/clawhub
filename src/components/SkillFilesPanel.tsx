@@ -267,7 +267,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
                 <div className="stat">Loading…</div>
               ) : fileError ? (
                 <div className="stat">Failed to load file: {fileError}</div>
-              ) : fileContent ? (
+              ) : fileContent !== null ? (
                 <pre ref={preRef} className="file-viewer-code" data-wrap={isWrapped}>
                   {fileContent}
                 </pre>
