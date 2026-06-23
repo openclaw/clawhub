@@ -1,6 +1,7 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, type Page, type TestInfo } from "@playwright/test";
+import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import { waitForHydration } from "../helpers/runtimeErrors";
 
 type DevPersona = "owner" | "user" | "admin" | "abusePublisher";
@@ -59,6 +60,17 @@ function devPersonaHeaderPattern(persona: DevPersona, expectedHandle: string) {
 function devPersonaMenuLabel(persona: DevPersona) {
   if (persona === "abusePublisher") return "abuse publisher";
   return persona;
+}
+
+function parseSkillDetailPath(pathname: string) {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (segments.length >= 3 && segments[1] === "skills") {
+    return { ownerHandle: segments[0], slug: segments[2] };
+  }
+  if (segments.length >= 2) {
+    return { ownerHandle: segments[0], slug: segments[1] };
+  }
+  throw new Error(`Expected skill detail path, received ${pathname}`);
 }
 
 export function skillMd(args: { slug: string; displayName: string; versionLabel: string }) {
@@ -253,18 +265,19 @@ export async function publishSkillVersion(
   const publishButton = page.getByRole("button", { name: "Publish skill" });
   await expect(publishButton).toBeEnabled();
   await publishButton.click();
-  await expect(page).toHaveURL(new RegExp(`/[^/]+/${escapeRegExp(args.slug)}$`), {
+  await expect(page).toHaveURL(new RegExp(`/${escapeRegExp(args.slug)}$`), {
     timeout: 60_000,
   });
-  const [, actualOwnerHandle, actualSlug] = new URL(page.url()).pathname
-    .split("/")
-    .map(decodeURIComponent);
+  const { ownerHandle: actualOwnerHandle, slug: actualSlug } = parseSkillDetailPath(
+    new URL(page.url()).pathname,
+  );
   expect(actualOwnerHandle).toBeTruthy();
   expect(actualOwnerHandle?.toLowerCase()).toContain(args.ownerHandle.toLowerCase());
   expect(actualSlug).toBe(args.slug);
-  await expect(page.locator(".skill-page-title")).toHaveText(args.displayName);
+  expect(new URL(page.url()).pathname).toBe(buildSkillDetailHref(actualOwnerHandle!, args.slug));
   await expect(page.getByRole("dialog", { name: /it's alive/i })).toBeVisible();
   await page.getByRole("button", { name: "View skill" }).click();
   await expect(page.getByRole("dialog", { name: /it's alive/i })).toBeHidden();
+  await expect(page.locator(".skill-page-title")).toHaveText(args.displayName);
   return actualOwnerHandle!;
 }
