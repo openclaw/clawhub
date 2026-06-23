@@ -19,29 +19,21 @@ describe("slug route resolution", () => {
     queryMock.mockReset();
   });
 
-  it("resolves Codex to the official OpenClaw plugin", async () => {
-    await expect(resolveTopLevelSlugRoute("codex")).resolves.toEqual({
-      kind: "plugin",
-      name: "@openclaw/codex",
-      href: "/openclaw/plugins/codex",
-    });
+  it("does not resolve top-level OpenClaw plugin aliases without matching publishers", async () => {
+    queryMock.mockResolvedValue(null);
+
+    await expect(resolveTopLevelSlugRoute("codex")).resolves.toBeNull();
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });
 
-  it("resolves extension slugs to their configured npm package names", async () => {
-    await expect(resolveTopLevelSlugRoute("anthropic")).resolves.toEqual({
-      kind: "plugin",
-      name: "@openclaw/anthropic-provider",
-      href: "/openclaw/plugins/anthropic-provider",
-    });
-
+  it("resolves extension slugs to their configured npm package names for legacy owner routes", async () => {
     await expect(resolveOpenClawPluginSlug("kimi-coding", "openclaw")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/kimi-provider",
       href: "/openclaw/plugins/kimi-provider",
     });
 
-    await expect(resolveTopLevelSlugRoute("diffs-language-pack")).resolves.toEqual({
+    await expect(resolveOpenClawPluginSlug("diffs-language-pack", "openclaw")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/diffs-language-pack",
       href: "/openclaw/plugins/diffs-language-pack",
@@ -62,7 +54,7 @@ describe("slug route resolution", () => {
     await expect(resolveOpenClawPluginSlug("codex", "ivangdavila")).resolves.toBeNull();
   });
 
-  it("falls back to skill slug resolution when no official plugin exists", async () => {
+  it("does not fall back to skill slug resolution when no publisher exists", async () => {
     queryMock.mockResolvedValue(null);
     fetchSkillPageDataMock.mockResolvedValue({
       owner: "steipete",
@@ -75,11 +67,8 @@ describe("slug route resolution", () => {
       },
     });
 
-    await expect(resolveTopLevelSlugRoute("weather")).resolves.toEqual({
-      kind: "skill",
-      owner: "steipete",
-      slug: "weather",
-    });
+    await expect(resolveTopLevelSlugRoute("weather")).resolves.toBeNull();
+    expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });
 
   it("resolves publisher handles before legacy bare skill slugs", async () => {
@@ -93,13 +82,13 @@ describe("slug route resolution", () => {
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });
 
-  it("keeps official OpenClaw aliases ahead of colliding publisher handles", async () => {
+  it("keeps publisher handles ahead of colliding official OpenClaw aliases", async () => {
     queryMock.mockResolvedValue({ _id: "publishers:tencent", handle: "tencent" });
 
     await expect(resolveTopLevelSlugRoute("tencent")).resolves.toEqual({
-      kind: "plugin",
-      name: "@openclaw/tencent-provider",
-      href: "/openclaw/plugins/tencent-provider",
+      kind: "publisher",
+      handle: "tencent",
+      publisher: { _id: "publishers:tencent", handle: "tencent" },
     });
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });

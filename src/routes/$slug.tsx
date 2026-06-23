@@ -1,4 +1,4 @@
-import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
+import { createFileRoute, notFound } from "@tanstack/react-router";
 import { buildPublisherMeta } from "../lib/og";
 import { resolveTopLevelSlugRoute } from "../lib/slugRoute";
 import { PublisherProfilePage } from "./user/$handle";
@@ -8,24 +8,9 @@ export const Route = createFileRoute("/$slug")({
     const target = await resolveTopLevelSlugRoute(params.slug);
     if (!target) throw notFound();
 
-    if (target.kind === "plugin") {
-      throw redirect({
-        href: target.href,
-        replace: true,
-      });
-    }
-
-    if (target.kind === "publisher") {
-      return {
-        publisher: target.publisher,
-      };
-    }
-
-    throw redirect({
-      to: "/$owner/skills/$slug",
-      params: { owner: target.owner, slug: target.slug },
-      replace: true,
-    });
+    return {
+      publisher: target.publisher,
+    };
   },
   head: ({ params, loaderData }) => {
     if (!loaderData || !("publisher" in loaderData)) return {};
