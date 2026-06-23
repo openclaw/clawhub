@@ -40,8 +40,8 @@ The skills feed uses the same envelope and `/v1/feeds/skills` route. It emits
 `type: "skill"` entries with `@<publisher>/<slug>` ids and ClawHub install
 coordinates. It includes only skills with an active latest published version,
 non-empty files, a SHA-256 integrity hash, and an active official publisher
-whose publisher kind is `org`. Personal publishers and unverified
-organizations are excluded.
+record. Both verified organization and personal publishers are included;
+unverified publishers are excluded.
 
 ## Publication
 

@@ -171,7 +171,6 @@ async function buildSkillEntry(
   ]);
   if (
     !owner ||
-    owner.kind !== "org" ||
     (trustedOwner
       ? Boolean(owner.deletedAt || owner.deactivatedAt)
       : !(await isOfficialPublisher(ctx, owner))) ||
@@ -227,12 +226,7 @@ export const listOfficialPublisherPage = internalQuery({
     const publishers: Doc<"publishers">[] = [];
     for (const row of page.page) {
       const publisher = await ctx.db.get(row.publisherId);
-      if (
-        publisher &&
-        publisher.kind === "org" &&
-        !publisher.deletedAt &&
-        !publisher.deactivatedAt
-      ) {
+      if (publisher && !publisher.deletedAt && !publisher.deactivatedAt) {
         publishers.push(publisher);
       }
     }
@@ -260,7 +254,6 @@ export const listOfficialSkillEntries = internalQuery({
     const owner = await ctx.db.get(args.publisherId);
     if (
       !owner ||
-      owner.kind !== "org" ||
       owner.deletedAt ||
       owner.deactivatedAt ||
       !(await isOfficialPublisher(ctx, owner))

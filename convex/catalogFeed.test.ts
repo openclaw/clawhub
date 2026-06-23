@@ -225,6 +225,24 @@ describe("catalog feed projection", () => {
     });
   });
 
+  it("includes skills from verified personal publishers", async () => {
+    const result = (await listOfficialSkillEntriesHandler(
+      makeCtx([makeSkill({ ownerPublisherId: "publishers:steipete" })], {
+        "publishers:steipete": { _id: "publishers:steipete", kind: "user", handle: "steipete" },
+        "skillVersions:1": makeSkillVersion(),
+      }),
+      { publisherId: "publishers:steipete", cursor: null },
+    )) as { entries: unknown[]; isDone: boolean };
+
+    expect(result.entries).toMatchObject([
+      {
+        type: "skill",
+        id: "@steipete/demo",
+        publisher: { id: "steipete", trust: "official" },
+      },
+    ]);
+  });
+
   it("excludes a latest version blocked by the download safety gate", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill()], {
@@ -239,27 +257,33 @@ describe("catalog feed projection", () => {
     expect(result.entries).toEqual([]);
   });
 
-  it("excludes personal, unverified, unpublished, and un-hashed skills", async () => {
-    const skills = [
-      makeSkill({ _id: "skills:user", ownerPublisherId: "publishers:user" }),
-      makeSkill({ _id: "skills:unverified", ownerPublisherId: "publishers:unverified" }),
-      makeSkill({ _id: "skills:unpublished", latestVersionId: undefined }),
-      makeSkill({ _id: "skills:no-hash", latestVersionId: "skillVersions:no-hash" }),
-    ];
+  it("excludes unverified, unpublished, and un-hashed skills", async () => {
     vi.mocked((await import("./lib/officialPublishers")).isOfficialPublisher).mockImplementation(
       async (_ctx, publisher) => publisher?._id === "publishers:1",
     );
 
-    const result = (await listOfficialSkillEntriesHandler(
-      makeCtx(skills, {
-        "publishers:user": { _id: "publishers:user", kind: "user", handle: "alice" },
+    const unverified = (await listOfficialSkillEntriesHandler(
+      makeCtx([makeSkill({ ownerPublisherId: "publishers:unverified" })], {
         "publishers:unverified": { _id: "publishers:unverified", kind: "org", handle: "vendor" },
         "skillVersions:1": makeSkillVersion(),
-        "skillVersions:no-hash": makeSkillVersion({ sha256hash: undefined }),
       }),
+      { publisherId: "publishers:unverified", cursor: null },
+    )) as { entries: unknown[] };
+    const unpublishedOrUnhashed = (await listOfficialSkillEntriesHandler(
+      makeCtx(
+        [
+          makeSkill({ latestVersionId: undefined }),
+          makeSkill({ _id: "skills:no-hash", latestVersionId: "skillVersions:no-hash" }),
+        ],
+        {
+          "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+          "skillVersions:no-hash": makeSkillVersion({ sha256hash: undefined }),
+        },
+      ),
       { publisherId: "publishers:1", cursor: null },
-    )) as { entries: unknown[]; isDone: boolean };
+    )) as { entries: unknown[] };
 
-    expect(result.entries).toEqual([]);
+    expect(unverified.entries).toEqual([]);
+    expect(unpublishedOrUnhashed.entries).toEqual([]);
   });
 });

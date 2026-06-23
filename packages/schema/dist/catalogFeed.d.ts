@@ -138,6 +138,6 @@ export declare const CATALOG_FEED_SCHEMA_VERSION = 1;
 export declare const CATALOG_FEED_ID = "clawhub-official";
 export declare const CATALOG_FEED_SOURCE_REF = "public-clawhub";
 export declare const CATALOG_SKILLS_FEED_ID = "clawhub-official-skills";
-export declare const CATALOG_SKILLS_FEED_DESCRIPTION = "Skills published by verified OpenClaw organizations on ClawHub.";
+export declare const CATALOG_SKILLS_FEED_DESCRIPTION = "Skills published by verified OpenClaw publishers on ClawHub.";
 export declare function parseCatalogFeed(value: unknown): CatalogFeed;
 export declare function serializeCatalogFeed(feed: CatalogFeed): string;

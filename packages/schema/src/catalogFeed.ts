@@ -68,7 +68,7 @@ export const CATALOG_FEED_ID = "clawhub-official";
 export const CATALOG_FEED_SOURCE_REF = "public-clawhub";
 export const CATALOG_SKILLS_FEED_ID = "clawhub-official-skills";
 export const CATALOG_SKILLS_FEED_DESCRIPTION =
-  "Skills published by verified OpenClaw organizations on ClawHub.";
+  "Skills published by verified OpenClaw publishers on ClawHub.";
 
 export function parseCatalogFeed(value: unknown): CatalogFeed {
   const feed = CatalogFeedSchema.assert(value);
