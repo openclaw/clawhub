@@ -98,6 +98,13 @@ Public read:
 - `GET /api/v1/skills/{slug}/file?path=&version=&tag=`
 - `GET /api/v1/resolve?slug=&hash=`
 - `GET /api/v1/download?slug=&version=&tag=`
+  - Hosted skills return deterministic ZIP bytes.
+  - Current GitHub-backed skills with a `clean` or `suspicious` scan return a
+    JSON `public-github` handoff descriptor instead of ClawHub bytes.
+- `GET /api/v1/skills/export?startDate=&endDate=&limit=&cursor=`
+  - Hosted skills are exported as stored files.
+  - Current GitHub-backed skills with a `clean` or `suspicious` scan are exported
+    as `public-github` handoff descriptors.
 - `GET /api/v1/packages?limit=&cursor=&sort=`
   - `sort`: `updated` (default), `recommended`, `downloads`, legacy alias `installs`
   - Invalid `sort` values return `400`
@@ -124,6 +131,7 @@ Auth required:
 - `POST /api/v1/skills/{slug}/transfer/accept`
 - `POST /api/v1/skills/{slug}/transfer/reject`
 - `POST /api/v1/skills/{slug}/transfer/cancel`
+- `GET /api/v1/skills/export?startDate=&endDate=&limit=&cursor=`
 - `GET /api/v1/plugins/export?startDate=&endDate=&limit=&cursor=&family=`
 - `GET /api/v1/transfers/incoming`
 - `GET /api/v1/transfers/outgoing`

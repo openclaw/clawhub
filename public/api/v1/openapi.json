@@ -27,6 +27,42 @@
           }
         }
       },
+      "GitHubSkillDownloadHandoff": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "sourceRef",
+          "repo",
+          "commit",
+          "path",
+          "contentHash",
+          "archiveUrl"
+        ],
+        "properties": {
+          "sourceRef": {
+            "type": "string",
+            "enum": [
+              "public-github"
+            ]
+          },
+          "repo": {
+            "type": "string"
+          },
+          "commit": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "contentHash": {
+            "type": "string"
+          },
+          "archiveUrl": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
       "Owner": {
         "type": [
           "object",
@@ -1619,7 +1655,7 @@
     },
     "/api/v1/download": {
       "get": {
-        "summary": "Download zip",
+        "summary": "Download skill ZIP or GitHub handoff",
         "parameters": [
           {
             "name": "slug",
@@ -1648,12 +1684,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Zip",
+            "description": "Hosted ZIP bytes or a GitHub-backed source handoff descriptor.",
             "content": {
               "application/zip": {
                 "schema": {
                   "type": "string",
                   "format": "binary"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GitHubSkillDownloadHandoff"
                 }
               }
             }

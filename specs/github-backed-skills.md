@@ -235,6 +235,20 @@ bypass failed, suspicious, malicious, missing, or removed upstream states.
 ClawHub must not create hosted `skillVersions` or ClawHub download artifacts for
 GitHub-backed skills.
 
+`GET /api/v1/download` may still be used as a metered source handoff for current
+GitHub-backed skills whose scan verdict is `clean` or `suspicious`. In that case
+ClawHub returns only stored fetch coordinates (`sourceRef: "public-github"`,
+repo, commit, path, content hash, and an archive URL) after checking current
+upstream and scan state. It must not fetch GitHub, expand archives, proxy bytes,
+create `skillVersions`, or include detailed scan metadata in the successful
+payload.
+
+`GET /api/v1/skills/export` follows the same no-mirror contract. Hosted skills
+continue to export stored version files with `sourceRef: "public-clawhub"`.
+Current GitHub-backed skills whose scan verdict is `clean` or `suspicious` are
+included as `sourceRef: "public-github"` entries with `_source_handoff.json`
+coordinates, not ClawHub-hosted source files.
+
 This avoids two NVIDIA concerns:
 
 - Signature drift: any byte-level transformation in a mirror can invalidate

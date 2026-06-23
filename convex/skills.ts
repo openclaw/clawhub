@@ -2744,6 +2744,26 @@ export const getBySlug = query({
   },
 });
 
+export const getGitHubDownloadTargetInternal = internalQuery({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.installKind !== "github") return null;
+    const source = skill.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+
+    return {
+      installKind: "github" as const,
+      repo: source?.repo ?? null,
+      path: skill.githubPath ?? null,
+      commit: skill.githubCurrentCommit ?? null,
+      contentHash: skill.githubCurrentContentHash ?? null,
+      currentStatus: skill.githubCurrentStatus ?? null,
+      scanStatus: skill.githubScanStatus ?? null,
+      removedAt: skill.githubRemovedAt ?? null,
+    };
+  },
+});
+
 export const getVerifyTargetBySlugInternal = internalQuery({
   args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
   handler: async (ctx, args) => {
@@ -12765,10 +12785,22 @@ export const listByDateRange = internalQuery({
 function isExportableSkillDigest(
   skill: Pick<
     Doc<"skillSearchDigest">,
-    "latestVersionId" | "softDeletedAt" | "moderationStatus" | "moderationFlags"
+    | "latestVersionId"
+    | "installKind"
+    | "githubCurrentStatus"
+    | "githubScanStatus"
+    | "softDeletedAt"
+    | "moderationStatus"
+    | "moderationFlags"
   >,
 ) {
-  return Boolean(skill.latestVersionId) && isPublicSkillDoc(skill);
+  if (!isPublicSkillDoc(skill)) return false;
+  if (skill.latestVersionId) return true;
+  return (
+    skill.installKind === "github" &&
+    skill.githubCurrentStatus === "present" &&
+    (skill.githubScanStatus === "clean" || skill.githubScanStatus === "suspicious")
+  );
 }
 
 export const __test = {
