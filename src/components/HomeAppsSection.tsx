@@ -12,13 +12,13 @@ import { useMemo, useState } from "react";
 import {
   HOME_PLUGIN_SHORTCUTS,
   HOME_SKILL_APPS,
-  homeAppIconUrl,
+  HOME_APP_ICON_PATHS,
   homePluginShortcutIconUrl,
+  homeSkillAppIconUrl,
   SKILLS_BROWSE_SEARCH,
   type HomePluginShortcut,
   type HomeSkillApp,
 } from "../lib/homeApps";
-import { OPENCLAW_LOGO_URL } from "../lib/nav-items";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 
 function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
@@ -31,7 +31,8 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
         <img
-          src={homeAppIconUrl(app.iconDomain)}
+          src={homeSkillAppIconUrl(app)}
+          className={homeAppsTileLogoClassName(app.id)}
           alt=""
           width={40}
           height={40}
@@ -58,6 +59,7 @@ function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcu
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
         <img
           src={homePluginShortcutIconUrl(shortcut)}
+          className={homeAppsTileLogoClassName(shortcut.id)}
           alt=""
           width={40}
           height={40}
@@ -85,6 +87,25 @@ function skill(id: string): HomeAppsItemRef {
 
 function plugin(id: string): HomeAppsItemRef {
   return { kind: "plugin", id };
+}
+
+const backgroundLogoIds = new Set([
+  // Only SVGs that include their own solid/white/colored background get the
+  // rounded mask. Transparent logos must remain unrounded to avoid clipping.
+  "amazon-bedrock",
+  "aws",
+  "chrome",
+  "google-calendar",
+  "google-sheets",
+  "jira",
+  "llama-cpp",
+]);
+
+function homeAppsTileLogoClassName(id: string) {
+  const className = `home-v2-apps-tile-logo home-v2-apps-tile-logo--${id}`;
+  return backgroundLogoIds.has(id)
+    ? `${className} home-v2-apps-tile-logo--has-background`
+    : className;
 }
 
 const appCategories = [
@@ -193,17 +214,17 @@ const workflowHeaderTiles: ReadonlyArray<{
 }> = [
   {
     label: "OpenAI",
-    src: "/openai-favicon.svg",
+    src: HOME_APP_ICON_PATHS.openai,
     className: "is-openai",
   },
   {
     label: "Slack",
-    src: "/slack-favicon.svg",
+    src: HOME_APP_ICON_PATHS.slack,
     className: "is-slack",
   },
   {
     label: "OpenClaw",
-    src: OPENCLAW_LOGO_URL,
+    src: HOME_APP_ICON_PATHS.openclaw,
     className: "is-openclaw",
     badge: "Exfoliate!",
   },

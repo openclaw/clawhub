@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="100%"
+   height="100%"
+   viewBox="0 0 652 653"
+   version="1.1"
+   xml:space="preserve"
+   style="fill-rule:evenodd;clip-rule:evenodd;stroke-linejoin:round;stroke-miterlimit:2;"
+   id="svg3959"
+   sodipodi:docname="talk-icon-plain-light-spaced.svg"
+   inkscape:version="1.2.1 (9c6d41e410, 2022-07-14)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg"><defs
+   id="defs3963" /><sodipodi:namedview
+   id="namedview3961"
+   pagecolor="#ffffff"
+   bordercolor="#000000"
+   borderopacity="0.25"
+   inkscape:showpageshadow="2"
+   inkscape:pageopacity="0.0"
+   inkscape:pagecheckerboard="0"
+   inkscape:deskcolor="#d1d1d1"
+   showgrid="false"
+   inkscape:zoom="1.5344564"
+   inkscape:cx="303.03892"
+   inkscape:cy="326.5"
+   inkscape:window-width="2560"
+   inkscape:window-height="1369"
+   inkscape:window-x="1912"
+   inkscape:window-y="1106"
+   inkscape:window-maximized="1"
+   inkscape:current-layer="svg3959" />
+    <g
+   transform="matrix(0.87116566,0,0,0.87116595,-120.03681,-120.03687)"
+   id="g3957">
+        <path
+   id="path25"
+   d="M 511.959,186 C 333.142,186.003 186,333.141 186,511.951 c 0,0.003 0,0.006 0,0.009 0,178.81 147.142,325.949 325.959,325.951 59.66,-0.121 118.158,-16.618 169.09,-47.686 40.062,15.919 129.798,63.147 151.155,42.747 C 854.522,811.66 806.003,711.354 794.371,674.081 822.79,624.772 837.804,568.869 837.915,511.958 837.912,333.151 690.773,186.016 511.96,186.011 Z m 0.037,123.923 c 110.879,0 202.118,91.237 202.118,202.112 -0.007,110.87 -91.244,202.097 -202.118,202.097 -110.873,0 -202.11,-91.227 -202.117,-202.097 v 0 c 0,-110.875 91.239,-202.112 202.117,-202.112 z" />
+    </g>
+</svg>
