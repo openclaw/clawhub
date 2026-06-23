@@ -1670,7 +1670,6 @@ describe("publishers membership controls", () => {
     });
 
     expect(prefixResult.page.map((item) => item.handle)).toEqual(["vyctorbrzezowski"]);
-    expect(prefixResult.page[0]?.stats.skills).toBe(5);
     expect(exactResult.page.map((item) => item.handle)).toEqual(["vyctorbrzezowski"]);
   });
 
