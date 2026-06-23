@@ -162,7 +162,7 @@ function publicRouteCases(): PublicRouteCase[] {
       label: "publisher profile",
       path: (fixtures) => `/user/${encodeURIComponent(fixtures.skill.ownerHandle)}`,
       assert: async (page) => {
-        await expect(page.getByText("Publisher catalog")).toBeVisible();
+        await expect(page.getByRole("region", { name: "Publisher catalog" })).toBeVisible();
       },
     },
     {
