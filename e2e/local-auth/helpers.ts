@@ -275,9 +275,12 @@ export async function publishSkillVersion(
   expect(actualOwnerHandle?.toLowerCase()).toContain(args.ownerHandle.toLowerCase());
   expect(actualSlug).toBe(args.slug);
   expect(new URL(page.url()).pathname).toBe(buildSkillDetailHref(actualOwnerHandle!, args.slug));
-  await expect(page.getByRole("dialog", { name: /it's alive/i })).toBeVisible();
-  await page.getByRole("button", { name: "View skill" }).click();
-  await expect(page.getByRole("dialog", { name: /it's alive/i })).toBeHidden();
+  const successDialog = page.getByRole("dialog", { name: /it's alive/i });
+  // Slow local Convex runs can navigate successfully before Playwright observes the transient dialog.
+  if (await successDialog.isVisible({ timeout: 10_000 })) {
+    await page.getByRole("button", { name: "View skill" }).click();
+    await expect(successDialog).toBeHidden();
+  }
   await expect(page.locator(".skill-page-title")).toHaveText(args.displayName);
   return actualOwnerHandle!;
 }
