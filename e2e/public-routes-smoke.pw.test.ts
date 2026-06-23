@@ -108,7 +108,7 @@ function publicRouteCases(): PublicRouteCase[] {
       label: "publishers browse",
       path: () => "/publishers",
       assert: async (page) => {
-        await expect(page.getByRole("heading", { name: /^Publishers/ })).toBeVisible();
+        await expect(page.getByRole("heading", { name: /^Creators/ })).toBeVisible();
       },
     },
     {

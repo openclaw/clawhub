@@ -48,13 +48,13 @@ type PublishersLoaderResult = {
 const PUBLISHER_PAGE_SIZE = 25;
 const PUBLISHER_KIND_OPTIONS = [
   { value: undefined, label: "All" },
-  { value: "orgs", label: "Orgs" },
-  { value: "people", label: "Creators" },
   {
     value: "official",
-    label: "Officials",
+    label: "Official",
     icon: <BadgeCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
   },
+  { value: "orgs", label: "Organizations", mobileLabel: "Orgs" },
+  { value: "people", label: "Users" },
 ];
 
 function normalizePublisherKind(value: unknown): PublisherKindSearch | undefined {
@@ -306,7 +306,7 @@ function PublishersIndex() {
   return (
     <main className="browse-page browse-page-borderless-header publishers-browse-page">
       <div className="browse-page-header">
-        <h1 className="browse-title">Publishers</h1>
+        <h1 className="browse-title">Creators</h1>
       </div>
       <BrowseControls>
         <BrowseControlsRow>

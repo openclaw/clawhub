@@ -15,6 +15,7 @@ import type { BrowseCategory } from "../lib/categories";
 type BrowseChoice = {
   value: string | undefined;
   label: string;
+  mobileLabel?: string;
   icon?: ReactNode;
 };
 
@@ -57,10 +58,22 @@ export function BrowseTabs({ ariaLabel, options, value, onChange }: BrowseTabsPr
             type="button"
             role="radio"
             aria-checked={active}
+            aria-label={option.mobileLabel ? option.label : undefined}
             onClick={() => onChange(option.value)}
           >
             {option.icon}
-            {option.label}
+            {option.mobileLabel ? (
+              <>
+                <span className="lg:hidden" aria-hidden="true">
+                  {option.mobileLabel}
+                </span>
+                <span className="hidden lg:inline" aria-hidden="true">
+                  {option.label}
+                </span>
+              </>
+            ) : (
+              option.label
+            )}
           </button>
         );
       })}

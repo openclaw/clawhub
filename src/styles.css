@@ -28433,9 +28433,12 @@ a[class*="rounded-full"] {
     flex-grow: 0.75;
   }
 
-  .publishers-browse-page .browse-tab:nth-child(3),
-  .publishers-browse-page .browse-tab:nth-child(4) {
+  .publishers-browse-page .browse-tab:nth-child(3) {
     flex-grow: 1.2;
+  }
+
+  .publishers-browse-page .browse-tab:nth-child(4) {
+    flex-grow: 0.75;
   }
 
   .browse-category-select {

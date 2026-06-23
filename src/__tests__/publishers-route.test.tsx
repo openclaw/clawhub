@@ -172,7 +172,7 @@ describe("publishers route", () => {
 
     render(<Component />);
 
-    expect(screen.getByText("Publishers")).toBeTruthy();
+    expect(screen.getByText("Creators")).toBeTruthy();
     expect(screen.getByText("No publishers found")).toBeTruthy();
   });
 
@@ -189,11 +189,12 @@ describe("publishers route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Publishers" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Creators" })).toBeTruthy();
     expect(screen.queryByText("17")).toBeNull();
     expect(screen.getByRole("radio", { name: "All" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Orgs" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Creators" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Official" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Organizations" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Users" })).toBeTruthy();
     expect(screen.queryByText("Builders")).toBeNull();
     expect(screen.queryByText(/Showing/i)).toBeNull();
   });
@@ -212,7 +213,7 @@ describe("publishers route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Publishers" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Creators" })).toBeTruthy();
     expect(screen.queryByText("17")).toBeNull();
   });
 
