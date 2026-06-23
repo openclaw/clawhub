@@ -1,5 +1,4 @@
 import { expect, test } from "@playwright/test";
-import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
 import {
   buildSkillDetailHref,
