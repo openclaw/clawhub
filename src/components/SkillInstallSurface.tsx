@@ -192,6 +192,7 @@ export function SkillCommandLineCard({
   ownerId,
   clawdis,
 }: SkillInstallSurfaceProps) {
+  const headingId = useId();
   const [activeInstallTab, setActiveInstallTab] = useState<"cli" | "prompt">("cli");
   const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
@@ -215,29 +216,24 @@ export function SkillCommandLineCard({
   };
 
   return (
-    <article className="skill-install-command-card">
+    <article className="skill-install-command-card" aria-labelledby={headingId}>
       <div className="skill-install-command-header detail-hero-summary-row">
-        <h3 className="skill-install-panel-title">Install</h3>
-        <div
-          className="install-switcher-toggle"
-          role="tablist"
-          aria-label="Install option"
-          data-active={activeInstallTab}
-        >
+        <h3 id={headingId} className="skill-install-panel-title">
+          Install
+        </h3>
+        <div className="skill-install-tab-toggle" role="group" aria-label="Install option">
           <button
             type="button"
-            role="tab"
-            aria-selected={activeInstallTab === "cli"}
-            className={`install-switcher-pill${activeInstallTab === "cli" ? " is-active" : ""}`}
+            className={`skill-install-tab${activeInstallTab === "cli" ? " is-active" : ""}`}
+            aria-pressed={activeInstallTab === "cli"}
             onClick={() => selectInstallTab("cli")}
           >
             CLI
           </button>
           <button
             type="button"
-            role="tab"
-            aria-selected={activeInstallTab === "prompt"}
-            className={`install-switcher-pill${activeInstallTab === "prompt" ? " is-active" : ""}`}
+            className={`skill-install-tab${activeInstallTab === "prompt" ? " is-active" : ""}`}
+            aria-pressed={activeInstallTab === "prompt"}
             onClick={() => selectInstallTab("prompt")}
           >
             Prompt

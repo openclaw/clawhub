@@ -1114,8 +1114,8 @@ describe("SkillDetailPage", () => {
     expect(screen.getAllByText("@steipete/weather").length).toBeGreaterThan(0);
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
-    expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Prompt" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
     expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(

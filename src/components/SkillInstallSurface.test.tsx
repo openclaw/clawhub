@@ -83,6 +83,7 @@ describe("SkillInstallSurface", () => {
       </TooltipProvider>,
     );
 
+    expect(screen.getByRole("heading", { name: "Install" })).toBeTruthy();
     expect(screen.getByText("openclaw skills install")).toBeTruthy();
     expect(screen.getByText("@steipete/weather")).toBeTruthy();
     expect(document.querySelector(".skill-install-command-verb")?.textContent).toBe(
@@ -92,8 +93,10 @@ describe("SkillInstallSurface", () => {
       " @steipete/weather",
     );
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
-    expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe("false");
+    expect(screen.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Prompt" }).getAttribute("aria-pressed")).toBe(
+      "false",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw CLI command" }));
 
@@ -101,10 +104,12 @@ describe("SkillInstallSurface", () => {
       expect(writeTextMock).toHaveBeenCalledWith("openclaw skills install @steipete/weather");
     });
 
-    fireEvent.click(screen.getByRole("tab", { name: "Prompt" }));
+    fireEvent.click(screen.getByRole("button", { name: "Prompt" }));
 
     expect(screen.getByText(/Install the skill "Weather"/i)).toBeTruthy();
-    expect(screen.getByRole("tab", { name: "Prompt" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("button", { name: "Prompt" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
 
     fireEvent.click(screen.getByRole("button", { name: "Copy OpenClaw prompt" }));
 

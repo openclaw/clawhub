@@ -7902,10 +7902,70 @@ code {
   box-shadow: none;
 }
 
+/* Skill/plugin install card — flat CLI | Prompt text toggle */
+.skill-install-command-card .skill-install-tab-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
+}
+
+.skill-install-command-card .skill-install-tab {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 24px;
+  padding: 4px 8px;
+  border-radius: 0;
+  background: none;
+  color: var(--ink-soft);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  line-height: 1;
+  transition: color 0.15s ease;
+}
+
+.skill-install-command-card .skill-install-tab + .skill-install-tab {
+  position: relative;
+}
+
+.skill-install-command-card .skill-install-tab + .skill-install-tab::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 1px;
+  height: 12px;
+  transform: translateY(-50%);
+  background: color-mix(in srgb, var(--ink-soft) 45%, transparent);
+}
+
+.skill-install-command-card .skill-install-tab:hover {
+  color: var(--ink);
+}
+
+.skill-install-command-card .skill-install-tab.is-active {
+  color: var(--ink);
+}
+
+.skill-install-command-card .skill-install-tab:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--ink) 35%, transparent);
+  outline-offset: 2px;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .skill-install-prompt-trigger,
   .skill-install-copy-button,
   .skill-install-command-reveal,
+  .skill-install-tab,
   .install-switcher-toggle::before,
   .install-switcher-pill {
     transition: none;
