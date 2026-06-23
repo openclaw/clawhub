@@ -41,11 +41,11 @@ jobs:
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
       HF_DATASET_REPO: OpenClaw/clawhub-security-signals
       HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals
-      HF_REVISION: ${{ inputs.hf-revision || 'main' }}
+      HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
       HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
       SNAPSHOT_LIMIT: ${{ inputs.limit || '' }}
-      SANITIZED_OUT_DIR: ${{ runner.temp }}/clawhub-security-dataset/sanitized
-      WORK_DIR: ${{ runner.temp }}/clawhub-security-dataset
+      SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized
+      WORK_DIR: /tmp/clawhub-security-dataset
     steps:
       - uses: actions/checkout@v6
 
