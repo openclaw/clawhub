@@ -1332,9 +1332,18 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
             const q = {
               eq: (field: string, value: unknown) => {
                 fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
                 return q;
               },
             };
@@ -1380,9 +1389,13 @@ describe("publishers membership controls", () => {
             }
             if (table === "publishers" && indexName === "by_active_kind_handle") {
               return {
-                collect: vi.fn(async () =>
-                  publisherRows.filter((publisher) => publisher.kind === fields.kind),
-                ),
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  return publisherRows.filter(
+                    (publisher) =>
+                      publisher.kind === fields.kind && publisher.handle.startsWith(prefix),
+                  );
+                }),
               };
             }
             if (
@@ -1409,6 +1422,125 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
     expect(result.globalCounts).toEqual({ all: 3, individuals: 2, organizations: 1 });
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
+  });
+
+  it("finds publishers outside the popular install window via handle prefix search", async () => {
+    const popularRows = Array.from({ length: 500 }, (_, index) => ({
+      _id: `publishers:popular-${index}`,
+      _creationTime: index,
+      kind: "user" as const,
+      handle: `popular-${index}`,
+      displayName: `Popular ${index}`,
+      linkedUserId: `users:popular-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 500 - index,
+      totalDownloads: 500 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const vincentkoc = {
+      _id: "publishers:vincentkoc",
+      _creationTime: 1,
+      kind: "user" as const,
+      handle: "vincentkoc",
+      displayName: "Vincent Koc",
+      linkedUserId: "users:vincentkoc",
+      publishedSkills: 0,
+      publishedPackages: 0,
+      totalInstalls: 0,
+      totalDownloads: 0,
+      totalStars: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:vincentkoc") {
+            return { _id: id, image: "https://github.com/vincentkoc.png" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  fields.handle === "vincent"
+                    ? null
+                    : fields.handle === "vincentkoc"
+                      ? vincentkoc
+                      : null,
+                ),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_installs") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  const upper = (range.lt as { value: string } | undefined)?.value ?? "";
+                  if (fields.kind === "user" && prefix === "vincent" && upper === "vincent\uffff") {
+                    return [vincentkoc];
+                  }
+                  return [];
+                }),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_downloads"
+            ) {
+              return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      query: "vincent",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page.map((item) => item.handle)).toEqual(["vincentkoc"]);
+    expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
   });
 
   it("filters hidden legacy user publishers before counting and paginating public publisher pages", async () => {
@@ -2051,9 +2183,18 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
             const q = {
               eq: (field: string, value: unknown) => {
                 fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
                 return q;
               },
             };
@@ -2066,11 +2207,19 @@ describe("publishers membership controls", () => {
                 })),
               };
             }
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
                 })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => []),
               };
             }
             if (
