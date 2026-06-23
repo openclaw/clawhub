@@ -595,12 +595,7 @@ export function PublisherProfilePage({
     setIsReportDialogOpen(true);
   };
 
-  const requireSignIn = () => {
-    const redirectTo = typeof window === "undefined" ? undefined : window.location.href;
-    void signIn("github", redirectTo ? { redirectTo } : undefined);
-  };
-
-  const submitPublisherReport = async (publisher: PublicPublisherListItem) => {
+  const submitPublisherReport = async (reportedPublisher: PublicPublisherListItem) => {
     const trimmedReason = reportReason.trim();
     if (!trimmedReason) {
       setReportError("Report reason required.");
@@ -611,8 +606,8 @@ export function PublisherProfilePage({
     setReportError(null);
     try {
       const reportText = [
-        `Publisher report: @${publisher.handle}`,
-        `Name: ${publisher.displayName}`,
+        `Publisher report: @${reportedPublisher.handle}`,
+        `Name: ${reportedPublisher.displayName}`,
         `Profile: ${window.location.href}`,
         "",
         trimmedReason,
