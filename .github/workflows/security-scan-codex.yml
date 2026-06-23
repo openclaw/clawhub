@@ -58,21 +58,6 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check configuration
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
-            echo "::error::SECURITY_SCAN_WORKER_TOKEN is required"
-            exit 1
-          fi
-          if [[ -z "$OPENAI_API_KEY" ]]; then
-            echo "::error::OPENAI_API_KEY is required"
-            exit 1
-          fi
-
       - name: Install Codex CLI
         run: |
           set -euo pipefail
@@ -120,7 +105,6 @@ jobs:
             ghcr.io/trufflesecurity/trufflehog:3.95.5@sha256:56c25710275c4b8d74c4f1346a5e7c606fa7ff4afe996f680b288d0fae3fcd9c \
             filesystem /scan \
             --only-verified \
-            --debug \
             --fail \
             --no-update \
             --github-actions

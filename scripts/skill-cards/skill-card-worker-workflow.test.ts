@@ -46,6 +46,7 @@ describe("skill-card-worker workflow", () => {
     );
     expect(job.env).not.toHaveProperty("OPENAI_API_KEY");
     expect(job.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expect(job.steps.find((step) => step.name === "Check configuration")).toBeUndefined();
     expect(job.steps.find((step) => step.name === "Authenticate Codex CLI")?.env).toHaveProperty(
       "OPENAI_API_KEY",
     );

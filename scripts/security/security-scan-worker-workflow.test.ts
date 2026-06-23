@@ -41,6 +41,7 @@ describe("security-scan-codex workflow", () => {
     expect(scanStep?.run).toContain("filesystem /scan");
     expect(scanStep?.run).toContain("--only-verified");
     expect(scanStep?.run).toContain("--fail");
+    expect(scanStep?.run).not.toContain("--debug");
     expect(uploadStep?.if).toBe(
       "${{ !cancelled() && steps.diagnostics_secret_scan.outcome == 'success' }}",
     );
@@ -48,6 +49,7 @@ describe("security-scan-codex workflow", () => {
     expect(jobEnv).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expect(scanStep?.env ?? {}).not.toHaveProperty("OPENAI_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expect(steps.find((step) => step.name === "Check configuration")).toBeUndefined();
     expect(steps.find((step) => step.name === "Run Codex security worker")?.env).toEqual({
       OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}",
       SECURITY_SCAN_WORKER_TOKEN: "${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}",

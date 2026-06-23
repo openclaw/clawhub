@@ -347,17 +347,8 @@ function githubSkillScanStatusFromLlmAnalysis(
   return "failed" as const;
 }
 
-const BARE_WORKER_ERROR_SECRET_PATTERNS: RegExp[] = [
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
-  /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g,
-  /\bsk_live_[A-Za-z0-9]{16,}\b/g,
-  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
-  /\bAIza[0-9A-Za-z_-]{35}\b/g,
-];
-
 function sanitizeWorkerErrorDetail(error: string, maxChars = 500) {
-  let redacted = error
+  const redacted = error
     .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
     .replace(
       /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
@@ -371,14 +362,10 @@ function sanitizeWorkerErrorDetail(error: string, maxChars = 500) {
       /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[ _-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
       "[redacted-secret]",
     )
-    .replace(/\b[A-Za-z0-9_+/=-]{64,}\b/g, "[redacted-secret]")
     .replace(
       /\bX-(?:Amz|Goog)-(?:Signature|Credential|Security-Token|Algorithm)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
       "[redacted-secret]",
     );
-  for (const pattern of BARE_WORKER_ERROR_SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, "[redacted-secret]");
-  }
   return redacted.slice(0, maxChars);
 }
 

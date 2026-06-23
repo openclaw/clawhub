@@ -80,30 +80,25 @@ const recordGitHubSkillScanResultInternalHandler = (
   >
 )._handler;
 
-function fakeBareSecrets() {
+function fakeWorkerSecretFields() {
   return {
     apiKeyLabel: ["API", "key"].join(" "),
-    awsAccessKey: `AKIA${"A".repeat(16)}`,
-    githubClassicPat: ["ghp", "a".repeat(36)].join("_"),
-    githubPat: ["github", "pat", "a".repeat(36)].join("_"),
-    googleApiKey: `AIza${"A".repeat(35)}`,
-    openAiKey: ["sk", "a".repeat(24)].join("-"),
     proseApiKey: ["prose", "secret"].join("-"),
+    runtimeApiKey: "sk-short-secret",
   };
 }
 
 function fakeLeakyWorkerError() {
-  const bareSecrets = fakeBareSecrets();
+  const secrets = fakeWorkerSecretFields();
   return (
     `Download failed 403: https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123 ` +
-    `Authorization: Bearer abc ${bareSecrets.githubPat} ${bareSecrets.githubClassicPat} ` +
-    `${bareSecrets.openAiKey} ${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey} ` +
-    `${bareSecrets.awsAccessKey} ${bareSecrets.googleApiKey} X-Amz-Signature=${"c".repeat(32)}`
+    `Authorization: Bearer abc OPENAI_API_KEY=${secrets.runtimeApiKey} ` +
+    `${secrets.apiKeyLabel}: ${secrets.proseApiKey} X-Amz-Signature=${"c".repeat(32)}`
   );
 }
 
 function expectNoLeakedWorkerErrorSecrets(error: string) {
-  const bareSecrets = fakeBareSecrets();
+  const secrets = fakeWorkerSecretFields();
   expect(error).toContain("Download failed 403");
   expect(error).not.toContain("https://");
   expect(error).not.toContain("signed.example.invalid");
@@ -111,13 +106,10 @@ function expectNoLeakedWorkerErrorSecrets(error: string) {
   expect(error).not.toContain("X-Amz-Signature");
   expect(error).not.toContain("Authorization");
   expect(error).not.toContain("Bearer abc");
-  expect(error).not.toContain(`${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey}`);
-  expect(error).not.toContain(bareSecrets.proseApiKey);
-  expect(error).not.toContain(bareSecrets.githubPat);
-  expect(error).not.toContain(bareSecrets.githubClassicPat);
-  expect(error).not.toContain(bareSecrets.openAiKey);
-  expect(error).not.toContain(bareSecrets.awsAccessKey);
-  expect(error).not.toContain(bareSecrets.googleApiKey);
+  expect(error).not.toContain("OPENAI_API_KEY");
+  expect(error).not.toContain(secrets.runtimeApiKey);
+  expect(error).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
+  expect(error).not.toContain(secrets.proseApiKey);
 }
 
 function makeFailurePersistenceCtx(docs: Record<string, Record<string, unknown>>) {
@@ -3607,13 +3599,11 @@ describe("securityScan", () => {
   it("redacts signed artifact URLs from persisted worker failure fields", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
 
-    const bareSecrets = fakeBareSecrets();
+    const secrets = fakeWorkerSecretFields();
     const leakyError =
       `Download failed 403: https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123 ` +
-      `Authorization: Bearer abc ${bareSecrets.githubPat} ${bareSecrets.githubClassicPat} ` +
-      `${bareSecrets.openAiKey} ` +
-      `${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey} ` +
-      `${bareSecrets.awsAccessKey} ${bareSecrets.googleApiKey} X-Amz-Signature=${"c".repeat(32)}`;
+      `Authorization: Bearer abc OPENAI_API_KEY=${secrets.runtimeApiKey} ` +
+      `${secrets.apiKeyLabel}: ${secrets.proseApiKey} X-Amz-Signature=${"c".repeat(32)}`;
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
       "error" in args ? { ok: true, retry: false } : { ok: true },
     );
@@ -3660,13 +3650,10 @@ describe("securityScan", () => {
       expect(error).not.toContain("X-Amz-Signature");
       expect(error).not.toContain("Authorization");
       expect(error).not.toContain("Bearer abc");
-      expect(error).not.toContain(`${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey}`);
-      expect(error).not.toContain(bareSecrets.proseApiKey);
-      expect(error).not.toContain(bareSecrets.githubPat);
-      expect(error).not.toContain(bareSecrets.githubClassicPat);
-      expect(error).not.toContain(bareSecrets.openAiKey);
-      expect(error).not.toContain(bareSecrets.awsAccessKey);
-      expect(error).not.toContain(bareSecrets.googleApiKey);
+      expect(error).not.toContain("OPENAI_API_KEY");
+      expect(error).not.toContain(secrets.runtimeApiKey);
+      expect(error).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
+      expect(error).not.toContain(secrets.proseApiKey);
     }
 
     const llmAnalyses = runMutation.mock.calls
@@ -3687,15 +3674,10 @@ describe("securityScan", () => {
       expect(analysis?.findings).not.toContain("X-Amz-Signature");
       expect(analysis?.findings).not.toContain("Authorization");
       expect(analysis?.findings).not.toContain("Bearer abc");
-      expect(analysis?.findings).not.toContain(
-        `${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey}`,
-      );
-      expect(analysis?.findings).not.toContain(bareSecrets.proseApiKey);
-      expect(analysis?.findings).not.toContain(bareSecrets.githubPat);
-      expect(analysis?.findings).not.toContain(bareSecrets.githubClassicPat);
-      expect(analysis?.findings).not.toContain(bareSecrets.openAiKey);
-      expect(analysis?.findings).not.toContain(bareSecrets.awsAccessKey);
-      expect(analysis?.findings).not.toContain(bareSecrets.googleApiKey);
+      expect(analysis?.findings).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
+      expect(analysis?.findings).not.toContain("OPENAI_API_KEY");
+      expect(analysis?.findings).not.toContain(secrets.runtimeApiKey);
+      expect(analysis?.findings).not.toContain(secrets.proseApiKey);
     }
   });
 

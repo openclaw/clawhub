@@ -1,17 +1,7 @@
 const DEFAULT_MAX_TEXT_CHARS = 20_000;
 
-const BARE_SECRET_PATTERNS: RegExp[] = [
-  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
-  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
-  /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g,
-  /\bsk_live_[A-Za-z0-9]{16,}\b/g,
-  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
-  /\bAIza[0-9A-Za-z_-]{35}\b/g,
-  /\b[A-Za-z0-9_+/=-]{64,}\b/g,
-];
-
 export function redactWorkerText(value: string, maxChars = DEFAULT_MAX_TEXT_CHARS) {
-  let redacted = value
+  const redacted = value
     .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
     .replace(
       /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
@@ -29,9 +19,6 @@ export function redactWorkerText(value: string, maxChars = DEFAULT_MAX_TEXT_CHAR
       /\bX-(?:Amz|Goog)-(?:Signature|Credential|Security-Token|Algorithm)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
       "[redacted-secret]",
     );
-  for (const pattern of BARE_SECRET_PATTERNS) {
-    redacted = redacted.replace(pattern, "[redacted-secret]");
-  }
   if (redacted.length <= maxChars) return redacted;
   return `${redacted.slice(0, maxChars)}\n...[truncated ${redacted.length - maxChars} chars]`;
 }

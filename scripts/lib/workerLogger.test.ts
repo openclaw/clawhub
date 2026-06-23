@@ -17,9 +17,9 @@ describe("worker logger", () => {
           path: "SKILL.md",
         },
         headers: { authorization: "Bearer worker-token-secret" },
-        rawResult: "OPENAI_API_KEY=sk-test-secret",
+        rawResult: "raw scanner output with url=https://signed.example.invalid/raw",
         stderr: "Authorization: Basic abc123",
-        stdout: "ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        stdout: "raw stdout transcript",
         target: {
           files: [
             {
@@ -39,8 +39,7 @@ describe("worker logger", () => {
     expect(parsed.msg).toBe("structured worker event");
     expect(text).not.toContain("signed.example.invalid");
     expect(text).not.toContain("worker-token-secret");
-    expect(text).not.toContain("sk-test-secret");
-    expect(text).not.toContain("ghp_");
+    expect(text).not.toContain("raw stdout transcript");
     expect(text).toContain("[redacted-secret]");
     expect(parsed.artifact).toMatchObject({ path: "SKILL.md" });
   });

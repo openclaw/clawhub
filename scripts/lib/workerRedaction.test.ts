@@ -8,15 +8,17 @@ import {
 } from "./workerRedaction";
 
 describe("worker redaction", () => {
-  it("redacts signed URLs and common secret-shaped text", () => {
+  it("redacts signed URLs, auth headers, and explicit secret-labeled text", () => {
+    const sha256 = "a".repeat(64);
     const raw = [
       "download https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc",
       "Authorization: Bearer abc.def.ghi",
       "Authorization: Basic dXNlcjpwYXNz",
-      `OPENAI_API_KEY=${["sk", "a".repeat(24)].join("-")}`,
-      `GITHUB_TOKEN=${["ghp", "b".repeat(36)].join("_")}`,
+      "OPENAI_API_KEY=openai-runtime-secret",
+      "GITHUB_TOKEN=runtime-token-secret",
       `CONVEX_WORKER_TOKEN=${"c".repeat(72)}`,
-      `api_key=${["github", "pat", "d".repeat(36)].join("_")}`,
+      "api_key=plugin-api-token",
+      `artifact_sha256=${sha256}`,
     ].join("\n");
 
     const redacted = redactWorkerText(raw);
@@ -27,10 +29,11 @@ describe("worker redaction", () => {
     expect(redacted).not.toContain("X-Amz-Signature");
     expect(redacted).not.toContain("Bearer abc");
     expect(redacted).not.toContain("Basic dXN");
-    expect(redacted).not.toContain("sk-");
-    expect(redacted).not.toContain("ghp_");
-    expect(redacted).not.toContain("github_pat_");
+    expect(redacted).not.toContain("openai-runtime-secret");
+    expect(redacted).not.toContain("runtime-token-secret");
+    expect(redacted).not.toContain("plugin-api-token");
     expect(redacted).not.toContain("CONVEX_WORKER_TOKEN=");
+    expect(redacted).toContain(`artifact_sha256=${sha256}`);
     expect(redacted).toContain("[redacted-url]");
     expect(redacted).toContain("[redacted-secret]");
   });

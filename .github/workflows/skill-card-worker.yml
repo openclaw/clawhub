@@ -56,21 +56,6 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Check configuration
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
-            echo "::error::SECURITY_SCAN_WORKER_TOKEN is required"
-            exit 1
-          fi
-          if [[ -z "$OPENAI_API_KEY" ]]; then
-            echo "::error::OPENAI_API_KEY is required"
-            exit 1
-          fi
-
       - name: Install Codex CLI and renderer dependencies
         run: |
           set -euo pipefail

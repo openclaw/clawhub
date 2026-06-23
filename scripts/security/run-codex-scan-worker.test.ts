@@ -32,15 +32,12 @@ async function tempDir() {
   return dir;
 }
 
-function fakeBareSecrets() {
+function fakeWorkerSecretFields() {
   return {
     apiKeyLabel: ["API", "key"].join(" "),
-    awsAccessKey: `AKIA${"A".repeat(16)}`,
-    githubClassicPat: ["ghp", "a".repeat(36)].join("_"),
-    githubPat: ["github", "pat", "a".repeat(36)].join("_"),
-    googleApiKey: `AIza${"A".repeat(35)}`,
-    openAiKey: ["sk", "a".repeat(24)].join("-"),
     proseApiKey: ["prose", "secret"].join("-"),
+    runtimeApiKey: "sk-short-secret",
+    workerToken: "worker-token-secret",
   };
 }
 
@@ -363,7 +360,7 @@ describe("run-codex-scan-worker diagnostics", () => {
   });
 
   it("omits signed artifact URLs from download failure errors", async () => {
-    const bareSecrets = fakeBareSecrets();
+    const secrets = fakeWorkerSecretFields();
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValue(new Response("forbidden", { status: 403 }));
@@ -426,10 +423,10 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(message).not.toContain("X-Amz-Signature");
     expect(message).not.toContain("Authorization");
 
-    const bareSecretPath =
-      `secrets/${bareSecrets.githubPat}-${bareSecrets.githubClassicPat}-${bareSecrets.awsAccessKey}-` +
-      `${bareSecrets.googleApiKey}-X-Amz-Signature=${"a".repeat(32)}.md`;
-    const bareSecretPathError = await writeArtifactWorkspace(
+    const secretLabelPath =
+      `secrets/token=${secrets.workerToken}-api_key=${secrets.proseApiKey}-` +
+      `X-Amz-Signature=${"a".repeat(32)}.md`;
+    const secretLabelPathError = await writeArtifactWorkspace(
       {
         job: {
           _id: "job124b",
@@ -442,8 +439,8 @@ describe("run-codex-scan-worker diagnostics", () => {
         target: {
           files: [
             {
-              path: bareSecretPath,
-              sha256: "bare-secret-fixture",
+              path: secretLabelPath,
+              sha256: "secret-label-fixture",
               size: 61,
               url: "https://signed.example.invalid/package?token=secret",
             },
@@ -452,23 +449,21 @@ describe("run-codex-scan-worker diagnostics", () => {
       },
       await tempDir(),
     ).catch((caught: unknown) => caught);
-    const bareSecretPathMessage =
-      bareSecretPathError instanceof Error
-        ? bareSecretPathError.message
-        : String(bareSecretPathError);
-    expect(bareSecretPathMessage).toContain("Download failed 403 for artifact file");
-    expect(bareSecretPathMessage).not.toContain(bareSecrets.githubPat);
-    expect(bareSecretPathMessage).not.toContain(bareSecrets.githubClassicPat);
-    expect(bareSecretPathMessage).not.toContain(bareSecrets.awsAccessKey);
-    expect(bareSecretPathMessage).not.toContain(bareSecrets.googleApiKey);
-    expect(bareSecretPathMessage).not.toContain("X-Amz-Signature");
+    const secretLabelPathMessage =
+      secretLabelPathError instanceof Error
+        ? secretLabelPathError.message
+        : String(secretLabelPathError);
+    expect(secretLabelPathMessage).toContain("Download failed 403 for artifact file");
+    expect(secretLabelPathMessage).not.toContain(secrets.workerToken);
+    expect(secretLabelPathMessage).not.toContain(`api_key=${secrets.proseApiKey}`);
+    expect(secretLabelPathMessage).not.toContain(secrets.proseApiKey);
+    expect(secretLabelPathMessage).not.toContain("X-Amz-Signature");
 
     fetchMock.mockRejectedValueOnce(
       new Error(
         `fetch failed https://signed.example.invalid/file?token=secret Authorization: Bearer abc ` +
-          `OPENAI_API_KEY=sk-short-secret ${bareSecrets.openAiKey} ${bareSecrets.githubPat} ` +
-          `${bareSecrets.githubClassicPat} ` +
-          `${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey} ` +
+          `OPENAI_API_KEY=${secrets.runtimeApiKey} ` +
+          `${secrets.apiKeyLabel}: ${secrets.proseApiKey} ` +
           `X-Amz-Signature=${"b".repeat(32)}`,
       ),
     );
@@ -511,21 +506,16 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(networkMessage).not.toContain("Bearer abc");
     expect(networkMessage).not.toContain(" abc");
     expect(networkMessage).not.toContain("OPENAI_API_KEY");
-    expect(networkMessage).not.toContain(`${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey}`);
-    expect(networkMessage).not.toContain(bareSecrets.proseApiKey);
-    expect(networkMessage).not.toContain("sk-short-secret");
-    expect(networkMessage).not.toContain(bareSecrets.openAiKey);
-    expect(networkMessage).not.toContain(bareSecrets.githubPat);
-    expect(networkMessage).not.toContain(bareSecrets.githubClassicPat);
+    expect(networkMessage).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
+    expect(networkMessage).not.toContain(secrets.proseApiKey);
+    expect(networkMessage).not.toContain(secrets.runtimeApiKey);
     expect(networkMessage).not.toContain("X-Amz-Signature");
     expect(networkCauseMessage).not.toContain("https://");
     expect(networkCauseMessage).not.toContain("signed.example.invalid");
     expect(networkCauseMessage).not.toContain("token=secret");
     expect(networkCauseMessage).not.toContain("Authorization");
-    expect(networkCauseMessage).not.toContain(
-      `${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey}`,
-    );
-    expect(networkCauseMessage).not.toContain(bareSecrets.proseApiKey);
+    expect(networkCauseMessage).not.toContain(`${secrets.apiKeyLabel}: ${secrets.proseApiKey}`);
+    expect(networkCauseMessage).not.toContain(secrets.proseApiKey);
 
     fetchMock.mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
     const clawpackError = await writeArtifactWorkspace(
