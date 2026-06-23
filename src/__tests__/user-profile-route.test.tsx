@@ -354,6 +354,7 @@ describe("publisher profile helpers", () => {
         activeStatus: "CanLoadMore",
         catalogSearch: "",
         selectedCatalogGroup: "current-weather",
+        activePublishedDisplay: null,
       }),
     ).toBe(false);
 
@@ -363,6 +364,8 @@ describe("publisher profile helpers", () => {
         catalogSearch: "",
         selectedCatalogGroup: "all",
         activePublishedDisplay: {
+          mode: "grouped",
+          sourceRepos: [],
           sections: [],
         },
       }),
@@ -373,6 +376,7 @@ describe("publisher profile helpers", () => {
         activeStatus: "CanLoadMore",
         catalogSearch: "weather",
         selectedCatalogGroup: "all",
+        activePublishedDisplay: null,
       }),
     ).toBe(true);
 
@@ -381,6 +385,7 @@ describe("publisher profile helpers", () => {
         activeStatus: "CanLoadMore",
         catalogSearch: "",
         selectedCatalogGroup: "all",
+        activePublishedDisplay: null,
       }),
     ).toBe(true);
   });

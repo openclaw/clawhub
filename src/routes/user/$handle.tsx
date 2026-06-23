@@ -447,9 +447,16 @@ function PublisherProfileChromeIdentity({ publisher }: { publisher: PublicPublis
           <h1>
             <span className="publisher-profile-title-text">{publisher.displayName}</span>
           </h1>
-          {publisher.official ? <OfficialTag /> : null}
+          {publisher.official ? (
+            <OfficialTag className="publisher-profile-title-official-tag" />
+          ) : null}
         </div>
-        <span className="publisher-profile-handle">@{publisher.handle}</span>
+        <span className="publisher-profile-handle-row">
+          <span className="publisher-profile-handle">@{publisher.handle}</span>
+          {publisher.official ? (
+            <OfficialBadge className="publisher-profile-handle-official-badge" />
+          ) : null}
+        </span>
       </div>
     </div>
   );
@@ -925,7 +932,15 @@ const UNCATEGORIZED_GROUP_TITLE = "Uncategorized";
 export function getPublisherCatalogItemCategorySlugs(item: PublicPublisherCatalogItem): string[] {
   const slugs = new Set<string>();
   if (item.kind === "skill") {
-    for (const category of getSkillCategoriesForSkill(item)) {
+    for (const category of getSkillCategoriesForSkill({
+      slug: item.slug ?? parseCatalogItemSlug(item),
+      displayName: item.displayName,
+      summary: item.summary,
+      categories: item.categories,
+      inferredCategories: item.inferredCategories,
+      latestVersionId: item.latestVersionId,
+      inferredFromVersionId: item.inferredFromVersionId,
+    })) {
       slugs.add(category.slug);
     }
   } else {
@@ -1236,8 +1251,8 @@ export function catalogItemToPublicSkill(item: PublicPublisherCatalogItem): Publ
     _creationTime: item.updatedAt,
     slug: parseCatalogItemSlug(item),
     displayName: item.displayName,
-    summary: item.summary,
-    icon: item.icon,
+    summary: item.summary ?? undefined,
+    icon: item.icon ?? undefined,
     ownerUserId: "users:unknown" as Id<"users">,
     categories: item.categories,
     inferredCategories: item.inferredCategories,

@@ -3603,6 +3603,9 @@ code {
 .marketplace-icon-xs {
   width: 26px;
   height: 26px;
+}
+
+.marketplace-icon-xs.marketplace-icon-user {
   border-radius: 999px;
 }
 

@@ -28,7 +28,6 @@
 
 .publisher-profile-chrome {
   width: 100%;
-  /* Extra flow spacing before the catalog toolbar; scrolls away so sticky stays flush. */
   margin-bottom: calc(var(--space-6) - var(--space-5));
 }
 
@@ -167,11 +166,22 @@
 .publisher-profile-member-avatar-stack-item .marketplace-icon,
 .publisher-profile-member-menu-row .marketplace-icon,
 .publisher-profile-meta-chip .marketplace-icon {
-  border-radius: 999px;
   overflow: hidden;
   box-shadow: none;
   transform: none;
   transition: none;
+}
+
+.publisher-profile-chrome-identity .publisher-profile-avatar .marketplace-icon-user,
+.publisher-profile-member-avatar-stack-item .marketplace-icon,
+.publisher-profile-member-menu-row .marketplace-icon,
+.publisher-profile-meta-chip .marketplace-icon-user {
+  border-radius: 999px;
+}
+
+.publisher-profile-chrome-identity .publisher-profile-avatar .marketplace-icon-org,
+.publisher-profile-meta-chip .marketplace-icon-org {
+  border-radius: var(--r-md);
 }
 
 .publisher-profile-chrome-identity
@@ -193,6 +203,11 @@
   background: color-mix(in srgb, var(--ink) 6%, var(--surface-muted));
   border: 1px solid var(--line);
   color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
+}
+
+.publisher-profile-member-avatar-stack-item .marketplace-icon:not(:has(.marketplace-icon-image)),
+.publisher-profile-member-menu-row .marketplace-icon:not(:has(.marketplace-icon-image)) {
+  border: none;
 }
 
 .publisher-profile-chrome-identity
@@ -255,6 +270,29 @@
   letter-spacing: 0.01em;
   line-height: 1.2;
   text-transform: lowercase;
+}
+
+.publisher-profile-handle-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.publisher-profile-handle-row .official-badge.publisher-profile-handle-official-badge {
+  display: none;
+  flex-shrink: 0;
+  width: auto;
+  height: auto;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--official-fg);
+}
+
+.publisher-profile-handle-row .official-badge.publisher-profile-handle-official-badge svg {
+  width: 14px;
+  height: 14px;
 }
 
 .publisher-profile-bio-block {
@@ -706,18 +744,10 @@
 
 .publisher-profile-tab-bar {
   --publisher-catalog-divider-inset: 10px;
-  position: sticky;
-  top: var(--site-header-height);
-  z-index: 30;
-  isolation: isolate;
   margin-top: 0;
-  /* Divider inset below chips only — no top padding/margin or sticky leaves a header gap. */
   padding: 0 0 var(--publisher-catalog-divider-inset);
   margin-bottom: calc(var(--publisher-catalog-divider-inset) - var(--space-5));
   border-bottom: 1px solid var(--line);
-  background: var(--bg);
-  -webkit-backdrop-filter: blur(10px);
-  backdrop-filter: blur(10px);
 }
 
 .publisher-profile-tab-bar .browse-controls {
@@ -869,11 +899,21 @@
   }
 
   .publisher-profile-chrome-identity {
-    align-items: start;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-4);
   }
 
   .publisher-profile-title-row {
     align-items: flex-start;
+  }
+
+  .publisher-profile-title-official-tag {
+    display: none;
+  }
+
+  .publisher-profile-handle-row .official-badge.publisher-profile-handle-official-badge {
+    display: inline-flex;
   }
 
   .publisher-profile-title-text {
