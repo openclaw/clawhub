@@ -37,7 +37,7 @@ jobs:
     needs: validate-ref
     environment:
       name: Production
-      url: https://registry.openclaw.ai/feeds/plugins
+      url: https://registry.openclaw.ai/v1/feeds/plugins
     env:
       EXPIRES_IN_DAYS: ${{ inputs.expires_in_days || '7' }}
     steps:

@@ -22,6 +22,11 @@
   ],
   "redirects": [
     {
+      "source": "/feeds/plugins",
+      "destination": "/v1/feeds/plugins",
+      "statusCode": 308
+    },
+    {
       "source": "/",
       "has": [
         {
@@ -52,7 +57,7 @@
       "destination": "https://wry-manatee-359.convex.site/api/:path*"
     },
     {
-      "source": "/feeds/plugins",
+      "source": "/v1/feeds/plugins",
       "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/plugins"
     }
   ],

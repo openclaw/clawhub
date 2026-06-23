@@ -5,9 +5,10 @@ import {
   CATALOG_FEED_SOURCE_REF,
   parseCatalogFeed,
   serializeCatalogFeed,
+  type CatalogFeed,
 } from "./catalogFeed.js";
 
-function makeFeed(overrides: Record<string, unknown> = {}) {
+function makeFeed(overrides: Partial<CatalogFeed> = {}): CatalogFeed {
   return {
     schemaVersion: CATALOG_FEED_SCHEMA_VERSION,
     id: CATALOG_FEED_ID,
@@ -58,12 +59,41 @@ function makeFeed(overrides: Record<string, unknown> = {}) {
 
 describe("catalog feed schema", () => {
   it("sorts entries by stable id before serializing", () => {
-    const serialized = serializeCatalogFeed(makeFeed() as never);
+    const serialized = serializeCatalogFeed(makeFeed());
     expect(serialized.indexOf('"id":"alpha"')).toBeLessThan(serialized.indexOf('"id":"zeta"'));
   });
 
+  it("serializes equivalent objects to identical canonical bytes", () => {
+    const feed = makeFeed();
+    const reordered: CatalogFeed = {
+      entries: feed.entries.map((entry) => ({
+        install: {
+          candidates: entry.install.candidates.map((candidate) => ({
+            integrity: candidate.integrity,
+            version: candidate.version,
+            package: candidate.package,
+            sourceRef: candidate.sourceRef,
+          })),
+        },
+        publisher: entry.publisher,
+        state: entry.state,
+        version: entry.version,
+        title: entry.title,
+        id: entry.id,
+        type: entry.type,
+      })),
+      expiresAt: feed.expiresAt,
+      sequence: feed.sequence,
+      generatedAt: feed.generatedAt,
+      id: feed.id,
+      schemaVersion: feed.schemaVersion,
+    };
+
+    expect(serializeCatalogFeed(feed)).toBe(serializeCatalogFeed(reordered));
+  });
+
   it("rejects unsupported versions and expired feeds", () => {
-    expect(() => parseCatalogFeed(makeFeed({ schemaVersion: 2 }))).toThrow(
+    expect(() => parseCatalogFeed(makeFeed({ schemaVersion: 2 } as never))).toThrow(
       "Unsupported catalog feed schema version",
     );
     expect(() => parseCatalogFeed(makeFeed({ expiresAt: "2026-06-22T00:00:00.000Z" }))).toThrow(
@@ -81,7 +111,7 @@ describe("catalog feed schema", () => {
               install: { candidates: [{ sourceRef: CATALOG_FEED_SOURCE_REF }] },
             },
           ],
-        }),
+        } as never),
       ),
     ).toThrow();
   });

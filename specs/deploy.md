@@ -179,7 +179,8 @@ gh workflow run publish-catalog-feed.yml --repo openclaw/clawhub --ref main
 ```
 
 The workflow stores the current feed snapshot in Convex and serves it through
-`/feeds/plugins` with public edge-cache validators. Attach
+`/v1/feeds/plugins` with public edge-cache validators. The unversioned
+`/feeds/plugins` path redirects to the versioned route. Attach
 `registry.openclaw.ai` to the same Vercel project before configuring OpenClaw's
 default feed URL.
 

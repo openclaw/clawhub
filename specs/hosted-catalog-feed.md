@@ -58,11 +58,20 @@ unchanged and provides:
 - `Last-Modified`
 - `Cache-Control: public, max-age=60, s-maxage=300, stale-while-revalidate=86400`
 - `Surrogate-Control: max-age=300, stale-while-revalidate=86400`
-- `304 Not Modified` for matching `If-None-Match`
+- `304 Not Modified` for matching `If-None-Match` or `If-Modified-Since`
 
-`vercel.json` exposes `/feeds/plugins` as an edge-friendly rewrite to the
-Convex endpoint. The `registry.openclaw.ai` custom domain must point at the
-same Vercel project before the public RFC URL is enabled.
+`vercel.json` exposes `/v1/feeds/plugins` as an edge-friendly rewrite to the
+Convex endpoint. The unversioned `/feeds/plugins` path permanently redirects
+to the versioned path. The `registry.openclaw.ai` custom domain must point at
+the same Vercel project before the public RFC URL is enabled.
+
+The serialized payload uses stable object-key ordering and deterministic entry
+and install-candidate ordering. Additive fields may be introduced within a
+major version; incompatible wire changes require a new versioned route and
+schema version.
+
+`/.well-known/openclaw-registry.json` advertises the versioned plugin feed.
+`/.well-known/clawhub.json` remains the ClawHub API discovery document.
 
 Do not make the feed request-time dynamic. Refresh the stored publication first,
 then let Vercel or the configured CDN cache the immutable response by ETag.

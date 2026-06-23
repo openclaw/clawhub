@@ -1,0 +1,4 @@
+Contact: mailto:security@openclaw.ai
+Expires: 2027-06-23T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://clawhub.ai/.well-known/security.txt

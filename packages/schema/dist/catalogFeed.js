@@ -57,7 +57,39 @@ export function parseCatalogFeed(value) {
 }
 export function serializeCatalogFeed(feed) {
     const parsed = parseCatalogFeed(feed);
-    const entries = [...parsed.entries].sort((left, right) => left.id.localeCompare(right.id));
-    return JSON.stringify({ ...parsed, entries });
+    const entries = [...parsed.entries]
+        .sort((left, right) => left.id.localeCompare(right.id))
+        .map((entry) => ({
+        type: entry.type,
+        id: entry.id,
+        title: entry.title,
+        version: entry.version,
+        state: entry.state,
+        publisher: {
+            id: entry.publisher.id,
+            trust: entry.publisher.trust,
+        },
+        install: {
+            candidates: [...entry.install.candidates]
+                .sort((left, right) => [left.sourceRef, left.package, left.version, left.integrity]
+                .join("\u0000")
+                .localeCompare([right.sourceRef, right.package, right.version, right.integrity].join("\u0000")))
+                .map((candidate) => ({
+                sourceRef: candidate.sourceRef,
+                package: candidate.package,
+                version: candidate.version,
+                integrity: candidate.integrity,
+            })),
+        },
+    }));
+    return JSON.stringify({
+        schemaVersion: parsed.schemaVersion,
+        id: parsed.id,
+        generatedAt: parsed.generatedAt,
+        sequence: parsed.sequence,
+        expiresAt: parsed.expiresAt,
+        ...(parsed.description === undefined ? {} : { description: parsed.description }),
+        entries,
+    });
 }
 //# sourceMappingURL=catalogFeed.js.map

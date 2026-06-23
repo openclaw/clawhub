@@ -8,7 +8,19 @@ function matchesEtag(request: Request, etag: string) {
   return header
     .split(",")
     .map((value) => value.trim())
-    .some((value) => value === "*" || value === etag);
+    .some((value) => {
+      if (value === "*") return true;
+      const normalized = value.startsWith("W/") ? value.slice(2) : value;
+      return normalized === etag;
+    });
+}
+
+function matchesLastModified(request: Request, publishedAt: number) {
+  const header = request.headers.get("if-modified-since");
+  if (!header) return false;
+  const since = Date.parse(header);
+  if (!Number.isFinite(since)) return false;
+  return Math.floor(publishedAt / 1000) * 1000 <= since;
 }
 
 export async function catalogFeedV1Handler(ctx: ActionCtx, request: Request) {
@@ -42,6 +54,11 @@ export async function catalogFeedV1Handler(ctx: ActionCtx, request: Request) {
     corsHeaders(),
   );
 
-  if (matchesEtag(request, etag)) return new Response(null, { status: 304, headers });
+  if (
+    matchesEtag(request, etag) ||
+    (!request.headers.has("if-none-match") && matchesLastModified(request, publication.publishedAt))
+  ) {
+    return new Response(null, { status: 304, headers });
+  }
   return new Response(publication.payload, { status: 200, headers });
 }

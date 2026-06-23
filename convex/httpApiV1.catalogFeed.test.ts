@@ -50,6 +50,37 @@ describe("catalogFeedV1Handler", () => {
     expect(await response.text()).toBe("");
   });
 
+  it("accepts weak etags and last-modified validators", async () => {
+    const weakEtagResponse = await catalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/feed", {
+        headers: { "If-None-Match": 'W/"sha256:abc123"' },
+      }),
+    );
+    expect(weakEtagResponse.status).toBe(304);
+
+    const lastModifiedResponse = await catalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/feed", {
+        headers: { "If-Modified-Since": "Tue, 23 Jun 2026 00:00:00 GMT" },
+      }),
+    );
+    expect(lastModifiedResponse.status).toBe(304);
+  });
+
+  it("gives etag precedence over last-modified", async () => {
+    const response = await catalogFeedV1Handler(
+      ctx as never,
+      new Request("https://clawhub.ai/feed", {
+        headers: {
+          "If-None-Match": '"sha256:different"',
+          "If-Modified-Since": "Tue, 23 Jun 2026 00:00:00 GMT",
+        },
+      }),
+    );
+    expect(response.status).toBe(200);
+  });
+
   it("does not cache an unpublished feed", async () => {
     ctx.runQuery.mockResolvedValue(null);
     const response = await catalogFeedV1Handler(
