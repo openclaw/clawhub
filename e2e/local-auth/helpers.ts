@@ -2,7 +2,11 @@ import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, type Page, type TestInfo } from "@playwright/test";
 import { buildPublisherProfileHref, buildSkillDetailHref } from "../../src/lib/ownerRoute";
-import { buildPluginDetailHref, buildPluginSecurityAuditHref, buildPluginValidationHref } from "../../src/lib/pluginRoutes";
+import {
+  buildPluginDetailHref,
+  buildPluginSecurityAuditHref,
+  buildPluginValidationHref,
+} from "../../src/lib/pluginRoutes";
 import { waitForHydration } from "../helpers/runtimeErrors";
 
 type DevPersona = "owner" | "user" | "admin" | "abusePublisher";
