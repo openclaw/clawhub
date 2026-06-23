@@ -185,9 +185,6 @@ const appCategories = [
   },
 ] as const;
 
-const slackWorkflowPlugin =
-  HOME_PLUGIN_SHORTCUTS.find((shortcut) => shortcut.id === "slack") ?? HOME_PLUGIN_SHORTCUTS[0];
-
 const workflowHeaderTiles: ReadonlyArray<{
   label: string;
   src: string;
@@ -196,12 +193,12 @@ const workflowHeaderTiles: ReadonlyArray<{
 }> = [
   {
     label: "OpenAI",
-    src: homeAppIconUrl("openai.com"),
+    src: "/openai-favicon.svg",
     className: "is-openai",
   },
   {
     label: "Slack",
-    src: homePluginShortcutIconUrl(slackWorkflowPlugin),
+    src: "/slack-favicon.svg",
     className: "is-slack",
   },
   {
