@@ -187,7 +187,7 @@ test("skill publishers can create a skill and publish a new version", async ({
     changelog: "Initial release from the browser publish flow.",
   });
 
-  const metadata = page.locator(".sidebar-metadata");
+  const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
   await expect(metadata.getByText("Current version", { exact: true })).toBeVisible();
   await expect(metadata.getByText("v1.0.0", { exact: true })).toBeVisible();
 

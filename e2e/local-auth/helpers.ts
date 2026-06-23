@@ -173,10 +173,29 @@ export async function selectOwnerHandle(page: Page, selector: string, ownerHandl
   await expectOwnerHandleSelected(page, selector, ownerHandle);
 }
 
+async function waitForPublishSkillForm(page: Page) {
+  const heading = page.getByRole("heading", { name: "Publish a skill" });
+  const retryButton = page.getByRole("button", { name: "Try again" });
+
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await waitForHydration(page).catch(() => {});
+    if (await heading.isVisible({ timeout: 5_000 }).catch(() => false)) {
+      await page.locator("#ownerHandle").waitFor({ state: "attached", timeout: 15_000 });
+      return;
+    }
+    if (await retryButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
+      await retryButton.click();
+    }
+  }
+
+  await expect(heading).toBeVisible({ timeout: 15_000 });
+  await page.locator("#ownerHandle").waitFor({ state: "attached", timeout: 15_000 });
+}
+
 export async function signInAsLocalPublisher(page: Page, persona: DevPersona) {
   await signInAsLocalPersona(page, persona);
   await page.goto("/skills/publish", { waitUntil: "domcontentloaded" });
-  await expect(page.getByRole("heading", { name: "Publish a skill" })).toBeVisible();
+  await waitForPublishSkillForm(page);
   await expect
     .poll(
       async () => {
@@ -218,6 +237,7 @@ export async function publishSkillVersion(
     "utf8",
   );
 
+  await waitForPublishSkillForm(page);
   await selectOwnerHandle(page, "#ownerHandle", args.ownerHandle);
   await page.locator("#slug").fill(args.slug);
   await page.locator("#displayName").fill(args.displayName);

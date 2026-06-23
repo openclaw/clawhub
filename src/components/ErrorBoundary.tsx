@@ -61,7 +61,7 @@ function extractErrorMessage(error: unknown): string {
   if (!error) return "An unexpected error occurred. Please try again.";
   if (error instanceof Error && error.message.trim()) return error.message.trim();
   // Handle plain objects like { error: "message" } from API responses
-  if (typeof error === "object" && error !== null) {
+  if (typeof error === "object") {
     const record = error as Record<string, unknown>;
     if (typeof record.error === "string" && record.error.trim()) return record.error.trim();
     if (typeof record.message === "string" && record.message.trim()) return record.message.trim();

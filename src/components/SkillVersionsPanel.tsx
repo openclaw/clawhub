@@ -1,4 +1,5 @@
 import { useMutation } from "convex/react";
+import { Download } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 import { api } from "../../convex/_generated/api";
@@ -6,10 +7,11 @@ import type { Doc } from "../../convex/_generated/dataModel";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
-import { type LlmAnalysis, SecurityScanResults } from "./SkillSecurityScanResults";
 import { Badge } from "./ui/badge";
 import { Button } from "./ui/button";
+import { VersionChangelog } from "./VersionChangelog";
 import { VersionDeleteDialog } from "./VersionDeleteDialog";
+import { VersionReleaseRow } from "./VersionReleaseRow";
 
 type SkillVersionsPanelProps = {
   versions: Doc<"skillVersions">[] | undefined;
@@ -44,7 +46,6 @@ export function SkillVersionsPanel({
   nixPlugin,
   skillSlug,
   ownerHandle,
-  suppressScanResults,
   suppressedMessage,
 }: SkillVersionsPanelProps) {
   const convexSiteUrl = getRuntimeEnv("VITE_CONVEX_SITE_URL") ?? "https://clawhub.ai";
@@ -54,6 +55,7 @@ export function SkillVersionsPanel({
   const [removedVersionIds, setRemovedVersionIds] = useState<Set<Id<"skillVersions">>>(
     () => new Set(),
   );
+  const [expandedVersionIds, setExpandedVersionIds] = useState<Set<string>>(() => new Set());
   const deleteContextIdRef = useRef(0);
   const visibleVersions = (versions ?? []).filter((version) => !removedVersionIds.has(version._id));
 
@@ -62,7 +64,20 @@ export function SkillVersionsPanel({
     setDeletingVersion(null);
     setIsDeleting(false);
     setRemovedVersionIds(new Set());
+    setExpandedVersionIds(new Set());
   }, [skillSlug]);
+
+  const toggleVersion = (versionId: string) => {
+    setExpandedVersionIds((current) => {
+      const next = new Set(current);
+      if (next.has(versionId)) {
+        next.delete(versionId);
+      } else {
+        next.add(versionId);
+      }
+      return next;
+    });
+  };
 
   const handleDelete = async () => {
     if (!deletingVersion) return;
@@ -85,81 +100,88 @@ export function SkillVersionsPanel({
 
   return (
     <>
-      <div className="grid max-w-full gap-5 overflow-x-auto">
-        <div>
-          <h2 className="m-0 font-display text-[1.2rem] font-bold text-[color:var(--ink)]">
-            Versions
-          </h2>
-          <p className="m-0 text-sm text-[color:var(--ink-soft)]">
-            {nixPlugin
-              ? "Review release history and changelog."
-              : "Download older releases or scan the changelog."}
-          </p>
+      <div className="tab-body skill-versions-panel">
+        <div className="skill-versions-header">
+          <h2>Versions</h2>
           {suppressedMessage ? (
-            <p className="text-sm text-[color:var(--ink-soft)]">{suppressedMessage}</p>
+            <p className="skill-versions-suppressed-message">{suppressedMessage}</p>
           ) : null}
         </div>
-        <div className="max-h-[600px] overflow-y-auto">
-          <div className="flex flex-col gap-3">
+        <div className="skill-versions-scroll">
+          <div className="skill-versions-list skill-versions-list-without-checks">
+            <div className="skill-versions-column-header" aria-hidden="true">
+              <span>Version</span>
+              <span>Release</span>
+              <span className="skill-versions-column-header-download">Download</span>
+              <span />
+            </div>
             {visibleVersions.map((version) => {
               const isLatest =
                 version._id === latestVersionId || version._id === latestTaggedVersionId;
               const isAvailable =
                 version.softDeletedAt === undefined && version.ownerDeletedAt === undefined;
+              const isExpanded = expandedVersionIds.has(version._id);
+              const isAutoChangelog = version.changelogSource === "auto";
+              const changelogId = `version-changelog-${version._id}`;
               return (
-                <div
+                <VersionReleaseRow
                   key={version._id}
-                  className="flex items-start justify-between gap-4 rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface)] p-3"
-                >
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div>
-                      v{version.version} · {new Date(version.createdAt).toLocaleDateString()}
-                      {version.changelogSource === "auto" ? (
-                        <span className="text-[color:var(--ink-soft)]"> · auto</span>
+                  versionLabel={`v${version.version}`}
+                  dateLabel={new Date(version.createdAt).toLocaleDateString()}
+                  isLatest={isLatest}
+                  isExpanded={isExpanded}
+                  changelogId={changelogId}
+                  release={
+                    <>
+                      {isLatest ? (
+                        <Badge variant="compact" className="version-release-channel-badge">
+                          Latest
+                        </Badge>
                       ) : null}
-                    </div>
-                    <div className="whitespace-pre-wrap break-words text-[color:var(--ink-soft)]">
-                      {version.changelog}
-                    </div>
-                    <div className="pt-1">
-                      {!suppressScanResults && (version.sha256hash || version.llmAnalysis) ? (
-                        <SecurityScanResults
-                          sha256hash={version.sha256hash}
-                          vtAnalysis={version.vtAnalysis}
-                          llmAnalysis={version.llmAnalysis as LlmAnalysis | undefined}
-                          variant="badge"
-                        />
+                      {isAutoChangelog ? (
+                        <Badge variant="compact" className="version-release-channel-badge">
+                          auto
+                        </Badge>
                       ) : null}
-                    </div>
-                  </div>
-                  <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-                    {isLatest ? <Badge variant="compact">Latest</Badge> : null}
-                    {!nixPlugin && isAvailable ? (
-                      <a
-                        href={buildVersionDownloadHref(
-                          convexSiteUrl,
-                          skillSlug,
-                          ownerHandle,
-                          version.version,
-                        )}
-                        className="inline-flex items-center justify-center gap-2 whitespace-nowrap font-semibold text-xs min-h-[34px] rounded-[var(--radius-pill)] px-3 py-1.5 border border-[color:var(--line)] bg-[color:var(--surface)] text-[color:var(--ink)] transition-all duration-200 no-underline"
-                      >
-                        Zip
-                      </a>
-                    ) : null}
-                    {canDeleteVersions && isAvailable && !isLatest ? (
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="sm"
-                        aria-label={`Delete version ${version.version}`}
-                        onClick={() => setDeletingVersion(version)}
-                      >
-                        Delete
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
+                    </>
+                  }
+                  actions={
+                    <>
+                      {!nixPlugin && isAvailable ? (
+                        <a
+                          href={buildVersionDownloadHref(
+                            convexSiteUrl,
+                            skillSlug,
+                            ownerHandle,
+                            version.version,
+                          )}
+                          className="skill-version-release-download skill-version-release-download-labeled"
+                          aria-label={`Download version v${version.version}`}
+                        >
+                          <Download
+                            className="skill-version-release-download-icon"
+                            size={14}
+                            aria-hidden="true"
+                          />
+                          <span>Download version</span>
+                        </a>
+                      ) : null}
+                      {canDeleteVersions && isAvailable && !isLatest ? (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          aria-label={`Delete version ${version.version}`}
+                          onClick={() => setDeletingVersion(version)}
+                        >
+                          Delete
+                        </Button>
+                      ) : null}
+                    </>
+                  }
+                  onToggle={() => toggleVersion(version._id)}
+                  changelog={isExpanded ? <VersionChangelog text={version.changelog} /> : null}
+                />
               );
             })}
           </div>

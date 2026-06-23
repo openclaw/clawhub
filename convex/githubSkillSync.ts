@@ -1376,7 +1376,6 @@ async function storeGitHubSkillScanFileChunks(
     }
     if (pendingChunk.length > 0) {
       await appendChunk(pendingChunk);
-      pendingChunk = [];
     }
   } catch (error) {
     // Prior chunks are owned by the durable request; only this bounded chunk can be orphaned.

@@ -1172,6 +1172,109 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("users/publisher-reclaim dry-runs deleted org handle reclaim for admins", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return {
+        ok: true,
+        publisherId: "publishers:tencent",
+        handle: "tencent",
+        dryRun: true,
+        hardDeleted: false,
+        activeSkills: 0,
+        activePackages: 0,
+        memberCount: 1,
+        githubSources: 0,
+        githubSourceContents: 0,
+        officialPublisher: false,
+        confirmationToken: "reclaim-deleted-org:tencent",
+      };
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-reclaim", {
+        method: "POST",
+        body: JSON.stringify({ handle: " Tencent ", reason: "Free spam org handle" }),
+      }),
+    );
+    if (response.status !== 200) throw new Error(await response.text());
+
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      handle: "tencent",
+      dryRun: true,
+      hardDeleted: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+        dryRun: true,
+      }),
+    );
+  });
+
+  it("users/publisher-reclaim requires the confirmation token before apply", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      throw new Error('Confirmation token must be "reclaim-deleted-org:tencent"');
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:admin",
+      user: { _id: "users:admin", role: "admin" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-reclaim", {
+        method: "POST",
+        body: JSON.stringify({ handle: "tencent", reason: "Free spam org handle", dryRun: false }),
+      }),
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.text()).toBe('Confirmation token must be "reclaim-deleted-org:tencent"');
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        handle: "tencent",
+        dryRun: false,
+        confirmationToken: undefined,
+      }),
+    );
+  });
+
+  it("users/publisher-reclaim forbids non-admin api tokens", async () => {
+    const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+      if (isRateLimitArgs(args)) return okRate();
+      return okRate();
+    });
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "moderator" },
+    } as never);
+
+    const response = await __handlers.usersPostRouterV1Handler(
+      makeCtx({ runQuery: vi.fn(), runAction: vi.fn(), runMutation }),
+      new Request("https://example.com/api/v1/users/publisher-reclaim", {
+        method: "POST",
+        body: JSON.stringify({ handle: "tencent", reason: "Free spam org handle" }),
+      }),
+    );
+
+    expect(response.status).toBe(403);
+    expect(runMutation).toHaveBeenCalledTimes(1);
+  });
+
   it("users/reserve forbids non-admin api tokens", async () => {
     const runQuery = vi.fn();
     const runAction = vi.fn();
@@ -2237,6 +2340,30 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("uses the public site origin for production ambiguous skill choices", async () => {
+    vi.stubEnv("CONVEX_DEPLOYMENT", "prod:wry-manatee-359");
+    const runQuery = vi.fn().mockResolvedValue({
+      skill: null,
+      ambiguous: true,
+      ambiguousMatches: [
+        { slug: "demo", ownerHandle: "openclaw" },
+        { slug: "demo", ownerHandle: "patrick" },
+      ],
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://wry-manatee-359.convex.site/api/v1/skills/demo"),
+    );
+
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.matches).toEqual([
+      expect.objectContaining({ url: "https://clawhub.ai/openclaw/demo" }),
+      expect.objectContaining({ url: "https://clawhub.ai/patrick/demo" }),
+    ]);
+  });
+
   it("get skill returns pending-scan message for owner api token", async () => {
     vi.mocked(getOptionalApiTokenUserId).mockResolvedValue("users:1" as never);
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
@@ -2557,6 +2684,42 @@ describe("httpApiV1 handlers", () => {
       archive: {
         version: "1.0.0",
         downloadUrl: "https://example.com/api/v1/download?slug=demo&version=1.0.0",
+      },
+    });
+  });
+
+  it("skill install resolver threads ownerHandle through scoped archive installs", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:demo",
+        slug: "demo",
+        displayName: "Demo Skill",
+        latestVersionSummary: { version: "1.0.0" },
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/demo/install?ownerHandle=acme"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.skills.getSkillBySlugInternal,
+      expect.objectContaining({ slug: "demo", ownerHandle: "acme" }),
+    );
+    expect(runQuery).toHaveBeenCalledWith(
+      api.skills.getBySlug,
+      expect.objectContaining({ slug: "demo", ownerHandle: "acme" }),
+    );
+    await expect(response.json()).resolves.toEqual({
+      ok: true,
+      slug: "demo",
+      installKind: "archive",
+      archive: {
+        version: "1.0.0",
+        downloadUrl: "https://example.com/api/v1/download?slug=demo&ownerHandle=acme&version=1.0.0",
       },
     });
   });
@@ -8826,6 +8989,40 @@ describe("httpApiV1 handlers", () => {
     for (const [, args] of runQuery.mock.calls) {
       if (hasPluginRecommendedScoreReadinessArgs(args)) continue;
       expect(args).toEqual(expect.objectContaining({ officialFirst: true }));
+    }
+  });
+
+  it("plugins list accepts category official-first browse with scan-status exclusions", async () => {
+    const runQuery = vi.fn((_, args: Record<string, unknown>) => {
+      if (hasPluginRecommendedScoreReadinessArgs(args)) {
+        return false;
+      }
+      return { page: [], isDone: true, continueCursor: "" };
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.listPluginsV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request(
+        "https://example.com/api/v1/plugins?limit=25&category=security&officialFirst=true&sort=downloads&excludeScanStatus=pending,suspicious",
+      ),
+    );
+
+    expect(response.status).toBe(200);
+    const json = await response.json();
+    expect(json).toEqual({ items: [], nextCursor: null });
+    const familyCalls = runQuery.mock.calls.filter(([, args]) => "family" in args);
+    expect(familyCalls).toHaveLength(2);
+    for (const [, args] of familyCalls) {
+      expect(args).toEqual(
+        expect.objectContaining({
+          category: "security",
+          excludedScanStatuses: ["pending", "suspicious"],
+          officialFirst: true,
+          sort: "downloads",
+          paginationOpts: { cursor: null, numItems: 25 },
+        }),
+      );
     }
   });
 

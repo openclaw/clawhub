@@ -46,6 +46,7 @@ import {
   cmdUpdate,
 } from "./cli/commands/skills.js";
 import { cmdStarSkill } from "./cli/commands/star.js";
+import { cmdSync } from "./cli/commands/sync.js";
 import {
   cmdTransferAccept,
   cmdTransferCancel,
@@ -861,6 +862,50 @@ registerCommand(program, ["unstar"])
     await cmdUnstarSkill(opts, slug, options, isInputAllowed());
   });
 
+registerCommand(program, ["sync"])
+  .description("Scan local skills and publish new or changed ones")
+  .option("--root <dir...>", "Extra scan roots (one or more)")
+  .option("--all", "Publish all new or changed skills without prompting")
+  .option("--dry-run", "Show what would be published")
+  .option("--json", "Output JSON")
+  .option("--owner <handle>", "Publish under an org/user publisher handle")
+  .option("--bump <type>", "Version bump for updates (patch|minor|major)", "patch")
+  .option("--changelog <text>", "Changelog to use for updates")
+  .option("--tags <tags>", "Comma-separated tags", "latest")
+  .option("--concurrency <n>", "Concurrent registry/file checks", (value) =>
+    Number.parseInt(value, 10),
+  )
+  .option("--source-repo <repo>", "GitHub repo URL or owner/name for source provenance")
+  .option("--source-commit <sha>", "Git commit SHA for source provenance")
+  .option("--source-ref <ref>", "Git ref for source provenance")
+  .action(async (options) => {
+    const opts = await resolveGlobalOpts();
+    const bump =
+      options.bump === "patch" || options.bump === "minor" || options.bump === "major"
+        ? options.bump
+        : fail("--bump must be patch, minor, or major");
+    const concurrency = options.concurrency ?? 6;
+    if (concurrency < 1 || concurrency > 32) fail("--concurrency must be between 1 and 32");
+    await cmdSync(
+      opts,
+      {
+        root: options.root,
+        all: options.all,
+        dryRun: options.dryRun,
+        json: options.json,
+        owner: options.owner,
+        bump,
+        changelog: options.changelog,
+        tags: options.tags,
+        concurrency,
+        sourceRepo: options.sourceRepo,
+        sourceCommit: options.sourceCommit,
+        sourceRef: options.sourceRef,
+      },
+      isInputAllowed(),
+    );
+  });
+
 applyCommandHelpGroups(program, {
   login: "Auth:",
   logout: "Auth:",
@@ -878,6 +923,7 @@ applyCommandHelpGroups(program, {
   star: "Skills:",
   unstar: "Skills:",
   publish: "Publishing:",
+  sync: "Publishing:",
   skill: "Publishing:",
   publisher: "Publishing:",
   package: "Packages:",

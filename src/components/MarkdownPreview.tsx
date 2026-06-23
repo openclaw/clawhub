@@ -1,5 +1,5 @@
 import rehypeShikiFromHighlighter from "@shikijs/rehype/core";
-import { isValidElement, useEffect, useId, useMemo, useState } from "react";
+import { isValidElement, useEffect, useId, useMemo, useState, useSyncExternalStore } from "react";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
 import ReactMarkdown, { type UrlTransform } from "react-markdown";
 import rehypeRaw from "rehype-raw";
@@ -7,7 +7,9 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import type { PluggableList } from "unified";
 import { rehypeProxyImages } from "../lib/rehypeProxyImages";
+import { isDarkThemeResolved, onThemeChange } from "../lib/theme";
 import { cn } from "../lib/utils";
+import { CodeWrapToggleButton, useCodeWrapToggle } from "./CodeWrapToggle";
 
 interface MarkdownPreviewProps {
   children: string;
@@ -46,7 +48,38 @@ function buildBaseRehype(assetBaseUrl: string | undefined): PluggableList {
   return [rehypeRaw, [rehypeSanitize, schema], [rehypeProxyImages, { assetBaseUrl }]];
 }
 
-const SHIKI_THEME = "github-dark";
+const SHIKI_THEMES = ["github-light", "github-dark"] as const;
+type ShikiTheme = (typeof SHIKI_THEMES)[number];
+
+function resolveShikiTheme(): ShikiTheme {
+  return isDarkThemeResolved() ? "github-dark" : "github-light";
+}
+
+function subscribeShikiTheme(onStoreChange: () => void) {
+  if (typeof document === "undefined") return () => undefined;
+
+  const syncTheme = () => onStoreChange();
+  const removeThemeListener = onThemeChange(syncTheme);
+  const observer = new MutationObserver(syncTheme);
+  observer.observe(document.documentElement, {
+    attributes: true,
+    attributeFilter: ["data-theme-resolved"],
+  });
+
+  return () => {
+    removeThemeListener();
+    observer.disconnect();
+  };
+}
+
+function getShikiThemeServerSnapshot(): ShikiTheme {
+  return "github-light";
+}
+
+function useShikiTheme(): ShikiTheme {
+  return useSyncExternalStore(subscribeShikiTheme, resolveShikiTheme, getShikiThemeServerSnapshot);
+}
+
 const SHIKI_LANGS = [
   "bash",
   "sh",
@@ -76,7 +109,7 @@ function loadHighlighter(): Promise<unknown> {
   if (!highlighterPromise) {
     highlighterPromise = import("shiki").then(({ createHighlighter }) =>
       createHighlighter({
-        themes: [SHIKI_THEME],
+        themes: [...SHIKI_THEMES],
         langs: SHIKI_LANGS,
       }),
     );
@@ -110,7 +143,14 @@ type MermaidRenderState =
 function stringifyReactNode(node: ReactNode): string {
   if (typeof node === "string" || typeof node === "number") return String(node);
   if (Array.isArray(node)) return node.map(stringifyReactNode).join("");
+  if (isValidElement<{ children?: ReactNode }>(node))
+    return stringifyReactNode(node.props.children);
   return "";
+}
+
+function getCodeLanguage(className: string) {
+  const match = /\blanguage-([a-z0-9_+-]+)\b/i.exec(className);
+  return match?.[1]?.toLowerCase() ?? "text";
 }
 
 function removeMermaidRenderArtifacts(diagramId: string) {
@@ -185,7 +225,38 @@ function MarkdownPre({ children, ...props }: ComponentPropsWithoutRef<"pre">) {
     }
   }
 
-  return <pre {...props}>{children}</pre>;
+  return <MarkdownCodeBlock {...props}>{children}</MarkdownCodeBlock>;
+}
+
+function MarkdownCodeBlock({ children, className, ...props }: ComponentPropsWithoutRef<"pre">) {
+  const child = Array.isArray(children) ? children[0] : children;
+  const childClassName = isValidElement<{ className?: string }>(child)
+    ? (child.props.className ?? "")
+    : "";
+  const language = getCodeLanguage(`${className ?? ""} ${childClassName}`);
+  const source = stringifyReactNode(children).replace(/\n$/, "");
+  const { preRef, isWrapped, canWrap, toggleWrap } = useCodeWrapToggle(source);
+
+  return (
+    <figure className={cn("markdown-code-block", isWrapped && "is-wrapped")}>
+      <figcaption className="markdown-code-block-toolbar">
+        <span className="markdown-code-block-language">{language}</span>
+        {canWrap ? (
+          <span className="markdown-code-block-actions">
+            <CodeWrapToggleButton isWrapped={isWrapped} onToggle={toggleWrap} />
+          </span>
+        ) : null}
+      </figcaption>
+      <pre
+        {...props}
+        ref={preRef}
+        className={cn("markdown-code-block-pre", className)}
+        data-wrap={isWrapped}
+      >
+        {children}
+      </pre>
+    </figure>
+  );
 }
 
 const MARKDOWN_COMPONENTS = {
@@ -200,6 +271,7 @@ export function MarkdownPreview({
   assetBaseUrl,
 }: MarkdownPreviewProps) {
   const [highlighter, setHighlighter] = useState<unknown>(null);
+  const shikiTheme = useShikiTheme();
 
   useEffect(() => {
     let cancelled = false;
@@ -220,14 +292,15 @@ export function MarkdownPreview({
   const rehypePlugins = useMemo<PluggableList>(() => {
     const baseRehype = buildBaseRehype(assetBaseUrl);
     if (highlight && highlighter) {
-      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: SHIKI_THEME }]];
+      return [...baseRehype, [rehypeShikiFromHighlighter, highlighter, { theme: shikiTheme }]];
     }
     return baseRehype;
-  }, [highlight, highlighter, assetBaseUrl]);
+  }, [highlight, highlighter, assetBaseUrl, shikiTheme]);
 
   return (
     <div className={cn("markdown", className)}>
       <ReactMarkdown
+        key={shikiTheme}
         remarkPlugins={[remarkGfm]}
         rehypePlugins={rehypePlugins}
         components={MARKDOWN_COMPONENTS}

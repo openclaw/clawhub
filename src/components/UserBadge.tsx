@@ -5,18 +5,30 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { convexHttp } from "../convex/client";
 import { hasOwnProperty } from "../lib/hasOwnProperty";
 import { formatCompactStat } from "../lib/numberFormat";
-import type { PublicPublisher, PublicUser } from "../lib/publicUser";
 import { OfficialBadge } from "./OfficialBadge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
+type UserBadgeUser = {
+  _id?: string;
+  kind?: "user" | "org";
+  linkedUserId?: string;
+  handle?: string | null;
+  name?: string | null;
+  displayName?: string | null;
+  image?: string | null;
+  official?: boolean;
+};
+
 type UserBadgeProps = {
-  user: PublicUser | PublicPublisher | null | undefined;
+  user: UserBadgeUser | null | undefined;
   fallbackHandle?: string | null;
   prefix?: string;
   size?: "sm" | "md";
   link?: boolean;
   showName?: boolean;
   showHandle?: boolean;
+  /** Sidebar creator row: `Display Name / @handle` with muted handle suffix. */
+  showMutedHandle?: boolean;
   disableTooltip?: boolean;
 };
 
@@ -28,28 +40,32 @@ export function UserBadge({
   link = true,
   showName = false,
   showHandle = true,
+  showMutedHandle = false,
   disableTooltip = false,
 }: UserBadgeProps) {
   const userName =
     hasOwnProperty(user, "name") && typeof user.name === "string" ? user.name.trim() : undefined;
   const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
-  const href = user?.handle ? `/user/${encodeURIComponent(user.handle)}` : null;
+  const href = handle ? `/user/${encodeURIComponent(handle)}` : null;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;
+  const showInlineMutedHandle = showMutedHandle && Boolean(handle) && Boolean(displayName);
+  const resolvedShowHandle = showMutedHandle ? !displayName && Boolean(handle) : showHandle;
   const hasUsefulName =
     showName &&
     Boolean(displayName) &&
-    (!showHandle || !handle || displayName!.toLowerCase() !== handle.toLowerCase());
+    (showMutedHandle ||
+      !resolvedShowHandle ||
+      !handle ||
+      displayName!.toLowerCase() !== handle.toLowerCase());
   const initial = (displayName ?? handle ?? "u").charAt(0).toUpperCase();
   const isOfficial = user && hasOwnProperty(user, "official") && user.official === true;
 
   // Resolve userId for stats query — PublicUser has _id directly,
   // PublicPublisher has linkedUserId
   const userId =
-    user && hasOwnProperty(user, "kind")
-      ? ((user as PublicPublisher).linkedUserId ?? null)
-      : (user?._id ?? null);
+    user && hasOwnProperty(user, "kind") ? (user.linkedUserId ?? null) : (user?._id ?? null);
 
   const badgeContent = (
     <>
@@ -64,27 +80,38 @@ export function UserBadge({
       {hasUsefulName ? (
         <>
           <span className="user-name">{displayName}</span>
-          {showHandle ? (
+          {showInlineMutedHandle ? (
+            <>
+              <span className="user-name-sep" aria-hidden="true">
+                {" / "}
+              </span>
+              <span className="user-handle user-handle-muted">{label}</span>
+            </>
+          ) : resolvedShowHandle ? (
             <span className="user-name-sep" aria-hidden="true">
               ·
             </span>
           ) : null}
         </>
       ) : null}
-      {showHandle && link && href ? (
-        <a className="user-handle" href={href}>
-          {label}
-        </a>
-      ) : showHandle ? (
-        <span className="user-handle">{label}</span>
-      ) : null}
+      {resolvedShowHandle ? <span className="user-handle">{label}</span> : null}
       {isOfficial ? <OfficialBadge /> : null}
     </>
   );
 
+  const profileLabel = hasUsefulName
+    ? `View ${displayName} profile`
+    : handle
+      ? `View @${handle} profile`
+      : "View profile";
+
   const badge =
-    !showHandle && link && href ? (
-      <a className={`user-badge user-badge-${size} user-badge-link`} href={href}>
+    link && href ? (
+      <a
+        className={`user-badge user-badge-${size} user-badge-link`}
+        href={href}
+        aria-label={profileLabel}
+      >
         {badgeContent}
       </a>
     ) : (

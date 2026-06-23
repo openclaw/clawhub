@@ -216,12 +216,14 @@ function formatUnknownCause(value: unknown) {
   if (typeof value === "number" || typeof value === "boolean" || typeof value === "bigint") {
     return String(value);
   }
-  if (typeof value === "object" && value !== null) {
-    const fields = safeObjectCauseFields(value);
+  if (typeof value === "symbol") return value.description ?? "symbol";
+  if (typeof value === "function") return value.name ? `function: ${value.name}` : "function";
+  if (typeof value === "object") {
+    const fields = safeObjectCauseFields(Object(value));
     if (fields.length > 0) return fields.join(", ");
     return "[object cause omitted]";
   }
-  return String(value);
+  return "[cause omitted]";
 }
 
 const objectCauseFields = [

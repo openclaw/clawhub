@@ -192,13 +192,15 @@ async function expectDeleteDialog(page: Parameters<typeof expectHealthyPage>[0])
   return dialog;
 }
 
+function versionToggle(page: Parameters<typeof expectHealthyPage>[0], version: string) {
+  return page
+    .locator(".skill-version-release-toggle")
+    .filter({ hasText: new RegExp(`^v${version.replaceAll(".", "\\.")}`) });
+}
+
 async function expectVersionsList(page: Parameters<typeof expectHealthyPage>[0]) {
-  await expect(
-    page.getByText(new RegExp(`^v${OLDER_VERSION.replaceAll(".", "\\.")} ·`)),
-  ).toBeVisible();
-  await expect(
-    page.getByText(new RegExp(`^v${LATEST_VERSION.replaceAll(".", "\\.")} ·`)),
-  ).toBeVisible();
+  await expect(versionToggle(page, OLDER_VERSION)).toBeVisible();
+  await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
   await expect(page.getByRole("button", { name: `Delete version ${OLDER_VERSION}` })).toBeVisible();
   await expect(page.getByRole("button", { name: `Delete version ${LATEST_VERSION}` })).toHaveCount(
     0,
@@ -207,12 +209,8 @@ async function expectVersionsList(page: Parameters<typeof expectHealthyPage>[0])
 }
 
 async function expectPublicVersionsList(page: Parameters<typeof expectHealthyPage>[0]) {
-  await expect(
-    page.getByText(new RegExp(`^v${OLDER_VERSION.replaceAll(".", "\\.")} ·`)),
-  ).toHaveCount(0);
-  await expect(
-    page.getByText(new RegExp(`^v${LATEST_VERSION.replaceAll(".", "\\.")} ·`)),
-  ).toBeVisible();
+  await expect(versionToggle(page, OLDER_VERSION)).toHaveCount(0);
+  await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
   await expect(page.getByRole("button", { name: /delete version/i })).toHaveCount(0);
   await expect(page.getByRole("button", { name: /restore/i })).toHaveCount(0);
 }
@@ -305,12 +303,8 @@ test("owners can permanently delete individual non-latest skill and plugin versi
   });
   await skillDialog.getByRole("button", { name: "Delete version" }).click();
   await expect(skillDialog).toHaveCount(0);
-  await expect(
-    page.getByText(new RegExp(`^v${OLDER_VERSION.replaceAll(".", "\\.")} ·`)),
-  ).toHaveCount(0);
-  await expect(
-    page.getByText(new RegExp(`^v${LATEST_VERSION.replaceAll(".", "\\.")} ·`)),
-  ).toBeVisible();
+  await expect(versionToggle(page, OLDER_VERSION)).toHaveCount(0);
+  await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
   await expect(page.getByRole("button", { name: /restore/i })).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("skill-version-delete-after.png"),
@@ -337,12 +331,8 @@ test("owners can permanently delete individual non-latest skill and plugin versi
   });
   await packageDialog.getByRole("button", { name: "Delete version" }).click();
   await expect(packageDialog).toHaveCount(0);
-  await expect(
-    page.getByText(new RegExp(`^v${OLDER_VERSION.replaceAll(".", "\\.")} ·`)),
-  ).toHaveCount(0);
-  await expect(
-    page.getByText(new RegExp(`^v${LATEST_VERSION.replaceAll(".", "\\.")} ·`)),
-  ).toBeVisible();
+  await expect(versionToggle(page, OLDER_VERSION)).toHaveCount(0);
+  await expect(versionToggle(page, LATEST_VERSION)).toBeVisible();
   await expect(page.getByRole("button", { name: /restore/i })).toHaveCount(0);
   await page.screenshot({
     path: testInfo.outputPath("plugin-version-delete-after.png"),

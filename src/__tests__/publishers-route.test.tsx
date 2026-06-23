@@ -66,7 +66,9 @@ async function loadRoute() {
         links?: Array<{ rel: string; href: string }>;
         meta?: Array<Record<string, string>>;
       };
-      loader?: (args: { deps: { kind?: "orgs" | "people"; q?: string } }) => Promise<unknown>;
+      loader?: (args: {
+        deps: { kind?: "orgs" | "people"; official?: boolean; q?: string };
+      }) => Promise<unknown>;
       validateSearch?: (search: Record<string, unknown>) => Record<string, unknown>;
     };
   };
@@ -127,11 +129,13 @@ describe("publishers route", () => {
 
     expect(route.__config.validateSearch?.({ kind: "builders" })).toEqual({
       kind: "people",
+      official: undefined,
       q: undefined,
       view: undefined,
     });
     expect(route.__config.validateSearch?.({ kind: "individuals" })).toEqual({
       kind: "people",
+      official: undefined,
       q: undefined,
       view: undefined,
     });
@@ -148,6 +152,20 @@ describe("publishers route", () => {
     });
   });
 
+  it("passes the official filter to the public publishers query without a legacy scan", async () => {
+    const route = await loadRoute();
+
+    await route.__config.loader?.({ deps: { official: true } });
+
+    expect(queryMock.mock.calls[0]?.[1]).toEqual({
+      paginationOpts: { cursor: null, numItems: 25 },
+      kind: undefined,
+      query: undefined,
+      official: true,
+    });
+    expect(queryMock).toHaveBeenCalledTimes(1);
+  });
+
   it("renders the loaded publisher results", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
@@ -158,7 +176,7 @@ describe("publishers route", () => {
     expect(screen.getByText("No publishers found")).toBeTruthy();
   });
 
-  it("renders the total publisher count in the unfiltered page title", async () => {
+  it("does not present the bounded publisher result count as a global total", async () => {
     loaderDataMock.mockReturnValue({
       page: [],
       counts: { all: 17, organizations: 6, individuals: 11 },
@@ -171,15 +189,16 @@ describe("publishers route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("heading", { name: "Publishers 17" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Publishers" })).toBeTruthy();
+    expect(screen.queryByText("17")).toBeNull();
     expect(screen.getByRole("radio", { name: "All" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "Organizations" })).toBeTruthy();
-    expect(screen.getByRole("radio", { name: "People" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Orgs" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Creators" })).toBeTruthy();
     expect(screen.queryByText("Builders")).toBeNull();
     expect(screen.queryByText(/Showing/i)).toBeNull();
   });
 
-  it("hides the total publisher count when filters are active", async () => {
+  it("keeps the publisher heading unchanged when filters are active", async () => {
     searchMock.mockReturnValue({ kind: "orgs" });
     loaderDataMock.mockReturnValue({
       page: [],
@@ -197,7 +216,7 @@ describe("publishers route", () => {
     expect(screen.queryByText("17")).toBeNull();
   });
 
-  it("keeps publisher view controls in the page header and type filters in the sidebar", async () => {
+  it("keeps publisher type filters and view controls in the horizontal controls", async () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
@@ -207,11 +226,11 @@ describe("publishers route", () => {
     const listView = screen.getByRole("button", { name: "List" });
     const searchInput = screen.getByPlaceholderText("Search publishers...");
 
-    expect(allTab.closest(".browse-sidebar")).not.toBeNull();
-    expect(listView.closest(".browse-page-header")).not.toBeNull();
-    expect(searchInput.compareDocumentPosition(listView) & Node.DOCUMENT_POSITION_PRECEDING).toBe(
-      Node.DOCUMENT_POSITION_PRECEDING,
-    );
+    expect(allTab.closest(".browse-controls")).not.toBeNull();
+    expect(listView.closest(".browse-controls")).not.toBeNull();
+    expect(
+      Boolean(listView.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
   });
 
   it("clears publisher search from the search field", async () => {
@@ -221,7 +240,7 @@ describe("publishers route", () => {
 
     render(<Component />);
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear publisher search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
 
     expect(navigateMock).toHaveBeenCalled();
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {

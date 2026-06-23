@@ -60,11 +60,13 @@ export function buildSkillInstallResolution({
   origin,
   skill,
   source,
+  ownerHandle,
   forceInstall = false,
 }: {
   origin: string;
   skill: InstallResolverSkill;
   source: InstallResolverSource | null;
+  ownerHandle?: string | null;
   forceInstall?: boolean;
 }): SkillInstallResolution {
   if (skill.installKind !== "github") {
@@ -75,6 +77,7 @@ export function buildSkillInstallResolution({
 
     const url = new URL("/api/v1/download", origin);
     url.searchParams.set("slug", skill.slug);
+    if (ownerHandle) url.searchParams.set("ownerHandle", ownerHandle);
     url.searchParams.set("version", version);
     return {
       ok: true,

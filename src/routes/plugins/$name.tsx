@@ -6,23 +6,36 @@ import {
   useRouterState,
 } from "@tanstack/react-router";
 import { useMutation, useQuery } from "convex/react";
-import { AlertTriangle, Download, Info, Upload } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import {
+  AlertTriangle,
+  Braces,
+  Download,
+  FileArchive,
+  Files,
+  Fingerprint,
+  HardDrive,
+  Info,
+  Package,
+  Server,
+  Sparkles,
+  Tag,
+  Upload,
+  type LucideIcon,
+} from "lucide-react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
-import { ActivityMetricLabel } from "../../components/ActivityMetricLabel";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
-import { CatalogTopicList } from "../../components/CatalogTopicList";
 import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
 import {
   DetailSecuritySummary,
   DetailSecuritySummaryLabel,
 } from "../../components/DetailSecuritySummary";
+import { useDownloadsSidebarMetricBlock } from "../../components/DownloadsMetricCard";
 import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { MetricTrendCard, MetricTrendCardSkeleton } from "../../components/MetricTrendCard";
 import { OfficialTag } from "../../components/OfficialBadge";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
@@ -41,9 +54,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "../../components/ui/dialog";
+import { UserBadge } from "../../components/UserBadge";
 import { getActivityTrendEndDay } from "../../lib/activityTrend";
+import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
+import {
+  buildPluginCategoryBrowseHref,
+  PLUGIN_CATEGORIES,
+  resolvePluginBrowseCategorySlug,
+} from "../../lib/categories";
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
-import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
 import {
@@ -62,11 +81,14 @@ import { familyLabel } from "../../lib/packageLabels";
 import {
   buildPluginDetailHref,
   buildPluginSecurityAuditHref,
+  displayPluginPackageName,
   parseScopedPackageName,
 } from "../../lib/pluginRoutes";
 import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
+import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { useDeferredPackageActivityTrend } from "../../lib/useDeferredActivityTrend";
+import { useMediaQuery } from "../../lib/useMediaQuery";
 
 type PluginDetailRateLimitState = {
   scope: "detail" | "metadata";
@@ -266,10 +288,13 @@ function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
     : "readme";
 }
 
+const PLUGIN_README_COLLAPSED_LINE_COUNT = 50;
+
 function PluginDetailTabs({
   activeTab,
   setActiveTab,
-  readmePanel,
+  readme,
+  readmeAssetBaseUrl,
   versionsPanel,
   compatibilityPanel,
   configurationPanel,
@@ -280,8 +305,9 @@ function PluginDetailTabs({
 }: {
   activeTab: PluginDetailTab;
   setActiveTab: (tab: PluginDetailTab) => void;
-  readmePanel: ReactNode;
-  versionsPanel: ReactNode;
+  readme: string | null;
+  readmeAssetBaseUrl?: string;
+  versionsPanel: (hidden: boolean) => ReactNode;
   compatibilityPanel: ReactNode | null;
   configurationPanel: ReactNode | null;
   mcpServersPanel: ReactNode | null;
@@ -289,8 +315,17 @@ function PluginDetailTabs({
   validationPanel: ReactNode | null;
   validationCount: number;
 }) {
-  const [hasMountedVersions, setHasMountedVersions] = useState(false);
+  const [hasMountedVersions, setHasMountedVersions] = useState(activeTab === "versions");
+  const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
+  const readmeLineCount = useMemo(() => readme?.split(/\r\n|\n|\r/).length ?? 0, [readme]);
+  const isReadmeLong = readmeLineCount > PLUGIN_README_COLLAPSED_LINE_COUNT;
+
+  useEffect(() => {
+    setIsReadmeExpanded(false);
+  }, [readme]);
   const selectTab = (tab: PluginDetailTab) => {
+    const scrollPosition =
+      typeof window === "undefined" ? null : { left: window.scrollX, top: window.scrollY };
     setActiveTab(tab);
     if (typeof window === "undefined") return;
     const hash = tab === "readme" ? "" : tab === "mcpServers" ? "#mcp-servers" : `#${tab}`;
@@ -299,6 +334,10 @@ function PluginDetailTabs({
       "",
       `${window.location.pathname}${window.location.search}${hash}`,
     );
+    window.requestAnimationFrame(() => {
+      if (!scrollPosition) return;
+      window.scrollTo(scrollPosition.left, scrollPosition.top);
+    });
   };
 
   const effectiveActiveTab =
@@ -318,6 +357,32 @@ function PluginDetailTabs({
   useEffect(() => {
     if (effectiveActiveTab === "versions") setHasMountedVersions(true);
   }, [effectiveActiveTab]);
+  const readmePanel = readme ? (
+    <>
+      <div
+        className={`skill-readme-preview${
+          isReadmeLong && !isReadmeExpanded ? " is-collapsed" : ""
+        }`}
+      >
+        <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
+      </div>
+      {isReadmeLong ? (
+        <button
+          type="button"
+          className="skill-readme-toggle"
+          aria-expanded={isReadmeExpanded}
+          onClick={() => setIsReadmeExpanded((expanded) => !expanded)}
+        >
+          {isReadmeExpanded ? "Show less" : "Read more"}
+        </button>
+      ) : null}
+    </>
+  ) : (
+    <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
+      <p className="empty-state-title">No README available</p>
+      <p className="empty-state-body">This plugin doesn't have a README yet.</p>
+    </div>
+  );
   const activePanel =
     effectiveActiveTab === "compatibility" && compatibilityPanel
       ? compatibilityPanel
@@ -332,23 +397,27 @@ function PluginDetailTabs({
               : readmePanel;
 
   return (
-    <div className="tab-card">
+    <div className="tab-card detail-mobile-tabs">
       <div className="tab-header" role="tablist" aria-label="Plugin detail tabs">
         <button
+          id="plugin-tab-readme"
           className={`tab-button${effectiveActiveTab === "readme" ? " is-active" : ""}`}
           type="button"
           role="tab"
           aria-selected={effectiveActiveTab === "readme"}
+          aria-controls="plugin-tabpanel-readme"
           onClick={() => selectTab("readme")}
         >
-          README
+          README.md
         </button>
         {skillsPanel ? (
           <button
+            id="plugin-tab-skills"
             className={`tab-button${effectiveActiveTab === "skills" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "skills"}
+            aria-controls="plugin-tabpanel-skills"
             onClick={() => selectTab("skills")}
           >
             Skills
@@ -356,10 +425,12 @@ function PluginDetailTabs({
         ) : null}
         {mcpServersPanel ? (
           <button
+            id="plugin-tab-mcpServers"
             className={`tab-button${effectiveActiveTab === "mcpServers" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "mcpServers"}
+            aria-controls="plugin-tabpanel-mcpServers"
             onClick={() => selectTab("mcpServers")}
           >
             MCP Servers
@@ -367,10 +438,12 @@ function PluginDetailTabs({
         ) : null}
         {configurationPanel ? (
           <button
+            id="plugin-tab-configuration"
             className={`tab-button${effectiveActiveTab === "configuration" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "configuration"}
+            aria-controls="plugin-tabpanel-configuration"
             onClick={() => selectTab("configuration")}
           >
             Configuration
@@ -378,42 +451,55 @@ function PluginDetailTabs({
         ) : null}
         {compatibilityPanel ? (
           <button
+            id="plugin-tab-compatibility"
             className={`tab-button${effectiveActiveTab === "compatibility" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "compatibility"}
+            aria-controls="plugin-tabpanel-compatibility"
             onClick={() => selectTab("compatibility")}
           >
             Compatibility
           </button>
         ) : null}
         <button
+          id="plugin-tab-versions"
           className={`tab-button${effectiveActiveTab === "versions" ? " is-active" : ""}`}
           type="button"
           role="tab"
           aria-selected={effectiveActiveTab === "versions"}
+          aria-controls="plugin-tabpanel-versions"
           onClick={() => selectTab("versions")}
         >
           Versions
         </button>
         {validationPanel ? (
           <button
+            id="plugin-tab-validation"
             className={`tab-button${effectiveActiveTab === "validation" ? " is-active" : ""}`}
             type="button"
             role="tab"
             aria-selected={effectiveActiveTab === "validation"}
+            aria-controls="plugin-tabpanel-validation"
             onClick={() => selectTab("validation")}
           >
             Validation ({validationCount})
           </button>
         ) : null}
       </div>
-      <div className="tab-body">
-        {effectiveActiveTab === "versions" ? null : activePanel}
-        {hasMountedVersions || effectiveActiveTab === "versions" ? (
-          <div hidden={effectiveActiveTab !== "versions"}>{versionsPanel}</div>
-        ) : null}
-      </div>
+      {effectiveActiveTab !== "versions" ? (
+        <div
+          className={`tab-body${effectiveActiveTab === "readme" ? " skill-readme-body" : ""}`}
+          role="tabpanel"
+          id={`plugin-tabpanel-${effectiveActiveTab}`}
+          aria-labelledby={`plugin-tab-${effectiveActiveTab}`}
+        >
+          {activePanel}
+        </div>
+      ) : null}
+      {hasMountedVersions || effectiveActiveTab === "versions"
+        ? versionsPanel(effectiveActiveTab !== "versions")
+        : null}
     </div>
   );
 }
@@ -424,6 +510,61 @@ type PluginManifestSummary = NonNullable<
 type BundledPluginSkill = PluginManifestSummary["bundledSkills"][number];
 type PluginConfigField = PluginManifestSummary["configFields"][number];
 type PluginMcpServer = PluginManifestSummary["mcpServers"][number];
+
+type PluginKvRowProps = {
+  label: string;
+  icon?: LucideIcon;
+  mono?: boolean;
+  hash?: boolean;
+  children: ReactNode;
+};
+
+function GitHubIcon({ size = 14 }: { size?: number }) {
+  return (
+    <svg viewBox="0 0 24 24" fill="currentColor" width={size} height={size} aria-hidden="true">
+      <path d="M12 .5C5.65.5.5 5.65.5 12c0 5.08 3.29 9.39 7.86 10.91.58.1.79-.25.79-.56 0-.28-.01-1.02-.02-2-3.2.7-3.88-1.54-3.88-1.54-.52-1.33-1.28-1.69-1.28-1.69-1.05-.72.08-.7.08-.7 1.16.08 1.77 1.19 1.77 1.19 1.03 1.77 2.7 1.26 3.36.96.1-.75.4-1.26.73-1.55-2.55-.29-5.24-1.28-5.24-5.68 0-1.25.45-2.28 1.18-3.08-.12-.29-.51-1.46.11-3.04 0 0 .97-.31 3.16 1.18.92-.26 1.9-.38 2.88-.39.98 0 1.96.13 2.88.39 2.19-1.49 3.15-1.18 3.15-1.18.63 1.58.24 2.75.12 3.04.74.8 1.18 1.83 1.18 3.08 0 4.42-2.69 5.39-5.25 5.67.42.36.78 1.07.78 2.15 0 1.55-.01 2.8-.01 3.18 0 .31.21.67.8.56A11.51 11.51 0 0 0 23.5 12C23.5 5.65 18.35.5 12 .5Z" />
+    </svg>
+  );
+}
+
+function PluginKvRow({ label, icon: Icon, mono, hash, children }: PluginKvRowProps) {
+  const valueClassName = [
+    "plugin-kv-value",
+    mono ? "plugin-kv-value--mono" : null,
+    hash ? "plugin-kv-value--hash" : null,
+  ]
+    .filter(Boolean)
+    .join(" ");
+
+  return (
+    <div className="plugin-kv-row">
+      <dt className="plugin-kv-label">
+        <span className="plugin-kv-label-inner">
+          {Icon ? <Icon size={14} className="plugin-kv-icon" aria-hidden="true" /> : null}
+          <span>{label}</span>
+        </span>
+      </dt>
+      <dd className={valueClassName}>{children}</dd>
+    </div>
+  );
+}
+
+function compatibilityFieldIcon(key: string): LucideIcon | undefined {
+  switch (key) {
+    case "pluginApiRange":
+      return Braces;
+    case "builtWithOpenClawVersion":
+      return Tag;
+    case "minGatewayVersion":
+      return Server;
+    default:
+      return undefined;
+  }
+}
+
+function formatCompatibilityLabel(key: string): string {
+  return key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase());
+}
 
 function PluginManifestConfigurationPanel({ fields }: { fields: PluginConfigField[] }) {
   return (
@@ -544,7 +685,7 @@ function PluginDetailRoute() {
 
 export function PluginDetailPending() {
   return (
-    <main className="section detail-page-section" aria-busy="true">
+    <main className="section detail-page-section plugin-detail-page" aria-busy="true">
       <div role="status" aria-label="Loading plugin details">
         <SkillDetailSkeleton kind="plugin" />
       </div>
@@ -590,6 +731,11 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const { trend: activityTrend, loading: activityTrendLoading } = useDeferredPackageActivityTrend(
     detail.package ? { name: detail.package.name, endDay: activityTrendEndDay } : null,
   );
+  const downloadsMetricBlock = useDownloadsSidebarMetricBlock({
+    allTimeDownloads: detail.package?.stats?.downloads ?? 0,
+    activityTrend: activityTrend?.downloads,
+    loading: activityTrendLoading,
+  });
   const inspectorFindings = useQuery(
     api.packages.listPackageInspectorWarningsForManager,
     manageContext ? { name: manageContext.package.name, limit: 100 } : "skip",
@@ -598,6 +744,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
     : undefined;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
+  const [mobileDetailPanel, setMobileDetailPanel] = useState<"content" | "stats">("content");
+  const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
+  const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
+  const [isCatalogMetadataDialogOpen, setIsCatalogMetadataDialogOpen] = useState(false);
   const setCatalogMetadata = useMutation(api.packages.setPackageCatalogMetadata);
   useEffect(() => {
     const syncTabFromHash = () => setActiveTab(pluginDetailTabFromHash(window.location.hash));
@@ -643,6 +793,19 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   }
 
   const pkg = detail.package;
+  const headerCategories = (pkg.categories ?? [])
+    .flatMap((value) => {
+      const slug = resolvePluginBrowseCategorySlug(value);
+      const category = PLUGIN_CATEGORIES.find((item) => item.slug === slug);
+      return category ? [category] : [];
+    })
+    .slice(0, 3);
+  const headerTopics = (pkg.topics ?? [])
+    .map((topic) => topic.trim())
+    .filter(Boolean)
+    .slice(0, 5);
+  const headerSummary = pkg.summary ?? "No summary provided.";
+  const hasSummaryToggle = headerSummary.length > 220;
   const owner = detail.owner;
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
@@ -674,25 +837,23 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         displayName: pkg.displayName,
       }).toString()}`
     : null;
+  const showCatalogMetadataEmptyState = Boolean(
+    manageContext && headerCategories.length === 0 && headerTopics.length === 0,
+  );
   const compatEntries = compatibility
     ? Object.entries(compatibility).filter(([, v]) => v !== undefined && v !== null)
     : [];
   const manifestPluginApiRange = pluginManifestSummary?.compatibility?.pluginApiRange;
-  const readmePanel = readme ? (
-    <MarkdownPreview assetBaseUrl={readmeAssetBaseUrl}>{readme}</MarkdownPreview>
-  ) : (
-    <div className="empty-state px-[var(--space-4)] py-[var(--space-6)]">
-      <p className="empty-state-title">No README available</p>
-      <p className="empty-state-body">This plugin doesn't have a README yet.</p>
-    </div>
-  );
-  const versionsPanel = (
+  const versionsPanel = (hidden: boolean) => (
     <PluginVersionsPanel
       packageName={pkg.name}
       versions={versions}
       latestVersion={pkg.latestVersion ?? null}
       canDeleteVersions={canDeleteVersions === true}
       onVersionDeleted={() => router.invalidate()}
+      panelId="plugin-tabpanel-versions"
+      labelledBy="plugin-tab-versions"
+      hidden={hidden}
     />
   );
   const compatibilityPanel =
@@ -700,61 +861,52 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       <div className="plugin-tab-panel">
         <dl className="plugin-kv-grid">
           {manifestPluginApiRange ? (
-            <div className="plugin-kv-row">
-              <dt className="plugin-kv-label">OpenClaw plugin API</dt>
-              <dd className="plugin-kv-value font-mono text-xs">{manifestPluginApiRange}</dd>
-            </div>
+            <PluginKvRow label="OpenClaw plugin API" icon={Braces} mono>
+              {manifestPluginApiRange}
+            </PluginKvRow>
           ) : null}
           {artifact ? (
             <>
-              <div className="plugin-kv-row">
-                <dt className="plugin-kv-label">Artifact</dt>
-                <dd className="plugin-kv-value">
-                  {artifact.kind === "npm-pack" ? "ClawPack" : "Legacy ZIP"}
-                </dd>
-              </div>
+              <PluginKvRow label="Artifact" icon={Package}>
+                {artifact.kind === "npm-pack" ? "ClawPack" : "Legacy ZIP"}
+              </PluginKvRow>
               {artifact.kind === "legacy-zip" ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Compatibility note</dt>
-                  <dd className="plugin-kv-value">
-                    This plugin uses the legacy ZIP path and may have compatibility issues until the
-                    publisher uploads a ClawPack.
-                  </dd>
-                </div>
+                <PluginKvRow label="Compatibility note" icon={Info}>
+                  This plugin uses the legacy ZIP path and may have compatibility issues until the
+                  publisher uploads a ClawPack.
+                </PluginKvRow>
               ) : null}
               {artifact.kind === "npm-pack" && artifact.npmTarballName ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Tarball</dt>
-                  <dd className="plugin-kv-value font-mono text-xs">{artifact.npmTarballName}</dd>
-                </div>
+                <PluginKvRow label="Tarball" icon={FileArchive} mono>
+                  {artifact.npmTarballName}
+                </PluginKvRow>
               ) : null}
               {artifact.kind === "npm-pack" && formatArtifactSize(artifact.size) ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Size</dt>
-                  <dd className="plugin-kv-value">{formatArtifactSize(artifact.size)}</dd>
-                </div>
+                <PluginKvRow label="Size" icon={HardDrive}>
+                  {formatArtifactSize(artifact.size)}
+                </PluginKvRow>
               ) : null}
               {artifact.kind === "npm-pack" && typeof artifact.npmFileCount === "number" ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Files</dt>
-                  <dd className="plugin-kv-value">{artifact.npmFileCount}</dd>
-                </div>
+                <PluginKvRow label="Files" icon={Files}>
+                  {artifact.npmFileCount}
+                </PluginKvRow>
               ) : null}
               {artifact.kind === "npm-pack" && artifact.npmIntegrity ? (
-                <div className="plugin-kv-row">
-                  <dt className="plugin-kv-label">Integrity</dt>
-                  <dd className="plugin-kv-value font-mono text-xs">{artifact.npmIntegrity}</dd>
-                </div>
+                <PluginKvRow label="Integrity" icon={Fingerprint} hash>
+                  {artifact.npmIntegrity}
+                </PluginKvRow>
               ) : null}
             </>
           ) : null}
           {compatEntries.map(([key, value]) => (
-            <div key={key} className="plugin-kv-row">
-              <dt className="plugin-kv-label">
-                {key.replace(/([A-Z])/g, " $1").replace(/^./, (s) => s.toUpperCase())}
-              </dt>
-              <dd className="plugin-kv-value font-mono text-xs">{value}</dd>
-            </div>
+            <PluginKvRow
+              key={key}
+              label={formatCompatibilityLabel(key)}
+              icon={compatibilityFieldIcon(key)}
+              mono
+            >
+              {value}
+            </PluginKvRow>
           ))}
         </dl>
       </div>
@@ -856,29 +1008,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         </div>
       </div>
     ) : null;
-  const catalogMetadataPanel = manageContext ? (
-    <Card>
-      <CardHeader>
-        <CardTitle>Catalog metadata</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <CatalogMetadataEditor
-          kind="plugin"
-          categories={manageContext.package.categories}
-          suggestedCategories={manageContext.suggestedCategories}
-          topics={manageContext.package.topics}
-          onSave={async (value) => {
-            await setCatalogMetadata({
-              packageId: manageContext.package._id,
-              categories: value.categories,
-              topics: value.topics,
-            });
-            toast.success("Catalog metadata updated.");
-          }}
-        />
-      </CardContent>
-    </Card>
-  ) : null;
   const sourceRepoLink = verification?.sourceRepo
     ? (() => {
         const raw = verification.sourceRepo;
@@ -889,43 +1018,29 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
           .replace(/\/$/, "");
         return (
           <a href={href} target="_blank" rel="noopener noreferrer" className="plugin-external-link">
+            <GitHubIcon />
             {display}
           </a>
         );
       })()
     : null;
-  const tagMetadataValue =
-    pkg.tags && Object.keys(pkg.tags).length > 0 ? (
-      <span className="plugin-sidebar-tag-list">
-        {Object.entries(pkg.tags).map(([key, value]) => (
-          <span key={key}>
-            {key} {String(value)}
-          </span>
-        ))}
-      </span>
-    ) : null;
   const ownerMetadataValue = owner ? (
-    <span className="user-badge user-badge-md">
-      <span className="user-avatar" aria-hidden="true">
-        {owner.image ? (
-          <img className="user-avatar-img" src={owner.image} alt="" loading="lazy" />
-        ) : (
-          <span className="user-avatar-fallback">
-            {(owner.displayName ?? owner.handle ?? "p").charAt(0).toUpperCase()}
-          </span>
-        )}
-      </span>
-      {owner.handle ? (
-        <a className="user-name" href={`/user/${encodeURIComponent(owner.handle)}`}>
-          {owner.displayName ?? owner.handle}
-        </a>
-      ) : (
-        <span className="user-name">{owner.displayName ?? "unknown"}</span>
-      )}
-    </span>
+    <UserBadge
+      user={{
+        ...owner,
+        ...(pkg.isOfficial ? { official: true as const } : {}),
+      }}
+      fallbackHandle={owner.handle ?? pkg.ownerHandle ?? null}
+      prefix=""
+      size="md"
+      showName
+      showHandle={false}
+      showMutedHandle
+      disableTooltip
+    />
   ) : null;
   const hasSourceMetadata = Boolean(
-    sourceRepoLink || ownerMetadataValue || latestRelease || pkg.latestVersion || tagMetadataValue,
+    sourceRepoLink || ownerMetadataValue || latestRelease || pkg.latestVersion,
   );
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
@@ -934,10 +1049,99 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />
   ) : null;
+  const pluginSidebarDownloadActions =
+    pkg.latestVersion && !isDownloadBlocked ? (
+      <div className="plugin-sidebar-download-actions">
+        <Button asChild variant="outline" size="sm" className="plugin-sidebar-download-button">
+          <a href={downloadPath}>
+            <Download size={13} aria-hidden="true" />
+            Download
+          </a>
+        </Button>
+      </div>
+    ) : null;
+  const hasDownloadsGraph = activityTrendLoading || Boolean(activityTrend?.downloads);
+  const pluginDownloadsMetricBlock =
+    !hasDownloadsGraph && pluginSidebarDownloadActions
+      ? {
+          ...downloadsMetricBlock,
+          value: (
+            <div className="plugin-downloads-metric-value-row">
+              <div className="plugin-downloads-metric-content">{downloadsMetricBlock.value}</div>
+              {pluginSidebarDownloadActions}
+            </div>
+          ),
+        }
+      : downloadsMetricBlock;
+  const pluginDownloadMetadataBlock =
+    hasDownloadsGraph && pluginSidebarDownloadActions
+      ? {
+          key: "plugin-download",
+          label: "",
+          value: pluginSidebarDownloadActions,
+        }
+      : null;
+  const pluginSidebarMetadataBlocks = hasSourceMetadata
+    ? [
+        pluginDownloadsMetricBlock,
+        { label: "Repository", value: sourceRepoLink },
+        ...(ownerMetadataValue ? [{ label: "Creator", value: ownerMetadataValue }] : []),
+        securitySummary
+          ? {
+              key: "security-audit",
+              label: <DetailSecuritySummaryLabel />,
+              value: securitySummary,
+            }
+          : { label: "", value: null },
+        {
+          grid: [
+            {
+              label: "Last updated",
+              value: (
+                <span title={new Date(pkg.updatedAt).toLocaleString()}>
+                  {timeAgo(pkg.updatedAt)}
+                </span>
+              ),
+            },
+            {
+              label: "Current version",
+              value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
+            },
+          ],
+        },
+        { label: "Type", value: familyLabel(pkg.family) },
+        ...(pluginDownloadMetadataBlock ? [pluginDownloadMetadataBlock] : []),
+      ]
+    : [
+        pluginDownloadsMetricBlock,
+        ...(pluginDownloadMetadataBlock ? [pluginDownloadMetadataBlock] : []),
+      ];
+  const pluginSidebarStatsContent =
+    hasSourceMetadata || pluginSidebarDownloadActions ? (
+      <SidebarMetadata
+        ariaLabel="Plugin metadata"
+        density="compact"
+        className="skill-sidebar-deferred-metadata"
+        blocks={pluginSidebarMetadataBlocks}
+      />
+    ) : null;
+  const managementToolbar = newVersionHref ? (
+    <div className="skill-management-toolbar">
+      <div className="skill-management-toolbar-inner">
+        <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
+          <a href={newVersionHref} aria-label="New version">
+            <Upload size={13} aria-hidden="true" />
+            New version
+          </a>
+        </Button>
+      </div>
+    </div>
+  ) : null;
 
   return (
-    <main className="section detail-page-section">
+    <main className="section detail-page-section plugin-detail-page">
       <DetailPageShell>
+        {managementToolbar}
         <DetailHero
           main={
             <div className="skill-hero-title">
@@ -948,25 +1152,83 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   {owner?.handle ?? owner?.displayName ?? "unknown"}
                 </a>
                 <span aria-hidden="true">/</span>
-                <a href="/plugins">plugins</a>
-                <span aria-hidden="true">/</span>
-                <a href={buildPluginDetailHref(pkg.name)}>{pkg.name}</a>
+                <a href={buildPluginDetailHref(pkg.name)} aria-current="page">
+                  {displayPluginPackageName(pkg.name)}
+                </a>
               </nav>
-              <div className="skill-hero-title-row">
-                <h1 className="skill-page-title">{pkg.displayName}</h1>
-                {pkg.isOfficial ? (
-                  <div className="skill-title-badges">
-                    <OfficialTag />
+              <div className="skill-hero-heading-stack">
+                {headerCategories.length > 0 || headerTopics.length > 0 ? (
+                  <div className="skill-hero-taxonomy-row" aria-label="Plugin metadata">
+                    {headerCategories.length > 0 ? (
+                      <div className="skill-category-meta-list" aria-label="Categories">
+                        {headerCategories.map((category, index) => (
+                          <a
+                            key={category.slug}
+                            className="skill-category-meta-link"
+                            href={buildPluginCategoryBrowseHref(category)}
+                            aria-label={`View ${category.label} plugins`}
+                          >
+                            <BrowseCategoryIcon
+                              slug={category.slug}
+                              icon={category.icon}
+                              size={14}
+                              className="skill-category-icon"
+                            />
+                            <span>
+                              {category.label}
+                              {index < headerCategories.length - 1 ? "," : ""}
+                            </span>
+                          </a>
+                        ))}
+                      </div>
+                    ) : null}
+                    {headerCategories.length > 0 && headerTopics.length > 0 ? (
+                      <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+                    ) : null}
+                    {headerTopics.length > 0 ? (
+                      <div className="skill-hero-topic-list" aria-label="Topics">
+                        {headerTopics.map((topic) => (
+                          <span className="skill-hero-topic" key={topic}>
+                            #{topic.toLowerCase().replace(/\s+/g, "-")}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
-                {isDownloadBlocked ? (
-                  <div className="skill-title-actions">
-                    <Badge variant="destructive">Download blocked</Badge>
-                  </div>
+                <div className="skill-hero-title-row">
+                  <h1 className="skill-page-title">{pkg.displayName}</h1>
+                  {pkg.isOfficial ? (
+                    <div className="skill-title-badges">
+                      <OfficialTag />
+                    </div>
+                  ) : null}
+                  {isDownloadBlocked ? (
+                    <div className="skill-title-actions">
+                      <Badge variant="destructive">Download blocked</Badge>
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+              <div className="skill-summary-block">
+                <p
+                  className={`section-subtitle skill-summary-line${
+                    hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
+                  }`}
+                >
+                  {headerSummary}
+                </p>
+                {hasSummaryToggle ? (
+                  <button
+                    type="button"
+                    className="skill-summary-toggle"
+                    aria-expanded={isSummaryExpanded}
+                    onClick={() => setIsSummaryExpanded((expanded) => !expanded)}
+                  >
+                    {isSummaryExpanded ? "Show less" : "Read more"}
+                  </button>
                 ) : null}
               </div>
-              <CatalogTopicList topics={pkg.topics} />
-              <p className="section-subtitle">{pkg.summary ?? "No summary provided."}</p>
 
               {rateLimited?.scope === "metadata" ? (
                 <div className="skill-hero-badges">
@@ -976,92 +1238,25 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
             </div>
           }
           sidebar={
-            <div className="plugin-sidebar-stack">
-              {hasSourceMetadata ? (
-                <SidebarMetadata
-                  ariaLabel="Plugin metadata"
-                  density="compact"
-                  blocks={[
-                    activityTrendLoading
-                      ? {
-                          key: "download-trend-loading",
-                          label: <ActivityMetricLabel label="30-day Downloads" />,
-                          value: <MetricTrendCardSkeleton />,
-                          large: true,
-                        }
-                      : activityTrend
-                        ? {
-                            key: "download-trend",
-                            label: <ActivityMetricLabel label="30-day Downloads" />,
-                            value: (
-                              <MetricTrendCard
-                                trend={activityTrend.downloads}
-                                ariaLabel="Daily downloads over the last 30 days"
-                                unitLabel="download"
-                              />
-                            ),
-                            large: true,
-                          }
-                        : {
-                            label: <ActivityMetricLabel label="Downloads" />,
-                            value: formatCompactStat(pkg.stats?.downloads ?? 0),
-                            large: true,
-                          },
-                    { label: "Repository", value: sourceRepoLink },
-                    { label: "Owner", value: ownerMetadataValue },
-                    securitySummary
-                      ? {
-                          key: "security-audit",
-                          label: <DetailSecuritySummaryLabel />,
-                          value: securitySummary,
-                        }
-                      : { label: "", value: null },
-                    {
-                      grid: [
-                        {
-                          label: "Current version",
-                          value: pkg.latestVersion ? `v${pkg.latestVersion}` : null,
-                        },
-                        { label: "Type", value: familyLabel(pkg.family) },
-                      ],
-                    },
-                    { label: "Tags", value: tagMetadataValue },
-                  ]}
-                />
-              ) : null}
-
-              {(pkg.latestVersion && !isDownloadBlocked) || newVersionHref ? (
-                <div className="skill-sidebar-actions">
-                  {pkg.latestVersion && !isDownloadBlocked ? (
-                    <Button asChild variant="outline" className="skill-sidebar-action-button">
-                      <a href={downloadPath}>
-                        <Download size={14} aria-hidden="true" />
-                        Download
-                      </a>
-                    </Button>
-                  ) : null}
-                  {newVersionHref ? (
-                    <Button asChild variant="outline" className="skill-sidebar-action-button">
-                      <a href={newVersionHref}>
-                        <Upload size={14} aria-hidden="true" />
-                        New version
-                      </a>
-                    </Button>
-                  ) : null}
-                </div>
+            <div className="skill-hero-sidebar-stack">
+              {pluginSidebarStatsContent && !isMobileDetailLayout ? (
+                <div className="detail-sidebar-stats">{pluginSidebarStatsContent}</div>
               ) : null}
             </div>
           }
         >
-          <div className="plugin-install-stack">
+          <div className="plugin-install-stack detail-mobile-install">
             {incompatibilityAlert}
             <Card className="skill-install-command-card">
-              <CardHeader>
-                <CardTitle>Install</CardTitle>
+              <CardHeader className="detail-hero-summary-row plugin-install-card-header">
+                <CardTitle className="skill-install-panel-title">Install</CardTitle>
               </CardHeader>
               <CardContent>
                 <div className="skill-install-command-wrap">
-                  <div className="skill-install-command-shell">
+                  <div className="skill-install-command-shell skill-install-command-shell-cli">
+                    <span className="skill-install-command-prompt" aria-hidden="true">
+                      $
+                    </span>
                     <pre className="skill-install-command">
                       <code>{installSnippet}</code>
                     </pre>
@@ -1075,22 +1270,128 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 </div>
               </CardContent>
             </Card>
-            {catalogMetadataPanel}
+            {showCatalogMetadataEmptyState ? (
+              <div className="plugin-catalog-empty-alert" role="status">
+                <div className="plugin-catalog-empty-alert-icon" aria-hidden="true">
+                  <Sparkles size={15} />
+                </div>
+                <div className="plugin-catalog-empty-alert-copy">
+                  <div className="plugin-catalog-empty-alert-heading">
+                    <span>Categorize this plugin</span>
+                    <span className="plugin-catalog-empty-alert-visibility">
+                      Visible only to you
+                    </span>
+                  </div>
+                  <p>Add categories and topics.</p>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="plugin-catalog-empty-alert-cta"
+                  onClick={() => setIsCatalogMetadataDialogOpen(true)}
+                >
+                  Categorize
+                </Button>
+              </div>
+            ) : null}
           </div>
-          <PluginDetailTabs
-            activeTab={activeTab}
-            setActiveTab={setActiveTab}
-            readmePanel={readmePanel}
-            versionsPanel={versionsPanel}
-            compatibilityPanel={compatibilityPanel}
-            configurationPanel={configurationPanel}
-            mcpServersPanel={mcpServersPanel}
-            skillsPanel={skillsPanel}
-            validationPanel={validationPanel}
-            validationCount={validationCount}
-          />
+          <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
+            <div
+              className="detail-mobile-master-tab-list"
+              role="tablist"
+              aria-label="Plugin mobile sections"
+            >
+              <button
+                id="plugin-mobile-master-tab-content"
+                className={`detail-mobile-master-tab${
+                  mobileDetailPanel === "content" ? " is-active" : ""
+                }`}
+                type="button"
+                role="tab"
+                aria-selected={mobileDetailPanel === "content"}
+                aria-controls="plugin-mobile-master-panel-content"
+                onClick={() => setMobileDetailPanel("content")}
+              >
+                About
+              </button>
+              {pluginSidebarStatsContent && isMobileDetailLayout ? (
+                <button
+                  id="plugin-mobile-master-tab-stats"
+                  className={`detail-mobile-master-tab${
+                    mobileDetailPanel === "stats" ? " is-active" : ""
+                  }`}
+                  type="button"
+                  role="tab"
+                  aria-selected={mobileDetailPanel === "stats"}
+                  aria-controls="plugin-mobile-master-panel-stats"
+                  onClick={() => setMobileDetailPanel("stats")}
+                >
+                  Stats
+                </button>
+              ) : null}
+            </div>
+            <div
+              className="detail-mobile-master-panel detail-mobile-master-panel-content"
+              id="plugin-mobile-master-panel-content"
+              role="tabpanel"
+              aria-labelledby="plugin-mobile-master-tab-content"
+              hidden={mobileDetailPanel !== "content"}
+            >
+              <PluginDetailTabs
+                activeTab={activeTab}
+                setActiveTab={setActiveTab}
+                readme={readme}
+                readmeAssetBaseUrl={readmeAssetBaseUrl}
+                versionsPanel={versionsPanel}
+                compatibilityPanel={compatibilityPanel}
+                configurationPanel={configurationPanel}
+                mcpServersPanel={mcpServersPanel}
+                skillsPanel={skillsPanel}
+                validationPanel={validationPanel}
+                validationCount={validationCount}
+              />
+            </div>
+            {pluginSidebarStatsContent && isMobileDetailLayout ? (
+              <div
+                className="detail-mobile-master-panel detail-mobile-master-stats"
+                id="plugin-mobile-master-panel-stats"
+                role="tabpanel"
+                aria-labelledby="plugin-mobile-master-tab-stats"
+                hidden={mobileDetailPanel !== "stats"}
+              >
+                {pluginSidebarStatsContent}
+              </div>
+            ) : null}
+          </div>
         </DetailHero>
       </DetailPageShell>
+      {manageContext ? (
+        <Dialog open={isCatalogMetadataDialogOpen} onOpenChange={setIsCatalogMetadataDialogOpen}>
+          <DialogContent className="plugin-catalog-metadata-dialog">
+            <DialogHeader>
+              <DialogTitle>Catalog metadata</DialogTitle>
+              <DialogDescription>Choose categories and topics for this plugin.</DialogDescription>
+            </DialogHeader>
+            <CatalogMetadataEditor
+              kind="plugin"
+              categories={manageContext.package.categories}
+              suggestedCategories={manageContext.suggestedCategories}
+              topics={manageContext.package.topics}
+              onSave={async (value) => {
+                await setCatalogMetadata({
+                  packageId: manageContext.package._id,
+                  categories: value.categories,
+                  topics: value.topics,
+                });
+                toast.success("Catalog metadata updated.");
+                setIsCatalogMetadataDialogOpen(false);
+                await router.invalidate();
+              }}
+            />
+          </DialogContent>
+        </Dialog>
+      ) : null}
     </main>
   );
 }

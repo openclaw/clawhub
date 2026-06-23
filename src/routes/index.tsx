@@ -5,10 +5,21 @@ import { HomeBringSkillsSection } from "../components/HomeBringSkillsSection";
 import { HomeListingSection } from "../components/HomeListingSection";
 import { HomePopularPublishersSection } from "../components/HomePopularPublishersSection";
 import { HomeV2FoldBottomFade } from "../components/HomeV2FoldBottomFade";
+import { fetchInitialHomeListing, type HomeListingInitialData } from "../lib/homeListingData";
 
 export const Route = createFileRoute("/")({
+  loader: loadInitialHomeListing,
   component: SkillsHome,
 });
+
+async function loadInitialHomeListing(): Promise<HomeListingInitialData | null> {
+  try {
+    return await fetchInitialHomeListing();
+  } catch (error) {
+    console.error("Failed to load initial home listing:", error);
+    return null;
+  }
+}
 
 const SLOT_WORDS = [
   "Equip",
@@ -28,6 +39,7 @@ const SLOT_WORDS = [
 const HACK_INDEX = SLOT_WORDS.indexOf("Hack");
 
 function SkillsHome() {
+  const initialListing = Route.useLoaderData();
   const clickTimesRef = useRef<number[]>([]);
   const [slotState, setSlotState] = useState<
     | null
@@ -264,7 +276,7 @@ function SkillsHome() {
     slotTimersRef.current.push(finalTimer);
   }, [fireConfetti]);
 
-  const handleLabelClick = useCallback(() => {
+  const handleHeadlineClick = useCallback(() => {
     const now = Date.now();
     if (now < cooldownUntilRef.current) return;
     clickTimesRef.current.push(now);
@@ -307,14 +319,6 @@ function SkillsHome() {
           <div className="home-v2-ring home-v2-ring-3" />
         </div>
 
-        <button
-          className={`home-v2-hero-label ${slotState ? "home-v2-hero-label-active" : ""}`}
-          type="button"
-          onClick={handleLabelClick}
-        >
-          BUILT BY THE COMMUNITY
-        </button>
-
         {slotState ? (
           <h1
             className={`home-v2-headline home-v2-headline-slots${
@@ -333,38 +337,52 @@ function SkillsHome() {
                 className="home-v2-hack-lobster"
               />
             ) : null}
-            <span className="home-v2-headline-inner">
-              {renderSlotReel(0)}
-              <span className="home-v2-sep" />
-              {renderSlotReel(1)}
-              <span className="home-v2-sep" />
-              {renderSlotReel(2)}
-            </span>
+            <button
+              type="button"
+              className="home-v2-headline-trigger"
+              title="Spin hero headline"
+              onClick={handleHeadlineClick}
+            >
+              <span className="home-v2-headline-inner">
+                {renderSlotReel(0)}
+                <span className="home-v2-sep" />
+                {renderSlotReel(1)}
+                <span className="home-v2-sep home-v2-sep-final" />
+                {renderSlotReel(2)}
+              </span>
+            </button>
           </h1>
         ) : (
           <h1 className="home-v2-headline">
-            <span className="home-v2-headline-inner">
-              <span className="home-v2-action-word">Equip</span>
-              <span className="home-v2-sep" />
-              <span className="home-v2-action-word">Install</span>
-              <span className="home-v2-sep" />
-              <span className="home-v2-cycle-wrap">
-                <span className="home-v2-cycle-track">
-                  <span className="home-v2-cycle-word">Unleash.</span>
-                  <span className="home-v2-cycle-word">Ship.</span>
-                  <span className="home-v2-cycle-word">Build.</span>
-                  <span className="home-v2-cycle-word">Create.</span>
-                  <span className="home-v2-cycle-word">Unleash.</span>
+            <button
+              type="button"
+              className="home-v2-headline-trigger"
+              title="Spin hero headline"
+              onClick={handleHeadlineClick}
+            >
+              <span className="home-v2-headline-inner">
+                <span className="home-v2-action-word">Equip</span>
+                <span className="home-v2-sep" />
+                <span className="home-v2-action-word">Install</span>
+                <span className="home-v2-sep home-v2-sep-final" />
+                <span className="home-v2-cycle-wrap">
+                  <span className="home-v2-cycle-track">
+                    <span className="home-v2-cycle-word">Unleash</span>
+                    <span className="home-v2-cycle-word">Ship</span>
+                    <span className="home-v2-cycle-word">Build</span>
+                    <span className="home-v2-cycle-word">Create</span>
+                    <span className="home-v2-cycle-word">Unleash</span>
+                  </span>
                 </span>
               </span>
-            </span>
+            </button>
           </h1>
         )}
 
         <p className="home-v2-sub">Discover skills and plugins from top creators</p>
       </section>
 
-      <HomeListingSection />
+      <HomeListingSection initialListing={initialListing} />
       <HomePopularPublishersSection />
       <HomeAppsSection />
       <HomeBringSkillsSection />

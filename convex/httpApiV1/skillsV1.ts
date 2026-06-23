@@ -1620,6 +1620,7 @@ function ambiguousSkillChoicesForRequest(
   request: Request,
   matches: Array<{ slug: string; ownerHandle?: string | null }> | undefined,
 ): AmbiguousSkillSlugChoice[] {
+  const origin = publicApiOrigin(request);
   return (matches ?? []).flatMap((match) => {
     const ownerHandle = match.ownerHandle?.trim().replace(/^@+/, "");
     if (!ownerHandle) return [];
@@ -1632,7 +1633,7 @@ function ambiguousSkillChoicesForRequest(
         ref: `@${ownerHandle}/${slug}`,
         url: new URL(
           `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(slug)}`,
-          request.url,
+          origin,
         ).toString(),
       },
     ];
@@ -1823,7 +1824,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           moderationFlags?: string[];
         })
       | null
-    >(ctx, internalRefs.skills.getSkillBySlugInternal, { slug })) as
+    >(ctx, internalRefs.skills.getSkillBySlugInternal, skillLookupArgs)) as
       | (InstallResolverSkill & {
           _id: Id<"skills">;
           githubSourceId?: Id<"githubSkillSources">;
@@ -1847,12 +1848,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       origin: publicApiOrigin(request),
       skill,
       source,
+      ownerHandle,
       forceInstall,
     });
 
-    const publicSkillResult = (await ctx.runQuery(api.skills.getBySlug, {
-      slug,
-    })) as GetBySlugResult;
+    const publicSkillResult = (await ctx.runQuery(
+      api.skills.getBySlug,
+      skillLookupArgs,
+    )) as GetBySlugResult;
     const publiclyVisible = publicSkillResult?.skill?._id === skill._id;
     if (!publiclyVisible) {
       if (!resolution.ok && shouldExposeHiddenGitHubInstallBlock(skill, resolution)) {

@@ -1,8 +1,10 @@
 import { useAction } from "convex/react";
-import { ChevronDown, FileCode2 } from "lucide-react";
+import { ArrowLeft, FileText, Fingerprint, Folder } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import { api } from "../../convex/_generated/api";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
+import { CodeWrapToggleButton, useCodeWrapToggle } from "./CodeWrapToggle";
 import { formatBytes } from "./skillDetailUtils";
 
 type SkillFile = Doc<"skillVersions">["files"][number];
@@ -12,16 +14,87 @@ type SkillFilesPanelProps = {
   latestFiles: SkillFile[];
 };
 
-const MOBILE_FILE_LIST_MAX_WIDTH = 899;
-const MOBILE_FILE_LIST_PREVIEW_COUNT = 8;
+type FileTreeFileNode = {
+  type: "file";
+  name: string;
+  path: string;
+  size: number;
+};
 
-function splitFilePath(path: string) {
-  const lastSlashIndex = path.lastIndexOf("/");
-  if (lastSlashIndex === -1) return { directory: "", filename: path };
+type FileTreeDirectoryNode = {
+  type: "directory";
+  name: string;
+  path: string;
+  children: FileTreeNode[];
+};
+
+type FileTreeNode = FileTreeDirectoryNode | FileTreeFileNode;
+
+type MutableDirectoryNode = FileTreeDirectoryNode & {
+  directories: Map<string, MutableDirectoryNode>;
+};
+
+function createDirectoryNode(name: string, path: string): MutableDirectoryNode {
   return {
-    directory: path.slice(0, lastSlashIndex + 1),
-    filename: path.slice(lastSlashIndex + 1),
+    type: "directory",
+    name,
+    path,
+    children: [],
+    directories: new Map(),
   };
+}
+
+function sortTreeNodes(left: FileTreeNode, right: FileTreeNode) {
+  const leftIsPrimary = left.type === "file" && left.path === "SKILL.md";
+  const rightIsPrimary = right.type === "file" && right.path === "SKILL.md";
+  if (leftIsPrimary !== rightIsPrimary) return leftIsPrimary ? -1 : 1;
+  if (left.type !== right.type) return left.type === "file" ? -1 : 1;
+  return left.name.localeCompare(right.name, undefined, { sensitivity: "base" });
+}
+
+function stripMutableState(node: MutableDirectoryNode): FileTreeDirectoryNode {
+  return {
+    type: "directory",
+    name: node.name,
+    path: node.path,
+    children: node.children
+      .map((child) =>
+        child.type === "directory" ? stripMutableState(child as MutableDirectoryNode) : child,
+      )
+      .sort(sortTreeNodes),
+  };
+}
+
+function buildFileTree(files: SkillFile[]) {
+  const root = createDirectoryNode("", "");
+  for (const file of files) {
+    const parts = file.path.split("/").filter(Boolean);
+    if (parts.length === 0) continue;
+    let currentDirectory = root;
+    for (const directoryName of parts.slice(0, -1)) {
+      const directoryPath = currentDirectory.path
+        ? `${currentDirectory.path}/${directoryName}`
+        : directoryName;
+      let directory = currentDirectory.directories.get(directoryName);
+      if (!directory) {
+        directory = createDirectoryNode(directoryName, directoryPath);
+        currentDirectory.directories.set(directoryName, directory);
+        currentDirectory.children.push(directory);
+      }
+      currentDirectory = directory;
+    }
+    currentDirectory.children.push({
+      type: "file",
+      name: parts.at(-1) ?? file.path,
+      path: file.path,
+      size: file.size,
+    });
+  }
+  return stripMutableState(root).children;
+}
+
+function getFileTreeLevelStyle(level: number) {
+  return { "--file-tree-level": level } as CSSProperties;
 }
 
 export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps) {
@@ -31,11 +104,12 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   const [fileMeta, setFileMeta] = useState<{ size: number; sha256: string } | null>(null);
   const [fileError, setFileError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [showAllMobileFiles, setShowAllMobileFiles] = useState(false);
   const isMounted = useRef(true);
   const requestId = useRef(0);
+  const fileListRef = useRef<HTMLDivElement>(null);
   const fileCache = useRef(new Map<string, { text: string; size: number; sha256: string }>());
+  const [viewerMinHeight, setViewerMinHeight] = useState<number | undefined>();
+  const { preRef, isWrapped, canWrap, toggleWrap } = useCodeWrapToggle(fileContent ?? "");
 
   useEffect(() => {
     isMounted.current = true;
@@ -45,35 +119,8 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     };
   }, []);
 
-  useEffect(() => {
-    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
-      return () => {};
-    }
-    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_FILE_LIST_MAX_WIDTH}px)`);
-    const syncMobileState = () => {
-      const nextIsMobile = mediaQuery.matches;
-      setIsMobile(nextIsMobile);
-      if (!nextIsMobile) {
-        setShowAllMobileFiles(false);
-      }
-    };
-    syncMobileState();
-    mediaQuery.addEventListener("change", syncMobileState);
-    return () => {
-      mediaQuery.removeEventListener("change", syncMobileState);
-    };
-  }, []);
-
-  useEffect(() => {
-    setShowAllMobileFiles(false);
-  }, [versionId]);
-
-  const visibleFiles = useMemo(() => {
-    if (!isMobile || showAllMobileFiles) return latestFiles;
-    return latestFiles.slice(0, MOBILE_FILE_LIST_PREVIEW_COUNT);
-  }, [isMobile, latestFiles, showAllMobileFiles]);
-
-  const hiddenFilesCount = latestFiles.length - visibleFiles.length;
+  const fileTree = useMemo(() => buildFileTree(latestFiles), [latestFiles]);
+  const selectedFileName = selectedPath?.split("/").pop() ?? selectedPath ?? "";
 
   useEffect(() => {
     requestId.current += 1;
@@ -83,6 +130,7 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     setFileMeta(null);
     setFileError(null);
     setIsLoading(false);
+    setViewerMinHeight(undefined);
 
     if (versionId === null) return;
   }, [versionId]);
@@ -90,11 +138,15 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
   const handleSelect = useCallback(
     (path: string) => {
       if (!versionId) return;
+      if (selectedPath === path && (isLoading || fileContent !== null)) return;
       const cacheKey = `${versionId}:${path}`;
       const cached = fileCache.current.get(cacheKey);
 
       requestId.current += 1;
       const current = requestId.current;
+      if (fileListRef.current) {
+        setViewerMinHeight(fileListRef.current.offsetHeight);
+      }
       setSelectedPath(path);
       setFileError(null);
       if (cached) {
@@ -123,84 +175,126 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
           setIsLoading(false);
         });
     },
-    [getFileText, versionId],
+    [fileContent, getFileText, isLoading, selectedPath, versionId],
   );
 
+  const handleBack = () => {
+    requestId.current += 1;
+    setSelectedPath(null);
+    setFileContent(null);
+    setFileMeta(null);
+    setFileError(null);
+    setIsLoading(false);
+    setViewerMinHeight(undefined);
+  };
+
+  const selectedFileSize =
+    fileMeta?.size ?? latestFiles.find((file) => file.path === selectedPath)?.size;
+
+  const renderTreeNode = (node: FileTreeNode, level: number): ReactNode => {
+    if (node.type === "directory") {
+      return (
+        <div key={node.path} className="file-tree-group">
+          <div className="file-tree-directory" style={getFileTreeLevelStyle(level)}>
+            <Folder size={14} aria-hidden="true" />
+            <span>{node.name}</span>
+          </div>
+          {node.children.map((child) => renderTreeNode(child, level + 1))}
+        </div>
+      );
+    }
+
+    const formattedSize = formatBytes(node.size);
+    const isPrimary = node.path === "SKILL.md";
+    return (
+      <button
+        key={node.path}
+        className={`file-tree-file${isPrimary ? " is-primary" : ""}`}
+        style={getFileTreeLevelStyle(level)}
+        type="button"
+        onClick={() => handleSelect(node.path)}
+        aria-label={`${node.path}${isPrimary ? " main" : ""} ${formattedSize}`}
+      >
+        <FileText size={14} aria-hidden="true" />
+        <span className="file-tree-name-wrap">
+          <span className="file-tree-name">{node.name}</span>
+          {isPrimary ? <span className="file-tree-main-badge">main</span> : null}
+        </span>
+        <span className="file-meta">{formattedSize}</span>
+      </button>
+    );
+  };
+
   return (
-    <div className="tab-body">
-      <div className="file-browser">
-        <div className={`file-list${isMobile && hiddenFilesCount > 0 ? " has-hidden-files" : ""}`}>
-          <div className="file-list-header">
-            <h3 className="section-title text-[1.05rem] m-0">Files</h3>
-            <span className="file-list-count">{latestFiles.length} total</span>
-          </div>
-          <div className={`file-list-body${showAllMobileFiles ? " is-expanded" : ""}`}>
-            {latestFiles.length === 0 ? (
-              <div className="stat">No files available.</div>
-            ) : (
-              visibleFiles.map((file) => {
-                const { directory, filename } = splitFilePath(file.path);
-                const formattedSize = formatBytes(file.size);
-                return (
-                  <button
-                    key={file.path}
-                    className={`file-row file-row-button${
-                      selectedPath === file.path ? " is-active" : ""
-                    }`}
-                    type="button"
-                    onClick={() => handleSelect(file.path)}
-                    aria-current={selectedPath === file.path ? "true" : undefined}
-                    aria-label={`${file.path} ${formattedSize}`}
-                  >
-                    <span className="file-row-path">
-                      {directory ? <span className="file-path-dir">{directory}</span> : null}
-                      <span className="file-path-name">{filename}</span>
-                    </span>
-                    <span className="file-meta">{formattedSize}</span>
-                  </button>
-                );
-              })
-            )}
-          </div>
-          {isMobile && hiddenFilesCount > 0 ? (
-            <div className="file-list-see-all-wrap">
-              <div className="file-list-see-all-gradient" aria-hidden="true" />
+    <div className="tab-body skill-files-panel">
+      <div className={`file-browser${selectedPath ? " is-viewing-file" : ""}`}>
+        {selectedPath ? (
+          <div
+            className="file-viewer"
+            style={viewerMinHeight ? { minHeight: viewerMinHeight } : undefined}
+          >
+            <div className="file-viewer-header">
               <button
-                className="file-list-see-all"
+                className="file-viewer-back"
                 type="button"
-                onClick={() => setShowAllMobileFiles(true)}
+                onClick={handleBack}
+                aria-label="Back to file list"
               >
-                <ChevronDown size={14} aria-hidden="true" />
-                <span>See all</span>
+                <ArrowLeft size={15} aria-hidden="true" />
+                <span className="file-viewer-back-label">Back</span>
               </button>
-            </div>
-          ) : null}
-        </div>
-        <div className="file-viewer">
-          <div className="file-viewer-header">
-            <div className="file-path">{selectedPath ?? "Select a file"}</div>
-          </div>
-          <div className="file-viewer-body">
-            {isLoading ? (
-              <div className="stat">Loading…</div>
-            ) : fileError ? (
-              <div className="stat">Failed to load file: {fileError}</div>
-            ) : fileContent ? (
-              <pre className="file-viewer-code">{fileContent}</pre>
-            ) : (
-              <div className="file-viewer-empty">
-                <FileCode2 size={22} className="file-viewer-empty-icon" aria-hidden="true" />
-                <p className="file-viewer-empty-text">Select a file to preview.</p>
+              <div className="file-viewer-title" aria-label={selectedPath}>
+                <span className="file-viewer-filename">{selectedFileName}</span>
+                {selectedFileSize !== undefined ? (
+                  <>
+                    <span className="file-viewer-title-sep" aria-hidden="true">
+                      ·
+                    </span>
+                    <span className="file-viewer-size">{formatBytes(selectedFileSize)}</span>
+                  </>
+                ) : null}
               </div>
-            )}
-          </div>
-          {fileMeta ? (
-            <div className="file-viewer-meta">
-              <span className="file-meta">{formatBytes(fileMeta.size)}</span>
-              <span className="file-meta">{fileMeta.sha256.slice(0, 12)}...</span>
+              <div className="file-viewer-header-end">
+                {canWrap ? (
+                  <span className="markdown-code-block-actions">
+                    <CodeWrapToggleButton isWrapped={isWrapped} onToggle={toggleWrap} />
+                  </span>
+                ) : null}
+              </div>
             </div>
-          ) : null}
-        </div>
+            <div className="file-viewer-body">
+              {isLoading ? (
+                <div className="stat">Loading…</div>
+              ) : fileError ? (
+                <div className="stat">Failed to load file: {fileError}</div>
+              ) : fileContent !== null ? (
+                <pre ref={preRef} className="file-viewer-code" data-wrap={isWrapped}>
+                  {fileContent}
+                </pre>
+              ) : null}
+            </div>
+            {fileMeta ? (
+              <div className="file-viewer-meta">
+                <Fingerprint size={14} className="file-viewer-hash-icon" aria-hidden="true" />
+                <span className="file-viewer-hash">{fileMeta.sha256}</span>
+              </div>
+            ) : null}
+          </div>
+        ) : (
+          <div className="file-list" ref={fileListRef}>
+            <div className="file-list-header">
+              <h3 className="section-title">Files</h3>
+              <span className="file-list-count">{latestFiles.length} total</span>
+            </div>
+            <div className="file-list-body">
+              {latestFiles.length === 0 ? (
+                <div className="stat">No files available.</div>
+              ) : (
+                fileTree.map((node) => renderTreeNode(node, 0))
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

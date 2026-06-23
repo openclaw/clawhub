@@ -179,6 +179,7 @@ export function SkillCommandLineCard({
   clawdis,
 }: SkillInstallSurfaceProps) {
   const [activeInstallTab, setActiveInstallTab] = useState<"cli" | "prompt">("cli");
+  const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
   const openClawCommand = formatOpenClawInstallCommand(installTarget);
   const promptPreview = formatOpenClawPrompt({
@@ -190,18 +191,31 @@ export function SkillCommandLineCard({
     clawdis,
   });
   const activeInstallText = activeInstallTab === "prompt" ? promptPreview : openClawCommand;
+  const selectInstallTab = (tab: "cli" | "prompt") => {
+    if (tab === activeInstallTab) {
+      return;
+    }
+
+    setInstallTabDirection(tab === "prompt" ? "right" : "left");
+    setActiveInstallTab(tab);
+  };
 
   return (
     <article className="skill-install-command-card">
-      <div className="skill-install-command-header">
+      <div className="skill-install-command-header detail-hero-summary-row">
         <h3 className="skill-install-panel-title">Install</h3>
-        <div className="install-switcher-toggle" role="tablist" aria-label="Install option">
+        <div
+          className="install-switcher-toggle"
+          role="tablist"
+          aria-label="Install option"
+          data-active={activeInstallTab}
+        >
           <button
             type="button"
             role="tab"
             aria-selected={activeInstallTab === "cli"}
             className={`install-switcher-pill${activeInstallTab === "cli" ? " is-active" : ""}`}
-            onClick={() => setActiveInstallTab("cli")}
+            onClick={() => selectInstallTab("cli")}
           >
             CLI
           </button>
@@ -210,7 +224,7 @@ export function SkillCommandLineCard({
             role="tab"
             aria-selected={activeInstallTab === "prompt"}
             className={`install-switcher-pill${activeInstallTab === "prompt" ? " is-active" : ""}`}
-            onClick={() => setActiveInstallTab("prompt")}
+            onClick={() => selectInstallTab("prompt")}
           >
             Prompt
           </button>
@@ -218,11 +232,22 @@ export function SkillCommandLineCard({
       </div>
 
       <div className="skill-install-command-wrap">
-        <div className="skill-install-command-shell">
+        <div
+          className={`skill-install-command-shell${
+            activeInstallTab === "cli" ? " skill-install-command-shell-cli" : ""
+          }`}
+        >
+          {activeInstallTab === "cli" ? (
+            <span className="skill-install-command-prompt" aria-hidden="true">
+              $
+            </span>
+          ) : null}
           <pre
+            key={activeInstallTab}
+            data-direction={installTabDirection}
             className={`skill-install-command${
               activeInstallTab === "prompt" ? " skill-install-prompt-compact" : ""
-            }`}
+            } skill-install-command-reveal`}
             tabIndex={0}
           >
             <code translate="no">{activeInstallText}</code>

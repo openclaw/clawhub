@@ -41,7 +41,7 @@ describe("UserBadge", () => {
   it("links users to canonical publisher profiles", () => {
     renderBadge(user);
 
-    expect(screen.getByRole("link", { name: "@steipete" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "View @steipete profile" }).getAttribute("href")).toBe(
       "/user/steipete",
     );
   });
@@ -49,26 +49,89 @@ describe("UserBadge", () => {
   it("links org publishers to canonical publisher profiles", () => {
     renderBadge(orgPublisher);
 
-    expect(screen.getByRole("link", { name: "@openclaw" }).getAttribute("href")).toBe(
+    expect(screen.getByRole("link", { name: "View @openclaw profile" }).getAttribute("href")).toBe(
       "/user/openclaw",
     );
   });
 
-  it("shows the display name when handles are hidden", () => {
+  it("shows muted handle beside display name in sidebar creator layout", () => {
     const publisher: PublicPublisher = {
       ...orgPublisher,
       _id: "publisher-acme" as Id<"publishers">,
-      handle: "acme",
+      handle: "acme-corp",
       displayName: "Acme",
     };
 
-    render(
+    const { container } = render(
       <TooltipProvider>
-        <UserBadge user={publisher} prefix="" showName showHandle={false} disableTooltip />
+        <UserBadge
+          user={publisher}
+          prefix=""
+          showName
+          showHandle={false}
+          showMutedHandle
+          disableTooltip
+        />
       </TooltipProvider>,
     );
 
     expect(screen.getByText("Acme")).toBeTruthy();
+    expect(screen.getByText("@acme-corp")).toBeTruthy();
+    expect(container.querySelector(".user-handle-muted")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View Acme profile" }).getAttribute("href")).toBe(
+      "/user/acme-corp",
+    );
+  });
+
+  it("shows muted handle even when it matches the display name", () => {
+    const publisher: PublicPublisher = {
+      ...orgPublisher,
+      _id: "publisher-pskoett" as Id<"publishers">,
+      handle: "pskoett",
+      displayName: "pskoett",
+    };
+
+    const { container } = render(
+      <TooltipProvider>
+        <UserBadge
+          user={publisher}
+          prefix=""
+          showName
+          showHandle={false}
+          showMutedHandle
+          disableTooltip
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByText("pskoett")).toBeTruthy();
+    expect(screen.getByText("@pskoett")).toBeTruthy();
+    expect(container.querySelector(".user-handle-muted")).toBeTruthy();
+  });
+
+  it("links using fallbackHandle when the user record has no handle", () => {
+    const publisher = {
+      ...orgPublisher,
+      handle: undefined,
+      displayName: "OpenClaw",
+    };
+
+    render(
+      <TooltipProvider>
+        <UserBadge
+          user={publisher}
+          fallbackHandle="openclaw"
+          prefix=""
+          showName
+          showHandle={false}
+          disableTooltip
+        />
+      </TooltipProvider>,
+    );
+
+    expect(screen.getByRole("link", { name: "View OpenClaw profile" }).getAttribute("href")).toBe(
+      "/user/openclaw",
+    );
   });
 
   it("shows a compact Official badge for official publishers", () => {

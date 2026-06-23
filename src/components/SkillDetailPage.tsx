@@ -17,7 +17,7 @@ import {
   isBannedAccountAuthError,
   routeToBannedAccountPage,
 } from "../lib/authErrorMessage";
-import { getSkillCategoryForSkill } from "../lib/categories";
+import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
@@ -72,7 +72,7 @@ function tabFromHash(hash: string): DetailTab {
   const normalized = hash.replace(/^#/, "").toLowerCase();
   if (normalized === "files") return "files";
   if (normalized === "skill-card" || normalized === "card") return "skill-card";
-  if (normalized === "compare") return "compare";
+  if (normalized === "compare" || normalized === "diff") return "compare";
   if (normalized === "versions") return "versions";
   if (
     normalized === "runtime" ||
@@ -256,6 +256,10 @@ export function SkillDetailPage({
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
+  const relatedCategories = useMemo(
+    () => (skill ? getSkillCategoriesForSkill(skill).slice(0, 3) : []),
+    [skill],
+  );
   const suggestedCatalogCategories = useMemo(
     () => (skill ? resolveSkillCategories({ inferred: inferSkillCategories(skill) }) : undefined),
     [skill],
@@ -780,7 +784,7 @@ export function SkillDetailPage({
 
   if (isLoadingSkill || wantsCanonicalRedirect) {
     return (
-      <main className="section detail-page-section" aria-busy="true">
+      <main className="section detail-page-section skill-detail-page" aria-busy="true">
         <div role="status" aria-label="Loading skill details">
           <SkillDetailSkeleton />
         </div>
@@ -839,7 +843,7 @@ export function SkillDetailPage({
 
   if (mode === "settings") {
     return (
-      <main className="section detail-page-section">
+      <main className="section detail-page-section skill-detail-page">
         <DetailPageShell className="skill-settings-page">
           <div className="skill-settings-page-header">
             <a href={detailHref} className="skill-settings-back-link">
@@ -878,7 +882,7 @@ export function SkillDetailPage({
   }
 
   return (
-    <main className="section detail-page-section">
+    <main className="section detail-page-section skill-detail-page">
       <DetailPageShell>
         <SkillHeader
           skill={displayedSkill}
@@ -909,6 +913,7 @@ export function SkillDetailPage({
           cliHelp={cliHelp}
           clawdis={clawdis}
           category={relatedCategory}
+          categories={relatedCategories}
           priorityContent={staffVisibilityAlert}
           securityAuditSummary={securitySummary}
           activityTrend={activityTrend}
@@ -955,11 +960,11 @@ export function SkillDetailPage({
             osLabels={osLabels}
             readmeHrefResolver={readmeHrefResolver}
           />
-
           <SkillRelatedSection
             category={relatedCategory}
             relatedSkills={relatedSkillsResult?.items ?? []}
             isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
+            variant="compact"
           />
         </SkillHeader>
       </DetailPageShell>

@@ -1853,13 +1853,13 @@ async function summarizePublisherAbuseReviewNominations(
 async function summarizeVisiblePublisherAbuseReviewNominations(
   ctx: QueryCtx,
   nominations: Doc<"publisherAbuseReviewNominations">[],
-  limit?: number,
+  limit: number,
 ) {
   const items = [];
   for (const nomination of nominations) {
     const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
     if (await isVisiblePublisherAbuseReviewItem(ctx, item)) items.push(item);
-    if (limit && items.length >= limit) break;
+    if (items.length >= limit) break;
   }
   return items;
 }

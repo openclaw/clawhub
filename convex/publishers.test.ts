@@ -18,6 +18,7 @@ import {
   recoverPersonalPublisherInternal,
   createOrg,
   deleteOrg,
+  reclaimDeletedOrgHandleInternal,
   removeMember,
   addOfficialPublisherInternal,
   createOrgPublisherForUserInternal,
@@ -192,13 +193,16 @@ const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
       kind?: "user" | "org";
+      official?: boolean;
       query?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
       page: Array<{
         handle: string;
+        displayName?: string;
         kind: "user" | "org";
+        official?: boolean;
         stats: { downloads: number; installs: number };
         publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
       }>;
@@ -349,6 +353,32 @@ const deleteSoleOwnerOrgsForAccountDeletionInternalHandler = (
       deletedOrgs: number;
       hiddenSkills: number;
       deletedPackages: number;
+    }
+  >
+)._handler;
+
+const reclaimDeletedOrgHandleInternalHandler = (
+  reclaimDeletedOrgHandleInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      reason: string;
+      dryRun?: boolean;
+      confirmationToken?: string;
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      dryRun: boolean;
+      hardDeleted: boolean;
+      activeSkills: number;
+      activePackages: number;
+      memberCount: number;
+      githubSources: number;
+      githubSourceContents: number;
+      officialPublisher: boolean;
+      confirmationToken: string;
     }
   >
 )._handler;
@@ -809,6 +839,189 @@ describe("publishers membership controls", () => {
     ).rejects.toThrow("Only org owners can delete an organization");
     expect(patch).not.toHaveBeenCalled();
     expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  function makeReclaimDeletedOrgCtx(
+    options: {
+      publisher?: Record<string, unknown> | null;
+      activeSkills?: Array<Record<string, unknown>>;
+      activePackages?: Array<Record<string, unknown>>;
+    } = {},
+  ) {
+    const publisher = options.publisher ?? {
+      _id: "publishers:tencent",
+      kind: "org",
+      handle: "tencent",
+      displayName: "TENCENT",
+      deletedAt: 2_000,
+      deactivatedAt: 2_000,
+      createdAt: 1,
+      updatedAt: 2_000,
+    };
+    const members = [
+      {
+        _id: "publisherMembers:owner",
+        publisherId: "publishers:tencent",
+        userId: "users:spammer",
+        role: "owner",
+      },
+    ];
+    const deleted = vi.fn();
+    const insert = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_handle") throw new Error(`unexpected index ${indexName}`);
+            return { unique: vi.fn(async () => publisher) };
+          }),
+        };
+      }
+      if (table === "skills") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_owner_publisher_active_updated") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { take: vi.fn(async () => options.activeSkills ?? []) };
+          }),
+        };
+      }
+      if (table === "packages") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_owner_publisher_active_updated") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { take: vi.fn(async () => options.activePackages ?? []) };
+          }),
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_publisher") throw new Error(`unexpected index ${indexName}`);
+            return { collect: vi.fn(async () => members) };
+          }),
+        };
+      }
+      if (table === "githubSkillSources" || table === "githubSkillContents") {
+        return emptyOwnedResourcesQuery();
+      }
+      if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+      throw new Error(`unexpected table ${table}`);
+    });
+    return {
+      ctx: {
+        scheduler: { runAfter: vi.fn() },
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:admin") return { _id: id, role: "admin" };
+            return null;
+          }),
+          query,
+          insert,
+          delete: deleted,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          normalizeId: vi.fn(() => null),
+        },
+      },
+      deleted,
+      insert,
+    };
+  }
+
+  it("dry-runs hard deletion for a deleted empty org handle", async () => {
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+
+    const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      handle: "Tencent",
+      reason: "Free spam org handle",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      publisherId: "publishers:tencent",
+      handle: "tencent",
+      dryRun: true,
+      hardDeleted: false,
+      activeSkills: 0,
+      activePackages: 0,
+      memberCount: 1,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+    expect(deleted).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("requires the confirmation token before hard deleting", async () => {
+    const { ctx, deleted } = makeReclaimDeletedOrgCtx();
+
+    await expect(
+      reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+        dryRun: false,
+      }),
+    ).rejects.toThrow('Confirmation token must be "reclaim-deleted-org:tencent"');
+    expect(deleted).not.toHaveBeenCalled();
+  });
+
+  it("hard deletes the deleted org publisher row and records an audit log", async () => {
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+
+    const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      handle: "tencent",
+      reason: "Free spam org handle",
+      dryRun: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      hardDeleted: true,
+      memberCount: 1,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "publisher.org.reclaim_deleted_handle",
+        targetType: "publisher",
+        targetId: "publishers:tencent",
+        metadata: expect.objectContaining({
+          handle: "tencent",
+          reason: "Free spam org handle",
+        }),
+      }),
+    );
+    expect(deleted).toHaveBeenCalledWith("publisherMembers:owner");
+    expect(deleted).toHaveBeenCalledWith("publishers:tencent");
+  });
+
+  it("refuses to reclaim an active org handle", async () => {
+    const { ctx } = makeReclaimDeletedOrgCtx({
+      publisher: {
+        _id: "publishers:tencent",
+        kind: "org",
+        handle: "tencent",
+        displayName: "TENCENT",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    });
+
+    await expect(
+      reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+      }),
+    ).rejects.toThrow("Publisher is active; use org delete before reclaiming the handle");
   });
 
   it("deletes sole-owner account orgs when other owner memberships are inactive", async () => {
@@ -1522,6 +1735,132 @@ describe("publishers membership controls", () => {
     expect(get).toHaveBeenCalledWith("users:proof-banned-builder");
     expect(get).toHaveBeenCalledWith("users:alice");
     expect(ownerPublisherQueries).toEqual(["publishers:alice", "publishers:alice"]);
+  });
+
+  it("lists official creators and organizations from the official publisher index", async () => {
+    const publishers = [
+      {
+        _id: "publishers:steipete",
+        _creationTime: 1,
+        kind: "user",
+        handle: "steipete",
+        displayName: "steipete",
+        linkedUserId: "users:steipete",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 85_400,
+        totalDownloads: 100_000,
+        totalStars: 100,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 2,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        publishedSkills: 6,
+        publishedPackages: 59,
+        totalInstalls: 130,
+        totalDownloads: 95_000,
+        totalStars: 4,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      {
+        _id: "publishers:community",
+        _creationTime: 3,
+        kind: "org",
+        handle: "community",
+        displayName: "Community",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 1_000,
+        totalDownloads: 1_000,
+        totalStars: 1,
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ];
+    const officialRows = [
+      {
+        _id: "officialPublishers:steipete",
+        publisherId: "publishers:steipete",
+        createdAt: 1,
+      },
+      {
+        _id: "officialPublishers:openclaw",
+        publisherId: "publishers:openclaw",
+        createdAt: 2,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:steipete") {
+            return {
+              _id: id,
+              displayName: "Peter Steinberger",
+              image: "https://github.com/steipete.png",
+            };
+          }
+          return publishers.find((publisher) => publisher._id === id) ?? null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery?: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery?.(q);
+
+            if (table === "officialPublishers" && indexName === "by_created") {
+              return {
+                order: vi.fn(() => ({ take: vi.fn(async () => officialRows) })),
+              };
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return {
+                unique: vi.fn(async () =>
+                  officialRows.find((row) => row.publisherId === fields.publisherId),
+                ),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_downloads"
+            ) {
+              return indexedRows([]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      official: true,
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page.map((publisher) => publisher.handle)).toEqual(["steipete", "openclaw"]);
+    expect(result.page.map((publisher) => publisher.kind)).toEqual(["user", "org"]);
+    expect(result.page[0]?.displayName).toBe("Peter Steinberger");
+    expect(result.page.every((publisher) => publisher.official)).toBe(true);
+    expect(result.isDone).toBe(true);
+
+    const creators = await listPublicPageHandler(ctx as never, {
+      official: true,
+      kind: "user",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(creators.page.map((publisher) => publisher.handle)).toEqual(["steipete"]);
+    expect(creators.globalCounts).toEqual({ all: 2, individuals: 1, organizations: 1 });
   });
 
   it("orders and renders public publisher card previews by downloads", async () => {

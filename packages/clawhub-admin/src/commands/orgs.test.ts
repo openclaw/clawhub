@@ -27,6 +27,7 @@ const {
   cmdCreateOrg,
   cmdDeleteOrg,
   cmdListOfficialOrgs,
+  cmdReclaimDeletedOrgHandle,
   cmdRemoveOfficialOrg,
   cmdRemoveOrgMember,
   cmdRepairScopedPackages,
@@ -281,6 +282,98 @@ describe("cmdDeleteOrg", () => {
     await expect(cmdDeleteOrg(makeGlobalOpts(), "clawhub", {})).rejects.toThrow(
       /--reason required/i,
     );
+    expect(httpMocks.apiRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe("cmdReclaimDeletedOrgHandle", () => {
+  it("dry-runs deleted org handle reclaim by default", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:tencent",
+      handle: "tencent",
+      dryRun: true,
+      hardDeleted: false,
+      activeSkills: 0,
+      activePackages: 0,
+      memberCount: 1,
+      githubSources: 0,
+      githubSourceContents: 0,
+      officialPublisher: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+
+    const result = await cmdReclaimDeletedOrgHandle(makeGlobalOpts(), "@Tencent", {
+      reason: "Free spam org handle",
+      json: true,
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      hardDeleted: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+    expect(authTokenMocks.requireAuthToken).toHaveBeenCalled();
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        method: "POST",
+        path: "/api/v1/users/publisher-reclaim",
+        token: "tkn",
+        body: {
+          handle: "tencent",
+          reason: "Free spam org handle",
+          dryRun: true,
+        },
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("applies reclaim only with an explicit confirmation token", async () => {
+    httpMocks.apiRequest.mockResolvedValueOnce({
+      ok: true,
+      publisherId: "publishers:tencent",
+      handle: "tencent",
+      dryRun: false,
+      hardDeleted: true,
+      activeSkills: 0,
+      activePackages: 0,
+      memberCount: 1,
+      githubSources: 0,
+      githubSourceContents: 0,
+      officialPublisher: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+
+    await cmdReclaimDeletedOrgHandle(makeGlobalOpts(), "tencent", {
+      reason: "Free spam org handle",
+      apply: true,
+      confirm: "reclaim-deleted-org:tencent",
+    });
+
+    expect(httpMocks.apiRequest).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({
+        body: expect.objectContaining({
+          handle: "tencent",
+          dryRun: false,
+          confirmationToken: "reclaim-deleted-org:tencent",
+        }),
+        retryCount: 0,
+      }),
+      expect.anything(),
+    );
+  });
+
+  it("requires a confirmation token when applying reclaim", async () => {
+    await expect(
+      cmdReclaimDeletedOrgHandle(makeGlobalOpts(), "tencent", {
+        reason: "Free spam org handle",
+        apply: true,
+      }),
+    ).rejects.toThrow(/--confirm required/i);
     expect(httpMocks.apiRequest).not.toHaveBeenCalled();
   });
 });

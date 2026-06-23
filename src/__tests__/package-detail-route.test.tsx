@@ -94,6 +94,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("convex/react", () => ({
+  ConvexReactClient: class {
+    query = convexQueryMock;
+  },
   useConvex: () => convexClientMock,
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
@@ -138,6 +141,13 @@ vi.mock("../components/MarkdownPreview", () => ({
   }) => <div>{children}</div>,
 }));
 
+vi.mock("../components/ui/tooltip", () => ({
+  Tooltip: ({ children }: { children: ReactNode }) => children,
+  TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  TooltipProvider: ({ children }: { children: ReactNode }) => children,
+  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
+}));
+
 async function loadRoute() {
   return (await import("../routes/plugins/$name")).Route as unknown as {
     __config: {
@@ -147,8 +157,47 @@ async function loadRoute() {
   };
 }
 
+function openRelease(version: string) {
+  const versionPattern = new RegExp(`v${version.replaceAll(".", "\\.")}`);
+  const toggle = screen
+    .getAllByRole("button")
+    .find(
+      (button) =>
+        button.classList.contains("skill-version-release-toggle") &&
+        versionPattern.test(button.textContent ?? ""),
+    );
+  if (!toggle) {
+    throw new Error(`Version toggle for v${version} not found`);
+  }
+  fireEvent.click(toggle);
+}
+
 describe("plugin detail route", () => {
+  function setViewportWidth(width: number) {
+    vi.stubGlobal("matchMedia", (query: string) => {
+      const minWidth = /\(min-width:\s*(\d+)px\)/.exec(query)?.[1];
+      const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(query)?.[1];
+      const matches = minWidth
+        ? width >= Number(minWidth)
+        : maxWidth
+          ? width <= Number(maxWidth)
+          : false;
+
+      return {
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      };
+    });
+  }
+
   beforeEach(() => {
+    setViewportWidth(1071);
     paramsMock = { name: "demo-plugin" };
     pathnameMock = "/plugins/demo-plugin";
     window.location.hash = "";
@@ -202,6 +251,46 @@ describe("plugin detail route", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("uses mobile About and Stats tabs below 901px", async () => {
+    setViewportWidth(488);
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+          stats: { downloads: 597, installs: 0, stars: 0, versions: 1 },
+        },
+        owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
+      },
+      version: loaderDataMock.version,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const { container } = render(<Component />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".detail-mobile-master-tab-list")).toBeTruthy();
+    });
+
+    expect(screen.getByRole("tab", { name: "About" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Stats" }).getAttribute("aria-selected")).toBe("false");
+    expect(
+      container.querySelector("#plugin-mobile-master-panel-stats")?.hasAttribute("hidden"),
+    ).toBe(true);
+    expect(container.querySelector(".detail-sidebar-stats")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Stats" }));
+
+    expect(screen.getByRole("tab", { name: "Stats" }).getAttribute("aria-selected")).toBe("true");
+    expect(
+      container.querySelector("#plugin-mobile-master-panel-stats")?.hasAttribute("hidden"),
+    ).toBe(false);
+    expect(screen.getByText("Downloads")).toBeTruthy();
   });
 
   it("hides download actions when the plugin has no latest release", async () => {
@@ -230,8 +319,8 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Web Search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Research");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
   });
 
   it("renders populated active release history on the versions tab", async () => {
@@ -269,8 +358,11 @@ describe("plugin detail route", () => {
     render(<Component />);
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByText(`v2.0.0 · ${new Date(publishedAt).toLocaleDateString()}`)).toBeTruthy();
+    expect(screen.getAllByText("v2.0.0").length).toBeGreaterThan(0);
+    expect(screen.getByText(new Date(publishedAt).toLocaleDateString())).toBeTruthy();
+    openRelease("2.0.0");
     expect(screen.getByText("Adds package release history.")).toBeTruthy();
+    openRelease("2.0.0-beta.1");
     expect(screen.getByText("Previews package release history.")).toBeTruthy();
     expect(screen.getByText("latest")).toBeTruthy();
     expect(screen.getByText("stable")).toBeTruthy();
@@ -280,7 +372,7 @@ describe("plugin detail route", () => {
         'a[href="/api/v1/packages/demo-plugin/download?version=2.0.0-beta.1"]',
       ),
     ).toBeNull();
-    expect(screen.queryByText("Zip")).toBeNull();
+    expect(screen.queryByText("Download .zip")).toBeNull();
   });
 
   it("loads and appends the next active release page", async () => {
@@ -323,18 +415,39 @@ describe("plugin detail route", () => {
       cursor: "versions:next",
       limit: 20,
     });
+    openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        screen
+          .getAllByRole("button", { hidden: true })
+          .some(
+            (button) =>
+              button.getAttribute("aria-controls") === "version-changelog-1.0.0" &&
+              button.classList.contains("skill-version-release-toggle"),
+          ),
+      ).toBe(true);
+    });
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded next page")).toBeTruthy();
     expect(
       document.querySelector('a[href="/api/v1/packages/demo-plugin/download?version=1.0.0"]'),
     ).toBeNull();
-    expect(screen.queryByText("Zip")).toBeNull();
+    expect(screen.queryByText("Download .zip")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "README" }));
+    fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByText("Loaded next page")).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("button", { hidden: true })
+        .some(
+          (button) =>
+            button.getAttribute("aria-controls") === "version-changelog-1.0.0" &&
+            button.classList.contains("skill-version-release-toggle"),
+        ),
+    ).toBe(true);
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
   });
 
@@ -382,6 +495,7 @@ describe("plugin detail route", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
+    openRelease("1.0.0");
     expect(screen.getByText("Plugin A loaded release")).toBeTruthy();
 
     window.history.pushState(null, "", "/plugins/@scope/plugin-b");
@@ -411,12 +525,15 @@ describe("plugin detail route", () => {
     };
     rerender(<PluginDetailPage name="@scope/plugin-b" loaderData={loaderDataMock} />);
 
-    expect(screen.getByRole("tab", { name: "README" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "README.md" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.getByText("Plugin B README")).toBeTruthy();
     expect(screen.queryByText("Plugin A loaded release")).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
+    openRelease("3.0.0");
     expect(screen.getByText("Plugin B release")).toBeTruthy();
     expect(screen.queryByText("Plugin A loaded release")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
@@ -452,6 +569,7 @@ describe("plugin detail route", () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded after empty page")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
@@ -521,14 +639,11 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "README",
-      "Skills",
-      "MCP Servers",
-      "Configuration",
-      "Compatibility",
-      "Versions",
-    ]);
+    expect(
+      Array.from(document.querySelectorAll(".detail-mobile-tabs .tab-button"), (tab) =>
+        tab.textContent?.trim(),
+      ),
+    ).toEqual(["README.md", "Skills", "MCP Servers", "Configuration", "Compatibility", "Versions"]);
     expect(screen.getByRole("tab", { name: "Compatibility" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Configuration" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "MCP Servers" })).toBeTruthy();
@@ -607,6 +722,7 @@ describe("plugin detail route", () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
+    openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain(
       "Could not load more releases. Try again.",
@@ -620,6 +736,7 @@ describe("plugin detail route", () => {
       cursor: "versions:next",
       limit: 20,
     });
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded after retry")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -688,6 +805,7 @@ describe("plugin detail route", () => {
       });
     });
 
+    openRelease("3.0.0");
     expect(screen.getByText("Second plugin release")).toBeTruthy();
     expect(screen.queryByText("Stale first plugin release")).toBeNull();
   });
@@ -717,6 +835,7 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("tab", { name: "Versions" }).getAttribute("aria-selected")).toBe(
       "true",
     );
+    openRelease("1.0.0");
     expect(screen.getByText("Initial release")).toBeTruthy();
   });
 
@@ -794,6 +913,29 @@ describe("plugin detail route", () => {
     ).toBeTruthy();
   });
 
+  it("omits scoped package prefixes from plugin breadcrumbs", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          name: "@openclaw/firecrawl-plugin",
+          displayName: "OpenClaw Firecrawl Plugin",
+        },
+        owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const { container } = render(<Component />);
+
+    const packageCrumb = container.querySelector(
+      'nav[aria-label="Plugin breadcrumbs"] a[href="/plugins/@openclaw/firecrawl-plugin"]',
+    );
+    expect(packageCrumb?.textContent).toBe("firecrawl-plugin");
+  });
+
   it("labels official packages as Official", async () => {
     loaderDataMock = {
       ...loaderDataMock,
@@ -812,7 +954,7 @@ describe("plugin detail route", () => {
     render(<Component />);
 
     expect(screen.getAllByText("Official").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.getAllByLabelText("Official").length).toBeGreaterThan(0);
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
@@ -832,7 +974,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
     const { container } = render(<Component />);
 
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
@@ -854,8 +996,8 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Web Search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Research");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
   });
 
   it("renders the plugin 30-day downloads graph from a deferred activity query", async () => {
@@ -867,7 +1009,11 @@ describe("plugin detail route", () => {
           latestVersion: "1.0.0",
           stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
         },
-        owner: null,
+        owner: {
+          handle: "demo-owner",
+          displayName: "Demo Owner",
+          image: null,
+        },
       },
     };
     convexQueryMock.mockResolvedValueOnce({
@@ -891,12 +1037,12 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const downloadsLabel = screen.getByText("30-day Downloads");
+    const downloadsLabel = screen.getByText("Downloads");
     const currentVersionLabel = screen.getByText("Current version");
     expect(downloadsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
     await waitFor(() =>
       expect(
@@ -907,7 +1053,6 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
     expect(
       convexQueryMock.mock.calls.some(([query, args]) => {
         return (
@@ -926,6 +1071,28 @@ describe("plugin detail route", () => {
         ([query]) => getFunctionName(query as never) === "packages:getActivityTrendForName",
       ),
     ).toBe(false);
+
+    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
+    expect(sidebarMetadata).toBeTruthy();
+    const sidebarRows = Array.from(
+      sidebarMetadata?.querySelectorAll(".sidebar-metadata-row") ?? [],
+      (row) => ({
+        text: row.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        hasDownload: Boolean(row.querySelector(".plugin-sidebar-download-button")),
+      }),
+    );
+    const downloadsRow = sidebarRows.find((row) => row.text.includes("Downloads"));
+    const creatorRow = sidebarRows.find((row) => row.text.includes("Creator"));
+    const downloadOnlyRow = sidebarRows.find((row) => row.hasDownload);
+    const typeRow = sidebarRows.find((row) => row.text.includes("Code Plugin"));
+    expect(downloadsRow?.hasDownload).toBe(false);
+    expect(downloadOnlyRow).toBeTruthy();
+    expect(creatorRow).toBeTruthy();
+    expect(typeRow).toBeTruthy();
+    expect(sidebarRows.at(-1)).toEqual(downloadOnlyRow);
+    expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
+      "/api/v1/packages/demo-plugin/download?version=1.0.0",
+    );
   });
 
   it("falls back to all-time plugin stats when activity graphs are unavailable", async () => {
@@ -956,6 +1123,12 @@ describe("plugin detail route", () => {
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
+
+    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
+    const downloadsRow = sidebarMetadata?.querySelector(".sidebar-metadata-row-large");
+    expect(downloadsRow?.textContent).toContain("Downloads");
+    expect(downloadsRow?.querySelector(".plugin-sidebar-download-button")).toBeTruthy();
+    expect(sidebarMetadata?.querySelectorAll(".plugin-sidebar-download-button")).toHaveLength(1);
   });
 
   it("shows plugin settings when the viewer can manage the plugin", async () => {
@@ -1005,15 +1178,12 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const downloadLink = screen.getByRole("link", { name: /download/i });
     const newVersionLink = screen.getByRole("link", { name: "New version" });
+    expect(screen.getByRole("link", { name: /download/i })).toBeTruthy();
     expect(newVersionLink.getAttribute("href")).toBe(
       "/plugins/publish?ownerHandle=demo-owner&name=demo-plugin&displayName=Demo+Plugin",
     );
     expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
-    expect(
-      downloadLink.compareDocumentPosition(newVersionLink) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
       name: "demo-plugin",
       candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],

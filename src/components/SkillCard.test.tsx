@@ -36,8 +36,8 @@ describe("SkillCard", () => {
       />,
     );
 
-    expect(screen.getByText("google-calendar")).toBeTruthy();
-    expect(screen.getByText("productivity")).toBeTruthy();
+    expect(screen.getByText("#google-calendar")).toBeTruthy();
+    expect(screen.getByText("#productivity")).toBeTruthy();
   });
 });
 

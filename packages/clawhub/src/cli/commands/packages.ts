@@ -2330,7 +2330,6 @@ async function preparePackagePublishPlan(
     addCleanup(async () => {
       await rm(packDestination, { recursive: true, force: true });
     });
-    parsedClawpack = packed.parsed;
     clawpackOnDisk = packed.file;
     filesOnDisk = packed.parsed.entries.map((entry) => ({
       relPath: entry.path,

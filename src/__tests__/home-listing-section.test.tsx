@@ -100,6 +100,44 @@ describe("HomeListingSection", () => {
     });
   });
 
+  it("renders the initial Skills Top listing without refetching on mount", async () => {
+    render(
+      <HomeListingSection
+        initialListing={{
+          kind: "skills",
+          tab: "popular",
+          categorySlugs: [],
+          fetchLimit: 20,
+          items: [
+            {
+              skill: {
+                _id: "skills:initial" as never,
+                slug: "initial-skill",
+                displayName: "Initial Skill",
+                summary: "Already loaded by the route.",
+                stats: {
+                  comments: 0,
+                  downloads: 0,
+                  installsAllTime: 42,
+                  stars: 0,
+                  versions: 1,
+                },
+              } as never,
+              ownerHandle: "builder",
+            },
+          ],
+          hasMore: true,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Initial Skill")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Load more" })).toBeTruthy();
+    await waitFor(() => {
+      expect(convexQueryMock).not.toHaveBeenCalled();
+    });
+  });
+
   it("switches to plugins and loads plugin cards", async () => {
     render(<HomeListingSection />);
 
@@ -188,6 +226,42 @@ describe("HomeListingSection", () => {
         categorySlug: "development",
       });
       expect(screen.getByText("Dev Alpha")).toBeTruthy();
+    });
+  });
+
+  it("keeps listing search fetch-on-query instead of serving repeated queries from tab cache", async () => {
+    convexActionMock.mockResolvedValue([
+      {
+        skill: {
+          _id: "skills:alpha",
+          slug: "alpha-skill",
+          displayName: "Alpha Skill",
+          summary: "Alpha",
+          stats: { stars: 1, downloads: 1 },
+        },
+        ownerHandle: "builder",
+      },
+    ]);
+
+    render(<HomeListingSection />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Search catalog" }));
+    const searchInput = await screen.findByRole("searchbox", { name: "Search skills" });
+    fireEvent.change(searchInput, { target: { value: "alpha" } });
+
+    await waitFor(() => {
+      expect(convexActionMock).toHaveBeenCalledTimes(1);
+    });
+
+    fireEvent.change(searchInput, { target: { value: "" } });
+    await waitFor(() => {
+      expect(screen.queryByText("Alpha Skill")).toBeNull();
+    });
+
+    fireEvent.change(searchInput, { target: { value: "alpha" } });
+
+    await waitFor(() => {
+      expect(convexActionMock).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -302,6 +376,64 @@ describe("HomeListingSection", () => {
     });
     expect(screen.queryByText("Popularity")).toBeNull();
     expect(screen.queryByText("999")).toBeNull();
+  });
+
+  it("reuses cached skill tabs instead of refetching when switching back", async () => {
+    convexQueryMock.mockImplementation((name) => {
+      if (name === "skills:listPublicTrendingPage") {
+        return Promise.resolve({
+          items: [
+            {
+              skill: {
+                _id: "skills:trending",
+                slug: "trending-skill",
+                displayName: "Trending Skill",
+                summary: "Hot this week.",
+                stats: { installsAllTime: 999 },
+              },
+              ownerHandle: "builder",
+            },
+          ],
+        });
+      }
+      return Promise.resolve({
+        page: [
+          {
+            skill: {
+              _id: "skills:top",
+              slug: "top-skill",
+              displayName: "Top Skill",
+              summary: "Popular.",
+              stats: { installsAllTime: 100 },
+            },
+            ownerHandle: "builder",
+          },
+        ],
+        hasMore: false,
+        nextCursor: null,
+      });
+    });
+
+    render(<HomeListingSection />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Top Skill")).toBeTruthy();
+    });
+    expect(convexQueryMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Trending" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Trending Skill")).toBeTruthy();
+    });
+    expect(convexQueryMock).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Top" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Top Skill")).toBeTruthy();
+    });
+    expect(convexQueryMock).toHaveBeenCalledTimes(2);
   });
 
   it("keeps pending and suspicious audits out of skill New", async () => {
@@ -479,6 +611,50 @@ describe("HomeListingSection", () => {
     expect(screen.queryByText("Community Plugin")).toBeNull();
     const latestRequest = fetchPluginCatalogMock.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(latestRequest).toEqual(expect.objectContaining({ isOfficial: true, limit: 20 }));
+  });
+
+  it("reuses cached plugin tabs instead of refetching when switching back", async () => {
+    fetchPluginCatalogMock.mockImplementation((args: { isOfficial?: boolean }) =>
+      Promise.resolve({
+        items: [
+          {
+            name: args.isOfficial ? "official-plugin" : "top-plugin",
+            displayName: args.isOfficial ? "Official Plugin" : "Top Plugin",
+            family: "code-plugin",
+            channel: args.isOfficial ? "official" : "community",
+            isOfficial: Boolean(args.isOfficial),
+            summary: "Cached plugin.",
+            createdAt: 1,
+            updatedAt: 2,
+            latestVersion: "1.0.0",
+            stats: { stars: 1, downloads: 2, installs: args.isOfficial ? 50 : 75, versions: 1 },
+          },
+        ],
+        nextCursor: null,
+      }),
+    );
+
+    render(<HomeListingSection />);
+    fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Official Plugin")).toBeTruthy();
+    });
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Top" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Top Plugin")).toBeTruthy();
+    });
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("Official Plugin")).toBeTruthy();
+    });
+    expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(2);
   });
 
   it("uses the skills cursor when loading beyond the first page", async () => {

@@ -65,6 +65,7 @@ describe("restored UI design contract", () => {
   const footer = () => read("src/components/Footer.tsx");
   const home = () => read("src/routes/index.tsx");
   const navItems = () => read("src/lib/nav-items.ts");
+  const publicRegistry = () => read("src/lib/publicRegistry.ts");
   const settings = () => read("src/routes/settings.tsx");
   const styles = () => read("src/styles.css");
   const theme = () => read("src/lib/theme.ts");
@@ -83,6 +84,7 @@ describe("restored UI design contract", () => {
   it("requires the responsive header rail, search overlay, and theme controls", () => {
     const headerSource = header();
     const navSource = navItems();
+    const publicRegistrySource = publicRegistry();
     const css = styles();
 
     expect(headerSource).toContain('className="navbar-top"');
@@ -112,7 +114,10 @@ describe("restored UI design contract", () => {
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
     expect(navSource).toContain('label: "Publishers"');
     expect(navSource).toContain('label: "Docs"');
-    expect(navSource).toContain('href: "https://docs.openclaw.ai/clawhub/"');
+    expect(navSource).toContain("href: CLAWHUB_DOCS_URL");
+    expect(publicRegistrySource).toContain(
+      'export const CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/"',
+    );
     expect(navSource).not.toContain('icon: "wrench"');
     expect(navSource).not.toContain('icon: "plug"');
     expect(navSource).not.toContain('label: "About"');
@@ -178,7 +183,11 @@ describe("restored UI design contract", () => {
     const listingSource = read("src/components/HomeListingSection.tsx");
     const css = styles();
 
-    expect(homeSource).toContain("BUILT BY THE COMMUNITY");
+    expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
+    expect(homeSource).not.toContain("Unleash.");
+    expect(homeSource).not.toContain("Ship.");
+    expect(homeSource).not.toContain("Build.");
+    expect(homeSource).not.toContain("Create.");
     expect(homeSource).toContain("Discover skills and plugins from top creators");
     expect(homeSource).not.toContain("home-v2-sub-stat");
     expect(homeSource).toContain("HomeListingSection");
@@ -244,8 +253,12 @@ describe("restored UI design contract", () => {
     const css = styles();
     const installCardSource = read("src/components/SkillInstallCard.tsx");
 
-    expect(installCardSource).toContain("runtime-requirements-panel");
-    expect(cssRule(css, ".runtime-requirements-panel .stat")).toContain("color: var(--ink)");
+    expect(installCardSource).toContain("requirements-env-row");
+    expect(cssRule(css, ".tab-body.skill-install-tabs")).toContain("color: var(--ink)");
+    expect(cssRule(css, ".requirements-env-main code")).toContain("color: var(--ink)");
+    expect(cssRule(css, ".requirements-token,\n.requirements-badge")).toContain(
+      "color: var(--ink)",
+    );
 
     const darkRatio = contrastRatio(
       tokenValue(css, ":root", "--ink"),
@@ -269,7 +282,7 @@ describe("restored UI design contract", () => {
     expect(cssRule(css, ".skill-hero-lower.has-sidebar")).toContain(
       "grid-template-columns: minmax(0, 1fr) minmax(300px, 360px)",
     );
-    expect(cssRule(css, ".skill-hero-main-extra")).toContain("overflow: hidden");
+    expect(cssRule(css, ".skill-hero-main-extra")).toContain("overflow-x: clip");
     expect(cssRule(css, ".skill-install-command-shell")).toContain("max-width: 100%");
     expect(cssRule(css, ".skill-hero-action-grid")).toContain(
       "grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr))",

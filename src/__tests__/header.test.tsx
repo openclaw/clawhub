@@ -30,6 +30,7 @@ const defaultUnifiedSearchResult = {
         _id: "skills:weather",
         slug: "weather",
         displayName: "Weather Skill",
+        categories: ["development"],
         ownerUserId: "users:local",
         stats: { downloads: 1, stars: 2 },
         createdAt: 1,
@@ -47,6 +48,7 @@ const defaultUnifiedSearchResult = {
         channel: "community",
         isOfficial: false,
         summary: "Plugin weather tools.",
+        categories: ["channels"],
         ownerHandle: "local",
         createdAt: 1,
         updatedAt: 2,
@@ -225,9 +227,12 @@ function compactHeaderCss() {
   throw new Error("Missing compact header media query");
 }
 
+const scrollIntoViewMock = vi.fn();
+
 describe("Header", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    Element.prototype.scrollIntoView = scrollIntoViewMock;
     authStatusMock.mockReturnValue({
       isAuthenticated: false,
       isLoading: false,
@@ -414,9 +419,7 @@ describe("Header", () => {
 
     expect(document.activeElement).toBe(input);
     expect(input.getAttribute("aria-expanded")).toBe("true");
-    expect(screen.getByRole("tablist", { name: "Result type" })).toBeTruthy();
-    expect(screen.getByText("tabs")).toBeTruthy();
-    expect(screen.getByText("results")).toBeTruthy();
+    expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
     expect(screen.getByText("Start typing to search skills and plugins")).toBeTruthy();
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
       "",
@@ -425,27 +428,23 @@ describe("Header", () => {
     );
   });
 
-  it("preserves caret navigation in the search input and switches focused tabs with arrows", () => {
+  it("preserves caret navigation and moves through the unified results with vertical arrows", () => {
     render(<Header />);
 
     const input = screen.getByPlaceholderText("Search skills and plugins");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather plugin" } });
 
-    const skillsTab = screen.getByRole("tab", { name: "Skills" });
-    const pluginsTab = screen.getByRole("tab", { name: "Plugins" });
-
     expect(fireEvent.keyDown(input, { key: "ArrowLeft" })).toBe(true);
-    expect(skillsTab.getAttribute("aria-selected")).toBe("true");
-
-    skillsTab.focus();
-    fireEvent.keyDown(skillsTab, { key: "ArrowRight" });
-
-    expect(pluginsTab.getAttribute("aria-selected")).toBe("true");
-    expect(document.activeElement).toBe(pluginsTab);
+    const firstActiveId = input.getAttribute("aria-activedescendant");
+    const initialScrollCount = scrollIntoViewMock.mock.calls.length;
+    fireEvent.keyDown(input, { key: "ArrowDown" });
+    expect(input.getAttribute("aria-activedescendant")).not.toBe(firstActiveId);
+    expect(scrollIntoViewMock.mock.calls.length).toBeGreaterThan(initialScrollCount);
+    expect(scrollIntoViewMock).toHaveBeenLastCalledWith({ block: "nearest" });
   });
 
-  it("shows tabbed skills and plugins typeahead without users", () => {
+  it("shows skills and plugins together in grouped typeahead sections", () => {
     navigateMock.mockReset();
 
     render(<Header />);
@@ -454,16 +453,17 @@ describe("Header", () => {
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
 
-    const tablist = screen.getByRole("tablist", { name: "Result type" });
-    expect(within(tablist).getByRole("tab", { name: "Skills" })).toBeTruthy();
-    expect(within(tablist).getByRole("tab", { name: "Plugins" })).toBeTruthy();
-    expect(screen.getByText("tabs")).toBeTruthy();
-    expect(screen.getByText("results")).toBeTruthy();
-
     const typeahead = screen.getByRole("listbox");
+    const skillGroup = within(typeahead).getByRole("group", { name: "Skills" });
+    const pluginGroup = within(typeahead).getByRole("group", { name: "Plugins" });
     expect(screen.getByText("Weather Skill")).toBeTruthy();
     expect(screen.getByText("@local / weather")).toBeTruthy();
-    expect(screen.queryByText("Weather Plugin")).toBeNull();
+    expect(screen.getByText("Weather Plugin")).toBeTruthy();
+    expect(screen.getByText("@local / weather-plugin")).toBeTruthy();
+    expect(skillGroup.querySelector("svg.lucide-wrench")).not.toBeNull();
+    expect(pluginGroup.querySelector("svg.lucide-message-circle")).not.toBeNull();
+    expect(typeahead.querySelector("svg.lucide-package")).toBeNull();
+    expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
     expect(input.getAttribute("role")).toBe("combobox");
     expect(input.getAttribute("aria-autocomplete")).toBe("list");
     expect(input.getAttribute("aria-expanded")).toBe("true");
@@ -473,11 +473,6 @@ describe("Header", () => {
     expect(within(typeahead).queryByText("Publishers")).toBeNull();
     expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
 
-    fireEvent.click(within(tablist).getByRole("tab", { name: "Plugins" }));
-    expect(screen.getByText("Weather Plugin")).toBeTruthy();
-    expect(screen.queryByText("Weather Skill")).toBeNull();
-
-    fireEvent.click(within(tablist).getByRole("tab", { name: "Skills" }));
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
 
@@ -485,6 +480,33 @@ describe("Header", () => {
       to: "/search",
       search: { q: "weather", type: "skills" },
     });
+  });
+
+  it("omits scoped package prefixes from plugin typeahead metadata", () => {
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      pluginResults: [
+        {
+          ...defaultUnifiedSearchResult.pluginResults[0],
+          plugin: {
+            ...defaultUnifiedSearchResult.pluginResults[0].plugin,
+            name: "@openclaw/firecrawl-plugin",
+            displayName: "OpenClaw Firecrawl Plugin",
+            ownerHandle: "openclaw",
+          },
+        },
+      ],
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "firecrawl" } });
+
+    expect(screen.getByText("OpenClaw Firecrawl Plugin")).toBeTruthy();
+    expect(screen.getByText("@openclaw / firecrawl-plugin")).toBeTruthy();
+    expect(screen.queryByText("@openclaw / @openclaw/firecrawl-plugin")).toBeNull();
   });
 
   it("falls back to typed skill search when a typeahead skill has no owner handle", () => {
@@ -543,9 +565,7 @@ describe("Header", () => {
     fireEvent.change(input, { target: { value: "zzzz" } });
 
     expect(screen.getByText('No skills or plugins found for "zzzz"')).toBeTruthy();
-    expect(screen.getByRole("tablist", { name: "Result type" })).toBeTruthy();
-    expect(screen.getByText("tabs")).toBeTruthy();
-    expect(screen.getByText("results")).toBeTruthy();
+    expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
     expect(screen.queryByText('See skill results for "zzzz"')).toBeNull();
     expect(screen.queryByText('See plugin results for "zzzz"')).toBeNull();
   });

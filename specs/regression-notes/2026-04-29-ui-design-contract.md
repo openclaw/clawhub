@@ -8,7 +8,7 @@ Protected fundamentals:
 
 - Two-row header: brand, full-width desktop search, rectangular theme mode control, auth action, then content nav with `Skills`, `Plugins`, `Users`, and `About`.
 - Compact header: menu button, inline search, GitHub action, and visible content nav row.
-- Home hero: `BUILT BY THE COMMUNITY.`, `Tools built by thousands, ready in one search.`, search focus border behavior, slot-machine easter egg support, featured carousel, category grid breakpoints, and `Trending Now`.
+- Home hero: the `Equip / Install / Unleash` action headline, `Discover skills and plugins from top creators` subcopy, keyboard-accessible slot-machine headline trigger, canonical catalog listing, popular publishers, apps, and bring-your-own-skills sections.
 - Footer: restored four public sections and mobile section toggles.
 - Visual settings: no tweakcn overlay, custom-theme file, relaxed/compact density controls, or other nonfunctional visual preferences.
 
