@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
 import {
   expectLocalPersonaActive,
@@ -30,7 +31,7 @@ test("starring a skill survives refresh with the synchronized count", async ({
   });
 
   await signInAsLocalPersona(page, "user");
-  await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+  await page.goto(buildSkillDetailHref(ownerHandle, slug), { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expectLocalPersonaActive(page, "user");
 
