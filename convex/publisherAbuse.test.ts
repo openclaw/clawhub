@@ -1033,6 +1033,63 @@ describe("publisher abuse dry-run persistence", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it("rejects direct ban actions when the publisher was relinked", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async () => ({ ok: true }));
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const ctx = {
+      runMutation,
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseReviewNominations:nomination") {
+            return makeNomination({
+              _id: "publisherAbuseReviewNominations:nomination",
+              ownerKey: "publisher:publishers:candidate",
+              ownerPublisherId: "publishers:candidate",
+              ownerUserId: "users:previous-owner",
+              label: "potential_ban_candidate",
+              status: "pending",
+              latestScoreId: "publisherAbuseScores:score",
+              updatedAt: 1,
+            });
+          }
+          if (id === "publishers:candidate") {
+            return {
+              _id: "publishers:candidate",
+              kind: "user",
+              linkedUserId: "users:new-owner",
+            };
+          }
+          if (id === "users:new-owner") return { _id: "users:new-owner", role: "user" };
+          return null;
+        }),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      banPublisherAbuseOwnerHandler(ctx, {
+        nominationId: "publisherAbuseReviewNominations:nomination",
+        expectedLatestScoreId: "publisherAbuseScores:score",
+        expectedUpdatedAt: 1,
+        reason: "confirmed spam",
+      }),
+    ).rejects.toThrow(/linked user changed/i);
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("bans the linked owner and resolves the nomination in one mutation", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",

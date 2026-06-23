@@ -447,6 +447,7 @@ export const banPublisherAbuseOwner = mutation({
       throw new Error("Cannot ban publisher abuse nomination without a linked user");
     }
     await requirePublisherAbuseNominationNotExcluded(ctx, nomination);
+    await requirePublisherAbuseNominationStillTargetsLinkedUser(ctx, nomination);
 
     const reason = normalizeBanReason(args.reason);
     await ctx.runMutation(internal.users.banUserInternal, {
@@ -3204,6 +3205,20 @@ async function requirePublisherAbuseNominationNotExcluded(
   const publisher = await ctx.db.get(nomination.ownerPublisherId);
   if (!(await isPublisherExcludedFromPublisherAbuse(ctx, publisher))) return;
   throw new Error("Excluded publisher abuse nominations cannot be acted on.");
+}
+
+async function requirePublisherAbuseNominationStillTargetsLinkedUser(
+  ctx: Pick<MutationCtx, "db">,
+  nomination: Doc<"publisherAbuseReviewNominations">,
+) {
+  if (!nomination.ownerPublisherId) return;
+  const publisher = await ctx.db.get(nomination.ownerPublisherId);
+  if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+    throw new Error("Cannot ban publisher abuse nomination for an inactive publisher");
+  }
+  if (publisher.linkedUserId !== nomination.ownerUserId) {
+    throw new Error("Cannot ban publisher abuse nomination because the linked user changed");
+  }
 }
 
 function publisherAbuseAutobanReason(
