@@ -1,6 +1,7 @@
 /* @vitest-environment node */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { internal } from "./_generated/api";
 
 const { resendConstructorMock, resendSendMock } = vi.hoisted(() => ({
   resendConstructorMock: vi.fn(function ResendMock() {
@@ -62,6 +63,33 @@ type SendPublisherAbuseWarningHandler = {
   ) => Promise<unknown>;
 };
 
+function publisherAbuseWarningArgs() {
+  return {
+    nominationId: "publisherAbuseReviewNominations:candidate",
+    ownerKey: "publisher:publishers:candidate",
+    runId: "publisherAbuseScoreRuns:run",
+    scoreId: "publisherAbuseScores:score",
+    userId: "users:target",
+    to: "target@example.com",
+    handle: "target",
+    publisherHandle: "bulkpub",
+    warningPendingAt: 1_700_000_000_000,
+    graceMs: 7 * 24 * 60 * 60 * 1000,
+    score: {
+      modelVersion: "publisher-abuse-pressure.v2",
+      publishedSkills: 143,
+      totalInstalls: 2,
+      totalStars: 0,
+      totalDownloads: 30,
+      installsPerSkill: 0.01,
+      starsPerSkill: 0,
+      downloadsPerSkill: 0.21,
+      zScore: 3.2,
+      reasonCodes: ["high_catalog_volume"],
+    },
+  };
+}
+
 describe("transactional account emails", () => {
   beforeEach(() => {
     vi.stubEnv("RESEND_API_KEY", "resend_test");
@@ -71,6 +99,7 @@ describe("transactional account emails", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllEnvs();
   });
 
@@ -109,30 +138,7 @@ describe("transactional account emails", () => {
 
     const result = await (
       sendPublisherAbuseWarningInternal as unknown as SendPublisherAbuseWarningHandler
-    )._handler(ctx, {
-      nominationId: "publisherAbuseReviewNominations:candidate",
-      ownerKey: "publisher:publishers:candidate",
-      runId: "publisherAbuseScoreRuns:run",
-      scoreId: "publisherAbuseScores:score",
-      userId: "users:target",
-      to: "target@example.com",
-      handle: "target",
-      publisherHandle: "bulkpub",
-      warningPendingAt: 1_700_000_000_000,
-      graceMs: 7 * 24 * 60 * 60 * 1000,
-      score: {
-        modelVersion: "publisher-abuse-pressure.v2",
-        publishedSkills: 143,
-        totalInstalls: 2,
-        totalStars: 0,
-        totalDownloads: 30,
-        installsPerSkill: 0.01,
-        starsPerSkill: 0,
-        downloadsPerSkill: 0.21,
-        zScore: 3.2,
-        reasonCodes: ["high_catalog_volume"],
-      },
-    });
+    )._handler(ctx, publisherAbuseWarningArgs());
 
     expect(result).toEqual({ ok: true, id: "email_123" });
     expect(resendSendMock).toHaveBeenCalledTimes(1);
@@ -141,5 +147,67 @@ describe("transactional account emails", () => {
       idempotencyKey:
         "publisher-abuse-warning:publisherAbuseReviewNominations:candidate:users:target:1700000000000",
     });
+    expect(ctx.runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.publisherAbuse.recordPublisherAbuseWarningSentInternal,
+      {
+        nominationId: "publisherAbuseReviewNominations:candidate",
+        ownerKey: "publisher:publishers:candidate",
+        runId: "publisherAbuseScoreRuns:run",
+        scoreId: "publisherAbuseScores:score",
+        warningPendingAt: 1_700_000_000_000,
+        warningSentAt: 1_700_000_100_000,
+        deadlineAt: 1_700_604_900_000,
+      },
+    );
+  });
+
+  it("does not send publisher abuse warnings when the pending claim is stale", async () => {
+    const ctx = {
+      runMutation: vi.fn().mockResolvedValueOnce({ ok: false, reason: "stale_warning" }),
+    };
+
+    const result = await (
+      sendPublisherAbuseWarningInternal as unknown as SendPublisherAbuseWarningHandler
+    )._handler(ctx, publisherAbuseWarningArgs());
+
+    expect(result).toEqual({ ok: false, reason: "stale_warning" });
+    expect(resendSendMock).not.toHaveBeenCalled();
+    expect(ctx.runMutation).toHaveBeenCalledTimes(1);
+    expect(ctx.runMutation).toHaveBeenCalledWith(
+      internal.publisherAbuse.claimPublisherAbusePendingWarningInternal,
+      {
+        nominationId: "publisherAbuseReviewNominations:candidate",
+        runId: "publisherAbuseScoreRuns:run",
+        scoreId: "publisherAbuseScores:score",
+        warningPendingAt: 1_700_000_000_000,
+      },
+    );
+  });
+
+  it("clears publisher abuse pending warnings when email delivery fails", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    resendSendMock.mockResolvedValueOnce({ data: null, error: { message: "rejected" } });
+    const ctx = {
+      runMutation: vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }),
+    };
+
+    const result = await (
+      sendPublisherAbuseWarningInternal as unknown as SendPublisherAbuseWarningHandler
+    )._handler(ctx, publisherAbuseWarningArgs());
+
+    expect(result).toEqual({ ok: false, reason: "resend_error" });
+    expect(resendSendMock).toHaveBeenCalledTimes(1);
+    expect(ctx.runMutation).toHaveBeenCalledTimes(2);
+    expect(ctx.runMutation).toHaveBeenNthCalledWith(
+      2,
+      internal.publisherAbuse.clearPublisherAbusePendingWarningInternal,
+      {
+        nominationId: "publisherAbuseReviewNominations:candidate",
+        runId: "publisherAbuseScoreRuns:run",
+        scoreId: "publisherAbuseScores:score",
+        warningPendingAt: 1_700_000_000_000,
+      },
+    );
   });
 });
