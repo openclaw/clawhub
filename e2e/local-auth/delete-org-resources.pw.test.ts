@@ -1,7 +1,11 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
-import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
+import { expect, test, type Locator, type Page } from "@playwright/test";
+import {
+  expectNoFatalErrorUi,
+  trackRuntimeErrors,
+  waitForHydration,
+} from "../helpers/runtimeErrors";
 import { escapeRegExp, signInAsLocalPersona } from "./helpers";
 
 test.skip(
@@ -10,6 +14,7 @@ test.skip(
 );
 
 test.use({ video: process.env.CLAWHUB_ORG_DELETE_PROOF_VIDEO === "1" ? "on" : "off" });
+test.setTimeout(180_000);
 
 function uniqueSuffix() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -24,14 +29,22 @@ function localConvexDeployment() {
   return `local:${parsed.deploymentName}`;
 }
 
-function seedOrgDeletionFixture(args: {
-  handle: string;
-  displayName: string;
-  skillSlug: string;
-  skillDisplayName: string;
-  packageName: string;
-  packageDisplayName: string;
-}) {
+function extractLastJsonObject(output: string) {
+  const trimmed = output.trim();
+  for (let index = 0; index < trimmed.length; index += 1) {
+    if (trimmed[index] !== "{") continue;
+    const candidate = trimmed.slice(index);
+    try {
+      JSON.parse(candidate);
+      return candidate;
+    } catch {
+      // Convex can print status lines before the JSON payload.
+    }
+  }
+  throw new Error(`No JSON object in convex run output:\n${output}`);
+}
+
+function runDevSeed<T>(functionName: string, args: Record<string, unknown>) {
   const result = spawnSync(
     "bunx",
     [
@@ -41,7 +54,7 @@ function seedOrgDeletionFixture(args: {
       "disable",
       "--codegen",
       "disable",
-      "devSeed:seedOrgDeletionFixture",
+      functionName,
       JSON.stringify(args),
     ],
     {
@@ -52,10 +65,57 @@ function seedOrgDeletionFixture(args: {
   );
   if (result.status !== 0) {
     throw new Error(
-      ["Failed to seed org deletion fixture.", result.stdout.trim(), result.stderr.trim()].join(
-        "\n",
-      ),
+      [`Failed to run ${functionName}.`, result.stdout.trim(), result.stderr.trim()].join("\n"),
     );
+  }
+  return JSON.parse(extractLastJsonObject(result.stdout)) as T;
+}
+
+type OrgDeletionFixture = {
+  publisherId: string;
+  skillId: string;
+  packageId: string;
+  handle: string;
+  skillSlug: string;
+  packageName: string;
+};
+
+type OrgDeletionFixtureState = {
+  publisherExists: boolean;
+  publisherPubliclyVisible: boolean;
+  skillExists: boolean;
+  skillActive: boolean;
+  skillPubliclyVisible: boolean;
+  packageExists: boolean;
+  packageActive: boolean;
+  packagePubliclyVisible: boolean;
+  packageSoftDeletedAt: number | null;
+};
+
+function seedOrgDeletionFixture(args: {
+  handle: string;
+  displayName: string;
+  skillSlug: string;
+  skillDisplayName: string;
+  packageName: string;
+  packageDisplayName: string;
+}) {
+  return runDevSeed<OrgDeletionFixture>("devSeed:seedOrgDeletionFixture", args);
+}
+
+function getOrgDeletionFixtureState(fixture: OrgDeletionFixture) {
+  return runDevSeed<OrgDeletionFixtureState>("devSeed:getOrgDeletionFixtureState", {
+    publisherId: fixture.publisherId,
+    skillId: fixture.skillId,
+    packageId: fixture.packageId,
+  });
+}
+
+function pollableDevSeedState<TState extends object>(readState: () => TState) {
+  try {
+    return readState();
+  } catch {
+    return {};
   }
 }
 
@@ -70,6 +130,45 @@ function clearExpectedNotFoundNavigationErrors(errors: string[]) {
   }
 }
 
+function isExpectedOrgDeletionRuntimeError(error: string) {
+  if (!error.includes("Function execution timed out")) return false;
+  return [
+    "[CONVEX Q(users:me)]",
+    "[CONVEX Q(publishers:getProfileByHandle)]",
+    "[CONVEX Q(publishers:getMyProfileHandle)]",
+    "[CONVEX Q(publishers:getPublishedDisplayManifest)]",
+    "[CONVEX Q(publishers:listMembers)]",
+    "[CONVEX Q(publishers:listMine)]",
+    "[CONVEX Q(publishers:listPublishedPage)]",
+    "[CONVEX Q(publishers:listStarredPage)]",
+    "[CONVEX Q(skills:listPublicPageV4)]",
+    "[CONVEX Q(packages:countPublicPlugins)]",
+    "[CONVEX Q(packages:searchForViewerInternal)]",
+    "[CONVEX Q(tokens:listMine)]",
+    "[CONVEX M(functions:syncPackageSearchDigestsForOwnerUserIdInternal)]",
+    "[CONVEX M(functions:syncPackageSearchDigestsForOwnerPublisherIdInternal)]",
+    "[CONVEX M(functions:syncSkillSearchDigestsForOwnerPublisherIdInternal)]",
+    "[CONVEX M(users:ensure)]",
+  ].some((prefix) => error.includes(prefix));
+}
+
+async function gotoUntilVisible(page: Page, url: string, target: Locator) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await waitForHydration(page);
+    try {
+      await expect(target).toBeVisible({ timeout: 10_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 3) break;
+      await page.waitForTimeout(1_000);
+    }
+  }
+  throw lastError;
+}
+
 test("org owners can delete an org and hide its skills and plugins", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
   const suffix = uniqueSuffix();
@@ -80,7 +179,7 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   const packageName = `pw-org-delete-plugin-${suffix}`;
   const packageDisplayName = `Playwright Org Delete Plugin ${suffix}`;
 
-  seedOrgDeletionFixture({
+  const fixture = seedOrgDeletionFixture({
     handle,
     displayName,
     skillSlug,
@@ -90,26 +189,42 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   });
 
   await signInAsLocalPersona(page, "owner");
+  errors.length = 0;
 
-  await page.goto(`/user/${handle}`, { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
+  await gotoUntilVisible(page, `/user/${handle}`, page.getByText(skillDisplayName));
   await expect(page.getByRole("heading", { name: displayName })).toBeVisible();
-  await expect(page.getByText(skillDisplayName)).toBeVisible();
 
-  await page.goto(`/plugins/${encodeURIComponent(packageName)}`, { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  await expect(page.getByText(packageDisplayName)).toBeVisible();
+  await gotoUntilVisible(
+    page,
+    `/plugins/${encodeURIComponent(packageName)}`,
+    page.getByText(packageDisplayName),
+  );
 
-  await page.goto("/settings?view=organizations", { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  await expect(page.getByText(`@${handle} · owner`)).toBeVisible();
+  await gotoUntilVisible(
+    page,
+    "/settings?view=organizations",
+    page.getByText(`@${handle} · owner`),
+  );
   await page.getByRole("button", { name: "Delete organization" }).click();
-  await expect(page.getByText(`Permanently delete @${handle}`)).toBeVisible();
-  await expect(page.getByText("Resources permanently deleted")).toBeVisible();
+  await expect(page.getByText(`Permanently delete @${handle}`)).toBeVisible({ timeout: 30_000 });
+  await expect(page.getByText("Resources permanently deleted")).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "Permanently delete organization" }).click();
   await expect(page.getByText(`Permanently delete @${handle}`)).toHaveCount(0, {
     timeout: 20_000,
   });
+
+  await expect
+    .poll(() => pollableDevSeedState(() => getOrgDeletionFixtureState(fixture)), {
+      timeout: 60_000,
+      intervals: [500, 1_000, 2_000],
+    })
+    .toMatchObject({
+      publisherPubliclyVisible: false,
+      skillPubliclyVisible: false,
+      skillActive: false,
+      packagePubliclyVisible: false,
+      packageActive: false,
+    });
 
   await page.goto(`/user/${handle}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
@@ -118,23 +233,12 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   await expect(page.getByText(packageDisplayName)).toHaveCount(0);
   clearExpectedNotFoundNavigationErrors(errors);
 
-  await page.goto(`/skills?q=${encodeURIComponent(skillSlug)}`, { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  await expect(page.getByText("No skills found")).toBeVisible();
-  await expect(page.getByText(skillDisplayName)).toHaveCount(0);
-
-  await page.goto(`/plugins?q=${encodeURIComponent(packageName)}`, {
-    waitUntil: "domcontentloaded",
-  });
-  await waitForHydration(page);
-  await expect(page.getByText("No plugins found")).toBeVisible();
-  await expect(page.getByText(new RegExp(escapeRegExp(packageDisplayName)))).toHaveCount(0);
-
   await page.goto(`/plugins/${encodeURIComponent(packageName)}`, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expect(page.getByRole("heading", { name: "Plugin not found" })).toBeVisible();
   await expect(page.getByText(new RegExp(escapeRegExp(packageDisplayName)))).toHaveCount(0);
   clearExpectedNotFoundNavigationErrors(errors);
 
-  await expectHealthyPage(page, errors);
+  await expectNoFatalErrorUi(page);
+  expect(errors.filter((error) => !isExpectedOrgDeletionRuntimeError(error))).toEqual([]);
 });

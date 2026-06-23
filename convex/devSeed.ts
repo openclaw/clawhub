@@ -3961,6 +3961,36 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
   },
 });
 
+export const getOrgDeletionFixtureState: ReturnType<typeof rawInternalMutation> =
+  rawInternalMutation({
+    args: {
+      publisherId: v.id("publishers"),
+      skillId: v.id("skills"),
+      packageId: v.id("packages"),
+    },
+    handler: async (ctx, args) => {
+      const publisher = await ctx.db.get(args.publisherId);
+      const skill = await ctx.db.get(args.skillId);
+      const pkg = await ctx.db.get(args.packageId);
+      return {
+        ok: true as const,
+        publisherExists: Boolean(publisher),
+        publisherPubliclyVisible: Boolean(
+          publisher && !publisher.deletedAt && !publisher.deactivatedAt,
+        ),
+        skillExists: Boolean(skill),
+        skillActive: Boolean(skill && !skill.softDeletedAt),
+        skillPubliclyVisible: Boolean(
+          skill && !skill.softDeletedAt && !skill.hiddenAt && skill.moderationStatus !== "removed",
+        ),
+        packageExists: Boolean(pkg),
+        packageActive: Boolean(pkg && !pkg.softDeletedAt),
+        packagePubliclyVisible: Boolean(pkg && !pkg.softDeletedAt),
+        packageSoftDeletedAt: pkg?.softDeletedAt ?? null,
+      };
+    },
+  });
+
 type VersionDeletionFixtureArgs = {
   skillSlug: string;
   skillDisplayName: string;

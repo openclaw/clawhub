@@ -30,7 +30,7 @@ function routeSegment(value: string) {
 
 export function buildPluginDetailHref(name: string, options: PluginRouteOptions = {}) {
   const scoped = parseScopedPackageName(name);
-  const ownerHandle = cleanOwnerHandle(options.ownerHandle) ?? cleanOwnerHandle(scoped?.scope);
+  const ownerHandle = cleanOwnerHandle(scoped?.scope) ?? cleanOwnerHandle(options.ownerHandle);
 
   if (ownerHandle) {
     return `/${routeSegment(ownerHandle)}/plugins/${routeSegment(scoped?.name ?? name)}`;
@@ -45,6 +45,22 @@ export function buildPluginDetailHref(name: string, options: PluginRouteOptions 
 
 export function buildPluginSecurityAuditHref(name: string, options: PluginRouteOptions = {}) {
   return `${buildPluginDetailHref(name, options)}/security-audit`;
+}
+
+export function buildPluginCanonicalHrefForRequestedPath(
+  pathname: string,
+  requestedName: string,
+  resolvedName: string,
+  options: PluginRouteOptions = {},
+) {
+  const requestedDetailPath = buildPluginDetailHref(requestedName);
+  if (
+    pathname === `${requestedDetailPath}/security-audit` ||
+    pathname.startsWith(`${requestedDetailPath}/security/`)
+  ) {
+    return buildPluginSecurityAuditHref(resolvedName, options);
+  }
+  return buildPluginDetailHref(resolvedName, options);
 }
 
 export function buildPluginValidationHref(name: string) {

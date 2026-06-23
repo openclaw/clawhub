@@ -148,6 +148,7 @@ type EnqueueSkillVersionScanArgs = {
   priority?: number;
   waitForVtMs?: number;
   preserveActiveJob?: boolean;
+  preserveExistingJob?: boolean;
 };
 
 type EnqueuePackageReleaseScanArgs = {
@@ -546,6 +547,8 @@ export const enqueueSkillVersionScanInternal = internalMutation({
     source: jobSourceValidator,
     priority: v.optional(v.number()),
     waitForVtMs: v.optional(v.number()),
+    preserveActiveJob: v.optional(v.boolean()),
+    preserveExistingJob: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     return enqueueSkillVersionScan(ctx, args);
@@ -2045,6 +2048,14 @@ async function enqueueSkillVersionScan(ctx: MutationCtx, args: EnqueueSkillVersi
       updatedAt: now,
     });
     return { ok: true as const, jobId: active._id, alreadyQueued: true as const };
+  }
+  const preservedExisting = args.preserveExistingJob
+    ? existing
+        .filter((job) => job.source === args.source)
+        .sort((a, b) => b.updatedAt - a.updatedAt)[0]
+    : undefined;
+  if (preservedExisting) {
+    return { ok: true as const, jobId: preservedExisting._id, alreadyQueued: true as const };
   }
 
   const jobId = await ctx.db.insert("securityScanJobs", {
