@@ -47,6 +47,7 @@ import {
 } from "../lib/homeListingData";
 import { formatCompactStat } from "../lib/numberFormat";
 import { fetchPluginCatalog, type PackageListItem } from "../lib/packageApi";
+import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import type { PublicSkill, PublicUser } from "../lib/publicUser";
 import { truncateText } from "../lib/truncateText";
 import { HomeListingCategorySelect } from "./HomeListingCategorySelect";
@@ -221,9 +222,10 @@ function HomeListingSkillRow({ entry, showStats }: { entry: SkillPageEntry; show
 
 function HomeListingPluginRow({ plugin }: { plugin: PackageListItem }) {
   const name = plugin.displayName || plugin.name;
+  const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
-    <Link to="/plugins/$name" params={{ name: plugin.name }} className="home-v2-listing-row">
+    <Link to={pluginHref} className="home-v2-listing-row">
       <span className="home-v2-listing-row-icon" aria-hidden="true">
         <MarketplaceIcon kind="plugin" label={name} size="sm" />
       </span>
@@ -292,9 +294,10 @@ function HomeListingSkillCard({ entry, showStats }: { entry: SkillPageEntry; sho
 
 function HomeListingPluginCard({ plugin }: { plugin: PackageListItem }) {
   const name = plugin.displayName || plugin.name;
+  const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: plugin.ownerHandle });
 
   return (
-    <Link to="/plugins/$name" params={{ name: plugin.name }} className="home-v2-listing-card">
+    <Link to={pluginHref} className="home-v2-listing-card">
       <div className="home-v2-listing-card-head">
         <span className="home-v2-listing-card-icon" aria-hidden="true">
           <MarketplaceIcon kind="plugin" label={name} size="sm" />

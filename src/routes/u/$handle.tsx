@@ -1,10 +1,10 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
+import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 
 export const Route = createFileRoute("/u/$handle")({
   beforeLoad: ({ params }) => {
     throw redirect({
-      to: "/user/$handle",
-      params: { handle: params.handle },
+      href: buildPublisherProfileHref(params.handle),
       replace: true,
     });
   },

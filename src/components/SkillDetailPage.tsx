@@ -19,6 +19,7 @@ import {
 } from "../lib/authErrorMessage";
 import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
@@ -517,14 +518,14 @@ export function SkillDetailPage({
     const params = { owner: ownerParam, slug: redirectSlug };
     if (mode === "settings") {
       void navigate({
-        to: "/$owner/$slug/settings",
+        to: "/$owner/skills/$slug/settings",
         params,
         replace: true,
       });
       return;
     }
     void navigate({
-      to: "/$owner/$slug",
+      to: "/$owner/skills/$slug",
       params,
       replace: true,
     });
@@ -803,9 +804,7 @@ export function SkillDetailPage({
   const securitySummary =
     latestVersion || githubScanStatus ? (
       <DetailSecuritySummary
-        auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
-          skill.slug,
-        )}/security-audit`}
+        auditHref={buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)}
         vtAnalysis={latestVersion?.vtAnalysis ?? null}
         llmAnalysis={latestVersion?.llmAnalysis ?? null}
         githubScanStatus={githubScanStatus}

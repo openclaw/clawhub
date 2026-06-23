@@ -41,8 +41,8 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
 
   return (
     <Link
-      to="/user/$handle"
-      params={{ handle }}
+      to="/$slug"
+      params={{ slug: handle }}
       className={`publisher-card publisher-card-${variant}`}
       aria-label={`Publisher: ${publisher.displayName}`}
     >

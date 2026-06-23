@@ -1,4 +1,4 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, redirect } from "@tanstack/react-router";
 import { normalizeCatalogTopic } from "clawhub-schema";
 import { usePaginatedQuery, useQuery } from "convex/react";
 import { Building2, Download, Package, Star, Users, Wrench, type LucideIcon } from "lucide-react";
@@ -14,6 +14,7 @@ import { Card, CardContent } from "../../components/ui/card";
 import { Skeleton } from "../../components/ui/skeleton";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
+import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import type {
   PublicPublisher,
   PublicPublisherCatalogDisplay,
@@ -23,11 +24,14 @@ import type {
 import { readPublicDownloadCount } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/user/$handle")({
+  beforeLoad: ({ params }) => {
+    throw redirect({
+      href: buildPublisherProfileHref(params.handle),
+      replace: true,
+    });
+  },
   loader: async ({ params }) => {
-    const { convexHttp } = await import("../../convex/client");
-    const publisher = (await convexHttp.query(api.publishers.getProfileByHandle, {
-      handle: params.handle,
-    })) as PublicPublisherListItem | null;
+    const publisher = await loadPublisherProfile(params.handle);
     if (!publisher) throw notFound();
     return { publisher };
   },
@@ -54,6 +58,13 @@ export const Route = createFileRoute("/user/$handle")({
   },
   component: PublisherProfile,
 });
+
+export async function loadPublisherProfile(handle: string) {
+  const { convexHttp } = await import("../../convex/client");
+  return (await convexHttp.query(api.publishers.getProfileByHandle, {
+    handle,
+  })) as PublicPublisherListItem | null;
+}
 
 type PublisherMemberResult = {
   publisher: PublicPublisher | null;
@@ -91,6 +102,16 @@ function PublisherProfile() {
   const { publisher: loaderPublisher } = Route.useLoaderData() as {
     publisher: PublicPublisherListItem;
   };
+  return <PublisherProfilePage handle={handle} loaderPublisher={loaderPublisher} />;
+}
+
+export function PublisherProfilePage({
+  handle,
+  loaderPublisher,
+}: {
+  handle: string;
+  loaderPublisher: PublicPublisherListItem;
+}) {
   const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>("skills");
   const publishedKind: "skill" | "plugin" = catalogTab === "plugins" ? "plugin" : "skill";
   const queriedPublisher = useQuery(api.publishers.getProfileByHandle, { handle }) as
@@ -208,8 +229,8 @@ function PublisherProfile() {
                     ? visibleAffiliations.map((entry) => (
                         <Link
                           key={entry.publisher._id}
-                          to="/user/$handle"
-                          params={{ handle: entry.publisher.handle }}
+                          to="/$slug"
+                          params={{ slug: entry.publisher.handle }}
                           className="publisher-profile-affiliation-badge"
                         >
                           <MarketplaceIcon
@@ -283,8 +304,8 @@ function PublisherProfile() {
                     {affiliations.map((entry) => (
                       <Link
                         key={entry.publisher._id}
-                        to="/user/$handle"
-                        params={{ handle: entry.publisher.handle }}
+                        to="/$slug"
+                        params={{ slug: entry.publisher.handle }}
                         className="publisher-profile-org"
                       >
                         <MarketplaceIcon
@@ -317,8 +338,8 @@ function PublisherProfile() {
                       {members?.members.map((entry) => (
                         <Link
                           key={`${entry.user._id}:${entry.role}`}
-                          to="/user/$handle"
-                          params={{ handle: entry.user.handle ?? publisher.handle }}
+                          to="/$slug"
+                          params={{ slug: entry.user.handle ?? publisher.handle }}
                           className="publisher-profile-member"
                         >
                           <MarketplaceIcon

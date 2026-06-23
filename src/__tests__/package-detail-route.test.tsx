@@ -78,6 +78,7 @@ vi.mock("@tanstack/react-router", () => ({
     select?: (state: { location: { pathname: string } }) => string;
   }) => (select ? select({ location: { pathname: pathnameMock } }) : pathnameMock),
   useRouter: () => ({ invalidate: routerInvalidateMock }),
+  redirect: (options: unknown) => ({ redirect: options }),
   Outlet: () => <div data-testid="nested-plugin-route" />,
   Link: ({
     children,
@@ -909,7 +910,7 @@ describe("plugin detail route", () => {
     const { container } = render(<Component />);
 
     expect(
-      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/user/openclaw"]'),
+      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/openclaw"]'),
     ).toBeTruthy();
   });
 
@@ -931,7 +932,7 @@ describe("plugin detail route", () => {
     const { container } = render(<Component />);
 
     const packageCrumb = container.querySelector(
-      'nav[aria-label="Plugin breadcrumbs"] a[href="/plugins/@openclaw/firecrawl-plugin"]',
+      'nav[aria-label="Plugin breadcrumbs"] a[href="/openclaw/plugins/firecrawl-plugin"]',
     );
     expect(packageCrumb?.textContent).toBe("firecrawl-plugin");
   });
@@ -1978,16 +1979,15 @@ describe("plugin detail route", () => {
     fetchPackageReadmeMock.mockResolvedValueOnce("README");
     fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
 
-    const result = await loader({ params: { name: "matrix" } });
+    await expect(loader({ params: { name: "matrix" } })).rejects.toEqual({
+      redirect: { href: "/openclaw/plugins/matrix", replace: true },
+    });
 
     expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
     expect(fetchPackageVersions).toHaveBeenCalledWith("@openclaw/matrix", { limit: 20 });
-    expect(result.versions).toEqual(emptyVersions);
-    expect(result.detail.package?.name).toBe("@openclaw/matrix");
-    expect(result.rateLimited).toBeNull();
   });
 
   it("uses extension npm config for short plugin route candidates", async () => {
@@ -2021,7 +2021,9 @@ describe("plugin detail route", () => {
     fetchPackageReadmeMock.mockResolvedValueOnce("README");
     fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
 
-    const result = await loader({ params: { name: "anthropic" } });
+    await expect(loader({ params: { name: "anthropic" } })).rejects.toEqual({
+      redirect: { href: "/openclaw/plugins/anthropic-provider", replace: true },
+    });
 
     expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/anthropic-provider");
@@ -2030,6 +2032,5 @@ describe("plugin detail route", () => {
       "@openclaw/anthropic-provider",
       "2026.3.22",
     );
-    expect(result.detail.package?.name).toBe("@openclaw/anthropic-provider");
   });
 });

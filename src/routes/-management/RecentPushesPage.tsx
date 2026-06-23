@@ -50,7 +50,7 @@ export function RecentPushesPage({
                 {entry.skill ? (
                   <Button asChild>
                     <Link
-                      to="/$owner/$slug"
+                      to="/$owner/skills/$slug"
                       params={{
                         owner: resolveOwnerParam(
                           entry.owner?.handle ?? null,

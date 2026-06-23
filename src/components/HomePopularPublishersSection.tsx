@@ -40,8 +40,8 @@ function PopularPublisherCard({
 
   return (
     <Link
-      to="/user/$handle"
-      params={{ handle: pinned.handle }}
+      to="/$slug"
+      params={{ slug: pinned.handle }}
       className="home-v2-popular-publisher-card"
       aria-label={`${name}, @${pinned.handle}`}
       draggable={false}

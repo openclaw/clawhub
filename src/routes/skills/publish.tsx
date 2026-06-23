@@ -751,7 +751,7 @@ export function Upload() {
           toast.success(`Published ${trimmedSlug}@${trimmedVersion}`);
         }
         void navigate({
-          to: "/$owner/$slug",
+          to: "/$owner/skills/$slug",
           params: { owner: ownerParam, slug: trimmedSlug },
           search: {},
         });

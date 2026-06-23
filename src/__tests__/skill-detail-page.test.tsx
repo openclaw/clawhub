@@ -1040,7 +1040,7 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
     expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
-      "/steipete/weather/security-audit",
+      "/steipete/skills/weather/security-audit",
     );
     const sidebarLabels = Array.from(
       sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
@@ -1366,7 +1366,7 @@ describe("SkillDetailPage", () => {
       expect(navigateMock).toHaveBeenCalled();
     });
     expect(navigateMock).toHaveBeenCalledWith({
-      to: "/$owner/$slug",
+      to: "/$owner/skills/$slug",
       params: { owner: "steipete", slug: "weather" },
       replace: true,
     });
@@ -1423,7 +1423,7 @@ describe("SkillDetailPage", () => {
       expect(navigateMock).toHaveBeenCalled();
     });
     expect(navigateMock).toHaveBeenCalledWith({
-      to: "/$owner/$slug",
+      to: "/$owner/skills/$slug",
       params: { owner: "steipete", slug: "weather" },
       replace: true,
     });
@@ -1525,7 +1525,7 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect(screen.getAllByText("Weather").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /settings/i }).getAttribute("href")).toBe(
-      "/SteiPete/weather/settings",
+      "/SteiPete/skills/weather/settings",
     );
     expect(navigateMock).not.toHaveBeenCalled();
   });
@@ -1778,7 +1778,7 @@ describe("SkillDetailPage", () => {
     const { unmount } = render(<SkillDetailPage slug="weather" />);
 
     const settingsLink = await screen.findByRole("link", { name: /settings/i });
-    expect(settingsLink.getAttribute("href")).toBe("/steipete/weather/settings");
+    expect(settingsLink.getAttribute("href")).toBe("/steipete/skills/weather/settings");
     expect(screen.queryByText(/Owner tools/i)).toBeNull();
     unmount();
 

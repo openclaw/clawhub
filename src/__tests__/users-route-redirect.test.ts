@@ -40,8 +40,7 @@ describe("users route redirect", () => {
 
     expect(() => route.__config.beforeLoad({ params: { handle: "alice" }, search: {} })).toThrow();
     expect(redirectMock).toHaveBeenCalledWith({
-      to: "/user/$handle",
-      params: { handle: "alice" },
+      href: "/alice",
       replace: true,
     });
   });
@@ -58,8 +57,7 @@ describe("users route redirect", () => {
 
     expect(() => route.__config.beforeLoad({ params: { handle: "alice" }, search: {} })).toThrow();
     expect(redirectMock).toHaveBeenCalledWith({
-      to: "/user/$handle",
-      params: { handle: "alice" },
+      href: "/alice",
       replace: true,
     });
   });
@@ -78,8 +76,7 @@ describe("users route redirect", () => {
       route.__config.beforeLoad({ params: { handle: "openclaw" }, search: {} }),
     ).toThrow();
     expect(redirectMock).toHaveBeenCalledWith({
-      to: "/user/$handle",
-      params: { handle: "openclaw" },
+      href: "/openclaw",
       replace: true,
     });
   });

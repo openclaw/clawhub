@@ -16,8 +16,26 @@ export function displayPluginPackageName(name: string) {
   return parseScopedPackageName(name)?.name ?? name;
 }
 
-export function buildPluginDetailHref(name: string) {
+type PluginRouteOptions = {
+  ownerHandle?: string | null;
+};
+
+function cleanOwnerHandle(ownerHandle: string | null | undefined) {
+  return ownerHandle?.trim().replace(/^@+/, "") || null;
+}
+
+function routeSegment(value: string) {
+  return encodeURIComponent(value.trim().replace(/^@+/, ""));
+}
+
+export function buildPluginDetailHref(name: string, options: PluginRouteOptions = {}) {
   const scoped = parseScopedPackageName(name);
+  const ownerHandle = cleanOwnerHandle(options.ownerHandle) ?? cleanOwnerHandle(scoped?.scope);
+
+  if (ownerHandle) {
+    return `/${routeSegment(ownerHandle)}/plugins/${routeSegment(scoped?.name ?? name)}`;
+  }
+
   if (!scoped) return `/plugins/${encodeURIComponent(name)}`;
 
   return `/plugins/@${encodeURIComponent(scoped.scope.slice(1))}/${encodeURIComponent(
@@ -25,8 +43,8 @@ export function buildPluginDetailHref(name: string) {
   )}`;
 }
 
-export function buildPluginSecurityAuditHref(name: string) {
-  return `${buildPluginDetailHref(name)}/security-audit`;
+export function buildPluginSecurityAuditHref(name: string, options: PluginRouteOptions = {}) {
+  return `${buildPluginDetailHref(name, options)}/security-audit`;
 }
 
 export function buildPluginValidationHref(name: string) {
@@ -36,4 +54,10 @@ export function buildPluginValidationHref(name: string) {
 export function packageNameFromScopedRoute(scope: string, name: string) {
   if (!scope.startsWith("@") || !name || name.includes("/")) return null;
   return `${scope}/${name}`;
+}
+
+export function packageNameFromPublisherPluginRoute(owner: string, name: string) {
+  const ownerHandle = cleanOwnerHandle(owner);
+  if (!ownerHandle || !name || name.includes("/")) return null;
+  return `@${ownerHandle}/${name}`;
 }

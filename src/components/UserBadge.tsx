@@ -5,6 +5,7 @@ import type { Id } from "../../convex/_generated/dataModel";
 import { convexHttp } from "../convex/client";
 import { hasOwnProperty } from "../lib/hasOwnProperty";
 import { formatCompactStat } from "../lib/numberFormat";
+import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import { OfficialBadge } from "./OfficialBadge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
@@ -47,7 +48,7 @@ export function UserBadge({
     hasOwnProperty(user, "name") && typeof user.name === "string" ? user.name.trim() : undefined;
   const displayName = user?.displayName?.trim() || userName || null;
   const handle = user?.handle ?? fallbackHandle ?? null;
-  const href = handle ? `/user/${encodeURIComponent(handle)}` : null;
+  const href = handle ? buildPublisherProfileHref(handle) : null;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;
   const showInlineMutedHandle = showMutedHandle && Boolean(handle) && Boolean(displayName);

@@ -1,11 +1,14 @@
-import { createFileRoute, notFound } from "@tanstack/react-router";
+import { createFileRoute, notFound, redirect } from "@tanstack/react-router";
 import {
   loadPluginSecurityAudit,
   PluginSecurityAuditPage,
   pluginSecurityAuditHead,
   type PluginSecurityAuditLoaderData,
 } from "../../$name/security-audit";
-import { packageNameFromScopedRoute } from "../../../../lib/pluginRoutes";
+import {
+  buildPluginSecurityAuditHref,
+  packageNameFromScopedRoute,
+} from "../../../../lib/pluginRoutes";
 
 function packageNameFromParams(params: { scope: string; name: string }) {
   const packageName = packageNameFromScopedRoute(params.scope, params.name);
@@ -15,7 +18,10 @@ function packageNameFromParams(params: { scope: string; name: string }) {
 
 export const Route = createFileRoute("/plugins/$scope/$name/security-audit")({
   beforeLoad: ({ params }) => {
-    packageNameFromParams(params);
+    throw redirect({
+      href: buildPluginSecurityAuditHref(packageNameFromParams(params)),
+      statusCode: 308,
+    });
   },
   loader: async ({ params }) => loadPluginSecurityAudit(packageNameFromParams(params)),
   head: ({ params, loaderData }) =>

@@ -15,7 +15,7 @@ OpenAPI: `/api/v1/openapi.json`.
 
 ## Public catalog reuse
 
-Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing (`https://clawhub.ai/<owner>/<slug>`), and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
+Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing (`https://clawhub.ai/<owner>/skills/<slug>`), and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
 
 Web slug shortcuts resolve across registry families, but API clients should use
 the canonical URLs returned by read endpoints instead of reconstructing route
@@ -485,8 +485,8 @@ Response:
       "version": "1.2.3",
       "createdAt": 0,
       "checkedAt": 0,
-      "skillUrl": "https://clawhub.ai/steipete/gifgrep",
-      "securityAuditUrl": "https://clawhub.ai/steipete/gifgrep/security-audit?version=1.2.3",
+      "skillUrl": "https://clawhub.ai/steipete/skills/gifgrep",
+      "securityAuditUrl": "https://clawhub.ai/steipete/skills/gifgrep/security-audit?version=1.2.3",
       "security": {
         "status": "clean",
         "passed": true,

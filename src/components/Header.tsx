@@ -27,7 +27,8 @@ import {
 } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
-import { displayPluginPackageName } from "../lib/pluginRoutes";
+import { buildSkillDetailHref } from "../lib/ownerRoute";
+import { buildPluginDetailHref, displayPluginPackageName } from "../lib/pluginRoutes";
 import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
@@ -295,12 +296,13 @@ export default function Header() {
         return;
       }
       void navigate({
-        to: `/${encodeURIComponent(resultOwnerHandle)}/${encodeURIComponent(item.result.skill.slug)}`,
+        to: buildSkillDetailHref(resultOwnerHandle, item.result.skill.slug),
       });
     } else if (item.kind === "plugin") {
       void navigate({
-        to: "/plugins/$name",
-        params: { name: item.result.plugin.name },
+        to: buildPluginDetailHref(item.result.plugin.name, {
+          ownerHandle: item.result.plugin.ownerHandle,
+        }),
       });
     } else {
       void navigate({
@@ -576,8 +578,8 @@ export default function Header() {
                   {profileHandle ? (
                     <DropdownMenuItem asChild>
                       <Link
-                        to="/user/$handle"
-                        params={{ handle: profileHandle }}
+                        to="/$slug"
+                        params={{ slug: profileHandle }}
                         className="flex items-center gap-2"
                       >
                         <UserRound size={14} aria-hidden="true" />

@@ -2328,13 +2328,13 @@ describe("httpApiV1 handlers", () => {
           ownerHandle: "openclaw",
           slug: "demo",
           ref: "@openclaw/demo",
-          url: "https://example.com/openclaw/demo",
+          url: "https://example.com/openclaw/skills/demo",
         },
         {
           ownerHandle: "patrick",
           slug: "demo",
           ref: "@patrick/demo",
-          url: "https://example.com/patrick/demo",
+          url: "https://example.com/patrick/skills/demo",
         },
       ],
     });
@@ -2359,8 +2359,8 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body.matches).toEqual([
-      expect.objectContaining({ url: "https://clawhub.ai/openclaw/demo" }),
-      expect.objectContaining({ url: "https://clawhub.ai/patrick/demo" }),
+      expect.objectContaining({ url: "https://clawhub.ai/openclaw/skills/demo" }),
+      expect.objectContaining({ url: "https://clawhub.ai/patrick/skills/demo" }),
     ]);
   });
 
@@ -5284,8 +5284,8 @@ describe("httpApiV1 handlers", () => {
           version: "1.0.0",
           createdAt: 1,
           checkedAt: 3,
-          skillUrl: "https://example.com/acme/demo",
-          securityAuditUrl: "https://example.com/acme/demo/security-audit?version=1.0.0",
+          skillUrl: "https://example.com/acme/skills/demo",
+          securityAuditUrl: "https://example.com/acme/skills/demo/security-audit?version=1.0.0",
           security: {
             status: "clean",
             passed: true,
@@ -5349,8 +5349,8 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items[0]).toMatchObject({
-      skillUrl: "https://clawhub.ai/acme/demo",
-      securityAuditUrl: "https://clawhub.ai/acme/demo/security-audit?version=1.0.0",
+      skillUrl: "https://clawhub.ai/acme/skills/demo",
+      securityAuditUrl: "https://clawhub.ai/acme/skills/demo/security-audit?version=1.0.0",
     });
   });
 
@@ -5757,10 +5757,10 @@ describe("httpApiV1 handlers", () => {
       reasons: [],
       slug: "demo",
       displayName: "Demo",
-      pageUrl: "https://clawhub.ai/acme/demo",
+      pageUrl: "https://clawhub.ai/acme/skills/demo",
       publisherHandle: "acme",
       publisherDisplayName: "Acme",
-      publisherProfileUrl: "https://clawhub.ai/user/acme",
+      publisherProfileUrl: "https://clawhub.ai/acme",
       version: "1.0.0",
       resolvedFrom: "tag",
       tag: "stable",
