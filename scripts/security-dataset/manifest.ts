@@ -1,5 +1,6 @@
 export type SnapshotManifestInput = {
   snapshotId: string;
+  sourceSnapshotId?: string | null;
   createdAt: string;
   repoGitSha: string;
   convexDeployment: string;
@@ -16,7 +17,9 @@ export type SnapshotManifestInput = {
     clawScanFindings: number;
     labels: number;
     splits: number;
+    huggingFaceRows?: number;
   };
+  outputSizes?: Record<string, number>;
   scannerVersions: string[];
   modelNames: string[];
   redactionPolicyVersion: string;
@@ -25,11 +28,20 @@ export type SnapshotManifestInput = {
     createdAtGte: number | null;
     createdAtLt: number | null;
   };
+  huggingFaceDataset?: {
+    repo: string;
+    revision: string;
+    commit: string | null;
+    configNames: string[];
+    splitNames: string[];
+    rowCountsBySplit: Record<string, number>;
+  };
 };
 
 export function buildSecurityDatasetManifest(input: SnapshotManifestInput) {
   return {
     snapshot_id: input.snapshotId,
+    source_snapshot_id: input.sourceSnapshotId ?? input.snapshotId,
     created_at: input.createdAt,
     repo_git_sha: input.repoGitSha,
     convex_deployment: input.convexDeployment,
@@ -47,7 +59,9 @@ export function buildSecurityDatasetManifest(input: SnapshotManifestInput) {
       clawscan_findings: input.rowCounts.clawScanFindings,
       labels: input.rowCounts.labels,
       splits: input.rowCounts.splits,
+      huggingface_rows: input.rowCounts.huggingFaceRows ?? 0,
     },
+    output_sizes: input.outputSizes ?? {},
     scanner_versions: input.scannerVersions,
     model_names: input.modelNames,
     redaction_policy_version: input.redactionPolicyVersion,
@@ -57,6 +71,7 @@ export function buildSecurityDatasetManifest(input: SnapshotManifestInput) {
       created_at_gte: input.timeWindow?.createdAtGte ?? null,
       created_at_lt: input.timeWindow?.createdAtLt ?? null,
     },
+    huggingface_dataset: input.huggingFaceDataset ?? null,
   };
 }
 
