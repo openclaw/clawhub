@@ -1543,6 +1543,130 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
   });
 
+  it("finds publishers with published skills outside the popular install window", async () => {
+    const popularRows = Array.from({ length: 500 }, (_, index) => ({
+      _id: `publishers:popular-${index}`,
+      _creationTime: index,
+      kind: "user" as const,
+      handle: `popular-${index}`,
+      displayName: `Popular ${index}`,
+      linkedUserId: `users:popular-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 500 - index,
+      totalDownloads: 500 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const vyctorbrzezowski = {
+      _id: "publishers:vyctorbrzezowski",
+      _creationTime: 1,
+      kind: "user" as const,
+      handle: "vyctorbrzezowski",
+      displayName: "Vyctor Brzezowski",
+      linkedUserId: "users:vyctorbrzezowski",
+      publishedSkills: 5,
+      publishedPackages: 1,
+      totalInstalls: 46,
+      totalDownloads: 1288,
+      totalStars: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:vyctorbrzezowski") {
+            return { _id: id, image: "https://github.com/vyctorbrzezowski.png" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  fields.handle === "vyctorbrzezowski" ? vyctorbrzezowski : null,
+                ),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_installs") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  const upper = (range.lt as { value: string } | undefined)?.value ?? "";
+                  if (fields.kind === "user" && prefix === "vyctor" && upper === "vyctor\uffff") {
+                    return [vyctorbrzezowski];
+                  }
+                  return [];
+                }),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_installs") {
+              return indexedRows([
+                {
+                  _id: "skills:vyctor-demo",
+                  ownerPublisherId: "publishers:vyctorbrzezowski",
+                  softDeletedAt: undefined,
+                  displayName: "Demo Skill",
+                  statsInstallsAllTime: 46,
+                  statsDownloads: 1288,
+                  statsStars: 0,
+                  updatedAt: 1,
+                },
+              ]);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_installs") {
+              return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const prefixResult = await listPublicPageHandler(ctx as never, {
+      query: "vyctor",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+    const exactResult = await listPublicPageHandler(ctx as never, {
+      query: "vyctorbrzezowski",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(prefixResult.page.map((item) => item.handle)).toEqual(["vyctorbrzezowski"]);
+    expect(prefixResult.page[0]?.stats.skills).toBe(5);
+    expect(exactResult.page.map((item) => item.handle)).toEqual(["vyctorbrzezowski"]);
+  });
+
   it("filters hidden legacy user publishers before counting and paginating public publisher pages", async () => {
     const publisherRows = [
       {
