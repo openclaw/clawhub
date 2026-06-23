@@ -13,6 +13,7 @@ import * as codexScanWorker from "./run-codex-scan-worker";
 import {
   buildPrompt,
   normalizeSkillSpectorAnalysis,
+  processJob,
   resolveSkillSpectorScanInput,
   writeArtifactWorkspace,
   writeJobDiagnostic,
@@ -21,6 +22,7 @@ import {
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
 });
 
@@ -28,6 +30,18 @@ async function tempDir() {
   const dir = await mkdtemp(join(tmpdir(), "clawhub-codex-worker-test-"));
   tempDirs.push(dir);
   return dir;
+}
+
+function fakeBareSecrets() {
+  return {
+    apiKeyLabel: ["API", "key"].join(" "),
+    awsAccessKey: `AKIA${"A".repeat(16)}`,
+    githubClassicPat: ["ghp", "a".repeat(36)].join("_"),
+    githubPat: ["github", "pat", "a".repeat(36)].join("_"),
+    googleApiKey: `AIza${"A".repeat(35)}`,
+    openAiKey: ["sk", "a".repeat(24)].join("-"),
+    proseApiKey: ["prose", "secret"].join("-"),
+  };
 }
 
 describe("run-codex-scan-worker diagnostics", () => {
@@ -344,6 +358,253 @@ describe("run-codex-scan-worker diagnostics", () => {
       targetKind: "skillVersion",
     });
     expect(metadata.target.files).toEqual([{ path: "SKILL.md", sha256: "abc123", size: 42 }]);
+  });
+
+  it("omits signed artifact URLs from download failure errors", async () => {
+    const bareSecrets = fakeBareSecrets();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("forbidden", { status: 403 }));
+    const workspace = await tempDir();
+
+    await expect(
+      writeArtifactWorkspace(
+        {
+          job: {
+            _id: "job123",
+            hasMaliciousSignal: false,
+            leaseToken: "lease-secret",
+            source: "publish",
+            targetKind: "skillVersion",
+            waitForVtUntil: 0,
+          },
+          target: {
+            files: [
+              {
+                path: "SKILL.md",
+                sha256: "abc123",
+                size: 42,
+                url: "https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123",
+              },
+            ],
+          },
+        },
+        workspace,
+      ),
+    ).rejects.toThrow("Download failed 403 for artifact file SKILL.md");
+
+    const error = await writeArtifactWorkspace(
+      {
+        job: {
+          _id: "job124",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {
+          files: [
+            {
+              path: "package.json",
+              sha256: "def456",
+              size: 54,
+              url: "https://signed.example.invalid/package?Authorization=Bearer-secret",
+            },
+          ],
+        },
+      },
+      await tempDir(),
+    ).catch((caught: unknown) => caught);
+
+    const message = error instanceof Error ? error.message : String(error);
+    expect(message).not.toContain("https://");
+    expect(message).not.toContain("signed.example.invalid");
+    expect(message).not.toContain("token=secret");
+    expect(message).not.toContain("X-Amz-Signature");
+    expect(message).not.toContain("Authorization");
+
+    const bareSecretPath =
+      `secrets/${bareSecrets.githubPat}-${bareSecrets.githubClassicPat}-${bareSecrets.awsAccessKey}-` +
+      `${bareSecrets.googleApiKey}-X-Amz-Signature=${"a".repeat(32)}.md`;
+    const bareSecretPathError = await writeArtifactWorkspace(
+      {
+        job: {
+          _id: "job124b",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {
+          files: [
+            {
+              path: bareSecretPath,
+              sha256: "bare-secret-fixture",
+              size: 61,
+              url: "https://signed.example.invalid/package?token=secret",
+            },
+          ],
+        },
+      },
+      await tempDir(),
+    ).catch((caught: unknown) => caught);
+    const bareSecretPathMessage =
+      bareSecretPathError instanceof Error
+        ? bareSecretPathError.message
+        : String(bareSecretPathError);
+    expect(bareSecretPathMessage).toContain("Download failed 403 for artifact file");
+    expect(bareSecretPathMessage).not.toContain(bareSecrets.githubPat);
+    expect(bareSecretPathMessage).not.toContain(bareSecrets.githubClassicPat);
+    expect(bareSecretPathMessage).not.toContain(bareSecrets.awsAccessKey);
+    expect(bareSecretPathMessage).not.toContain(bareSecrets.googleApiKey);
+    expect(bareSecretPathMessage).not.toContain("X-Amz-Signature");
+
+    fetchMock.mockRejectedValueOnce(
+      new Error(
+        `fetch failed https://signed.example.invalid/file?token=secret Authorization: Bearer abc ` +
+          `OPENAI_API_KEY=sk-short-secret ${bareSecrets.openAiKey} ${bareSecrets.githubPat} ` +
+          `${bareSecrets.githubClassicPat} ` +
+          `${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey} ` +
+          `X-Amz-Signature=${"b".repeat(32)}`,
+      ),
+    );
+    const networkError = await writeArtifactWorkspace(
+      {
+        job: {
+          _id: "job125",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "skillVersion",
+          waitForVtUntil: 0,
+        },
+        target: {
+          files: [
+            {
+              path: "SKILL.md",
+              sha256: "ghi789",
+              size: 60,
+              url: "https://signed.example.invalid/file?token=secret",
+            },
+          ],
+        },
+      },
+      await tempDir(),
+    ).catch((caught: unknown) => caught);
+    const networkMessage =
+      networkError instanceof Error ? networkError.message : String(networkError);
+    expect(networkError).toBeInstanceOf(Error);
+    if (!(networkError instanceof Error)) throw new Error("Expected network error");
+    const networkCause = networkError.cause;
+    expect(networkCause).toBeInstanceOf(Error);
+    const networkCauseMessage =
+      networkCause instanceof Error ? networkCause.message : String(networkCause);
+    expect(networkMessage).toContain("Download failed for artifact file SKILL.md");
+    expect(networkMessage).not.toContain("https://");
+    expect(networkMessage).not.toContain("signed.example.invalid");
+    expect(networkMessage).not.toContain("token=secret");
+    expect(networkMessage).not.toContain("Authorization");
+    expect(networkMessage).not.toContain("Bearer abc");
+    expect(networkMessage).not.toContain(" abc");
+    expect(networkMessage).not.toContain("OPENAI_API_KEY");
+    expect(networkMessage).not.toContain(`${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey}`);
+    expect(networkMessage).not.toContain(bareSecrets.proseApiKey);
+    expect(networkMessage).not.toContain("sk-short-secret");
+    expect(networkMessage).not.toContain(bareSecrets.openAiKey);
+    expect(networkMessage).not.toContain(bareSecrets.githubPat);
+    expect(networkMessage).not.toContain(bareSecrets.githubClassicPat);
+    expect(networkMessage).not.toContain("X-Amz-Signature");
+    expect(networkCauseMessage).not.toContain("https://");
+    expect(networkCauseMessage).not.toContain("signed.example.invalid");
+    expect(networkCauseMessage).not.toContain("token=secret");
+    expect(networkCauseMessage).not.toContain("Authorization");
+    expect(networkCauseMessage).not.toContain(
+      `${bareSecrets.apiKeyLabel}: ${bareSecrets.proseApiKey}`,
+    );
+    expect(networkCauseMessage).not.toContain(bareSecrets.proseApiKey);
+
+    fetchMock.mockResolvedValueOnce(new Response("forbidden", { status: 403 }));
+    const clawpackError = await writeArtifactWorkspace(
+      {
+        job: {
+          _id: "job126",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "packageRelease",
+          waitForVtUntil: 0,
+        },
+        target: {
+          clawpackUrl:
+            "https://signed.example.invalid/package.tgz?token=secret&X-Amz-Signature=abc123",
+        },
+      },
+      await tempDir(),
+    ).catch((caught: unknown) => caught);
+    const clawpackMessage =
+      clawpackError instanceof Error ? clawpackError.message : String(clawpackError);
+    expect(clawpackMessage).toContain("Download failed 403 for artifact tarball artifact.tgz");
+    expect(clawpackMessage).not.toContain("https://");
+    expect(clawpackMessage).not.toContain("signed.example.invalid");
+    expect(clawpackMessage).not.toContain("token=secret");
+    expect(clawpackMessage).not.toContain("X-Amz-Signature");
+    fetchMock.mockRestore();
+  });
+
+  it("sanitizes download failures before logging or failing the Convex job", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("forbidden", { status: 403 }));
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const client = {
+      action: vi.fn(async () => ({ retry: false })),
+    };
+
+    await expect(
+      processJob(
+        client,
+        "worker-token",
+        {
+          job: {
+            _id: "securityScanJobs:download-failed",
+            hasMaliciousSignal: false,
+            leaseToken: "lease-secret",
+            source: "publish",
+            targetKind: "skillVersion",
+            waitForVtUntil: 0,
+          },
+          target: {
+            files: [
+              {
+                path: "SKILL.md",
+                sha256: "abc123",
+                size: 42,
+                url: "https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123",
+              },
+            ],
+          },
+        },
+        undefined,
+      ),
+    ).resolves.toBe(false);
+
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        error: "Download failed 403 for artifact file SKILL.md",
+      }),
+    );
+    const logged = consoleError.mock.calls.map((call) => call.join(" ")).join("\n");
+    expect(logged).toContain("Download failed 403 for artifact file SKILL.md");
+    expect(logged).not.toContain("https://");
+    expect(logged).not.toContain("signed.example.invalid");
+    expect(logged).not.toContain("token=secret");
+    expect(logged).not.toContain("X-Amz-Signature");
+
+    consoleError.mockRestore();
+    fetchMock.mockRestore();
   });
 
   it("writes redacted Codex diagnostics without copying submitted artifact files or signed URLs", async () => {

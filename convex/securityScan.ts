@@ -347,23 +347,43 @@ function githubSkillScanStatusFromLlmAnalysis(
   return "failed" as const;
 }
 
-function publicWorkerErrorDetail(error: string) {
-  return error
+const BARE_WORKER_ERROR_SECRET_PATTERNS: RegExp[] = [
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
+  /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g,
+  /\bsk_live_[A-Za-z0-9]{16,}\b/g,
+  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
+  /\bAIza[0-9A-Za-z_-]{35}\b/g,
+];
+
+function sanitizeWorkerErrorDetail(error: string, maxChars = 500) {
+  let redacted = error
     .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
     .replace(
-      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
       (_match, scheme: string) => `${scheme} [redacted-secret]`,
     )
     .replace(
-      /\b(token|secret|password|api[_-]?key|authorization)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      (_match, key: string, separator: string) => `${key}${separator}[redacted-secret]`,
+      /\b(token|secret|password|api[ _-]?key|authorization)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      "[redacted-secret]",
     )
     .replace(
-      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      (_match, key: string, separator: string) => `${key}${separator}[redacted-secret]`,
+      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[ _-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      "[redacted-secret]",
     )
     .replace(/\b[A-Za-z0-9_+/=-]{64,}\b/g, "[redacted-secret]")
-    .slice(0, 500);
+    .replace(
+      /\bX-(?:Amz|Goog)-(?:Signature|Credential|Security-Token|Algorithm)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      "[redacted-secret]",
+    );
+  for (const pattern of BARE_WORKER_ERROR_SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "[redacted-secret]");
+  }
+  return redacted.slice(0, maxChars);
+}
+
+function publicWorkerErrorDetail(error: string) {
+  return sanitizeWorkerErrorDetail(error, 500);
 }
 
 function truncateSkillSpectorStorageText(
@@ -1790,9 +1810,10 @@ export const recordSkillScanRequestFailedInternal = internalMutation({
     const request = await ctx.db.get(args.scanId);
     if (!request) throw new ConvexError("Scan request not found");
     const now = Date.now();
+    const error = sanitizeWorkerErrorDetail(args.error, 2000);
     await ctx.db.patch(request._id, {
       status: "failed",
-      lastError: args.error.slice(0, 2000),
+      lastError: error,
       ...(args.llmAnalysis ? { llmAnalysis: args.llmAnalysis } : {}),
       completedAt: now,
       updatedAt: now,
@@ -1814,11 +1835,12 @@ export const recordGitHubSkillScanResultInternal = internalMutation({
     const scan = await ctx.db.get(args.githubSkillScanId);
     if (!scan) return { ok: true as const, skipped: "missing-scan" as const };
     const now = Date.now();
+    const error = args.error ? sanitizeWorkerErrorDetail(args.error, 2000) : undefined;
     await ctx.db.patch(scan._id, {
       status: args.scanStatus,
       llmAnalysis: args.llmAnalysis,
       skillSpectorAnalysis: args.skillSpectorAnalysis,
-      lastError: args.error?.slice(0, 2000),
+      lastError: error,
       runId: args.runId,
       completedAt: now,
       updatedAt: now,
@@ -2458,9 +2480,10 @@ export const failJobInternal = internalMutation({
     if (!job || job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
     const now = Date.now();
     const retry = job.attempts < MAX_ATTEMPTS;
+    const error = sanitizeWorkerErrorDetail(args.error, 2000);
     await ctx.db.patch(args.jobId, {
       status: retry ? "queued" : "failed",
-      lastError: args.error.slice(0, 2000),
+      lastError: error,
       nextRunAt: retry ? now + Math.min(30 * 60 * 1000, 2 ** job.attempts * 60_000) : job.nextRunAt,
       leaseToken: undefined,
       leaseExpiresAt: undefined,
@@ -2470,7 +2493,7 @@ export const failJobInternal = internalMutation({
     if (job.targetKind === "skillScanRequest" && job.skillScanRequestId) {
       await ctx.db.patch(job.skillScanRequestId, {
         status: retry ? "queued" : "failed",
-        lastError: args.error.slice(0, 2000),
+        lastError: error,
         ...(retry ? {} : { completedAt: now }),
         updatedAt: now,
       });
@@ -2696,13 +2719,14 @@ export const failCodexScanJob = action({
   },
   handler: async (ctx, args) => {
     assertWorkerToken(args.token);
+    const error = sanitizeWorkerErrorDetail(args.error, 2000);
     const result = await runMutationRef<{ ok: true; retry: boolean }>(
       ctx,
       internalRefs.securityScan.failJobInternal,
       {
         jobId: args.jobId,
         leaseToken: args.leaseToken,
-        error: args.error,
+        error,
       },
     );
 
@@ -2715,7 +2739,7 @@ export const failCodexScanJob = action({
         },
       );
       if (target && !target.missing) {
-        const llmAnalysis = buildWorkerFailureLlmAnalysis(args.error);
+        const llmAnalysis = buildWorkerFailureLlmAnalysis(error);
         if (target.job.targetKind === "skillVersion" && target.version) {
           if (!hasArtifactBackedLlmAnalysis(target.version.llmAnalysis)) {
             await runMutationRef(ctx, internalRefs.skills.updateVersionLlmAnalysisInternal, {
@@ -2739,7 +2763,7 @@ export const failCodexScanJob = action({
               {
                 githubSkillScanId: target.githubScan._id,
                 scanStatus: "failed",
-                error: args.error,
+                error,
                 llmAnalysis,
               },
             );
@@ -2749,7 +2773,7 @@ export const failCodexScanJob = action({
             internalRefs.securityScan.recordSkillScanRequestFailedInternal,
             {
               scanId: target.scanRequest._id,
-              error: args.error,
+              error,
               llmAnalysis,
             },
           );

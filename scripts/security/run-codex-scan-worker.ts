@@ -99,6 +99,8 @@ type JobDiagnosticInput = {
   status: "completed" | "failed";
 };
 
+type CodexScanWorkerClient = Pick<ConvexHttpClient, "action">;
+
 const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
@@ -107,6 +109,14 @@ const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+const BARE_SECRET_PATTERNS: RegExp[] = [
+  /\bgithub_pat_[A-Za-z0-9_]{20,}\b/g,
+  /\bgh[pousr]_[A-Za-z0-9_]{20,}\b/g,
+  /\bsk-(?:proj-)?[A-Za-z0-9_-]{20,}\b/g,
+  /\bsk_live_[A-Za-z0-9]{16,}\b/g,
+  /\b(?:AKIA|ASIA)[A-Z0-9]{16}\b/g,
+  /\bAIza[0-9A-Za-z_-]{35}\b/g,
+];
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const schemaPath = join(root, "scripts/security/codex-scan-output.schema.json");
@@ -183,21 +193,24 @@ function safeDiagnosticPathSegment(value: string) {
 }
 
 function redactDiagnosticText(value: string, maxChars = MAX_DIAGNOSTIC_TEXT_CHARS) {
-  const redacted = value
+  let redacted = value
     .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
     .replace(
-      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/gi,
+      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
       (_match, scheme: string) => `${scheme} [redacted-secret]`,
     )
     .replace(
-      /\b(token|secret|password|api[_-]?key|authorization)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      /\b(token|secret|password|api[ _-]?key|authorization)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
       (_match, key: string, separator: string) => `${key}${separator}[redacted-secret]`,
     )
     .replace(
-      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[ _-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
       (_match, key: string, separator: string) => `${key}${separator}[redacted-secret]`,
     )
     .replace(/\b[A-Za-z0-9_+/=-]{64,}\b/g, "[redacted-secret]");
+  for (const pattern of BARE_SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, "[redacted-secret]");
+  }
   if (redacted.length <= maxChars) return redacted;
   return `${redacted.slice(0, maxChars)}\n...[truncated ${redacted.length - maxChars} chars]`;
 }
@@ -207,6 +220,22 @@ function redactDiagnosticError(value: string) {
     /(Codex result did not match ClawScan schema)(?::[\s\S]*)?/i,
     "$1: [redacted result body]",
   );
+}
+
+function sanitizeWorkerErrorMessage(value: string) {
+  return redactDiagnosticError(value)
+    .replace(
+      /\b(?:token|secret|password|api[ _-]?key|authorization)\b(["']?\s*[:=]\s*["']?)?(?:Bearer|Basic)?\s*\[redacted-secret\]/gi,
+      "[redacted-secret]",
+    )
+    .replace(
+      /\b[A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[ _-]?KEY|AUTHORIZATION)\b(["']?\s*[:=]\s*["']?)?(?:Bearer|Basic)?\s*\[redacted-secret\]/g,
+      "[redacted-secret]",
+    )
+    .replace(
+      /\bX-(?:Amz|Goog)-(?:Signature|Credential|Security-Token|Algorithm)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
+      "[redacted-secret]",
+    );
 }
 
 const DIAGNOSTIC_CONTENT_KEY_PATTERN =
@@ -398,9 +427,26 @@ function safeOutputPath(workspace: string, artifactPath: string) {
   return out;
 }
 
-async function download(url: string) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Download failed ${response.status}: ${url}`);
+function artifactDownloadDescription(kind: "file" | "clawpack", artifactPath: string) {
+  const safePath = redactDiagnosticText(artifactPath.replace(/[\r\n]+/g, " "), 240);
+  return kind === "file" ? `artifact file ${safePath}` : `artifact tarball ${safePath}`;
+}
+
+async function download(url: string, artifact: { kind: "file" | "clawpack"; path: string }) {
+  const description = artifactDownloadDescription(artifact.kind, artifact.path);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch (error) {
+    const message = sanitizeWorkerErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    );
+    // eslint-disable-next-line preserve-caught-error -- raw fetch errors can include signed artifact URLs.
+    throw new Error(`Download failed for ${description}: ${message || "network error"}`, {
+      cause: new Error(message || "network error"),
+    });
+  }
+  if (!response.ok) throw new Error(`Download failed ${response.status} for ${description}`);
   return Buffer.from(await response.arrayBuffer());
 }
 
@@ -422,12 +468,15 @@ export async function writeArtifactWorkspace(job: ClaimedJob, workspace: string)
   for (const file of job.target.files ?? []) {
     const out = safeOutputPath(workspace, file.path);
     await mkdir(dirname(out), { recursive: true });
-    await writeFile(out, await download(file.url));
+    await writeFile(out, await download(file.url, { kind: "file", path: file.path }));
   }
 
   if (job.target.clawpackUrl) {
     const tarballPath = join(workspace, "artifact.tgz");
-    await writeFile(tarballPath, await download(job.target.clawpackUrl));
+    await writeFile(
+      tarballPath,
+      await download(job.target.clawpackUrl, { kind: "clawpack", path: "artifact.tgz" }),
+    );
     const listing = await runCommand("tar", ["-tzf", tarballPath], {
       cwd: workspace,
       timeoutMs: 60_000,
@@ -1018,12 +1067,12 @@ async function runCodex(
   return toStoredLlmAnalysis(parsed);
 }
 
-async function processJob(
-  client: ConvexHttpClient,
+export async function processJob(
+  client: CodexScanWorkerClient,
   token: string,
   job: ClaimedJob,
   diagnosticsRoot: string | undefined,
-) {
+): Promise<boolean> {
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-codex-scan-${basename(job.job._id)}-`));
   const startedAt = Date.now();
   const codex: CodexCommandDiagnostic = {};
@@ -1052,7 +1101,9 @@ async function processJob(
     console.log(`completed ${job.job._id}: ${llmAnalysis.status}`);
     return true;
   } catch (error) {
-    errorMessage = error instanceof Error ? error.message : String(error);
+    errorMessage = sanitizeWorkerErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    );
     const failResult = (await client.action(api.securityScan.failCodexScanJob, {
       token,
       jobId: job.job._id as Id<"securityScanJobs">,
