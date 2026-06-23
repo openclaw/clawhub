@@ -32,7 +32,9 @@
 ## Topics
 
 - Authors may supply up to five topics through CLI or UI publish and edit surfaces.
-- Stored topics preserve author-facing labels. Lookup uses normalized topic slugs.
+- UI topic inputs commit new values as normalized lowercase hyphenated slugs so saved metadata
+  matches browse URLs. Existing stored labels remain unchanged until an author replaces them.
+  Lookup always uses normalized topic slugs.
 - Reserved platform trust labels such as `official`, `officials`, `featured`, `verified`,
   `trusted`, `curated`, and brand or channel slugs such as `openclaw`, `clawhub`, and `community`
   are rejected. The canonical list lives in `RESERVED_CATALOG_TOPIC_SLUGS` inside

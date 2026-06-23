@@ -69,7 +69,7 @@ describe("CatalogMetadataEditor", () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         categories: ["development", "research"],
-        topics: ["GPU development", "CUDA"],
+        topics: ["GPU development", "cuda"],
       }),
     );
   });
@@ -107,7 +107,24 @@ describe("CatalogMetadataEditor", () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         categories: ["other"],
-        topics: ["Calendar", "Scheduling"],
+        topics: ["Calendar", "scheduling"],
+      }),
+    );
+  });
+
+  it("auto-hyphenates a new multi-word topic before saving", async () => {
+    const onSave = vi.fn(async () => {});
+    render(<CatalogMetadataEditor kind="skill" onSave={onSave} />);
+
+    const topicsInput = screen.getByLabelText("Topics");
+    fireEvent.change(topicsInput, { target: { value: "session management" } });
+    fireEvent.keyDown(topicsInput, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(onSave).toHaveBeenCalledWith({
+        categories: ["other"],
+        topics: ["session-management"],
       }),
     );
   });
@@ -127,7 +144,7 @@ describe("CatalogMetadataEditor", () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         categories: ["other"],
-        topics: ["Calendar", "Scheduling"],
+        topics: ["Calendar", "scheduling"],
       }),
     );
   });
@@ -167,7 +184,7 @@ describe("CatalogMetadataEditor", () => {
     await waitFor(() =>
       expect(onSave).toHaveBeenCalledWith({
         categories: ["other"],
-        topics: ["Calendar", "Scheduling"],
+        topics: ["Calendar", "scheduling"],
       }),
     );
   });
