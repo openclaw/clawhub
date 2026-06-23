@@ -21,6 +21,7 @@ const listOfficialEntriesHandler = (
 
 function makePackage(overrides: Record<string, unknown> = {}) {
   return {
+    _id: "packages:1",
     name: "@openclaw/demo",
     normalizedName: "@openclaw/demo",
     displayName: "Demo",
@@ -36,6 +37,7 @@ function makePackage(overrides: Record<string, unknown> = {}) {
 
 function makeRelease(overrides: Record<string, unknown> = {}) {
   return {
+    packageId: "packages:1",
     version: "1.2.3",
     integritySha256: "ignored",
     artifactKind: "legacy-zip",
@@ -136,6 +138,17 @@ describe("catalog feed projection", () => {
 
     const result = await listOfficialEntriesHandler(
       makeCtx([makePackage()], {
+        "packageReleases:1": makeRelease(),
+      }),
+      { family: "code-plugin" },
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("rejects a latest-release pointer for another package", async () => {
+    const result = await listOfficialEntriesHandler(
+      makeCtx([makePackage({ _id: "packages:2" })], {
         "packageReleases:1": makeRelease(),
       }),
       { family: "code-plugin" },

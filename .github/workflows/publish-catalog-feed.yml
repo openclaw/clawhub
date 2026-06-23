@@ -39,7 +39,6 @@ jobs:
       name: Production
       url: https://registry.openclaw.ai/feeds/plugins
     env:
-      CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
       EXPIRES_IN_DAYS: ${{ inputs.expires_in_days || '7' }}
     steps:
       - uses: actions/checkout@v6
@@ -52,6 +51,8 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Publish current production catalog
+        env:
+          CONVEX_DEPLOY_KEY: ${{ secrets.CONVEX_DEPLOY_KEY }}
         run: |
           set -euo pipefail
           if [[ -z "$CONVEX_DEPLOY_KEY" ]]; then

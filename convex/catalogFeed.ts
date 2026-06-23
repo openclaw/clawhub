@@ -11,9 +11,9 @@ import type { Doc } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import type { QueryCtx } from "./_generated/server";
 import { sha256Hex } from "./lib/clawpack";
+import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
-import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getOwnerPublisher } from "./lib/publishers";
 
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";
@@ -65,7 +65,7 @@ async function buildEntry(
 ): Promise<CatalogFeedEntry | null> {
   if (pkg.softDeletedAt || pkg.channel !== "official" || !pkg.latestReleaseId) return null;
   const release = await ctx.db.get(pkg.latestReleaseId);
-  if (!release || release.softDeletedAt) return null;
+  if (!release || release.packageId !== pkg._id || release.softDeletedAt) return null;
 
   const scanStatus = resolvePackageReleaseScanStatus(release);
   if (isPackageBlockedFromPublic(scanStatus)) return null;
