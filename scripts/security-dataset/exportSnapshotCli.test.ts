@@ -88,6 +88,29 @@ describe("security dataset snapshot CLI", () => {
       await rm(directory, { recursive: true, force: true });
     }
   });
+
+  it("rejects a minimum page size larger than the starting page size", async () => {
+    await expect(
+      execFileAsync(
+        "bun",
+        [
+          "scripts/security-dataset/export-snapshot.ts",
+          "--page-size",
+          "5",
+          "--min-page-size",
+          "6",
+          "--dry-run",
+        ],
+        {
+          cwd: process.cwd(),
+          encoding: "utf8",
+          maxBuffer: 16 * 1024 * 1024,
+        },
+      ),
+    ).rejects.toMatchObject({
+      stderr: expect.stringContaining("--min-page-size must be less than or equal to --page-size."),
+    });
+  });
 });
 
 function buildTinyConvexSnapshotZip() {

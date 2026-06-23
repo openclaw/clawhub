@@ -68,6 +68,7 @@ type Options = {
   mode: "public";
   limit: number | null;
   pageSize: number;
+  minPageSize: number;
   batchPages: number;
   concurrency: number;
   shards: number;
@@ -239,9 +240,11 @@ async function exportShard(input: {
 }) {
   const { options, shard, state, writers } = input;
   let cursor: string | null = null;
+  let pageSize = options.pageSize;
   let batchPages = options.batchPages;
   while (!isLimitReached(options, state)) {
-    const result = await runConvexPage(options, shard, cursor, options.pageSize, batchPages);
+    const result = await runConvexPage(options, shard, cursor, pageSize, batchPages);
+    pageSize = result.pageSize;
     batchPages = result.batchPages;
     const page = result.page;
     const inputs = reserveExportInputs(page.page, state, options.limit);
@@ -262,9 +265,10 @@ async function runConvexPage(
   cursor: string | null,
   numItems: number,
   batchPages: number,
-): Promise<{ page: ConvexPage; batchPages: number }> {
+): Promise<{ page: ConvexPage; pageSize: number; batchPages: number }> {
   const functionName = "securityDatasetNode:listArtifactExportBatchCompressedInternal";
   const workerFunctionName = "securityDatasetNode:listArtifactExportBatchCompressed";
+  let pageSize = numItems;
   let pageCount = batchPages;
 
   while (true) {
@@ -273,7 +277,7 @@ async function runConvexPage(
       mode: options.mode,
       createdAtGte: shard.createdAtGte,
       createdAtLt: shard.createdAtLt,
-      paginationOpts: { cursor, numItems },
+      paginationOpts: { cursor, numItems: pageSize },
       pageCount,
     };
 
@@ -293,13 +297,21 @@ async function runConvexPage(
               args,
               isCompressedConvexPage,
             );
-        return { page: decodeCompressedConvexPage(compressed), batchPages: pageCount };
+        return {
+          page: decodeCompressedConvexPage(compressed),
+          pageSize,
+          batchPages: pageCount,
+        };
       } catch (error) {
         lastError = error;
-        if (isLikelyOversizedConvexBatch(error) && pageCount > 1) break;
+        if (
+          isLikelyOversizedConvexBatch(error) &&
+          canReduceConvexBatch(options, pageSize, pageCount)
+        )
+          break;
         if (attempt === DEFAULT_MAX_CONVEX_ATTEMPTS) break;
         console.error(
-          `[snapshot] retrying ${functionName} batch-pages=${pageCount} after attempt ${attempt}: ${errorMessage(error)}`,
+          `[snapshot] retrying ${functionName} page-size=${pageSize} batch-pages=${pageCount} after attempt ${attempt}: ${errorMessage(error)}`,
         );
         await delay(attempt * 500);
       }
@@ -311,6 +323,16 @@ async function runConvexPage(
         `[snapshot] ${shard.label} reducing batch-pages ${pageCount}->${nextPageCount}: ${errorMessage(lastError)}`,
       );
       pageCount = nextPageCount;
+      continue;
+    }
+
+    if (isLikelyOversizedConvexBatch(lastError) && pageSize > options.minPageSize) {
+      const nextPageSize = Math.max(options.minPageSize, Math.floor(pageSize / 2));
+      console.error(
+        `[snapshot] ${shard.label} reducing page-size ${pageSize}->${nextPageSize}: ${errorMessage(lastError)}`,
+      );
+      pageSize = nextPageSize;
+      pageCount = 1;
       continue;
     }
 
@@ -768,6 +790,10 @@ function isLikelyOversizedConvexBatch(error: unknown) {
   return isLikelyTruncatedConvexOutput(error) || isLikelyConvexOperationTimeout(error);
 }
 
+function canReduceConvexBatch(options: Options, pageSize: number, pageCount: number) {
+  return pageCount > 1 || pageSize > options.minPageSize;
+}
+
 function writeCommandErrorOutput(error: unknown) {
   if (!isRecord(error)) return;
   if (typeof error.stderr === "string" && error.stderr.length > 0) {
@@ -794,6 +820,7 @@ function parseArgs(args: string[]): Options {
     mode: "public",
     limit: null,
     pageSize: DEFAULT_PAGE_SIZE,
+    minPageSize: Math.min(10, DEFAULT_PAGE_SIZE),
     batchPages: DEFAULT_BATCH_PAGES,
     concurrency: DEFAULT_CONCURRENCY,
     shards: DEFAULT_SHARDS,
@@ -825,6 +852,8 @@ function parseArgs(args: string[]): Options {
       options.limit = readPositiveInt(readValue(args, ++index, arg), arg);
     } else if (arg === "--page-size") {
       options.pageSize = readPositiveInt(readValue(args, ++index, arg), arg);
+    } else if (arg === "--min-page-size") {
+      options.minPageSize = readPositiveInt(readValue(args, ++index, arg), arg);
     } else if (arg === "--batch-pages") {
       options.batchPages = readPositiveInt(readValue(args, ++index, arg), arg);
     } else if (arg === "--concurrency") {
@@ -863,6 +892,9 @@ function parseArgs(args: string[]): Options {
   }
   if (options.workerToken && (options.prod || options.deployment || options.push)) {
     throw new Error("Use --worker-token with --convex-url instead of --prod/--deployment/--push.");
+  }
+  if (options.minPageSize > options.pageSize) {
+    throw new Error("--min-page-size must be less than or equal to --page-size.");
   }
   assertCreatedTimeWindow(options.timeWindow);
   return options;

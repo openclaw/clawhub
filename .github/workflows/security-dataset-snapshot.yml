@@ -19,6 +19,26 @@ on:
         description: "Hugging Face branch/revision to upload to"
         required: true
         default: "main"
+      page-size:
+        description: "Live export page size per Convex request"
+        required: true
+        default: "25"
+      min-page-size:
+        description: "Smallest page size to retry after Convex timeouts"
+        required: true
+        default: "5"
+      batch-pages:
+        description: "Live export pages per Convex request"
+        required: true
+        default: "1"
+      concurrency:
+        description: "Concurrent live export shards"
+        required: true
+        default: "2"
+      shards:
+        description: "Created-at shards per source kind"
+        required: true
+        default: "24"
   schedule:
     - cron: "17 9 * * *"
 
@@ -44,6 +64,11 @@ jobs:
       HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
       HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
       SNAPSHOT_LIMIT: ${{ inputs.limit || '' }}
+      SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
+      SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '5' }}
+      SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
+      SNAPSHOT_CONCURRENCY: ${{ inputs.concurrency || '2' }}
+      SNAPSHOT_SHARDS: ${{ inputs.shards || '24' }}
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized
       WORK_DIR: /tmp/clawhub-security-dataset
     steps:
@@ -82,9 +107,11 @@ jobs:
             --hf-dataset
             --hf-repo "$HF_DATASET_REPO"
             --hf-revision "$HF_REVISION"
-            --page-size 25
-            --batch-pages 2
-            --concurrency 3
+            --page-size "$SNAPSHOT_PAGE_SIZE"
+            --min-page-size "$SNAPSHOT_MIN_PAGE_SIZE"
+            --batch-pages "$SNAPSHOT_BATCH_PAGES"
+            --concurrency "$SNAPSHOT_CONCURRENCY"
+            --shards "$SNAPSHOT_SHARDS"
           )
           if [[ -n "$SNAPSHOT_LIMIT" ]]; then
             args+=(--limit "$SNAPSHOT_LIMIT")
