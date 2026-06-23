@@ -50,6 +50,7 @@ export async function cmdPublish(
     sourcePath?: string;
     dryRun?: boolean;
     json?: boolean;
+    quiet?: boolean;
   },
 ): Promise<SkillPublishResult> {
   const folder = folderArg ? resolve(opts.workdir, folderArg) : null;
@@ -86,11 +87,9 @@ export async function cmdPublish(
   if (!displayName) fail("--name required");
   if (explicitVersion && !semver.valid(explicitVersion)) fail("--version must be valid semver");
 
-  const spinner = options.json ? null : createCrabLoader(`Preparing ${slug}`);
+  const spinner = options.json || options.quiet ? null : createCrabLoader(`Preparing ${slug}`);
   try {
-    const filesOnDisk = stripGeneratedSkillCards(
-      await ensureRootManifestFile(folder, await listTextFiles(folder)),
-    );
+    const filesOnDisk = await prepareSkillFilesForPublish(folder);
     if (filesOnDisk.length === 0) fail("No files found");
     if (
       !filesOnDisk.some((file) => {
@@ -226,7 +225,7 @@ function parseCsv(value: string | undefined) {
     .filter(Boolean);
 }
 
-async function resolveDefaultOwnerHandle(registry: string, token: string) {
+export async function resolveDefaultOwnerHandle(registry: string, token: string) {
   const whoami = await apiRequest(
     registry,
     { method: "GET", path: ApiRoutes.whoami, token },
@@ -275,6 +274,12 @@ function buildPublishResult(result: Omit<SkillPublishResult, "ok">): SkillPublis
 
 function writePublishJsonIfRequested(json: boolean | undefined, result: SkillPublishResult) {
   if (json) process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+}
+
+export async function prepareSkillFilesForPublish(folder: string) {
+  return stripGeneratedSkillCards(
+    await ensureRootManifestFile(folder, await listTextFiles(folder)),
+  );
 }
 
 function stripGeneratedSkillCards(files: Awaited<ReturnType<typeof listTextFiles>>) {
