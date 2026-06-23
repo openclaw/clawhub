@@ -107,11 +107,26 @@ let highlighterPromise: Promise<unknown> | null = null;
 
 function loadHighlighter(): Promise<unknown> {
   if (!highlighterPromise) {
-    highlighterPromise = import("shiki").then(({ createHighlighter }) =>
-      createHighlighter({
-        themes: [...SHIKI_THEMES],
-        langs: SHIKI_LANGS,
-      }),
+    highlighterPromise = Promise.all([
+      import("shiki/dist/core.mjs"),
+      import("shiki/dist/engine-javascript.mjs"),
+      import("shiki/dist/langs.mjs"),
+      import("shiki/dist/themes.mjs"),
+    ]).then(
+      ([
+        { createBundledHighlighter },
+        { createJavaScriptRegexEngine },
+        { bundledLanguages },
+        { bundledThemes },
+      ]) =>
+        createBundledHighlighter({
+          langs: bundledLanguages,
+          themes: bundledThemes,
+          engine: () => createJavaScriptRegexEngine(),
+        })({
+          themes: [...SHIKI_THEMES],
+          langs: SHIKI_LANGS,
+        }),
     );
   }
   return highlighterPromise;

@@ -14,7 +14,7 @@ import { Card, CardContent } from "../../components/ui/card";
 import { Skeleton } from "../../components/ui/skeleton";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
-import { buildPublisherProfileHref } from "../../lib/ownerRoute";
+import { buildPublisherProfileHref, isLegacyPublisherProfileHandle } from "../../lib/ownerRoute";
 import type {
   PublicPublisher,
   PublicPublisherCatalogDisplay,
@@ -25,6 +25,8 @@ import { readPublicDownloadCount } from "../../lib/publicUser";
 
 export const Route = createFileRoute("/user/$handle")({
   beforeLoad: ({ params }) => {
+    if (isLegacyPublisherProfileHandle(params.handle)) return;
+
     throw redirect({
       href: buildPublisherProfileHref(params.handle),
       replace: true,

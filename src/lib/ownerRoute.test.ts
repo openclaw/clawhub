@@ -1,11 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPublisherProfileHref,
   isOwnerRouteHandleOrIdSegment,
   isOwnerRouteHandleSegment,
   isOwnerRouteScopeSegment,
 } from "./ownerRoute";
 
 describe("owner route segments", () => {
+  it("uses the legacy profile route for official alias collisions", () => {
+    expect(buildPublisherProfileHref("tencent")).toBe("/user/tencent");
+    expect(buildPublisherProfileHref("steipete")).toBe("/steipete");
+  });
+
   it("accepts npm-compatible publisher handle characters", () => {
     expect(isOwnerRouteHandleSegment("example.tools")).toBe(true);
     expect(isOwnerRouteHandleSegment("lab_1")).toBe(true);

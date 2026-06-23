@@ -12,6 +12,7 @@ import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
+  isReservedOpenClawExtensionHandle,
   isReservedPublicOwnerHandle,
 } from "./lib/publicRouteReservations";
 import {
@@ -1078,6 +1079,9 @@ async function ensureOrgPublisherHandleWithActor(
   if (!normalizePublisherHandle(args.memberHandle)) {
     throw new ConvexError("memberHandle required when creating org publisher");
   }
+  if (!existingPublisher && !existingUser && isReservedOpenClawExtensionHandle(handle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
+  }
 
   const publisherId = await ctx.db.insert("publishers", {
     kind: "org",
@@ -1685,6 +1689,9 @@ async function createOrgPublisherForUser(
   }
   if (await isHandleReservedForAnotherUser(ctx, handle, args.actorUserId)) {
     throw new ConvexError(`Handle "@${handle}" is reserved for another user`);
+  }
+  if (isReservedOpenClawExtensionHandle(handle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
   }
 
   const now = Date.now();
