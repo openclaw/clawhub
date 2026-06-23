@@ -17,7 +17,7 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 describe("users route redirect", () => {
-  it("redirects legacy /users traffic to /publishers", async () => {
+  it("redirects legacy /users traffic to /creators", async () => {
     const route = (await import("../routes/users/index")).Route as unknown as {
       __config: { beforeLoad: (args: { search: Record<string, unknown> }) => unknown };
     };
@@ -25,7 +25,18 @@ describe("users route redirect", () => {
     const search = { q: "builder" };
 
     expect(() => route.__config.beforeLoad({ search })).toThrow();
-    expect(redirectMock).toHaveBeenCalledWith({ to: "/publishers", search, replace: true });
+    expect(redirectMock).toHaveBeenCalledWith({ to: "/creators", search, replace: true });
+  });
+
+  it("redirects legacy /publishers traffic to /creators", async () => {
+    const route = (await import("../routes/publishers/index")).Route as unknown as {
+      __config: { beforeLoad: (args: { search: Record<string, unknown> }) => unknown };
+    };
+
+    const search = { kind: "orgs", q: "acme" };
+
+    expect(() => route.__config.beforeLoad({ search })).toThrow();
+    expect(redirectMock).toHaveBeenCalledWith({ to: "/creators", search, replace: true });
   });
 
   it("redirects legacy /p profile routes to user profiles", async () => {

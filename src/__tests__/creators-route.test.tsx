@@ -59,7 +59,7 @@ vi.mock("../lib/site", () => ({
 }));
 
 async function loadRoute() {
-  return (await import("../routes/publishers/index")).Route as unknown as {
+  return (await import("../routes/creators/index")).Route as unknown as {
     __config: {
       component?: ComponentType;
       head?: () => {
@@ -74,7 +74,7 @@ async function loadRoute() {
   };
 }
 
-describe("publishers route", () => {
+describe("creators route", () => {
   beforeEach(() => {
     vi.resetModules();
     loaderDataMock.mockReset();
@@ -96,7 +96,7 @@ describe("publishers route", () => {
     searchMock.mockReturnValue({});
   });
 
-  it("renders the public publishers listing surface", async () => {
+  it("renders the public creators listing surface", async () => {
     const route = await loadRoute();
     const result = await route.__config.loader?.({ deps: {} });
 
@@ -256,11 +256,11 @@ describe("publishers route", () => {
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
   });
 
-  it("sets publisher-specific sharing metadata", async () => {
+  it("sets creators-specific sharing metadata", async () => {
     const route = await loadRoute();
     const head = route.__config.head?.();
 
-    expect(head?.links).toContainEqual({ rel: "canonical", href: "https://clawhub.ai/publishers" });
-    expect(head?.meta).toContainEqual({ property: "og:title", content: "Publishers · ClawHub" });
+    expect(head?.links).toContainEqual({ rel: "canonical", href: "https://clawhub.ai/creators" });
+    expect(head?.meta).toContainEqual({ property: "og:title", content: "Creators · ClawHub" });
   });
 });

@@ -105,9 +105,17 @@ function publicRouteCases(): PublicRouteCase[] {
       },
     },
     {
-      label: "publishers browse",
+      label: "creators browse",
+      path: () => "/creators",
+      assert: async (page) => {
+        await expect(page.getByRole("heading", { name: /^Creators/ })).toBeVisible();
+      },
+    },
+    {
+      label: "publishers browse redirect",
       path: () => "/publishers",
       assert: async (page) => {
+        await expect(page).toHaveURL(/\/creators/);
         await expect(page.getByRole("heading", { name: /^Creators/ })).toBeVisible();
       },
     },

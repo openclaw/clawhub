@@ -5,7 +5,7 @@ import {
 } from "./publicRouteReservations";
 
 describe("public route reservations", () => {
-  it.each(["admin", "clawhub", "docs", "plugins", "skills"])(
+  it.each(["admin", "clawhub", "creators", "docs", "plugins", "publishers", "skills"])(
     "reserves @%s as a public owner handle",
     (handle) => {
       expect(isReservedPublicOwnerHandle(handle)).toBe(true);

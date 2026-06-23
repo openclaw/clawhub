@@ -61,7 +61,8 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
   },
   {
     label: "Creators",
-    to: PublicRegistryPaths.publishers,
+    to: PublicRegistryPaths.creators,
+    activePathPrefixes: ["/publishers"],
   },
 ];
 
@@ -116,7 +117,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
     items: [
       { kind: "link", label: "Skills", to: PublicRegistryPaths.skills, search: SKILLS_SEARCH },
       { kind: "link", label: "Plugins", to: PublicRegistryPaths.plugins },
-      { kind: "link", label: "Publishers", to: PublicRegistryPaths.publishers },
+      { kind: "link", label: "Creators", to: PublicRegistryPaths.creators },
       {
         kind: "link",
         label: "Audits",

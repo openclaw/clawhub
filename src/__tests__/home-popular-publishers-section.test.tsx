@@ -31,7 +31,7 @@ vi.mock("@tanstack/react-router", () => ({
       {...props}
       className={className}
       href={
-        params?.slug ? `/${params.slug}` : params?.handle ? `/user/${params.handle}` : "/publishers"
+        params?.slug ? `/${params.slug}` : params?.handle ? `/user/${params.handle}` : "/creators"
       }
     >
       {children}

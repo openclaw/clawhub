@@ -186,7 +186,7 @@ export function PublisherProfilePage({
             icon={Building2}
             title="Publisher not found"
             description="This publisher doesn't exist or may have been removed."
-            action={{ label: "Browse publishers", href: "/publishers" }}
+            action={{ label: "Browse creators", href: "/creators" }}
           />
         </Container>
       </main>
