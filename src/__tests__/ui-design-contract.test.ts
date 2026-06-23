@@ -112,7 +112,7 @@ describe("restored UI design contract", () => {
     expect(headerSource).not.toContain('className="navbar-tabs-secondary"');
 
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
-    expect(navSource).toContain('label: "Publishers"');
+    expect(navSource).toContain('label: "Creators"');
     expect(navSource).toContain('label: "Docs"');
     expect(navSource).toContain("href: CLAWHUB_DOCS_URL");
     expect(publicRegistrySource).toContain(

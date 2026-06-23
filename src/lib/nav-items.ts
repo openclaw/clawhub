@@ -44,7 +44,7 @@ const SKILLS_SEARCH = {
 
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
-// These map to the content-type tabs: Skills | Plugins | Publishers
+// These map to the content-type tabs: Skills | Plugins | Creators
 // ---------------------------------------------------------------------------
 
 export const PRIMARY_NAV_ITEMS: NavItem[] = [
@@ -60,7 +60,7 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     activePathPrefixes: ["/plugin/"],
   },
   {
-    label: "Publishers",
+    label: "Creators",
     to: PublicRegistryPaths.publishers,
   },
 ];

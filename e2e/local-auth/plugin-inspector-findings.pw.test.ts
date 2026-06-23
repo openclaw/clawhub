@@ -2,12 +2,7 @@ import { writeFile } from "node:fs/promises";
 import { expect, type Page, test, type TestInfo } from "@playwright/test";
 import { strToU8, zipSync } from "fflate";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
-import {
-  buildPluginDetailHref,
-  buildPluginValidationHref,
-  escapeRegExp,
-  signInAsLocalPersona,
-} from "./helpers";
+import { buildPluginValidationHref, escapeRegExp, signInAsLocalPersona } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
