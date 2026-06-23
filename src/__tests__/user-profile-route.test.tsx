@@ -8,7 +8,9 @@ import {
   formatRelativeUpdatedAt,
   getCatalogItemShortTypeLabel,
   groupPublisherCatalogItemsByTopic,
+  parsePluginCatalogRoute,
   publisherCatalogItemMatchesCategory,
+  resolveDefaultCatalogTab,
   shouldShowPublisherCatalogLoadMore,
 } from "../routes/user/$handle";
 
@@ -42,15 +44,7 @@ vi.mock("@tanstack/react-router", () => ({
     useParams: () => ({ handle: "nvidia" }),
     useSearch: () => ({}),
   }),
-  Link: ({
-    children,
-    to,
-    className,
-  }: {
-    children: ReactNode;
-    to?: string;
-    className?: string;
-  }) => (
+  Link: ({ children, to, className }: { children: ReactNode; to?: string; className?: string }) => (
     <a href={to ?? "/test"} className={className}>
       {children}
     </a>
@@ -137,10 +131,47 @@ describe("user profile route", () => {
 
     const catalogTabs = screen.getByRole("group", { name: "Catalog" });
     expect(catalogTabs.className).toContain("clawhub-segmented");
-    expect(within(catalogTabs).getByRole("button", { name: /skills 136/i, pressed: true })).toBeTruthy();
-    expect(within(catalogTabs).getByRole("button", { name: /plugins 0/i, pressed: false })).toBeTruthy();
+    expect(
+      within(catalogTabs).getByRole("button", { name: /skills 136/i, pressed: true }),
+    ).toBeTruthy();
+    expect(
+      within(catalogTabs).getByRole("button", { name: /plugins 0/i, pressed: false }),
+    ).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Sort" })).toBeTruthy();
     expect(screen.getByRole("combobox", { name: "Sort" }).textContent).toMatch(/^Sort$/i);
+  });
+
+  it("opens plugins tab when publisher has plugins but no skills", async () => {
+    const pluginsOnlyPublisher = {
+      ...publisher,
+      handle: "expediagroup",
+      displayName: "Expedia Group",
+      stats: {
+        ...publisher.stats,
+        skills: 0,
+        packages: 1,
+      },
+    };
+    loaderDataMock.mockReturnValue({ publisher: pluginsOnlyPublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: pluginsOnlyPublisher, members: [] };
+      if ("kind" in args) return null;
+      return pluginsOnlyPublisher;
+    });
+
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const catalogTabs = screen.getByRole("group", { name: "Catalog" });
+    expect(
+      within(catalogTabs).getByRole("button", { name: /skills 0/i, pressed: false }),
+    ).toBeTruthy();
+    expect(
+      within(catalogTabs).getByRole("button", { name: /plugins 1/i, pressed: true }),
+    ).toBeTruthy();
   });
 
   it("shows catalog search trigger when item count meets threshold", async () => {
@@ -254,6 +285,36 @@ describe("user profile route", () => {
 });
 
 describe("publisher profile helpers", () => {
+  it("resolves default catalog tab from publisher stats", () => {
+    expect(resolveDefaultCatalogTab({ stats: { skills: 10, packages: 0 } } as never)).toBe(
+      "skills",
+    );
+    expect(resolveDefaultCatalogTab({ stats: { skills: 0, packages: 3 } } as never)).toBe(
+      "plugins",
+    );
+    expect(resolveDefaultCatalogTab({ stats: { skills: 5, packages: 2 } } as never)).toBe("skills");
+    expect(resolveDefaultCatalogTab({ stats: { skills: 0, packages: 0 } } as never)).toBe("skills");
+  });
+
+  it("parses publisher-scoped plugin routes from catalog hrefs", () => {
+    expect(
+      parsePluginCatalogRoute({
+        _id: "packages:gateway",
+        kind: "plugin",
+        displayName: "Gateway",
+        summary: null,
+        icon: null,
+        href: "/expediagroup/plugins/travel-gateway",
+        stars: 0,
+        isOfficial: true,
+        updatedAt: 1,
+      }),
+    ).toEqual({
+      ownerHandle: "expediagroup",
+      name: "@expediagroup/travel-gateway",
+    });
+  });
+
   it("renames empty topic groups to uncategorized and sorts them last", () => {
     const groups = groupPublisherCatalogItemsByTopic([
       {
@@ -306,6 +367,14 @@ describe("publisher profile helpers", () => {
         },
       }),
     ).toBe(false);
+
+    expect(
+      shouldShowPublisherCatalogLoadMore({
+        activeStatus: "CanLoadMore",
+        catalogSearch: "weather",
+        selectedCatalogGroup: "all",
+      }),
+    ).toBe(true);
 
     expect(
       shouldShowPublisherCatalogLoadMore({
@@ -369,9 +438,9 @@ describe("publisher profile helpers", () => {
       },
     ];
 
-    expect(buildPublisherCatalogCategoryOptions(items, "skill").map((category) => category.slug)).toEqual(
-      ["development"],
-    );
+    expect(
+      buildPublisherCatalogCategoryOptions(items, "skill").map((category) => category.slug),
+    ).toEqual(["development"]);
     expect(
       buildPublisherCatalogCategoryOptions(items, "plugin").map((category) => category.slug),
     ).toEqual(["gateway"]);

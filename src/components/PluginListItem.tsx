@@ -13,6 +13,7 @@ import { OfficialBadge } from "./OfficialBadge";
 type PluginListItemProps = {
   item: PackageListItem;
   variant?: "list" | "card";
+  href?: string;
 };
 
 const PLUGIN_CATEGORIES_BY_SLUG = new Map(
@@ -39,7 +40,7 @@ function getPluginCategories(item: PackageListItem) {
   });
 }
 
-export function PluginListItem({ item, variant = "list" }: PluginListItemProps) {
+export function PluginListItem({ item, variant = "list", href }: PluginListItemProps) {
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
   const taxonomy = getPluginTaxonomyDisplay(item);
   const categories = getPluginCategories(item);
@@ -48,7 +49,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
     .slice(0, 3)
     .map((category) => category.label)
     .join(", ");
-  const pluginHref = buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
+  const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
 
   if (variant === "card") {
     return (

@@ -74,9 +74,7 @@ describe("PublishedItemCard", () => {
   });
 
   it("renders Slash when skill category data is missing", () => {
-    render(
-      <PublishedItemCard item={{ ...baseSkill, categories: undefined, icon: null }} />,
-    );
+    render(<PublishedItemCard item={{ ...baseSkill, categories: undefined, icon: null }} />);
     expect(document.querySelector("svg")?.classList.contains("lucide-slash")).toBe(true);
   });
 
@@ -133,6 +131,23 @@ describe("PublishedItemCard", () => {
     expect(screen.queryByText("@plugin")).toBeNull();
     expect(screen.queryByText("/")).toBeNull();
     expect(screen.getByText("Test Plugin")).toBeTruthy();
+  });
+
+  it("keeps publisher-scoped plugin detail links from catalog hrefs", () => {
+    render(
+      <PublishedItemCard
+        item={{
+          ...basePlugin,
+          icon: null,
+          href: "/expediagroup/plugins/travel-gateway",
+          displayName: "Travel Gateway",
+        }}
+      />,
+    );
+
+    const link = screen.getByRole("link", { name: /travel gateway/i });
+    expect(link.getAttribute("href")).toBe("/expediagroup/plugins/travel-gateway");
+    expect(screen.getByText("@expediagroup")).toBeTruthy();
   });
 });
 

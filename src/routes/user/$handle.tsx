@@ -15,7 +15,6 @@ import {
   Download,
   Flag,
   MoreHorizontal,
-  Package,
   Search,
   Star,
   type LucideIcon,
@@ -23,6 +22,7 @@ import {
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
+import type { Id } from "../../../convex/_generated/dataModel";
 import {
   BrowseActions,
   BrowseControls,
@@ -41,8 +41,8 @@ import { Container } from "../../components/layout/Container";
 import { MarketplaceIcon } from "../../components/MarketplaceIcon";
 import { OfficialBadge, OfficialTag } from "../../components/OfficialBadge";
 import { PluginListItem } from "../../components/PluginListItem";
-import { SkillListItem } from "../../components/SkillListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
+import { SkillListItem } from "../../components/SkillListItem";
 import { SkillReportDialog } from "../../components/SkillReportDialog";
 import { Button } from "../../components/ui/button";
 import {
@@ -62,11 +62,11 @@ import {
   SKILL_CATEGORIES,
   type BrowseCategory,
 } from "../../lib/categories";
-import type { PackageListItem } from "../../lib/packageApi";
 import { formatCompactStat } from "../../lib/numberFormat";
 import { buildPublisherMeta } from "../../lib/og";
 import { buildPublisherProfileHref, isLegacyPublisherProfileHandle } from "../../lib/ownerRoute";
-import { useAuthStatus } from "../../lib/useAuthStatus";
+import type { PackageListItem } from "../../lib/packageApi";
+import { packageNameFromPublisherPluginRoute } from "../../lib/pluginRoutes";
 import type {
   PublicPublisher,
   PublicPublisherCatalogDisplay,
@@ -75,7 +75,7 @@ import type {
   PublicSkill,
 } from "../../lib/publicUser";
 import { readPublicDownloadCount } from "../../lib/publicUser";
-import type { Id } from "../../../convex/_generated/dataModel";
+import { useAuthStatus } from "../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/user/$handle")({
   beforeLoad: ({ params }) => {
@@ -153,6 +153,14 @@ function formatCatalogTabCount(value: number) {
   return formatBrowseCount(value) ?? formatCompactStat(value);
 }
 
+export function resolveDefaultCatalogTab(
+  publisher: Pick<PublicPublisherListItem, "stats">,
+): Extract<ProfileCatalogTab, "skills" | "plugins"> {
+  if (publisher.stats.skills > 0) return "skills";
+  if (publisher.stats.packages > 0) return "plugins";
+  return "skills";
+}
+
 function buildCatalogTabOptions(publisher: PublicPublisherListItem) {
   const options = [
     {
@@ -219,10 +227,7 @@ function PublisherProfileBio({ bio }: { bio: string }) {
 
   return (
     <div className="publisher-profile-bio-block">
-      <p
-        ref={bioRef}
-        className={`publisher-profile-bio${expanded ? "" : " is-clamped"}`}
-      >
+      <p ref={bioRef} className={`publisher-profile-bio${expanded ? "" : " is-clamped"}`}>
         {bio}
       </p>
       {canExpand ? (
@@ -248,10 +253,7 @@ type PublisherStatCard = {
   icon: LucideIcon;
 };
 
-export function buildPublisherStatCards(
-  publisher: PublicPublisherListItem,
-  publishedCount: number,
-): PublisherStatCard[] {
+export function buildPublisherStatCards(publisher: PublicPublisherListItem): PublisherStatCard[] {
   return [
     {
       key: "downloads",
@@ -265,12 +267,6 @@ export function buildPublisherStatCards(
       label: "stars",
       icon: Star,
     },
-    {
-      key: "published",
-      value: formatCompactStat(publishedCount),
-      label: "published",
-      icon: Package,
-    },
   ];
 }
 
@@ -281,7 +277,7 @@ function PublisherProfileStatCards({ cards }: { cards: PublisherStatCard[] }) {
         const Icon = card.icon;
         return (
           <div key={card.key} className="publisher-profile-stat">
-            <Icon size={15} aria-hidden="true" className="publisher-profile-stat-icon" />
+            <Icon size={16} aria-hidden="true" className="publisher-profile-stat-icon" />
             <dd className="publisher-profile-stat-value">{card.value}</dd>
             <dt className="publisher-profile-stat-label">{card.label}</dt>
           </div>
@@ -316,15 +312,9 @@ function PublisherProfileMemberMenuRow({
           {name}
           {entry.user.official ? <OfficialBadge /> : null}
         </span>
-        {showRole ? (
-          <span className="publisher-profile-member-menu-role">{entry.role}</span>
-        ) : null}
+        {showRole ? <span className="publisher-profile-member-menu-role">{entry.role}</span> : null}
       </span>
-      <ArrowRight
-        size={14}
-        aria-hidden="true"
-        className="publisher-profile-member-menu-arrow"
-      />
+      <ArrowRight size={14} aria-hidden="true" className="publisher-profile-member-menu-arrow" />
     </Link>
   );
 }
@@ -441,11 +431,7 @@ function PublisherProfileChromeActions({
   );
 }
 
-function PublisherProfileChromeIdentity({
-  publisher,
-}: {
-  publisher: PublicPublisherListItem;
-}) {
+function PublisherProfileChromeIdentity({ publisher }: { publisher: PublicPublisherListItem }) {
   return (
     <div className="publisher-profile-chrome-identity">
       <div className="publisher-profile-avatar">
@@ -478,7 +464,12 @@ export function PublisherProfilePage({
 }) {
   const { isAuthenticated } = useAuthStatus();
   const { signIn } = useAuthActions();
-  const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>("skills");
+  const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>(() =>
+    resolveDefaultCatalogTab(loaderPublisher),
+  );
+  useEffect(() => {
+    setCatalogTab(resolveDefaultCatalogTab(loaderPublisher));
+  }, [handle, loaderPublisher]);
   const [catalogSort, setCatalogSort] = useState<ProfileCatalogSort>(DEFAULT_PROFILE_CATALOG_SORT);
   const [catalogSearch, setCatalogSearch] = useState("");
   const [selectedCatalogGroup, setSelectedCatalogGroup] = useState("all");
@@ -494,8 +485,7 @@ export function PublisherProfilePage({
     inputRef: searchInputRef,
   });
 
-  const activeCatalogSort =
-    catalogSort === DEFAULT_PROFILE_CATALOG_SORT ? undefined : catalogSort;
+  const activeCatalogSort = catalogSort === DEFAULT_PROFILE_CATALOG_SORT ? undefined : catalogSort;
 
   const apiSort = catalogSort === "stars" ? "downloads" : catalogSort;
 
@@ -653,7 +643,7 @@ export function PublisherProfilePage({
                 </div>
               </div>
             </div>
-            <BrowseResultsSkeleton count={6} variant="list" />
+            <BrowseResultsSkeleton count={6} showColumnHead={false} variant="list" />
           </div>
         </Container>
       </main>
@@ -675,7 +665,6 @@ export function PublisherProfilePage({
     );
   }
 
-  const publishedCount = publisher.stats.skills + publisher.stats.packages;
   const affiliations = publisher.affiliations ?? [];
   const memberEntries = members?.members ?? [];
   const activeStatus = catalogTab === "stars" ? starredStatus : publishedStatus;
@@ -701,7 +690,7 @@ export function PublisherProfilePage({
   const hiddenOrgCount = Math.max(0, affiliations.length - VISIBLE_ORG_CHIPS);
   const showOrganizations = publisher.kind === "user" && affiliations.length > 0;
   const showMembers = publisher.kind === "org" && memberEntries.length > 0;
-  const publisherStatCards = buildPublisherStatCards(publisher, publishedCount);
+  const publisherStatCards = buildPublisherStatCards(publisher);
   const profileBio = publisher.bio?.trim() || DEFAULT_PUBLISHER_BIO;
 
   return (
@@ -747,6 +736,45 @@ export function PublisherProfilePage({
                     </section>
                   ) : null}
 
+                  {showOrganizations ? (
+                    <section
+                      className="publisher-profile-detail-block publisher-profile-detail-block-fit publisher-profile-details-organizations"
+                      aria-label="Organizations"
+                    >
+                      <h2 className="publisher-profile-detail-label">Organizations</h2>
+                      <div className="publisher-profile-meta-chips">
+                        {visibleOrgs.map((entry) => (
+                          <Link
+                            key={entry.publisher._id}
+                            to="/user/$handle"
+                            params={{ handle: entry.publisher.handle }}
+                            className="publisher-profile-meta-chip"
+                          >
+                            <MarketplaceIcon
+                              kind="org"
+                              label={entry.publisher.displayName}
+                              imageUrl={entry.publisher.image}
+                              size="xs"
+                            />
+                            <span className="publisher-profile-meta-chip-copy">
+                              <strong>{entry.publisher.displayName}</strong>
+                              <small>{entry.role}</small>
+                            </span>
+                          </Link>
+                        ))}
+                        {!showAllOrgs && hiddenOrgCount > 0 ? (
+                          <button
+                            type="button"
+                            className="publisher-profile-meta-chip publisher-profile-meta-chip-more"
+                            onClick={() => setShowAllOrgs(true)}
+                          >
+                            +{hiddenOrgCount}
+                          </button>
+                        ) : null}
+                      </div>
+                    </section>
+                  ) : null}
+
                   <section
                     className="publisher-profile-detail-block publisher-profile-details-links"
                     aria-label="Links"
@@ -770,42 +798,6 @@ export function PublisherProfilePage({
                     </div>
                   </section>
                 </div>
-
-                {showOrganizations ? (
-                  <section className="publisher-profile-detail-block" aria-label="Organizations">
-                    <h2 className="publisher-profile-detail-label">Organizations</h2>
-                    <div className="publisher-profile-meta-chips">
-                      {visibleOrgs.map((entry) => (
-                        <Link
-                          key={entry.publisher._id}
-                          to="/user/$handle"
-                          params={{ handle: entry.publisher.handle }}
-                          className="publisher-profile-meta-chip"
-                        >
-                          <MarketplaceIcon
-                            kind="org"
-                            label={entry.publisher.displayName}
-                            imageUrl={entry.publisher.image}
-                            size="xs"
-                          />
-                          <span className="publisher-profile-meta-chip-copy">
-                            <strong>{entry.publisher.displayName}</strong>
-                            <small>{entry.role}</small>
-                          </span>
-                        </Link>
-                      ))}
-                      {!showAllOrgs && hiddenOrgCount > 0 ? (
-                        <button
-                          type="button"
-                          className="publisher-profile-meta-chip publisher-profile-meta-chip-more"
-                          onClick={() => setShowAllOrgs(true)}
-                        >
-                          +{hiddenOrgCount}
-                        </button>
-                      ) : null}
-                    </div>
-                  </section>
-                ) : null}
               </div>
             </div>
           </section>
@@ -864,53 +856,53 @@ export function PublisherProfilePage({
               className="publisher-profile-catalog browse-page"
               aria-label="Publisher catalog"
             >
-            {isLoadingCatalog ? (
-              <BrowseResultsSkeleton count={6} variant="list" />
-            ) : catalogGroups.length > 1 ? (
-              <PublisherGroupedCatalog
-                groups={catalogGroups}
-                selectedGroup={selectedCatalogGroup}
-                onSelectedGroupChange={setSelectedCatalogGroup}
-                footer={
-                  showCatalogLoadMore ? (
+              {isLoadingCatalog ? (
+                <BrowseResultsSkeleton count={6} showColumnHead={false} variant="list" />
+              ) : catalogGroups.length > 1 ? (
+                <PublisherGroupedCatalog
+                  groups={catalogGroups}
+                  selectedGroup={selectedCatalogGroup}
+                  onSelectedGroupChange={setSelectedCatalogGroup}
+                  footer={
+                    showCatalogLoadMore ? (
+                      <div className="publisher-profile-load-more">
+                        <Button type="button" onClick={() => activeLoadMore(12)}>
+                          Load more
+                        </Button>
+                      </div>
+                    ) : activeStatus === "LoadingMore" ? (
+                      <div className="publisher-profile-loading">Loading more...</div>
+                    ) : null
+                  }
+                />
+              ) : filteredItems.length > 0 ? (
+                <>
+                  <PublisherCatalogItems items={filteredItems} />
+                  {showCatalogLoadMore ? (
                     <div className="publisher-profile-load-more">
                       <Button type="button" onClick={() => activeLoadMore(12)}>
                         Load more
                       </Button>
                     </div>
-                  ) : activeStatus === "LoadingMore" ? (
+                  ) : null}
+                  {activeStatus === "LoadingMore" ? (
                     <div className="publisher-profile-loading">Loading more...</div>
-                  ) : null
-                }
-              />
-            ) : filteredItems.length > 0 ? (
-              <>
-                <PublisherCatalogItems items={filteredItems} />
-                {showCatalogLoadMore ? (
-                  <div className="publisher-profile-load-more">
-                    <Button type="button" onClick={() => activeLoadMore(12)}>
-                      Load more
-                    </Button>
-                  </div>
-                ) : null}
-                {activeStatus === "LoadingMore" ? (
-                  <div className="publisher-profile-loading">Loading more...</div>
-                ) : null}
-              </>
-            ) : (
-              <EmptyState
-                icon={catalogSearch.trim().length > 0 ? Search : undefined}
-                title={
-                  catalogSearch.trim().length > 0
-                    ? "No matching items"
-                    : catalogTab === "stars"
-                      ? "No starred items yet"
-                      : catalogTab === "plugins"
-                        ? "No published plugins yet"
-                        : "No published skills yet"
-                }
-              />
-            )}
+                  ) : null}
+                </>
+              ) : (
+                <EmptyState
+                  icon={catalogSearch.trim().length > 0 ? Search : undefined}
+                  title={
+                    catalogSearch.trim().length > 0
+                      ? "No matching items"
+                      : catalogTab === "stars"
+                        ? "No starred items yet"
+                        : catalogTab === "plugins"
+                          ? "No published plugins yet"
+                          : "No published skills yet"
+                  }
+                />
+              )}
             </section>
           </div>
         </div>
@@ -1038,7 +1030,7 @@ export function buildPublisherGroupTabOptions(groups: PublisherCatalogGroup[]) {
 
 export function shouldShowPublisherCatalogLoadMore({
   activeStatus,
-  catalogSearch,
+  catalogSearch: _catalogSearch,
   selectedCatalogGroup,
   activePublishedDisplay,
 }: {
@@ -1048,10 +1040,7 @@ export function shouldShowPublisherCatalogLoadMore({
   activePublishedDisplay: PublicPublisherCatalogDisplay | null | undefined;
 }) {
   return (
-    activeStatus === "CanLoadMore" &&
-    catalogSearch.trim().length === 0 &&
-    selectedCatalogGroup === "all" &&
-    !activePublishedDisplay
+    activeStatus === "CanLoadMore" && selectedCatalogGroup === "all" && !activePublishedDisplay
   );
 }
 
@@ -1069,7 +1058,10 @@ function PublisherCatalogItems({ items }: { items: PublicPublisherCatalogItem[] 
 
 function PublisherCatalogGroupSection({ group }: { group: PublisherCatalogGroup }) {
   return (
-    <section className="publisher-profile-manifest-section" aria-labelledby={`catalog-group-${group.key}`}>
+    <section
+      className="publisher-profile-manifest-section"
+      aria-labelledby={`catalog-group-${group.key}`}
+    >
       <header className="publisher-profile-manifest-heading">
         <h3 id={`catalog-group-${group.key}`}>{group.title}</h3>
         {group.description ? <p>{group.description}</p> : null}
@@ -1185,8 +1177,7 @@ export function getCatalogItemTypeLabel(item: PublicPublisherCatalogItem) {
     latestVersionId: item.latestVersionId,
     inferredFromVersionId: item.inferredFromVersionId,
   });
-  const subtype =
-    item.topics?.[0]?.trim() || category?.label || UNCATEGORIZED_GROUP_TITLE;
+  const subtype = item.topics?.[0]?.trim() || category?.label || UNCATEGORIZED_GROUP_TITLE;
   return `Skill · ${subtype}`;
 }
 
@@ -1211,13 +1202,37 @@ function parseCatalogItemSlug(item: PublicPublisherCatalogItem) {
   return segments[segments.length - 1] ?? item._id;
 }
 
-function parsePluginName(item: PublicPublisherCatalogItem) {
+export function parsePluginCatalogRoute(item: PublicPublisherCatalogItem): {
+  name: string;
+  ownerHandle?: string;
+} {
   const segments = item.href.split("/").filter(Boolean);
   const pluginsIndex = segments.indexOf("plugins");
-  if (pluginsIndex >= 0 && segments[pluginsIndex + 1]) {
-    return decodeURIComponent(segments[pluginsIndex + 1]);
+  if (pluginsIndex < 0) {
+    return { name: parseCatalogItemSlug(item) };
   }
-  return parseCatalogItemSlug(item);
+
+  const pluginSegment = segments[pluginsIndex + 1];
+  if (!pluginSegment) {
+    return { name: parseCatalogItemSlug(item) };
+  }
+
+  if (pluginsIndex > 0) {
+    const ownerHandle = decodeURIComponent(segments[pluginsIndex - 1]);
+    const pluginName = decodeURIComponent(pluginSegment);
+    return {
+      ownerHandle,
+      name: packageNameFromPublisherPluginRoute(ownerHandle, pluginName) ?? pluginName,
+    };
+  }
+
+  if (pluginSegment.startsWith("@") && segments[pluginsIndex + 2]) {
+    const scope = decodeURIComponent(pluginSegment);
+    const pluginName = decodeURIComponent(segments[pluginsIndex + 2]);
+    return { name: `${scope}/${pluginName}` };
+  }
+
+  return { name: decodeURIComponent(pluginSegment) };
 }
 
 export function catalogItemToPublicSkill(item: PublicPublisherCatalogItem): PublicSkill {
@@ -1234,9 +1249,7 @@ export function catalogItemToPublicSkill(item: PublicPublisherCatalogItem): Publ
     latestVersionId: item.latestVersionId as Id<"skillVersions"> | undefined,
     inferredFromVersionId: item.inferredFromVersionId as Id<"skillVersions"> | undefined,
     topics: item.topics,
-    badges: item.isOfficial
-      ? { official: { byUserId: "users:system" as Id<"users">, at: 0 } }
-      : {},
+    badges: item.isOfficial ? { official: { byUserId: "users:system" as Id<"users">, at: 0 } } : {},
     stats: {
       downloads: readPublicDownloadCount(item),
       stars: item.stars,
@@ -1253,8 +1266,10 @@ export function catalogItemToPublicSkill(item: PublicPublisherCatalogItem): Publ
 }
 
 function catalogItemToPackageListItem(item: PublicPublisherCatalogItem): PackageListItem {
+  const route = parsePluginCatalogRoute(item);
   return {
-    name: parsePluginName(item),
+    name: route.name,
+    ownerHandle: route.ownerHandle,
     displayName: item.displayName,
     family: "code-plugin",
     channel: item.isOfficial ? "official" : "community",
@@ -1277,7 +1292,7 @@ function catalogItemToPackageListItem(item: PublicPublisherCatalogItem): Package
 export function PublishedItemCard({ item }: { item: PublicPublisherCatalogItem }) {
   if (item.kind === "plugin") {
     const plugin = catalogItemToPackageListItem(item);
-    return <PluginListItem item={plugin} variant="list" />;
+    return <PluginListItem item={plugin} variant="list" href={item.href} />;
   }
 
   const skill = catalogItemToPublicSkill(item);

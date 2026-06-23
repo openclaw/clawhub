@@ -381,7 +381,12 @@ code {
   flex-direction: column;
 }
 
-.app-shell:has(.skill-detail-page, .plugin-detail-page, .security-audit-page, .publisher-profile-route)::before {
+.app-shell:has(
+    .skill-detail-page,
+    .plugin-detail-page,
+    .security-audit-page,
+    .publisher-profile-route
+  )::before {
   position: absolute;
   top: 0;
   right: 0;
@@ -404,15 +409,31 @@ code {
 }
 
 [data-theme-resolved="light"]
-  .app-shell:has(.skill-detail-page, .plugin-detail-page, .security-audit-page, .publisher-profile-route)::before {
+  .app-shell:has(
+    .skill-detail-page,
+    .plugin-detail-page,
+    .security-audit-page,
+    .publisher-profile-route
+  )::before {
   display: none;
 }
 
-.app-shell:has(.skill-detail-page, .plugin-detail-page, .security-audit-page, .publisher-profile-route) .navbar.navbar-calm {
+.app-shell:has(
+    .skill-detail-page,
+    .plugin-detail-page,
+    .security-audit-page,
+    .publisher-profile-route
+  )
+  .navbar.navbar-calm {
   background: transparent;
 }
 
-.app-shell:has(.skill-detail-page, .plugin-detail-page, .security-audit-page, .publisher-profile-route)
+.app-shell:has(
+    .skill-detail-page,
+    .plugin-detail-page,
+    .security-audit-page,
+    .publisher-profile-route
+  )
   .navbar.navbar-calm.navbar-calm-scrolled {
   background: color-mix(in srgb, var(--nav-bg) 78%, transparent);
 }
@@ -481,7 +502,13 @@ code {
   border-bottom: 1px solid var(--line);
 }
 
-.app-shell:has(.skill-detail-page, .plugin-detail-page, .security-audit-page, .publisher-profile-route) .navbar {
+.app-shell:has(
+    .skill-detail-page,
+    .plugin-detail-page,
+    .security-audit-page,
+    .publisher-profile-route
+  )
+  .navbar {
   border-bottom: 0;
 }
 
@@ -18203,7 +18230,6 @@ a.search-empty-action {
   }
 }
 
-
 .profile-header {
   display: flex;
   align-items: center;
@@ -19953,8 +19979,8 @@ a.search-empty-action {
 .clawhub-segmented,
 .home-v2-listing-kind,
 .home-v2-listing-view {
-  --clawhub-segmented-h: 36px;
   --clawhub-segmented-seg-h: 30px;
+  --clawhub-segmented-h: calc(var(--clawhub-segmented-seg-h) + 8px);
   --home-v2-listing-control-h: var(--clawhub-segmented-h);
   --home-v2-listing-control-seg-h: var(--clawhub-segmented-seg-h);
   --clawhub-segmented-border: var(--line);
@@ -20006,6 +20032,13 @@ a.search-empty-action {
 
 .clawhub-segmented-btn {
   gap: 6px;
+}
+
+.clawhub-segmented-label,
+.clawhub-segmented-count {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .clawhub-segmented-count {
@@ -21181,6 +21214,7 @@ a.search-empty-action {
   position: relative;
   isolation: isolate;
   margin-bottom: var(--footer-easter-depth);
+  padding: 0;
   border-radius: 0;
   background: var(--hv2-bg);
   border-top-color: var(--hv2-border);
@@ -21288,9 +21322,11 @@ a.search-empty-action {
 .site-footer-v2 .site-footer-inner {
   position: relative;
   z-index: 1;
-  padding: 72px 48px 52px;
+  width: 100%;
+  max-width: var(--page-max);
   margin-inline: auto;
-  max-width: 1296px;
+  padding: 72px var(--space-6) 52px;
+  box-sizing: border-box;
 }
 
 .footer-v2-main {
@@ -21742,7 +21778,7 @@ a.search-empty-action {
 
 @media (max-width: 960px) {
   .site-footer-v2 .site-footer-inner {
-    padding: 56px 28px 40px;
+    padding: 56px var(--space-6) 40px;
   }
 
   .footer-v2-main {
@@ -21761,7 +21797,7 @@ a.search-empty-action {
 
 @media (max-width: 760px) {
   .site-footer-v2 .site-footer-inner {
-    padding: 44px 20px 32px;
+    padding: 44px var(--space-4) 32px;
   }
 
   .site-footer-v2 .footer-v2-eco {
@@ -21888,7 +21924,6 @@ a.search-empty-action {
     display: none;
   }
 }
-
 
 .about-page {
   display: grid;
@@ -27008,8 +27043,8 @@ a[class*="rounded-full"] {
 }
 
 .clawhub-segmented {
-  --clawhub-segmented-h: 36px;
   --clawhub-segmented-seg-h: 30px;
+  --clawhub-segmented-h: calc(var(--clawhub-segmented-seg-h) + 8px);
   --clawhub-segmented-border: var(--line);
   --clawhub-segmented-bg: color-mix(in srgb, var(--surface) 95%, transparent);
   --clawhub-segmented-fg: var(--ink-soft);
@@ -27046,6 +27081,13 @@ a[class*="rounded-full"] {
   transition:
     color 0.15s ease,
     background 0.15s ease;
+}
+
+.clawhub-segmented-label,
+.clawhub-segmented-count {
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .clawhub-segmented-count {

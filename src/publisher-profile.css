@@ -7,7 +7,8 @@
 .publisher-profile-page {
   display: grid;
   gap: var(--space-5);
-  padding-block: var(--space-6) var(--space-7);
+  padding-top: var(--space-8);
+  padding-bottom: var(--space-7);
 }
 
 .publisher-profile-route {
@@ -27,6 +28,8 @@
 
 .publisher-profile-chrome {
   width: 100%;
+  /* Extra flow spacing before the catalog toolbar; scrolls away so sticky stays flush. */
+  margin-bottom: calc(var(--space-6) - var(--space-5));
 }
 
 .publisher-profile-chrome-top {
@@ -98,7 +101,7 @@
 .publisher-profile-stat-value {
   margin: 0;
   color: var(--ink);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   line-height: 1.2;
@@ -107,7 +110,7 @@
 .publisher-profile-stat-label {
   margin: 0;
   color: var(--ink-soft);
-  font-size: var(--fs-sm);
+  font-size: var(--fs-base);
   font-weight: 500;
   line-height: 1.2;
 }
@@ -160,7 +163,69 @@
   height: 72px;
 }
 
-.publisher-profile-chrome-identity .publisher-profile-avatar .marketplace-icon-md .marketplace-icon-glyph {
+.publisher-profile-chrome-identity .publisher-profile-avatar .marketplace-icon,
+.publisher-profile-member-avatar-stack-item .marketplace-icon,
+.publisher-profile-member-menu-row .marketplace-icon,
+.publisher-profile-meta-chip .marketplace-icon {
+  border-radius: 999px;
+  overflow: hidden;
+  box-shadow: none;
+  transform: none;
+  transition: none;
+}
+
+.publisher-profile-chrome-identity
+  .publisher-profile-avatar
+  .marketplace-icon:has(.marketplace-icon-image),
+.publisher-profile-member-avatar-stack-item .marketplace-icon:has(.marketplace-icon-image),
+.publisher-profile-member-menu-row .marketplace-icon:has(.marketplace-icon-image),
+.publisher-profile-meta-chip .marketplace-icon:has(.marketplace-icon-image) {
+  background: transparent;
+  border: none;
+}
+
+.publisher-profile-chrome-identity
+  .publisher-profile-avatar
+  .marketplace-icon:not(:has(.marketplace-icon-image)),
+.publisher-profile-member-avatar-stack-item .marketplace-icon:not(:has(.marketplace-icon-image)),
+.publisher-profile-member-menu-row .marketplace-icon:not(:has(.marketplace-icon-image)),
+.publisher-profile-meta-chip .marketplace-icon:not(:has(.marketplace-icon-image)) {
+  background: color-mix(in srgb, var(--ink) 6%, var(--surface-muted));
+  border: 1px solid var(--line);
+  color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
+}
+
+.publisher-profile-chrome-identity
+  .publisher-profile-avatar
+  .marketplace-icon:not(:has(.marketplace-icon-image))
+  .marketplace-icon-glyph,
+.publisher-profile-member-avatar-stack-item
+  .marketplace-icon:not(:has(.marketplace-icon-image))
+  .marketplace-icon-glyph,
+.publisher-profile-member-menu-row
+  .marketplace-icon:not(:has(.marketplace-icon-image))
+  .marketplace-icon-glyph,
+.publisher-profile-meta-chip
+  .marketplace-icon:not(:has(.marketplace-icon-image))
+  .marketplace-icon-glyph {
+  color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
+}
+
+.publisher-profile-chrome-identity .publisher-profile-avatar .marketplace-icon:hover,
+.publisher-profile-member-avatar-stack-item .marketplace-icon:hover,
+.publisher-profile-member-menu-row .marketplace-icon:hover,
+.publisher-profile-members-trigger:hover
+  .publisher-profile-member-avatar-stack-item
+  .marketplace-icon,
+.publisher-profile-meta-chip .marketplace-icon:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.publisher-profile-chrome-identity
+  .publisher-profile-avatar
+  .marketplace-icon-md
+  .marketplace-icon-glyph {
   width: 36px;
   height: 36px;
 }
@@ -378,8 +443,13 @@
 }
 
 .publisher-profile-member-avatar-stack {
-  display: flex;
+  display: inline-flex;
   align-items: center;
+}
+
+.publisher-profile-member-avatar-stack:has(
+  .publisher-profile-member-avatar-stack-item:nth-child(2)
+) {
   padding-right: 4px;
 }
 
@@ -485,11 +555,21 @@
   outline: none;
 }
 
-[data-theme-resolved="dark"] .publisher-profile-members-menu-list [data-slot="dropdown-menu-item"]:hover,
-[data-theme-resolved="dark"] .publisher-profile-members-menu-list [data-slot="dropdown-menu-item"]:focus-visible,
-[data-theme-resolved="dark"] .publisher-profile-members-menu-list [data-slot="dropdown-menu-item"][data-highlighted],
-[data-theme-resolved="dark"] .publisher-profile-members-menu-list .publisher-profile-member-menu-row:hover,
-[data-theme-resolved="dark"] .publisher-profile-members-menu-list .publisher-profile-member-menu-row[data-highlighted] {
+[data-theme-resolved="dark"]
+  .publisher-profile-members-menu-list
+  [data-slot="dropdown-menu-item"]:hover,
+[data-theme-resolved="dark"]
+  .publisher-profile-members-menu-list
+  [data-slot="dropdown-menu-item"]:focus-visible,
+[data-theme-resolved="dark"]
+  .publisher-profile-members-menu-list
+  [data-slot="dropdown-menu-item"][data-highlighted],
+[data-theme-resolved="dark"]
+  .publisher-profile-members-menu-list
+  .publisher-profile-member-menu-row:hover,
+[data-theme-resolved="dark"]
+  .publisher-profile-members-menu-list
+  .publisher-profile-member-menu-row[data-highlighted] {
   background: color-mix(in srgb, var(--ink) 12%, var(--surface));
 }
 
@@ -630,10 +710,9 @@
   top: var(--site-header-height);
   z-index: 30;
   isolation: isolate;
-  /* Breathing room from hero content to catalog toolbar. */
-  margin-top: var(--space-6);
-  /* Match browse-controls chip gap above and below the divider line. */
-  padding: 10px 0 var(--publisher-catalog-divider-inset);
+  margin-top: 0;
+  /* Divider inset below chips only — no top padding/margin or sticky leaves a header gap. */
+  padding: 0 0 var(--publisher-catalog-divider-inset);
   margin-bottom: calc(var(--publisher-catalog-divider-inset) - var(--space-5));
   border-bottom: 1px solid var(--line);
   background: var(--bg);
@@ -709,6 +788,11 @@
   width: 100%;
 }
 
+.publisher-profile-group-tabs + .publisher-profile-catalog-sections,
+.publisher-profile-group-tabs + .publisher-profile-manifest-section {
+  padding-top: var(--space-3);
+}
+
 .publisher-profile-manifest-section {
   display: grid;
   gap: var(--space-2);
@@ -717,11 +801,13 @@
 .publisher-profile-manifest-heading {
   display: grid;
   gap: 8px;
-  padding: 0 4px;
+  width: 100%;
 }
 
 .publisher-profile-manifest-heading h3 {
   margin: 0;
+  padding-bottom: 10px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 88%, transparent);
   color: color-mix(in srgb, var(--ink) 80%, transparent);
   font-size: clamp(1.125rem, 2vw, 1.375rem);
   font-weight: 760;
@@ -731,6 +817,7 @@
 
 .publisher-profile-manifest-heading p {
   margin: 0;
+  padding: 0 4px;
   color: var(--ink-soft);
   font-size: var(--fs-sm);
   line-height: 1.45;
@@ -777,7 +864,8 @@
 
 @media (max-width: 640px) {
   .publisher-profile-page {
-    padding-block: var(--space-6) var(--space-6);
+    padding-top: var(--space-7);
+    padding-bottom: var(--space-6);
   }
 
   .publisher-profile-chrome-identity {
