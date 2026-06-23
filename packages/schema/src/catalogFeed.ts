@@ -60,7 +60,10 @@ export function parseCatalogFeed(value: unknown): CatalogFeed {
   if (feed.sequence < 0 || !Number.isSafeInteger(feed.sequence)) {
     throw new Error("Catalog feed sequence must be a non-negative integer");
   }
-  if (!Number.isFinite(Date.parse(feed.generatedAt)) || !Number.isFinite(Date.parse(feed.expiresAt))) {
+  if (
+    !Number.isFinite(Date.parse(feed.generatedAt)) ||
+    !Number.isFinite(Date.parse(feed.expiresAt))
+  ) {
     throw new Error("Catalog feed timestamps must be valid ISO dates");
   }
   if (Date.parse(feed.expiresAt) <= Date.parse(feed.generatedAt)) {

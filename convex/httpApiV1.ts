@@ -1,4 +1,5 @@
 import { httpAction } from "./functions";
+import { catalogFeedV1Handler } from "./httpApiV1/catalogFeedV1";
 import { contentRightsV1Handler } from "./httpApiV1/contentRightsV1";
 import { verifyDocsSessionV1Handler } from "./httpApiV1/docsSessionV1";
 import {
@@ -56,6 +57,7 @@ export const listBundlePluginsV1Http = httpAction(listBundlePluginsV1Handler);
 export const verifyDocsSessionV1Http = httpAction(verifyDocsSessionV1Handler);
 export const createPublisherV1Http = httpAction(createPublisherV1Handler);
 export const contentRightsV1Http = httpAction(contentRightsV1Handler);
+export const catalogFeedV1Http = httpAction(catalogFeedV1Handler);
 
 export const searchSkillsV1Http = httpAction(searchSkillsV1Handler);
 export const resolveSkillVersionV1Http = httpAction(resolveSkillVersionV1Handler);
@@ -97,6 +99,7 @@ export const __handlers = {
   verifyDocsSessionV1Handler,
   createPublisherV1Handler,
   contentRightsV1Handler,
+  catalogFeedV1Handler,
   searchSkillsV1Handler,
   resolveSkillVersionV1Handler,
   listSkillsV1Handler,

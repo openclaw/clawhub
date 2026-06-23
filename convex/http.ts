@@ -46,6 +46,7 @@ import {
   starsPostRouterV1Http,
   transfersGetRouterV1Http,
   banAppealContextV1Http,
+  catalogFeedV1Http,
   usersGetRouterV1Http,
   usersListV1Http,
   usersPostRouterV1Http,
@@ -128,6 +129,12 @@ http.route({
   path: ApiRoutes.bundlePlugins,
   method: "GET",
   handler: listBundlePluginsV1Http,
+});
+
+http.route({
+  path: ApiRoutes.catalogFeed,
+  method: "GET",
+  handler: catalogFeedV1Http,
 });
 
 http.route({

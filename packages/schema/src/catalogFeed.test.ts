@@ -66,9 +66,9 @@ describe("catalog feed schema", () => {
     expect(() => parseCatalogFeed(makeFeed({ schemaVersion: 2 }))).toThrow(
       "Unsupported catalog feed schema version",
     );
-    expect(() =>
-      parseCatalogFeed(makeFeed({ expiresAt: "2026-06-22T00:00:00.000Z" })),
-    ).toThrow("expiresAt must be after generatedAt");
+    expect(() => parseCatalogFeed(makeFeed({ expiresAt: "2026-06-22T00:00:00.000Z" }))).toThrow(
+      "expiresAt must be after generatedAt",
+    );
   });
 
   it("rejects malformed install candidates", () => {
