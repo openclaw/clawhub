@@ -13,6 +13,7 @@ import type { QueryCtx } from "./_generated/server";
 import { sha256Hex } from "./lib/clawpack";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
+import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getOwnerPublisher } from "./lib/publishers";
 
 const CATALOG_FEED_DESCRIPTION = "Official OpenClaw plugins published on ClawHub.";
@@ -75,6 +76,7 @@ async function buildEntry(
     ownerPublisherId: pkg.ownerPublisherId,
     ownerUserId: pkg.ownerUserId,
   });
+  if (!(await isOfficialPublisher(ctx, owner))) return null;
   const publisherId = owner?.handle?.trim();
   if (!publisherId) return null;
 

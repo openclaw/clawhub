@@ -4,6 +4,9 @@ import { listOfficialEntries } from "./catalogFeed";
 vi.mock("./lib/publishers", () => ({
   getOwnerPublisher: vi.fn().mockResolvedValue({ handle: "openclaw" }),
 }));
+vi.mock("./lib/officialPublishers", () => ({
+  isOfficialPublisher: vi.fn().mockResolvedValue(true),
+}));
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
@@ -121,6 +124,20 @@ describe("catalog feed projection", () => {
           "packageReleases:3": makeRelease({ sha256hash: undefined }),
         },
       ),
+      { family: "code-plugin" },
+    );
+
+    expect(result).toEqual([]);
+  });
+
+  it("re-checks the live official publisher record", async () => {
+    const { isOfficialPublisher } = await import("./lib/officialPublishers");
+    vi.mocked(isOfficialPublisher).mockResolvedValueOnce(false);
+
+    const result = await listOfficialEntriesHandler(
+      makeCtx([makePackage()], {
+        "packageReleases:1": makeRelease(),
+      }),
       { family: "code-plugin" },
     );
 
