@@ -277,8 +277,13 @@ export async function publishSkillVersion(
   expect(new URL(page.url()).pathname).toBe(buildSkillDetailHref(actualOwnerHandle!, args.slug));
   const successDialog = page.getByRole("dialog", { name: /it's alive/i });
   // Slow local Convex runs can navigate successfully before Playwright observes the transient dialog.
-  if (await successDialog.isVisible({ timeout: 10_000 })) {
-    await page.getByRole("button", { name: "View skill" }).click();
+  if (
+    await successDialog.waitFor({ state: "visible", timeout: 10_000 }).then(
+      () => true,
+      () => false,
+    )
+  ) {
+    await successDialog.getByRole("button", { name: "View skill" }).click();
     await expect(successDialog).toBeHidden();
   }
   await expect(page.locator(".skill-page-title")).toHaveText(args.displayName);

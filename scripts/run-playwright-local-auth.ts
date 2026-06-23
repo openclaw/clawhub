@@ -256,6 +256,7 @@ function isFunctionReadinessRetryableOutput(output: string) {
   return (
     isFunctionUnavailableOutput(output) ||
     isLocalConvexModuleStillPreparingOutput(output) ||
+    output.includes("ConcurrentPush") ||
     output.includes("Function execution timed out (maximum duration: 1s)")
   );
 }
