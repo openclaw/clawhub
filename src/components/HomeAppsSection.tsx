@@ -30,7 +30,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
         <img
-          src={homeAppIconUrl(app.iconDomain)}
+          src={app.iconPath ?? homeAppIconUrl(app.iconDomain)}
           alt=""
           width={40}
           height={40}
