@@ -9561,7 +9561,7 @@ export const publishVersion: ReturnType<typeof action> = action({
       actorUserId: userId,
       ownerHandle: args.ownerHandle,
       minimumRole: "publisher",
-    })) as { publisherId: Id<"publishers"> };
+    })) as { publisherId: Id<"publishers">; handle: string };
     const sourceOwnerHandle =
       args.migrateOwner === true
         ? args.sourceOwnerHandle?.trim() || user.handle?.trim() || undefined
@@ -9577,6 +9577,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     const { icon: _legacyIcon, ...publishArgs } = args;
     return publishVersionForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
+      ownerHandle: target.handle,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
     });

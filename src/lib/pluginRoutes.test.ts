@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPluginCanonicalHrefForRequestedPath,
   buildPluginDetailHref,
   buildPluginSecurityAuditHref,
   displayPluginPackageName,
@@ -26,6 +27,31 @@ describe("plugin routes", () => {
     expect(buildPluginSecurityAuditHref("demo-plugin", { ownerHandle: "@acme" })).toBe(
       "/acme/plugins/demo-plugin/security-audit",
     );
+  });
+
+  it("does not rewrite scoped package names to unrelated owner handles", () => {
+    expect(buildPluginDetailHref("@scope/demo-plugin", { ownerHandle: "acme" })).toBe(
+      "/scope/plugins/demo-plugin",
+    );
+  });
+
+  it("preserves security audit intent when canonicalizing unowned plugin paths", () => {
+    expect(
+      buildPluginCanonicalHrefForRequestedPath(
+        "/plugins/demo-plugin/security-audit",
+        "demo-plugin",
+        "demo-plugin",
+        { ownerHandle: "acme" },
+      ),
+    ).toBe("/acme/plugins/demo-plugin/security-audit");
+    expect(
+      buildPluginCanonicalHrefForRequestedPath(
+        "/plugins/demo-plugin/security/virustotal",
+        "demo-plugin",
+        "demo-plugin",
+        { ownerHandle: "acme" },
+      ),
+    ).toBe("/acme/plugins/demo-plugin/security-audit");
   });
 
   it("parses scoped package names and scoped routes", () => {

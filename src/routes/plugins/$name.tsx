@@ -80,6 +80,7 @@ import {
 } from "../../lib/packageApi";
 import { familyLabel } from "../../lib/packageLabels";
 import {
+  buildPluginCanonicalHrefForRequestedPath,
   buildPluginDetailHref,
   buildPluginSecurityAuditHref,
   displayPluginPackageName,
@@ -256,14 +257,21 @@ export const Route = createFileRoute("/plugins/$name")({
       });
     }
   },
-  loader: async ({ params }) => {
+  loader: async ({ location, params }) => {
     const data = await loadPluginDetail(params.name);
     const ownerHandle = data.detail.owner?.handle ?? null;
     const packageName = data.detail.package?.name ?? null;
 
     if (packageName && ownerHandle) {
       throw redirect({
-        href: buildPluginDetailHref(packageName, { ownerHandle }),
+        href: buildPluginCanonicalHrefForRequestedPath(
+          location?.pathname ?? buildPluginDetailHref(params.name),
+          params.name,
+          packageName,
+          {
+            ownerHandle,
+          },
+        ),
         replace: true,
       });
     }
