@@ -2433,6 +2433,16 @@ const officialPluginMigrations = defineTable({
   .index("by_phase_updatedAt", ["phase", "updatedAt"])
   .index("by_updatedAt", ["updatedAt"]);
 
+const catalogFeedPublications = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  expiresAt: v.string(),
+  payload: v.string(),
+  payloadSha256: v.string(),
+  publishedAt: v.number(),
+}).index("by_feed", ["feedId"]);
+
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2900,6 +2910,7 @@ export default defineSchema({
   packageAppeals,
   packageModerationEventLogs,
   officialPluginMigrations,
+  catalogFeedPublications,
   stars,
   auditLogs,
   publisherAbuseScoreRuns,

@@ -1,0 +1,9 @@
+{
+  "type": "openclaw.registry",
+  "schemaVersion": 1,
+  "registry": "https://registry.openclaw.ai",
+  "feeds": {
+    "plugins": "https://registry.openclaw.ai/v1/feeds/plugins",
+    "skills": "https://registry.openclaw.ai/v1/feeds/skills"
+  }
+}

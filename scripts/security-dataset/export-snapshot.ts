@@ -1,17 +1,24 @@
 import { execFile, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createWriteStream, type WriteStream } from "node:fs";
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { promisify } from "node:util";
 import { gunzipSync } from "node:zlib";
+import { ConvexHttpClient } from "convex/browser";
+import { api } from "../../convex/_generated/api";
 import { artifactInputsFromConvexExportZip } from "./convexExport";
 import { parseConvexJsonMatching } from "./convexOutput";
 import { reserveExportInputs } from "./exportLimit";
+import {
+  buildHuggingFaceSecuritySignalRows,
+  type HuggingFaceSecuritySignalRow,
+} from "./huggingFaceExport";
 import { buildSecurityDatasetManifest } from "./manifest";
 import {
   normalizeArtifactExport,
   type ArtifactExportInput,
+  type DatasetSplit,
   type NormalizedDatasetRows,
   type SourceKind,
 } from "./normalize";
@@ -38,6 +45,14 @@ type ConvexBounds = {
   maxCreatedAt: number | null;
 };
 
+type DatasetLineage = {
+  exportMode: "public";
+  generatedAt: number;
+  redactionPolicyVersion: string;
+  sourceTables: string[];
+  sourceBounds: ConvexBounds[];
+};
+
 type CompressedConvexPage = {
   encoding: "gzip-base64-json";
   payload: string;
@@ -45,6 +60,8 @@ type CompressedConvexPage = {
 
 type Options = {
   deployment: string | null;
+  convexUrl: string | null;
+  workerToken: string | null;
   prod: boolean;
   push: boolean;
   dryRun: boolean;
@@ -58,6 +75,10 @@ type Options = {
   sourceKind: SourceKind | "all";
   timeWindow: CreatedTimeWindow;
   convexExportZip: string | null;
+  sourceSnapshotId: string | null;
+  huggingFaceDataset: boolean;
+  huggingFaceRepo: string;
+  huggingFaceRevision: string;
 };
 
 type ExportShard = {
@@ -76,7 +97,9 @@ type SnapshotState = {
     clawScanFindings: number;
     labels: number;
     splits: number;
+    huggingFaceRows: number;
   };
+  huggingFaceRowCountsBySplit: Record<DatasetSplit, number>;
   scannerVersions: Set<string>;
   modelNames: Set<string>;
 };
@@ -88,6 +111,7 @@ type SnapshotWriters = {
   clawScanFindings: WriteStream;
   labels: WriteStream;
   splits: WriteStream;
+  huggingFaceSplits?: Record<DatasetSplit, WriteStream>;
 };
 
 const DEFAULT_PAGE_SIZE = 50;
@@ -98,12 +122,13 @@ const DEFAULT_MAX_CONVEX_ATTEMPTS = 6;
 const DEFAULT_OUT_DIR = ".data/security-dataset/snapshots";
 const CONVEX_RUN_MAX_BUFFER_BYTES = 128 * 1024 * 1024;
 const SOURCE_KINDS: SourceKind[] = ["skill", "package"];
+const HF_SPLITS: DatasetSplit[] = ["train", "validation", "test", "eval_holdout"];
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
   const snapshotId = buildSnapshotId(options);
   const snapshotDir = resolve(options.outDir, snapshotId);
-  const writers = options.dryRun ? null : await openSnapshotWriters(snapshotDir);
+  const writers = options.dryRun ? null : await openSnapshotWriters(snapshotDir, options);
   let writersClosed = false;
   const state = createSnapshotState();
 
@@ -111,9 +136,15 @@ async function main() {
     const shardCount = options.convexExportZip
       ? await exportConvexExportZip({ options, state, writers })
       : await exportRemoteShards({ options, state, writers });
-    const manifest = buildManifest({ options, snapshotId, state, shardCount });
 
     if (options.dryRun) {
+      const manifest = buildManifest({
+        options,
+        snapshotId,
+        state,
+        shardCount,
+        outputSizes: {},
+      });
       console.log(JSON.stringify({ snapshotId, dryRun: true, manifest }, null, 2));
       return;
     }
@@ -121,6 +152,8 @@ async function main() {
     if (!writers) throw new Error("Snapshot writers were not opened.");
     await closeSnapshotWriters(writers);
     writersClosed = true;
+    const outputSizes = await collectOutputSizes(snapshotDir);
+    const manifest = buildManifest({ options, snapshotId, state, shardCount, outputSizes });
     await writeFile(join(snapshotDir, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`);
 
     console.log(JSON.stringify({ snapshotId, snapshotDir, manifest }, null, 2));
@@ -231,6 +264,7 @@ async function runConvexPage(
   batchPages: number,
 ): Promise<{ page: ConvexPage; batchPages: number }> {
   const functionName = "securityDatasetNode:listArtifactExportBatchCompressedInternal";
+  const workerFunctionName = "securityDatasetNode:listArtifactExportBatchCompressed";
   let pageCount = batchPages;
 
   while (true) {
@@ -246,12 +280,19 @@ async function runConvexPage(
     let lastError: unknown = null;
     for (let attempt = 1; attempt <= DEFAULT_MAX_CONVEX_ATTEMPTS; attempt += 1) {
       try {
-        const compressed = await runConvexJsonOnce<CompressedConvexPage>(
-          options,
-          functionName,
-          args,
-          isCompressedConvexPage,
-        );
+        const compressed = options.workerToken
+          ? await runWorkerAction<CompressedConvexPage>(
+              options,
+              workerFunctionName,
+              { ...args, token: options.workerToken },
+              isCompressedConvexPage,
+            )
+          : await runConvexJsonOnce<CompressedConvexPage>(
+              options,
+              functionName,
+              args,
+              isCompressedConvexPage,
+            );
         return { page: decodeCompressedConvexPage(compressed), batchPages: pageCount };
       } catch (error) {
         lastError = error;
@@ -279,12 +320,50 @@ async function runConvexPage(
 }
 
 async function runConvexBounds(options: Options, sourceKind: SourceKind): Promise<ConvexBounds> {
+  if (options.workerToken) {
+    const lineage = await runWorkerAction<DatasetLineage>(
+      options,
+      "securityDatasetNode:getDatasetLineage",
+      { token: options.workerToken, mode: options.mode },
+      isDatasetLineage,
+    );
+    const bounds = lineage.sourceBounds.find((candidate) => candidate.sourceKind === sourceKind);
+    if (!bounds) {
+      return { sourceKind, minCreatedAt: null, maxCreatedAt: null };
+    }
+    return bounds;
+  }
   return runConvexJson<ConvexBounds>(
     options,
     "securityDataset:getArtifactExportBoundsInternal",
     { sourceKind },
     isConvexBounds,
   );
+}
+
+async function runWorkerAction<T>(
+  options: Options,
+  functionName: string,
+  args: unknown,
+  validate: (value: unknown) => value is T,
+): Promise<T> {
+  if (!options.convexUrl) {
+    throw new Error("--convex-url or CONVEX_URL is required when using --worker-token.");
+  }
+  const client = new ConvexHttpClient(options.convexUrl);
+  const result = await client.action(resolveWorkerAction(functionName), args as never);
+  if (validate(result)) return result;
+  throw new Error(`Invalid ${functionName} response.`);
+}
+
+function resolveWorkerAction(functionName: string) {
+  if (functionName === "securityDatasetNode:listArtifactExportBatchCompressed") {
+    return api.securityDatasetNode.listArtifactExportBatchCompressed;
+  }
+  if (functionName === "securityDatasetNode:getDatasetLineage") {
+    return api.securityDatasetNode.getDatasetLineage;
+  }
+  throw new Error(`Unsupported worker action: ${functionName}`);
 }
 
 async function runConvexJson<T>(
@@ -352,14 +431,19 @@ function buildManifest(input: {
   snapshotId: string;
   state: SnapshotState;
   shardCount: number;
+  outputSizes: Record<string, number>;
 }) {
-  const { options, snapshotId, state, shardCount } = input;
+  const { options, snapshotId, state, shardCount, outputSizes } = input;
   const repoGitSha = gitSha();
   return buildSecurityDatasetManifest({
     snapshotId,
+    sourceSnapshotId: options.sourceSnapshotId ?? snapshotId,
     createdAt: new Date().toISOString(),
     repoGitSha,
-    convexDeployment: options.deployment ?? (options.prod ? "prod" : "configured-dev"),
+    convexDeployment:
+      options.deployment ??
+      inferDeploymentFromConvexUrl(options.convexUrl) ??
+      (options.prod ? "prod" : "configured-dev"),
     exportMode: options.mode,
     pageSize: options.pageSize,
     concurrency: options.concurrency,
@@ -373,13 +457,34 @@ function buildManifest(input: {
       clawScanFindings: state.rowCounts.clawScanFindings,
       labels: state.rowCounts.labels,
       splits: state.rowCounts.splits,
+      huggingFaceRows: state.rowCounts.huggingFaceRows,
     },
+    outputSizes,
     scannerVersions: Array.from(state.scannerVersions).sort(),
     modelNames: Array.from(state.modelNames).sort(),
     redactionPolicyVersion: "public-signals-v2-bundle-files",
     sourceTables: ["skillVersions", "packageReleases"],
     timeWindow: options.timeWindow,
+    huggingFaceDataset: options.huggingFaceDataset
+      ? {
+          repo: options.huggingFaceRepo,
+          revision: options.huggingFaceRevision,
+          commit: null,
+          configNames: ["default"],
+          splitNames: HF_SPLITS,
+          rowCountsBySplit: state.huggingFaceRowCountsBySplit,
+        }
+      : undefined,
   });
+}
+
+function inferDeploymentFromConvexUrl(convexUrl: string | null) {
+  if (!convexUrl) return null;
+  try {
+    return new URL(convexUrl).hostname.split(".")[0] || null;
+  } catch {
+    return null;
+  }
 }
 
 function buildSnapshotId(options: Options) {
@@ -388,7 +493,9 @@ function buildSnapshotId(options: Options) {
     .replace(/[-:]/g, "")
     .replace(/\.\d{3}Z$/, "Z");
   const deployment =
-    options.deployment?.replace(/[^a-zA-Z0-9]+/g, "-") ?? (options.prod ? "prod" : "dev");
+    options.deployment?.replace(/[^a-zA-Z0-9]+/g, "-") ??
+    inferDeploymentFromConvexUrl(options.convexUrl)?.replace(/[^a-zA-Z0-9]+/g, "-") ??
+    (options.prod ? "prod" : "dev");
   return `clawhub-${deployment}-${timestamp}-${gitSha().slice(0, 8)}`;
 }
 
@@ -402,6 +509,13 @@ function createSnapshotState(): SnapshotState {
       clawScanFindings: 0,
       labels: 0,
       splits: 0,
+      huggingFaceRows: 0,
+    },
+    huggingFaceRowCountsBySplit: {
+      train: 0,
+      validation: 0,
+      test: 0,
+      eval_holdout: 0,
     },
     scannerVersions: new Set(),
     modelNames: new Set(),
@@ -415,12 +529,17 @@ async function processArtifactInputs(input: {
 }) {
   const { inputs, state, writers } = input;
   const rows = normalizeArtifactExport(inputs);
+  const hfRows = buildHuggingFaceSecuritySignalRows(rows);
   state.rowCounts.artifacts += rows.artifacts.length;
   state.rowCounts.scanResults += rows.scanResults.length;
   state.rowCounts.staticFindings += rows.staticFindings.length;
   state.rowCounts.clawScanFindings += rows.clawScanFindings.length;
   state.rowCounts.labels += rows.labels.length;
   state.rowCounts.splits += rows.splits.length;
+  state.rowCounts.huggingFaceRows += hfRows.length;
+  for (const row of hfRows) {
+    state.huggingFaceRowCountsBySplit[row.split] += 1;
+  }
   for (const row of rows.scanResults) {
     if (row.scanner_version) state.scannerVersions.add(row.scanner_version);
     if (row.model) state.modelNames.add(row.model);
@@ -428,11 +547,17 @@ async function processArtifactInputs(input: {
 
   if (!writers) return;
   await writeNormalizedRows(writers, rows);
+  if (writers.huggingFaceSplits) {
+    await writeHuggingFaceRows(writers.huggingFaceSplits, hfRows);
+  }
 }
 
-async function openSnapshotWriters(snapshotDir: string): Promise<SnapshotWriters> {
+async function openSnapshotWriters(
+  snapshotDir: string,
+  options: Options,
+): Promise<SnapshotWriters> {
   await mkdir(snapshotDir, { recursive: true });
-  return {
+  const writers: SnapshotWriters = {
     artifacts: createWriteStream(join(snapshotDir, "artifacts.jsonl"), { encoding: "utf8" }),
     scanResults: createWriteStream(join(snapshotDir, "scan_results.jsonl"), { encoding: "utf8" }),
     staticFindings: createWriteStream(join(snapshotDir, "static_findings.jsonl"), {
@@ -444,10 +569,30 @@ async function openSnapshotWriters(snapshotDir: string): Promise<SnapshotWriters
     labels: createWriteStream(join(snapshotDir, "labels.jsonl"), { encoding: "utf8" }),
     splits: createWriteStream(join(snapshotDir, "splits.jsonl"), { encoding: "utf8" }),
   };
+  if (options.huggingFaceDataset) {
+    const dataDir = join(snapshotDir, "hf-dataset", "data");
+    await mkdir(dataDir, { recursive: true });
+    writers.huggingFaceSplits = {
+      train: createWriteStream(join(dataDir, "train.jsonl"), { encoding: "utf8" }),
+      validation: createWriteStream(join(dataDir, "validation.jsonl"), { encoding: "utf8" }),
+      test: createWriteStream(join(dataDir, "test.jsonl"), { encoding: "utf8" }),
+      eval_holdout: createWriteStream(join(dataDir, "eval_holdout.jsonl"), { encoding: "utf8" }),
+    };
+  }
+  return writers;
 }
 
 async function closeSnapshotWriters(writers: SnapshotWriters) {
-  await Promise.all(Object.values(writers).map((stream) => endStream(stream)));
+  const streams = [
+    writers.artifacts,
+    writers.scanResults,
+    writers.staticFindings,
+    writers.clawScanFindings,
+    writers.labels,
+    writers.splits,
+    ...Object.values(writers.huggingFaceSplits ?? {}),
+  ];
+  await Promise.all(streams.map((stream) => endStream(stream)));
 }
 
 async function endStream(stream: WriteStream) {
@@ -468,6 +613,37 @@ async function writeJsonlRows(stream: WriteStream, rows: unknown[]) {
   if (rows.length === 0) return;
   const chunk = `${rows.map((row) => JSON.stringify(row)).join("\n")}\n`;
   if (!stream.write(chunk)) await once(stream, "drain");
+}
+
+async function writeHuggingFaceRows(
+  streams: Record<DatasetSplit, WriteStream>,
+  rows: HuggingFaceSecuritySignalRow[],
+) {
+  for (const split of HF_SPLITS) {
+    await writeJsonlRows(
+      streams[split],
+      rows.filter((row) => row.split === split),
+    );
+  }
+}
+
+async function collectOutputSizes(root: string) {
+  const sizes: Record<string, number> = {};
+  await collectOutputSizesInto(root, root, sizes);
+  return sizes;
+}
+
+async function collectOutputSizesInto(root: string, dir: string, sizes: Record<string, number>) {
+  const entries = await readdir(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) {
+      await collectOutputSizesInto(root, path, sizes);
+    } else if (entry.isFile()) {
+      const relativePath = path.slice(root.length + 1);
+      sizes[relativePath] = (await stat(path)).size;
+    }
+  }
 }
 
 function boundsToShards(bounds: ConvexBounds, shardCount: number): ExportShard[] {
@@ -547,6 +723,18 @@ function isCompressedConvexPage(value: unknown): value is CompressedConvexPage {
   );
 }
 
+function isDatasetLineage(value: unknown): value is DatasetLineage {
+  return (
+    isRecord(value) &&
+    value.exportMode === "public" &&
+    typeof value.generatedAt === "number" &&
+    typeof value.redactionPolicyVersion === "string" &&
+    Array.isArray(value.sourceTables) &&
+    Array.isArray(value.sourceBounds) &&
+    value.sourceBounds.every(isConvexBounds)
+  );
+}
+
 function decodeCompressedConvexPage(value: CompressedConvexPage) {
   const json = gunzipSync(Buffer.from(value.payload, "base64")).toString("utf8");
   const parsed: unknown = JSON.parse(json);
@@ -588,6 +776,8 @@ function gitSha() {
 function parseArgs(args: string[]): Options {
   const options: Options = {
     deployment: null,
+    convexUrl: null,
+    workerToken: null,
     prod: false,
     push: false,
     dryRun: false,
@@ -601,6 +791,10 @@ function parseArgs(args: string[]): Options {
     sourceKind: "all",
     timeWindow: emptyCreatedTimeWindow(),
     convexExportZip: null,
+    sourceSnapshotId: null,
+    huggingFaceDataset: false,
+    huggingFaceRepo: process.env.HF_DATASET_REPO ?? "OpenClaw/clawhub-security-signals",
+    huggingFaceRevision: process.env.HF_REVISION ?? "main",
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -613,6 +807,10 @@ function parseArgs(args: string[]): Options {
       options.dryRun = true;
     } else if (arg === "--deployment") {
       options.deployment = readValue(args, ++index, arg);
+    } else if (arg === "--convex-url") {
+      options.convexUrl = readValue(args, ++index, arg);
+    } else if (arg === "--worker-token") {
+      options.workerToken = readValue(args, ++index, arg);
     } else if (arg === "--limit") {
       options.limit = readPositiveInt(readValue(args, ++index, arg), arg);
     } else if (arg === "--page-size") {
@@ -633,6 +831,14 @@ function parseArgs(args: string[]): Options {
       options.timeWindow.createdAtLt = parseCreatedTimestamp(readValue(args, ++index, arg), arg);
     } else if (arg === "--convex-export-zip" || arg === "--from-convex-export") {
       options.convexExportZip = readValue(args, ++index, arg);
+    } else if (arg === "--source-snapshot-id") {
+      options.sourceSnapshotId = readValue(args, ++index, arg);
+    } else if (arg === "--hf-dataset") {
+      options.huggingFaceDataset = true;
+    } else if (arg === "--hf-repo") {
+      options.huggingFaceRepo = readValue(args, ++index, arg);
+    } else if (arg === "--hf-revision") {
+      options.huggingFaceRevision = readValue(args, ++index, arg);
     } else if (arg === "--mode") {
       const mode = readValue(args, ++index, arg);
       if (mode !== "public") throw new Error(`Unsupported mode: ${mode}`);
@@ -644,6 +850,9 @@ function parseArgs(args: string[]): Options {
 
   if (options.prod && options.deployment) {
     throw new Error("Use either --prod or --deployment, not both.");
+  }
+  if (options.workerToken && (options.prod || options.deployment || options.push)) {
+    throw new Error("Use --worker-token with --convex-url instead of --prod/--deployment/--push.");
   }
   assertCreatedTimeWindow(options.timeWindow);
   return options;

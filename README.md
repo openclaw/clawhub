@@ -81,21 +81,6 @@ export CLAWHUB_DISABLE_TELEMETRY=1
 
 Details: [`docs/telemetry.md`](docs/telemetry.md).
 
-## Security dataset export
-
-Maintainers can generate a sanitized ClawHub security/eval dataset snapshot with:
-
-```bash
-bun run dataset:snapshot -- --dry-run --limit 10
-bun run dataset:snapshot -- --convex-export-zip /path/to/convex-export.zip --hf-dataset
-```
-
-The exporter writes normalized JSONL files, optional Hugging Face split files, and a manifest with
-row counts, source metadata, output sizes, and the redaction policy version. Do not use broad Convex
-admin credentials for automated backup reads; prefer a live sanitized export path or a genuinely
-narrow backup-reader credential. Future agents should read the repo-local `clawhub-security-dataset`
-skill before changing the exporter, workflow, or Hugging Face publishing path.
-
 ## Repo layout
 
 - `src/` — TanStack Start app (routes, components, styles).

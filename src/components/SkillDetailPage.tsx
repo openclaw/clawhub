@@ -216,7 +216,8 @@ export function SkillDetailPage({
   const publicResult = useQuery(api.skills.getBySlug, !isStaff ? skillLookupArgs : "skip") as
     | SkillBySlugResult
     | undefined;
-  const result = isStaff ? staffResult : publicResult === undefined ? initialResult : publicResult;
+  const liveResult = isStaff ? staffResult : publicResult;
+  const result = liveResult === undefined ? initialResult : liveResult;
 
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
@@ -251,7 +252,7 @@ export function SkillDetailPage({
     delta: number;
   } | null>(null);
 
-  const isLoadingSkill = isStaff ? staffResult === undefined : result === undefined;
+  const isLoadingSkill = result === undefined;
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;

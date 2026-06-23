@@ -1,6 +1,8 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, type Locator, test } from "@playwright/test";
+import { buildSkillDetailHref } from "../../src/lib/ownerRoute";
+import { buildPluginDetailHref } from "../../src/lib/pluginRoutes";
 import {
   expectHealthyPage,
   expectNoFatalErrorUi,
@@ -224,7 +226,7 @@ test("owners can permanently delete individual non-latest skill and plugin versi
   const suffix = uniqueSuffix();
   const skillSlug = `pw-version-delete-skill-${suffix}`;
   const skillDisplayName = `Playwright Version Delete Skill ${suffix}`;
-  const packageName = `@claw333/pw-version-delete-plugin-${suffix}`;
+  const packageName = `@local-user/pw-version-delete-plugin-${suffix}`;
   const packageDisplayName = `Playwright Version Delete Plugin ${suffix}`;
   const fixture = seedVersionDeletionFixture({
     skillSlug,
@@ -285,7 +287,12 @@ test("owners can permanently delete individual non-latest skill and plugin versi
 
   await signInAsLocalPersona(page, "user");
 
-  await page.goto(`/${fixture.handle}/${fixture.skillSlug}`, { waitUntil: "domcontentloaded" });
+  const skillDetailHref = buildSkillDetailHref(fixture.handle, fixture.skillSlug);
+  const pluginDetailHref = buildPluginDetailHref(fixture.packageName, {
+    ownerHandle: fixture.handle,
+  });
+
+  await page.goto(skillDetailHref, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expect(page.locator(".skill-page-title")).toHaveText(skillDisplayName);
   await page.getByRole("tab", { name: "Versions" }).click();
@@ -311,7 +318,7 @@ test("owners can permanently delete individual non-latest skill and plugin versi
     fullPage: true,
   });
 
-  await page.goto(`/plugins/${encodeURIComponent(fixture.packageName)}`, {
+  await page.goto(pluginDetailHref, {
     waitUntil: "domcontentloaded",
   });
   await waitForHydration(page);
@@ -395,7 +402,7 @@ test("owners can permanently delete individual non-latest skill and plugin versi
   const publicPage = await publicContext.newPage();
   const publicErrors = trackRuntimeErrors(publicPage);
   try {
-    await publicPage.goto(`/${fixture.handle}/${fixture.skillSlug}`, {
+    await publicPage.goto(skillDetailHref, {
       waitUntil: "domcontentloaded",
     });
     await waitForHydration(publicPage);
@@ -403,7 +410,7 @@ test("owners can permanently delete individual non-latest skill and plugin versi
     await publicPage.getByRole("tab", { name: "Versions" }).click();
     await expectPublicVersionsList(publicPage);
 
-    await publicPage.goto(`/plugins/${encodeURIComponent(fixture.packageName)}`, {
+    await publicPage.goto(pluginDetailHref, {
       waitUntil: "domcontentloaded",
     });
     await waitForHydration(publicPage);

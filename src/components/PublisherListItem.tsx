@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { Download } from "lucide-react";
 import { formatCompactStat } from "../lib/numberFormat";
+import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import {
   type PublicPublisherListItem,
   type PublicPublisherPublishedItem,
@@ -41,8 +42,7 @@ export function PublisherListItem({ publisher, variant = "list" }: PublisherList
 
   return (
     <Link
-      to="/$slug"
-      params={{ slug: handle }}
+      to={buildPublisherProfileHref(handle)}
       className={`publisher-card publisher-card-${variant}`}
       aria-label={`Publisher: ${publisher.displayName}`}
     >

@@ -92,4 +92,15 @@ describe("slug route resolution", () => {
     });
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });
+
+  it("keeps official OpenClaw aliases ahead of colliding publisher handles", async () => {
+    queryMock.mockResolvedValue({ _id: "publishers:tencent", handle: "tencent" });
+
+    await expect(resolveTopLevelSlugRoute("tencent")).resolves.toEqual({
+      kind: "plugin",
+      name: "@openclaw/tencent-provider",
+      href: "/openclaw/plugins/tencent-provider",
+    });
+    expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
+  });
 });

@@ -25,6 +25,9 @@ Publisher profiles:
 - Canonical page: `/<handle>`
 - Legacy compatibility pages: `/user/<handle>`, `/p/<handle>`, `/u/<handle>`,
   and `/orgs/<handle>` redirect to `/<handle>`
+- Existing publisher handles that predate an official OpenClaw alias remain
+  reachable at `/user/<handle>` so the alias can keep its canonical top-level
+  shortcut.
 
 Skills:
 
@@ -110,6 +113,9 @@ The effective precedence is:
 This means official OpenClaw aliases are reserved before skills at the root.
 That is intentional: `https://clawhub.ai/codex` must show the official OpenClaw
 Codex plugin even if a skill named `codex` exists.
+
+Publisher handle creation and rename paths reserve the full official alias set.
+This prevents new profiles from taking over those top-level plugin shortcuts.
 
 ## Collision policy
 
