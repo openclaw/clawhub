@@ -71,10 +71,13 @@ vi.mock("@tanstack/react-router", () => ({
     children: ReactNode;
     className?: string;
     hash?: string;
-    params?: { handle?: string };
+    params?: { handle?: string; slug?: string };
     to?: string;
   }) => {
-    const to = props.to?.replace("$handle", props.params?.handle ?? "$handle") ?? "/";
+    const to =
+      props.to
+        ?.replace("$handle", props.params?.handle ?? "$handle")
+        .replace("$slug", props.params?.slug ?? "$slug") ?? "/";
     return (
       <a href={`${to}${props.hash ? `#${props.hash}` : ""}`} className={props.className}>
         {props.children}
@@ -608,7 +611,7 @@ describe("Header", () => {
     const profile = screen.getByText("Profile");
     const dashboard = screen.getAllByText("Dashboard").at(-1)!;
 
-    expect(profile.closest("a")?.getAttribute("href")).toBe("/user/patrick-profile");
+    expect(profile.closest("a")?.getAttribute("href")).toBe("/patrick-profile");
     expect(profile.compareDocumentPosition(dashboard) & Node.DOCUMENT_POSITION_FOLLOWING).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );

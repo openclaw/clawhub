@@ -1,9 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchSkillPageDataMock = vi.fn();
+const queryMock = vi.fn();
 
 vi.mock("./skillPage", () => ({
   fetchSkillPageData: (...args: unknown[]) => fetchSkillPageDataMock(...args),
+}));
+
+vi.mock("../convex/client", () => ({
+  convexHttp: { query: (...args: unknown[]) => queryMock(...args) },
 }));
 
 import { resolveOpenClawPluginSlug, resolveTopLevelSlugRoute } from "./slugRoute";
@@ -11,13 +16,14 @@ import { resolveOpenClawPluginSlug, resolveTopLevelSlugRoute } from "./slugRoute
 describe("slug route resolution", () => {
   beforeEach(() => {
     fetchSkillPageDataMock.mockReset();
+    queryMock.mockReset();
   });
 
   it("resolves Codex to the official OpenClaw plugin", async () => {
     await expect(resolveTopLevelSlugRoute("codex")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/codex",
-      href: "/plugins/@openclaw/codex",
+      href: "/openclaw/plugins/codex",
     });
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });
@@ -26,19 +32,19 @@ describe("slug route resolution", () => {
     await expect(resolveTopLevelSlugRoute("anthropic")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/anthropic-provider",
-      href: "/plugins/@openclaw/anthropic-provider",
+      href: "/openclaw/plugins/anthropic-provider",
     });
 
     await expect(resolveOpenClawPluginSlug("kimi-coding", "openclaw")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/kimi-provider",
-      href: "/plugins/@openclaw/kimi-provider",
+      href: "/openclaw/plugins/kimi-provider",
     });
 
     await expect(resolveTopLevelSlugRoute("diffs-language-pack")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/diffs-language-pack",
-      href: "/plugins/@openclaw/diffs-language-pack",
+      href: "/openclaw/plugins/diffs-language-pack",
     });
 
     expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
@@ -48,7 +54,7 @@ describe("slug route resolution", () => {
     await expect(resolveOpenClawPluginSlug("codex", "@openclaw")).resolves.toEqual({
       kind: "plugin",
       name: "@openclaw/codex",
-      href: "/plugins/@openclaw/codex",
+      href: "/openclaw/plugins/codex",
     });
   });
 
@@ -57,6 +63,7 @@ describe("slug route resolution", () => {
   });
 
   it("falls back to skill slug resolution when no official plugin exists", async () => {
+    queryMock.mockResolvedValue(null);
     fetchSkillPageDataMock.mockResolvedValue({
       owner: "steipete",
       initialData: {
@@ -73,5 +80,16 @@ describe("slug route resolution", () => {
       owner: "steipete",
       slug: "weather",
     });
+  });
+
+  it("resolves publisher handles before legacy bare skill slugs", async () => {
+    queryMock.mockResolvedValue({ _id: "publishers:steipete", handle: "steipete" });
+
+    await expect(resolveTopLevelSlugRoute("steipete")).resolves.toEqual({
+      kind: "publisher",
+      handle: "steipete",
+      publisher: { _id: "publishers:steipete", handle: "steipete" },
+    });
+    expect(fetchSkillPageDataMock).not.toHaveBeenCalled();
   });
 });

@@ -1013,7 +1013,7 @@ function buildSkillPageUrl(request: Request, owner: SkillUrlOwner, slug: string)
     return new URL(`/api/v1/skills/${encodeURIComponent(slug)}`, origin).toString();
   }
   return new URL(
-    `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}`,
+    `/${encodeURIComponent(ownerSegment)}/skills/${encodeURIComponent(slug)}`,
     origin,
   ).toString();
 }
@@ -1028,7 +1028,7 @@ function buildSecurityAuditUrl(
   if (!ownerSegment) return null;
 
   const url = new URL(
-    `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/security-audit`,
+    `/${encodeURIComponent(ownerSegment)}/skills/${encodeURIComponent(slug)}/security-audit`,
     publicApiOrigin(request),
   );
   url.searchParams.set("version", version);
@@ -1632,7 +1632,7 @@ function ambiguousSkillChoicesForRequest(
         slug,
         ref: `@${ownerHandle}/${slug}`,
         url: new URL(
-          `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(slug)}`,
+          `/${encodeURIComponent(ownerHandle)}/skills/${encodeURIComponent(slug)}`,
           origin,
         ).toString(),
       },
@@ -2327,12 +2327,12 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         slug: skillResult.skill.slug,
         displayName: skillResult.skill.displayName,
         pageUrl: publisherOwnerHandle
-          ? `https://clawhub.ai/${publisherOwnerHandle}/${skillResult.skill.slug}`
+          ? `https://clawhub.ai/${publisherOwnerHandle}/skills/${skillResult.skill.slug}`
           : `https://clawhub.ai/api/v1/skills/${skillResult.skill.slug}`,
         publisherHandle: publisherOwnerHandle,
         publisherDisplayName: ownerDisplayName,
         publisherProfileUrl: publisherOwnerHandle
-          ? `https://clawhub.ai/user/${publisherOwnerHandle}`
+          ? `https://clawhub.ai/${publisherOwnerHandle}`
           : null,
         version: version.version,
         resolvedFrom,

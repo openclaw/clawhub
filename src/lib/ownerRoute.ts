@@ -16,3 +16,23 @@ export function isOwnerRouteScopeSegment(owner: string) {
 export function isOwnerRouteHandleOrIdSegment(owner: string) {
   return isOwnerRouteHandleSegment(owner) || isOwnerRouteIdSegment(owner);
 }
+
+function routeSegment(value: string) {
+  return encodeURIComponent(value.trim().replace(/^@+/, ""));
+}
+
+export function buildPublisherProfileHref(handle: string) {
+  return `/${routeSegment(handle)}`;
+}
+
+export function buildSkillDetailHref(owner: string, slug: string) {
+  return `/${routeSegment(owner)}/skills/${routeSegment(slug)}`;
+}
+
+export function buildSkillSecurityAuditHref(owner: string, slug: string) {
+  return `${buildSkillDetailHref(owner, slug)}/security-audit`;
+}
+
+export function buildSkillSettingsHref(owner: string, slug: string) {
+  return `${buildSkillDetailHref(owner, slug)}/settings`;
+}

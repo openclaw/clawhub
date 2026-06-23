@@ -23,7 +23,7 @@ describe("scoped plugin route redirects", () => {
     redirectMock.mockClear();
   });
 
-  it("accepts scoped plugin detail paths", async () => {
+  it("redirects scoped plugin detail paths to publisher-centric plugin paths", async () => {
     const route = await loadRoute("../routes/plugins/$scope/$name");
 
     expect(() =>
@@ -31,8 +31,11 @@ describe("scoped plugin route redirects", () => {
         location: { pathname: "/plugins/@clawkit/clawkit-creative-studio" },
         params: { scope: "@clawkit", name: "clawkit-creative-studio" },
       }),
-    ).not.toThrow();
-    expect(redirectMock).not.toHaveBeenCalled();
+    ).toThrow();
+    expect(redirectMock).toHaveBeenCalledWith({
+      href: "/clawkit/plugins/clawkit-creative-studio",
+      statusCode: 308,
+    });
   });
 
   it("redirects old scoped plugin security scanner paths to the combined audit", async () => {
@@ -45,12 +48,12 @@ describe("scoped plugin route redirects", () => {
       }),
     ).toThrow();
     expect(redirectMock).toHaveBeenCalledWith({
-      href: "/plugins/@clawkit/clawkit-creative-studio/security-audit",
+      href: "/clawkit/plugins/clawkit-creative-studio/security-audit",
       statusCode: 308,
     });
   });
 
-  it("accepts nested security audit paths through the scoped plugin parent", async () => {
+  it("preserves nested security audit paths through the scoped plugin parent", async () => {
     const route = await loadRoute("../routes/plugins/$scope/$name");
 
     expect(() =>
@@ -58,8 +61,11 @@ describe("scoped plugin route redirects", () => {
         location: { pathname: "/plugins/@clawkit/clawkit-creative-studio/security-audit" },
         params: { scope: "@clawkit", name: "clawkit-creative-studio" },
       }),
-    ).not.toThrow();
-    expect(redirectMock).not.toHaveBeenCalled();
+    ).toThrow();
+    expect(redirectMock).toHaveBeenCalledWith({
+      href: "/clawkit/plugins/clawkit-creative-studio/security-audit",
+      statusCode: 308,
+    });
   });
 
   it("canonicalizes raw scoped legacy package paths", async () => {

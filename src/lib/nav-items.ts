@@ -62,7 +62,6 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
   {
     label: "Publishers",
     to: PublicRegistryPaths.publishers,
-    activePathPrefixes: ["/user/"],
   },
 ];
 

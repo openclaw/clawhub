@@ -4,6 +4,7 @@ import { Download, Star } from "lucide-react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
+import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
@@ -48,12 +49,12 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
     .slice(0, 3)
     .map((category) => category.label)
     .join(", ");
+  const pluginHref = buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
 
   if (variant === "card") {
     return (
       <Link
-        to="/plugins/$name"
-        params={{ name: item.name }}
+        to={pluginHref}
         className="card skill-card plugin-card"
         aria-label={`Plugin: ${item.displayName}`}
       >
@@ -103,8 +104,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
 
   return (
     <Link
-      to="/plugins/$name"
-      params={{ name: item.name }}
+      to={pluginHref}
       className="skill-list-item skill-list-item-with-taxonomy"
       aria-label={`Plugin: ${item.displayName}`}
     >

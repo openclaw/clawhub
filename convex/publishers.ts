@@ -45,6 +45,7 @@ import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const LEGACY_PUBLISHER_DOWNLOAD_FALLBACK_LIMIT = MAX_PUBLIC_PUBLISHER_LIST_LIMIT;
+const MAX_PUBLISHER_HANDLE_PREFIX_CANDIDATES = 100;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
 const GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT = 10;
 const PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT = 100;
@@ -627,21 +628,30 @@ async function getActivePublisherRowsByDownloads(
   return mergePublisherRows(rankedRows, legacyRows);
 }
 
+function shouldIncludePublisherListSummary(
+  summary: PublisherListSummary,
+  options?: { includeEmptyPublishers?: boolean },
+) {
+  return options?.includeEmptyPublishers || hasPublisherListContent(summary);
+}
+
 async function getVisiblePublisherListSummaries(
   ctx: Pick<QueryCtx, "db">,
   publishers: Doc<"publishers">[],
+  options?: { includeEmptyPublishers?: boolean },
 ) {
   const summaries = await Promise.all(
     publishers.map((publisher) => toVisiblePublisherListSummary(ctx, publisher)),
   );
   return summaries
     .filter((summary): summary is PublisherListSummary => Boolean(summary))
-    .filter(hasPublisherListContent);
+    .filter((summary) => shouldIncludePublisherListSummary(summary, options));
 }
 
 async function hydratePublisherListSummaries(
   ctx: Pick<QueryCtx, "db">,
   summaries: PublisherListSummary[],
+  options?: { includeEmptyPublishers?: boolean },
 ) {
   const items = await Promise.all(
     summaries.map((summary) =>
@@ -653,7 +663,9 @@ async function hydratePublisherListSummaries(
   );
   return items
     .filter((item): item is PublisherListItem => Boolean(item))
-    .filter((item) => item.stats.skills + item.stats.packages > 0);
+    .filter(
+      (item) => options?.includeEmptyPublishers || item.stats.skills + item.stats.packages > 0,
+    );
 }
 
 async function getUserStarredCount(ctx: Pick<QueryCtx, "db">, userId: Id<"users">) {
@@ -739,6 +751,61 @@ function resolvePublisherDisplayName(
 ) {
   if (publisher.kind !== "user") return publisher.displayName;
   return linkedUser?.displayName?.trim() || linkedUser?.name?.trim() || publisher.displayName;
+}
+
+function publisherHandlePrefixUpperBound(value: string) {
+  return `${value}\uffff`;
+}
+
+async function queryActivePublishersByHandlePrefix(
+  ctx: Pick<QueryCtx, "db">,
+  kind: PublicPublisherKindFilter,
+  handlePrefix: string,
+) {
+  return await ctx.db
+    .query("publishers")
+    .withIndex("by_active_kind_handle", (q) =>
+      q
+        .eq("deletedAt", undefined)
+        .eq("deactivatedAt", undefined)
+        .eq("kind", kind)
+        .gte("handle", handlePrefix)
+        .lt("handle", publisherHandlePrefixUpperBound(handlePrefix)),
+    )
+    .take(MAX_PUBLISHER_HANDLE_PREFIX_CANDIDATES);
+}
+
+async function collectActivePublisherRowsForListPage(
+  ctx: Pick<QueryCtx, "db">,
+  args: {
+    kindFilter?: PublicPublisherKindFilter;
+    queryText?: string;
+    browseRows?: Doc<"publishers">[];
+  },
+) {
+  const browseRows =
+    args.browseRows ?? (await getActivePublisherRowsByDownloads(ctx, args.kindFilter));
+  const normalizedQuery = args.queryText ? normalizePublisherHandle(args.queryText) : undefined;
+  if (!normalizedQuery) return browseRows;
+
+  const kinds: PublicPublisherKindFilter[] = args.kindFilter ? [args.kindFilter] : ["user", "org"];
+  const [exactMatch, ...prefixMatches] = await Promise.all([
+    getPublisherByHandle(ctx, normalizedQuery),
+    ...kinds.map((kind) => queryActivePublishersByHandlePrefix(ctx, kind, normalizedQuery)),
+  ]);
+  const merged = new Map<Id<"publishers">, Doc<"publishers">>();
+  for (const publisher of browseRows) {
+    merged.set(publisher._id, publisher);
+  }
+  if (exactMatch && isPublisherActive(exactMatch)) {
+    merged.set(exactMatch._id, exactMatch);
+  }
+  for (const rows of prefixMatches) {
+    for (const publisher of rows) {
+      merged.set(publisher._id, publisher);
+    }
+  }
+  return [...merged.values()];
 }
 
 function getPublisherListCounts(items: PublisherListItem[]): PublisherListCounts {
@@ -1657,7 +1724,7 @@ async function createOrgPublisherForUser(
   };
 }
 
-async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
+async function inspectPublisherHardDeleteRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
   const sources = await ctx.db
     .query("githubSkillSources")
     .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
@@ -1669,6 +1736,29 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
       .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
       .collect();
     sourceContents += contents.length;
+  }
+
+  const members = await ctx.db
+    .query("publisherMembers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .collect();
+
+  const official = await ctx.db
+    .query("officialPublishers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .unique();
+
+  return { sources, sourceContents, members, official };
+}
+
+async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
+  const preview = await inspectPublisherHardDeleteRows(ctx, publisherId);
+
+  for (const source of preview.sources) {
+    const contents = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+      .collect();
     for (const content of contents) await ctx.db.delete(content._id);
     await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
       sourceId: source._id,
@@ -1676,25 +1766,17 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
     await ctx.db.delete(source._id);
   }
 
-  const members = await ctx.db
-    .query("publisherMembers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
-    .collect();
-  for (const member of members) await ctx.db.delete(member._id);
+  for (const member of preview.members) await ctx.db.delete(member._id);
 
-  const official = await ctx.db
-    .query("officialPublishers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
-    .unique();
-  if (official) await ctx.db.delete(official._id);
+  if (preview.official) await ctx.db.delete(preview.official._id);
 
   await ctx.db.delete(publisherId);
 
   return {
-    sources: sources.length,
-    sourceContents,
-    members: members.length,
-    official: Boolean(official),
+    sources: preview.sources.length,
+    sourceContents: preview.sourceContents,
+    members: preview.members.length,
+    official: Boolean(preview.official),
   };
 }
 
@@ -2219,10 +2301,20 @@ export const listPublicPage = query({
           Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt),
         )
       : undefined;
-    const activeRows = officialRows
+    const browseRows = officialRows
       ? officialRows.filter((publisher) => !kindFilter || publisher.kind === kindFilter)
       : await getActivePublisherRowsByDownloads(ctx, kindFilter);
-    const publisherSummaries = await getVisiblePublisherListSummaries(ctx, activeRows);
+    const activeRows = queryText
+      ? await collectActivePublisherRowsForListPage(ctx, {
+          kindFilter,
+          queryText,
+          browseRows,
+        })
+      : browseRows;
+    const includeEmptyPublishers = Boolean(queryText);
+    const publisherSummaries = await getVisiblePublisherListSummaries(ctx, activeRows, {
+      includeEmptyPublishers,
+    });
     const itemSummaries = publisherSummaries
       .filter(
         (summary) =>
@@ -2241,6 +2333,7 @@ export const listPublicPage = query({
     const page = await hydratePublisherListSummaries(
       ctx,
       itemSummaries.slice(safeOffset, nextOffset),
+      { includeEmptyPublishers },
     );
 
     return {
@@ -2600,6 +2693,115 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
       activeSkills: 0,
       activePackages: 0,
       memberCount: members.length,
+    };
+  },
+});
+
+export const reclaimDeletedOrgHandleInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+    confirmationToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle)) {
+      throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
+    }
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher) throw new ConvexError("Publisher not found");
+    if (publisher.kind !== "org") throw new ConvexError("Publisher is not an org");
+    if (!publisher.deletedAt && !publisher.deactivatedAt) {
+      throw new ConvexError("Publisher is active; use org delete before reclaiming the handle");
+    }
+
+    const [activeSkills, activePackages, preview] = await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+        )
+        .take(1),
+      ctx.db
+        .query("packages")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+        )
+        .take(1),
+      inspectPublisherHardDeleteRows(ctx, publisher._id),
+    ]);
+
+    if (activeSkills.length > 0 || activePackages.length > 0) {
+      throw new ConvexError(
+        `Publisher has active skills or packages and cannot be reclaimed with this command`,
+      );
+    }
+
+    const confirmationToken = `reclaim-deleted-org:${handle}`;
+    const dryRun = args.dryRun !== false;
+    const baseResult = {
+      ok: true as const,
+      publisherId: publisher._id,
+      handle,
+      activeSkills: activeSkills.length,
+      activePackages: activePackages.length,
+      memberCount: preview.members.length,
+      githubSources: preview.sources.length,
+      githubSourceContents: preview.sourceContents,
+      officialPublisher: Boolean(preview.official),
+      confirmationToken,
+    };
+    if (dryRun) {
+      return {
+        ...baseResult,
+        dryRun: true,
+        hardDeleted: false,
+      };
+    }
+
+    if (args.confirmationToken !== confirmationToken) {
+      throw new ConvexError(`Confirmation token must be "${confirmationToken}"`);
+    }
+
+    const now = Date.now();
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.org.reclaim_deleted_handle",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        handle,
+        reason,
+        deletedAt: publisher.deletedAt,
+        deactivatedAt: publisher.deactivatedAt,
+        memberCount: preview.members.length,
+        githubSources: preview.sources.length,
+        githubSourceContents: preview.sourceContents,
+        officialPublisher: Boolean(preview.official),
+        source: "publisher.org.admin_reclaim",
+      },
+      createdAt: now,
+    });
+    const deletedRows = await hardDeletePublisherRows(ctx, publisher._id);
+
+    return {
+      ...baseResult,
+      dryRun: false,
+      hardDeleted: true,
+      memberCount: deletedRows.members,
+      githubSources: deletedRows.sources,
+      githubSourceContents: deletedRows.sourceContents,
+      officialPublisher: deletedRows.official,
     };
   },
 });

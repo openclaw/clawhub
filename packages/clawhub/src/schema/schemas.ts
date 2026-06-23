@@ -252,6 +252,22 @@ export const ApiV1PublisherDeleteResponseSchema = type({
 });
 export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
 
+export const ApiV1PublisherReclaimResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  dryRun: "boolean",
+  hardDeleted: "boolean",
+  activeSkills: "number",
+  activePackages: "number",
+  memberCount: "number",
+  githubSources: "number",
+  githubSourceContents: "number",
+  officialPublisher: "boolean",
+  confirmationToken: "string",
+});
+export type ApiV1PublisherReclaimResponse = (typeof ApiV1PublisherReclaimResponseSchema)[inferred];
+
 export const ApiV1PublisherRecoveryResponseSchema = type({
   ok: "true",
   dryRun: "boolean",

@@ -65,6 +65,7 @@ import {
 import { formatRetryDelay } from "../../lib/formatRetryDelay";
 import { buildPluginMeta } from "../../lib/og";
 import { getOpenClawPackageCandidateNames } from "../../lib/openClawExtensionSlugs";
+import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import {
   fetchPackageDetail,
   fetchPackageFile,
@@ -255,7 +256,20 @@ export const Route = createFileRoute("/plugins/$name")({
       });
     }
   },
-  loader: async ({ params }) => loadPluginDetail(params.name),
+  loader: async ({ params }) => {
+    const data = await loadPluginDetail(params.name);
+    const ownerHandle = data.detail.owner?.handle ?? null;
+    const packageName = data.detail.package?.name ?? null;
+
+    if (packageName && ownerHandle) {
+      throw redirect({
+        href: buildPluginDetailHref(packageName, { ownerHandle }),
+        replace: true,
+      });
+    }
+
+    return data;
+  },
   head: ({ params, loaderData }) => pluginDetailHead(params.name, loaderData),
   pendingComponent: PluginDetailPending,
   component: PluginDetailRoute,
@@ -810,12 +824,13 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
+  const skillInstallOwner = owner?.handle ?? pkg.ownerHandle ?? "owner";
   const installSnippet =
     pkg.family === "code-plugin"
       ? `openclaw plugins install clawhub:${pkg.name}`
       : pkg.family === "bundle-plugin"
         ? `openclaw plugins install clawhub:${pkg.name}`
-        : `openclaw skills install ${pkg.name}`;
+        : `openclaw skills install @${skillInstallOwner.replace(/^@+/, "")}/${pkg.name}`;
 
   const compatibility = latestRelease?.compatibility ?? pkg.compatibility;
   const pluginManifestSummary = latestRelease?.pluginManifestSummary ?? null;
@@ -1044,7 +1059,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   );
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
-      auditHref={buildPluginSecurityAuditHref(name)}
+      auditHref={buildPluginSecurityAuditHref(name, { ownerHandle: owner?.handle })}
       vtAnalysis={latestRelease.vtAnalysis ?? null}
       llmAnalysis={latestRelease.llmAnalysis ?? null}
     />
@@ -1148,11 +1163,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               <nav className="skill-hero-breadcrumbs" aria-label="Plugin breadcrumbs">
                 <a href="/plugins">plugins</a>
                 <span aria-hidden="true">/</span>
-                <a href={owner?.handle ? `/user/${encodeURIComponent(owner.handle)}` : "#"}>
+                <a href={owner?.handle ? buildPublisherProfileHref(owner.handle) : "#"}>
                   {owner?.handle ?? owner?.displayName ?? "unknown"}
                 </a>
                 <span aria-hidden="true">/</span>
-                <a href={buildPluginDetailHref(pkg.name)} aria-current="page">
+                <a
+                  href={buildPluginDetailHref(pkg.name, { ownerHandle: owner?.handle })}
+                  aria-current="page"
+                >
                   {displayPluginPackageName(pkg.name)}
                 </a>
               </nav>

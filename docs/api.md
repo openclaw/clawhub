@@ -20,7 +20,7 @@ Guidelines:
 - Use public read endpoints such as `GET /api/v1/skills`, `GET /api/v1/search`, and `GET /api/v1/skills/{slug}` for catalog listings.
 - Cache responses and respect `429`, `Retry-After`, and rate-limit headers instead of polling aggressively.
 - Link back to the canonical ClawHub skill URL when displaying listings so users can inspect the source registry record.
-- Use canonical page URLs in the form `https://clawhub.ai/<owner>/<slug>`.
+- Use canonical page URLs in the form `https://clawhub.ai/<owner>/skills/<slug>`.
 - Do not imply that ClawHub endorses, verifies, or operates the third-party site.
 - Do not mirror hidden, private, or moderation-blocked content by bypassing public API filters or auth boundaries.
 

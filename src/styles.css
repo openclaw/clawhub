@@ -25268,6 +25268,12 @@ a.publisher-profile-detail:hover {
   object-fit: contain;
 }
 
+.home-v2-apps-workflow-tile.is-openai img,
+.home-v2-apps-workflow-tile.is-slack img {
+  width: 36.75px;
+  height: 36.75px;
+}
+
 .home-v2-apps-workflow-tile span {
   position: absolute;
   top: -8px;
@@ -26238,6 +26244,12 @@ a.home-v2-apps-see-all:focus-visible svg {
   .home-v2-apps-workflow-tile img {
     width: 22px;
     height: 22px;
+  }
+
+  .home-v2-apps-workflow-tile.is-openai img,
+  .home-v2-apps-workflow-tile.is-slack img {
+    width: 19.25px;
+    height: 19.25px;
   }
 
   .home-v2-apps-workflow-tile span {

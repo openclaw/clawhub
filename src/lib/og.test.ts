@@ -16,7 +16,7 @@ describe("og helpers", () => {
     });
     expect(meta.title).toBe("Weather — ClawHub");
     expect(meta.description).toBe("Forecasts for your area.");
-    expect(meta.url).toContain("/steipete/weather");
+    expect(meta.url).toContain("/steipete/skills/weather");
     expect(meta.owner).toBe("steipete");
     expect(meta.image).toContain("/og/skill?");
     expect(meta.image).toContain("v=8");
@@ -37,7 +37,7 @@ describe("og helpers", () => {
     });
     expect(meta.title).toBe("Codex — ClawHub Plugins");
     expect(meta.description).toBe("OpenClaw Codex harness.");
-    expect(meta.url).toBe("https://clawhub.ai/plugins/@openclaw/codex");
+    expect(meta.url).toBe("https://clawhub.ai/openclaw/plugins/codex");
     expect(meta.image).toContain("/og/plugin?");
     expect(meta.image).toContain("v=3");
     expect(meta.image).toContain("name=%40openclaw%2Fcodex");
@@ -52,7 +52,7 @@ describe("og helpers", () => {
     });
     expect(meta.title).toBe("byungkyu — ClawHub");
     expect(meta.description).toBe("maton.ai");
-    expect(meta.url).toBe("https://clawhub.ai/user/byungkyu");
+    expect(meta.url).toBe("https://clawhub.ai/byungkyu");
     expect(meta.image).toContain("/og/profile?");
     expect(meta.image).toContain("v=3");
     expect(meta.image).toContain("handle=byungkyu");
@@ -62,7 +62,7 @@ describe("og helpers", () => {
     const meta = buildSkillMeta({ slug: "parser" });
     expect(meta.title).toBe("parser — ClawHub");
     expect(meta.description).toMatch(/ClawHub — a fast skill registry/i);
-    expect(meta.url).toContain("/unknown/parser");
+    expect(meta.url).toContain("/unknown/skills/parser");
     expect(meta.owner).toBeNull();
     expect(meta.image).toContain("slug=parser");
   });

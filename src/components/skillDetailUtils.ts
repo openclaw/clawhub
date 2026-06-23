@@ -1,5 +1,6 @@
 import type { ClawdisSkillMetadata, SkillInstallSpec } from "clawhub-schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { buildSkillDetailHref } from "../lib/ownerRoute";
 import { getClawHubSiteUrl } from "../lib/site";
 
 export type SkillPromptMode = "install-only" | "install-and-setup";
@@ -26,7 +27,7 @@ export function buildSkillHref(
   slug: string,
 ) {
   const owner = ownerHandle?.trim() || (ownerId ? String(ownerId) : "unknown");
-  return `/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`;
+  return buildSkillDetailHref(owner, slug);
 }
 
 export function formatConfigSnippet(raw: string) {
@@ -172,7 +173,7 @@ export function buildSkillPageUrl(
   const owner = handle || (ownerId ? String(ownerId) : null);
   if (!owner) return null;
 
-  const path = `/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`;
+  const path = buildSkillDetailHref(owner, slug);
   return new URL(path, getClawHubSiteUrl()).toString();
 }
 

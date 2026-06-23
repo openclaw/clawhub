@@ -1,5 +1,8 @@
+import { api } from "../../convex/_generated/api";
+import { convexHttp } from "../convex/client";
 import { getOpenClawExtensionPackageName } from "./openClawExtensionSlugs";
 import { buildPluginDetailHref } from "./pluginRoutes";
+import type { PublicPublisherListItem } from "./publicUser";
 import { fetchSkillPageData } from "./skillPage";
 
 const OPENCLAW_HANDLE = "openclaw";
@@ -14,6 +17,11 @@ type SlugRouteTarget =
       kind: "skill";
       owner: string;
       slug: string;
+    }
+  | {
+      kind: "publisher";
+      handle: string;
+      publisher: PublicPublisherListItem;
     };
 
 type PluginSlugRouteTarget = Extract<SlugRouteTarget, { kind: "plugin" }>;
@@ -45,6 +53,15 @@ export async function resolveTopLevelSlugRoute(slug: string): Promise<SlugRouteT
   const plugin = await resolveOpenClawPluginSlug(slug);
   if (plugin) return plugin;
 
+  const publisher = await resolvePublisherHandle(slug);
+  if (publisher) {
+    return {
+      kind: "publisher",
+      handle: publisher.handle,
+      publisher,
+    };
+  }
+
   const data = await fetchSkillPageData(slug);
   const owner = data.initialData?.result?.owner?.handle ?? data.owner;
   const resolvedSlug = data.initialData?.result?.resolvedSlug ?? slug;
@@ -55,4 +72,17 @@ export async function resolveTopLevelSlugRoute(slug: string): Promise<SlugRouteT
     owner,
     slug: resolvedSlug,
   };
+}
+
+async function resolvePublisherHandle(handle: string) {
+  const normalized = normalizeOwner(handle);
+  if (!normalized) return null;
+
+  try {
+    return (await convexHttp.query(api.publishers.getProfileByHandle, {
+      handle: normalized,
+    })) as PublicPublisherListItem | null;
+  } catch {
+    return null;
+  }
 }

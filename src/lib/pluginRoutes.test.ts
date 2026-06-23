@@ -9,14 +9,23 @@ import {
 
 describe("plugin routes", () => {
   it("keeps scoped package routes readable", () => {
-    expect(buildPluginDetailHref("@openclaw/codex")).toBe("/plugins/@openclaw/codex");
+    expect(buildPluginDetailHref("@openclaw/codex")).toBe("/openclaw/plugins/codex");
     expect(buildPluginSecurityAuditHref("@openclaw/codex")).toBe(
-      "/plugins/@openclaw/codex/security-audit",
+      "/openclaw/plugins/codex/security-audit",
     );
   });
 
   it("keeps unscoped package routes single-segment encoded", () => {
     expect(buildPluginDetailHref("demo plugin")).toBe("/plugins/demo%20plugin");
+  });
+
+  it("uses explicit owner handles for unscoped package detail routes", () => {
+    expect(buildPluginDetailHref("demo-plugin", { ownerHandle: "acme" })).toBe(
+      "/acme/plugins/demo-plugin",
+    );
+    expect(buildPluginSecurityAuditHref("demo-plugin", { ownerHandle: "@acme" })).toBe(
+      "/acme/plugins/demo-plugin/security-audit",
+    );
   });
 
   it("parses scoped package names and scoped routes", () => {

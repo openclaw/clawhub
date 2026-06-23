@@ -9,6 +9,7 @@ import { getSkillBadges } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
+import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
@@ -345,7 +346,7 @@ export function SkillHeader({
               <nav className="skill-hero-breadcrumbs" aria-label="Skill breadcrumbs">
                 <a href="/skills">skills</a>
                 <span aria-hidden="true">/</span>
-                <a href={ownerHandle ? `/user/${encodeURIComponent(ownerHandle)}` : "#"}>
+                <a href={ownerHandle ? buildPublisherProfileHref(ownerHandle) : "#"}>
                   {ownerHandle ?? owner?.displayName ?? owner?._id ?? "unknown"}
                 </a>
                 <span aria-hidden="true">/</span>

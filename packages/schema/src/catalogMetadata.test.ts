@@ -223,6 +223,15 @@ describe("catalog metadata", () => {
     expect(() => normalizeCatalogTopics(["Official"])).toThrow(
       'Topic "Official" is reserved by ClawHub',
     );
+    expect(() => normalizeCatalogTopics(["Officials"])).toThrow(
+      'Topic "Officials" is reserved by ClawHub',
+    );
+    expect(() => normalizeCatalogTopics(["OpenClaw"])).toThrow(
+      'Topic "OpenClaw" is reserved by ClawHub',
+    );
+    expect(() => normalizeCatalogTopics(["Trusted"])).toThrow(
+      'Topic "Trusted" is reserved by ClawHub',
+    );
     expect(() => normalizeCatalogTopics(["offi\u200bcial"])).toThrow(
       "Topics cannot include invisible format controls",
     );

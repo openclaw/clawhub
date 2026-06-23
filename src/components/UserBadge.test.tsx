@@ -42,7 +42,7 @@ describe("UserBadge", () => {
     renderBadge(user);
 
     expect(screen.getByRole("link", { name: "View @steipete profile" }).getAttribute("href")).toBe(
-      "/user/steipete",
+      "/steipete",
     );
   });
 
@@ -50,7 +50,7 @@ describe("UserBadge", () => {
     renderBadge(orgPublisher);
 
     expect(screen.getByRole("link", { name: "View @openclaw profile" }).getAttribute("href")).toBe(
-      "/user/openclaw",
+      "/openclaw",
     );
   });
 
@@ -79,7 +79,7 @@ describe("UserBadge", () => {
     expect(screen.getByText("@acme-corp")).toBeTruthy();
     expect(container.querySelector(".user-handle-muted")).toBeTruthy();
     expect(screen.getByRole("link", { name: "View Acme profile" }).getAttribute("href")).toBe(
-      "/user/acme-corp",
+      "/acme-corp",
     );
   });
 
@@ -130,7 +130,7 @@ describe("UserBadge", () => {
     );
 
     expect(screen.getByRole("link", { name: "View OpenClaw profile" }).getAttribute("href")).toBe(
-      "/user/openclaw",
+      "/openclaw",
     );
   });
 

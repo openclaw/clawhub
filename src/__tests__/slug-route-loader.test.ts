@@ -38,12 +38,12 @@ describe("top-level slug route loader", () => {
     resolveTopLevelSlugRouteMock.mockResolvedValue({
       kind: "plugin",
       name: "@openclaw/codex",
-      href: "/plugins/@openclaw/codex",
+      href: "/openclaw/plugins/codex",
     });
 
     expect(await runLoader("codex")).toEqual({
       redirect: {
-        href: "/plugins/@openclaw/codex",
+        href: "/openclaw/plugins/codex",
         replace: true,
       },
     });
@@ -58,10 +58,22 @@ describe("top-level slug route loader", () => {
 
     expect(await runLoader("codex")).toEqual({
       redirect: {
-        to: "/$owner/$slug",
+        to: "/$owner/skills/$slug",
         params: { owner: "ivangdavila", slug: "codex" },
         replace: true,
       },
+    });
+  });
+
+  it("returns publisher profile data for canonical publisher paths", async () => {
+    resolveTopLevelSlugRouteMock.mockResolvedValue({
+      kind: "publisher",
+      handle: "steipete",
+      publisher: { _id: "publishers:steipete", handle: "steipete" },
+    });
+
+    expect(await runLoader("steipete")).toEqual({
+      publisher: { _id: "publishers:steipete", handle: "steipete" },
     });
   });
 

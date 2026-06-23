@@ -86,7 +86,20 @@ export const Route = createFileRoute("/plugins/$name/security-audit")({
       });
     }
   },
-  loader: async ({ params }) => loadPluginSecurityAudit(params.name),
+  loader: async ({ params }) => {
+    const data = await loadPluginSecurityAudit(params.name);
+    const ownerHandle = data.detail.owner?.handle ?? null;
+    const packageName = data.detail.package?.name ?? null;
+
+    if (packageName && ownerHandle) {
+      throw redirect({
+        href: buildPluginSecurityAuditHref(packageName, { ownerHandle }),
+        replace: true,
+      });
+    }
+
+    return data;
+  },
   head: ({ params, loaderData }) => pluginSecurityAuditHead(params.name, loaderData),
   component: PluginSecurityAuditRoute,
 });
@@ -143,7 +156,7 @@ export function PluginSecurityAuditPage({
         owner: detail.owner ?? null,
         ownerUserId: null,
         ownerPublisherId: null,
-        detailPath: buildPluginDetailHref(name),
+        detailPath: buildPluginDetailHref(name, { ownerHandle: detail.owner?.handle }),
       }}
       sha256hash={release.artifact?.sha256 ?? null}
       vtAnalysis={release.vtAnalysis ?? null}
