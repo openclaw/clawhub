@@ -296,7 +296,7 @@ async function runConvexPage(
         return { page: decodeCompressedConvexPage(compressed), batchPages: pageCount };
       } catch (error) {
         lastError = error;
-        if (isLikelyTruncatedConvexOutput(error) && pageCount > 1) break;
+        if (isLikelyOversizedConvexBatch(error) && pageCount > 1) break;
         if (attempt === DEFAULT_MAX_CONVEX_ATTEMPTS) break;
         console.error(
           `[snapshot] retrying ${functionName} batch-pages=${pageCount} after attempt ${attempt}: ${errorMessage(error)}`,
@@ -305,7 +305,7 @@ async function runConvexPage(
       }
     }
 
-    if (isLikelyTruncatedConvexOutput(lastError) && pageCount > 1) {
+    if (isLikelyOversizedConvexBatch(lastError) && pageCount > 1) {
       const nextPageCount = Math.max(1, Math.floor(pageCount / 2));
       console.error(
         `[snapshot] ${shard.label} reducing batch-pages ${pageCount}->${nextPageCount}: ${errorMessage(lastError)}`,
@@ -756,6 +756,16 @@ function errorMessage(error: unknown) {
 
 function isLikelyTruncatedConvexOutput(error: unknown) {
   return /Convex JSON output \(524288 bytes\)/.test(errorMessage(error));
+}
+
+function isLikelyConvexOperationTimeout(error: unknown) {
+  return /(?:The operation timed out|operation timeout|deadline exceeded)/i.test(
+    errorMessage(error),
+  );
+}
+
+function isLikelyOversizedConvexBatch(error: unknown) {
+  return isLikelyTruncatedConvexOutput(error) || isLikelyConvexOperationTimeout(error);
 }
 
 function writeCommandErrorOutput(error: unknown) {

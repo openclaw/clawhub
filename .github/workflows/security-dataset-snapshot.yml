@@ -82,6 +82,9 @@ jobs:
             --hf-dataset
             --hf-repo "$HF_DATASET_REPO"
             --hf-revision "$HF_REVISION"
+            --page-size 25
+            --batch-pages 2
+            --concurrency 3
           )
           if [[ -n "$SNAPSHOT_LIMIT" ]]; then
             args+=(--limit "$SNAPSHOT_LIMIT")
