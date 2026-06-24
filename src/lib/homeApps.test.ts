@@ -44,6 +44,7 @@ describe("home app icons", () => {
 
       expect(svg.trimStart(), id).toMatch(/^(<\?xml[^>]*>\s*)?<svg\b/);
       expect(svg, id).not.toMatch(/<image\b|data:image|base64/i);
+      expect(svg, id).not.toMatch(/<text\b|font-family|clip0_6630_17005|translate\(0 310\.84\)/i);
 
       const size = readSvgViewport(svg);
       expect(
