@@ -514,6 +514,66 @@ description: Security scanner smoke fixture.
     ).rejects.toThrow(/exceeds 10MB limit/i);
   });
 
+  it("rejects mutable GitHub remote references during skill publish", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Blocks mutable remote install references.
+---
+# Mutable Remote Skill
+
+Install from https://raw.githubusercontent.com/acme/tool/main/install.sh
+`,
+      ],
+    ]);
+    const runMutation = vi.fn(async () => null);
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await expect(
+      publishVersionForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          slug: "mutable-remote-skill",
+          displayName: "Mutable Remote Skill",
+          version: "1.0.0",
+          changelog: "Initial release",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 180,
+              storageId: "_storage:skill" as never,
+              sha256: "a".repeat(64),
+              contentType: "text/markdown",
+            },
+          ],
+        },
+        {
+          bypassGitHubAccountAge: true,
+          bypassQualityGate: true,
+          skipWebhook: true,
+        },
+      ),
+    ).rejects.toThrow("REMOTE_REFERENCE_UNPINNED_GITHUB");
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
+  });
+
   it("rejects publisher-authored skill-card.md files", async () => {
     const ctx = {
       runQuery: vi.fn(async () => null),
