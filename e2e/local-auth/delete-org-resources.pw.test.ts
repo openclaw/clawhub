@@ -169,33 +169,15 @@ async function gotoUntilVisible(page: Page, url: string, target: Locator) {
   throw lastError;
 }
 
-async function gotoPublisherProfileUntilCatalogItemVisible(
+async function expectPublisherProfileSkillLink(
   page: Page,
-  handle: string,
-  displayName: string,
-  catalogItemLabel: string,
+  args: { headingName: string; skillSlug: string },
 ) {
-  await gotoUntilVisible(
-    page,
-    `/user/${handle}`,
-    page.getByRole("heading", { name: displayName }),
-  );
+  await expect(page.getByRole("heading", { name: args.headingName })).toBeVisible();
   await expect(page.getByRole("region", { name: "Publisher catalog" })).toBeVisible();
-
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 12; attempt += 1) {
-    try {
-      await expect(page.getByText(catalogItemLabel)).toBeVisible({ timeout: 20_000 });
-      return;
-    } catch (error) {
-      lastError = error;
-      if (attempt === 11) break;
-      await page.reload({ waitUntil: "domcontentloaded" });
-      await waitForHydration(page);
-      await page.waitForTimeout(1_000 * (attempt + 1));
-    }
-  }
-  throw lastError;
+  await expect(page.locator(`a[href$="/${args.skillSlug}"]`).first()).toBeVisible({
+    timeout: 30_000,
+  });
 }
 
 test("org owners can delete an org and hide its skills and plugins", async ({ page }) => {
@@ -220,12 +202,8 @@ test("org owners can delete an org and hide its skills and plugins", async ({ pa
   await signInAsLocalPersona(page, "owner");
   errors.length = 0;
 
-  await gotoPublisherProfileUntilCatalogItemVisible(
-    page,
-    handle,
-    displayName,
-    skillDisplayName,
-  );
+  await gotoUntilVisible(page, `/user/${handle}`, page.getByRole("heading", { name: displayName }));
+  await expectPublisherProfileSkillLink(page, { headingName: displayName, skillSlug });
 
   await gotoUntilVisible(
     page,

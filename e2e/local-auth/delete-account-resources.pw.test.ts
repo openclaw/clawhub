@@ -251,9 +251,12 @@ test("users can permanently delete their account and personal publisher resource
   await gotoUntilVisible(
     page,
     buildPublisherProfileHref(fixture.handle),
-    page.getByText(skillDisplayName),
+    page.getByRole("heading", { name: "Local User" }),
   );
-  await expect(page.getByRole("heading", { name: "Local User" })).toBeVisible();
+  await expect(page.getByRole("region", { name: "Publisher catalog" })).toBeVisible();
+  await expect(page.locator(`a[href$="/${fixture.skillSlug}"]`).first()).toBeVisible({
+    timeout: 30_000,
+  });
 
   await gotoUntilVisible(
     page,
