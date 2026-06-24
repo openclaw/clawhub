@@ -14,6 +14,7 @@ import { syncGitHubProfile } from "./lib/githubAccount";
 import { toPublicUser } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
+  isReservedOpenClawExtensionHandle,
   isReservedPublicOwnerHandle,
 } from "./lib/publicRouteReservations";
 import {
@@ -760,6 +761,10 @@ async function canUserClaimHandle(
   if (await isHandleReservedForAnotherUser(ctx, normalizedHandle, userId)) return false;
 
   const publisher = await getPublisherByHandle(ctx, normalizedHandle);
+  if (isReservedOpenClawExtensionHandle(normalizedHandle)) {
+    const existingUser = await getUserByHandleOrPersonalPublisher(ctx, normalizedHandle);
+    return existingUser?._id === userId;
+  }
   if (!publisher || publisher.deletedAt || publisher.deactivatedAt) return true;
   return publisher.kind === "user" && publisher.linkedUserId === userId;
 }
@@ -2055,6 +2060,9 @@ async function ensurePublisherHandleWithActor(
     .unique();
   if (existing?.deletedAt || existing?.deactivatedAt) {
     throw new Error("Handle belongs to a deleted or deactivated user");
+  }
+  if (!existing && isReservedOpenClawExtensionHandle(normalizedHandle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(normalizedHandle));
   }
 
   const now = Date.now();

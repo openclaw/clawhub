@@ -1,6 +1,10 @@
+import {
+  shouldPreserveSecurityScanStateForUnchangedContent,
+  type SourceBackedSkillScanStatus,
+} from "./securityScanPolicy";
 import { getFrontmatterValue, parseFrontmatter } from "./skills";
 
-export type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
+export type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
 export type GitHubCurrentStatus = "present" | "missing" | "unknown";
 export type DisplayManifestStatus = "ok" | "missing" | "invalid" | "failed";
 
@@ -425,14 +429,7 @@ export function buildGitHubSkillSyncPlan({
 function githubScanStatusForUnchangedContent(
   status: GitHubSkillScanStatus | undefined,
 ): GitHubSkillScanStatus {
-  if (
-    status === "clean" ||
-    status === "failed" ||
-    status === "malicious" ||
-    status === "suspicious"
-  ) {
-    return status;
-  }
+  if (shouldPreserveSecurityScanStateForUnchangedContent(status)) return status;
   return "pending";
 }
 

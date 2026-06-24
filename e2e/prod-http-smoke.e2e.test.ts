@@ -148,7 +148,7 @@ describe("prod http smoke", () => {
 
     expect(html).toContain(`<title>${detail.skill.displayName} — ClawHub</title>`);
     expect(html).toContain(
-      `<link rel="canonical" href="${getSiteBase()}/${owner}/${detail.skill.slug}"/>`,
+      `<link rel="canonical" href="${getSiteBase()}/${owner}/skills/${detail.skill.slug}"/>`,
     );
     if (detail.skill.summary) {
       expect(html).toContain(detail.skill.summary);

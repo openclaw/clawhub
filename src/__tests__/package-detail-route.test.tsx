@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { createRequire } from "node:module";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { AnchorHTMLAttributes, ComponentType, ReactNode } from "react";
 import { toast } from "sonner";
@@ -78,6 +78,7 @@ vi.mock("@tanstack/react-router", () => ({
     select?: (state: { location: { pathname: string } }) => string;
   }) => (select ? select({ location: { pathname: pathnameMock } }) : pathnameMock),
   useRouter: () => ({ invalidate: routerInvalidateMock }),
+  redirect: (options: unknown) => ({ redirect: options }),
   Outlet: () => <div data-testid="nested-plugin-route" />,
   Link: ({
     children,
@@ -139,13 +140,6 @@ vi.mock("../components/MarkdownPreview", () => ({
     className?: string;
     highlight?: boolean;
   }) => <div>{children}</div>,
-}));
-
-vi.mock("../components/ui/tooltip", () => ({
-  Tooltip: ({ children }: { children: ReactNode }) => children,
-  TooltipContent: ({ children }: { children: ReactNode }) => <div>{children}</div>,
-  TooltipProvider: ({ children }: { children: ReactNode }) => children,
-  TooltipTrigger: ({ children }: { children: ReactNode }) => children,
 }));
 
 async function loadRoute() {
@@ -909,7 +903,7 @@ describe("plugin detail route", () => {
     const { container } = render(<Component />);
 
     expect(
-      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/user/openclaw"]'),
+      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/openclaw"]'),
     ).toBeTruthy();
   });
 
@@ -931,7 +925,7 @@ describe("plugin detail route", () => {
     const { container } = render(<Component />);
 
     const packageCrumb = container.querySelector(
-      'nav[aria-label="Plugin breadcrumbs"] a[href="/plugins/@openclaw/firecrawl-plugin"]',
+      'nav[aria-label="Plugin breadcrumbs"] a[href="/openclaw/plugins/firecrawl-plugin"]',
     );
     expect(packageCrumb?.textContent).toBe("firecrawl-plugin");
   });
@@ -1549,7 +1543,8 @@ describe("plugin detail route", () => {
     expect(screen.getByText("ClawPack")).toBeTruthy();
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
-    expect(screen.getByText("openclaw plugins install clawhub:demo-plugin")).toBeTruthy();
+    expect(screen.getByText("openclaw plugins install")).toBeTruthy();
+    expect(screen.getByText("clawhub:demo-plugin")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",
     );
@@ -1674,7 +1669,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });
 
-  it("shows validation outputs to plugin managers on the validation tab", async () => {
+  it("shows validation outputs to plugin managers above the detail tabs", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -1774,32 +1769,61 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("tab", { name: "Validation (1)" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Validation" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Validation", level: 2 })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByRole("link", { name: "2 warnings" })).toBeNull();
-    expect(
-      screen.getByText(
-        /Validation outputs are only visible to plugin owners and admins. Run locally using the CLI:/,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("Validate locally before publishing")).toBeTruthy();
     expect(screen.getByText("clawhub package validate <path-to-plugin>")).toBeTruthy();
+    expect(screen.getByRole("toolbar", { name: "Validation actions" })).toBeTruthy();
+    expect(document.getElementById("validation-toolbar-cli")?.getAttribute("aria-labelledby")).toBe(
+      "validation-toolbar-label",
+    );
+    const titleActions = document.querySelector(".plugin-validation-panel-title-actions");
+    expect(titleActions?.querySelector(".plugin-validation-panel-stats")).toBeTruthy();
+    expect(titleActions?.textContent).toMatch(/0 errors/);
+    expect(titleActions?.textContent).toMatch(/1 warning/);
+    expect(titleActions?.querySelector(".plugin-validation-panel-agent")).toBeNull();
+    const validationToolbar = screen.getByRole("toolbar", { name: "Validation actions" });
+    const commandBlock = validationToolbar.querySelector(".plugin-validation-command-block");
+    expect(commandBlock?.querySelector(".plugin-validation-toolbar-label")).toBeTruthy();
+    expect(validationToolbar.querySelector(":scope > .plugin-validation-toolbar-label")).toBeNull();
+    expect(validationToolbar.querySelector(".plugin-validation-toolbar-agent")).toBeTruthy();
+    expect(
+      within(validationToolbar as HTMLElement).getByRole("button", {
+        name: "Copy fix instructions",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy validate command" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy fix instructions" })).toBeTruthy();
+    expect(screen.getByText("Copy instructions")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Agent" })).toBeNull();
     expect(screen.getByText("legacy-before-agent-start")).toBeTruthy();
+    expect(screen.getByText(/Deprecated API/)).toBeTruthy();
+    expect(screen.queryByText(/Warning · Deprecated API · P2/)).toBeNull();
+    expect(screen.queryByText("deprecation-warning")).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
     expect(screen.queryByText("registerTool is no longer available")).toBeNull();
     expect(screen.queryByText("Inspector")).toBeNull();
     expect(screen.queryByText("Scan")).toBeNull();
-    expect(screen.getByText("Fix")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View fix guide ↗" }).getAttribute("href")).toBe(
+      "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+    );
+    const validationRegion = screen.getByRole("region", { name: "Validation" });
+    expect(within(validationRegion).getByText("Release")).toBeTruthy();
+    expect(within(validationRegion).getByText("v1.0.0")).toBeTruthy();
+    expect(within(validationRegion).getByText("Target")).toBeTruthy();
+    expect(within(validationRegion).getByText("OpenClaw 0.9.0")).toBeTruthy();
+    expect(screen.getByText(/Legacy before_agent_start hook is deprecated\./)).toBeTruthy();
+    expect(screen.getByText(/Hey, we found/)).toBeTruthy();
+    expect(screen.getByText("1 issue")).toBeTruthy();
     expect(
-      screen.getByText("Replace the legacy before_agent_start hook with current prompt hooks."),
+      within(screen.getByRole("region", { name: "Validation" })).getByText("demo-plugin"),
     ).toBeTruthy();
+    expect(screen.getByText(/version 1\.0\.0/)).toBeTruthy();
     expect(
-      screen
-        .getByRole("link", {
-          name: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-        })
-        .getAttribute("href"),
-    ).toBe("https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start");
-    expect(screen.getByText("Docs")).toBeTruthy();
-    expect(screen.getAllByText("OpenClaw 0.9.0").length).toBeGreaterThan(0);
+      screen.getByText(/Review the findings below, apply the fix, and upload a new version\./),
+    ).toBeTruthy();
   });
 
   it("does not show validation outputs to signed-out viewers when the hash changes", async () => {
@@ -1978,16 +2002,15 @@ describe("plugin detail route", () => {
     fetchPackageReadmeMock.mockResolvedValueOnce("README");
     fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
 
-    const result = await loader({ params: { name: "matrix" } });
+    await expect(loader({ params: { name: "matrix" } })).rejects.toEqual({
+      redirect: { href: "/openclaw/plugins/matrix", replace: true },
+    });
 
     expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
     expect(fetchPackageVersions).toHaveBeenCalledWith("@openclaw/matrix", { limit: 20 });
-    expect(result.versions).toEqual(emptyVersions);
-    expect(result.detail.package?.name).toBe("@openclaw/matrix");
-    expect(result.rateLimited).toBeNull();
   });
 
   it("uses extension npm config for short plugin route candidates", async () => {
@@ -2021,7 +2044,9 @@ describe("plugin detail route", () => {
     fetchPackageReadmeMock.mockResolvedValueOnce("README");
     fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
 
-    const result = await loader({ params: { name: "anthropic" } });
+    await expect(loader({ params: { name: "anthropic" } })).rejects.toEqual({
+      redirect: { href: "/openclaw/plugins/anthropic-provider", replace: true },
+    });
 
     expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/anthropic-provider");
@@ -2030,6 +2055,5 @@ describe("plugin detail route", () => {
       "@openclaw/anthropic-provider",
       "2026.3.22",
     );
-    expect(result.detail.package?.name).toBe("@openclaw/anthropic-provider");
   });
 });

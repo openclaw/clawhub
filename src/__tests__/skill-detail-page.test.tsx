@@ -194,6 +194,86 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByRole("button", { name: "Diff" })).toBeNull();
   });
 
+  it("keeps loader-backed skill content visible while staff live query resolves", async () => {
+    useAuthStatusMock.mockReturnValue({
+      isAuthenticated: true,
+      isLoading: false,
+      me: { _id: "users:staff", role: "moderator" },
+    });
+    useQueryMock.mockImplementation((_fn: unknown, args: unknown) => {
+      if (args === "skip") return undefined;
+      return undefined;
+    });
+
+    render(
+      <SkillDetailPage
+        slug="github"
+        canonicalOwner="steipete"
+        initialData={{
+          result: {
+            skill: {
+              _id: skillId,
+              _creationTime: 0,
+              slug: "github",
+              displayName: "Github",
+              summary: "Interact with GitHub using the `gh` CLI.",
+              ownerUserId: ownerId,
+              ownerPublisherId,
+              tags: {},
+              badges: {},
+              stats: {
+                stars: 12,
+                downloads: 34,
+                installsCurrent: 5,
+                installsAllTime: 8,
+                versions: 1,
+                comments: 0,
+              },
+              createdAt: 0,
+              updatedAt: 0,
+            },
+            owner: {
+              _id: ownerPublisherId,
+              _creationTime: 0,
+              kind: "user",
+              handle: "steipete",
+              displayName: "Peter",
+              linkedUserId: ownerId,
+            },
+            latestVersion: {
+              _id: versionId,
+              _creationTime: 0,
+              skillId,
+              version: "1.0.0",
+              fingerprint: "abc",
+              changelog: "Initial release",
+              parsed: { license: "MIT-0", frontmatter: {} },
+              files: [
+                {
+                  path: "SKILL.md",
+                  size: 10,
+                  storageId,
+                  sha256: "abc",
+                  contentType: "text/markdown",
+                },
+              ],
+              createdBy: ownerId,
+              createdAt: 0,
+            },
+            forkOf: null,
+            canonical: null,
+          },
+          readme: "# GitHub Skill",
+          readmeError: null,
+        }}
+      />,
+    );
+
+    expect(screen.queryByRole("status", { name: /Loading skill details/i })).toBeNull();
+    expect(screen.getAllByRole("heading", { name: "Github" }).length).toBeGreaterThan(0);
+    expect(screen.getByText(/Interact with GitHub using the `gh` CLI\./i)).toBeTruthy();
+  });
+
   it("loads skill activity graphs through a deferred one-shot query", async () => {
     const activityTrend = {
       installs: {
@@ -1030,17 +1110,16 @@ describe("SkillDetailPage", () => {
     expect(sidebarMetadata).toBeTruthy();
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("openclaw skills install @steipete/weather").length).toBeGreaterThan(
-      0,
-    );
+    expect(screen.getAllByText("openclaw skills install").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("@steipete/weather").length).toBeGreaterThan(0);
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
-    expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");
-    expect(screen.getByRole("tab", { name: "Prompt" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "CLI" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Prompt" })).toBeTruthy();
     expect(screen.queryByText(/After install, inspect the skill metadata/i)).toBeNull();
     expect(screen.getAllByText("Security audit").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: "View Security Audit" }).getAttribute("href")).toBe(
-      "/steipete/weather/security-audit",
+      "/steipete/skills/weather/security-audit",
     );
     const sidebarLabels = Array.from(
       sidebarMetadata?.querySelectorAll(".sidebar-metadata-label") ?? [],
@@ -1366,7 +1445,7 @@ describe("SkillDetailPage", () => {
       expect(navigateMock).toHaveBeenCalled();
     });
     expect(navigateMock).toHaveBeenCalledWith({
-      to: "/$owner/$slug",
+      to: "/$owner/skills/$slug",
       params: { owner: "steipete", slug: "weather" },
       replace: true,
     });
@@ -1423,7 +1502,7 @@ describe("SkillDetailPage", () => {
       expect(navigateMock).toHaveBeenCalled();
     });
     expect(navigateMock).toHaveBeenCalledWith({
-      to: "/$owner/$slug",
+      to: "/$owner/skills/$slug",
       params: { owner: "steipete", slug: "weather" },
       replace: true,
     });
@@ -1525,7 +1604,7 @@ describe("SkillDetailPage", () => {
     expect(screen.queryByText(/Loading skill/i)).toBeNull();
     expect(screen.getAllByText("Weather").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /settings/i }).getAttribute("href")).toBe(
-      "/SteiPete/weather/settings",
+      "/SteiPete/skills/weather/settings",
     );
     expect(navigateMock).not.toHaveBeenCalled();
   });
@@ -1778,7 +1857,7 @@ describe("SkillDetailPage", () => {
     const { unmount } = render(<SkillDetailPage slug="weather" />);
 
     const settingsLink = await screen.findByRole("link", { name: /settings/i });
-    expect(settingsLink.getAttribute("href")).toBe("/steipete/weather/settings");
+    expect(settingsLink.getAttribute("href")).toBe("/steipete/skills/weather/settings");
     expect(screen.queryByText(/Owner tools/i)).toBeNull();
     unmount();
 

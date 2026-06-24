@@ -11,7 +11,7 @@ function TopicInputHarness({ initialValue = "" }: { initialValue?: string }) {
 }
 
 describe("CatalogTopicInput", () => {
-  it("allows typing a multi-word topic before Enter commits it", () => {
+  it("allows typing a multi-word topic before Enter commits its slug", () => {
     render(<TopicInputHarness />);
 
     const input = screen.getByLabelText("Topics");
@@ -22,10 +22,10 @@ describe("CatalogTopicInput", () => {
     fireEvent.change(input, { target: { value: "GPU development" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(screen.getByText("#gpu development")).toBeTruthy();
+    expect(screen.getByText("#gpu-development")).toBeTruthy();
   });
 
-  it("allows typing a comma-containing topic before Enter commits it", () => {
+  it("allows typing punctuation before Enter commits the normalized slug", () => {
     render(<TopicInputHarness />);
 
     const input = screen.getByLabelText("Topics");
@@ -36,7 +36,7 @@ describe("CatalogTopicInput", () => {
     fireEvent.change(input, { target: { value: "CI, CD" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(screen.getByText("#ci, cd")).toBeTruthy();
+    expect(screen.getByText("#ci-cd")).toBeTruthy();
   });
 
   it("normalizes topic chips to lowercase", () => {
@@ -46,14 +46,14 @@ describe("CatalogTopicInput", () => {
     expect(screen.getByText("#gpu development")).toBeTruthy();
   });
 
-  it("commits a pasted multi-word topic with Enter", () => {
+  it("auto-hyphenates a pasted multi-word topic with Enter", () => {
     render(<TopicInputHarness />);
 
     const input = screen.getByLabelText("Topics");
     fireEvent.change(input, { target: { value: "GPU Development" } });
     fireEvent.keyDown(input, { key: "Enter" });
 
-    expect(screen.getByText("#gpu development")).toBeTruthy();
+    expect(screen.getByText("#gpu-development")).toBeTruthy();
   });
 
   it("removes topic chips with their remove button or Backspace", () => {

@@ -21,6 +21,7 @@ sync:
     - dist
     - dist-ssr
     - node_modules
+    - .output
     - playwright-report
     - test-results
 env:

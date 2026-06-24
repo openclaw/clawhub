@@ -60,6 +60,30 @@ describe("public corpus fixture validation", () => {
     );
   });
 
+  it("rejects invalid plugin categories and topics", () => {
+    const result = validateCorpusRows([
+      {
+        ...pluginRow,
+        categories: ["not-a-category"],
+        topics: ["Official"],
+      },
+    ]);
+
+    expect(result.ok).toBe(false);
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        reason: "invalid_catalog_metadata",
+        field: "categories",
+      }),
+    );
+    expect(result.findings).toContainEqual(
+      expect.objectContaining({
+        reason: "invalid_catalog_metadata",
+        field: "topics",
+      }),
+    );
+  });
+
   it("rejects empty content and secret-like text", () => {
     const result = validateCorpusRows([
       { ...skillRow, slug: "empty", skillMd: "" },

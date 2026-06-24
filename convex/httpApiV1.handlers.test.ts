@@ -586,6 +586,128 @@ describe("httpApiV1 handlers", () => {
     ]);
   });
 
+  it("skills export includes GitHub-backed skills as public GitHub handoff descriptors", async () => {
+    vi.mocked(requireApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    vi.mocked(getOptionalApiTokenUser).mockResolvedValue({
+      userId: "users:actor",
+      user: { _id: "users:actor", role: "user" },
+    } as never);
+    const commit = "2".repeat(40);
+
+    const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+      if ("startDate" in args) {
+        return {
+          page: [
+            {
+              skillId: "skills:hosted",
+              slug: "hosted-demo",
+              displayName: "Hosted Demo",
+              latestVersionId: "skillVersions:hosted",
+              createdAt: 1,
+              updatedAt: 2,
+              stats: { downloads: 4 },
+              ownerUserId: "users:alice",
+              ownerHandle: "alice",
+              ownerDisplayName: "Alice",
+            },
+            {
+              skillId: "skills:github",
+              slug: "aiq-deploy",
+              displayName: "AIQ Deploy",
+              installKind: "github",
+              latestVersionId: undefined,
+              createdAt: 3,
+              updatedAt: 4,
+              stats: { downloads: 7 },
+              ownerUserId: "users:nvidia",
+              ownerHandle: "nvidia",
+              ownerDisplayName: "NVIDIA",
+            },
+          ],
+          nextCursor: null,
+          hasMore: false,
+        };
+      }
+      if (args.versionId === "skillVersions:hosted") {
+        return {
+          skillId: "skills:hosted",
+          version: "1.0.0",
+          files: [{ storageId: "storage:hosted", path: "SKILL.md" }],
+        };
+      }
+      if (args.skillId === "skills:github") {
+        return {
+          installKind: "github",
+          repo: "NVIDIA/skills",
+          path: "skills/aiq-deploy",
+          commit,
+          contentHash: "hash-aiq-deploy",
+          currentStatus: "present",
+          scanStatus: "suspicious",
+          removedAt: null,
+        };
+      }
+      return null;
+    });
+    const storageGet = vi.fn(async () => new Blob(["hosted skill"]));
+
+    const response = await __handlers.exportSkillsV1Handler(
+      makeCtx({ runQuery, storage: { get: storageGet } }),
+      new Request("https://example.com/api/v1/skills/export?startDate=1&endDate=5", {
+        headers: { authorization: "Bearer user-token" },
+      }),
+    );
+
+    if (response.status !== 200) throw new Error(await response.text());
+    expect(response.headers.get("X-Total-Returned")).toBe("2");
+    expect(response.headers.get("X-Export-Errors")).toBe("0");
+
+    const zipEntries = unzipSync(new Uint8Array(await response.arrayBuffer()));
+    expect(Object.keys(zipEntries).sort()).toEqual([
+      "_manifest.json",
+      "alice/hosted-demo/SKILL.md",
+      "alice/hosted-demo/_export_skill_meta.json",
+      "nvidia/aiq-deploy/_export_skill_meta.json",
+      "nvidia/aiq-deploy/_source_handoff.json",
+    ]);
+    expect(zipEntries["_errors.json"]).toBeUndefined();
+
+    const manifest = JSON.parse(new TextDecoder().decode(zipEntries["_manifest.json"]));
+    expect(manifest).toEqual([
+      expect.objectContaining({
+        publisher: "alice",
+        slug: "hosted-demo",
+        sourceRef: "public-clawhub",
+        fileCount: 1,
+      }),
+      expect.objectContaining({
+        publisher: "nvidia",
+        slug: "aiq-deploy",
+        sourceRef: "public-github",
+        version: null,
+        fileCount: 0,
+      }),
+    ]);
+
+    const handoff = JSON.parse(
+      new TextDecoder().decode(zipEntries["nvidia/aiq-deploy/_source_handoff.json"]),
+    );
+    expect(handoff).toEqual({
+      sourceRef: "public-github",
+      repo: "NVIDIA/skills",
+      commit,
+      path: "skills/aiq-deploy",
+      contentHash: "hash-aiq-deploy",
+      archiveUrl: `https://api.github.com/repos/NVIDIA/skills/zipball/${commit}`,
+    });
+    expect(handoff).not.toHaveProperty("scan");
+    expect(handoff).not.toHaveProperty("scanStatus");
+    expect(storageGet).toHaveBeenCalledTimes(1);
+  });
+
   it("skills export skips stale latest versions before reading blobs", async () => {
     vi.mocked(requireApiTokenUser).mockResolvedValue({
       userId: "users:actor",
@@ -2328,13 +2450,13 @@ describe("httpApiV1 handlers", () => {
           ownerHandle: "openclaw",
           slug: "demo",
           ref: "@openclaw/demo",
-          url: "https://example.com/openclaw/demo",
+          url: "https://example.com/openclaw/skills/demo",
         },
         {
           ownerHandle: "patrick",
           slug: "demo",
           ref: "@patrick/demo",
-          url: "https://example.com/patrick/demo",
+          url: "https://example.com/patrick/skills/demo",
         },
       ],
     });
@@ -2359,8 +2481,8 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(409);
     const body = await response.json();
     expect(body.matches).toEqual([
-      expect.objectContaining({ url: "https://clawhub.ai/openclaw/demo" }),
-      expect.objectContaining({ url: "https://clawhub.ai/patrick/demo" }),
+      expect.objectContaining({ url: "https://clawhub.ai/openclaw/skills/demo" }),
+      expect.objectContaining({ url: "https://clawhub.ai/patrick/skills/demo" }),
     ]);
   });
 
@@ -2761,6 +2883,51 @@ describe("httpApiV1 handlers", () => {
         path: "skills/aiq-deploy",
         commit: "1".repeat(40),
         contentHash: "hash-aiq-deploy",
+      },
+    });
+  });
+
+  it("skill install resolver returns a pinned GitHub descriptor for scan-suspicious source-backed skills", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-review",
+        slug: "aiq-review",
+        displayName: "AIQ Review",
+        moderationStatus: "active",
+        moderationReason: "scanner.llm.suspicious",
+        moderationVerdict: "suspicious",
+        moderationFlags: ["flagged.suspicious"],
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-review",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-aiq-review",
+        githubCurrentStatus: "present",
+        githubScanStatus: "suspicious",
+      },
+      source: {
+        _id: "githubSkillSources:nvidia",
+        repo: "NVIDIA/skills",
+        defaultBranch: "main",
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-review/install"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      slug: "aiq-review",
+      installKind: "github",
+      github: {
+        repo: "NVIDIA/skills",
+        path: "skills/aiq-review",
+        commit: "1".repeat(40),
+        contentHash: "hash-aiq-review",
       },
     });
   });
@@ -5284,8 +5451,8 @@ describe("httpApiV1 handlers", () => {
           version: "1.0.0",
           createdAt: 1,
           checkedAt: 3,
-          skillUrl: "https://example.com/acme/demo",
-          securityAuditUrl: "https://example.com/acme/demo/security-audit?version=1.0.0",
+          skillUrl: "https://example.com/acme/skills/demo",
+          securityAuditUrl: "https://example.com/acme/skills/demo/security-audit?version=1.0.0",
           security: {
             status: "clean",
             passed: true,
@@ -5349,8 +5516,8 @@ describe("httpApiV1 handlers", () => {
     expect(response.status).toBe(200);
     const json = await response.json();
     expect(json.items[0]).toMatchObject({
-      skillUrl: "https://clawhub.ai/acme/demo",
-      securityAuditUrl: "https://clawhub.ai/acme/demo/security-audit?version=1.0.0",
+      skillUrl: "https://clawhub.ai/acme/skills/demo",
+      securityAuditUrl: "https://clawhub.ai/acme/skills/demo/security-audit?version=1.0.0",
     });
   });
 
@@ -5757,10 +5924,10 @@ describe("httpApiV1 handlers", () => {
       reasons: [],
       slug: "demo",
       displayName: "Demo",
-      pageUrl: "https://clawhub.ai/acme/demo",
+      pageUrl: "https://clawhub.ai/acme/skills/demo",
       publisherHandle: "acme",
       publisherDisplayName: "Acme",
-      publisherProfileUrl: "https://clawhub.ai/user/acme",
+      publisherProfileUrl: "https://clawhub.ai/acme",
       version: "1.0.0",
       resolvedFrom: "tag",
       tag: "stable",

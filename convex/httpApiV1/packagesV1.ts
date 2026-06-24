@@ -3227,7 +3227,7 @@ function ambiguousSkillChoicesForPackageRequest(
         slug,
         ref: `@${ownerHandle}/${slug}`,
         url: new URL(
-          `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(slug)}`,
+          `/${encodeURIComponent(ownerHandle)}/skills/${encodeURIComponent(slug)}`,
           request.url,
         ).toString(),
       },

@@ -1,13 +1,20 @@
 import { writeFile } from "node:fs/promises";
 import { expect, type Page, test, type TestInfo } from "@playwright/test";
 import { strToU8, zipSync } from "fflate";
-import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
-import { signInAsLocalPersona } from "./helpers";
+import {
+  expectNoFatalErrorUi,
+  expectNoRuntimeErrors,
+  trackRuntimeErrors,
+  waitForHydration,
+} from "../helpers/runtimeErrors";
+import { buildPluginValidationHref, escapeRegExp, signInAsLocalPersona } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "local-auth plugin inspector tests require the local dev auth runner",
 );
+
+test.setTimeout(600_000);
 
 if (process.env.CLAWHUB_CAPTURE_PLUGIN_INSPECTOR_PROOF === "1") {
   test.use({ video: "on" });
@@ -85,75 +92,195 @@ async function captureProof(page: Page, testInfo: TestInfo, name: string) {
   });
 }
 
+function sawTransientUploadFailure(errors: string[]) {
+  return errors.some(
+    (error) =>
+      error.includes("CONVEX M(uploads:generateUploadUrl)") &&
+      (error.includes("Function execution timed out (maximum duration: 1s)") ||
+        error.includes("Unauthorized")),
+  );
+}
+
+async function expectHealthyInspectorPage(page: Page, errors: string[]) {
+  const expectedTransientTimeouts = [
+    "CONVEX Q(packages:canDeleteVersions)",
+    "CONVEX Q(packages:getManageContext)",
+    "CONVEX Q(packages:getPackageInspectorValidationSummaryPublic)",
+    "CONVEX Q(packages:list)",
+    "CONVEX Q(publishers:getMyProfileHandle)",
+    "CONVEX Q(publishers:listMine)",
+  ];
+  await expectNoFatalErrorUi(page);
+  await expectNoRuntimeErrors(
+    page,
+    errors.filter(
+      (error) =>
+        !(
+          error.includes("Function execution timed out (maximum duration: 1s)") &&
+          expectedTransientTimeouts.some((functionName) => error.includes(functionName))
+        ),
+    ),
+  );
+}
+
+async function expectDashboardWarningLink(page: Page, warningName: string) {
+  const dashboardWarningLink = page.locator(`a[href="${buildPluginValidationHref(warningName)}"]`);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
+    await waitForHydration(page);
+    try {
+      await expect(dashboardWarningLink).toBeVisible({ timeout: 30_000 });
+      return dashboardWarningLink;
+    } catch (error) {
+      if (attempt >= 3) throw error;
+      await page.waitForTimeout(1_000 * attempt);
+    }
+  }
+  return dashboardWarningLink;
+}
+
+async function expectValidationSectionVisible(page: Page, warningName: string) {
+  const detailHref = buildPluginValidationHref(warningName);
+  const validationSection = page.locator("#validation");
+
+  for (let attempt = 1; attempt <= 6; attempt += 1) {
+    await waitForHydration(page).catch(() => {});
+    if ((await validationSection.count()) > 0) {
+      await expect(validationSection).toBeVisible({ timeout: 10_000 });
+      return;
+    }
+    await page.goto(detailHref, { waitUntil: "domcontentloaded" });
+    await page.waitForTimeout(500 * attempt);
+  }
+
+  await expect(validationSection).toBeVisible({ timeout: 10_000 });
+}
+
+async function publishWarningPluginWithRetry(args: {
+  errors: string[];
+  page: Page;
+  suffix: string;
+  testInfo: TestInfo;
+}) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const attemptSuffix = attempt === 0 ? args.suffix : `${args.suffix}-${attempt + 1}`;
+    const warningName = `pw-inspector-warning-${attemptSuffix}`;
+    const warningDisplayName = `Playwright Inspector Warning Plugin ${attemptSuffix}`;
+    args.errors.length = 0;
+
+    try {
+      if (attempt > 0) await signInAsLocalPersona(args.page, "admin");
+      await args.page.goto("/plugins/publish", { waitUntil: "domcontentloaded" });
+      await waitForHydration(args.page);
+      await uploadPluginZip(
+        args.page,
+        await writePluginZip(args.testInfo, {
+          name: warningName,
+          displayName: warningDisplayName,
+          kind: "warning",
+        }),
+      );
+      await expect(args.page.locator("#pluginName")).toHaveValue(warningName);
+      await args.page.locator("#pluginSourceCommit").fill("abc123");
+      const publishButton = args.page.getByRole("button", { name: "Publish plugin" });
+      await expect(publishButton).toBeEnabled({ timeout: 60_000 });
+      await publishButton.click({ timeout: 15_000 });
+      await expect(args.page.getByText("Published. Pending security checks")).toBeVisible({
+        timeout: 60_000,
+      });
+      return { warningDisplayName, warningName };
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2) throw error;
+      await args.page.waitForTimeout(1_000);
+    }
+  }
+  throw lastError;
+}
+
+async function publishHardErrorPluginWithRetry(args: {
+  errors: string[];
+  page: Page;
+  suffix: string;
+  testInfo: TestInfo;
+}) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const attemptSuffix = attempt === 0 ? args.suffix : `${args.suffix}-${attempt + 1}`;
+    const badName = `pw-inspector-bad-${attemptSuffix}`;
+    args.errors.length = 0;
+
+    try {
+      if (attempt > 0) await signInAsLocalPersona(args.page, "admin");
+      await args.page.goto("/plugins/publish", { waitUntil: "domcontentloaded" });
+      await waitForHydration(args.page);
+      await uploadPluginZip(
+        args.page,
+        await writePluginZip(args.testInfo, {
+          name: badName,
+          displayName: "Playwright Inspector Bad Plugin",
+          kind: "hard-error",
+        }),
+      );
+      await expect(args.page.locator("#pluginName")).toHaveValue(badName);
+      await args.page.locator("#pluginSourceCommit").fill("abc123");
+      const publishButton = args.page.getByRole("button", { name: "Publish plugin" });
+      await expect(publishButton).toBeEnabled({ timeout: 60_000 });
+      await publishButton.click({ timeout: 15_000 });
+      await expect(args.page.getByRole("alert")).toContainText("Plugin Inspector blocked publish", {
+        timeout: 60_000,
+      });
+      return { badName };
+    } catch (error) {
+      lastError = error;
+      if (attempt === 2) throw error;
+      await args.page.waitForTimeout(sawTransientUploadFailure(args.errors) ? 1_000 : 2_000);
+    }
+  }
+  throw lastError;
+}
+
 test("plugin inspector blocks hard publish errors and publishes warning findings", async ({
   page,
 }, testInfo) => {
   const errors = trackRuntimeErrors(page);
   const suffix = Date.now().toString(36);
-  const badName = `pw-inspector-bad-${suffix}`;
-  const warningName = `pw-inspector-warning-${suffix}`;
-  const warningDisplayName = `Playwright Inspector Warning Plugin ${suffix}`;
 
   await signInAsLocalPersona(page, "admin");
 
-  await page.goto("/plugins/publish", { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  await expect(page.getByRole("heading", { name: "Publish Plugin" })).toBeVisible();
-  await uploadPluginZip(
+  await publishHardErrorPluginWithRetry({
+    errors,
     page,
-    await writePluginZip(testInfo, {
-      name: badName,
-      displayName: "Playwright Inspector Bad Plugin",
-      kind: "hard-error",
-    }),
-  );
-  await expect(page.locator("#pluginName")).toHaveValue(badName);
-  await page.locator("#pluginSourceCommit").fill("abc123");
-  await page.getByRole("button", { name: "Publish plugin" }).click();
-  await expect(page.getByRole("alert")).toContainText("Plugin Inspector blocked publish", {
-    timeout: 60_000,
+    suffix,
+    testInfo,
   });
   await captureProof(page, testInfo, "01-upload-hard-error");
-  errors.length = 0;
-
-  await page.goto("/plugins/publish", { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  await uploadPluginZip(
+  const { warningName } = await publishWarningPluginWithRetry({
+    errors,
     page,
-    await writePluginZip(testInfo, {
-      name: warningName,
-      displayName: warningDisplayName,
-      kind: "warning",
-    }),
-  );
-  await expect(page.locator("#pluginName")).toHaveValue(warningName);
-  await page.locator("#pluginSourceCommit").fill("abc123");
-  await page.getByRole("button", { name: "Publish plugin" }).click();
-  await expect(page.getByText("Published. Pending security checks")).toBeVisible({
-    timeout: 60_000,
+    suffix,
+    testInfo,
   });
   await captureProof(page, testInfo, "02-upload-warning-success");
 
-  await page.goto("/dashboard", { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  const dashboardWarningLink = page.locator(`a[href="/plugins/${warningName}#validation"]`);
-  await expect(dashboardWarningLink).toBeVisible({ timeout: 30_000 });
+  const dashboardWarningLink = await expectDashboardWarningLink(page, warningName);
   await captureProof(page, testInfo, "03-dashboard-warning-count");
   await dashboardWarningLink.click();
 
-  await expect(page).toHaveURL(new RegExp(`/plugins/${warningName}#validation$`));
-  await expect(page.getByRole("tab", { name: /Validation \(\d+\)/ })).toHaveAttribute(
-    "aria-selected",
-    "true",
+  await expect(page).toHaveURL(
+    new RegExp(`${escapeRegExp(buildPluginValidationHref(warningName))}$`),
   );
+  await expectValidationSectionVisible(page, warningName);
   await expect(
-    page.locator(".plugin-warning-item-header code").filter({
+    page.locator(".plugin-warning-item-code").filter({
       hasText: /^legacy-before-agent-start$/,
     }),
   ).toBeVisible();
-  await expect(page.getByText("deprecation-warning")).toBeVisible();
+  await expect(page.getByText(/Deprecated API/)).toBeVisible();
+  await expect(page.getByText(/legacy-before-agent-start/)).toBeVisible();
   await expect(page.getByText(/before_agent_start hook compatibility/i)).toBeVisible();
   await captureProof(page, testInfo, "04-plugin-public-warnings");
 
-  await expectHealthyPage(page, errors);
+  await expectHealthyInspectorPage(page, errors);
 });

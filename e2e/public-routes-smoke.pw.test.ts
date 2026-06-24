@@ -38,9 +38,19 @@ async function stubVercelImageOptimizerInVitePreview(page: Page) {
   await page.route("**/_vercel/image?**", (route) => route.fulfill({ status: 204 }));
 }
 
+async function getSeedFixture(request: APIRequestContext, path: string) {
+  let lastResponse: Awaited<ReturnType<APIRequestContext["get"]>> | null = null;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    lastResponse = await request.get(seedApiUrl(path));
+    if (lastResponse.ok()) return lastResponse;
+    await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
+  }
+  return lastResponse!;
+}
+
 async function fetchSeedFixtures(request: APIRequestContext): Promise<SeedFixtures> {
   const skillPath = "/api/v1/skills/gifgrep";
-  const skillResponse = await request.get(seedApiUrl(skillPath));
+  const skillResponse = await getSeedFixture(request, skillPath);
   expect(
     skillResponse.ok(),
     `seed skill fixture ${skillPath} returned ${skillResponse.status()}`,
@@ -57,7 +67,7 @@ async function fetchSeedFixtures(request: APIRequestContext): Promise<SeedFixtur
   expect(skillDisplayName, "gifgrep seed fixture needs a display name").toBeTruthy();
 
   const pluginPath = "/api/v1/plugins?limit=1";
-  const pluginResponse = await request.get(seedApiUrl(pluginPath));
+  const pluginResponse = await getSeedFixture(request, pluginPath);
   expect(
     pluginResponse.ok(),
     `seed plugin catalog ${pluginPath} returned ${pluginResponse.status()}`,
@@ -105,10 +115,18 @@ function publicRouteCases(): PublicRouteCase[] {
       },
     },
     {
-      label: "publishers browse",
+      label: "creators browse",
+      path: () => "/creators",
+      assert: async (page) => {
+        await expect(page.getByRole("heading", { name: /^Creators/ })).toBeVisible();
+      },
+    },
+    {
+      label: "publishers browse redirect",
       path: () => "/publishers",
       assert: async (page) => {
-        await expect(page.getByRole("heading", { name: /^Publishers/ })).toBeVisible();
+        await expect(page).toHaveURL(/\/creators/);
+        await expect(page.getByRole("heading", { name: /^Creators/ })).toBeVisible();
       },
     },
     {
@@ -144,7 +162,7 @@ function publicRouteCases(): PublicRouteCase[] {
       label: "publisher profile",
       path: (fixtures) => `/user/${encodeURIComponent(fixtures.skill.ownerHandle)}`,
       assert: async (page) => {
-        await expect(page.getByText("Publisher catalog")).toBeVisible();
+        await expect(page.getByRole("region", { name: "Publisher catalog" })).toBeVisible();
       },
     },
     {

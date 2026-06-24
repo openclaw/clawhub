@@ -79,7 +79,7 @@ test("known public skill detail links to owner profile", async ({ page, request 
   await waitForHydration(page);
   await ownerLink.click();
   await expect(page).toHaveURL(new RegExp(`/user/${ownerHandle}$`));
-  await expect(page.getByRole("heading", { name: "Publisher catalog" })).toBeAttached();
+  await expect(page.getByRole("region", { name: "Publisher catalog" })).toBeVisible();
   await expect(page.locator(".skill-card, .skill-list-item").first()).toBeVisible();
   await expectHealthyPage(page, errors);
 });

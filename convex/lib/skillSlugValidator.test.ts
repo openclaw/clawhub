@@ -82,6 +82,7 @@ describe("assertValidSkillSlug", () => {
     "clawhub",
     "souls",
     "packages",
+    "creators",
     "publishers",
   ])("rejects reserved slug %s", (slug) => {
     // Some short reserved entries (e.g. "u") are also blocked by the
@@ -89,7 +90,7 @@ describe("assertValidSkillSlug", () => {
     expect(() => assertValidSkillSlug(slug)).toThrow();
   });
 
-  it.each(["openclaw", "publishers"])(
+  it.each(["openclaw", "creators", "publishers"])(
     "emits the reserved-specific error for long reserved slug %s",
     (slug) => {
       expect(() => assertValidSkillSlug(slug)).toThrow(/reserved/i);

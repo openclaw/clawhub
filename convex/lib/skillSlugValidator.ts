@@ -34,6 +34,7 @@ const RESERVED_SKILL_SLUGS: ReadonlySet<string> = new Set([
   "orgs",
   "packages",
   "plugins",
+  "creators",
   "publishers",
   "publish",
   "publish-plugin",

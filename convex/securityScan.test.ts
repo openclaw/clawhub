@@ -8,6 +8,7 @@ import {
   claimQueuedJobsInternal,
   completeCodexScanJob,
   enqueueBulkSkillRescanBatchForAdminInternal,
+  enqueueSkillVersionScanInternal,
   failCodexScanJob,
   finalizeGitHubSkillScanRequestInternal,
   getJobTargetInternal,
@@ -215,6 +216,20 @@ const requestPackageRescanForUserInternalHandler = (
   requestPackageRescanForUserInternal as unknown as WrappedHandler<
     { actorUserId: string; name: string; version?: string },
     { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
+  >
+)._handler;
+
+const enqueueSkillVersionScanInternalHandler = (
+  enqueueSkillVersionScanInternal as unknown as WrappedHandler<
+    {
+      versionId: string;
+      source: "publish";
+      priority?: number;
+      waitForVtMs?: number;
+      preserveActiveJob?: boolean;
+      preserveExistingJob?: boolean;
+    },
+    { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
   >
 )._handler;
 
@@ -875,6 +890,39 @@ describe("securityScan", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.mocked(getAuthUserId).mockReset();
+  });
+
+  it("does not enqueue a duplicate publish scan after the backup delay if the first scan already finished", async () => {
+    const existingJob = makeScanJob({
+      _id: "securityScanJobs:fast-publish",
+      status: "succeeded",
+      source: "publish",
+      skillVersionId: "skillVersions:fast-publish",
+    });
+    const { ctx, inserts, patches } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "skillVersions:fast-publish": {
+          _id: "skillVersions:fast-publish",
+          skillId: "skills:fast-publish",
+          version: "1.0.0",
+        },
+      },
+      activeJobs: [existingJob],
+    });
+
+    const result = await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:fast-publish",
+      source: "publish",
+      preserveExistingJob: true,
+    });
+
+    expect(result).toMatchObject({
+      jobId: "securityScanJobs:fast-publish",
+      alreadyQueued: true,
+    });
+    expect(inserts.filter((entry) => entry.table === "securityScanJobs")).toEqual([]);
+    expect(patches).toEqual([]);
   });
 
   it("lets platform moderators request skill rescans", async () => {

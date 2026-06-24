@@ -288,7 +288,7 @@ function buildEvidencePacket(
       summary: skill.summary ?? null,
       badges: skill.badges ?? null,
       pageUrl: publisherHandle
-        ? `https://clawhub.ai/${publisherHandle}/${skill.slug}`
+        ? `https://clawhub.ai/${publisherHandle}/skills/${skill.slug}`
         : `https://clawhub.ai/api/v1/skills/${skill.slug}`,
     },
     release: {

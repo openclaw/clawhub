@@ -14,6 +14,9 @@ type SkillReportDialogProps = {
   isSubmitting: boolean;
   reportReason: string;
   reportError: string | null;
+  title?: string;
+  description?: string;
+  submitLabel?: string;
   onReasonChange: (value: string) => void;
   onCancel: () => void;
   onSubmit: () => void;
@@ -24,6 +27,9 @@ export function SkillReportDialog({
   isSubmitting,
   reportReason,
   reportError,
+  title = "Report skill",
+  description = "Describe the issue so moderators can review it quickly.",
+  submitLabel = "Submit report",
   onReasonChange,
   onCancel,
   onSubmit,
@@ -37,10 +43,8 @@ export function SkillReportDialog({
     >
       <DialogContent>
         <DialogHeader>
-          <DialogTitle>Report skill</DialogTitle>
-          <DialogDescription>
-            Describe the issue so moderators can review it quickly.
-          </DialogDescription>
+          <DialogTitle>{title}</DialogTitle>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <form
           className="flex flex-col gap-3"
@@ -75,7 +79,7 @@ export function SkillReportDialog({
               Cancel
             </Button>
             <Button type="submit" disabled={isSubmitting} loading={isSubmitting}>
-              {isSubmitting ? "Submitting..." : "Submit report"}
+              {isSubmitting ? "Submitting..." : submitLabel}
             </Button>
           </DialogFooter>
         </form>

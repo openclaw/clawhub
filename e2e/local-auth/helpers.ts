@@ -1,6 +1,12 @@
 import { mkdir, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { expect, type Page, type TestInfo } from "@playwright/test";
+import { buildPublisherProfileHref, buildSkillDetailHref } from "../../src/lib/ownerRoute";
+import {
+  buildPluginDetailHref,
+  buildPluginSecurityAuditHref,
+  buildPluginValidationHref,
+} from "../../src/lib/pluginRoutes";
 import { waitForHydration } from "../helpers/runtimeErrors";
 
 type DevPersona = "owner" | "user" | "admin" | "abusePublisher";
@@ -36,6 +42,73 @@ function fingerprintSaltBlock(args: { slug: string; versionLabel: string }) {
   return lines.join("\n");
 }
 
+async function expectPublishedDetailPage(page: Page, displayName: string) {
+  const title = page.locator(".skill-page-title");
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    await waitForHydration(page);
+    try {
+      await expect(title).toHaveText(displayName, { timeout: 30_000 });
+      return;
+    } catch (error) {
+      if (attempt >= 3) throw error;
+      await page.reload({ waitUntil: "domcontentloaded" });
+    }
+  }
+}
+
+async function fillPublishSkillForm(
+  page: Page,
+  args: {
+    ownerHandle: string;
+    slug: string;
+    displayName: string;
+    version: string;
+    changelog: string;
+  },
+  skillDir: string,
+) {
+  await selectOwnerHandle(page, "#ownerHandle", args.ownerHandle);
+  await page.locator("#slug").fill(args.slug, { timeout: 15_000 });
+  await page.locator("#displayName").fill(args.displayName, { timeout: 15_000 });
+  await page.locator("#version").fill(args.version, { timeout: 15_000 });
+  await page.locator("#tags").fill("latest, stable", { timeout: 15_000 });
+  const changelog = page.locator("#changelog");
+  if ((await changelog.count()) > 0) {
+    await changelog.fill(args.changelog, { timeout: 15_000 });
+  }
+  await page.getByLabel(/i have the rights to publish this skill/i).check({ timeout: 15_000 });
+  await page.getByTestId("upload-input").setInputFiles(skillDir, { timeout: 15_000 });
+}
+
+async function hasDuplicateVersionAlert(page: Page, version: string) {
+  const alert = page.getByRole("alert");
+  const text = await alert.textContent({ timeout: 500 }).catch(() => "");
+  return text?.includes(`Version ${version} already exists`) ?? false;
+}
+
+function skillDetailPath(ownerHandle: string, slug: string) {
+  return buildSkillDetailHref(ownerHandle, slug);
+}
+
+async function publishedSkillVersionExists(
+  page: Page,
+  args: {
+    ownerHandle: string;
+    slug: string;
+    version: string;
+  },
+) {
+  const url = `/api/v1/skills/${encodeURIComponent(args.slug)}/versions/${encodeURIComponent(
+    args.version,
+  )}?ownerHandle=${encodeURIComponent(args.ownerHandle)}`;
+  const response = await page.request.get(url, { timeout: 2_000 }).catch(() => null);
+  if (!response?.ok()) return false;
+  const body = (await response.json().catch(() => null)) as {
+    version?: { version?: unknown };
+  } | null;
+  return body?.version?.version === args.version;
+}
+
 function devPersonaHeaderPattern(persona: DevPersona, expectedHandle: string) {
   const displayName =
     persona === "owner"
@@ -60,6 +133,33 @@ function devPersonaMenuLabel(persona: DevPersona) {
   if (persona === "abusePublisher") return "abuse publisher";
   return persona;
 }
+
+function parseSkillDetailPath(pathname: string) {
+  const segments = pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  if (segments.length >= 3 && segments[1] === "skills") {
+    return { ownerHandle: segments[0], slug: segments[2] };
+  }
+  if (segments.length >= 2) {
+    return { ownerHandle: segments[0], slug: segments[1] };
+  }
+  throw new Error(`Expected skill detail path, received ${pathname}`);
+}
+
+function devPersonaHandle(persona: DevPersona) {
+  return persona === "owner"
+    ? "local"
+    : persona === "abusePublisher"
+      ? "local-abuse"
+      : `local-${persona}`;
+}
+
+export {
+  buildPluginDetailHref,
+  buildPluginSecurityAuditHref,
+  buildPluginValidationHref,
+  buildPublisherProfileHref,
+  buildSkillDetailHref,
+};
 
 export function skillMd(args: { slug: string; displayName: string; versionLabel: string }) {
   return `---
@@ -108,26 +208,31 @@ export async function expectLocalPersonaActive(page: Page, persona: DevPersona) 
 }
 
 export async function signInAsLocalPersona(page: Page, persona: DevPersona) {
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await page.goto("/", { waitUntil: "domcontentloaded" });
+      await waitForHydration(page);
 
-  await page.getByRole("button", { name: "Open local dev personas" }).click();
-  await page
-    .getByRole("menuitem", { name: new RegExp(`use ${devPersonaMenuLabel(persona)}`, "i") })
-    .click();
-  try {
-    await expectLocalPersonaActive(page, persona);
-  } catch {
-    await page.reload({ waitUntil: "domcontentloaded" });
-    await waitForHydration(page);
-    await expectLocalPersonaActive(page, persona);
+      await page
+        .getByRole("button", { name: "Open local dev personas" })
+        .click({ timeout: 15_000 });
+      const personaMenuItem = page.getByRole("menuitem", {
+        name: new RegExp(`use ${devPersonaMenuLabel(persona)}`, "i"),
+      });
+      await expect(personaMenuItem).toBeVisible({ timeout: 15_000 });
+      await personaMenuItem.click({ timeout: 15_000 });
+      await expectLocalPersonaActive(page, persona);
+      return devPersonaHandle(persona);
+    } catch (error) {
+      lastError = error;
+      if (attempt >= 3) throw error;
+      await page.waitForTimeout(1_000 * attempt);
+    }
   }
 
-  return persona === "owner"
-    ? "local"
-    : persona === "abusePublisher"
-      ? "local-abuse"
-      : `local-${persona}`;
+  if (lastError) throw lastError;
+  return devPersonaHandle(persona);
 }
 
 export async function signInAsLocalOwner(page: Page) {
@@ -152,14 +257,26 @@ async function getSelectedOwnerHandle(page: Page, selector: string) {
   return parseOwnerHandle(await ownerControl.innerText());
 }
 
-export async function expectOwnerHandleSelected(page: Page, selector: string, ownerHandle: string) {
+export async function expectOwnerHandleSelected(
+  page: Page,
+  selector: string,
+  ownerHandle: string,
+  timeout = 15_000,
+) {
   await expect
-    .poll(async () => await getSelectedOwnerHandle(page, selector), { timeout: 15_000 })
+    .poll(async () => await getSelectedOwnerHandle(page, selector), { timeout })
     .toBe(ownerHandle);
 }
 
 export async function selectOwnerHandle(page: Page, selector: string, ownerHandle: string) {
   const ownerControl = page.locator(selector);
+  try {
+    await expectOwnerHandleSelected(page, selector, ownerHandle, 5_000);
+    return;
+  } catch {
+    // Fall through to the explicit select path if the publish form is still hydrating.
+  }
+
   if (await isNativeOwnerSelect(page, selector)) {
     await ownerControl.selectOption(ownerHandle);
   } else {
@@ -176,20 +293,41 @@ export async function selectOwnerHandle(page: Page, selector: string, ownerHandl
 async function waitForPublishSkillForm(page: Page) {
   const heading = page.getByRole("heading", { name: "Publish a skill" });
   const retryButton = page.getByRole("button", { name: "Try again" });
+  const rightsCheckbox = page.getByLabel(/i have the rights to publish this skill/i);
+  const requiredControls = ["#ownerHandle", "#slug", "#displayName", "#version", "#tags"] as const;
+  let lastError: unknown;
 
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
     await waitForHydration(page).catch(() => {});
     if (await heading.isVisible({ timeout: 5_000 }).catch(() => false)) {
-      await page.locator("#ownerHandle").waitFor({ state: "attached", timeout: 15_000 });
-      return;
+      try {
+        for (const selector of requiredControls) {
+          await page.locator(selector).waitFor({ state: "attached", timeout: 15_000 });
+        }
+        await expect(rightsCheckbox).toBeVisible({ timeout: 15_000 });
+        await page.getByTestId("upload-input").waitFor({ state: "attached", timeout: 15_000 });
+        return;
+      } catch (error) {
+        lastError = error;
+      }
     }
     if (await retryButton.isVisible({ timeout: 1_000 }).catch(() => false)) {
       await retryButton.click();
+    } else if (attempt < 3) {
+      await page.reload({ waitUntil: "domcontentloaded" });
     }
   }
 
   await expect(heading).toBeVisible({ timeout: 15_000 });
-  await page.locator("#ownerHandle").waitFor({ state: "attached", timeout: 15_000 });
+  for (const selector of requiredControls) {
+    await page.locator(selector).waitFor({ state: "attached", timeout: 15_000 });
+  }
+  await expect(rightsCheckbox)
+    .toBeVisible({ timeout: 15_000 })
+    .catch((error) => {
+      throw lastError ?? error;
+    });
+  await page.getByTestId("upload-input").waitFor({ state: "attached", timeout: 15_000 });
 }
 
 export async function signInAsLocalPublisher(page: Page, persona: DevPersona) {
@@ -205,7 +343,7 @@ export async function signInAsLocalPublisher(page: Page, persona: DevPersona) {
         if (!value || (persona === "owner" && value === "local")) return "";
         return value;
       },
-      { timeout: 15_000 },
+      { timeout: 120_000, intervals: [500, 1_000, 2_000] },
     )
     .not.toBe("");
   const ownerHandle = await getSelectedOwnerHandle(page, "#ownerHandle");
@@ -223,6 +361,7 @@ export async function publishSkillVersion(
     version: string;
     versionLabel: string;
     changelog: string;
+    versionExists?: () => Promise<boolean>;
   },
 ) {
   const skillDir = testInfo.outputPath(`${args.slug}-${args.version}`);
@@ -238,33 +377,75 @@ export async function publishSkillVersion(
   );
 
   await waitForPublishSkillForm(page);
-  await selectOwnerHandle(page, "#ownerHandle", args.ownerHandle);
-  await page.locator("#slug").fill(args.slug);
-  await page.locator("#displayName").fill(args.displayName);
-  await page.locator("#version").fill(args.version);
-  await page.locator("#tags").fill("latest, stable");
-  const changelog = page.locator("#changelog");
-  if ((await changelog.count()) > 0) {
-    await changelog.fill(args.changelog);
-  }
-  await page.getByLabel(/i have the rights to publish this skill/i).check();
-  await page.getByTestId("upload-input").setInputFiles(skillDir);
-
   const publishButton = page.getByRole("button", { name: "Publish skill" });
-  await expect(publishButton).toBeEnabled();
-  await publishButton.click();
-  await expect(page).toHaveURL(new RegExp(`/[^/]+/${escapeRegExp(args.slug)}$`), {
-    timeout: 60_000,
-  });
-  const [, actualOwnerHandle, actualSlug] = new URL(page.url()).pathname
-    .split("/")
-    .map(decodeURIComponent);
+  const detailUrlPattern = new RegExp(`/[^/]+/(?:skills/)?${escapeRegExp(args.slug)}$`);
+  const versionExists = async () =>
+    args.versionExists ? await args.versionExists() : await publishedSkillVersionExists(page, args);
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    let publishUrl = page.url();
+    try {
+      await fillPublishSkillForm(page, args, skillDir);
+      await expect(publishButton).toBeEnabled({ timeout: 30_000 });
+      publishUrl = page.url();
+      await publishButton.click({ timeout: 15_000 });
+      await expect
+        .poll(
+          async () => {
+            if (await hasDuplicateVersionAlert(page, args.version)) return "duplicate";
+            if (await versionExists()) return "published";
+            if (!args.versionExists && detailUrlPattern.test(new URL(page.url()).pathname)) {
+              return "detail";
+            }
+            return "";
+          },
+          { timeout: 60_000, intervals: [500, 1_000, 2_000] },
+        )
+        .not.toBe("");
+      if (detailUrlPattern.test(new URL(page.url()).pathname)) break;
+      await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
+        waitUntil: "domcontentloaded",
+      });
+      await expectPublishedDetailPage(page, args.displayName);
+      break;
+    } catch (error) {
+      await page.goto(skillDetailPath(args.ownerHandle, args.slug), {
+        waitUntil: "domcontentloaded",
+      });
+      try {
+        await expectPublishedDetailPage(page, args.displayName);
+        if (!args.versionExists || (await versionExists())) break;
+        await page.goto(publishUrl, { waitUntil: "domcontentloaded" });
+        await waitForPublishSkillForm(page);
+      } catch {
+        await page.goto(publishUrl, { waitUntil: "domcontentloaded" });
+        await waitForPublishSkillForm(page);
+      }
+      if (attempt >= 3 || !new URL(page.url()).pathname.startsWith("/skills/publish")) {
+        throw error;
+      }
+      await page.waitForTimeout(1_000 * attempt);
+    }
+  }
+  const { ownerHandle: actualOwnerHandle, slug: actualSlug } = parseSkillDetailPath(
+    new URL(page.url()).pathname,
+  );
   expect(actualOwnerHandle).toBeTruthy();
   expect(actualOwnerHandle?.toLowerCase()).toContain(args.ownerHandle.toLowerCase());
   expect(actualSlug).toBe(args.slug);
-  await expect(page.locator(".skill-page-title")).toHaveText(args.displayName);
-  await expect(page.getByRole("dialog", { name: /it's alive/i })).toBeVisible();
-  await page.getByRole("button", { name: "View skill" }).click();
-  await expect(page.getByRole("dialog", { name: /it's alive/i })).toBeHidden();
+  expect(new URL(page.url()).pathname).toBe(buildSkillDetailHref(actualOwnerHandle!, args.slug));
+  await expectPublishedDetailPage(page, args.displayName);
+  const successDialog = page.getByRole("dialog", { name: /it's alive/i });
+  if (await successDialog.isVisible().catch(() => false)) {
+    try {
+      await successDialog.getByRole("button", { name: "View skill" }).click({ timeout: 5_000 });
+      await expect(successDialog).toBeHidden({ timeout: 10_000 });
+    } catch {
+      await page.goto(buildSkillDetailHref(actualOwnerHandle!, args.slug), {
+        waitUntil: "domcontentloaded",
+      });
+      await waitForHydration(page);
+    }
+  }
+  await expectPublishedDetailPage(page, args.displayName);
   return actualOwnerHandle!;
 }

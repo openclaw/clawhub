@@ -1,6 +1,14 @@
+import {
+  CATALOG_CATEGORY_LIMIT,
+  PLUGIN_CATEGORY_DEFINITIONS,
+  normalizeCatalogTopic,
+  normalizeCatalogTopics,
+  normalizePluginCategories,
+  resolvePluginCategories,
+} from "clawhub-schema";
 import { v } from "convex/values";
 import { internal } from "./_generated/api";
-import type { Id } from "./_generated/dataModel";
+import type { Doc, Id } from "./_generated/dataModel";
 import type { ActionCtx, MutationCtx } from "./_generated/server";
 import { internalMutation as rawInternalMutation } from "./_generated/server";
 import { internalAction, internalMutation } from "./functions";
@@ -9,11 +17,17 @@ import { EMBEDDING_DIMENSIONS, generateEmbedding } from "./lib/embeddings";
 import { deleteGitHubSkillScansForSkill } from "./lib/githubSkillScans";
 import { toDayKey } from "./lib/leaderboards";
 import { normalizePackageName } from "./lib/packageRegistry";
+import {
+  deletePackageSearchDigests,
+  extractPackageDigestFields,
+  upsertPackageSearchDigest,
+} from "./lib/packageSearchDigest";
 import { ensurePersonalPublisherForUser } from "./lib/publishers";
 import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
+import type { SourceBackedSkillScanStatus } from "./lib/securityScanPolicy";
 import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 import { readCanonicalStat } from "./lib/skillStats";
 import { generateToken, hashToken } from "./lib/tokens";
@@ -95,7 +109,7 @@ const githubSkillScanStatusValidator = v.union(
   v.literal("failed"),
 );
 
-type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
+type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
 
 type SeedGitHubBackedSkillSourceArgs = {
   reset?: boolean;
@@ -159,6 +173,8 @@ const publicCorpusPluginRowValidator = v.object({
   version: v.string(),
   readme: v.string(),
   summary: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   family: v.optional(
     v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
   ),
@@ -193,6 +209,8 @@ const publicCorpusPreparedPluginRowValidator = v.object({
   version: v.string(),
   readme: v.string(),
   summary: v.optional(v.string()),
+  categories: v.optional(v.array(v.string())),
+  topics: v.optional(v.array(v.string())),
   family: v.optional(
     v.union(v.literal("skill"), v.literal("code-plugin"), v.literal("bundle-plugin")),
   ),
@@ -866,6 +884,32 @@ export const backfillExistingPublicCorpusBatchRows = internalMutation({
         missingKeys.push(publicCorpusSeedRowKey(row));
         continue;
       }
+      if (!(await packageBelongsToPublicCorpusOwner(ctx, existing, row.dummyOwner))) {
+        skipped.push(`plugin:${row.name}`);
+        continue;
+      }
+      const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
+      await ctx.db.patch(existing._id, {
+        categories: catalogMetadata.categories,
+        topics: catalogMetadata.topics,
+        updatedAt: now,
+      });
+      if (existing.latestReleaseId) {
+        await ensurePublicCorpusPackageValidationWarning(ctx, {
+          packageId: existing._id,
+          releaseId: existing.latestReleaseId,
+          ownerUserId: existing.ownerUserId,
+          ownerPublisherId: existing.ownerPublisherId,
+          packageName: existing.name,
+          normalizedName: existing.normalizedName,
+          version: row.version,
+          createdAt: now,
+        });
+      }
+      const updatedPackage = await ctx.db.get(existing._id);
+      if (updatedPackage) {
+        await upsertPackageSearchDigest(ctx, extractPackageDigestFields(updatedPackage));
+      }
       await ensurePublicCorpusPackageDailyStats(ctx, {
         packageId: existing._id,
         key: row.name,
@@ -943,6 +987,21 @@ function publicCorpusSeedRowKey(
   row: { kind: "skill"; slug: string } | { kind: "plugin"; name: string },
 ) {
   return row.kind === "skill" ? `skill:${row.slug}` : `plugin:${row.name}`;
+}
+
+async function packageBelongsToPublicCorpusOwner(
+  ctx: Pick<MutationCtx, "db">,
+  pkg: Pick<Doc<"packages">, "ownerUserId">,
+  dummyOwner: { handle: string },
+  ownerUserId?: Id<"users">,
+) {
+  if (ownerUserId) return pkg.ownerUserId === ownerUserId;
+
+  const owners = await ctx.db
+    .query("users")
+    .withIndex("handle", (q) => q.eq("handle", dummyOwner.handle))
+    .collect();
+  return owners.some((owner) => owner._id === pkg.ownerUserId);
 }
 
 export const seedPublicCorpusBatchMutation = internalMutation({
@@ -1083,6 +1142,32 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           .withIndex("by_name", (q) => q.eq("normalizedName", normalizedName))
           .unique();
         if (existing) {
+          if (!(await packageBelongsToPublicCorpusOwner(ctx, existing, row.dummyOwner, userId))) {
+            skipped.push(`plugin:${row.name}`);
+            continue;
+          }
+          const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
+          await ctx.db.patch(existing._id, {
+            categories: catalogMetadata.categories,
+            topics: catalogMetadata.topics,
+            updatedAt: now,
+          });
+          if (existing.latestReleaseId) {
+            await ensurePublicCorpusPackageValidationWarning(ctx, {
+              packageId: existing._id,
+              releaseId: existing.latestReleaseId,
+              ownerUserId: existing.ownerUserId,
+              ownerPublisherId: existing.ownerPublisherId,
+              packageName: existing.name,
+              normalizedName: existing.normalizedName,
+              version: row.version,
+              createdAt: now,
+            });
+          }
+          const updatedPackage = await ctx.db.get(existing._id);
+          if (updatedPackage) {
+            await upsertPackageSearchDigest(ctx, extractPackageDigestFields(updatedPackage));
+          }
           await ensurePublicCorpusPackageDailyStats(ctx, {
             packageId: existing._id,
             key: row.name,
@@ -1097,6 +1182,7 @@ export const seedPublicCorpusBatchMutation = internalMutation({
         const createdAt = row.createdAt ?? now;
         const stats = publicCorpusPackageStats(row.name);
         const compatibility = { pluginApiRange: ">=0.1.0" };
+        const catalogMetadata = publicCorpusPluginCatalogMetadata(row);
         const verification = {
           tier: "structural" as const,
           scope: "artifact-only" as const,
@@ -1117,6 +1203,8 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           latestReleaseId: undefined,
           latestVersionSummary: undefined,
           tags: {},
+          categories: catalogMetadata.categories,
+          topics: catalogMetadata.topics,
           compatibility,
           verification,
           scanStatus: "clean",
@@ -1158,6 +1246,16 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           createdAt,
           softDeletedAt: undefined,
         });
+        await ensurePublicCorpusPackageValidationWarning(ctx, {
+          packageId,
+          releaseId,
+          ownerUserId: userId,
+          ownerPublisherId: publisherId,
+          packageName: row.name,
+          normalizedName,
+          version: row.version,
+          createdAt: now,
+        });
         await ctx.db.patch(packageId, {
           latestReleaseId: releaseId,
           latestVersionSummary: {
@@ -1171,6 +1269,10 @@ export const seedPublicCorpusBatchMutation = internalMutation({
           stats: { ...stats, versions: 1 },
           updatedAt: now,
         });
+        const packageDoc = await ctx.db.get(packageId);
+        if (packageDoc) {
+          await upsertPackageSearchDigest(ctx, extractPackageDigestFields(packageDoc));
+        }
         await ensurePublicCorpusPackageDailyStats(ctx, {
           packageId,
           key: row.name,
@@ -1335,6 +1437,176 @@ function publicCorpusPackageStats(name: string) {
     installs: score % 80,
     stars: score % 60,
   };
+}
+
+const PUBLIC_CORPUS_PLUGIN_FALLBACK_CATEGORIES = PLUGIN_CATEGORY_DEFINITIONS.map(
+  (category) => category.slug,
+).filter((slug) => slug !== "other");
+
+const PUBLIC_CORPUS_PLUGIN_CATEGORY_TOPICS: Record<string, string> = {
+  channels: "Messaging",
+  models: "Model Providers",
+  memory: "Memory",
+  context: "Context",
+  voice: "Voice",
+  media: "Media",
+  web: "Web Search",
+  tools: "Automation",
+  runtime: "Runtime",
+  gateway: "Gateway",
+  security: "Security",
+  other: "Utilities",
+};
+
+function publicCorpusPluginCatalogMetadata(row: {
+  name: string;
+  displayName: string;
+  summary?: string;
+  readme: string;
+  categories?: string[];
+  topics?: string[];
+}) {
+  const declaredCategories =
+    row.categories === undefined ? undefined : normalizePluginCategories(row.categories);
+  const categories = resolvePluginCategories({
+    declared: declaredCategories,
+    inferred: declaredCategories === undefined ? inferPublicCorpusPluginCategories(row) : undefined,
+  });
+  const topics =
+    row.topics === undefined
+      ? inferPublicCorpusPluginTopics(row, categories)
+      : normalizeCatalogTopics(row.topics);
+
+  return { categories, topics };
+}
+
+async function ensurePublicCorpusPackageValidationWarning(
+  ctx: Pick<MutationCtx, "db">,
+  params: {
+    packageId: Id<"packages">;
+    releaseId: Id<"packageReleases">;
+    ownerUserId: Id<"users">;
+    ownerPublisherId?: Id<"publishers">;
+    packageName: string;
+    normalizedName: string;
+    version: string;
+    createdAt: number;
+  },
+) {
+  const existingWarnings = await ctx.db
+    .query("packageInspectorWarnings")
+    .withIndex("by_release", (q) => q.eq("releaseId", params.releaseId))
+    .collect();
+  if (
+    existingWarnings.some(
+      (warning) =>
+        warning.code === "package-min-host-version-drift" &&
+        warning.inspectorFindingId === `${params.normalizedName}:package-min-host-version-drift`,
+    )
+  ) {
+    return;
+  }
+
+  await ctx.db.insert("packageInspectorWarnings", {
+    packageId: params.packageId,
+    releaseId: params.releaseId,
+    ownerUserId: params.ownerUserId,
+    ownerPublisherId: params.ownerPublisherId,
+    packageName: params.packageName,
+    version: params.version,
+    findingKind: "warning",
+    scanSource: "publish",
+    inspectorVersion: "0.3.15",
+    targetOpenClawVersion: "2026.6.9",
+    code: "package-min-host-version-drift",
+    severity: "P2",
+    level: "warning",
+    issueClass: "upstream-metadata",
+    compatStatus: "warning",
+    message: `${params.packageName}: OpenClaw package minimum host version drifts from build target`,
+    evidence: ["minHostVersion: >=2026.4.25", "buildOpenClawVersion: 2026.6.9"],
+    authorRemediation: {
+      summary:
+        "Set the package minimum host version to the OpenClaw version range the plugin was built and tested against.",
+      docsUrl:
+        "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-min-host-version-drift",
+    },
+    fixture: "public-corpus",
+    decision: "seeded-warning",
+    inspectorFindingId: `${params.normalizedName}:package-min-host-version-drift`,
+    createdAt: params.createdAt,
+  });
+}
+
+function inferPublicCorpusPluginCategories(row: {
+  name: string;
+  displayName: string;
+  summary?: string;
+  readme: string;
+}) {
+  const text = [row.name, row.displayName, row.summary, row.readme]
+    .filter(Boolean)
+    .join(" ")
+    .toLocaleLowerCase("en-US");
+  const categories: string[] = [];
+  const add = (category: string) => {
+    if (!categories.includes(category)) categories.push(category);
+  };
+
+  if (/\b(slack|discord|telegram|whatsapp|gmail|email|chat|message|messenger|sms)\b/.test(text)) {
+    add("channels");
+  }
+  if (/\b(model|models|provider|providers|gpt|llm|openai|claude|inference|modelark)\b/.test(text)) {
+    add("models");
+  }
+  if (/\b(memory|recall|embedding|embeddings|vector|session)\b/.test(text)) add("memory");
+  if (/\b(context|knowledge|document|docs|pdf)\b/.test(text)) add("context");
+  if (/\b(voice|speech|tts|transcription|audio)\b/.test(text)) add("voice");
+  if (/\b(image|media|video|youtube|twitter|x-|music|render)\b/.test(text)) add("media");
+  if (/\b(web|browser|search|reddit|fetch|crawl|url|http)\b/.test(text)) add("web");
+  if (/\b(tool|tools|workflow|automation|cli|command|shell|github|actions)\b/.test(text)) {
+    add("tools");
+  }
+  if (/\b(runtime|codex|developer|dev|test|deploy|openclaw)\b/.test(text)) add("runtime");
+  if (/\b(gateway|observability|worker|ops|operator)\b/.test(text)) add("gateway");
+  if (/\b(auth|oauth|security|secret|policy|permission|trust)\b/.test(text)) add("security");
+
+  if (categories.length > 0) return categories.slice(0, CATALOG_CATEGORY_LIMIT);
+  const fallbackIndex =
+    publicCorpusStableNumber(row.name) % PUBLIC_CORPUS_PLUGIN_FALLBACK_CATEGORIES.length;
+  return [PUBLIC_CORPUS_PLUGIN_FALLBACK_CATEGORIES[fallbackIndex] ?? "other"];
+}
+
+function inferPublicCorpusPluginTopics(
+  row: { name: string; displayName: string },
+  categories: readonly string[],
+) {
+  const topics: string[] = [];
+  const seenSlugs = new Set<string>();
+  const add = (candidate: string | undefined) => {
+    if (!candidate) return;
+    const slug = normalizeCatalogTopic(candidate);
+    if (!slug || seenSlugs.has(slug)) return;
+    try {
+      const [topic] = normalizeCatalogTopics([candidate]);
+      if (!topic) return;
+      seenSlugs.add(slug);
+      topics.push(topic);
+    } catch {
+      return;
+    }
+  };
+
+  add(PUBLIC_CORPUS_PLUGIN_CATEGORY_TOPICS[categories[0] ?? "other"]);
+  for (const rawToken of `${row.displayName} ${row.name}`.split(/[^\p{L}\p{N}]+/u)) {
+    const token = rawToken.trim();
+    if (token.length < 3) continue;
+    if (/^(plugin|openclaw|clawhub|agent|agents|the)$/i.test(token)) continue;
+    add(token.slice(0, 1).toLocaleUpperCase("en-US") + token.slice(1));
+    if (topics.length >= 5) break;
+  }
+
+  return topics.length > 0 ? topics : ["Utilities"];
 }
 
 function publicCorpusStableNumber(value: string) {
@@ -1580,6 +1852,7 @@ async function deletePackageAndReleases(ctx: MutationCtx, packageId: Id<"package
     .collect();
   await deletePackageBadgesForPackage(ctx, packageId);
   await deletePackageDailyStatsForPackage(ctx, packageId);
+  await deletePackageDerivedSearchData(ctx, packageId);
   await ctx.db.delete(packageId);
   for (const release of releases) await ctx.db.delete(release._id);
 }
@@ -1638,6 +1911,16 @@ async function deletePackageDailyStatsForPackage(ctx: MutationCtx, packageId: Id
     .withIndex("by_package_day", (q) => q.eq("packageId", packageId))
     .collect();
   for (const row of rows) await ctx.db.delete(row._id);
+}
+
+async function deletePackageDerivedSearchData(ctx: MutationCtx, packageId: Id<"packages">) {
+  await deletePackageSearchDigests(ctx, packageId);
+
+  const inspectorWarnings = await ctx.db
+    .query("packageInspectorWarnings")
+    .withIndex("by_package_created", (q) => q.eq("packageId", packageId))
+    .collect();
+  for (const row of inspectorWarnings) await ctx.db.delete(row._id);
 }
 
 async function deleteSeedSkillFixture(ctx: MutationCtx, slug = FLAGGED_SKILL_SLUG) {
@@ -3678,6 +3961,36 @@ export const seedOrgDeletionFixtureMutation = internalMutation({
     };
   },
 });
+
+export const getOrgDeletionFixtureState: ReturnType<typeof rawInternalMutation> =
+  rawInternalMutation({
+    args: {
+      publisherId: v.id("publishers"),
+      skillId: v.id("skills"),
+      packageId: v.id("packages"),
+    },
+    handler: async (ctx, args) => {
+      const publisher = await ctx.db.get(args.publisherId);
+      const skill = await ctx.db.get(args.skillId);
+      const pkg = await ctx.db.get(args.packageId);
+      return {
+        ok: true as const,
+        publisherExists: Boolean(publisher),
+        publisherPubliclyVisible: Boolean(
+          publisher && !publisher.deletedAt && !publisher.deactivatedAt,
+        ),
+        skillExists: Boolean(skill),
+        skillActive: Boolean(skill && !skill.softDeletedAt),
+        skillPubliclyVisible: Boolean(
+          skill && !skill.softDeletedAt && !skill.hiddenAt && skill.moderationStatus !== "removed",
+        ),
+        packageExists: Boolean(pkg),
+        packageActive: Boolean(pkg && !pkg.softDeletedAt),
+        packagePubliclyVisible: Boolean(pkg && !pkg.softDeletedAt),
+        packageSoftDeletedAt: pkg?.softDeletedAt ?? null,
+      };
+    },
+  });
 
 type VersionDeletionFixtureArgs = {
   skillSlug: string;

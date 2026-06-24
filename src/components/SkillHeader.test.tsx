@@ -131,7 +131,7 @@ describe("SkillHeader", () => {
       configRequirements: undefined,
       cliHelp: undefined,
       clawdis: undefined,
-      priorityContent: null,
+      staffVisibilityAlert: null,
       settingsHref: null,
       ...overrides,
     };
@@ -159,9 +159,9 @@ describe("SkillHeader", () => {
     expect(within(sidebarStatsRoot(container)).getByText("Creator")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).getByText("Downloads")).toBeTruthy();
     expect(within(sidebarStatsRoot(container)).getByText("2")).toBeTruthy();
-    expect(container.querySelector('a[href="/user/local"]')).toBeTruthy();
+    expect(container.querySelector('a[href="/local"]')).toBeTruthy();
     expect(
-      container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/user/local"]'),
+      container.querySelector('nav[aria-label="Skill breadcrumbs"] a[href="/local"]'),
     ).toBeTruthy();
   });
 

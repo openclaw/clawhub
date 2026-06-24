@@ -1,9 +1,10 @@
 import { Link } from "@tanstack/react-router";
 import { isPluginCategorySlug, PLUGIN_CATEGORY_DEFINITIONS } from "clawhub-schema";
-import { Download, Star } from "lucide-react";
+import { Download } from "lucide-react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { formatCompactStat } from "../lib/numberFormat";
 import type { PackageListItem } from "../lib/packageApi";
+import { buildPluginDetailHref } from "../lib/pluginRoutes";
 import { truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
@@ -12,6 +13,7 @@ import { OfficialBadge } from "./OfficialBadge";
 type PluginListItemProps = {
   item: PackageListItem;
   variant?: "list" | "card";
+  href?: string;
 };
 
 const PLUGIN_CATEGORIES_BY_SLUG = new Map(
@@ -38,9 +40,8 @@ function getPluginCategories(item: PackageListItem) {
   });
 }
 
-export function PluginListItem({ item, variant = "list" }: PluginListItemProps) {
+export function PluginListItem({ item, variant = "list", href }: PluginListItemProps) {
   const downloads = formatCompactStat(item.stats?.downloads ?? 0);
-  const stars = formatCompactStat(item.stats?.stars ?? 0);
   const taxonomy = getPluginTaxonomyDisplay(item);
   const categories = getPluginCategories(item);
   const primaryCategory = categories[0] ?? null;
@@ -48,12 +49,12 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
     .slice(0, 3)
     .map((category) => category.label)
     .join(", ");
+  const pluginHref = href ?? buildPluginDetailHref(item.name, { ownerHandle: item.ownerHandle });
 
   if (variant === "card") {
     return (
       <Link
-        to="/plugins/$name"
-        params={{ name: item.name }}
+        to={pluginHref}
         className="card skill-card plugin-card"
         aria-label={`Plugin: ${item.displayName}`}
       >
@@ -78,9 +79,6 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
             <div className="skill-card-bottom-meta">
               <div className="skill-list-item-meta plugin-card-meta">
                 <span className="skill-list-item-meta-item">
-                  <Star size={14} aria-hidden="true" /> {stars}
-                </span>
-                <span className="skill-list-item-meta-item">
                   <Download size={14} aria-hidden="true" /> {downloads}
                 </span>
               </div>
@@ -103,8 +101,7 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
 
   return (
     <Link
-      to="/plugins/$name"
-      params={{ name: item.name }}
+      to={pluginHref}
       className="skill-list-item skill-list-item-with-taxonomy"
       aria-label={`Plugin: ${item.displayName}`}
     >
@@ -126,9 +123,6 @@ export function PluginListItem({ item, variant = "list" }: PluginListItemProps) 
         {categoryLabel ? <span className="skill-list-item-category">{categoryLabel}</span> : null}
       </div>
       <div className="skill-list-item-meta">
-        <span className="skill-list-item-meta-item">
-          <Star size={14} aria-hidden="true" /> {stars}
-        </span>
         <span className="skill-list-item-meta-item">
           <Download size={14} aria-hidden="true" /> {downloads}
         </span>

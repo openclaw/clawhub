@@ -1,4 +1,8 @@
 import type { Id } from "../_generated/dataModel";
+import {
+  isSecurityScanStatusBlockedFromPublic,
+  normalizeSecurityScanStatus,
+} from "./securityScanPolicy";
 
 export type SkillFileModerationInfo = {
   isPendingScan?: boolean | null;
@@ -37,15 +41,6 @@ function isPendingSkillModerationReason(reason: string | null | undefined) {
     normalized === "scanner.vt.pending" ||
     normalized === "scanner.llm.pending"
   );
-}
-
-function normalizeSkillScanStatus(status: string | null | undefined) {
-  const normalized = status?.trim().toLowerCase();
-  if (normalized === "benign") return "clean";
-  if (normalized === "clean" || normalized === "suspicious" || normalized === "malicious") {
-    return normalized;
-  }
-  return null;
 }
 
 export function getSkillFileModerationInfoFromSkill(
@@ -116,10 +111,10 @@ export function getPublicSkillVersionDownloadBlock(
   );
   if (moderationBlock) return moderationBlock;
 
-  const scanStatus = normalizeSkillScanStatus(
+  const scanStatus = normalizeSecurityScanStatus(
     version.llmAnalysis?.verdict ?? version.llmAnalysis?.status,
   );
-  if (scanStatus === "malicious") {
+  if (isSecurityScanStatusBlockedFromPublic(scanStatus)) {
     return {
       status: 403,
       message:

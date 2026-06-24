@@ -833,6 +833,25 @@ const skills = defineTable({
       appliedAt: v.number(),
     }),
   ),
+  downloadBackfill: v.optional(
+    v.object({
+      modelVersion: v.string(),
+      sourceRepo: v.string(),
+      basis: v.literal("public-hosted-downloads-per-published-week"),
+      baselineCollectedAt: v.number(),
+      baselinePublicHostedSkillCount: v.number(),
+      baselinePublicHostedDownloads: v.number(),
+      baselinePublicHostedSkillWeeks: v.number(),
+      baselineAverageDownloadsPerSkillWeek: v.number(),
+      publishedAt: v.number(),
+      publishedWeeks: v.number(),
+      previousDownloads: v.number(),
+      targetDownloads: v.number(),
+      estimatedBackfilledDownloads: v.number(),
+      pendingSkillDocDownloads: v.number(),
+      appliedAt: v.number(),
+    }),
+  ),
   stats: statsValidator,
   createdAt: v.number(),
   updatedAt: v.number(),
@@ -2433,6 +2452,16 @@ const officialPluginMigrations = defineTable({
   .index("by_phase_updatedAt", ["phase", "updatedAt"])
   .index("by_updatedAt", ["updatedAt"]);
 
+const catalogFeedPublications = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  expiresAt: v.string(),
+  payload: v.string(),
+  payloadSha256: v.string(),
+  publishedAt: v.number(),
+}).index("by_feed", ["feedId"]);
+
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2900,6 +2929,7 @@ export default defineSchema({
   packageAppeals,
   packageModerationEventLogs,
   officialPluginMigrations,
+  catalogFeedPublications,
   stars,
   auditLogs,
   publisherAbuseScoreRuns,

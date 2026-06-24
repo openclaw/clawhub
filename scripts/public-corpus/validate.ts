@@ -1,3 +1,5 @@
+import { normalizeCatalogTopics, normalizePluginCategories } from "clawhub-schema";
+
 export const DEFAULT_PUBLIC_CORPUS_FIXTURE = "fixtures/public-corpus/corpus.jsonl";
 
 export type PublicCorpusSkillRow = {
@@ -17,6 +19,8 @@ export type PublicCorpusPluginRow = {
   version: string;
   readme: string;
   summary?: string;
+  categories?: string[];
+  topics?: string[];
   family?: "skill" | "code-plugin" | "bundle-plugin";
   channel?: "official" | "community" | "private";
   sourceRepoHost?: string | null;
@@ -36,6 +40,7 @@ export type CorpusValidationFinding = {
     | "disallowed_field"
     | "raw_convex_id"
     | "duplicate_slug"
+    | "invalid_catalog_metadata"
     | "local_path"
     | "secret_like_text";
   field?: string;
@@ -128,6 +133,7 @@ export function validateCorpusRows(rows: PublicCorpusRow[]): CorpusValidationRes
       requireString(row.version, "version", line, findings);
       if (!row.readme?.trim())
         findings.push({ line, reason: "empty_plugin_text", field: "readme" });
+      collectPluginCatalogMetadataFindings(row, line, findings);
       collectDuplicate("plugin", row.name, line, seenKeys, findings);
     }
   });
@@ -173,6 +179,38 @@ function requireString(
 ) {
   if (typeof value === "string" && value.trim()) return;
   findings.push({ line, reason: "missing_required_field", field });
+}
+
+function collectPluginCatalogMetadataFindings(
+  row: PublicCorpusPluginRow,
+  line: number,
+  findings: CorpusValidationFinding[],
+) {
+  if (row.categories !== undefined) {
+    try {
+      normalizePluginCategories(row.categories);
+    } catch (error) {
+      findings.push({
+        line,
+        reason: "invalid_catalog_metadata",
+        field: "categories",
+        value: error instanceof Error ? error.message : undefined,
+      });
+    }
+  }
+
+  if (row.topics !== undefined) {
+    try {
+      normalizeCatalogTopics(row.topics);
+    } catch (error) {
+      findings.push({
+        line,
+        reason: "invalid_catalog_metadata",
+        field: "topics",
+        value: error instanceof Error ? error.message : undefined,
+      });
+    }
+  }
 }
 
 function collectDisallowedFieldFindings(

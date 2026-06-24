@@ -20,34 +20,44 @@ request is a skill slug, an official OpenClaw plugin alias, or a package route.
 
 ## Canonical URLs
 
+Publisher profiles:
+
+- Canonical page: `/<handle>`
+- Legacy compatibility pages: `/user/<handle>`, `/p/<handle>`, `/u/<handle>`,
+  and `/orgs/<handle>` redirect to `/<handle>`
+- Existing publisher handles that predate an official OpenClaw alias remain
+  reachable at `/user/<handle>` so the alias can keep its canonical top-level
+  shortcut.
+
 Skills:
 
-- Canonical page: `/<owner>/<slug>`
-- Security audit page: `/<owner>/<slug>/security-audit`
-- Legacy scanner pages: `/<owner>/<slug>/security/:scanner` redirect to
-  `/<owner>/<slug>/security-audit`
+- Canonical page: `/<owner>/skills/<slug>`
+- Legacy compatibility page: `/<owner>/<slug>` redirects to
+  `/<owner>/skills/<slug>`
+- Security audit page: `/<owner>/skills/<slug>/security-audit`
+- Legacy security audit page: `/<owner>/<slug>/security-audit` redirects to
+  `/<owner>/skills/<slug>/security-audit`
+- Legacy scanner pages: `/<owner>/<slug>/security/:scanner` and
+  `/<owner>/skills/<slug>/security/:scanner` redirect to
+  `/<owner>/skills/<slug>/security-audit`
 - API detail: `/api/v1/skills/<slug>`
 
 Plugins:
 
-- Canonical page: `/plugins/@scope/name`
+- Canonical page: `/<publisher>/plugins/<slug>`
+- Legacy readable scoped page: `/plugins/@scope/name`
 - Encoded compatibility page: `/plugins/%40scope%2Fname`
-- Security audit page: `/plugins/@scope/name/security-audit`
+- Security audit page: `/<publisher>/plugins/<slug>/security-audit`
+- Legacy readable scoped security page: `/plugins/@scope/name/security-audit`
 - Encoded security compatibility page: `/plugins/%40scope%2Fname/security-audit`
 - Legacy scanner pages redirect to the corresponding plugin security audit page.
 
-Publisher profiles:
-
-- Canonical page: `/user/<handle>`
-- Legacy compatibility pages: `/p/<handle>`, `/u/<handle>`, and
-  `/orgs/<handle>` redirect to `/user/<handle>`
-
-Bare `/<handle>` routes are not profile routes. They remain reserved for static
-routes, official OpenClaw extension aliases, and skill slug resolution.
+Bare `/<handle>` routes are profile routes after static routes and official
+OpenClaw plugin aliases have won precedence.
 
 Encoded compatibility routes are npm-style package-name routes. They redirect
 with `308` to the readable scoped route so the address bar shows
-`/plugins/@openclaw/codex`, not `/plugins/%40openclaw%2Fcodex`.
+`/openclaw/plugins/codex`, not `/plugins/%40openclaw%2Fcodex`.
 
 ## Official OpenClaw aliases
 
@@ -73,9 +83,9 @@ For every official alias, these URLs redirect to the canonical plugin page:
 Example:
 
 ```text
-/codex -> /plugins/@openclaw/codex
-/openclaw/codex -> /plugins/@openclaw/codex
-/@openclaw/codex -> /plugins/@openclaw/codex
+/codex -> /openclaw/plugins/codex
+/openclaw/codex -> /openclaw/plugins/codex
+/@openclaw/codex -> /openclaw/plugins/codex
 ```
 
 ## Route precedence
@@ -86,34 +96,38 @@ The effective precedence is:
    `/api/...`.
 2. A top-level path matching an official OpenClaw extension alias redirects to
    that plugin package.
-3. Any other top-level path may resolve through the skill registry and redirect
-   to `/<owner>/<slug>`.
-4. `/openclaw/<alias>` and `/@openclaw/<alias>` only resolve official OpenClaw
+3. Any other top-level path may resolve as a publisher profile.
+4. Unknown top-level paths may still resolve through the historical skill slug
+   fallback and redirect to `/<owner>/skills/<slug>`.
+5. `/openclaw/<alias>` and `/@openclaw/<alias>` only resolve official OpenClaw
    plugin aliases.
-5. Other `/:owner/:slug` paths resolve as skills.
-6. `/:owner/:slug` with an unsupported `@scope` owner returns not found instead
+6. Other `/:owner/:slug` paths are legacy skill routes and redirect to
+   `/:owner/skills/:slug`.
+7. `/:owner/:slug` with an unsupported `@scope` owner returns not found instead
    of accidentally resolving a skill by slug.
-7. `/plugins/@scope/name` is the readable scoped plugin package route.
-8. `/plugins/<name>` probes package candidates in this order: official OpenClaw
+8. `/:owner/plugins/:slug` is the canonical publisher plugin route.
+9. `/plugins/@scope/name` and `/plugins/<name>` remain compatibility routes.
+   `/plugins/<name>` probes package candidates in this order: official OpenClaw
    alias package, `@openclaw/<name>`, then the unscoped package name.
 
 This means official OpenClaw aliases are reserved before skills at the root.
 That is intentional: `https://clawhub.ai/codex` must show the official OpenClaw
 Codex plugin even if a skill named `codex` exists.
 
+Publisher handle creation and rename paths reserve the full official alias set.
+This prevents new profiles from taking over those top-level plugin shortcuts.
+
 ## Collision policy
 
 Do not make every `/:owner/:slug` path a universal package route. Owners can
 have skills and plugins, and skill slugs are already unique in the skill
-registry. Package names have separate npm-like semantics. The only owner-style
-plugin redirects currently reserved are for the official OpenClaw owner:
-
-- `/openclaw/<alias>`
-- `/@openclaw/<alias>`
+registry. Package names have separate npm-like semantics. Publisher plugin
+routes must include the `plugins` segment.
 
 Unknown top-level slugs still fall back to skill resolution. Unknown
 `@scope/name` owner routes return not found unless a dedicated package route
-handles them under `/plugins/...`.
+handles them under `/:owner/plugins/...` or the legacy `/plugins/...`
+compatibility routes.
 
 Skill write paths must reject platform and trust-signal namespace squatting.
 Exact route/brand/role words are reserved, and slugs that start or end with
@@ -152,10 +166,11 @@ When OpenClaw ships a new extension:
 
 The route tests should cover:
 
-- `/<alias>` redirects to `/plugins/@openclaw/<package>`.
-- `/openclaw/<alias>` redirects to `/plugins/@openclaw/<package>`.
-- `/@openclaw/<alias>` redirects to `/plugins/@openclaw/<package>`.
+- `/<alias>` redirects to `/openclaw/plugins/<package>`.
+- `/openclaw/<alias>` redirects to `/openclaw/plugins/<package>`.
+- `/@openclaw/<alias>` redirects to `/openclaw/plugins/<package>`.
 - `/plugins/%40openclaw%2F<package>` redirects to
-  `/plugins/@openclaw/<package>`.
-- `/plugins/@openclaw/<package>` renders the plugin page.
-- Security routes keep the same readable scoped URL behavior.
+  `/openclaw/plugins/<package>`.
+- `/plugins/@openclaw/<package>` redirects to `/openclaw/plugins/<package>`.
+- `/openclaw/plugins/<package>` renders the plugin page.
+- Security routes keep the same canonical publisher plugin URL behavior.

@@ -44,7 +44,7 @@ const SKILLS_SEARCH = {
 
 // ---------------------------------------------------------------------------
 // Primary nav items (desktop tabs row + mobile dropdown top section)
-// These map to the content-type tabs: Skills | Plugins | Publishers
+// These map to the content-type tabs: Skills | Plugins | Creators
 // ---------------------------------------------------------------------------
 
 export const PRIMARY_NAV_ITEMS: NavItem[] = [
@@ -60,9 +60,9 @@ export const PRIMARY_NAV_ITEMS: NavItem[] = [
     activePathPrefixes: ["/plugin/"],
   },
   {
-    label: "Publishers",
-    to: PublicRegistryPaths.publishers,
-    activePathPrefixes: ["/user/"],
+    label: "Creators",
+    to: PublicRegistryPaths.creators,
+    activePathPrefixes: ["/publishers"],
   },
 ];
 
@@ -117,7 +117,7 @@ export const FOOTER_NAV_SECTIONS: FooterNavSection[] = [
     items: [
       { kind: "link", label: "Skills", to: PublicRegistryPaths.skills, search: SKILLS_SEARCH },
       { kind: "link", label: "Plugins", to: PublicRegistryPaths.plugins },
-      { kind: "link", label: "Publishers", to: PublicRegistryPaths.publishers },
+      { kind: "link", label: "Creators", to: PublicRegistryPaths.creators },
       {
         kind: "link",
         label: "Audits",

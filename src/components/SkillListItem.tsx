@@ -15,12 +15,19 @@ type SkillListItemProps = {
   skill: PublicSkill;
   ownerHandle?: string | null;
   owner?: PublicPublisher | null;
+  href?: string;
 };
 
-export function SkillListItem({ skill, ownerHandle, owner }: SkillListItemProps) {
+export function SkillListItem({
+  skill,
+  ownerHandle,
+  owner,
+  href: hrefOverride,
+}: SkillListItemProps) {
   const handle = ownerHandle ?? owner?.handle ?? null;
   const ownerSegment = handle?.trim() || String(skill.ownerPublisherId ?? skill.ownerUserId);
-  const href = `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(skill.slug)}`;
+  const href =
+    hrefOverride ?? `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(skill.slug)}`;
   const badges = getSkillBadges(skill);
   const categories = getSkillCategoriesForSkill(skill);
   const categoryLabel = categories

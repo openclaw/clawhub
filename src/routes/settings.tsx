@@ -1803,7 +1803,7 @@ function GitHubSourceList({
                         >
                           <div className="min-w-0">
                             <Link
-                              to="/$owner/$slug"
+                              to="/$owner/skills/$slug"
                               params={{
                                 owner: source.ownerPublisher?.handle ?? "",
                                 slug: skill.slug,

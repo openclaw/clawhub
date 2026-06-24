@@ -1,10 +1,13 @@
 import { useAction } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
+import { convexHttp } from "../convex/client";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
+import type { PublicPublisher, PublicPublisherListItem } from "./publicUser";
 
-export type UnifiedSearchType = "all" | "skills" | "plugins";
+export type UnifiedSearchType = "all" | "skills" | "plugins" | "creators";
 const MAX_UNIFIED_SEARCH_LIMIT = 100;
+const MAX_CREATOR_SEARCH_LIMIT = 50;
 
 export type UnifiedSkillResult = {
   type: "skill";
@@ -24,6 +27,7 @@ export type UnifiedSkillResult = {
     createdAt: number;
   };
   ownerHandle: string | null;
+  owner?: PublicPublisher | null;
   score: number;
 };
 
@@ -32,7 +36,12 @@ export type UnifiedPluginResult = {
   plugin: PackageListItem;
 };
 
-type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult;
+export type UnifiedCreatorResult = {
+  type: "creator";
+  creator: PublicPublisherListItem;
+};
+
+type UnifiedResult = UnifiedSkillResult | UnifiedPluginResult | UnifiedCreatorResult;
 
 type UnifiedSearchOptions = {
   debounceMs?: number;
@@ -40,6 +49,7 @@ type UnifiedSearchOptions = {
   limits?: {
     skills?: number;
     plugins?: number;
+    creators?: number;
   };
 };
 
@@ -52,10 +62,13 @@ export function useUnifiedSearch(
   const [results, setResults] = useState<UnifiedResult[]>([]);
   const [skillResults, setSkillResults] = useState<UnifiedSkillResult[]>([]);
   const [pluginResults, setPluginResults] = useState<UnifiedPluginResult[]>([]);
+  const [creatorResults, setCreatorResults] = useState<UnifiedCreatorResult[]>([]);
   const [skillCount, setSkillCount] = useState(0);
   const [pluginCount, setPluginCount] = useState(0);
+  const [creatorCount, setCreatorCount] = useState(0);
   const [skillHasMore, setSkillHasMore] = useState(false);
   const [pluginHasMore, setPluginHasMore] = useState(false);
+  const [creatorHasMore, setCreatorHasMore] = useState(false);
   const [isSearching, setIsSearching] = useState(false);
   const requestRef = useRef(0);
   const debounceMs = options.debounceMs ?? 300;
@@ -65,6 +78,11 @@ export function useUnifiedSearch(
     0,
     Math.min(options.limits?.plugins ?? 25, MAX_UNIFIED_SEARCH_LIMIT),
   );
+  const creatorLimit = Math.max(
+    0,
+    Math.min(options.limits?.creators ?? 25, MAX_CREATOR_SEARCH_LIMIT),
+  );
+  const creatorRequestLimit = Math.min(creatorLimit + 1, MAX_CREATOR_SEARCH_LIMIT);
 
   useEffect(() => {
     const trimmed = query.trim();
@@ -73,10 +91,13 @@ export function useUnifiedSearch(
       setResults([]);
       setSkillResults([]);
       setPluginResults([]);
+      setCreatorResults([]);
       setSkillCount(0);
       setPluginCount(0);
+      setCreatorCount(0);
       setSkillHasMore(false);
       setPluginHasMore(false);
+      setCreatorHasMore(false);
       setIsSearching(false);
       return () => {};
     }
@@ -89,8 +110,11 @@ export function useUnifiedSearch(
     const handle = window.setTimeout(() => {
       void (async () => {
         try {
-          const promises: [Promise<unknown> | null, Promise<{ items: PackageListItem[] }> | null] =
-            [null, null];
+          const promises: [
+            Promise<unknown> | null,
+            Promise<{ items: PackageListItem[] }> | null,
+            Promise<{ page: PublicPublisherListItem[]; isDone?: boolean }> | null,
+          ] = [null, null, null];
 
           if (activeType === "all" || activeType === "skills") {
             promises[0] = searchSkills({
@@ -107,23 +131,33 @@ export function useUnifiedSearch(
             });
           }
 
+          if (activeType === "all" || activeType === "creators") {
+            promises[2] = convexHttp.query(api.publishers.listPublicPage, {
+              query: trimmed,
+              paginationOpts: { cursor: null, numItems: creatorRequestLimit },
+            });
+          }
+
           const settled = await Promise.allSettled(promises.map((p) => p ?? Promise.resolve(null)));
 
           if (requestId !== requestRef.current) return;
 
           const skillsRaw = settled[0].status === "fulfilled" ? settled[0].value : null;
           const pluginsRaw = settled[1].status === "fulfilled" ? settled[1].value : null;
+          const creatorsRaw = settled[2].status === "fulfilled" ? settled[2].value : null;
 
           const skillMatches: UnifiedSkillResult[] = (
             (skillsRaw as Array<{
               skill: UnifiedSkillResult["skill"];
               ownerHandle: string | null;
+              owner?: PublicPublisher | null;
               score: number;
             }>) ?? []
           ).map((entry) => ({
             type: "skill" as const,
             skill: entry.skill,
             ownerHandle: entry.ownerHandle,
+            owner: entry.owner ?? null,
             score: entry.score,
           }));
           const nextSkillResults = skillMatches.slice(0, skillLimit);
@@ -136,20 +170,37 @@ export function useUnifiedSearch(
           }));
           const nextPluginResults = pluginMatches.slice(0, pluginLimit);
 
+          const creatorMatches: UnifiedCreatorResult[] = (
+            (creatorsRaw as { page: PublicPublisherListItem[] } | null)?.page ?? []
+          ).map((item) => ({
+            type: "creator" as const,
+            creator: item,
+          }));
+          const nextCreatorResults = creatorMatches.slice(0, creatorLimit);
+
           setSkillCount(nextSkillResults.length);
           setPluginCount(nextPluginResults.length);
+          setCreatorCount(nextCreatorResults.length);
           setSkillHasMore(skillMatches.length > skillLimit);
           setPluginHasMore(pluginMatches.length > pluginLimit);
+          setCreatorHasMore(
+            creatorLimit < MAX_CREATOR_SEARCH_LIMIT &&
+              (creatorMatches.length > creatorLimit ||
+                (creatorsRaw as { isDone?: boolean } | null)?.isDone === false),
+          );
           setSkillResults(nextSkillResults);
           setPluginResults(nextPluginResults);
+          setCreatorResults(nextCreatorResults);
 
           const merged: UnifiedResult[] = [];
           if (activeType === "all") {
-            merged.push(...nextSkillResults, ...nextPluginResults);
+            merged.push(...nextSkillResults, ...nextPluginResults, ...nextCreatorResults);
           } else if (activeType === "skills") {
             merged.push(...nextSkillResults);
-          } else {
+          } else if (activeType === "plugins") {
             merged.push(...nextPluginResults);
+          } else {
+            merged.push(...nextCreatorResults);
           }
 
           setResults(merged);
@@ -159,10 +210,13 @@ export function useUnifiedSearch(
             setResults([]);
             setSkillResults([]);
             setPluginResults([]);
+            setCreatorResults([]);
             setSkillCount(0);
             setPluginCount(0);
+            setCreatorCount(0);
             setSkillHasMore(false);
             setPluginHasMore(false);
+            setCreatorHasMore(false);
           }
         } finally {
           if (requestId === requestRef.current) {
@@ -177,16 +231,29 @@ export function useUnifiedSearch(
       controller.abort();
       window.clearTimeout(handle);
     };
-  }, [query, activeType, searchSkills, debounceMs, enabled, skillLimit, pluginLimit]);
+  }, [
+    query,
+    activeType,
+    searchSkills,
+    debounceMs,
+    enabled,
+    skillLimit,
+    pluginLimit,
+    creatorLimit,
+    creatorRequestLimit,
+  ]);
 
   return {
     results,
     skillResults,
     pluginResults,
+    creatorResults,
     skillCount,
     pluginCount,
+    creatorCount,
     skillHasMore,
     pluginHasMore,
+    creatorHasMore,
     isSearching,
   };
 }

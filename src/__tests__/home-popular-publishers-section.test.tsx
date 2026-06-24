@@ -23,14 +23,16 @@ vi.mock("@tanstack/react-router", () => ({
   }: {
     children: React.ReactNode;
     className?: string;
-    params?: { handle?: string };
+    params?: { handle?: string; slug?: string };
     to?: string;
     [key: string]: unknown;
   }) => (
     <a
       {...props}
       className={className}
-      href={params?.handle ? `/user/${params.handle}` : "/publishers"}
+      href={
+        params?.slug ? `/${params.slug}` : params?.handle ? `/user/${params.handle}` : "/creators"
+      }
     >
       {children}
     </a>
@@ -53,7 +55,7 @@ describe("HomePopularPublishersSection", () => {
     render(<HomePopularPublishersSection />);
 
     const card = screen.getByRole("link", { name: "OpenClaw, @openclaw" });
-    expect(card.getAttribute("href")).toBe("/user/openclaw");
+    expect(card.getAttribute("href")).toBe("/openclaw");
     const viewport = document.querySelector(".home-v2-popular-publishers-viewport");
     expect(viewport).toBeTruthy();
     Object.assign(viewport!, { setPointerCapture, hasPointerCapture, releasePointerCapture });

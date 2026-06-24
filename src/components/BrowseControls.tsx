@@ -15,6 +15,8 @@ import type { BrowseCategory } from "../lib/categories";
 type BrowseChoice = {
   value: string | undefined;
   label: string;
+  mobileLabel?: string;
+  count?: string;
   icon?: ReactNode;
 };
 
@@ -57,10 +59,79 @@ export function BrowseTabs({ ariaLabel, options, value, onChange }: BrowseTabsPr
             type="button"
             role="radio"
             aria-checked={active}
+            aria-label={option.mobileLabel ? option.label : undefined}
             onClick={() => onChange(option.value)}
           >
             {option.icon}
-            {option.label}
+            {option.mobileLabel ? (
+              <>
+                <span className="lg:hidden" aria-hidden="true">
+                  {option.mobileLabel}
+                </span>
+                <span className="hidden lg:inline" aria-hidden="true">
+                  {option.label}
+                </span>
+              </>
+            ) : (
+              option.label
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function BrowseChipTabs({ ariaLabel, options, value, onChange }: BrowseTabsProps) {
+  return (
+    <div className="browse-chip-tabs" role="radiogroup" aria-label={ariaLabel}>
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value ?? "all"}
+            className={`browse-chip-tab${active ? " is-active" : ""}`}
+            type="button"
+            role="radio"
+            aria-checked={active}
+            aria-label={option.count != null ? `${option.label} ${option.count}` : option.label}
+            onClick={() => onChange(option.value)}
+          >
+            {option.icon}
+            <span className="browse-chip-tab-label">{option.label}</span>
+            {option.count != null ? (
+              <span className="browse-chip-tab-count" aria-hidden="true">
+                {option.count}
+              </span>
+            ) : null}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export function BrowseSegmentedTabs({ ariaLabel, options, value, onChange }: BrowseTabsProps) {
+  return (
+    <div className="clawhub-segmented" role="group" aria-label={ariaLabel}>
+      {options.map((option) => {
+        const active = value === option.value;
+        return (
+          <button
+            key={option.value ?? "all"}
+            type="button"
+            className={`clawhub-segmented-btn${active ? " is-active" : ""}`}
+            aria-pressed={active}
+            aria-label={option.count != null ? `${option.label} ${option.count}` : option.label}
+            onClick={() => onChange(option.value)}
+          >
+            {option.icon}
+            <span className="clawhub-segmented-label">{option.label}</span>
+            {option.count != null ? (
+              <span className="clawhub-segmented-count" aria-hidden="true">
+                {option.count}
+              </span>
+            ) : null}
           </button>
         );
       })}

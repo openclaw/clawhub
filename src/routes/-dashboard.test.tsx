@@ -313,7 +313,7 @@ describe("Dashboard rows", () => {
     ).toBeNull();
   });
 
-  it("links public plugin finding counts to the plugin validation tab", () => {
+  it("links public plugin finding counts to the plugin validation section", () => {
     arrangeDashboard({
       packages: [
         createPackage({

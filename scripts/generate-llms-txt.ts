@@ -116,7 +116,7 @@ export async function renderLlmsTxt(options: { docsDirectory?: string } = {}) {
     markdownLink(
       "ClawHub",
       CLAWHUB_SITE_URL,
-      "Browse the public registry for skills, plugins, and publishers.",
+      "Browse the public registry for skills, plugins, and creators.",
     ),
     markdownLink(
       "ClawHub documentation",

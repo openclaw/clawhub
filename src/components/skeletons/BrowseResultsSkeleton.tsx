@@ -4,12 +4,14 @@ type BrowseResultsSkeletonProps = {
   count?: number;
   label?: string;
   variant?: "list" | "grid";
+  showColumnHead?: boolean;
 };
 
 export function BrowseResultsSkeleton({
   count = 6,
   label = "Skill",
   variant = "list",
+  showColumnHead = true,
 }: BrowseResultsSkeletonProps) {
   if (variant === "grid") {
     return (
@@ -45,12 +47,14 @@ export function BrowseResultsSkeleton({
 
   return (
     <div className="browse-list-stack" role="status" aria-label="Loading results">
-      <div className="browse-list-head" aria-hidden="true">
-        <span className="browse-list-head-icon-spacer" />
-        <span className="browse-list-head-label">{label}</span>
-        <span className="browse-list-head-label">Category</span>
-        <span className="browse-list-head-label browse-list-head-stat">Popularity</span>
-      </div>
+      {showColumnHead ? (
+        <div className="browse-list-head" aria-hidden="true">
+          <span className="browse-list-head-icon-spacer" />
+          <span className="browse-list-head-label">{label}</span>
+          <span className="browse-list-head-label">Category</span>
+          <span className="browse-list-head-label browse-list-head-stat">Popularity</span>
+        </div>
+      ) : null}
       <div className="results-list">
         {Array.from({ length: count }, (_, i) => (
           <div

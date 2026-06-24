@@ -87,6 +87,23 @@ describe("buildSkillInstallResolution", () => {
     });
   });
 
+  it("returns a pinned GitHub descriptor when current upstream state is scan-suspicious", () => {
+    const resolution = buildSkillInstallResolution({
+      origin: "https://clawhub.ai",
+      skill: { ...baseSkill, githubScanStatus: "suspicious" },
+      source,
+    });
+
+    expect(resolution).toMatchObject({
+      ok: true,
+      installKind: "github",
+      github: {
+        commit: "1".repeat(40),
+        contentHash: "hash-aiq-deploy",
+      },
+    });
+  });
+
   it("allows GitHub-backed installs when upstream content changed and the current hash is clean", () => {
     const resolution = buildSkillInstallResolution({
       origin: "https://clawhub.ai",
@@ -157,8 +174,8 @@ describe("buildSkillInstallResolution", () => {
       status: 403,
     },
     {
-      name: "scan is suspicious",
-      patch: { githubScanStatus: "suspicious" as const },
+      name: "scan is malicious",
+      patch: { githubScanStatus: "malicious" as const },
       reason: "github_scan_failed",
       status: 403,
     },

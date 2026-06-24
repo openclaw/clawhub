@@ -105,7 +105,7 @@ export function SkillDetailSkeleton({ kind = "skill" }: SkillDetailSkeletonProps
               <div className="skill-hero-main-extra">
                 <div className="detail-mobile-install">
                   <article className="skill-install-command-card">
-                    <div className="skill-install-command-header">
+                    <div className="skill-install-command-header detail-hero-summary-row">
                       <Skeleton className="h-7 w-20" />
                       {!isPlugin ? (
                         <div className="detail-skeleton-install-tabs" aria-hidden="true">

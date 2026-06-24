@@ -19,6 +19,7 @@ import {
 } from "../lib/authErrorMessage";
 import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
@@ -44,7 +45,6 @@ import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillPublishSuccessDialog } from "./SkillPublishSuccessDialog";
 import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
-import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 
@@ -215,7 +215,8 @@ export function SkillDetailPage({
   const publicResult = useQuery(api.skills.getBySlug, !isStaff ? skillLookupArgs : "skip") as
     | SkillBySlugResult
     | undefined;
-  const result = isStaff ? staffResult : publicResult === undefined ? initialResult : publicResult;
+  const liveResult = isStaff ? staffResult : publicResult;
+  const result = liveResult === undefined ? initialResult : liveResult;
 
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
@@ -250,7 +251,7 @@ export function SkillDetailPage({
     delta: number;
   } | null>(null);
 
-  const isLoadingSkill = isStaff ? staffResult === undefined : result === undefined;
+  const isLoadingSkill = result === undefined;
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
@@ -517,14 +518,14 @@ export function SkillDetailPage({
     const params = { owner: ownerParam, slug: redirectSlug };
     if (mode === "settings") {
       void navigate({
-        to: "/$owner/$slug/settings",
+        to: "/$owner/skills/$slug/settings",
         params,
         replace: true,
       });
       return;
     }
     void navigate({
-      to: "/$owner/$slug",
+      to: "/$owner/skills/$slug",
       params,
       replace: true,
     });
@@ -803,9 +804,7 @@ export function SkillDetailPage({
   const securitySummary =
     latestVersion || githubScanStatus ? (
       <DetailSecuritySummary
-        auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
-          skill.slug,
-        )}/security-audit`}
+        auditHref={buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)}
         vtAnalysis={latestVersion?.vtAnalysis ?? null}
         llmAnalysis={latestVersion?.llmAnalysis ?? null}
         githubScanStatus={githubScanStatus}
@@ -813,10 +812,10 @@ export function SkillDetailPage({
       />
     ) : null;
   const staffVisibilityAlert = staffModerationNote ? (
-    <Alert variant="warn" className="skill-visibility-alert" role="status">
-      <TriangleAlert size={18} aria-hidden="true" />
-      <AlertDescription>{staffModerationNote}</AlertDescription>
-    </Alert>
+    <p className="skill-visibility-alert" role="status">
+      <TriangleAlert size={14} aria-hidden="true" />
+      <span>{staffModerationNote}</span>
+    </p>
   ) : null;
   const settingsPanel =
     canAccessSettings && skill ? (
@@ -914,7 +913,7 @@ export function SkillDetailPage({
           clawdis={clawdis}
           category={relatedCategory}
           categories={relatedCategories}
-          priorityContent={staffVisibilityAlert}
+          staffVisibilityAlert={staffVisibilityAlert}
           securityAuditSummary={securitySummary}
           activityTrend={activityTrend}
           activityTrendLoading={activityTrendLoading}

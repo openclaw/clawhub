@@ -171,6 +171,20 @@ export function SkillInstallSurface({
   );
 }
 
+export function OpenClawCliInstallCommand({ command }: { command: string }) {
+  const match = command.match(/^(openclaw (?:skills|plugins) install)( .+)$/);
+  if (!match) {
+    return <code translate="no">{command}</code>;
+  }
+
+  return (
+    <code translate="no">
+      <span className="skill-install-command-verb">{match[1]}</span>
+      <span className="skill-install-command-target">{match[2]}</span>
+    </code>
+  );
+}
+
 export function SkillCommandLineCard({
   slug,
   displayName,
@@ -178,6 +192,7 @@ export function SkillCommandLineCard({
   ownerId,
   clawdis,
 }: SkillInstallSurfaceProps) {
+  const headingId = useId();
   const [activeInstallTab, setActiveInstallTab] = useState<"cli" | "prompt">("cli");
   const [installTabDirection, setInstallTabDirection] = useState<"left" | "right">("right");
   const installTarget = buildSkillInstallTarget(ownerHandle, ownerId, slug);
@@ -201,29 +216,24 @@ export function SkillCommandLineCard({
   };
 
   return (
-    <article className="skill-install-command-card">
+    <article className="skill-install-command-card" aria-labelledby={headingId}>
       <div className="skill-install-command-header detail-hero-summary-row">
-        <h3 className="skill-install-panel-title">Install</h3>
-        <div
-          className="install-switcher-toggle"
-          role="tablist"
-          aria-label="Install option"
-          data-active={activeInstallTab}
-        >
+        <h3 id={headingId} className="skill-install-panel-title">
+          Install
+        </h3>
+        <div className="skill-install-tab-toggle" role="group" aria-label="Install option">
           <button
             type="button"
-            role="tab"
-            aria-selected={activeInstallTab === "cli"}
-            className={`install-switcher-pill${activeInstallTab === "cli" ? " is-active" : ""}`}
+            className={`skill-install-tab${activeInstallTab === "cli" ? " is-active" : ""}`}
+            aria-pressed={activeInstallTab === "cli"}
             onClick={() => selectInstallTab("cli")}
           >
             CLI
           </button>
           <button
             type="button"
-            role="tab"
-            aria-selected={activeInstallTab === "prompt"}
-            className={`install-switcher-pill${activeInstallTab === "prompt" ? " is-active" : ""}`}
+            className={`skill-install-tab${activeInstallTab === "prompt" ? " is-active" : ""}`}
+            aria-pressed={activeInstallTab === "prompt"}
             onClick={() => selectInstallTab("prompt")}
           >
             Prompt
@@ -250,7 +260,11 @@ export function SkillCommandLineCard({
             } skill-install-command-reveal`}
             tabIndex={0}
           >
-            <code translate="no">{activeInstallText}</code>
+            {activeInstallTab === "cli" ? (
+              <OpenClawCliInstallCommand command={activeInstallText} />
+            ) : (
+              <code translate="no">{activeInstallText}</code>
+            )}
           </pre>
           <InstallCopyButton
             text={activeInstallText}

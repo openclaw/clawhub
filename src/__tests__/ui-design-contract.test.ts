@@ -107,12 +107,12 @@ describe("restored UI design contract", () => {
     expect(headerSource).toContain('className="github-sign-in-button"');
     expect(headerSource).toContain('className="sign-in-full-copy"');
     expect(headerSource).toContain('className="sign-in-compact-copy"');
-    expect(headerSource).toContain("Search skills and plugins");
+    expect(headerSource).toContain("Search skills, plugins, and creators");
     expect(headerSource).not.toContain('className="navbar-tabs-primary"');
     expect(headerSource).not.toContain('className="navbar-tabs-secondary"');
 
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
-    expect(navSource).toContain('label: "Publishers"');
+    expect(navSource).toContain('label: "Creators"');
     expect(navSource).toContain('label: "Docs"');
     expect(navSource).toContain("href: CLAWHUB_DOCS_URL");
     expect(publicRegistrySource).toContain(
