@@ -20,6 +20,7 @@ import {
   MAX_SKILL_SCAN_REQUEST_MANIFEST_BYTES,
   serializedSkillScanRequestFilesBytes,
 } from "./lib/skillScanRequestFiles";
+import { redactWorkerTransportText } from "./lib/workerTransportRedaction";
 
 const DEFAULT_VT_WAIT_MS = 10 * 60 * 1000;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
@@ -348,12 +349,7 @@ function githubSkillScanStatusFromLlmAnalysis(
 }
 
 function sanitizeWorkerErrorDetail(error: string, maxChars = 500) {
-  const redacted = error
-    .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
-    .replace(
-      /\b(?:Authorization\s*:\s*)?(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
-      "[redacted-secret]",
-    );
+  const redacted = redactWorkerTransportText(error);
   return redacted.slice(0, maxChars);
 }
 

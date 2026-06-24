@@ -1,12 +1,9 @@
+import { redactWorkerTransportText } from "../../convex/lib/workerTransportRedaction";
+
 const DEFAULT_MAX_TEXT_CHARS = 20_000;
 
 export function redactWorkerText(value: string, maxChars = DEFAULT_MAX_TEXT_CHARS) {
-  const redacted = value
-    .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
-    .replace(
-      /\b(?:Authorization\s*:\s*)?(?:Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi,
-      "[redacted-secret]",
-    );
+  const redacted = redactWorkerTransportText(value);
   if (redacted.length <= maxChars) return redacted;
   return `${redacted.slice(0, maxChars)}\n...[truncated ${redacted.length - maxChars} chars]`;
 }
