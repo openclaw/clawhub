@@ -21,8 +21,8 @@ import {
   computeTemporalAbuseCohortBenchmark,
   computeTemporalPublisherAbuseZScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+  labelForPublisherAbuseScore,
   labelForTemporalPublisherAbuse,
-  labelForPublisherAbuseZScore,
   PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   summarizePublisherAbuseLogPressure,
   type PublisherAbuseInput,
@@ -1437,7 +1437,7 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
       continue;
     }
     const zScore = (score.logPressure - meanLogPressure) / safeStdDev;
-    const label = labelForPublisherAbuseZScore(zScore, modelConfig);
+    const label = labelForPublisherAbuseScore(score, zScore, modelConfig);
     const rank = rankedScoresSoFar + ranked + 1;
     labelCounts[label] += 1;
     ranked += 1;

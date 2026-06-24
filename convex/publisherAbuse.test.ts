@@ -1165,6 +1165,146 @@ describe("publisher abuse dry-run persistence", () => {
     expect(insert).not.toHaveBeenCalled();
   });
 
+  it("rejects direct ban actions for staff-linked publisher nominations", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async () => ({ ok: true }));
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const staffPublisher = {
+      _id: "publishers:staff",
+      kind: "user",
+      handle: "staff",
+      displayName: "Staff",
+      linkedUserId: "users:staff",
+    };
+    const ctx = {
+      runMutation,
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseReviewNominations:nomination") {
+            return makeNomination({
+              _id: "publisherAbuseReviewNominations:nomination",
+              ownerKey: "publisher:publishers:staff",
+              ownerPublisherId: staffPublisher._id,
+              ownerUserId: "users:staff",
+              label: "potential_ban_candidate",
+              status: "pending",
+              latestScoreId: "publisherAbuseScores:score",
+              updatedAt: 1,
+            });
+          }
+          if (id === staffPublisher._id) return staffPublisher;
+          if (id === "users:staff") return { _id: "users:staff", role: "admin" };
+          return null;
+        }),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      banPublisherAbuseOwnerHandler(ctx, {
+        nominationId: "publisherAbuseReviewNominations:nomination",
+        expectedLatestScoreId: "publisherAbuseScores:score",
+        expectedUpdatedAt: 1,
+        reason: "confirmed spam",
+      }),
+    ).rejects.toThrow(/excluded publisher/i);
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects direct ban actions for staff-managed org publisher nominations", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const runMutation = vi.fn(async () => ({ ok: true }));
+    const patch = vi.fn(async () => null);
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const staffManagedPublisher = {
+      _id: "publishers:staff-managed",
+      kind: "org",
+      handle: "staff-managed",
+      displayName: "Staff Managed",
+      linkedUserId: "users:owner",
+    };
+    const ctx = {
+      runMutation,
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publisherAbuseReviewNominations:nomination") {
+            return makeNomination({
+              _id: "publisherAbuseReviewNominations:nomination",
+              ownerKey: "publisher:publishers:staff-managed",
+              ownerPublisherId: staffManagedPublisher._id,
+              ownerUserId: "users:owner",
+              label: "potential_ban_candidate",
+              status: "pending",
+              latestScoreId: "publisherAbuseScores:score",
+              updatedAt: 1,
+            });
+          }
+          if (id === staffManagedPublisher._id) return staffManagedPublisher;
+          if (id === "users:owner") return { _id: "users:owner", role: "user" };
+          if (id === "users:staff-manager") {
+            return { _id: "users:staff-manager", role: "moderator" };
+          }
+          return null;
+        }),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          if (table === "publisherMembers") {
+            return {
+              withIndex: (indexName: string) => {
+                expect(indexName).toBe("by_publisher_and_role");
+                return {
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherMembers:staff-manager",
+                        publisherId: staffManagedPublisher._id,
+                        userId: "users:staff-manager",
+                        role: "owner",
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                };
+              },
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      banPublisherAbuseOwnerHandler(ctx, {
+        nominationId: "publisherAbuseReviewNominations:nomination",
+        expectedLatestScoreId: "publisherAbuseScores:score",
+        expectedUpdatedAt: 1,
+        reason: "confirmed spam",
+      }),
+    ).rejects.toThrow(/excluded publisher/i);
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
   it("rejects direct ban actions when the publisher was relinked", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",

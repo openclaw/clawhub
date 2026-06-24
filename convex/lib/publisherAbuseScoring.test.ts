@@ -4,10 +4,12 @@ import { describe, expect, it } from "vitest";
 import {
   computeCurrentSkillTemporalAbuseScore,
   computeHistoricalSkillTemporalAbuseScore,
+  computePublisherAbusePressure,
   computePublisherAbuseRawScore,
   computeTemporalAbuseCohortBenchmark,
   computeTemporalPublisherAbuseZScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+  labelForPublisherAbuseScore,
   labelForTemporalPublisherAbuse,
   labelForPublisherAbuseZScore,
   scorePublisherAbuseCohort,
@@ -26,6 +28,66 @@ describe("publisher abuse scoring", () => {
     expect(labelForPublisherAbuseZScore(2.5, DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG)).toBe(
       "potential_ban_candidate",
     );
+  });
+
+  it("honors stored minimum published skill floors while labeling score rows", () => {
+    const storedConfig = {
+      ...DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+      minPublishedSkillsForAggregateLabel: 200,
+    };
+
+    expect(labelForPublisherAbuseScore({ publishedSkills: 199 }, 3, storedConfig)).toBe("pass");
+    expect(labelForPublisherAbuseScore({ publishedSkills: 200 }, 3, storedConfig)).toBe(
+      "potential_ban_candidate",
+    );
+  });
+
+  it("preserves legacy stored configs without engagement elasticity", () => {
+    const legacyConfig = {
+      ...DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+      engagementElasticity: undefined,
+      minPublishedSkillsForAggregateLabel: undefined,
+    };
+
+    const pressure = computePublisherAbusePressure(
+      {
+        publishedSkills: 25,
+        totalInstalls: 50,
+        totalStars: 1.25,
+        totalDownloads: 6_250,
+      },
+      legacyConfig,
+    );
+
+    expect(pressure).toBeCloseTo(0.25);
+  });
+
+  it("uses whole-publisher engagement calibration for stored configs that define it", () => {
+    const storedConfig = {
+      ...DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
+      engagementElasticity: 0.25,
+    };
+    const score200 = computePublisherAbuseRawScore(
+      publisher("bulk-200", {
+        publishedSkills: 200,
+        totalInstalls: 200,
+        totalStars: 5,
+        totalDownloads: 25_000,
+      }),
+      storedConfig,
+    );
+    const score400 = computePublisherAbuseRawScore(
+      publisher("bulk-400", {
+        publishedSkills: 400,
+        totalInstalls: 200,
+        totalStars: 5,
+        totalDownloads: 25_000,
+      }),
+      storedConfig,
+    );
+
+    expect(score200.pressure).toBeGreaterThan(0);
+    expect(score400.pressure / score200.pressure).toBeGreaterThan(2);
   });
 
   it("maps temporal labels to review-compatible z-scores", () => {
