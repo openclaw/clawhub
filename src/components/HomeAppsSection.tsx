@@ -12,7 +12,7 @@ import { useMemo, useState } from "react";
 import {
   HOME_PLUGIN_SHORTCUTS,
   HOME_SKILL_APPS,
-  HOME_APP_ICON_PATHS,
+  HOME_APP_LOCAL_ICON_PATHS,
   homePluginShortcutIconUrl,
   homeSkillAppIconUrl,
   SKILLS_BROWSE_SEARCH,
@@ -90,14 +90,11 @@ function plugin(id: string): HomeAppsItemRef {
 }
 
 const backgroundLogoIds = new Set([
-  // Only SVGs that include their own solid/white/colored background get the
-  // rounded mask. Transparent logos must remain unrounded to avoid clipping.
+  // Only remaining local fallback SVGs that include their own solid/colored
+  // background get the rounded mask. Simple Icons are transparent monochrome
+  // SVGs and must remain unrounded to avoid clipping.
   "amazon-bedrock",
   "aws",
-  "chrome",
-  "google-calendar",
-  "google-sheets",
-  "jira",
   "llama-cpp",
 ]);
 
@@ -214,17 +211,17 @@ const workflowHeaderTiles: ReadonlyArray<{
 }> = [
   {
     label: "OpenAI",
-    src: HOME_APP_ICON_PATHS.openai,
+    src: HOME_APP_LOCAL_ICON_PATHS.openai,
     className: "is-openai",
   },
   {
     label: "Slack",
-    src: HOME_APP_ICON_PATHS.slack,
+    src: HOME_APP_LOCAL_ICON_PATHS.slack,
     className: "is-slack",
   },
   {
     label: "OpenClaw",
-    src: HOME_APP_ICON_PATHS.openclaw,
+    src: HOME_APP_LOCAL_ICON_PATHS.openclaw,
     className: "is-openclaw",
     badge: "Exfoliate!",
   },

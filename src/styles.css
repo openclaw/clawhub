@@ -25712,23 +25712,7 @@ a.home-v2-apps-see-all:focus-visible svg {
   height: 18px;
 }
 
-.home-v2-apps-tile-icon .home-v2-apps-tile-logo--nextcloud-talk {
-  width: 19px;
-  height: 19px;
-}
-
-.home-v2-apps-tile-icon .home-v2-apps-tile-logo--trello {
-  width: 28px;
-  height: 28px;
-}
-
-.home-v2-apps-tile-icon .home-v2-apps-tile-logo--dropbox {
-  width: 29px;
-  height: 29px;
-}
-
-.home-v2-apps-tile-icon .home-v2-apps-tile-logo--aws,
-.home-v2-apps-tile-icon .home-v2-apps-tile-logo--gitlab {
+.home-v2-apps-tile-icon .home-v2-apps-tile-logo--aws {
   width: 34px;
   height: 34px;
 }

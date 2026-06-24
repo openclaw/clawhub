@@ -1,57 +1,67 @@
 /** Curated shortcuts for the home apps constellation (design-time). */
 
-export const HOME_APP_ICON_PATHS = {
-  airtable: "/app-icons/airtable.svg",
+const SIMPLE_ICON_LIGHT_COLOR = "171717";
+const SIMPLE_ICON_DARK_COLOR = "f5f5f5";
+
+const HOME_APP_SIMPLE_ICON_SLUGS = {
+  airtable: "airtable",
+  "apple-pim": "apple",
+  brave: "brave",
+  "cloudflare-gateway": "cloudflare",
+  chrome: "googlechrome",
+  cursor: "cursor",
+  "diagnostics-prometheus": "prometheus",
+  discord: "discord",
+  docker: "docker",
+  dropbox: "dropbox",
+  figma: "figma",
+  github: "github",
+  gitlab: "gitlab",
+  "gmail-plugin": "gmail",
+  gmail: "gmail",
+  "google-calendar": "googlecalendar",
+  googlechat: "googlechat",
+  "google-drive": "googledrive",
+  "google-meet": "googlemeet",
+  "google-sheets": "googlesheets",
+  hubspot: "hubspot",
+  jira: "jira",
+  kubernetes: "kubernetes",
+  line: "line",
+  linear: "linear",
+  matrix: "matrix",
+  "nextcloud-talk": "nextcloud",
+  notion: "notion",
+  obsidian: "obsidian",
+  perplexity: "perplexity",
+  qqbot: "qq",
+  qwen: "qwen",
+  raycast: "raycast",
+  telegram: "telegram",
+  trello: "trello",
+  twitch: "twitch",
+  whatsapp: "whatsapp",
+} as const;
+
+export const HOME_APP_LOCAL_ICON_PATHS = {
   "amazon-bedrock": "/app-icons/amazon-bedrock.svg",
-  "apple-pim": "/app-icons/apple.svg",
   aws: "/app-icons/aws.svg",
-  brave: "/app-icons/brave.svg",
   cerebras: "/app-icons/cerebras.svg",
-  "cloudflare-gateway": "/app-icons/cloudflare.svg",
-  chrome: "/app-icons/google-chrome.svg",
   codex: "/app-icons/openai.svg",
   deepinfra: "/app-icons/deepinfra.svg",
-  "diagnostics-prometheus": "/app-icons/prometheus.svg",
-  discord: "/app-icons/discord.svg",
-  docker: "/app-icons/docker.svg",
-  dropbox: "/app-icons/dropbox.svg",
   exa: "/app-icons/exa.svg",
   feishu: "/app-icons/feishu-lark.svg",
-  figma: "/app-icons/figma.svg",
   firecrawl: "/app-icons/firecrawl.svg",
-  github: "/app-icons/github.svg",
-  gitlab: "/app-icons/gitlab.svg",
-  "gmail-plugin": "/app-icons/google-gmail.svg",
-  gmail: "/app-icons/google-gmail.svg",
-  "google-calendar": "/app-icons/google-calendar.svg",
-  "google-drive": "/app-icons/google-drive.svg",
-  "google-meet": "/app-icons/google-meet.svg",
-  "google-sheets": "/app-icons/google-sheets.svg",
-  googlechat: "/app-icons/google-chat.svg",
   groq: "/app-icons/groq.svg",
-  jira: "/app-icons/atlassian-jira.svg",
-  kubernetes: "/app-icons/kubernetes.svg",
-  line: "/app-icons/line.svg",
-  linear: "/app-icons/linear.svg",
   "llama-cpp": "/app-icons/llama-cpp.svg",
-  matrix: "/app-icons/matrix.svg",
   msteams: "/app-icons/microsoft-teams.svg",
-  "nextcloud-talk": "/app-icons/nextcloud-talk.svg",
-  notion: "/app-icons/notion.svg",
-  obsidian: "/app-icons/obsidian.svg",
   openai: "/app-icons/openai.svg",
   openclaw: "/app-icons/openclaw.svg",
   parallel: "/app-icons/parallel.svg",
-  perplexity: "/app-icons/perplexity.svg",
-  qqbot: "/app-icons/qq.svg",
-  qwen: "/app-icons/qwen.svg",
   scraperapi: "/app-icons/scraperapi.svg",
   slack: "/app-icons/slack.svg",
-  trello: "/app-icons/atlassian-trello.svg",
-  twitch: "/app-icons/twitch.svg",
   "voice-call": "/app-icons/twilio.svg",
   vscode: "/app-icons/vscode.svg",
-  whatsapp: "/app-icons/whatsapp.svg",
 } as const;
 
 export type HomeSkillApp = {
@@ -508,18 +518,30 @@ function homeAppIconUrl(iconDomain: string) {
   return `https://www.google.com/s2/favicons?domain=${encodeURIComponent(iconDomain)}&sz=128`;
 }
 
+function homeSimpleIconUrl(id: string) {
+  return id in HOME_APP_SIMPLE_ICON_SLUGS
+    ? `https://cdn.simpleicons.org/${
+        HOME_APP_SIMPLE_ICON_SLUGS[id as keyof typeof HOME_APP_SIMPLE_ICON_SLUGS]
+      }/${SIMPLE_ICON_LIGHT_COLOR}/${SIMPLE_ICON_DARK_COLOR}`
+    : undefined;
+}
+
 function homeLocalIconUrl(id: string) {
-  return id in HOME_APP_ICON_PATHS
-    ? HOME_APP_ICON_PATHS[id as keyof typeof HOME_APP_ICON_PATHS]
+  return id in HOME_APP_LOCAL_ICON_PATHS
+    ? HOME_APP_LOCAL_ICON_PATHS[id as keyof typeof HOME_APP_LOCAL_ICON_PATHS]
     : undefined;
 }
 
 export function homeSkillAppIconUrl(app: HomeSkillApp) {
-  return homeLocalIconUrl(app.id) ?? homeAppIconUrl(app.iconDomain);
+  return homeSimpleIconUrl(app.id) ?? homeLocalIconUrl(app.id) ?? homeAppIconUrl(app.iconDomain);
 }
 
 export function homePluginShortcutIconUrl(shortcut: HomePluginShortcut) {
-  return homeLocalIconUrl(shortcut.id) ?? homeAppIconUrl(shortcut.iconDomain);
+  return (
+    homeSimpleIconUrl(shortcut.id) ??
+    homeLocalIconUrl(shortcut.id) ??
+    homeAppIconUrl(shortcut.iconDomain)
+  );
 }
 
 export const SKILLS_BROWSE_SEARCH = {
