@@ -1,7 +1,7 @@
 import { Label } from "./ui/label";
 import { Textarea } from "./ui/textarea";
 
-export const SKILL_SHORT_SUMMARY_MAX_LENGTH = 500;
+export const SKILL_PUBLISH_SUMMARY_MAX_LENGTH = 200;
 
 type SkillShortSummaryFieldProps = {
   id: string;
@@ -27,13 +27,13 @@ export function SkillShortSummaryField({
         aria-label="Short summary"
         rows={3}
         value={value}
-        maxLength={SKILL_SHORT_SUMMARY_MAX_LENGTH}
+        maxLength={SKILL_PUBLISH_SUMMARY_MAX_LENGTH}
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         placeholder="Enter a brief description..."
       />
       <span className="text-xs text-[color:var(--ink-soft)]">
-        {value.trim().length}/{SKILL_SHORT_SUMMARY_MAX_LENGTH}
+        {value.trim().length}/{SKILL_PUBLISH_SUMMARY_MAX_LENGTH}
       </span>
     </div>
   );

@@ -49,7 +49,7 @@ const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
-const MAX_OWNER_SUMMARY_LENGTH = 500;
+const MAX_PUBLISH_SUMMARY_LENGTH = 200;
 
 type FingerprintFile = { path: string; sha256: string };
 type SafePublishFile = PublishVersionArgs["files"][number] & { path: string };
@@ -205,8 +205,8 @@ export async function publishVersionForUser(
   // This ensures updates to the description are reflected on subsequent publishes (#301)
   const summaryFromFrontmatter = metadataDescription ?? directDescription;
   const explicitSummary = args.summary?.trim();
-  if (explicitSummary && explicitSummary.length > MAX_OWNER_SUMMARY_LENGTH) {
-    throw new ConvexError(`Summary must be ${MAX_OWNER_SUMMARY_LENGTH} characters or less`);
+  if (explicitSummary && explicitSummary.length > MAX_PUBLISH_SUMMARY_LENGTH) {
+    throw new ConvexError(`Summary must be ${MAX_PUBLISH_SUMMARY_LENGTH} characters or less`);
   }
   const summary =
     explicitSummary ||

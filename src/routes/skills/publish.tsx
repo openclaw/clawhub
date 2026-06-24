@@ -36,7 +36,7 @@ import {
 import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
 import {
-  SKILL_SHORT_SUMMARY_MAX_LENGTH,
+  SKILL_PUBLISH_SUMMARY_MAX_LENGTH,
   SkillShortSummaryField,
 } from "../../components/SkillShortSummaryField";
 import { Badge } from "../../components/ui/badge";
@@ -506,8 +506,8 @@ export function Upload() {
     if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
       issues.push("Total file size exceeds 50MB.");
     }
-    if (trimmedSummary.length > SKILL_SHORT_SUMMARY_MAX_LENGTH) {
-      issues.push(`Summary must be ${SKILL_SHORT_SUMMARY_MAX_LENGTH} characters or less.`);
+    if (trimmedSummary.length > SKILL_PUBLISH_SUMMARY_MAX_LENGTH) {
+      issues.push(`Summary must be ${SKILL_PUBLISH_SUMMARY_MAX_LENGTH} characters or less.`);
     }
     if (effectiveSlugCollision) {
       issues.push(effectiveSlugCollision.message);

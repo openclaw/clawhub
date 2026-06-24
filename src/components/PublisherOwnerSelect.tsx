@@ -75,15 +75,9 @@ function PublisherOwnerOptionLabel({ membership }: { membership: PublisherOwnerM
   return (
     <span className="min-w-0 truncate">
       <span className="text-[color:var(--ink-soft)]">@{publisher.handle}</span>
-      <span className="text-[color:var(--ink-soft)]" aria-hidden="true">
-        {" "}
-        ·{" "}
-      </span>
+      <span className="text-[color:var(--ink-soft)]"> · </span>
       <span className="font-medium text-[color:var(--ink)]">{publisher.displayName}</span>
-      <span className="text-[color:var(--ink-soft)]" aria-hidden="true">
-        {" "}
-        ·{" "}
-      </span>
+      <span className="text-[color:var(--ink-soft)]"> · </span>
       <span className="text-[color:var(--ink-soft)]">{formatPublisherRole(role)}</span>
     </span>
   );
