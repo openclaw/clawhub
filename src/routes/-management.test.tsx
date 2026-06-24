@@ -519,6 +519,58 @@ describe("Management", () => {
     });
   });
 
+  it("does not let moderators toggle publisher abuse autobans", () => {
+    searchState = { view: "abuse" };
+    authUser = {
+      _id: "users:moderator",
+      handle: "moderator",
+      role: "moderator",
+    };
+    const setAutobanEnabled = vi.fn(async () => ({
+      enabled: false,
+      updatedAt: 1716000000000,
+      updatedByUserId: "users:moderator",
+    }));
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publisherAbuse:setPublisherAbuseAutobanEnabled"
+        ? setAutobanEnabled
+        : vi.fn(),
+    );
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+        };
+      }
+      if (name === "publisherAbuse:getPublisherAbuseAutobanSetting") {
+        return {
+          enabled: true,
+          updatedAt: 1715000000000,
+          updatedByUserId: "users:admin",
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    expect(screen.getByText("Auto-ban is on")).toBeTruthy();
+    const button = screen.getByRole("button", { name: "Admins only" });
+    expect(button).toHaveProperty("disabled", true);
+    fireEvent.click(button);
+    expect(setAutobanEnabled).not.toHaveBeenCalled();
+  });
+
   it("keeps owner search available in the skill tools view", async () => {
     searchState = { view: "skills", skill: "owned-skill" };
     const currentOwner = makeManagementUser("users:owner", "owner");

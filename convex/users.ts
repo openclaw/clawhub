@@ -61,6 +61,7 @@ const ACCOUNT_RECOVERY_PURGE_LIMIT_DEFAULT = 25;
 const ACCOUNT_RECOVERY_PURGE_LIMIT_MAX = 100;
 const HOVER_STATS_COMPATIBILITY_ROW_LIMIT = 200;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN = 100;
+const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_READS = 2_000;
 const STAFF_PUBLISHER_MANAGER_ROLES = ["owner", "admin"] as const;
 const accountRecoveryPurgeModeValidator = v.optional(
   v.union(v.literal("deactivated"), v.literal("legacyDeleted")),
@@ -250,17 +251,28 @@ async function hasStaffPublisherManager(
   ctx: Pick<MutationCtx, "db">,
   publisherId: Id<"publishers">,
 ) {
+  let remainingDocReads = MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_READS;
   for (const role of STAFF_PUBLISHER_MANAGER_ROLES) {
     let cursor: string | null = null;
     do {
+      if (remainingDocReads <= 1) return true;
       const page = await ctx.db
         .query("publisherMembers")
         .withIndex("by_publisher_and_role", (q) =>
           q.eq("publisherId", publisherId).eq("role", role),
         )
-        .paginate({ cursor, numItems: MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN });
+        .paginate({
+          cursor,
+          numItems: Math.min(
+            MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN,
+            Math.floor(remainingDocReads / 2),
+          ),
+        });
+      remainingDocReads -= page.page.length;
 
       for (const member of page.page) {
+        if (remainingDocReads <= 0) return true;
+        remainingDocReads -= 1;
         const user = await ctx.db.get(member.userId);
         if (user?.role === "admin" || user?.role === "moderator") return true;
       }

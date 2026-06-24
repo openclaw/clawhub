@@ -130,23 +130,37 @@ describe("transactional account emails", () => {
     expect(options).toEqual({ idempotencyKey: "ban:users:target:1700000000000" });
   });
 
-  it("includes the publisher abuse nomination in warning idempotency keys", async () => {
+  it("uses a stable publisher abuse warning idempotency key across pending retries", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_100_000);
     const ctx = {
-      runMutation: vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true }),
+      runMutation: vi
+        .fn()
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true })
+        .mockResolvedValueOnce({ ok: true }),
     };
 
     const result = await (
       sendPublisherAbuseWarningInternal as unknown as SendPublisherAbuseWarningHandler
     )._handler(ctx, publisherAbuseWarningArgs());
+    const retryResult = await (
+      sendPublisherAbuseWarningInternal as unknown as SendPublisherAbuseWarningHandler
+    )._handler(ctx, {
+      ...publisherAbuseWarningArgs(),
+      warningPendingAt: 1_700_000_090_000,
+    });
 
     expect(result).toEqual({ ok: true, id: "email_123" });
-    expect(resendSendMock).toHaveBeenCalledTimes(1);
+    expect(retryResult).toEqual({ ok: true, id: "email_123" });
+    expect(resendSendMock).toHaveBeenCalledTimes(2);
     const [, options] = resendSendMock.mock.calls[0] ?? [];
+    const [, retryOptions] = resendSendMock.mock.calls[1] ?? [];
     expect(options).toEqual({
       idempotencyKey:
-        "publisher-abuse-warning:publisherAbuseReviewNominations:candidate:users:target:1700000000000",
+        "publisher-abuse-warning:publisherAbuseReviewNominations:candidate:users:target:publisherAbuseScores:score",
     });
+    expect(retryOptions).toEqual(options);
     expect(ctx.runMutation).toHaveBeenNthCalledWith(
       2,
       internal.publisherAbuse.recordPublisherAbuseWarningSentInternal,

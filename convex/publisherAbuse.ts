@@ -56,12 +56,14 @@ const MAX_BACKFILL_TEMPORAL_LOOKBACK_DAYS = 730;
 const MAX_TEMPORAL_DAILY_STAT_READS_PER_PAGE = 8_000;
 const MAX_TEMPORAL_DRY_RUN_CANDIDATES = 50;
 const MAX_TEMPORAL_EVIDENCE_SKILLS = 5;
+const TEMPORAL_AGGREGATE_PRESSURE_BAND = 1_000_000_000;
 const MAX_TEMPORAL_STALE_NOMINATION_CLEARS = 250;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN = 100;
 const MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_READS_PER_PAGE = 2_000;
 const STAFF_PUBLISHER_MANAGER_ROLES = ["owner", "admin"] as const;
 const FAILED_TEMPORAL_NOMINATION_CLEANUP_BATCH_SIZE = 100;
 const TEMPORAL_SCAN_CANDIDATE_CLEANUP_BATCH_SIZE = 500;
+const TEMPORAL_SCAN_CANDIDATE_STALE_MS = 14 * 24 * 60 * 60 * 1000;
 const DEFAULT_AUTOBAN_BATCH_SIZE = 1;
 const MAX_AUTOBAN_BATCH_SIZE = 1;
 const DEFAULT_AUTOBAN_MAX_PAGES = 50;
@@ -80,6 +82,8 @@ const STALE_PUBLISHER_LINK_AUTOBAN_SKIP_NOTE =
   "Autoban skipped: publisher is not linked to the nominated user account; manual review required.";
 const MISSING_WARNING_EMAIL_AUTOBAN_SKIP_NOTE =
   "Autoban warning skipped: linked user has no email address; manual review required.";
+const FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE =
+  "Autoban skipped: score run failed before completion; manual review required.";
 const FAILED_TEMPORAL_RUN_NOMINATION_NOTE =
   "Publisher abuse temporal score run failed before completion; rerun required.";
 const PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY = "publisherAbuseAutobanEnabled" as const;
@@ -102,6 +106,10 @@ type RunState = {
   scannedPublishers?: number;
   finalizedScores?: number;
   temporalScanComplete?: boolean;
+  temporalFinalizationStage?: ScoreRun["temporalFinalizationStage"];
+  temporalHighSkillCount?: number;
+  temporalFlaggedPublishers?: number;
+  temporalBenchmark?: TemporalAbuseCohortBenchmark;
 };
 
 type PageResult = RunState & {
@@ -109,6 +117,22 @@ type PageResult = RunState & {
   scanned?: number;
   finalized?: number;
   nominations?: number;
+};
+
+type TemporalAggregateMaterializationPageResult = {
+  isDone: boolean;
+  highTemporalSkills: number;
+  flaggedPublishers: number;
+};
+
+type TemporalAggregateRankingPageResult = {
+  isDone: boolean;
+  finalized: number;
+  nominations: number;
+  highTemporalSkills: number;
+  flaggedPublishers: number;
+  reviewCount: number;
+  potentialBanCandidateCount: number;
 };
 
 type PublisherMetricsDoc = Pick<
@@ -311,6 +335,7 @@ export const listReviewDashboard = query({
     assertModerator(user);
 
     const limit = clampInt(args.limit ?? 150, 1, 250);
+    const dashboardExclusionBudget = createStaffPublisherManagerExclusionBudget();
     const latestRun = await getLatestPublisherAbuseScoreRun(ctx);
     const scoreRankRunId = latestRun?.status === "completed" ? latestRun._id : undefined;
     const pendingPotentialBanCandidateItems = await getPendingPublisherAbuseReviewItemsForLabel(
@@ -320,6 +345,7 @@ export const listReviewDashboard = query({
         label: "potential_ban_candidate",
         limit,
         latestCompletedRunId: scoreRankRunId,
+        staffManagerExclusionBudget: dashboardExclusionBudget,
       },
     );
     const pendingReviewItems = await getPendingPublisherAbuseReviewItemsForLabel(ctx, {
@@ -327,11 +353,16 @@ export const listReviewDashboard = query({
       label: "review",
       limit,
       latestCompletedRunId: scoreRankRunId,
+      staffManagerExclusionBudget: dashboardExclusionBudget,
     });
     const pendingItems = [...pendingPotentialBanCandidateItems, ...pendingReviewItems]
       .sort(comparePublisherAbuseReviewItemsByLastScoredAt)
       .slice(0, limit);
-    const recentResolvedItems = await getRecentResolvedPublisherAbuseReviewItems(ctx, 30);
+    const recentResolvedItems = await getRecentResolvedPublisherAbuseReviewItems(
+      ctx,
+      30,
+      dashboardExclusionBudget,
+    );
 
     return {
       latestRun: latestRun ? summarizePublisherAbuseRun(latestRun) : null,
@@ -535,6 +566,13 @@ async function getPublisherAbuseAutobanEligibility(
       notes: "Autoban skipped: score run no longer exists; manual review required.",
     };
   }
+  if (scoredByRun.status === "failed") {
+    return {
+      kind: "defer",
+      status: "candidate_for_future_action",
+      notes: FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE,
+    };
+  }
   if (scoredByRun.modelVersion !== PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION) {
     return { kind: "ready" };
   }
@@ -667,6 +705,11 @@ export const recordPublisherAbuseWarningSentInternal = internalMutation({
       return { ok: false as const, reason: "stale_warning" as const };
     }
 
+    if (nomination.status !== "pending" || nomination.label !== "potential_ban_candidate") {
+      await clearPendingPublisherAbuseWarningFields(ctx, args.nominationId);
+      return { ok: false as const, reason: "nomination_not_actionable" as const };
+    }
+
     await ctx.db.patch(args.nominationId, {
       warningSentAt: args.warningSentAt,
       warningExpiresAt: args.deadlineAt,
@@ -722,6 +765,12 @@ export const claimPublisherAbusePendingWarningInternal = internalMutation({
     if (!(await isPublisherAbusePendingWarningStillLinked(ctx, nomination))) {
       await clearPendingPublisherAbuseWarningFields(ctx, args.nominationId);
       return { ok: false as const, reason: "nomination_not_actionable" as const };
+    }
+
+    const warningRun = await ctx.db.get(args.runId);
+    if (!warningRun || warningRun.status === "failed") {
+      await clearPendingPublisherAbuseWarningFields(ctx, args.nominationId);
+      return { ok: false as const, reason: "score_run_not_actionable" as const };
     }
 
     return { ok: true as const };
@@ -1075,7 +1124,7 @@ async function getPublisherAbuseAutobanSettingDocs(
 ): Promise<PublisherAbuseAutobanSettingDoc[]> {
   return await ctx.db
     .query("systemSettings")
-    .withIndex("by_key", (q) => q.eq("key", PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY))
+    .withIndex("by_key_and_updated_at", (q) => q.eq("key", PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY))
     .order("desc")
     .take(PUBLISHER_ABUSE_AUTOBAN_SETTING_READ_LIMIT);
 }
@@ -1140,6 +1189,10 @@ export const getPublisherAbuseScoreRunStateInternal = internalQuery({
       scannedPublishers: run.scannedPublishers,
       finalizedScores: run.finalizedScores,
       temporalScanComplete: run.temporalScanComplete,
+      temporalFinalizationStage: run.temporalFinalizationStage,
+      temporalHighSkillCount: run.temporalHighSkillCount,
+      temporalFlaggedPublishers: run.temporalFlaggedPublishers,
+      temporalBenchmark: run.temporalBenchmark,
     };
   },
 });
@@ -1232,6 +1285,14 @@ export const cleanupTemporalPublisherAbuseScanCandidatesPageInternal = internalM
   handler: cleanupTemporalPublisherAbuseScanCandidatesPageInternalHandler,
 });
 
+export const pruneStaleTemporalPublisherAbuseScanCandidatesInternal = internalMutation({
+  args: {
+    batchSize: v.optional(v.number()),
+    now: v.optional(v.number()),
+  },
+  handler: pruneStaleTemporalPublisherAbuseScanCandidatesInternalHandler,
+});
+
 export const persistTemporalPublisherAbuseCandidatesInternal = internalMutation({
   args: {
     runId: v.optional(v.id("publisherAbuseScoreRuns")),
@@ -1254,6 +1315,31 @@ export const persistTemporalPublisherAbuseAggregateInternal = internalMutation({
     scanComplete: v.boolean(),
   },
   handler: persistTemporalPublisherAbuseAggregateInternalHandler,
+});
+
+export const storePersistedTemporalPublisherAbuseBenchmarkInternal = internalMutation({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    benchmark: temporalAbuseCohortBenchmarkValidator,
+  },
+  handler: storePersistedTemporalPublisherAbuseBenchmarkInternalHandler,
+});
+
+export const materializePersistedTemporalPublisherAbuseAggregatesPageInternal = internalMutation({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    benchmark: temporalAbuseCohortBenchmarkValidator,
+    batchSize: v.optional(v.number()),
+  },
+  handler: materializePersistedTemporalPublisherAbuseAggregatesPageInternalHandler,
+});
+
+export const finalizePersistedTemporalPublisherAbuseAggregatesPageInternal = internalMutation({
+  args: {
+    runId: v.id("publisherAbuseScoreRuns"),
+    batchSize: v.optional(v.number()),
+  },
+  handler: finalizePersistedTemporalPublisherAbuseAggregatesPageInternalHandler,
 });
 
 export const completePersistedTemporalPublisherAbuseScanInternal = internalMutation({
@@ -1431,8 +1517,9 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
   let ranked = 0;
   const rankedScoresSoFar = run.passCount + run.reviewCount + run.potentialBanCandidateCount;
   const modelConfig = run.modelConfig;
+  const staffManagerExclusionBudget = createStaffPublisherManagerExclusionBudget();
   for (const score of page.page) {
-    if (await isPublisherAbuseScoreExcluded(ctx, score)) {
+    if (await isPublisherAbuseScoreExcluded(ctx, score, staffManagerExclusionBudget)) {
       finalized += 1;
       continue;
     }
@@ -2053,6 +2140,29 @@ export async function cleanupTemporalPublisherAbuseScanCandidatesPageInternalHan
   return { deleted: candidates.length };
 }
 
+export async function pruneStaleTemporalPublisherAbuseScanCandidatesInternalHandler(
+  ctx: MutationCtx,
+  args: { batchSize?: number; now?: number },
+) {
+  const batchSize = clampInt(args.batchSize ?? TEMPORAL_SCAN_CANDIDATE_CLEANUP_BATCH_SIZE, 1, 1000);
+  const cutoff = (args.now ?? Date.now()) - TEMPORAL_SCAN_CANDIDATE_STALE_MS;
+  const candidates = await ctx.db
+    .query("publisherAbuseTemporalScanCandidates")
+    .withIndex("by_created_at", (q) => q.lte("createdAt", cutoff))
+    .take(batchSize);
+  for (const candidate of candidates) {
+    await ctx.db.delete(candidate._id);
+  }
+  if (candidates.length >= batchSize) {
+    await ctx.scheduler.runAfter(
+      0,
+      internal.publisherAbuse.pruneStaleTemporalPublisherAbuseScanCandidatesInternal,
+      args,
+    );
+  }
+  return { deleted: candidates.length };
+}
+
 export async function persistTemporalPublisherAbuseCandidatesInternalHandler(
   ctx: MutationCtx,
   args: {
@@ -2196,6 +2306,7 @@ async function persistTemporalPublisherAbuseAggregate(
       args.aggregate.totalDownloads / Math.max(1, args.aggregate.highTemporalSkillCount),
     reasonCodes: args.aggregate.reasonCodes,
     temporalHighSkillCount: args.aggregate.highTemporalSkillCount,
+    temporalP99SkillCount: args.aggregate.p99TemporalSkillCount,
     temporalSpikeSkillCount: args.aggregate.spikeSkillCount,
     temporalSustainedSkillCount: args.aggregate.sustainedSkillCount,
     temporalMaxPressure: args.aggregate.maxTemporalPressure,
@@ -2213,6 +2324,24 @@ async function persistTemporalPublisherAbuseAggregate(
     now: args.now,
   });
   return { nominated: true as const, label };
+}
+
+export async function storePersistedTemporalPublisherAbuseBenchmarkInternalHandler(
+  ctx: MutationCtx,
+  args: {
+    runId: Id<"publisherAbuseScoreRuns">;
+    benchmark: TemporalAbuseCohortBenchmark;
+  },
+) {
+  const run = await requireRunningRun(ctx, args.runId);
+  if (run.phase !== "finalizing") {
+    return { ok: false as const, reason: "not_finalizing" as const };
+  }
+  await ctx.db.patch(args.runId, {
+    temporalBenchmark: args.benchmark,
+    updatedAt: Date.now(),
+  });
+  return { ok: true as const };
 }
 
 export async function persistTemporalPublisherAbuseAggregateInternalHandler(
@@ -2247,6 +2376,338 @@ export async function persistTemporalPublisherAbuseAggregateInternalHandler(
   return result;
 }
 
+export async function materializePersistedTemporalPublisherAbuseAggregatesPageInternalHandler(
+  ctx: MutationCtx,
+  args: {
+    runId: Id<"publisherAbuseScoreRuns">;
+    benchmark: TemporalAbuseCohortBenchmark;
+    batchSize?: number;
+  },
+): Promise<TemporalAggregateMaterializationPageResult> {
+  const run = await requireRunningRun(ctx, args.runId);
+  if (run.phase !== "finalizing") {
+    return {
+      isDone: run.phase === "completed",
+      highTemporalSkills: run.temporalHighSkillCount ?? 0,
+      flaggedPublishers: run.temporalFlaggedPublishers ?? 0,
+    };
+  }
+  if (run.temporalFinalizationStage === "ranking") {
+    return {
+      isDone: true,
+      highTemporalSkills: run.temporalHighSkillCount ?? 0,
+      flaggedPublishers: run.temporalFlaggedPublishers ?? run.scoredPublishers,
+    };
+  }
+  if (!run.temporalFinalizationStage && run.finalizedScores > 0) {
+    throw new Error("Legacy temporal finalization state cannot be resumed safely; rerun required");
+  }
+
+  const now = Date.now();
+  const page = await ctx.db
+    .query("publisherAbuseTemporalScanCandidates")
+    .withIndex("by_run", (q) => q.eq("runId", args.runId))
+    .paginate({
+      cursor: run.finalizeCursor ?? null,
+      numItems: clampInt(args.batchSize ?? DEFAULT_TEMPORAL_BATCH_SIZE, 1, MAX_TEMPORAL_BATCH_SIZE),
+    });
+  const aggregates = new Map<string, TemporalPublisherAggregate>();
+  let highTemporalSkills = 0;
+  for (const row of page.page) {
+    const classifiedCandidate = {
+      ...row.candidate,
+      temporalScore: classifySkillTemporalAbuseScore(row.candidate.temporalScore, args.benchmark),
+    };
+    if (
+      !classifiedCandidate.temporalScore.spike &&
+      !classifiedCandidate.temporalScore.sustained &&
+      !classifiedCandidate.temporalScore.nearConversion
+    ) {
+      continue;
+    }
+    highTemporalSkills += 1;
+    addTemporalPublisherAggregateCandidate(aggregates, classifiedCandidate);
+  }
+
+  let newAggregateRows = 0;
+  for (const aggregate of aggregates.values()) {
+    const result = await upsertMaterializedTemporalPublisherAggregateScore(ctx, {
+      run,
+      aggregate,
+      benchmark: args.benchmark,
+      now,
+    });
+    if (result.inserted) newAggregateRows += 1;
+  }
+
+  const nextHighTemporalSkills = (run.temporalHighSkillCount ?? 0) + highTemporalSkills;
+  const nextFlaggedPublishers = (run.temporalFlaggedPublishers ?? 0) + newAggregateRows;
+  await ctx.db.patch(args.runId, {
+    finalizeCursor: page.isDone ? undefined : page.continueCursor,
+    temporalFinalizationStage: page.isDone ? "ranking" : "aggregating",
+    temporalHighSkillCount: nextHighTemporalSkills,
+    temporalFlaggedPublishers: nextFlaggedPublishers,
+    temporalBenchmark: args.benchmark,
+    scoredPublishers: nextFlaggedPublishers,
+    updatedAt: now,
+  });
+
+  return {
+    isDone: page.isDone,
+    highTemporalSkills: nextHighTemporalSkills,
+    flaggedPublishers: nextFlaggedPublishers,
+  };
+}
+
+export async function finalizePersistedTemporalPublisherAbuseAggregatesPageInternalHandler(
+  ctx: MutationCtx,
+  args: {
+    runId: Id<"publisherAbuseScoreRuns">;
+    batchSize?: number;
+  },
+): Promise<TemporalAggregateRankingPageResult> {
+  const run = await requireRunningRun(ctx, args.runId);
+  if (run.phase !== "finalizing") {
+    return {
+      isDone: run.phase === "completed",
+      finalized: 0,
+      nominations: 0,
+      highTemporalSkills: run.temporalHighSkillCount ?? 0,
+      flaggedPublishers: run.temporalFlaggedPublishers ?? run.finalizedScores,
+      reviewCount: run.reviewCount,
+      potentialBanCandidateCount: run.potentialBanCandidateCount,
+    };
+  }
+  if (run.temporalFinalizationStage !== "ranking") {
+    return {
+      isDone: false,
+      finalized: 0,
+      nominations: 0,
+      highTemporalSkills: run.temporalHighSkillCount ?? 0,
+      flaggedPublishers: run.temporalFlaggedPublishers ?? run.scoredPublishers,
+      reviewCount: run.reviewCount,
+      potentialBanCandidateCount: run.potentialBanCandidateCount,
+    };
+  }
+  if (
+    run.finalizeCursor === undefined &&
+    run.finalizedScores >= (run.temporalFlaggedPublishers ?? 0)
+  ) {
+    return {
+      isDone: true,
+      finalized: 0,
+      nominations: 0,
+      highTemporalSkills: run.temporalHighSkillCount ?? 0,
+      flaggedPublishers: run.temporalFlaggedPublishers ?? run.finalizedScores,
+      reviewCount: run.reviewCount,
+      potentialBanCandidateCount: run.potentialBanCandidateCount,
+    };
+  }
+
+  const now = Date.now();
+  const page = await ctx.db
+    .query("publisherAbuseScores")
+    .withIndex("by_run_and_pressure", (q) => q.eq("runId", args.runId))
+    .order("desc")
+    .paginate({
+      cursor: run.finalizeCursor ?? null,
+      numItems: clampInt(args.batchSize ?? DEFAULT_TEMPORAL_BATCH_SIZE, 1, MAX_TEMPORAL_BATCH_SIZE),
+    });
+  let finalized = 0;
+  let nominations = 0;
+  let reviewCount = 0;
+  let potentialBanCandidateCount = 0;
+  const staffManagerExclusionBudget = createStaffPublisherManagerExclusionBudget();
+
+  for (const score of page.page) {
+    if (await isPublisherAbuseScoreExcluded(ctx, score, staffManagerExclusionBudget)) {
+      finalized += 1;
+      continue;
+    }
+    const label = labelForTemporalPublisherAbuse({
+      highTemporalSkillCount: score.temporalHighSkillCount ?? 0,
+      p99TemporalSkillCount: score.temporalP99SkillCount ?? 0,
+    });
+    const zScore = computeTemporalPublisherAbuseZScore({
+      label,
+      highTemporalSkillCount: score.temporalHighSkillCount ?? 0,
+      maxTemporalPressure: score.temporalMaxPressure ?? 0,
+    });
+    const rank = run.finalizedScores + finalized + 1;
+    finalized += 1;
+    if (label === "review") reviewCount += 1;
+    if (label === "potential_ban_candidate") potentialBanCandidateCount += 1;
+    await ctx.db.patch(score._id, { label, zScore, rank });
+    if (label !== "pass") {
+      await upsertPublisherAbuseReviewNomination(ctx, {
+        score: { ...score, label, zScore, rank },
+        run: { ...run, temporalScanComplete: run.temporalScanComplete === true } as ScoreRun,
+        now,
+      });
+      nominations += 1;
+    } else {
+      await updateExistingPublisherAbuseReviewNominationForPass(ctx, {
+        score: { ...score, label, zScore, rank },
+        run: { ...run, temporalScanComplete: run.temporalScanComplete === true } as ScoreRun,
+        now,
+      });
+    }
+  }
+
+  const nextReviewCount = run.reviewCount + reviewCount;
+  const nextPotentialBanCandidateCount =
+    run.potentialBanCandidateCount + potentialBanCandidateCount;
+  await ctx.db.patch(args.runId, {
+    finalizeCursor: page.isDone ? undefined : page.continueCursor,
+    finalizedScores: run.finalizedScores + finalized,
+    nominatedPublishers: run.nominatedPublishers + nominations,
+    reviewCount: nextReviewCount,
+    potentialBanCandidateCount: nextPotentialBanCandidateCount,
+    updatedAt: now,
+  });
+
+  return {
+    isDone: page.isDone,
+    finalized,
+    nominations,
+    highTemporalSkills: run.temporalHighSkillCount ?? 0,
+    flaggedPublishers: run.temporalFlaggedPublishers ?? run.finalizedScores + finalized,
+    reviewCount: nextReviewCount,
+    potentialBanCandidateCount: nextPotentialBanCandidateCount,
+  };
+}
+
+async function upsertMaterializedTemporalPublisherAggregateScore(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    run: ScoreRun;
+    aggregate: TemporalPublisherAggregate;
+    benchmark: TemporalAbuseCohortBenchmark;
+    now: number;
+  },
+) {
+  const existing = await ctx.db
+    .query("publisherAbuseScores")
+    .withIndex("by_run_and_owner_key", (q) =>
+      q.eq("runId", args.run._id).eq("ownerKey", args.aggregate.ownerKey),
+    )
+    .first();
+  if (!existing) {
+    const label = labelForTemporalPublisherAbuse({
+      highTemporalSkillCount: args.aggregate.highTemporalSkillCount,
+      p99TemporalSkillCount: args.aggregate.p99TemporalSkillCount,
+    });
+    const pressure = temporalAggregatePressure(args.aggregate);
+    await ctx.db.insert("publisherAbuseScores", {
+      runId: args.run._id,
+      ownerKey: args.aggregate.ownerKey,
+      ownerPublisherId: args.aggregate.ownerPublisherId,
+      ownerUserId: args.aggregate.ownerUserId,
+      handleSnapshot: args.aggregate.handleSnapshot,
+      modelVersion: PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+      label,
+      rank: 0,
+      pressure,
+      logPressure: Math.log10(Math.max(pressure, 1)),
+      zScore: computeTemporalPublisherAbuseZScore({
+        label,
+        highTemporalSkillCount: args.aggregate.highTemporalSkillCount,
+        maxTemporalPressure: args.aggregate.maxTemporalPressure,
+      }),
+      publishedSkills: args.aggregate.highTemporalSkillCount,
+      totalInstalls: args.aggregate.totalInstalls,
+      totalStars: 0,
+      totalDownloads: args.aggregate.totalDownloads,
+      installsPerSkill:
+        args.aggregate.totalInstalls / Math.max(1, args.aggregate.highTemporalSkillCount),
+      starsPerSkill: 0,
+      downloadsPerSkill:
+        args.aggregate.totalDownloads / Math.max(1, args.aggregate.highTemporalSkillCount),
+      reasonCodes: args.aggregate.reasonCodes,
+      temporalHighSkillCount: args.aggregate.highTemporalSkillCount,
+      temporalP99SkillCount: args.aggregate.p99TemporalSkillCount,
+      temporalSpikeSkillCount: args.aggregate.spikeSkillCount,
+      temporalSustainedSkillCount: args.aggregate.sustainedSkillCount,
+      temporalMaxPressure: args.aggregate.maxTemporalPressure,
+      temporalBenchmark: args.benchmark,
+      temporalEvidence: summarizeTemporalEvidence(args.aggregate.evidence),
+      createdAt: args.now,
+    });
+    return { inserted: true as const };
+  }
+
+  const highTemporalSkillCount =
+    (existing.temporalHighSkillCount ?? 0) + args.aggregate.highTemporalSkillCount;
+  const p99TemporalSkillCount =
+    (existing.temporalP99SkillCount ?? 0) + args.aggregate.p99TemporalSkillCount;
+  const spikeSkillCount = (existing.temporalSpikeSkillCount ?? 0) + args.aggregate.spikeSkillCount;
+  const sustainedSkillCount =
+    (existing.temporalSustainedSkillCount ?? 0) + args.aggregate.sustainedSkillCount;
+  const maxTemporalPressure = Math.max(
+    existing.temporalMaxPressure ?? 0,
+    args.aggregate.maxTemporalPressure,
+  );
+  const totalInstalls = nonNegative(existing.totalInstalls) + args.aggregate.totalInstalls;
+  const totalDownloads = nonNegative(existing.totalDownloads) + args.aggregate.totalDownloads;
+  const label = labelForTemporalPublisherAbuse({
+    highTemporalSkillCount,
+    p99TemporalSkillCount,
+  });
+  const pressure = temporalAggregatePressure({
+    highTemporalSkillCount,
+    maxTemporalPressure,
+  });
+  const temporalEvidence = [
+    ...(existing.temporalEvidence ?? []),
+    ...summarizeTemporalEvidence(args.aggregate.evidence),
+  ]
+    .sort((left, right) => right.pressure - left.pressure)
+    .slice(0, MAX_TEMPORAL_EVIDENCE_SKILLS);
+
+  await ctx.db.patch(existing._id, {
+    label,
+    pressure,
+    logPressure: Math.log10(Math.max(pressure, 1)),
+    zScore: computeTemporalPublisherAbuseZScore({
+      label,
+      highTemporalSkillCount,
+      maxTemporalPressure,
+    }),
+    publishedSkills: highTemporalSkillCount,
+    totalInstalls,
+    totalDownloads,
+    installsPerSkill: totalInstalls / Math.max(1, highTemporalSkillCount),
+    downloadsPerSkill: totalDownloads / Math.max(1, highTemporalSkillCount),
+    reasonCodes: uniqueStrings([...existing.reasonCodes, ...args.aggregate.reasonCodes]),
+    temporalHighSkillCount: highTemporalSkillCount,
+    temporalP99SkillCount: p99TemporalSkillCount,
+    temporalSpikeSkillCount: spikeSkillCount,
+    temporalSustainedSkillCount: sustainedSkillCount,
+    temporalMaxPressure: maxTemporalPressure,
+    temporalBenchmark: args.benchmark,
+    temporalEvidence,
+  });
+  return { inserted: false as const };
+}
+
+function temporalAggregatePressure(
+  aggregate: Pick<TemporalPublisherAggregate, "highTemporalSkillCount" | "maxTemporalPressure">,
+) {
+  const highSkillCount = nonNegative(aggregate.highTemporalSkillCount);
+  const pressureWithinBand = Math.min(
+    nonNegative(aggregate.maxTemporalPressure),
+    TEMPORAL_AGGREGATE_PRESSURE_BAND - 1,
+  );
+  return highSkillCount * TEMPORAL_AGGREGATE_PRESSURE_BAND + pressureWithinBand;
+}
+
+function summarizeTemporalEvidence(evidence: TemporalSkillCandidate[]) {
+  return [...evidence]
+    .sort((left, right) => right.temporalScore.pressure - left.temporalScore.pressure)
+    .slice(0, MAX_TEMPORAL_EVIDENCE_SKILLS)
+    .map(temporalEvidenceFromCandidate);
+}
+
 export async function completePersistedTemporalPublisherAbuseScanInternalHandler(
   ctx: MutationCtx,
   args: {
@@ -2263,7 +2724,11 @@ export async function completePersistedTemporalPublisherAbuseScanInternalHandler
   const run = await ctx.db.get(args.runId);
   if (!run) throw new Error("Temporal publisher abuse score run not found");
   const now = Date.now();
-  const flaggedPublishers = Math.max(run.finalizedScores, args.flaggedPublishers);
+  const flaggedPublishers = Math.max(
+    run.finalizedScores,
+    run.temporalFlaggedPublishers ?? 0,
+    args.flaggedPublishers,
+  );
   const nominatedPublishers = Math.max(run.nominatedPublishers, args.nominatedPublishers);
   const reviewCount = Math.max(run.reviewCount, args.reviewCount);
   const potentialBanCandidateCount = Math.max(
@@ -2279,7 +2744,11 @@ export async function completePersistedTemporalPublisherAbuseScanInternalHandler
         })
       : 0;
   const finalizedCount = flaggedPublishers + clearedNominations;
-  const scannedPublishers = Math.max(run.scannedPublishers, args.highTemporalSkills);
+  const scannedPublishers = Math.max(
+    run.scannedPublishers,
+    run.temporalHighSkillCount ?? 0,
+    args.highTemporalSkills,
+  );
   await ctx.db.patch(args.runId, {
     status: "completed",
     phase: "completed",
@@ -2383,6 +2852,10 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
           scannedPublishers: result.scannedPublishers,
           finalizedScores: result.finalizedScores,
           temporalScanComplete: result.temporalScanComplete,
+          temporalFinalizationStage: result.temporalFinalizationStage,
+          temporalHighSkillCount: result.temporalHighSkillCount,
+          temporalFlaggedPublishers: result.temporalFlaggedPublishers,
+          temporalBenchmark: result.temporalBenchmark,
         };
       }
 
@@ -2409,6 +2882,10 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
           scannedPublishers: result.scannedPublishers,
           finalizedScores: result.finalizedScores,
           temporalScanComplete: result.temporalScanComplete,
+          temporalFinalizationStage: result.temporalFinalizationStage,
+          temporalHighSkillCount: result.temporalHighSkillCount,
+          temporalFlaggedPublishers: result.temporalFlaggedPublishers,
+          temporalBenchmark: result.temporalBenchmark,
         };
       }
 
@@ -2459,8 +2936,11 @@ export async function runTemporalPublisherAbuseScanInternalHandler(
         mode,
         dryRun,
         scannedSkills,
-        finalizedScores: state.finalizedScores ?? 0,
         scanComplete: state.temporalScanComplete === true,
+        temporalFinalizationStage: state.temporalFinalizationStage,
+        temporalHighSkillCount: state.temporalHighSkillCount ?? 0,
+        temporalFlaggedPublishers: state.temporalFlaggedPublishers ?? 0,
+        temporalBenchmark: state.temporalBenchmark,
         candidateLimit,
         batchSize,
         maxPages,
@@ -2597,8 +3077,11 @@ async function finishPersistedTemporalPublisherAbuseScan(
     mode: TemporalAbuseMode;
     dryRun: boolean;
     scannedSkills: number;
-    finalizedScores: number;
     scanComplete: boolean;
+    temporalFinalizationStage?: ScoreRun["temporalFinalizationStage"];
+    temporalHighSkillCount: number;
+    temporalFlaggedPublishers: number;
+    temporalBenchmark?: TemporalAbuseCohortBenchmark;
     candidateLimit: number;
     batchSize: number;
     maxPages: number;
@@ -2608,15 +3091,57 @@ async function finishPersistedTemporalPublisherAbuseScan(
     actorUserId?: Id<"users">;
   },
 ) {
-  const benchmark = await computePersistedTemporalPublisherAbuseBenchmark(ctx, args.runId);
-  const aggregateResult = await persistPersistedTemporalPublisherAbuseAggregates(ctx, {
-    runId: args.runId,
-    benchmark,
-    scanComplete: args.scanComplete,
-    startIndex: args.finalizedScores,
-    batchSize: args.batchSize,
-  });
-  if (!aggregateResult.isDone) {
+  const benchmark =
+    args.temporalBenchmark ??
+    (await computePersistedTemporalPublisherAbuseBenchmark(ctx, args.runId));
+  if (!args.temporalBenchmark) {
+    await ctx.runMutation(
+      internal.publisherAbuse.storePersistedTemporalPublisherAbuseBenchmarkInternal,
+      {
+        runId: args.runId,
+        benchmark,
+      },
+    );
+  }
+
+  let highTemporalSkills = args.temporalHighSkillCount;
+  let flaggedPublishers = args.temporalFlaggedPublishers;
+  if (args.temporalFinalizationStage !== "ranking") {
+    const materialized: TemporalAggregateMaterializationPageResult = await ctx.runMutation(
+      internal.publisherAbuse.materializePersistedTemporalPublisherAbuseAggregatesPageInternal,
+      {
+        runId: args.runId,
+        benchmark,
+        batchSize: args.batchSize,
+      },
+    );
+    highTemporalSkills = materialized.highTemporalSkills;
+    flaggedPublishers = materialized.flaggedPublishers;
+    if (!materialized.isDone) {
+      await scheduleTemporalPublisherAbuseScanContinuation(ctx, args);
+      return {
+        ok: true as const,
+        dryRun: args.dryRun,
+        mode: args.mode,
+        scannedSkills: Math.max(args.scannedSkills, highTemporalSkills),
+        highTemporalSkills,
+        flaggedPublishers,
+        nominations: 0,
+        benchmark,
+      };
+    }
+  }
+
+  const ranked: TemporalAggregateRankingPageResult = await ctx.runMutation(
+    internal.publisherAbuse.finalizePersistedTemporalPublisherAbuseAggregatesPageInternal,
+    {
+      runId: args.runId,
+      batchSize: args.batchSize,
+    },
+  );
+  highTemporalSkills = ranked.highTemporalSkills;
+  flaggedPublishers = ranked.flaggedPublishers;
+  if (!ranked.isDone) {
     await ctx.scheduler.runAfter(
       ACTION_CONTINUATION_DELAY_MS,
       internal.publisherAbuse.runTemporalPublisherAbuseScanInternal,
@@ -2637,10 +3162,10 @@ async function finishPersistedTemporalPublisherAbuseScan(
       ok: true as const,
       dryRun: args.dryRun,
       mode: args.mode,
-      scannedSkills: Math.max(args.scannedSkills, aggregateResult.highTemporalSkills),
-      highTemporalSkills: aggregateResult.highTemporalSkills,
-      flaggedPublishers: aggregateResult.flaggedPublishers,
-      nominations: aggregateResult.nominations,
+      scannedSkills: Math.max(args.scannedSkills, highTemporalSkills),
+      highTemporalSkills,
+      flaggedPublishers,
+      nominations: ranked.nominations,
       benchmark,
     };
   }
@@ -2655,11 +3180,11 @@ async function finishPersistedTemporalPublisherAbuseScan(
       runId: args.runId,
       benchmark,
       scanComplete: args.scanComplete,
-      flaggedPublishers: aggregateResult.flaggedPublishers,
-      nominatedPublishers: aggregateResult.nominations,
-      highTemporalSkills: aggregateResult.highTemporalSkills,
-      reviewCount: aggregateResult.reviewCount,
-      potentialBanCandidateCount: aggregateResult.potentialBanCandidateCount,
+      flaggedPublishers,
+      nominatedPublishers: ranked.nominations,
+      highTemporalSkills,
+      reviewCount: ranked.reviewCount,
+      potentialBanCandidateCount: ranked.potentialBanCandidateCount,
     },
   );
   await ctx.runMutation(
@@ -2675,16 +3200,45 @@ async function finishPersistedTemporalPublisherAbuseScan(
     ok: true as const,
     dryRun: args.dryRun,
     mode: args.mode,
-    scannedSkills: Math.max(
-      args.scannedSkills,
-      completion.scannedPublishers,
-      aggregateResult.highTemporalSkills,
-    ),
-    highTemporalSkills: aggregateResult.highTemporalSkills,
-    flaggedPublishers: completion.flaggedPublishers ?? aggregateResult.flaggedPublishers,
-    nominations: completion.nominatedPublishers ?? aggregateResult.nominations,
+    scannedSkills: Math.max(args.scannedSkills, completion.scannedPublishers, highTemporalSkills),
+    highTemporalSkills,
+    flaggedPublishers: completion.flaggedPublishers ?? flaggedPublishers,
+    nominations: completion.nominatedPublishers ?? ranked.nominations,
     benchmark,
   };
+}
+
+async function scheduleTemporalPublisherAbuseScanContinuation(
+  ctx: Pick<ActionCtx, "scheduler">,
+  args: {
+    runId: Id<"publisherAbuseScoreRuns">;
+    mode: TemporalAbuseMode;
+    dryRun: boolean;
+    candidateLimit: number;
+    batchSize: number;
+    maxPages: number;
+    todayDay: number;
+    lookbackDays?: number;
+    trigger: "cron" | "manual";
+    actorUserId?: Id<"users">;
+  },
+) {
+  await ctx.scheduler.runAfter(
+    ACTION_CONTINUATION_DELAY_MS,
+    internal.publisherAbuse.runTemporalPublisherAbuseScanInternal,
+    {
+      runId: args.runId,
+      mode: args.mode,
+      dryRun: args.dryRun,
+      candidateLimit: args.candidateLimit,
+      batchSize: args.batchSize,
+      maxPages: args.maxPages,
+      todayDay: args.todayDay,
+      lookbackDays: args.lookbackDays,
+      trigger: args.trigger,
+      actorUserId: args.actorUserId,
+    },
+  );
 }
 
 async function computePersistedTemporalPublisherAbuseBenchmark(
@@ -2717,93 +3271,6 @@ async function computePersistedTemporalPublisherAbuseBenchmark(
     cursor = page.cursor;
   }
   return computeTemporalAbuseCohortBenchmark(scores);
-}
-
-async function persistPersistedTemporalPublisherAbuseAggregates(
-  ctx: Pick<ActionCtx, "runMutation" | "runQuery">,
-  args: {
-    runId: Id<"publisherAbuseScoreRuns">;
-    benchmark: TemporalAbuseCohortBenchmark;
-    scanComplete: boolean;
-    startIndex: number;
-    batchSize: number;
-  },
-) {
-  const aggregates = new Map<string, TemporalPublisherAggregate>();
-  let highTemporalSkills = 0;
-  let cursor: string | undefined;
-  let isDone = false;
-  while (!isDone) {
-    const page: {
-      candidates: TemporalSkillCandidate[];
-      isDone: boolean;
-      cursor?: string;
-    } = await ctx.runQuery(
-      internal.publisherAbuse.listTemporalPublisherAbuseScanCandidatesPageInternal,
-      {
-        runId: args.runId,
-        cursor,
-        batchSize: 1000,
-      },
-    );
-    for (const candidate of page.candidates) {
-      const classifiedCandidate = {
-        ...candidate,
-        temporalScore: classifySkillTemporalAbuseScore(candidate.temporalScore, args.benchmark),
-      };
-      if (
-        !classifiedCandidate.temporalScore.spike &&
-        !classifiedCandidate.temporalScore.sustained &&
-        !classifiedCandidate.temporalScore.nearConversion
-      ) {
-        continue;
-      }
-      highTemporalSkills += 1;
-      addTemporalPublisherAggregateCandidate(aggregates, classifiedCandidate);
-    }
-    isDone = page.isDone;
-    cursor = page.cursor;
-  }
-
-  const sortedAggregates = [...aggregates.values()].sort(
-    (left, right) =>
-      right.highTemporalSkillCount - left.highTemporalSkillCount ||
-      right.maxTemporalPressure - left.maxTemporalPressure ||
-      left.handleSnapshot.localeCompare(right.handleSnapshot),
-  );
-  let nominations = 0;
-  let reviewCount = 0;
-  let potentialBanCandidateCount = 0;
-  const startIndex = clampInt(args.startIndex, 0, sortedAggregates.length);
-  const batchSize = clampInt(args.batchSize, 1, MAX_TEMPORAL_BATCH_SIZE);
-  const pageAggregates = sortedAggregates.slice(startIndex, startIndex + batchSize);
-  for (const [index, aggregate] of pageAggregates.entries()) {
-    const label = labelForTemporalPublisherAbuse({
-      highTemporalSkillCount: aggregate.highTemporalSkillCount,
-      p99TemporalSkillCount: aggregate.p99TemporalSkillCount,
-    });
-    if (label === "review") reviewCount += 1;
-    if (label === "potential_ban_candidate") potentialBanCandidateCount += 1;
-    const result: { nominated: boolean; label: PublisherAbuseLabel } = await ctx.runMutation(
-      internal.publisherAbuse.persistTemporalPublisherAbuseAggregateInternal,
-      {
-        runId: args.runId,
-        aggregate,
-        rank: startIndex + index + 1,
-        benchmark: args.benchmark,
-        scanComplete: args.scanComplete,
-      },
-    );
-    if (result.nominated) nominations += 1;
-  }
-  return {
-    highTemporalSkills,
-    flaggedPublishers: sortedAggregates.length,
-    nominations,
-    reviewCount,
-    potentialBanCandidateCount,
-    isDone: startIndex + pageAggregates.length >= sortedAggregates.length,
-  };
 }
 
 async function finishTemporalPublisherAbuseScan(
@@ -3054,6 +3521,9 @@ async function createTemporalPublisherAbuseScoreRun(
     sumSquaredLogPressure: 0,
     temporalMode: args.mode,
     temporalScanComplete: false,
+    temporalFinalizationStage: "aggregating",
+    temporalHighSkillCount: 0,
+    temporalFlaggedPublishers: 0,
     temporalBenchmark: args.benchmark,
   });
 }
@@ -3268,17 +3738,23 @@ async function hasStaffPublisherManager(
 async function isPublisherAbuseExcludedReviewItem(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   item: PublisherAbuseReviewItem,
+  staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget,
 ) {
-  return await isPublisherExcludedFromPublisherAbuse(ctx, item.publisher);
+  return await isPublisherExcludedFromPublisherAbuse(
+    ctx,
+    item.publisher,
+    staffManagerExclusionBudget,
+  );
 }
 
 async function isPublisherAbuseScoreExcluded(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
   score: Pick<ScoreDoc, "ownerPublisherId">,
+  staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget,
 ) {
   if (!score.ownerPublisherId) return false;
   const publisher = await ctx.db.get(score.ownerPublisherId);
-  return await isPublisherExcludedFromPublisherAbuse(ctx, publisher);
+  return await isPublisherExcludedFromPublisherAbuse(ctx, publisher, staffManagerExclusionBudget);
 }
 
 async function requirePublisherAbuseNominationNotExcluded(
@@ -3441,7 +3917,8 @@ async function upsertPublisherAbuseReviewNomination(
     const shouldReopen =
       (isReopenableNominationStatus(existing.status) &&
         (isPublisherAbuseLabelEscalation(existing.label, args.score.label) ||
-          isDeferredNominationForCurrentTemporalRun(existing.status, args.run))) ||
+          isDeferredNominationForCurrentTemporalRun(existing.status, args.run) ||
+          isFailedPressureRunAutobanDeferral(existing, args.score, args.run))) ||
       (await isBannedNominationForActiveOwner(ctx, existing, args.score));
     const ownerUserChanged = existing.ownerUserId !== args.score.ownerUserId;
     const shouldClearWarning =
@@ -3579,6 +4056,21 @@ function isDeferredNominationForCurrentTemporalRun(status: TriageStatus, run: Sc
   );
 }
 
+function isFailedPressureRunAutobanDeferral(
+  nomination: Doc<"publisherAbuseReviewNominations">,
+  score: ScoreDoc,
+  run: ScoreRun,
+) {
+  return (
+    nomination.status === "candidate_for_future_action" &&
+    nomination.notes === FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE &&
+    score.label === "potential_ban_candidate" &&
+    run.modelVersion !== PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION &&
+    run.status === "running" &&
+    run.phase === "finalizing"
+  );
+}
+
 async function isBannedNominationForActiveOwner(
   ctx: Pick<MutationCtx, "db">,
   nomination: Doc<"publisherAbuseReviewNominations">,
@@ -3608,6 +4100,7 @@ async function getPendingPublisherAbuseReviewItemsForLabel(
     label: PendingPublisherAbuseReviewLabel;
     limit: number;
     latestCompletedRunId: Id<"publisherAbuseScoreRuns"> | undefined;
+    staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
   },
 ) {
   if (!args.latestCompletedRunId) {
@@ -3619,6 +4112,7 @@ async function getPendingPublisherAbuseReviewItemsForLabel(
     status: args.status,
     label: args.label,
     limit: args.limit,
+    staffManagerExclusionBudget: args.staffManagerExclusionBudget,
   });
   if (scoreRankItems.length >= args.limit) return scoreRankItems;
 
@@ -3659,6 +4153,7 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromScoreRank(
     status: TriageStatus;
     label: PendingPublisherAbuseReviewLabel;
     limit: number;
+    staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
   },
 ) {
   const items: PublisherAbuseReviewItem[] = [];
@@ -3686,7 +4181,9 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromScoreRank(
       continue;
     }
     const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
-    if (!(await isVisiblePublisherAbuseReviewItem(ctx, item))) continue;
+    if (!(await isVisiblePublisherAbuseReviewItem(ctx, item, args.staffManagerExclusionBudget))) {
+      continue;
+    }
     items.push(item);
     if (items.length >= args.limit) break;
   }
@@ -3695,7 +4192,12 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromScoreRank(
 
 async function getPendingPublisherAbuseReviewItemsForLabelFromLastScoredAt(
   ctx: QueryCtx,
-  args: { status: TriageStatus; label: PendingPublisherAbuseReviewLabel; limit: number },
+  args: {
+    status: TriageStatus;
+    label: PendingPublisherAbuseReviewLabel;
+    limit: number;
+    staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
+  },
 ) {
   const items: PublisherAbuseReviewItem[] = [];
   const scanLimit = args.limit * MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER;
@@ -3708,7 +4210,9 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromLastScoredAt(
     .take(scanLimit);
   const pageItems = await summarizePublisherAbuseReviewNominations(ctx, nominations);
   for (const item of pageItems) {
-    if (!(await isVisiblePublisherAbuseReviewItem(ctx, item))) continue;
+    if (!(await isVisiblePublisherAbuseReviewItem(ctx, item, args.staffManagerExclusionBudget))) {
+      continue;
+    }
     items.push(item);
     if (items.length >= args.limit) break;
   }
@@ -3716,16 +4220,32 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromLastScoredAt(
 }
 
 async function getLatestPublisherAbuseScoreRun(ctx: QueryCtx) {
+  const pressureRun = await getLatestPublisherAbuseScoreRunForModel(
+    ctx,
+    DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.modelVersion,
+  );
+  const temporalRun = await getLatestPublisherAbuseScoreRunForModel(
+    ctx,
+    PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
+  );
+  if (!pressureRun) return temporalRun;
+  if (!temporalRun) return pressureRun;
+  return temporalRun.startedAt > pressureRun.startedAt ? temporalRun : pressureRun;
+}
+
+async function getLatestPublisherAbuseScoreRunForModel(ctx: QueryCtx, modelVersion: string) {
   return await ctx.db
     .query("publisherAbuseScoreRuns")
-    .withIndex("by_model_version_and_started_at", (q) =>
-      q.eq("modelVersion", DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG.modelVersion),
-    )
+    .withIndex("by_model_version_and_started_at", (q) => q.eq("modelVersion", modelVersion))
     .order("desc")
     .first();
 }
 
-async function getRecentResolvedPublisherAbuseReviewItems(ctx: QueryCtx, limit: number) {
+async function getRecentResolvedPublisherAbuseReviewItems(
+  ctx: QueryCtx,
+  limit: number,
+  staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget,
+) {
   const resolvedStatuses: TriageStatus[] = [
     "banned",
     "reviewed_no_action",
@@ -3743,7 +4263,12 @@ async function getRecentResolvedPublisherAbuseReviewItems(ctx: QueryCtx, limit: 
     nominations.push(...page);
   }
   nominations.sort((left, right) => (right.reviewedAt ?? 0) - (left.reviewedAt ?? 0));
-  return await summarizeVisiblePublisherAbuseReviewNominations(ctx, nominations, limit);
+  return await summarizeVisiblePublisherAbuseReviewNominations(
+    ctx,
+    nominations,
+    limit,
+    staffManagerExclusionBudget,
+  );
 }
 
 async function summarizePublisherAbuseReviewNominations(
@@ -3761,11 +4286,14 @@ async function summarizeVisiblePublisherAbuseReviewNominations(
   ctx: QueryCtx,
   nominations: Doc<"publisherAbuseReviewNominations">[],
   limit?: number,
+  staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget,
 ) {
   const items = [];
   for (const nomination of nominations) {
     const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
-    if (await isVisiblePublisherAbuseReviewItem(ctx, item)) items.push(item);
+    if (await isVisiblePublisherAbuseReviewItem(ctx, item, staffManagerExclusionBudget)) {
+      items.push(item);
+    }
     if (limit && items.length >= limit) break;
   }
   return items;
@@ -3791,14 +4319,18 @@ async function summarizePublisherAbuseReviewNomination(
   };
 }
 
-async function isVisiblePublisherAbuseReviewItem(ctx: QueryCtx, item: PublisherAbuseReviewItem) {
+async function isVisiblePublisherAbuseReviewItem(
+  ctx: QueryCtx,
+  item: PublisherAbuseReviewItem,
+  staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget,
+) {
   return (
     item.nomination.label !== "pass" &&
     !item.ownerUser?.deletedAt &&
     !item.ownerUser?.deactivatedAt &&
     !item.publisher?.deletedAt &&
     !item.publisher?.deactivatedAt &&
-    !(await isPublisherAbuseExcludedReviewItem(ctx, item))
+    !(await isPublisherAbuseExcludedReviewItem(ctx, item, staffManagerExclusionBudget))
   );
 }
 

@@ -219,7 +219,7 @@ export const sendPublisherAbuseWarningInternal = internalAction({
       score: args.score,
     });
     const result = await sendTransactionalEmail({
-      idempotencyKey: `publisher-abuse-warning:${args.nominationId}:${args.userId}:${args.warningPendingAt}`,
+      idempotencyKey: `publisher-abuse-warning:${args.nominationId}:${args.userId}:${args.scoreId}`,
       to: args.to,
       subject: email.subject,
       text: email.text,

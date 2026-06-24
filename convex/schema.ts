@@ -2315,7 +2315,9 @@ const systemSettings = defineTable({
   enabled: v.boolean(),
   updatedAt: v.number(),
   updatedByUserId: v.optional(v.id("users")),
-}).index("by_key", ["key"]);
+})
+  .index("by_key", ["key"])
+  .index("by_key_and_updated_at", ["key", "updatedAt"]);
 
 const publisherAbuseScoreRuns = defineTable({
   modelVersion: v.string(),
@@ -2342,6 +2344,9 @@ const publisherAbuseScoreRuns = defineTable({
   stdDevLogPressure: v.optional(v.number()),
   temporalMode: v.optional(v.union(v.literal("current"), v.literal("backfill"))),
   temporalScanComplete: v.optional(v.boolean()),
+  temporalFinalizationStage: v.optional(v.union(v.literal("aggregating"), v.literal("ranking"))),
+  temporalHighSkillCount: v.optional(v.number()),
+  temporalFlaggedPublishers: v.optional(v.number()),
   temporalBenchmark: v.optional(
     v.object({
       sampleSize: v.number(),
@@ -2389,6 +2394,7 @@ const publisherAbuseScores = defineTable({
   downloadsPerSkill: v.number(),
   reasonCodes: v.array(v.string()),
   temporalHighSkillCount: v.optional(v.number()),
+  temporalP99SkillCount: v.optional(v.number()),
   temporalSpikeSkillCount: v.optional(v.number()),
   temporalSustainedSkillCount: v.optional(v.number()),
   temporalMaxPressure: v.optional(v.number()),
@@ -2492,7 +2498,9 @@ const publisherAbuseTemporalScanCandidates = defineTable({
     }),
   }),
   createdAt: v.number(),
-}).index("by_run", ["runId"]);
+})
+  .index("by_run", ["runId"])
+  .index("by_created_at", ["createdAt"]);
 
 const publisherAbuseReviewNominations = defineTable({
   ownerKey: v.string(),
