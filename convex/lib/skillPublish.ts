@@ -20,6 +20,7 @@ import {
   getPublishTotalSizeError,
   MAX_PUBLISH_TOTAL_BYTES,
 } from "./publishLimits";
+import { assertRemoteAssetPolicy } from "./remoteAssetPolicy";
 import { isSkillCardPath } from "./skillCards";
 import {
   computeQualitySignals,
@@ -282,6 +283,11 @@ export async function publishVersionForUser(
   } catch (error) {
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
+
+  assertRemoteAssetPolicy({
+    metadata,
+    files: fileContents,
+  });
 
   const staticScan = await runStaticPublishScan(ctx, {
     slug,

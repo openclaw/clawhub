@@ -112,6 +112,7 @@ import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
+import { assertRemoteAssetPolicy, isRemoteAssetPolicyTextFile } from "./lib/remoteAssetPolicy";
 import { MAX_ACTIVE_REPORTS_PER_USER, MAX_REPORT_REASON_LENGTH } from "./lib/reporting";
 import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./lib/searchText";
 import { hashSkillFiles } from "./lib/skills";
@@ -7451,6 +7452,30 @@ async function publishPackageImpl(
     throw new ConvexError(error instanceof Error ? error.message : "Invalid catalog metadata");
   }
   const topics = normalizedTopics.length ? normalizedTopics : undefined;
+  const remotePolicyFiles: Array<{ path: string; content: string }> = [];
+  for (const file of files) {
+    if (!isRemoteAssetPolicyTextFile(file.path, file.contentType ?? undefined)) continue;
+    remotePolicyFiles.push({
+      path: file.path,
+      content: await readStorageText(ctx, file.storageId),
+    });
+  }
+
+  assertRemoteAssetPolicy(
+    {
+      metadata: {
+        packageJson,
+        pluginManifest,
+        bundleManifest,
+        source: effectiveSource,
+      },
+      files: remotePolicyFiles,
+    },
+    {
+      blockingCodes: ["REMOTE_REFERENCE_UNPINNED_GITHUB", "REMOTE_REFERENCE_RAW_IP"],
+    },
+  );
+
   const staticScan = await runStaticPublishScan(ctx, {
     slug: name,
     displayName,
