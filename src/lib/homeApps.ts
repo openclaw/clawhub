@@ -15,6 +15,10 @@ const HOME_APP_IMAGE_ICON_SOURCES = {
   scraperapi: `${LOCAL_APP_ICON_BASE}/scraperapi.svg`,
 } as const;
 
+export const HOME_APP_IMAGE_ICON_PRELOADS = [
+  ...new Set(Object.values(HOME_APP_IMAGE_ICON_SOURCES)),
+];
+
 const HOME_APP_SIMPLE_ICON_COLORS = {
   airtable: "18BFFF",
   amazonwebservices: "232F3E",

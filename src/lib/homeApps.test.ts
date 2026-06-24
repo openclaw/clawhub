@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import {
   HOME_PLUGIN_SHORTCUTS,
   HOME_SKILL_APPS,
+  HOME_APP_IMAGE_ICON_PRELOADS,
   homePluginShortcutIcon,
   homeSkillAppIcon,
 } from "./homeApps";
@@ -32,8 +33,11 @@ describe("home app icons", () => {
   });
 
   it("uses pure local SVG files for image icons", () => {
+    const imageIconSrcs = new Set<string>();
+
     for (const [id, icon] of icons) {
       if (icon.kind !== "image") continue;
+      imageIconSrcs.add(icon.src);
 
       const iconPath = join(process.cwd(), "public", icon.src.replace(/^\//, ""));
       const svg = readFileSync(iconPath, "utf8");
@@ -41,6 +45,11 @@ describe("home app icons", () => {
       expect(svg.trimStart(), id).toMatch(/^(<\?xml[^>]*>\s*)?<svg\b/);
       expect(svg, id).not.toMatch(/<image\b|data:image|base64/i);
     }
+
+    for (const src of imageIconSrcs) {
+      expect(HOME_APP_IMAGE_ICON_PRELOADS, src).toContain(src);
+    }
+    expect(HOME_APP_IMAGE_ICON_PRELOADS).toContain("/app-icons/openclaw.svg");
   });
 
   it("uses the app id as the Simple Icons slug unless the card declares an override", () => {

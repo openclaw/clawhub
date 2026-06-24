@@ -35,7 +35,8 @@ function HomeAppIconMark({ icon, className }: HomeAppIconMarkProps) {
         alt=""
         width={40}
         height={40}
-        loading="lazy"
+        loading="eager"
+        fetchPriority="high"
         decoding="async"
       />
     );
