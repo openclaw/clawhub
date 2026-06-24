@@ -1171,7 +1171,7 @@ export function Upload() {
               </div>
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="tags">Tags</Label>
+                <Label htmlFor="tags">Release tags</Label>
                 <Input
                   id="tags"
                   value={tags}
@@ -1355,7 +1355,7 @@ function formatInlineList(items: string[]) {
 function missingPublishLabel(issue: string) {
   if (issue === "Slug is required.") return ["slug"];
   if (issue === "Display name is required.") return ["display name"];
-  if (issue === "At least one tag is required.") return ["tags"];
+  if (issue === "At least one tag is required.") return ["release tags"];
   if (issue === "Accept the MIT-0 license terms to publish this skill.") {
     return ["MIT-0 acceptance"];
   }

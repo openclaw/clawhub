@@ -155,11 +155,9 @@ export function CatalogMetadataFields({
         <div className="catalog-metadata-field-header">
           <Label htmlFor={`${fieldIdPrefix}Topics`}>Topics</Label>
           <div
-            className="catalog-metadata-field-actions invisible pointer-events-none"
+            className="catalog-metadata-field-actions min-h-[30px] shrink-0"
             aria-hidden="true"
-          >
-            {categoryToolbar}
-          </div>
+          />
         </div>
         <CatalogTopicInput
           id={`${fieldIdPrefix}Topics`}

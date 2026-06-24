@@ -35,7 +35,7 @@ export function PublisherOwnerSelect({
       <button
         id={id}
         type="button"
-        aria-label="Owner"
+        aria-label="Publishing as"
         disabled
         className="flex w-full min-h-[44px] items-center justify-between rounded-[var(--radius-sm)] border border-input-border bg-input-bg px-3.5 py-space-3 text-sm text-[color:var(--ink)] opacity-60"
       >
@@ -46,7 +46,7 @@ export function PublisherOwnerSelect({
 
   return (
     <Select value={value} onValueChange={onValueChange} disabled={disabled}>
-      <SelectTrigger id={id} aria-label="Owner">
+      <SelectTrigger id={id} aria-label="Publishing as">
         {selected ? (
           <PublisherOwnerOption membership={selected} />
         ) : value ? (
