@@ -42,7 +42,13 @@ const getExactSkillSlugMatchHandler = (
     _handler: (
       ctx: unknown,
       args: unknown,
-    ) => Promise<Array<{ skill: { slug: string; _id: string }; ownerHandle: string | null }>>;
+    ) => Promise<
+      Array<{
+        skill: { slug: string; _id: string };
+        ownerHandle: string | null;
+        owner: { official?: boolean } | null;
+      }>
+    >;
   }
 )._handler;
 const hydrateResultsHandler = (
@@ -793,6 +799,26 @@ describe("search helpers", () => {
       "skills:org-demo",
     ]);
     expect(result.map((entry) => entry.ownerHandle)).toEqual(["alice", "org"]);
+  });
+
+  it("includes official publisher status on skill search owners", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+        }),
+      ],
+      officialPublisherIds: ["publishers:org"],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, { slug: "demo" });
+
+    expect(result[0]?.ownerHandle).toBe("org");
+    expect(result[0]?.owner?.official).toBe(true);
   });
 
   it("filters duplicate exact slug matches by topic", async () => {
@@ -2302,11 +2328,13 @@ function makePaginatedRows<T>(rows: T[], onPaginate?: () => void) {
 function makeLexicalCtx(params: {
   exactSlugSkill?: ReturnType<typeof makeSkillDoc> | null;
   exactSlugSkills?: Array<ReturnType<typeof makeSkillDoc>>;
+  officialPublisherIds?: string[];
   recentSkills: Array<ReturnType<typeof makeSkillDoc>>;
   recentByCreated?: Array<ReturnType<typeof makeSkillDoc>>;
 }) {
   const exactSlugSkills =
     params.exactSlugSkills ?? (params.exactSlugSkill ? [params.exactSlugSkill] : []);
+  const officialPublisherIds = new Set(params.officialPublisherIds ?? []);
   // Convert skill docs to digest-shaped rows (add skillId + owner fields).
   const toDigestRows = (skills: Array<ReturnType<typeof makeSkillDoc>>) =>
     skills.map((skill) => ({
@@ -2330,6 +2358,29 @@ function makeLexicalCtx(params: {
     },
     db: {
       query: vi.fn((table: string) => {
+        if (table === "officialPublishers") {
+          return {
+            withIndex: (
+              index: string,
+              builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              usedIndexes.push(index);
+              let publisherId = "";
+              const q = {
+                eq: (field: string, value: unknown) => {
+                  if (field === "publisherId") publisherId = String(value);
+                  return q;
+                },
+              };
+              builder(q);
+              return {
+                unique: vi.fn(async () =>
+                  officialPublisherIds.has(publisherId) ? { publisherId } : null,
+                ),
+              };
+            },
+          };
+        }
         if (table === "skills") {
           return {
             withIndex: (index: string) => {
@@ -2489,6 +2540,13 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                 }),
               };
             },
+          };
+        }
+        if (table === "officialPublishers") {
+          return {
+            withIndex: () => ({
+              unique: vi.fn(async () => null),
+            }),
           };
         }
         if (table !== "skillSearchDigest") throw new Error(`Unexpected table ${table}`);

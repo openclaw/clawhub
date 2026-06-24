@@ -36,6 +36,7 @@ const defaultUnifiedSearchResult = {
         createdAt: 1,
         updatedAt: 2,
       },
+      owner: null,
     },
   ],
   pluginResults: [
@@ -460,9 +461,13 @@ describe("Header", () => {
     const skillGroup = within(typeahead).getByRole("group", { name: "Skills" });
     const pluginGroup = within(typeahead).getByRole("group", { name: "Plugins" });
     expect(screen.getByText("Weather Skill")).toBeTruthy();
-    expect(screen.getByText("@local / weather")).toBeTruthy();
     expect(screen.getByText("Weather Plugin")).toBeTruthy();
-    expect(screen.getByText("@local / weather-plugin")).toBeTruthy();
+    expect(
+      screen.getByText("Weather Skill").closest(".navbar-search-typeahead-row")?.textContent,
+    ).toContain("@local / weather");
+    expect(
+      screen.getByText("Weather Plugin").closest(".navbar-search-typeahead-row")?.textContent,
+    ).toContain("@local / weather-plugin");
     expect(skillGroup.querySelector("svg.lucide-wrench")).not.toBeNull();
     expect(pluginGroup.querySelector("svg.lucide-message-circle")).not.toBeNull();
     expect(typeahead.querySelector("svg.lucide-package")).toBeNull();
@@ -508,8 +513,11 @@ describe("Header", () => {
     fireEvent.change(input, { target: { value: "firecrawl" } });
 
     expect(screen.getByText("OpenClaw Firecrawl Plugin")).toBeTruthy();
-    expect(screen.getByText("@openclaw / firecrawl-plugin")).toBeTruthy();
-    expect(screen.queryByText("@openclaw / @openclaw/firecrawl-plugin")).toBeNull();
+    const pluginRow = screen
+      .getByText("OpenClaw Firecrawl Plugin")
+      .closest(".navbar-search-typeahead-row");
+    expect(pluginRow?.textContent).toContain("@openclaw / firecrawl-plugin");
+    expect(pluginRow?.textContent).not.toContain("@openclaw / @openclaw/firecrawl-plugin");
   });
 
   it("falls back to typed skill search when a typeahead skill has no owner handle", () => {
@@ -618,5 +626,54 @@ describe("Header", () => {
     expect(screen.getByText("Stars").closest("a")?.getAttribute("href")).toBe("/stars");
     expect(screen.getAllByText("Dashboard").length).toBeGreaterThan(0);
     expect(screen.getByText("Settings")).toBeTruthy();
+  });
+
+  it("shows compact official badges beside official typeahead publishers", () => {
+    useUnifiedSearchMock.mockReturnValue({
+      ...defaultUnifiedSearchResult,
+      skillResults: [
+        {
+          ...defaultUnifiedSearchResult.skillResults[0],
+          owner: {
+            _id: "publishers:local",
+            _creationTime: 1,
+            kind: "org",
+            handle: "local",
+            displayName: "Local",
+            image: undefined,
+            bio: undefined,
+            linkedUserId: undefined,
+            official: true,
+          },
+        },
+      ],
+      pluginResults: [
+        {
+          ...defaultUnifiedSearchResult.pluginResults[0],
+          plugin: {
+            ...defaultUnifiedSearchResult.pluginResults[0].plugin,
+            isOfficial: true,
+          },
+        },
+      ],
+    });
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills and plugins");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+
+    const skillRow = screen.getByText("Weather Skill").closest(".navbar-search-typeahead-row");
+    const pluginRow = screen.getByText("Weather Plugin").closest(".navbar-search-typeahead-row");
+
+    expect(skillRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
+      "@local / weather",
+    );
+    expect(pluginRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
+      "@local / weather-plugin",
+    );
+    expect(skillRow?.querySelector(".official-badge")).toBeTruthy();
+    expect(pluginRow?.querySelector(".official-badge")).toBeTruthy();
   });
 });

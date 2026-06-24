@@ -39,6 +39,7 @@ import {
   type UnifiedSkillResult,
 } from "../lib/useUnifiedSearch";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -962,23 +963,54 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
     const owner = item.result.ownerHandle ? `@${item.result.ownerHandle}` : "Skill";
     return {
       title: item.result.skill.displayName,
-      meta: `${owner} / ${item.result.skill.slug}`,
+      meta: (
+        <TypeaheadPublisherMeta
+          owner={owner}
+          official={item.result.owner?.official === true}
+          packageName={item.result.skill.slug}
+        />
+      ),
     };
   }
   if (item.kind === "plugin") {
     const packageName = displayPluginPackageName(item.result.plugin.name);
-    const owner = item.result.plugin.ownerHandle
-      ? `@${item.result.plugin.ownerHandle} / ${packageName}`
-      : packageName;
+    const owner = item.result.plugin.ownerHandle ? `@${item.result.plugin.ownerHandle}` : null;
     return {
       title: item.result.plugin.displayName,
-      meta: owner,
+      meta: owner ? (
+        <TypeaheadPublisherMeta
+          owner={owner}
+          official={item.result.plugin.isOfficial}
+          packageName={packageName}
+        />
+      ) : (
+        packageName
+      ),
     };
   }
   return {
     title: item.label,
     meta: null,
   };
+}
+
+function TypeaheadPublisherMeta({
+  owner,
+  official,
+  packageName,
+}: {
+  owner: string;
+  official: boolean;
+  packageName: string;
+}) {
+  return (
+    <>
+      <span className="navbar-search-typeahead-publisher">{owner}</span>
+      {official ? <OfficialBadge /> : null}
+      <span className="navbar-search-typeahead-separator"> / </span>
+      <span className="navbar-search-typeahead-package">{packageName}</span>
+    </>
+  );
 }
 function NavbarThemeSwitcher({
   mode,

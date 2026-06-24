@@ -2,6 +2,7 @@ import { useAction } from "convex/react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../../convex/_generated/api";
 import { fetchPluginCatalog, type PackageListItem } from "./packageApi";
+import type { PublicPublisher } from "./publicUser";
 
 export type UnifiedSearchType = "all" | "skills" | "plugins";
 const MAX_UNIFIED_SEARCH_LIMIT = 100;
@@ -24,6 +25,7 @@ export type UnifiedSkillResult = {
     createdAt: number;
   };
   ownerHandle: string | null;
+  owner?: PublicPublisher | null;
   score: number;
 };
 
@@ -118,12 +120,14 @@ export function useUnifiedSearch(
             (skillsRaw as Array<{
               skill: UnifiedSkillResult["skill"];
               ownerHandle: string | null;
+              owner?: PublicPublisher | null;
               score: number;
             }>) ?? []
           ).map((entry) => ({
             type: "skill" as const,
             skill: entry.skill,
             ownerHandle: entry.ownerHandle,
+            owner: entry.owner ?? null,
             score: entry.score,
           }));
           const nextSkillResults = skillMatches.slice(0, skillLimit);

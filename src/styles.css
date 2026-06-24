@@ -655,6 +655,37 @@ code {
   font-size: var(--fs-xs);
 }
 
+.navbar-search-typeahead-meta:has(.navbar-search-typeahead-publisher) {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+}
+
+.navbar-search-typeahead-publisher,
+.navbar-search-typeahead-package {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.navbar-search-typeahead-separator {
+  flex: 0 0 auto;
+}
+
+.navbar-search-typeahead-meta .official-badge {
+  width: 15px;
+  height: 15px;
+  border: 0;
+  background: transparent;
+}
+
+.navbar-search-typeahead-meta .official-badge svg {
+  width: 13px;
+  height: 13px;
+}
+
 .navbar-search-typeahead-status {
   padding: 12px;
   color: var(--ink-soft);
