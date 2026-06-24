@@ -400,16 +400,8 @@ describe("httpApi handlers", () => {
       expires_in: 900,
       interval: 5,
     };
-    const runQuery = vi.fn().mockResolvedValue({
-      allowed: true,
-      remaining: 300,
-      limit: 300,
-      resetAt: Date.now() + 60_000,
-    });
-    const runMutation = vi
-      .fn()
-      .mockResolvedValueOnce({ allowed: true, remaining: 299 })
-      .mockResolvedValueOnce(result);
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce(result);
 
     const response = await __handlers.cliDeviceCodeHandler(
       makeCtx({ runQuery, runMutation }),
@@ -436,13 +428,8 @@ describe("httpApi handlers", () => {
 
   it("cliDeviceTokenHttp requires the device grant type", async () => {
     vi.mocked(getOptionalApiTokenUser).mockResolvedValueOnce(null);
-    const runQuery = vi.fn().mockResolvedValue({
-      allowed: true,
-      remaining: 300,
-      limit: 300,
-      resetAt: Date.now() + 60_000,
-    });
-    const runMutation = vi.fn().mockResolvedValueOnce({ allowed: true, remaining: 299 });
+    const runQuery = vi.fn();
+    const runMutation = vi.fn().mockResolvedValueOnce({ ok: true });
 
     const response = await __handlers.cliDeviceTokenHandler(
       makeCtx({ runQuery, runMutation }),
@@ -460,15 +447,10 @@ describe("httpApi handlers", () => {
 
   it("cliDeviceTokenHttp returns pending as retryable", async () => {
     vi.mocked(getOptionalApiTokenUser).mockResolvedValueOnce(null);
-    const runQuery = vi.fn().mockResolvedValue({
-      allowed: true,
-      remaining: 300,
-      limit: 300,
-      resetAt: Date.now() + 60_000,
-    });
+    const runQuery = vi.fn();
     const runMutation = vi
       .fn()
-      .mockResolvedValueOnce({ allowed: true, remaining: 299 })
+      .mockResolvedValueOnce({ ok: true })
       .mockResolvedValueOnce({ error: "authorization_pending" });
 
     const response = await __handlers.cliDeviceTokenHandler(

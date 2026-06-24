@@ -74,6 +74,7 @@
     "@auth/core": "0.41.1",
     "@convex-dev/auth": "0.0.94",
     "@convex-dev/migrations": "0.3.5",
+    "@convex-dev/rate-limiter": "0.3.2",
     "@fontsource/bricolage-grotesque": "5.2.10",
     "@fontsource/ibm-plex-mono": "5.2.7",
     "@fontsource/manrope": "5.2.8",

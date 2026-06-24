@@ -27,30 +27,14 @@ const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
-type RateLimitArgs = { key: string; limit: number; windowMs: number };
-
-function isRateLimitArgs(args: unknown): args is RateLimitArgs {
-  if (!args || typeof args !== "object") return false;
-  const value = args as Record<string, unknown>;
-  return (
-    typeof value.key === "string" &&
-    typeof value.limit === "number" &&
-    typeof value.windowMs === "number"
-  );
-}
-
 const okRate = () => ({
-  allowed: true,
-  remaining: 10,
-  limit: 100,
-  resetAt: Date.now() + 60_000,
+  ok: true,
 });
 
 function makeCtx(partial: {
   runQuery?: (query: unknown, args: Record<string, unknown>) => unknown;
 }) {
   const runQuery = vi.fn(async (query: unknown, args: Record<string, unknown>) => {
-    if (isRateLimitArgs(args)) return { ...okRate(), limit: args.limit };
     return partial.runQuery ? await partial.runQuery(query, args) : null;
   });
   return { runQuery, runMutation: vi.fn().mockResolvedValue(okRate()) } as unknown as ActionCtx;

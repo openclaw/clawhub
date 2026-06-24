@@ -2,23 +2,36 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import { __test, downloadZipHandler } from "./downloads";
 
-type RateLimitArgs = { key: string; limit: number; windowMs: number };
+type RateLimitConfig = {
+  kind: "fixed window" | "token bucket";
+  rate: number;
+  period: number;
+  shards?: number;
+};
+
+type RateLimitArgs = {
+  name: string;
+  key?: string;
+  config: RateLimitConfig;
+};
 
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
   const value = args as Record<string, unknown>;
+  const config = value.config as Record<string, unknown> | undefined;
   return (
-    typeof value.key === "string" &&
-    typeof value.limit === "number" &&
-    typeof value.windowMs === "number"
+    typeof value.name === "string" &&
+    (!("key" in value) || typeof value.key === "string") &&
+    !!config &&
+    typeof config === "object" &&
+    typeof config.kind === "string" &&
+    typeof config.rate === "number" &&
+    typeof config.period === "number"
   );
 }
 
 const okRate = () => ({
-  allowed: true,
-  remaining: 10,
-  limit: 100,
-  resetAt: Date.now() + 60_000,
+  ok: true,
 });
 
 function stubZipResponse() {
@@ -81,7 +94,6 @@ describe("downloads helpers", () => {
     stubZipResponse();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
       if ("slug" in args) {
         return {
           skill: {
@@ -154,7 +166,6 @@ describe("downloads helpers", () => {
 
   it("threads owner handle through the skill lookup", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
       if ("slug" in args) {
         return {
           skill: {
@@ -204,7 +215,6 @@ describe("downloads helpers", () => {
 
   it("does not serve a tag that points at another skill's version", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
       if ("slug" in args) {
         return {
           skill: {
@@ -264,7 +274,6 @@ describe("downloads helpers", () => {
 
   it("returns ownerHandle guidance when a slug-only download is ambiguous", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
       if ("slug" in args) return { skill: null, ambiguous: true };
       return null;
     });
@@ -292,7 +301,6 @@ describe("downloads helpers", () => {
 
   it("blocks the exact requested skill version when its ClawScan verdict is malicious", async () => {
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
       if ("slug" in args) {
         return {
           skill: {
@@ -371,7 +379,6 @@ describe("downloads helpers", () => {
     stubZipResponse();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
       if ("tokenHash" in args) {
         return { _id: "apiTokens:1", revokedAt: undefined };
       }
@@ -441,7 +448,6 @@ describe("downloads helpers", () => {
     stubZipResponse();
 
     const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
-      if (isRateLimitArgs(args)) return okRate();
       if ("slug" in args) {
         return {
           skill: {

@@ -1,29 +1,11 @@
 /* @vitest-environment node */
 
 import { describe, expect, it, vi } from "vitest";
-import {
-  consumeRateLimitInternal,
-  getRateLimitStatusInternal,
-  pruneRateLimitCountersInternal,
-} from "./rateLimits";
+import { pruneRateLimitCountersInternal } from "./rateLimits";
 
 type WrappedHandler<TArgs, TResult> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
 };
-
-const getStatusHandler = (
-  getRateLimitStatusInternal as unknown as WrappedHandler<
-    { key: string; limit: number; windowMs: number },
-    { allowed: boolean; remaining: number; limit: number; resetAt: number }
-  >
-)._handler;
-
-const consumeHandler = (
-  consumeRateLimitInternal as unknown as WrappedHandler<
-    { key: string; limit: number; windowMs: number; shard?: number },
-    { allowed: boolean; remaining: number; shardExhausted?: boolean }
-  >
-)._handler;
 
 const pruneHandler = (
   pruneRateLimitCountersInternal as unknown as WrappedHandler<
@@ -32,234 +14,39 @@ const pruneHandler = (
   >
 )._handler;
 
-describe("rate limit sharding", () => {
-  it("sums active counter rows without reading legacy rate limit tables", async () => {
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({
-          withIndex: vi.fn(() => ({
-            collect: vi.fn(async () => [{ count: 4 }, { count: 5 }]),
-          })),
-        })),
-      },
-    };
+function makeDb(overrides: { query: ReturnType<typeof vi.fn>; delete: ReturnType<typeof vi.fn> }) {
+  return {
+    get: vi.fn(),
+    insert: vi.fn(),
+    patch: vi.fn(),
+    replace: vi.fn(),
+    delete: overrides.delete,
+    query: overrides.query,
+    normalizeId: vi.fn(() => null),
+    system: {
+      get: vi.fn(),
+      query: vi.fn(),
+    },
+  };
+}
 
-    const result = await getStatusHandler(ctx, {
-      key: "ip:test",
-      limit: 20,
-      windowMs: 60_000,
-    });
-
-    expect(result.allowed).toBe(true);
-    expect(result.remaining).toBe(11);
-    expect(ctx.db.query).toHaveBeenCalledTimes(1);
-    expect(ctx.db.query).toHaveBeenCalledWith("rateLimitCounters");
-    expect(ctx.db.query).not.toHaveBeenCalledWith("rateLimits");
-  });
-
-  it("writes only the selected active counter shard when consuming", async () => {
-    const insert = vi.fn();
-    const withIndex = vi.fn((_index, builder) => {
-      builder({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(),
-          })),
-        })),
-      });
-      return { first: vi.fn(async () => null) };
-    });
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({ withIndex })),
-        get: vi.fn(),
-        normalizeId: vi.fn(),
-        insert,
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        system: {
-          get: vi.fn(),
-          query: vi.fn(),
-        },
-      },
-    };
-
-    await consumeHandler(ctx, {
-      key: "ip:test",
-      limit: 20,
-      windowMs: 60_000,
-      shard: 7,
-    });
-
-    expect(withIndex).toHaveBeenCalledWith("by_key_window_shard", expect.any(Function));
-    expect(insert).toHaveBeenCalledWith(
-      "rateLimitCounters",
-      expect.objectContaining({
-        key: "ip:test",
-        shard: 7,
-        count: 1,
-        expiresAt: expect.any(Number),
-      }),
-    );
-  });
-
-  it("patches the selected shard while it is below its partition capacity", async () => {
-    const patch = vi.fn();
-    const withIndex = vi.fn((_index, builder) => {
-      builder({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(),
-          })),
-        })),
-      });
-      return { first: vi.fn(async () => ({ _id: "rateLimitCounters:2", count: 1 })) };
-    });
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({ withIndex })),
-        get: vi.fn(),
-        normalizeId: vi.fn(),
-        insert: vi.fn(),
-        patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
-        system: {
-          get: vi.fn(),
-          query: vi.fn(),
-        },
-      },
-    };
-
-    const result = await consumeHandler(ctx, {
-      key: "ip:test",
-      limit: 20,
-      windowMs: 60_000,
-      shard: 2,
-    });
-
-    expect(result).toEqual({ allowed: true, remaining: 18 });
-    expect(withIndex).toHaveBeenCalledWith("by_key_window_shard", expect.any(Function));
-    expect(patch).toHaveBeenCalledWith(
-      "rateLimitCounters:2",
-      expect.objectContaining({ count: 2 }),
-    );
-  });
-
-  it("denies consumption when the selected shard exhausts its partition capacity", async () => {
-    const insert = vi.fn();
-    const patch = vi.fn();
-    const withIndex = vi.fn((_index, builder) => {
-      builder({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(),
-          })),
-        })),
-      });
-      return { first: vi.fn(async () => ({ _id: "rateLimitCounters:7", count: 1 })) };
-    });
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({ withIndex })),
-        get: vi.fn(),
-        normalizeId: vi.fn(),
-        insert,
-        patch,
-        replace: vi.fn(),
-        delete: vi.fn(),
-        system: {
-          get: vi.fn(),
-          query: vi.fn(),
-        },
-      },
-    };
-
-    const result = await consumeHandler(ctx, {
-      key: "ip:test",
-      limit: 20,
-      windowMs: 60_000,
-      shard: 7,
-    });
-
-    expect(result).toEqual({ allowed: false, remaining: 0, shardExhausted: true });
-    expect(withIndex).toHaveBeenCalledWith("by_key_window_shard", expect.any(Function));
-    expect(insert).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-  });
-
-  it("clamps out-of-range shard inputs to active shards for small limits", async () => {
-    const insert = vi.fn();
-    const withIndex = vi.fn((_index, builder) => {
-      builder({
-        eq: vi.fn(() => ({
-          eq: vi.fn(() => ({
-            eq: vi.fn(),
-          })),
-        })),
-      });
-      return { first: vi.fn(async () => null) };
-    });
-    const ctx = {
-      db: {
-        query: vi.fn(() => ({ withIndex })),
-        get: vi.fn(),
-        normalizeId: vi.fn(),
-        insert,
-        patch: vi.fn(),
-        replace: vi.fn(),
-        delete: vi.fn(),
-        system: {
-          get: vi.fn(),
-          query: vi.fn(),
-        },
-      },
-    };
-
-    const result = await consumeHandler(ctx, {
-      key: "ip:test",
-      limit: 10,
-      windowMs: 60_000,
-      shard: 999,
-    });
-
-    expect(result).toEqual({ allowed: true, remaining: 9 });
-    expect(insert).toHaveBeenCalledWith(
-      "rateLimitCounters",
-      expect.objectContaining({
-        shard: 9,
-        count: 1,
-      }),
-    );
-  });
-
-  it("prunes only expired active counter rows in bounded batches", async () => {
+describe("legacy rate limit counter pruning", () => {
+  it("deletes stale legacy counter rows by expiresAt", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_000_000);
-    const stale = [
+    const deleteRow = vi.fn();
+    const take = vi.fn(async () => [
       { _id: "rateLimitCounters:a", expiresAt: 930_000 },
       { _id: "rateLimitCounters:b", expiresAt: 940_000 },
-    ];
-    const take = vi.fn(async () => stale);
+    ]);
     const withIndex = vi.fn((_index, builder) => {
       builder({ lt: vi.fn() });
       return { take };
     });
-    const deleteRow = vi.fn();
     const ctx = {
-      db: {
+      db: makeDb({
         query: vi.fn(() => ({ withIndex })),
-        get: vi.fn(),
-        normalizeId: vi.fn(),
-        insert: vi.fn(),
-        patch: vi.fn(),
-        replace: vi.fn(),
         delete: deleteRow,
-        system: {
-          get: vi.fn(),
-          query: vi.fn(),
-        },
-      },
+      }),
       scheduler: {
         runAfter: vi.fn(),
       },
@@ -267,13 +54,39 @@ describe("rate limit sharding", () => {
 
     const result = await pruneHandler(ctx, { batchSize: 10 });
 
+    expect(result).toEqual({ deleted: 2, hasMore: false });
     expect(ctx.db.query).toHaveBeenCalledWith("rateLimitCounters");
     expect(withIndex).toHaveBeenCalledWith("by_expires_at", expect.any(Function));
     expect(take).toHaveBeenCalledWith(10);
-    expect(deleteRow).toHaveBeenCalledTimes(2);
     expect(deleteRow).toHaveBeenCalledWith("rateLimitCounters:a");
     expect(deleteRow).toHaveBeenCalledWith("rateLimitCounters:b");
     expect(ctx.scheduler.runAfter).not.toHaveBeenCalled();
-    expect(result).toEqual({ deleted: 2, hasMore: false });
+  });
+
+  it("continues pruning when a full bounded batch is deleted", async () => {
+    const stale = Array.from({ length: 3 }, (_, index) => ({
+      _id: `rateLimitCounters:${index}`,
+      expiresAt: 900_000 + index,
+    }));
+    const ctx = {
+      db: makeDb({
+        query: vi.fn(() => ({
+          withIndex: vi.fn(() => ({ take: vi.fn(async () => stale) })),
+        })),
+        delete: vi.fn(),
+      }),
+      scheduler: {
+        runAfter: vi.fn(),
+      },
+    };
+
+    const result = await pruneHandler(ctx, { batchSize: 3 });
+
+    expect(result).toEqual({ deleted: 3, hasMore: true });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({ batchSize: 3 }),
+    );
   });
 });

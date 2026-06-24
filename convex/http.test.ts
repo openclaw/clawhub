@@ -12,40 +12,32 @@ type WrappedHttpAction = {
 
 function makeDeniedRateLimitCtx() {
   const runQuery = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
-    if ("key" in args && "limit" in args && "windowMs" in args) {
-      return {
-        allowed: false,
-        remaining: 0,
-        limit: args.limit,
-        resetAt: Date.now() + 60_000,
-      };
-    }
     throw new Error(`Unexpected runQuery args: ${JSON.stringify(args)}`);
+  });
+  const runMutation = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
+    if ("name" in args && "config" in args) {
+      const config = args.config as { period: number };
+      return { ok: false, retryAfter: config.period };
+    }
+    throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
   });
   return {
     ctx: {
       runQuery,
-      runMutation: vi.fn(),
+      runMutation,
     } as unknown as ActionCtx,
     runQuery,
+    runMutation,
   };
 }
 
 function makeAllowedRateLimitCtx() {
   const runQuery = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
-    if ("key" in args && "limit" in args && "windowMs" in args) {
-      return {
-        allowed: true,
-        remaining: 10,
-        limit: args.limit,
-        resetAt: Date.now() + 60_000,
-      };
-    }
     throw new Error(`Unexpected runQuery args: ${JSON.stringify(args)}`);
   });
   const runMutation = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
-    if ("key" in args && "limit" in args && "windowMs" in args) {
-      return { allowed: true, remaining: 9 };
+    if ("name" in args && "config" in args) {
+      return { ok: true };
     }
     throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
   });
@@ -64,7 +56,7 @@ describe("HTTP route rate limit defaults", () => {
     const route = http.lookup("/api/v1/packages/demo/versions/1.0.0/download", "GET");
     if (!route) throw new Error("Expected package version download route");
     const [action] = route;
-    const { ctx, runQuery } = makeDeniedRateLimitCtx();
+    const { ctx, runMutation } = makeDeniedRateLimitCtx();
 
     const response = await (action as unknown as WrappedHttpAction)._handler(
       ctx,
@@ -72,9 +64,12 @@ describe("HTTP route rate limit defaults", () => {
     );
 
     expect(response.status).toBe(429);
-    expect(runQuery).toHaveBeenCalledWith(
+    expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ limit: RATE_LIMITS.download.ip }),
+      expect.objectContaining({
+        name: "downloadIp",
+        config: expect.objectContaining({ rate: RATE_LIMITS.download.ip }),
+      }),
     );
   });
 
@@ -82,7 +77,7 @@ describe("HTTP route rate limit defaults", () => {
     const route = http.lookup("/api/auth/signin/github", "GET");
     if (!route) throw new Error("Expected auth sign-in route");
     const [action] = route;
-    const { ctx, runQuery } = makeDeniedRateLimitCtx();
+    const { ctx, runMutation } = makeDeniedRateLimitCtx();
 
     const response = await (action as unknown as WrappedHttpAction)._handler(
       ctx,
@@ -90,9 +85,12 @@ describe("HTTP route rate limit defaults", () => {
     );
 
     expect(response.status).toBe(429);
-    expect(runQuery).toHaveBeenCalledWith(
+    expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ limit: RATE_LIMITS.read.ip }),
+      expect.objectContaining({
+        name: "readIp",
+        config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
+      }),
     );
   });
 
@@ -110,7 +108,7 @@ describe("HTTP route rate limit defaults", () => {
     const route = http.lookup(path, method as "GET" | "POST");
     if (!route) throw new Error(`Expected legacy route for ${path}`);
     const [action] = route;
-    const { ctx, runQuery } = makeDeniedRateLimitCtx();
+    const { ctx, runMutation } = makeDeniedRateLimitCtx();
 
     const response = await (action as unknown as WrappedHttpAction)._handler(
       ctx,
@@ -118,10 +116,13 @@ describe("HTTP route rate limit defaults", () => {
     );
 
     expect(response.status).toBe(429);
-    expect(runQuery).toHaveBeenCalledWith(
+    expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({
-        limit: method === "GET" ? RATE_LIMITS.read.ip : RATE_LIMITS.write.ip,
+        name: method === "GET" ? "readIp" : "writeIp",
+        config: expect.objectContaining({
+          rate: method === "GET" ? RATE_LIMITS.read.ip : RATE_LIMITS.write.ip,
+        }),
       }),
     );
   });
@@ -141,7 +142,10 @@ describe("HTTP route rate limit defaults", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ limit: RATE_LIMITS.read.ip }),
+      expect.objectContaining({
+        name: "readIp",
+        config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
+      }),
     );
   });
 });

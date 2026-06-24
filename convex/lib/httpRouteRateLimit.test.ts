@@ -16,19 +16,12 @@ function makeCtx({
   allowed?: boolean;
 } = {}) {
   const runQuery = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
-    if ("key" in args && "limit" in args && "windowMs" in args) {
-      return {
-        allowed,
-        remaining: allowed ? 10 : 0,
-        limit: args.limit,
-        resetAt: Date.now() + 60_000,
-      };
-    }
     throw new Error(`Unexpected runQuery args: ${JSON.stringify(args)}`);
   });
   const runMutation = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
-    if ("key" in args && "limit" in args && "windowMs" in args) {
-      return { allowed: true, remaining: 9 };
+    if ("name" in args && "config" in args) {
+      const config = args.config as { period: number };
+      return allowed ? { ok: true } : { ok: false, retryAfter: config.period };
     }
     throw new Error(`Unexpected runMutation args: ${JSON.stringify(args)}`);
   });
@@ -49,7 +42,13 @@ describe("rateLimitedHttpAction", () => {
     expect(response.status).toBe(429);
     expect(await response.text()).toBe("Rate limit exceeded");
     expect(handler).not.toHaveBeenCalled();
-    expect(runMutation).not.toHaveBeenCalled();
+    expect(runMutation).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        name: "readIp",
+        config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
+      }),
+    );
   });
 
   it("merges route rate-limit headers into successful responses", async () => {
@@ -84,7 +83,10 @@ describe("rateLimitedHttpAction", () => {
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ limit: RATE_LIMITS.download.ip }),
+      expect.objectContaining({
+        name: "downloadIp",
+        config: expect.objectContaining({ rate: RATE_LIMITS.download.ip }),
+      }),
     );
   });
 
@@ -106,7 +108,10 @@ describe("rateLimitedHttpAction", () => {
     expect(runMutation).toHaveBeenCalledTimes(1);
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ limit: RATE_LIMITS.read.ip }),
+      expect.objectContaining({
+        name: "readIp",
+        config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
+      }),
     );
     expect(response.headers.get("RateLimit-Limit")).toBe(String(RATE_LIMITS.read.ip));
     expect(response.headers.get("RateLimit-Limit")).not.toContain(",");
@@ -185,7 +190,9 @@ describe("installRateLimitedRoutes", () => {
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ limit: expectedLimit }),
+      expect.objectContaining({
+        config: expect.objectContaining({ rate: expectedLimit }),
+      }),
     );
   });
 
@@ -226,7 +233,9 @@ describe("installRateLimitedRoutes", () => {
 
       expect(runMutation).toHaveBeenCalledWith(
         expect.anything(),
-        expect.objectContaining({ limit: expectedLimit }),
+        expect.objectContaining({
+          config: expect.objectContaining({ rate: expectedLimit }),
+        }),
       );
     },
   );
@@ -242,7 +251,7 @@ describe("installRateLimitedRoutes", () => {
     const route = router.lookup("/api/v1/example", "GET");
     if (!route) throw new Error("Expected wrapped route");
     const [action] = route;
-    const { ctx, runQuery } = makeCtx({ allowed: false });
+    const { ctx, runMutation } = makeCtx({ allowed: false });
 
     const response = await (action as unknown as WrappedHttpAction)._handler(
       ctx,
@@ -251,9 +260,12 @@ describe("installRateLimitedRoutes", () => {
 
     expect(response.status).toBe(429);
     expect(handler).not.toHaveBeenCalled();
-    expect(runQuery).toHaveBeenCalledWith(
+    expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ limit: RATE_LIMITS.read.ip }),
+      expect.objectContaining({
+        name: "readIp",
+        config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
+      }),
     );
   });
 
@@ -301,7 +313,10 @@ describe("installRateLimitedRoutes", () => {
 
     expect(runMutation).toHaveBeenCalledWith(
       expect.anything(),
-      expect.objectContaining({ limit: RATE_LIMITS.export.ip }),
+      expect.objectContaining({
+        name: "exportIp",
+        config: expect.objectContaining({ rate: RATE_LIMITS.export.ip }),
+      }),
     );
   });
 });

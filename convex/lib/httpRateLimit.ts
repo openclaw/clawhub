@@ -1,9 +1,10 @@
-import { internal } from "../_generated/api";
+import { MINUTE, RateLimiter, type RateLimitConfig } from "@convex-dev/rate-limiter";
+import { components } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
-import { RATE_LIMIT_COUNTER_SHARDS, RATE_LIMIT_WINDOW_MS } from "./rateLimitConfig";
+import { RATE_LIMIT_WINDOW_MS } from "./rateLimitConfig";
 
 export const RATE_LIMITS = {
   read: { ip: 3000, key: 12000, adminKey: 120000 },
@@ -13,26 +14,55 @@ export const RATE_LIMITS = {
   export: { ip: 10, key: 60, adminKey: 60 },
 } as const;
 
+const HTTP_RATE_LIMIT_SHARDS = 16;
+
 type RateLimitResult = {
   allowed: boolean;
-  remaining: number;
+  remaining?: number;
   limit: number;
   resetAt: number;
   unavailable?: boolean;
-};
-
-type RateLimitConsumeResult = {
-  allowed: boolean;
-  remaining: number;
-  shardExhausted?: boolean;
 };
 
 export type ApplyRateLimitResult =
   | { ok: true; headers: HeadersInit }
   | { ok: false; response: Response };
 
-const RATE_LIMIT_CONSUME_RETRY_DELAYS_MS = [5, 15, 35, 75, 150, 300, 600] as const;
+type RateLimitKind = keyof typeof RATE_LIMITS;
+type RateLimitSubject = "ip" | "key" | "adminKey";
+type HttpRateLimitName = `${RateLimitKind}${Capitalize<RateLimitSubject>}`;
+
 const preappliedRateLimitHeaders = new WeakMap<Request, HeadersInit>();
+
+function fixedWindowRateLimit(rate: number): RateLimitConfig {
+  return {
+    kind: "fixed window",
+    rate,
+    period: MINUTE,
+    start: 0,
+    shards: HTTP_RATE_LIMIT_SHARDS,
+  };
+}
+
+const HTTP_RATE_LIMIT_CONFIGS = {
+  readIp: fixedWindowRateLimit(RATE_LIMITS.read.ip),
+  readKey: fixedWindowRateLimit(RATE_LIMITS.read.key),
+  readAdminKey: fixedWindowRateLimit(RATE_LIMITS.read.adminKey),
+  writeIp: fixedWindowRateLimit(RATE_LIMITS.write.ip),
+  writeKey: fixedWindowRateLimit(RATE_LIMITS.write.key),
+  writeAdminKey: fixedWindowRateLimit(RATE_LIMITS.write.adminKey),
+  trustedPublishIp: fixedWindowRateLimit(RATE_LIMITS.trustedPublish.ip),
+  trustedPublishKey: fixedWindowRateLimit(RATE_LIMITS.trustedPublish.key),
+  trustedPublishAdminKey: fixedWindowRateLimit(RATE_LIMITS.trustedPublish.adminKey),
+  downloadIp: fixedWindowRateLimit(RATE_LIMITS.download.ip),
+  downloadKey: fixedWindowRateLimit(RATE_LIMITS.download.key),
+  downloadAdminKey: fixedWindowRateLimit(RATE_LIMITS.download.adminKey),
+  exportIp: fixedWindowRateLimit(RATE_LIMITS.export.ip),
+  exportKey: fixedWindowRateLimit(RATE_LIMITS.export.key),
+  exportAdminKey: fixedWindowRateLimit(RATE_LIMITS.export.adminKey),
+} as const satisfies Record<HttpRateLimitName, RateLimitConfig>;
+
+const httpRateLimiter = new RateLimiter(components.rateLimiter, HTTP_RATE_LIMIT_CONFIGS);
 
 export function markRateLimitApplied(request: Request, headers: HeadersInit): void {
   preappliedRateLimitHeaders.set(request, headers);
@@ -41,7 +71,7 @@ export function markRateLimitApplied(request: Request, headers: HeadersInit): vo
 export async function applyRateLimit(
   ctx: ActionCtx,
   request: Request,
-  kind: keyof typeof RATE_LIMITS,
+  kind: RateLimitKind,
 ): Promise<ApplyRateLimitResult> {
   const preappliedHeaders = preappliedRateLimitHeaders.get(request);
   if (preappliedHeaders) return { ok: true, headers: preappliedHeaders };
@@ -58,7 +88,8 @@ export async function applyRateLimit(
     const userResult = await checkRateLimit(
       ctx,
       getAuthenticatedRateLimitKey(auth.userId, kind),
-      userLimit,
+      userLimit.name,
+      userLimit.limit,
     );
     const headers = rateHeaders(userResult);
     if (userResult.unavailable) return rateLimitUnavailable(headers);
@@ -94,6 +125,7 @@ export async function applyRateLimit(
   const ipResult = await checkRateLimit(
     ctx,
     getAnonymousRateLimitKey(kind, ip),
+    getHttpRateLimitName(kind, "ip"),
     RATE_LIMITS[kind].ip,
   );
   const headers = rateHeaders(ipResult);
@@ -127,20 +159,21 @@ export async function applyRateLimit(
   return { ok: true, headers };
 }
 
-function getAnonymousRateLimitKey(kind: keyof typeof RATE_LIMITS, ip: string) {
+function getAnonymousRateLimitKey(kind: RateLimitKind, ip: string) {
   if (ip !== "unknown") return `ip:${ip}:${kind}`;
   return `ip:unknown:${kind}`;
 }
 
-function getAuthenticatedRateLimitKey(userId: string, kind: keyof typeof RATE_LIMITS) {
+function getAuthenticatedRateLimitKey(userId: string, kind: RateLimitKind) {
   return `user:${userId}:${kind}`;
 }
 
-function getAuthenticatedRateLimit(
-  kind: keyof typeof RATE_LIMITS,
-  user: Pick<Doc<"users">, "role">,
-) {
-  return user.role === "admin" ? RATE_LIMITS[kind].adminKey : RATE_LIMITS[kind].key;
+function getAuthenticatedRateLimit(kind: RateLimitKind, user: Pick<Doc<"users">, "role">) {
+  const subject = user.role === "admin" ? "adminKey" : "key";
+  return {
+    name: getHttpRateLimitName(kind, subject),
+    limit: RATE_LIMITS[kind][subject],
+  };
 }
 
 export function getClientIp(request: Request): string | null {
@@ -169,66 +202,36 @@ function getClientIpSource(request: Request) {
 async function checkRateLimit(
   ctx: ActionCtx,
   key: string,
+  name: HttpRateLimitName,
   limit: number,
 ): Promise<RateLimitResult> {
-  // Step 1: Read-only check to avoid write conflicts on denied requests.
-  const status = (await ctx.runQuery(internal.rateLimits.getRateLimitStatusInternal, {
-    key,
-    limit,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  })) as RateLimitResult;
-
-  if (!status.allowed) {
-    return status;
-  }
-
-  // Step 2: Consume with a mutation only when still allowed. Shard-level
-  // capacities enforce the total quota without a single hot counter document.
-  const activeShardCount = getActiveCounterShardCount(limit);
-  const triedShards = new Set<number>();
-  for (let shardAttempt = 0; shardAttempt < activeShardCount; shardAttempt += 1) {
-    let shard = Math.floor(Math.random() * activeShardCount);
-    while (triedShards.has(shard)) shard = (shard + 1) % activeShardCount;
-    triedShards.add(shard);
-
-    let result: RateLimitConsumeResult;
-    for (let conflictAttempt = 0; ; conflictAttempt += 1) {
-      try {
-        result = (await ctx.runMutation(internal.rateLimits.consumeRateLimitInternal, {
-          key,
-          limit,
-          windowMs: RATE_LIMIT_WINDOW_MS,
-          shard,
-        })) as RateLimitConsumeResult;
-        break;
-      } catch (error) {
-        if (!isRateLimitWriteConflict(error)) throw error;
-        const delayMs = RATE_LIMIT_CONSUME_RETRY_DELAYS_MS[conflictAttempt];
-        if (delayMs === undefined) {
-          return {
-            allowed: false,
-            remaining: status.remaining,
-            limit: status.limit,
-            resetAt: Date.now() + 1000,
-            unavailable: true,
-          };
-        }
-        await sleep(delayMs);
-      }
-    }
-
-    if (result.allowed) {
+  const now = Date.now();
+  try {
+    const status = await httpRateLimiter.limit(ctx, name, { key });
+    if (!status.ok) {
       return {
-        allowed: true,
-        remaining: Math.max(0, status.remaining - 1),
-        limit: status.limit,
-        resetAt: status.resetAt,
+        allowed: false,
+        remaining: 0,
+        limit,
+        resetAt: now + status.retryAfter,
       };
     }
-    if (!result.shardExhausted) break;
-  }
 
-  return await checkRateLimitStatus(ctx, key, limit);
+    return {
+      allowed: true,
+      limit,
+      resetAt: getCurrentWindowResetAt(now),
+    };
+  } catch (error) {
+    if (!isRateLimitWriteConflict(error)) throw error;
+    return {
+      allowed: false,
+      remaining: 0,
+      limit,
+      resetAt: now + 1000,
+      unavailable: true,
+    };
+  }
 }
 
 function rateLimitUnavailable(headers: HeadersInit): Extract<ApplyRateLimitResult, { ok: false }> {
@@ -252,36 +255,31 @@ function rateLimitUnavailable(headers: HeadersInit): Extract<ApplyRateLimitResul
   };
 }
 
-function sleep(delayMs: number) {
-  return new Promise((resolve) => setTimeout(resolve, delayMs));
-}
-
-async function checkRateLimitStatus(ctx: ActionCtx, key: string, limit: number) {
-  return (await ctx.runQuery(internal.rateLimits.getRateLimitStatusInternal, {
-    key,
-    limit,
-    windowMs: RATE_LIMIT_WINDOW_MS,
-  })) as RateLimitResult;
-}
-
-function getActiveCounterShardCount(limit: number) {
-  if (limit <= 0) return 1;
-  return Math.max(1, Math.min(RATE_LIMIT_COUNTER_SHARDS, Math.floor(limit)));
-}
-
 function rateHeaders(result: RateLimitResult): HeadersInit {
   const nowMs = Date.now();
   const resetSeconds = Math.ceil(result.resetAt / 1000);
   const resetDelaySeconds = Math.max(1, Math.ceil((result.resetAt - nowMs) / 1000));
-  return {
+  const headers: Record<string, string> = {
     "X-RateLimit-Limit": String(result.limit),
-    "X-RateLimit-Remaining": String(result.remaining),
     "X-RateLimit-Reset": String(resetSeconds),
     "RateLimit-Limit": String(result.limit),
-    "RateLimit-Remaining": String(result.remaining),
     "RateLimit-Reset": String(resetDelaySeconds),
-    ...(result.allowed ? {} : { "Retry-After": String(resetDelaySeconds) }),
   };
+  if (result.remaining !== undefined) {
+    headers["X-RateLimit-Remaining"] = String(result.remaining);
+    headers["RateLimit-Remaining"] = String(result.remaining);
+  }
+  if (!result.allowed) headers["Retry-After"] = String(resetDelaySeconds);
+  return headers;
+}
+
+function getCurrentWindowResetAt(now: number) {
+  return Math.floor(now / RATE_LIMIT_WINDOW_MS) * RATE_LIMIT_WINDOW_MS + RATE_LIMIT_WINDOW_MS;
+}
+
+function getHttpRateLimitName(kind: RateLimitKind, subject: RateLimitSubject): HttpRateLimitName {
+  const suffix = subject === "ip" ? "Ip" : subject === "key" ? "Key" : "AdminKey";
+  return `${kind}${suffix}` as HttpRateLimitName;
 }
 
 export function parseBearerToken(request: Request) {
