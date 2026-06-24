@@ -1192,8 +1192,10 @@ export async function claimCodexScanJobBatch(
   claimOne: () => Promise<ClaimedJob[]>,
 ) {
   const results = await Promise.allSettled(Array.from({ length: claimLimit }, () => claimOne()));
-  return results.flatMap((result) => {
+  let claimFailures = 0;
+  const jobs = results.flatMap((result) => {
     if (result.status === "fulfilled") return result.value;
+    claimFailures += 1;
     const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
     logger.error(
       {
@@ -1205,6 +1207,7 @@ export async function claimCodexScanJobBatch(
     );
     return [];
   });
+  return { claimFailures, jobs };
 }
 
 async function main() {
@@ -1235,7 +1238,7 @@ async function main() {
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
     const claimLimit = Math.min(batchLimit, remainingJobs);
-    const jobs = await claimCodexScanJobBatch(
+    const claimBatch = await claimCodexScanJobBatch(
       claimLimit,
       async () =>
         (await client.action(api.securityScan.claimCodexScanJobs, {
@@ -1245,9 +1248,12 @@ async function main() {
           leaseMs,
         })) as ClaimedJob[],
     );
+    const { claimFailures, jobs } = claimBatch;
+    totalFailed += claimFailures;
     logger.info(
       {
         claimed: jobs.length,
+        claimFailures,
         claimLimit,
         event: "security_scan_jobs_claimed",
         leaseMs,

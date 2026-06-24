@@ -76,7 +76,7 @@ describe("run-codex-scan-worker diagnostics", () => {
               target: Record<string, unknown>;
             }>
           >,
-        ) => Promise<Array<{ job: { _id: string } }>>;
+        ) => Promise<{ claimFailures: number; jobs: Array<{ job: { _id: string } }> }>;
       }
     ).claimCodexScanJobBatch;
     expect(claimCodexScanJobBatch).toBeTypeOf("function");
@@ -101,13 +101,40 @@ describe("run-codex-scan-worker diagnostics", () => {
       .mockResolvedValueOnce([]);
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
-    await expect(claimCodexScanJobBatch(3, claimOne)).resolves.toMatchObject([
-      { job: { _id: "securityScanJobs:1" } },
-    ]);
+    await expect(claimCodexScanJobBatch(3, claimOne)).resolves.toMatchObject({
+      claimFailures: 1,
+      jobs: [{ job: { _id: "securityScanJobs:1" } }],
+    });
     expect(claimOne).toHaveBeenCalledTimes(3);
     const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("");
     expect(logged).toContain("security_scan_claim_failed");
     expect(logged).toContain("temporary claim failure");
+    stdoutWrite.mockRestore();
+  });
+
+  it("counts total claim failures even when no jobs are claimed", async () => {
+    const claimCodexScanJobBatch = (
+      codexScanWorker as typeof codexScanWorker & {
+        claimCodexScanJobBatch?: (
+          claimLimit: number,
+          claimOne: () => Promise<never[]>,
+        ) => Promise<{ claimFailures: number; jobs: Array<{ job: { _id: string } }> }>;
+      }
+    ).claimCodexScanJobBatch;
+    expect(claimCodexScanJobBatch).toBeTypeOf("function");
+    if (!claimCodexScanJobBatch) return;
+
+    const claimOne = vi.fn().mockRejectedValue(new Error("claim outage"));
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+
+    await expect(claimCodexScanJobBatch(2, claimOne)).resolves.toMatchObject({
+      claimFailures: 2,
+      jobs: [],
+    });
+    expect(claimOne).toHaveBeenCalledTimes(2);
+    const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("");
+    expect(logged).toContain("security_scan_claim_failed");
+    expect(logged).toContain("claim outage");
     stdoutWrite.mockRestore();
   });
 
