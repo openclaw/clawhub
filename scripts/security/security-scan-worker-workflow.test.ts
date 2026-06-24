@@ -20,7 +20,9 @@ function expectSecretStepAllowlist(
 ) {
   for (const step of steps) {
     const stepName = step.name ?? step.uses ?? "<unnamed>";
-    const hasSecret = Object.hasOwn(step.env ?? {}, secretName);
+    const hasSecret =
+      Object.hasOwn(step.env ?? {}, secretName) ||
+      JSON.stringify(step).includes(`secrets.${secretName}`);
     expect(hasSecret, `${secretName} on ${stepName}`).toBe(allowedStepNames.includes(stepName));
   }
 }
