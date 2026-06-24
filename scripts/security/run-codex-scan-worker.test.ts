@@ -97,7 +97,11 @@ describe("run-codex-scan-worker diagnostics", () => {
           target: {},
         },
       ])
-      .mockRejectedValueOnce(new Error("temporary claim failure"))
+      .mockRejectedValueOnce(
+        new Error(
+          "temporary claim failure https://signed.example.invalid/file?token=claim-secret OPENAI_API_KEY=claim-process-secret",
+        ),
+      )
       .mockResolvedValueOnce([]);
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
 
@@ -109,6 +113,9 @@ describe("run-codex-scan-worker diagnostics", () => {
     const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("");
     expect(logged).toContain("security_scan_claim_failed");
     expect(logged).toContain("temporary claim failure");
+    expect(logged).not.toContain("https://signed.example.invalid");
+    expect(logged).not.toContain("claim-secret");
+    expect(logged).not.toContain("claim-process-secret");
     stdoutWrite.mockRestore();
   });
 
