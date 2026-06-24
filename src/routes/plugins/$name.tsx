@@ -34,6 +34,7 @@ import {
 import { useDownloadsSidebarMetricBlock } from "../../components/DownloadsMetricCard";
 import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
+import { OpenClawCliInstallCommand } from "../../components/SkillInstallSurface";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { OfficialTag } from "../../components/OfficialBadge";
@@ -1284,7 +1285,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                       $
                     </span>
                     <pre className="skill-install-command">
-                      <code>{installSnippet}</code>
+                      <OpenClawCliInstallCommand command={installSnippet} />
                     </pre>
                     <InstallCopyButton
                       text={installSnippet}

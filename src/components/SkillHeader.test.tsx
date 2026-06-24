@@ -131,7 +131,7 @@ describe("SkillHeader", () => {
       configRequirements: undefined,
       cliHelp: undefined,
       clawdis: undefined,
-      priorityContent: null,
+      staffVisibilityAlert: null,
       settingsHref: null,
       ...overrides,
     };

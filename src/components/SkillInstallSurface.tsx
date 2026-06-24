@@ -171,6 +171,20 @@ export function SkillInstallSurface({
   );
 }
 
+export function OpenClawCliInstallCommand({ command }: { command: string }) {
+  const match = command.match(/^(openclaw (?:skills|plugins) install)( .+)$/);
+  if (!match) {
+    return <code translate="no">{command}</code>;
+  }
+
+  return (
+    <code translate="no">
+      <span className="skill-install-command-verb">{match[1]}</span>
+      <span className="skill-install-command-target">{match[2]}</span>
+    </code>
+  );
+}
+
 export function SkillCommandLineCard({
   slug,
   displayName,
@@ -250,7 +264,11 @@ export function SkillCommandLineCard({
             } skill-install-command-reveal`}
             tabIndex={0}
           >
-            <code translate="no">{activeInstallText}</code>
+            {activeInstallTab === "cli" ? (
+              <OpenClawCliInstallCommand command={activeInstallText} />
+            ) : (
+              <code translate="no">{activeInstallText}</code>
+            )}
           </pre>
           <InstallCopyButton
             text={activeInstallText}

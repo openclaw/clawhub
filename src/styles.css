@@ -5448,10 +5448,19 @@ code {
 .skill-management-toolbar {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   width: 100%;
-  min-height: 0;
+  min-height: 32px;
   padding: 0 2px 8px;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+}
+
+.skill-management-toolbar-alert {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 .skill-management-toolbar-inner {
@@ -5459,7 +5468,8 @@ code {
   align-items: center;
   justify-content: flex-end;
   gap: 4px;
-  width: 100%;
+  flex: 0 0 auto;
+  margin-left: auto;
 }
 
 .skill-management-toolbar-action {
@@ -5617,12 +5627,24 @@ code {
 }
 
 .skill-visibility-alert {
-  max-width: 760px;
-  color: #f5c84b;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0;
+  min-width: 0;
+  color: var(--status-error-fg);
+  font-size: 0.8125rem;
+  font-weight: 550;
+  line-height: 1.3;
 }
 
 .skill-visibility-alert > svg {
-  color: #f5c84b;
+  flex: 0 0 auto;
+  color: var(--status-error-fg);
+}
+
+.skill-visibility-alert > span {
+  min-width: 0;
 }
 
 .tag-accent {
@@ -6759,6 +6781,14 @@ code {
   color: color-mix(in srgb, var(--ink-soft) 70%, transparent);
   user-select: none;
   pointer-events: none;
+}
+
+.skill-install-command-wrap .skill-install-command-verb {
+  color: color-mix(in srgb, var(--ink-soft) 70%, transparent);
+}
+
+.skill-install-command-wrap .skill-install-command-target {
+  color: var(--ink);
 }
 
 [data-theme-resolved="light"] .skill-install-command-shell {

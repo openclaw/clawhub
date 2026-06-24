@@ -45,7 +45,6 @@ import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillPublishSuccessDialog } from "./SkillPublishSuccessDialog";
 import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
-import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 
@@ -813,10 +812,10 @@ export function SkillDetailPage({
       />
     ) : null;
   const staffVisibilityAlert = staffModerationNote ? (
-    <Alert variant="warn" className="skill-visibility-alert" role="status">
-      <TriangleAlert size={18} aria-hidden="true" />
-      <AlertDescription>{staffModerationNote}</AlertDescription>
-    </Alert>
+    <p className="skill-visibility-alert" role="status">
+      <TriangleAlert size={14} aria-hidden="true" />
+      <span>{staffModerationNote}</span>
+    </p>
   ) : null;
   const settingsPanel =
     canAccessSettings && skill ? (
@@ -914,7 +913,7 @@ export function SkillDetailPage({
           clawdis={clawdis}
           category={relatedCategory}
           categories={relatedCategories}
-          priorityContent={staffVisibilityAlert}
+          staffVisibilityAlert={staffVisibilityAlert}
           securityAuditSummary={securitySummary}
           activityTrend={activityTrend}
           activityTrendLoading={activityTrendLoading}

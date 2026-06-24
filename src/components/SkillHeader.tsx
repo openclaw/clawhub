@@ -120,7 +120,7 @@ type SkillHeaderProps = {
   clawdis: ClawdisSkillMetadata | undefined;
   category?: SkillCategory | null;
   categories?: SkillCategory[] | null;
-  priorityContent?: ReactNode;
+  staffVisibilityAlert?: ReactNode;
   postInstallContent?: ReactNode;
   securityAuditSummary?: ReactNode;
   activityTrend?: ActivityTrend | null;
@@ -158,7 +158,7 @@ export function SkillHeader({
   clawdis,
   category,
   categories,
-  priorityContent,
+  staffVisibilityAlert,
   postInstallContent,
   securityAuditSummary,
   activityTrend,
@@ -233,9 +233,13 @@ export function SkillHeader({
   };
 
   const managementToolbar =
-    hasOwnerActions || isStaff ? (
+    hasOwnerActions || isStaff || staffVisibilityAlert ? (
       <div className="skill-management-toolbar">
-        <div className="skill-management-toolbar-inner">
+        {staffVisibilityAlert ? (
+          <div className="skill-management-toolbar-alert">{staffVisibilityAlert}</div>
+        ) : null}
+        {hasOwnerActions || isStaff ? (
+          <div className="skill-management-toolbar-inner">
           {newVersionHref ? (
             <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
               <a href={newVersionHref} aria-label="New version">
@@ -260,7 +264,8 @@ export function SkillHeader({
               </Link>
             </Button>
           ) : null}
-        </div>
+          </div>
+        ) : null}
       </div>
     ) : null;
 
@@ -484,8 +489,6 @@ export function SkillHeader({
           </>
         }
       >
-        {priorityContent}
-
         <div className="detail-mobile-install">
           <SkillCommandLineCard
             slug={skill.slug}
