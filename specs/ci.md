@@ -4,8 +4,9 @@ Pull requests are validated by `.github/workflows/ci.yml`.
 
 ## PR Checks
 
-The `CI` workflow is intentionally split into named jobs so failures and required
-status checks are precise:
+The `CI` workflow keeps the public required status checks stable while bundling
+the short non-browser gates into one Blacksmith runner registration. The
+`pr-gates` job runs the actual command steps for:
 
 - `static` runs peer dependency validation, dependency audit, formatting, lint,
   and dead-code checks.
@@ -15,11 +16,19 @@ status checks are precise:
 - `types-build` typechecks the app, schema package, and CLI package, then builds
   the app.
 - `e2e-http` runs the secretless HTTP and CLI end-to-end subset.
+
+The `static`, `unit`, `packages`, `types-build`, and `e2e-http` jobs are
+hosted-runner compatibility mirrors of `pr-gates` so existing branch protection
+rules do not need to change. Inspect the `pr-gates` step logs for the exact
+failing command.
+
 - `playwright-smoke` builds the app and runs a chromium browser smoke against the
   public read backend.
 - `playwright-local-auth` uses `test:pw:local-auth` to start a local anonymous
   Convex backend with dev auth, then runs the chromium specs under
-  `e2e/local-auth/`.
+  `e2e/local-auth/`. Related low-risk specs are grouped so the matrix spends
+  fewer Blacksmith runner registrations while keeping publish lifecycle checks
+  isolated for easier failure triage.
 
 For local reproduction, run the matching `ci:*` package scripts. `bun run ci:pr`
 matches the non-browser PR gates. `bun run ci:playwright-smoke` assumes the
