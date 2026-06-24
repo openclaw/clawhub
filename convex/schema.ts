@@ -1901,7 +1901,12 @@ const packageSearchDigest = defineTable({
   ])
   .index("by_active_normalized_name", ["softDeletedAt", "normalizedName", "updatedAt"])
   .index("by_active_runtime_id", ["softDeletedAt", "runtimeId", "updatedAt"])
-  .index("by_active_name", ["softDeletedAt", "displayName"]);
+  .index("by_active_owner_handle", ["softDeletedAt", "ownerHandle", "updatedAt"])
+  .index("by_active_name", ["softDeletedAt", "displayName"])
+  .searchIndex("search_by_display_name", {
+    searchField: "displayName",
+    filterFields: ["softDeletedAt"],
+  });
 
 const packageTopicSearchDigest = defineTable({
   packageId: v.id("packages"),

@@ -125,6 +125,7 @@ const MAX_PUBLIC_LIST_FILTER_SCAN_PAGES = 6;
 const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
+const MAX_DIRECT_PACKAGE_FULL_TEXT_CANDIDATES = 40;
 const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
 const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
 const packageListScanStatusValidator = v.union(
@@ -1603,9 +1604,11 @@ function packageSearchMatch(
   const normalized = digest.normalizedName.toLowerCase();
   const display = digest.displayName.toLowerCase();
   const runtimeId = digest.runtimeId?.toLowerCase() ?? "";
+  const ownerHandle = digest.ownerHandle?.toLowerCase() ?? "";
   const nameTokens = tokenize(normalized);
   const displayTokens = tokenize(display);
   const runtimeTokens = tokenize(runtimeId);
+  const ownerHandleTokens = tokenize(ownerHandle);
   let score = 0;
   let rankTier = Number.POSITIVE_INFINITY;
 
@@ -1626,17 +1629,23 @@ function packageSearchMatch(
   else if (runtimeId.startsWith(needle)) setMatch(1, 90);
   else if (runtimeId.includes(needle)) setMatch(1, 45);
 
+  if (ownerHandle === needle || `@${ownerHandle}` === needle) setMatch(1, 60);
+  else if (ownerHandle.startsWith(needle) || `@${ownerHandle}`.startsWith(needle)) setMatch(1, 35);
+  else if (ownerHandle.includes(needle)) setMatch(1, 20);
+
   if (
     matchesAllTokens(
       queryTokens,
-      [...nameTokens, ...displayTokens, ...runtimeTokens],
+      [...nameTokens, ...displayTokens, ...runtimeTokens, ...ownerHandleTokens],
       (a, b) => a === b,
     )
   ) {
     setMatch(1, 65);
   } else if (
-    matchesAllTokens(queryTokens, [...nameTokens, ...displayTokens, ...runtimeTokens], (a, b) =>
-      a.startsWith(b),
+    matchesAllTokens(
+      queryTokens,
+      [...nameTokens, ...displayTokens, ...runtimeTokens, ...ownerHandleTokens],
+      (a, b) => a.startsWith(b),
     )
   ) {
     setMatch(1, 35);
@@ -1719,7 +1728,15 @@ async function resolveDirectPackageSearchDigests(
       : undefined;
   const queryTokens = tokenize(queryText).filter((token) => token.length > 1);
   const runtimePrefix = queryTokens.length === 1 ? queryTokens[0] : queryText;
-  const [nameDigests, runtimeDigests, exactTopicDigests, categoryDigests] = await Promise.all([
+  const ownerHandlePrefix = queryTokens.length === 1 ? queryTokens[0] : null;
+  const [
+    nameDigests,
+    runtimeDigests,
+    displayNameDigests,
+    ownerHandleDigests,
+    exactTopicDigests,
+    categoryDigests,
+  ] = await Promise.all([
     normalizedQuery
       ? ctx.db
           .query("packageSearchDigest")
@@ -1739,6 +1756,23 @@ async function resolveDirectPackageSearchDigests(
               .eq("softDeletedAt", undefined)
               .gte("runtimeId", runtimePrefix)
               .lt("runtimeId", prefixUpperBound(runtimePrefix)),
+          )
+          .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+      : Promise.resolve([]),
+    ctx.db
+      .query("packageSearchDigest")
+      .withSearchIndex("search_by_display_name", (q) =>
+        q.search("displayName", queryText).eq("softDeletedAt", undefined),
+      )
+      .take(MAX_DIRECT_PACKAGE_FULL_TEXT_CANDIDATES),
+    ownerHandlePrefix
+      ? ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_active_owner_handle", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .gte("ownerHandle", ownerHandlePrefix)
+              .lt("ownerHandle", prefixUpperBound(ownerHandlePrefix)),
           )
           .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
       : Promise.resolve([]),
@@ -1777,6 +1811,8 @@ async function resolveDirectPackageSearchDigests(
   return [
     ...nameDigests,
     ...runtimeDigests,
+    ...displayNameDigests,
+    ...ownerHandleDigests,
     ...exactTopicDigests,
     ...prefixTopicDigests,
     ...categoryDigests,
