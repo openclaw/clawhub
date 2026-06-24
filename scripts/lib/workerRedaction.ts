@@ -15,9 +15,11 @@ export function redactWorkerPublicErrorMessage(value: string) {
 export function safeWorkerArtifactPathLabel(value: string) {
   const normalized = value.replace(/[\r\n]+/g, " ").trim();
   const parts = normalized.split("/");
+  const redacted = redactSharedWorkerPublicText(normalized);
   const isSafe =
     normalized.length > 0 &&
     normalized.length <= 240 &&
+    redacted === normalized &&
     !normalized.startsWith("/") &&
     !parts.includes("..") &&
     /^[A-Za-z0-9._/-]+$/.test(normalized);

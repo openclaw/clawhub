@@ -52,6 +52,8 @@ describe("worker transport redaction", () => {
 
   it("redacts key-value secrets at public log and persistence boundaries", () => {
     const sha256 = "a".repeat(64);
+    const githubToken = "ghp_1234567890abcdefghijklmnopqrstuv";
+    const openAiToken = "sk-proj-1234567890abcdefghijklmnopqrstuv";
     const raw = [
       "download https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc",
       "Authorization: Bearer abc.def.ghi",
@@ -60,6 +62,8 @@ describe("worker transport redaction", () => {
       "GITHUB_TOKEN=runtime-token-secret",
       "CONVEX_DEPLOY_KEY=convex-deploy-secret",
       "api_key=plugin-api-token",
+      `path=artifacts/${githubToken}.json`,
+      `file=artifacts/${openAiToken}.json`,
       `artifact_sha256=${sha256}`,
     ].join("\n");
 
@@ -73,6 +77,8 @@ describe("worker transport redaction", () => {
     expect(redacted).not.toContain("runtime-token-secret");
     expect(redacted).not.toContain("convex-deploy-secret");
     expect(redacted).not.toContain("plugin-api-token");
+    expect(redacted).not.toContain(githubToken);
+    expect(redacted).not.toContain(openAiToken);
     expect(redacted).not.toContain(sha256);
     expect(redacted).toContain("OPENAI_API_KEY=[redacted-secret]");
     expect(redacted).toContain("GITHUB_TOKEN=[redacted-secret]");
@@ -96,6 +102,12 @@ describe("worker transport redaction", () => {
     expect(safeWorkerArtifactPathLabel("nested/package.json")).toBe("nested/package.json");
     expect(safeWorkerArtifactPathLabel("../SKILL.md")).toBe("[redacted-path]");
     expect(safeWorkerArtifactPathLabel("unsafe/token=runtime-value.md")).toBe("[redacted-path]");
+    expect(safeWorkerArtifactPathLabel("artifacts/ghp_1234567890abcdefghijklmnopqrstuv.json")).toBe(
+      "[redacted-path]",
+    );
+    expect(
+      safeWorkerArtifactPathLabel("artifacts/sk-proj-1234567890abcdefghijklmnopqrstuv.json"),
+    ).toBe("[redacted-path]");
   });
 
   it("emits exact GitHub Actions masks only in GitHub Actions", () => {

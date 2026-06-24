@@ -11,6 +11,7 @@ import {
   SKILL_CARD_FILE_PATH,
   sourceSkillVersionFiles,
 } from "./lib/skillCards";
+import { redactWorkerPublicText } from "./lib/workerTextRedaction";
 
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const DEFAULT_SKILL_CARD_CLAIM_LIMIT = 6;
@@ -21,6 +22,10 @@ const jobSourceValidator = v.union(v.literal("publish"), v.literal("scan"), v.li
 
 type SkillCardJob = Doc<"skillCardGenerationJobs">;
 type SkillVersionFile = Doc<"skillVersions">["files"][number];
+
+function sanitizeWorkerErrorDetail(error: string, maxChars = 2000) {
+  return redactWorkerPublicText(error).slice(0, maxChars);
+}
 
 type SkillCardTarget = {
   job: SkillCardJob;
@@ -422,9 +427,10 @@ export const failJobInternal = internalMutation({
     if (!job || job.leaseToken !== args.leaseToken) throw new ConvexError("Lease mismatch");
     const now = Date.now();
     const retry = job.attempts < MAX_ATTEMPTS;
+    const error = sanitizeWorkerErrorDetail(args.error);
     await ctx.db.patch(args.jobId, {
       status: retry ? "queued" : "failed",
-      lastError: args.error.slice(0, 2000),
+      lastError: error,
       nextRunAt: retry ? now + Math.min(30 * 60 * 1000, 2 ** job.attempts * 60_000) : job.nextRunAt,
       leaseToken: undefined,
       leaseExpiresAt: undefined,
