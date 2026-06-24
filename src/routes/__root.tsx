@@ -24,7 +24,7 @@ import {
 import { getClawHubSiteUrl, SITE_DESCRIPTION, SITE_NAME } from "../lib/site";
 import appCss from "../styles.css?url";
 
-const OG_IMAGE_VERSION = "20260420-12";
+const OG_IMAGE_VERSION = "20260624-1";
 
 export const Route = createRootRoute({
   beforeLoad: ({ location }) => {
