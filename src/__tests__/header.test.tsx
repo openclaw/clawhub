@@ -496,9 +496,11 @@ describe("Header", () => {
     expect(
       screen.getByText("Weather Plugin").closest(".navbar-search-typeahead-row")?.textContent,
     ).toContain("@local / weather-plugin");
-    expect(
-      screen.getByText("Local Creator").closest(".navbar-search-typeahead-row")?.textContent,
-    ).toContain("@local");
+    const creatorRowText = screen
+      .getByText("Local Creator")
+      .closest(".navbar-search-typeahead-row")?.textContent;
+    expect(creatorRowText).toContain("@local");
+    expect(creatorRowText).not.toContain("/ Org");
     expect(skillGroup.querySelector("svg.lucide-wrench")).not.toBeNull();
     expect(pluginGroup.querySelector("svg.lucide-message-circle")).not.toBeNull();
     expect(creatorGroup.querySelector("svg.lucide-building-2")).not.toBeNull();
@@ -737,6 +739,9 @@ describe("Header", () => {
     );
     expect(creatorRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
       "@local",
+    );
+    expect(creatorRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).not.toContain(
+      "/ Org",
     );
     expect(skillRow?.querySelector(".official-badge")).toBeTruthy();
     expect(pluginRow?.querySelector(".official-badge")).toBeTruthy();

@@ -1079,7 +1079,6 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
         <TypeaheadCreatorMeta
           handle={`@${publisher.handle}`}
           official={publisher.official === true}
-          kind={publisher.kind}
         />
       ),
     };
@@ -1109,25 +1108,11 @@ function TypeaheadPublisherMeta({
   );
 }
 
-function TypeaheadCreatorMeta({
-  handle,
-  kind,
-  official,
-}: {
-  handle: string;
-  kind: "user" | "org";
-  official: boolean;
-}) {
+function TypeaheadCreatorMeta({ handle, official }: { handle: string; official: boolean }) {
   return (
     <>
       <span className="navbar-search-typeahead-publisher">{handle}</span>
       {official ? <OfficialBadge /> : null}
-      {kind === "org" ? (
-        <>
-          <span className="navbar-search-typeahead-separator"> / </span>
-          <span className="navbar-search-typeahead-package">Org</span>
-        </>
-      ) : null}
     </>
   );
 }
