@@ -1,13 +1,12 @@
 /** Curated shortcuts for the home apps constellation (design-time). */
 
-const SIMPLE_ICON_LIGHT_COLOR = "171717";
-const SIMPLE_ICON_DARK_COLOR = "f5f5f5";
+const SIMPLE_ICON_ASSET_BASE = "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons";
 
 const HOME_APP_SIMPLE_ICON_SLUGS = {
   airtable: "airtable",
-  "amazon-bedrock": "simpleicons",
+  "amazon-bedrock": "amazonwebservices",
   "apple-pim": "apple",
-  aws: "simpleicons",
+  aws: "amazonwebservices",
   brave: "brave",
   cerebras: "simpleicons",
   "cloudflare-gateway": "cloudflare",
@@ -40,11 +39,11 @@ const HOME_APP_SIMPLE_ICON_SLUGS = {
   linear: "linear",
   "llama-cpp": "ollama",
   matrix: "matrix",
-  msteams: "simpleicons",
+  msteams: "microsoftteams",
   "nextcloud-talk": "nextcloud",
   notion: "notion",
   obsidian: "obsidian",
-  openai: "simpleicons",
+  openai: "openai",
   openclaw: "simpleicons",
   parallel: "simpleicons",
   perplexity: "perplexity",
@@ -53,12 +52,12 @@ const HOME_APP_SIMPLE_ICON_SLUGS = {
   raycast: "raycast",
   salesforce: "simpleicons",
   scraperapi: "simpleicons",
-  slack: "simpleicons",
+  slack: "slack",
   telegram: "telegram",
   trello: "trello",
   twitch: "twitch",
-  "voice-call": "simpleicons",
-  vscode: "vscodium",
+  "voice-call": "twilio",
+  vscode: "visualstudiocode",
   whatsapp: "whatsapp",
 } as const;
 
@@ -517,7 +516,7 @@ function homeSimpleIconUrl(id: string) {
     id in HOME_APP_SIMPLE_ICON_SLUGS
       ? HOME_APP_SIMPLE_ICON_SLUGS[id as keyof typeof HOME_APP_SIMPLE_ICON_SLUGS]
       : "simpleicons";
-  return `https://cdn.simpleicons.org/${slug}/${SIMPLE_ICON_LIGHT_COLOR}/${SIMPLE_ICON_DARK_COLOR}`;
+  return `${SIMPLE_ICON_ASSET_BASE}/${slug}.svg`;
 }
 
 export function homeSkillAppIconUrl(app: HomeSkillApp) {

@@ -11,14 +11,15 @@ vi.mock("@tanstack/react-router", () => ({
 
 import { HomeAppsSection } from "./HomeAppsSection";
 
-const simpleIcon = (slug: string) => `https://cdn.simpleicons.org/${slug}/171717/f5f5f5`;
+const simpleIcon = (slug: string) =>
+  `https://cdn.jsdelivr.net/npm/simple-icons@latest/icons/${slug}.svg`;
 
 describe("HomeAppsSection", () => {
   it.each([
     ["GitHub", simpleIcon("github")],
-    ["VS Code", simpleIcon("vscodium")],
+    ["VS Code", simpleIcon("visualstudiocode")],
     ["Notion", simpleIcon("notion")],
-    ["Slack", simpleIcon("simpleicons")],
+    ["Slack", simpleIcon("slack")],
     ["Gmail", simpleIcon("gmail")],
     ["Google Drive", simpleIcon("googledrive")],
     ["Google Sheets", simpleIcon("googlesheets")],
@@ -61,13 +62,36 @@ describe("HomeAppsSection", () => {
 
     expect(
       document.querySelector<HTMLImageElement>(".home-v2-apps-workflow-tile.is-openai img")?.src,
-    ).toBe(simpleIcon("simpleicons"));
+    ).toBe(simpleIcon("openai"));
     expect(
       document.querySelector<HTMLImageElement>(".home-v2-apps-workflow-tile.is-slack img")?.src,
-    ).toBe(simpleIcon("simpleicons"));
+    ).toBe(simpleIcon("slack"));
     expect(
       document.querySelector<HTMLImageElement>(".home-v2-apps-workflow-tile.is-openclaw img")?.src,
     ).toBe(simpleIcon("simpleicons"));
+  });
+
+  it("uses exact Simple Icons slugs where they are available", () => {
+    render(<HomeAppsSection />);
+
+    fireEvent.click(screen.getByRole("tab", { name: "Cloud" }));
+    const awsImage = screen.getByText("AWS").closest("a")?.querySelector("img");
+    const bedrockImage = screen.getByText("Amazon Bedrock").closest("a")?.querySelector("img");
+
+    expect(awsImage?.getAttribute("src")).toBe(simpleIcon("amazonwebservices"));
+    expect(bedrockImage?.getAttribute("src")).toBe(simpleIcon("amazonwebservices"));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+
+    expect(screen.getByText("Slack").closest("a")?.querySelector("img")?.getAttribute("src")).toBe(
+      simpleIcon("slack"),
+    );
+    expect(
+      screen.getByText("Microsoft Teams").closest("a")?.querySelector("img")?.getAttribute("src"),
+    ).toBe(simpleIcon("microsoftteams"));
+    expect(
+      screen.getByText("Voice Call").closest("a")?.querySelector("img")?.getAttribute("src"),
+    ).toBe(simpleIcon("twilio"));
   });
 
   it("uses Simple Icons placeholders for brands missing exact Simple Icons slugs", () => {
@@ -75,13 +99,36 @@ describe("HomeAppsSection", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Cloud" }));
     const groqImage = screen.getByText("Groq").closest("a")?.querySelector("img");
-    const awsImage = screen.getByText("AWS").closest("a")?.querySelector("img");
+    const deepInfraImage = screen.getByText("DeepInfra").closest("a")?.querySelector("img");
+    const cerebrasImage = screen.getByText("Cerebras").closest("a")?.querySelector("img");
 
     expect(groqImage?.getAttribute("src")).toBe(simpleIcon("simpleicons"));
-    expect(awsImage?.getAttribute("src")).toBe(simpleIcon("simpleicons"));
+    expect(deepInfraImage?.getAttribute("src")).toBe(simpleIcon("simpleicons"));
+    expect(cerebrasImage?.getAttribute("src")).toBe(simpleIcon("simpleicons"));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Web" }));
+
+    expect(screen.getByText("Exa").closest("a")?.querySelector("img")?.getAttribute("src")).toBe(
+      simpleIcon("simpleicons"),
+    );
+    expect(
+      screen.getByText("Firecrawl").closest("a")?.querySelector("img")?.getAttribute("src"),
+    ).toBe(simpleIcon("simpleicons"));
+    expect(
+      screen.getByText("ScraperAPI").closest("a")?.querySelector("img")?.getAttribute("src"),
+    ).toBe(simpleIcon("simpleicons"));
+    expect(
+      screen.getByText("Parallel").closest("a")?.querySelector("img")?.getAttribute("src"),
+    ).toBe(simpleIcon("simpleicons"));
+
+    fireEvent.click(screen.getByRole("tab", { name: "Chat" }));
+
+    expect(
+      screen.getByText("Feishu/Lark").closest("a")?.querySelector("img")?.getAttribute("src"),
+    ).toBe(simpleIcon("simpleicons"));
   });
 
-  it("uses the Simple Icons dark/light endpoint for Google Chrome on the Web tab", () => {
+  it("uses the Simple Icons SVG asset for Google Chrome on the Web tab", () => {
     render(<HomeAppsSection />);
 
     fireEvent.click(screen.getByRole("tab", { name: "Web" }));

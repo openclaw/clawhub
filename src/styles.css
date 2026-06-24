@@ -25703,6 +25703,10 @@ a.home-v2-apps-see-all:focus-visible svg {
   object-fit: contain;
 }
 
+[data-theme-resolved="dark"] .home-v2-apps-tile-icon img {
+  filter: invert(1);
+}
+
 .home-v2-apps-tile-copy {
   display: grid;
   gap: 3px;
