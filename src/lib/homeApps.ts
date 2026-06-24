@@ -1,7 +1,7 @@
 /** Curated shortcuts for the home apps constellation (design-time). */
 
 const SIMPLE_ICON_ASSET_BASE = "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons";
-const DOMAIN_ICON_ASSET_BASE = "https://www.google.com/s2/favicons";
+const LOCAL_APP_ICON_BASE = "/app-icons";
 
 const HOME_APP_SIMPLE_ICON_SLUGS = {
   airtable: "airtable",
@@ -53,20 +53,16 @@ const HOME_APP_SIMPLE_ICON_SLUGS = {
   whatsapp: "whatsapp",
 } as const;
 
-function domainIcon(domain: string) {
-  return `${DOMAIN_ICON_ASSET_BASE}?domain=${encodeURIComponent(domain)}&sz=64`;
-}
-
 const HOME_APP_IMAGE_ICON_SOURCES = {
-  cerebras: domainIcon("cerebras.ai"),
-  deepinfra: domainIcon("deepinfra.com"),
-  exa: domainIcon("exa.ai"),
-  feishu: domainIcon("larksuite.com"),
-  firecrawl: domainIcon("firecrawl.dev"),
-  groq: domainIcon("groq.com"),
+  cerebras: `${LOCAL_APP_ICON_BASE}/cerebras.svg`,
+  deepinfra: `${LOCAL_APP_ICON_BASE}/deepinfra.svg`,
+  exa: `${LOCAL_APP_ICON_BASE}/exa.svg`,
+  feishu: `${LOCAL_APP_ICON_BASE}/feishu.svg`,
+  firecrawl: `${LOCAL_APP_ICON_BASE}/firecrawl.svg`,
+  groq: `${LOCAL_APP_ICON_BASE}/groq.svg`,
   openclaw: "/logo-transparent.png",
-  parallel: domainIcon("parallel.ai"),
-  scraperapi: domainIcon("scraperapi.com"),
+  parallel: `${LOCAL_APP_ICON_BASE}/parallel.svg`,
+  scraperapi: `${LOCAL_APP_ICON_BASE}/scraperapi.svg`,
 } as const;
 
 const HOME_APP_SIMPLE_ICON_COLORS = {
