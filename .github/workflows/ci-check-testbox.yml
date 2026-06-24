@@ -11,6 +11,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: clawhub-testbox-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   BUN_VERSION: "1.3.10"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
