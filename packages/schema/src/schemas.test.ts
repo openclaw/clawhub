@@ -237,6 +237,21 @@ describe("clawhub-schema", () => {
       suggestedName: "@vintageayu/dronzer",
       message: `Package scope "@openclaw" must match selected owner "@vintageayu". Publish as "@openclaw" or rename this package to "@vintageayu/dronzer". More info: ${DocsLinks.clawhub.packageScopeFaq}`,
     });
+
+    expect(inferPackageNameScope("@bitrouter.ai/openclaw-plugin")).toBe("bitrouter.ai");
+    expect(getPackageScopeOwnerMismatch("@bitrouter.ai/openclaw-plugin", "bitrouter.ai")).toBeNull();
+
+    expect(inferPackageNameScope("@glin_1/miniabc")).toBe("glin_1");
+    expect(getPackageScopeOwnerMismatch("@glin_1/miniabc", "@glin_1")).toBeNull();
+
+    expect(
+      getPackageScopeOwnerMismatch(
+        "@pluglab_thinkly/thinkly-openclaw-plugin",
+        "pluglab_thinkly",
+      ),
+    ).toBeNull();
+
+    expect(getPackageScopeOwnerMismatch("@souls_market/openclaw-plugin", "souls_market")).toBeNull();
   });
 
   it("builds OpenClaw docs URLs from normalized paths", () => {

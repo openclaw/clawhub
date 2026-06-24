@@ -1,6 +1,10 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
-import { assertCanManageOwnedResource, requirePublisherRole } from "./lib/publishers";
+import {
+  assertCanManageOwnedResource,
+  PUBLISHER_HANDLE_PATTERN,
+  requirePublisherRole,
+} from "./lib/publishers";
 import {
   addMember,
   listPublicPage,
@@ -32,6 +36,15 @@ vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
   authTables: {},
 }));
+
+describe("publisher handle validation", () => {
+  it("accepts npm-compatible dot and underscore org handles", () => {
+    expect(PUBLISHER_HANDLE_PATTERN.test("bitrouter.ai")).toBe(true);
+    expect(PUBLISHER_HANDLE_PATTERN.test("glin_1")).toBe(true);
+    expect(PUBLISHER_HANDLE_PATTERN.test("pluglab_thinkly")).toBe(true);
+    expect(PUBLISHER_HANDLE_PATTERN.test("souls_market")).toBe(true);
+  });
+});
 
 type WrappedHandler<TArgs, TResult = unknown> = {
   _handler: (ctx: unknown, args: TArgs) => Promise<TResult>;
