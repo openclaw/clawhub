@@ -8,19 +8,42 @@ import {
   Sparkles,
   type LucideIcon,
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { type CSSProperties, useMemo, useState } from "react";
 import {
   HOME_PLUGIN_SHORTCUTS,
   HOME_SKILL_APPS,
-  homePluginShortcutIconUrl,
-  homeSkillAppIconUrl,
+  homePluginShortcutIcon,
+  homeSkillAppIcon,
   SKILLS_BROWSE_SEARCH,
+  type HomeSimpleIcon,
   type HomePluginShortcut,
   type HomeSkillApp,
 } from "../lib/homeApps";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 
+type SimpleIconMarkProps = {
+  icon: HomeSimpleIcon;
+  className?: string;
+};
+
+function SimpleIconMark({ icon, className }: SimpleIconMarkProps) {
+  return (
+    <span
+      className={className}
+      data-simple-icon-slug={icon.slug}
+      style={
+        {
+          "--home-simple-icon-color": icon.color,
+          "--home-simple-icon-url": `url("${icon.src}")`,
+        } as CSSProperties
+      }
+    />
+  );
+}
+
 function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
+  const icon = homeSkillAppIcon(app);
+
   return (
     <Link
       to="/skills"
@@ -29,15 +52,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
       title={app.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <img
-          src={homeSkillAppIconUrl(app)}
-          className={homeAppsTileLogoClassName(app.id)}
-          alt=""
-          width={40}
-          height={40}
-          loading="lazy"
-          decoding="async"
-        />
+        <SimpleIconMark icon={icon} className={homeAppsTileLogoClassName(app.id)} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{app.name}</span>
@@ -49,6 +64,8 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
 }
 
 function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcut }) {
+  const icon = homePluginShortcutIcon(shortcut);
+
   return (
     <Link
       to={buildPluginDetailHref(shortcut.packageName)}
@@ -56,15 +73,7 @@ function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcu
       title={shortcut.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <img
-          src={homePluginShortcutIconUrl(shortcut)}
-          className={homeAppsTileLogoClassName(shortcut.id)}
-          alt=""
-          width={40}
-          height={40}
-          loading="lazy"
-          decoding="async"
-        />
+        <SimpleIconMark icon={icon} className={homeAppsTileLogoClassName(shortcut.id)} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{shortcut.name}</span>
@@ -92,8 +101,8 @@ function homeAppsTileLogoClassName(id: string) {
   return `home-v2-apps-tile-logo home-v2-apps-tile-logo--${id}`;
 }
 
-function workflowSimpleIconUrl(id: string) {
-  return homeSkillAppIconUrl({
+function workflowSimpleIcon(id: string) {
+  return homeSkillAppIcon({
     id,
     name: id,
     description: "",
@@ -202,23 +211,23 @@ const appCategories = [
 
 const workflowHeaderTiles: ReadonlyArray<{
   label: string;
-  src: string;
+  icon: HomeSimpleIcon;
   className: string;
   badge?: string;
 }> = [
   {
     label: "OpenAI",
-    src: workflowSimpleIconUrl("openai"),
+    icon: workflowSimpleIcon("openai"),
     className: "is-openai",
   },
   {
     label: "Slack",
-    src: workflowSimpleIconUrl("slack"),
+    icon: workflowSimpleIcon("slack"),
     className: "is-slack",
   },
   {
     label: "OpenClaw",
-    src: workflowSimpleIconUrl("openclaw"),
+    icon: workflowSimpleIcon("openclaw"),
     className: "is-openclaw",
     badge: "Exfoliate!",
   },
@@ -263,8 +272,10 @@ export function HomeAppsSection() {
           <div className="home-v2-apps-workflow-tiles" aria-hidden="true">
             {workflowHeaderTiles.map((tile) => (
               <span key={tile.label} className={`home-v2-apps-workflow-tile ${tile.className}`}>
-                {tile.badge ? <span>{tile.badge}</span> : null}
-                <img src={tile.src} alt="" width={46} height={46} loading="lazy" decoding="async" />
+                {tile.badge ? (
+                  <span className="home-v2-apps-workflow-badge">{tile.badge}</span>
+                ) : null}
+                <SimpleIconMark icon={tile.icon} className="home-v2-apps-workflow-logo" />
               </span>
             ))}
           </div>

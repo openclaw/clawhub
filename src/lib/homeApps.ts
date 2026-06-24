@@ -61,6 +61,62 @@ const HOME_APP_SIMPLE_ICON_SLUGS = {
   whatsapp: "whatsapp",
 } as const;
 
+const HOME_APP_SIMPLE_ICON_COLORS = {
+  airtable: "18BFFF",
+  amazonwebservices: "232F3E",
+  apple: "000000",
+  brave: "FB542B",
+  cloudflare: "F38020",
+  cursor: "000000",
+  discord: "5865F2",
+  docker: "2496ED",
+  dropbox: "0061FF",
+  figma: "F24E1E",
+  github: "181717",
+  gitlab: "FC6D26",
+  gmail: "EA4335",
+  googlecalendar: "4285F4",
+  googlechat: "34A853",
+  googlechrome: "4285F4",
+  googledrive: "4285F4",
+  googlemeet: "00897B",
+  googlesheets: "34A853",
+  hubspot: "FF7A59",
+  jira: "0052CC",
+  kubernetes: "326CE5",
+  line: "00C300",
+  linear: "5E6AD2",
+  matrix: "000000",
+  microsoftteams: "6264A7",
+  nextcloud: "0082C9",
+  notion: "000000",
+  obsidian: "7C3AED",
+  ollama: "000000",
+  openai: "412991",
+  perplexity: "1FB8CD",
+  prometheus: "E6522C",
+  qq: "1EBAFC",
+  qwen: "615CED",
+  raycast: "FF6363",
+  simpleicons: "111111",
+  slack: "4A154B",
+  telegram: "26A5E4",
+  trello: "0052CC",
+  twilio: "F22F46",
+  twitch: "9146FF",
+  visualstudiocode: "007ACC",
+  whatsapp: "25D366",
+} as const satisfies Record<
+  (typeof HOME_APP_SIMPLE_ICON_SLUGS)[keyof typeof HOME_APP_SIMPLE_ICON_SLUGS],
+  string
+>;
+
+export type HomeSimpleIcon = {
+  src: string;
+  color: string;
+  slug: string;
+};
+
 export type HomeSkillApp = {
   id: string;
   name: string;
@@ -511,20 +567,24 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
   },
 ];
 
-function homeSimpleIconUrl(id: string) {
+function homeSimpleIcon(id: string): HomeSimpleIcon {
   const slug =
     id in HOME_APP_SIMPLE_ICON_SLUGS
       ? HOME_APP_SIMPLE_ICON_SLUGS[id as keyof typeof HOME_APP_SIMPLE_ICON_SLUGS]
       : "simpleicons";
-  return `${SIMPLE_ICON_ASSET_BASE}/${slug}.svg`;
+  return {
+    src: `${SIMPLE_ICON_ASSET_BASE}/${slug}.svg`,
+    color: `#${HOME_APP_SIMPLE_ICON_COLORS[slug]}`,
+    slug,
+  };
 }
 
-export function homeSkillAppIconUrl(app: HomeSkillApp) {
-  return homeSimpleIconUrl(app.id);
+export function homeSkillAppIcon(app: HomeSkillApp) {
+  return homeSimpleIcon(app.id);
 }
 
-export function homePluginShortcutIconUrl(shortcut: HomePluginShortcut) {
-  return homeSimpleIconUrl(shortcut.id);
+export function homePluginShortcutIcon(shortcut: HomePluginShortcut) {
+  return homeSimpleIcon(shortcut.id);
 }
 
 export const SKILLS_BROWSE_SEARCH = {
