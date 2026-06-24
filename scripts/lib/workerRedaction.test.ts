@@ -62,6 +62,9 @@ describe("worker transport redaction", () => {
       "GITHUB_TOKEN=runtime-token-secret",
       "CONVEX_DEPLOY_KEY=convex-deploy-secret",
       "api_key=plugin-api-token",
+      'token=["array-token-secret"]',
+      'Authorization: ["array-auth-secret"]',
+      '{"token":["json-token-secret"],"authorization":["json-auth-secret"]}',
       `path=artifacts/${githubToken}.json`,
       `file=artifacts/${openAiToken}.json`,
       `artifact_sha256=${sha256}`,
@@ -77,6 +80,10 @@ describe("worker transport redaction", () => {
     expect(redacted).not.toContain("runtime-token-secret");
     expect(redacted).not.toContain("convex-deploy-secret");
     expect(redacted).not.toContain("plugin-api-token");
+    expect(redacted).not.toContain("array-token-secret");
+    expect(redacted).not.toContain("array-auth-secret");
+    expect(redacted).not.toContain("json-token-secret");
+    expect(redacted).not.toContain("json-auth-secret");
     expect(redacted).not.toContain(githubToken);
     expect(redacted).not.toContain(openAiToken);
     expect(redacted).not.toContain(sha256);
