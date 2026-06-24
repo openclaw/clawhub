@@ -49,13 +49,21 @@ describe("og helpers", () => {
       handle: "@byungkyu",
       displayName: "byungkyu",
       bio: "maton.ai",
+      image: "https://example.com/logo.png",
+      kind: "org",
+      installs: 1200,
     });
     expect(meta.title).toBe("byungkyu — ClawHub");
     expect(meta.description).toBe("maton.ai");
     expect(meta.url).toBe("https://clawhub.ai/byungkyu");
     expect(meta.image).toContain("/og/profile?");
-    expect(meta.image).toContain("v=3");
+    expect(meta.image).toContain("v=4");
     expect(meta.image).toContain("handle=byungkyu");
+    expect(meta.image).toContain("title=byungkyu");
+    expect(meta.image).toContain("description=maton.ai");
+    expect(meta.image).toContain("kind=org");
+    expect(meta.image).toContain("avatar=https%3A%2F%2Fexample.com%2Flogo.png");
+    expect(meta.image).toContain("installs=1200");
   });
 
   it("uses defaults when owner and summary are missing", () => {

@@ -94,8 +94,16 @@ export const Route = createFileRoute("/user/$handle")({
     if (!publisher) throw notFound();
     return { publisher };
   },
-  head: ({ params }) => {
-    const meta = buildPublisherMeta({ handle: params.handle });
+  head: ({ params, loaderData }) => {
+    const publisher = loaderData?.publisher;
+    const meta = buildPublisherMeta({
+      handle: publisher?.handle ?? params.handle,
+      displayName: publisher?.displayName,
+      bio: publisher?.bio,
+      image: publisher?.image,
+      kind: publisher?.kind,
+      installs: publisher?.stats.installs,
+    });
     return {
       meta: [
         { title: meta.title },

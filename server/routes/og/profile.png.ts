@@ -1,6 +1,6 @@
 import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, setHeader } from "h3";
-import { fetchImageDataUrl } from "../../og/fetchImageDataUrl";
+import { fetchPublisherProfileImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchPublisherOgMeta } from "../../og/fetchPublisherOgMeta";
 import { formatOgStat } from "../../og/formatOgStats";
 import {
@@ -47,7 +47,8 @@ export default defineEventHandler(async (event) => {
   const kindFromQuery = cleanString(query.kind);
   const avatarFromQuery = cleanString(query.avatar);
   const convexUrl = getConvexUrl();
-  const needFetch = !titleFromQuery || !descriptionFromQuery || !installsFromQuery;
+  const needFetch =
+    !titleFromQuery || !descriptionFromQuery || !installsFromQuery || !avatarFromQuery;
   const meta = needFetch && convexUrl ? await fetchPublisherOgMeta(handle, convexUrl) : null;
   const handleLabel = `@${meta?.handle || handle}`;
   const title = titleFromQuery || meta?.displayName || handleLabel;
@@ -58,7 +59,7 @@ export default defineEventHandler(async (event) => {
     getWatermarkDataUrl(),
     ensureResvgWasm().then(() => getFontBuffers()),
   ]);
-  const avatarDataUrl = await fetchImageDataUrl(avatarFromQuery || meta?.image);
+  const avatarDataUrl = await fetchPublisherProfileImageDataUrl(avatarFromQuery || meta?.image);
 
   const svg = buildPublisherOgSvg({
     markDataUrl,

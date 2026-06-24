@@ -32,6 +32,9 @@ type PublisherMetaSource = {
   handle: string;
   displayName?: string | null;
   bio?: string | null;
+  image?: string | null;
+  kind?: "user" | "org";
+  installs?: number | null;
 };
 
 type BasicMeta = {
@@ -43,7 +46,7 @@ type BasicMeta = {
 
 const OG_SKILL_IMAGE_LAYOUT_VERSION = "8";
 const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "3";
-const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "3";
+const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "4";
 
 function getSiteUrl() {
   return getClawHubSiteUrl();
@@ -129,11 +132,19 @@ export function buildPublisherMeta(source: PublisherMetaSource): BasicMeta {
   const handle = clean(source.handle).replace(/^@+/, "");
   const displayName = clean(source.displayName) || `@${handle}`;
   const bio = clean(source.bio);
+  const image = clean(source.image);
   const title = `${displayName} — ClawHub`;
   const description = bio || `Publisher @${handle} on ClawHub.`;
   const imageParams = new URLSearchParams();
   imageParams.set("v", OG_PUBLISHER_IMAGE_LAYOUT_VERSION);
   imageParams.set("handle", handle);
+  imageParams.set("title", displayName);
+  imageParams.set("description", truncate(description, 200));
+  if (source.kind === "org") imageParams.set("kind", "org");
+  if (image) imageParams.set("avatar", image);
+  if (typeof source.installs === "number" && Number.isFinite(source.installs)) {
+    imageParams.set("installs", String(Math.max(0, Math.trunc(source.installs))));
+  }
   return {
     title,
     description: truncate(description, 200),
