@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import {
   HOME_PLUGIN_SHORTCUTS,
@@ -7,14 +9,14 @@ import {
 } from "./homeApps";
 
 describe("home app icons", () => {
-  it("does not use favicon scraping or the Simple Icons placeholder for home cards", () => {
-    const icons = [
-      ...HOME_SKILL_APPS.map((app) => [app.id, homeSkillAppIcon(app)] as const),
-      ...HOME_PLUGIN_SHORTCUTS.map(
-        (shortcut) => [shortcut.id, homePluginShortcutIcon(shortcut)] as const,
-      ),
-    ];
+  const icons = [
+    ...HOME_SKILL_APPS.map((app) => [app.id, homeSkillAppIcon(app)] as const),
+    ...HOME_PLUGIN_SHORTCUTS.map(
+      (shortcut) => [shortcut.id, homePluginShortcutIcon(shortcut)] as const,
+    ),
+  ];
 
+  it("does not use favicon scraping or the Simple Icons placeholder for home cards", () => {
     for (const [id, icon] of icons) {
       expect(icon.src, id).not.toContain("google.com/s2/favicons");
 
@@ -24,8 +26,20 @@ describe("home app icons", () => {
           /^https:\/\/cdn\.jsdelivr\.net\/npm\/simple-icons@latest\/icons\/.+\.svg$/,
         );
       } else {
-        expect(icon.src, id).toMatch(/^\/(?:app-icons\/.+\.svg|logo-transparent\.png)$/);
+        expect(icon.src, id).toMatch(/^\/app-icons\/.+\.svg$/);
       }
+    }
+  });
+
+  it("uses pure local SVG files for image icons", () => {
+    for (const [id, icon] of icons) {
+      if (icon.kind !== "image") continue;
+
+      const iconPath = join(process.cwd(), "public", icon.src.replace(/^\//, ""));
+      const svg = readFileSync(iconPath, "utf8");
+
+      expect(svg.trimStart(), id).toMatch(/^(<\?xml[^>]*>\s*)?<svg\b/);
+      expect(svg, id).not.toMatch(/<image\b|data:image|base64/i);
     }
   });
 
