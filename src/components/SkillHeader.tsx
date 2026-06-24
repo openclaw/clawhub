@@ -367,7 +367,7 @@ export function SkillHeader({
                   <div className="skill-hero-taxonomy-row" aria-label="Skill metadata">
                     {headerCategories.length > 0 ? (
                       <div className="skill-category-meta-list" aria-label="Categories">
-                        {headerCategories.map((categoryItem, index) => (
+                        {headerCategories.map((categoryItem) => (
                           <a
                             key={categoryItem.slug}
                             className="skill-category-meta-link"
@@ -380,10 +380,7 @@ export function SkillHeader({
                               size={14}
                               className="skill-category-icon"
                             />
-                            <span>
-                              {categoryItem.label}
-                              {index < headerCategories.length - 1 ? "," : ""}
-                            </span>
+                            <span>{categoryItem.label}</span>
                           </a>
                         ))}
                       </div>

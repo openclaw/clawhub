@@ -165,6 +165,22 @@ describe("SkillHeader", () => {
     ).toBeTruthy();
   });
 
+  it("renders hero category labels without comma separators", () => {
+    const { container } = renderHeader({
+      skill: { ...skill, topics: ["workflow"] },
+      categories: [
+        { slug: "automation", label: "Automation", icon: "zap", keywords: [] },
+        { slug: "development", label: "Development", icon: "wrench", keywords: [] },
+      ],
+    });
+
+    const taxonomy = container.querySelector(".skill-category-meta-list");
+    expect(taxonomy).toBeTruthy();
+    expect(taxonomy?.textContent).toContain("Automation");
+    expect(taxonomy?.textContent).toContain("Development");
+    expect(taxonomy?.textContent).not.toContain(",");
+  });
+
   it("keeps desktop-width sidebar details expanded at 1071px", () => {
     const { container } = renderHeader();
 

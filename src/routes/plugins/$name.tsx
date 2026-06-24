@@ -1600,7 +1600,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   <div className="skill-hero-taxonomy-row" aria-label="Plugin metadata">
                     {headerCategories.length > 0 ? (
                       <div className="skill-category-meta-list" aria-label="Categories">
-                        {headerCategories.map((category, index) => (
+                        {headerCategories.map((category) => (
                           <a
                             key={category.slug}
                             className="skill-category-meta-link"
@@ -1613,10 +1613,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                               size={14}
                               className="skill-category-icon"
                             />
-                            <span>
-                              {category.label}
-                              {index < headerCategories.length - 1 ? "," : ""}
-                            </span>
+                            <span>{category.label}</span>
                           </a>
                         ))}
                       </div>

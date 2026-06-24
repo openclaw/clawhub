@@ -317,6 +317,31 @@ describe("plugin detail route", () => {
     expect(screen.getByLabelText("Topics").textContent).toContain("#research");
   });
 
+  it("renders hero category labels without comma separators", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        ...loaderDataMock.detail,
+        package: {
+          ...loaderDataMock.detail.package!,
+          categories: ["tools", "web", "channels"],
+          topics: ["Workflow"],
+        },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const taxonomy = document.querySelector(".skill-category-meta-list");
+    expect(taxonomy).toBeTruthy();
+    expect(taxonomy?.textContent).toContain("Tools");
+    expect(taxonomy?.textContent).toContain("Web");
+    expect(taxonomy?.textContent).toContain("Channels");
+    expect(taxonomy?.textContent).not.toContain(",");
+  });
+
   it("renders populated active release history on the versions tab", async () => {
     const publishedAt = new Date("2026-06-01T12:00:00Z").getTime();
     loaderDataMock = {
