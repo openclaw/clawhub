@@ -12,7 +12,6 @@ import { useMemo, useState } from "react";
 import {
   HOME_PLUGIN_SHORTCUTS,
   HOME_SKILL_APPS,
-  HOME_APP_LOCAL_ICON_PATHS,
   homePluginShortcutIconUrl,
   homeSkillAppIconUrl,
   SKILLS_BROWSE_SEARCH,
@@ -89,20 +88,18 @@ function plugin(id: string): HomeAppsItemRef {
   return { kind: "plugin", id };
 }
 
-const backgroundLogoIds = new Set([
-  // Only remaining local fallback SVGs that include their own solid/colored
-  // background get the rounded mask. Simple Icons are transparent monochrome
-  // SVGs and must remain unrounded to avoid clipping.
-  "amazon-bedrock",
-  "aws",
-  "llama-cpp",
-]);
-
 function homeAppsTileLogoClassName(id: string) {
-  const className = `home-v2-apps-tile-logo home-v2-apps-tile-logo--${id}`;
-  return backgroundLogoIds.has(id)
-    ? `${className} home-v2-apps-tile-logo--has-background`
-    : className;
+  return `home-v2-apps-tile-logo home-v2-apps-tile-logo--${id}`;
+}
+
+function workflowSimpleIconUrl(id: string) {
+  return homeSkillAppIconUrl({
+    id,
+    name: id,
+    description: "",
+    browseQuery: id,
+    iconDomain: "",
+  });
 }
 
 const appCategories = [
@@ -211,17 +208,17 @@ const workflowHeaderTiles: ReadonlyArray<{
 }> = [
   {
     label: "OpenAI",
-    src: HOME_APP_LOCAL_ICON_PATHS.openai,
+    src: workflowSimpleIconUrl("openai"),
     className: "is-openai",
   },
   {
     label: "Slack",
-    src: HOME_APP_LOCAL_ICON_PATHS.slack,
+    src: workflowSimpleIconUrl("slack"),
     className: "is-slack",
   },
   {
     label: "OpenClaw",
-    src: HOME_APP_LOCAL_ICON_PATHS.openclaw,
+    src: workflowSimpleIconUrl("openclaw"),
     className: "is-openclaw",
     badge: "Exfoliate!",
   },

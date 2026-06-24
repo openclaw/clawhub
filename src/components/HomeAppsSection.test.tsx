@@ -16,7 +16,9 @@ const simpleIcon = (slug: string) => `https://cdn.simpleicons.org/${slug}/171717
 describe("HomeAppsSection", () => {
   it.each([
     ["GitHub", simpleIcon("github")],
+    ["VS Code", simpleIcon("vscodium")],
     ["Notion", simpleIcon("notion")],
+    ["Slack", simpleIcon("simpleicons")],
     ["Gmail", simpleIcon("gmail")],
     ["Google Drive", simpleIcon("googledrive")],
     ["Google Sheets", simpleIcon("googlesheets")],
@@ -54,29 +56,29 @@ describe("HomeAppsSection", () => {
     },
   );
 
-  it("keeps workflow brand SVGs in the shared app icon directory", () => {
+  it("uses Simple Icons for workflow header marks too", () => {
     render(<HomeAppsSection />);
 
     expect(
       document.querySelector<HTMLImageElement>(".home-v2-apps-workflow-tile.is-openai img")?.src,
-    ).toContain("/app-icons/openai.svg");
+    ).toBe(simpleIcon("simpleicons"));
     expect(
       document.querySelector<HTMLImageElement>(".home-v2-apps-workflow-tile.is-slack img")?.src,
-    ).toContain("/app-icons/slack.svg");
+    ).toBe(simpleIcon("simpleicons"));
     expect(
       document.querySelector<HTMLImageElement>(".home-v2-apps-workflow-tile.is-openclaw img")?.src,
-    ).toContain("/app-icons/openclaw.svg");
+    ).toBe(simpleIcon("simpleicons"));
   });
 
-  it("uses local fallback SVGs for brands missing from Simple Icons", () => {
+  it("uses Simple Icons placeholders for brands missing exact Simple Icons slugs", () => {
     render(<HomeAppsSection />);
 
     fireEvent.click(screen.getByRole("tab", { name: "Cloud" }));
     const groqImage = screen.getByText("Groq").closest("a")?.querySelector("img");
     const awsImage = screen.getByText("AWS").closest("a")?.querySelector("img");
 
-    expect(groqImage?.getAttribute("src")).toBe("/app-icons/groq.svg");
-    expect(awsImage?.getAttribute("src")).toBe("/app-icons/aws.svg");
+    expect(groqImage?.getAttribute("src")).toBe(simpleIcon("simpleicons"));
+    expect(awsImage?.getAttribute("src")).toBe(simpleIcon("simpleicons"));
   });
 
   it("uses the Simple Icons dark/light endpoint for Google Chrome on the Web tab", () => {
@@ -88,7 +90,7 @@ describe("HomeAppsSection", () => {
     expect(image?.getAttribute("src")).toBe(simpleIcon("googlechrome"));
   });
 
-  it("rounds only local fallback SVGs that include their own background", () => {
+  it("does not apply old local SVG background clipping treatment", () => {
     render(<HomeAppsSection />);
 
     expect(screen.getByText("Notion").closest("a")?.querySelector("img")?.className).not.toContain(
@@ -106,10 +108,10 @@ describe("HomeAppsSection", () => {
 
     fireEvent.click(screen.getByRole("tab", { name: "Cloud" }));
 
-    expect(screen.getByText("llama.cpp").closest("a")?.querySelector("img")?.className).toContain(
-      "home-v2-apps-tile-logo--has-background",
-    );
-    expect(screen.getByText("AWS").closest("a")?.querySelector("img")?.className).toContain(
+    expect(
+      screen.getByText("llama.cpp").closest("a")?.querySelector("img")?.className,
+    ).not.toContain("home-v2-apps-tile-logo--has-background");
+    expect(screen.getByText("AWS").closest("a")?.querySelector("img")?.className).not.toContain(
       "home-v2-apps-tile-logo--has-background",
     );
     expect(screen.getByText("GitLab").closest("a")?.querySelector("img")?.className).not.toContain(

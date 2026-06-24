@@ -25703,20 +25703,6 @@ a.home-v2-apps-see-all:focus-visible svg {
   object-fit: contain;
 }
 
-.home-v2-apps-tile-icon .home-v2-apps-tile-logo--has-background {
-  border-radius: 999px;
-}
-
-.home-v2-apps-tile-icon .home-v2-apps-tile-logo--msteams {
-  width: 18px;
-  height: 18px;
-}
-
-.home-v2-apps-tile-icon .home-v2-apps-tile-logo--aws {
-  width: 34px;
-  height: 34px;
-}
-
 .home-v2-apps-tile-copy {
   display: grid;
   gap: 3px;
