@@ -10,7 +10,7 @@ const HOME_APP_IMAGE_ICON_SOURCES = {
   feishu: `${LOCAL_APP_ICON_BASE}/feishu.svg`,
   firecrawl: `${LOCAL_APP_ICON_BASE}/firecrawl.svg`,
   groq: `${LOCAL_APP_ICON_BASE}/groq.svg`,
-  openclaw: "/logo-transparent.png",
+  openclaw: `${LOCAL_APP_ICON_BASE}/openclaw.svg`,
   parallel: `${LOCAL_APP_ICON_BASE}/parallel.svg`,
   scraperapi: `${LOCAL_APP_ICON_BASE}/scraperapi.svg`,
 } as const;

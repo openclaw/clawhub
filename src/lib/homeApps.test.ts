@@ -59,4 +59,20 @@ describe("home app icons", () => {
     expect(iconById.get("deepinfra")?.src).toBe("/app-icons/deepinfra.svg");
     expect(iconById.get("cerebras")?.src).toBe("/app-icons/cerebras.svg");
   });
+
+  it("uses the OpenClaw site lobster mark for the OpenClaw workflow logo", () => {
+    const icon = homePluginShortcutIcon({
+      id: "openclaw",
+      runtimeId: "openclaw",
+      name: "OpenClaw",
+      description: "",
+      packageName: "@openclaw/openclaw",
+      iconDomain: "openclaw.ai",
+    });
+
+    if (icon.kind !== "image") {
+      throw new Error("Expected OpenClaw to resolve to a local image icon");
+    }
+    expect(icon.src).toBe("/app-icons/openclaw.svg");
+  });
 });
