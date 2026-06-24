@@ -18,10 +18,11 @@ import {
   computeCurrentSkillTemporalAbuseScore,
   computeHistoricalSkillTemporalAbuseScore,
   computePublisherAbuseRawScore,
+  labelForPublisherAbuseScore,
   computeTemporalAbuseCohortBenchmark,
   computeTemporalPublisherAbuseZScore,
   DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
-  labelForPublisherAbuseScore,
+  isPublisherAbuseCheckEligible,
   labelForTemporalPublisherAbuse,
   PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION,
   summarizePublisherAbuseLogPressure,
@@ -40,6 +41,7 @@ const MAX_MAX_PAGES = 50;
 const ACTION_CONTINUATION_DELAY_MS = 60_000;
 const MAX_ACTIVE_SKILL_FALLBACK_SCAN = 500;
 const MAX_ACTIVE_SKILL_FALLBACK_SCANS_PER_PAGE = 20;
+const MAX_OWNER_NOMINATION_VERSION_SCAN = 20;
 const MAX_REVIEW_DASHBOARD_SCAN_MULTIPLIER = 3;
 const MAX_REVIEW_DASHBOARD_SCORE_SCAN_MULTIPLIER = 32;
 const MAX_REVIEW_DASHBOARD_SCORE_SCAN = 2000;
@@ -1523,7 +1525,9 @@ export async function finalizePublisherAbuseScoresPageInternalHandler(
       finalized += 1;
       continue;
     }
-    const zScore = (score.logPressure - meanLogPressure) / safeStdDev;
+    const zScore = isPublisherAbuseCheckEligible(score, modelConfig)
+      ? (score.logPressure - meanLogPressure) / safeStdDev
+      : 0;
     const label = labelForPublisherAbuseScore(score, zScore, modelConfig);
     const rank = rankedScoresSoFar + ranked + 1;
     labelCounts[label] += 1;
@@ -3962,6 +3966,7 @@ async function upsertPublisherAbuseReviewNomination(
       nextStatus: shouldReopen ? "pending" : undefined,
       createdAt: args.now,
     });
+    await markStaleAggregatePublisherAbuseReviewNominationsAsPass(ctx, args);
     return existing._id;
   }
 
@@ -3989,7 +3994,36 @@ async function upsertPublisherAbuseReviewNomination(
     nextLabel: args.score.label,
     createdAt: args.now,
   });
+  await markStaleAggregatePublisherAbuseReviewNominationsAsPass(ctx, args);
   return nominationId;
+}
+
+async function markStaleAggregatePublisherAbuseReviewNominationsAsPass(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    score: ScoreDoc;
+    run: ScoreRun;
+    now: number;
+  },
+) {
+  if (!isAggregatePublisherAbuseModelVersion(args.score.modelVersion)) return null;
+
+  const existingNominations = await ctx.db
+    .query("publisherAbuseReviewNominations")
+    .withIndex("by_owner_key_and_model_version", (q) => q.eq("ownerKey", args.score.ownerKey))
+    .take(MAX_OWNER_NOMINATION_VERSION_SCAN);
+
+  let updatedNominationId: Id<"publisherAbuseReviewNominations"> | null = null;
+  for (const existing of existingNominations) {
+    if (
+      !shouldClearStaleAggregatePublisherAbuseReviewNomination(existing, args.score.modelVersion)
+    ) {
+      continue;
+    }
+    await markPublisherAbuseReviewNominationAsPass(ctx, { ...args, existing });
+    updatedNominationId ??= existing._id;
+  }
+  return updatedNominationId;
 }
 
 async function updateExistingPublisherAbuseReviewNominationForPass(
@@ -4000,15 +4034,74 @@ async function updateExistingPublisherAbuseReviewNominationForPass(
     now: number;
   },
 ) {
-  const existing = await ctx.db
+  if (!isAggregatePublisherAbuseModelVersion(args.score.modelVersion)) {
+    const existing = await ctx.db
+      .query("publisherAbuseReviewNominations")
+      .withIndex("by_owner_key_and_model_version", (q) =>
+        q.eq("ownerKey", args.score.ownerKey).eq("modelVersion", args.score.modelVersion),
+      )
+      .first();
+    if (!existing) return null;
+    await markPublisherAbuseReviewNominationAsPass(ctx, { ...args, existing });
+    return existing._id;
+  }
+
+  const existingNominations = await ctx.db
     .query("publisherAbuseReviewNominations")
-    .withIndex("by_owner_key_and_model_version", (q) =>
-      q.eq("ownerKey", args.score.ownerKey).eq("modelVersion", args.score.modelVersion),
-    )
-    .first();
+    .withIndex("by_owner_key_and_model_version", (q) => q.eq("ownerKey", args.score.ownerKey))
+    .take(MAX_OWNER_NOMINATION_VERSION_SCAN);
 
-  if (!existing) return null;
+  let updatedNominationId: Id<"publisherAbuseReviewNominations"> | null = null;
+  for (const existing of existingNominations) {
+    if (
+      existing.modelVersion !== args.score.modelVersion &&
+      !shouldClearStaleAggregatePublisherAbuseReviewNomination(existing, args.score.modelVersion)
+    ) {
+      continue;
+    }
+    await markPublisherAbuseReviewNominationAsPass(ctx, { ...args, existing });
+    updatedNominationId ??= existing._id;
+  }
+  return updatedNominationId;
+}
 
+function shouldClearStaleAggregatePublisherAbuseReviewNomination(
+  nomination: Doc<"publisherAbuseReviewNominations">,
+  currentModelVersion: string,
+) {
+  const nominationVersion = aggregatePublisherAbuseModelVersionNumber(nomination.modelVersion);
+  const currentVersion = aggregatePublisherAbuseModelVersionNumber(currentModelVersion);
+  return (
+    nominationVersion !== null &&
+    currentVersion !== null &&
+    nominationVersion < currentVersion &&
+    nomination.status === "pending" &&
+    nomination.label !== "pass"
+  );
+}
+
+function isAggregatePublisherAbuseModelVersion(modelVersion: string) {
+  return modelVersion.startsWith("publisher-abuse-pressure.");
+}
+
+function aggregatePublisherAbuseModelVersionNumber(modelVersion: string) {
+  const match = /^publisher-abuse-pressure\.v(\d+)$/.exec(modelVersion);
+  const versionText = match?.[1];
+  if (!versionText) return null;
+  const version = Number(versionText);
+  return Number.isSafeInteger(version) ? version : null;
+}
+
+async function markPublisherAbuseReviewNominationAsPass(
+  ctx: Pick<MutationCtx, "db">,
+  args: {
+    existing: Doc<"publisherAbuseReviewNominations">;
+    score: ScoreDoc;
+    run: ScoreRun;
+    now: number;
+  },
+) {
+  const { existing } = args;
   await ctx.db.patch(existing._id, {
     latestScoreId: args.score._id,
     label: "pass",

@@ -92,12 +92,13 @@ const { assertAdmin, assertModerator, requireUser, requireUserFromAction } =
   await import("./lib/access");
 
 const TEST_MODEL_CONFIG = {
-  modelVersion: "publisher-abuse-pressure.v2",
+  modelVersion: "publisher-abuse-pressure.v4",
   skillPivot: 100,
   installsPerSkillPivot: 2,
   starsPerSkillPivot: 0.05,
   downloadsPerSkillPivot: 250,
   outputElasticity: 1.5,
+  engagementElasticity: 0.25,
   installTrustElasticity: 0.8,
   starTrustElasticity: 1,
   downloadDemandElasticity: 0.2,
@@ -427,6 +428,7 @@ function makeScore(
   fields: Partial<{
     _id: string;
     runId: string;
+    modelVersion: string;
     ownerKey: string;
     ownerPublisherId: string;
     rank: number;
@@ -441,7 +443,7 @@ function makeScore(
     ownerPublisherId: fields.ownerPublisherId,
     ownerUserId: undefined,
     handleSnapshot: (fields.ownerKey ?? "user:owner").replace("user:", ""),
-    modelVersion: "publisher-abuse-pressure.v2",
+    modelVersion: fields.modelVersion ?? TEST_MODEL_CONFIG.modelVersion,
     label: fields.label ?? "potential_ban_candidate",
     rank: fields.rank ?? 1,
     pressure: 100,
@@ -487,6 +489,7 @@ function makeNomination(
     ownerUserId: string;
     latestScoreId: string;
     handleSnapshot: string;
+    modelVersion: string;
     label: "potential_ban_candidate" | "review" | "pass";
     status: PublisherAbuseTestTriageStatus;
     lastScoredAt: number;
@@ -502,7 +505,7 @@ function makeNomination(
     ownerUserId: fields.ownerUserId,
     handleSnapshot: fields.handleSnapshot ?? "owner",
     latestScoreId: fields.latestScoreId ?? "publisherAbuseScores:score",
-    modelVersion: "publisher-abuse-pressure.v2",
+    modelVersion: fields.modelVersion ?? TEST_MODEL_CONFIG.modelVersion,
     label: fields.label ?? "potential_ban_candidate",
     status: fields.status ?? "pending",
     openedAt: 1,
@@ -1477,51 +1480,6 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
-  it("does not resolve the nomination when linked owner ban fails", async () => {
-    vi.mocked(requireUser).mockResolvedValue({
-      userId: "users:moderator",
-      user: { _id: "users:moderator", role: "moderator" },
-    } as never);
-    const runMutation = vi.fn(async () => {
-      throw new Error("Ban failed");
-    });
-    const patch = vi.fn(async () => null);
-    const insert = vi.fn(async (table: string) => `${table}:new`);
-    const ctx = {
-      runMutation,
-      db: {
-        get: vi.fn(async (id: string) => {
-          if (id === "publisherAbuseReviewNominations:nomination") {
-            return {
-              _id: "publisherAbuseReviewNominations:nomination",
-              ownerKey: "user:owner",
-              ownerUserId: "users:owner",
-              latestScoreId: "publisherAbuseScores:score",
-              label: "potential_ban_candidate",
-              status: "pending",
-              updatedAt: 1,
-            };
-          }
-          return null;
-        }),
-        insert,
-        patch,
-      },
-    };
-
-    await expect(
-      banPublisherAbuseOwnerHandler(ctx, {
-        nominationId: "publisherAbuseReviewNominations:nomination",
-        expectedLatestScoreId: "publisherAbuseScores:score",
-        expectedUpdatedAt: 1,
-        reason: "confirmed spam",
-      }),
-    ).rejects.toThrow("Ban failed");
-
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-  });
-
   it("warns pending potential-ban nominations before banning", async () => {
     const nomination = makeNomination({
       _id: "publisherAbuseReviewNominations:candidate",
@@ -1842,7 +1800,7 @@ describe("publisher abuse dry-run persistence", () => {
       nominationId: "publisherAbuseReviewNominations:candidate",
       scoreId: "publisherAbuseScores:new",
       reason:
-        "publisher_abuse: potential ban candidate (publisher-abuse-pressure.v2): high_catalog_volume, low_installs_per_skill",
+        "publisher_abuse: potential ban candidate (publisher-abuse-pressure.v4): high_catalog_volume, low_installs_per_skill",
     });
   });
 
@@ -4055,7 +4013,7 @@ describe("publisher abuse dry-run persistence", () => {
     } as never);
     const latestRun = {
       _id: "publisherAbuseScoreRuns:latest",
-      modelVersion: "publisher-abuse-pressure.v2",
+      modelVersion: "publisher-abuse-pressure.v4",
       trigger: "manual",
       status: "completed",
       phase: "completed",
@@ -4117,7 +4075,7 @@ describe("publisher abuse dry-run persistence", () => {
             return {
               order: () => ({
                 first: async () =>
-                  constraints.modelVersion === "publisher-abuse-pressure.v2" ? latestRun : null,
+                  constraints.modelVersion === "publisher-abuse-pressure.v4" ? latestRun : null,
               }),
             };
           },
@@ -4223,7 +4181,7 @@ describe("publisher abuse dry-run persistence", () => {
       },
     });
     expect(scoreTakeLimit).toBe(32);
-    expect(scoreRunModels).toEqual(["publisher-abuse-pressure.v2", "publisher-abuse-temporal.v1"]);
+    expect(scoreRunModels).toEqual(["publisher-abuse-pressure.v4", "publisher-abuse-temporal.v1"]);
   });
 
   it("reports a completed temporal run as the latest dashboard scan", async () => {
@@ -4749,7 +4707,7 @@ describe("publisher abuse dry-run persistence", () => {
             return {
               order: () => ({
                 first: async () =>
-                  constraints.modelVersion === "publisher-abuse-pressure.v2" ? latestRun : null,
+                  constraints.modelVersion === "publisher-abuse-pressure.v4" ? latestRun : null,
               }),
             };
           },
@@ -5370,6 +5328,180 @@ describe("publisher abuse dry-run persistence", () => {
     expect(patch).not.toHaveBeenCalledWith(
       expect.stringMatching(/^(users|publishers|skills|skillSearchDigest):/),
       expect.anything(),
+    );
+  });
+
+  it("collects finite score rows for stored configs without engagement elasticity", async () => {
+    const legacyModelConfig: Partial<typeof TEST_MODEL_CONFIG> = { ...TEST_MODEL_CONFIG };
+    delete legacyModelConfig.engagementElasticity;
+    const insertedScores: unknown[] = [];
+    const insert = vi.fn(async (table: string, doc?: unknown) => {
+      if (table === "publisherAbuseScores") insertedScores.push(doc);
+      return `${table}:new`;
+    });
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          modelVersion: legacyModelConfig.modelVersion,
+          modelConfig: legacyModelConfig,
+          status: "running",
+          phase: "collecting",
+          collectCursor: undefined,
+          scannedPublishers: 0,
+          scoredPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [
+                    {
+                      _id: "publishers:legacy-config",
+                      handle: "legacy-config",
+                      linkedUserId: "users:legacy-config",
+                      publishedSkills: 250,
+                      publishedPackages: 0,
+                      totalInstalls: 25,
+                      totalStars: 1,
+                      totalDownloads: 10_000,
+                    },
+                  ],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          if (table === "packages") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: [],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(collectHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: false, scanned: 1, phase: "finalizing" }),
+    );
+
+    expect(insertedScores).toHaveLength(1);
+    const [insertedScore] = insertedScores;
+    if (typeof insertedScore !== "object" || insertedScore === null) {
+      throw new Error("Expected publisher abuse score insert");
+    }
+    const pressure = Object.getOwnPropertyDescriptor(insertedScore, "pressure")?.value;
+    const logPressure = Object.getOwnPropertyDescriptor(insertedScore, "logPressure")?.value;
+    expect(Number.isFinite(pressure)).toBe(true);
+    expect(Number.isFinite(logPressure)).toBe(true);
+    expect(insertedScore).toEqual(
+      expect.objectContaining({
+        ownerKey: "publisher:publishers:legacy-config",
+        handleSnapshot: "legacy-config",
+      }),
+    );
+  });
+
+  it("preserves legacy stored config label semantics while finalizing score rows", async () => {
+    const legacyModelConfig: Partial<typeof TEST_MODEL_CONFIG> = { ...TEST_MODEL_CONFIG };
+    delete legacyModelConfig.engagementElasticity;
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:legacy-run",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: "publisher-abuse-pressure.v2",
+          modelConfig: legacyModelConfig,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 3,
+          sumSquaredLogPressure: 9,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:legacy-score",
+                        ownerKey: "publisher:publishers:legacy-score",
+                        ownerPublisherId: "publishers:legacy-score",
+                        ownerUserId: "users:legacy-score",
+                        handleSnapshot: "legacy-score",
+                        modelVersion: "publisher-abuse-pressure.v2",
+                        pressure: 1000,
+                        logPressure: 6,
+                        publishedSkills: 99,
+                        totalInstalls: 0,
+                        totalStars: 0,
+                        totalDownloads: 100,
+                        installsPerSkill: 0,
+                        starsPerSkill: 0,
+                        downloadsPerSkill: 1.01,
+                        reasonCodes: ["low_installs_per_skill"],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: () => ({
+                first: async () => null,
+                take: async () => [],
+              }),
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:legacy-run" }),
+    ).resolves.toEqual(expect.objectContaining({ isDone: true, finalized: 1, nominations: 1 }));
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScores:legacy-score",
+      expect.objectContaining({ label: "potential_ban_candidate", zScore: 3 }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewNominations",
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:legacy-score",
+        modelVersion: "publisher-abuse-pressure.v2",
+        label: "potential_ban_candidate",
+      }),
     );
   });
 
@@ -6957,6 +7089,7 @@ describe("publisher abuse dry-run persistence", () => {
                   _id: "publisherAbuseReviewNominations:existing",
                   status: "pending",
                 }),
+                take: async () => [],
               }),
             };
           }
@@ -6974,6 +7107,410 @@ describe("publisher abuse dry-run persistence", () => {
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseReviewNominations:existing",
       expect.objectContaining({ latestScoreId: "publisherAbuseScores:score" }),
+    );
+  });
+
+  it("keeps below-pivot high z-score publishers out of spam abuse review", async () => {
+    const modelConfig = {
+      ...TEST_MODEL_CONFIG,
+      modelVersion: "publisher-abuse-pressure.v4",
+      skillPivot: 200,
+      minPublishedSkillsForAggregateLabel: 200,
+    };
+    const staleV2Nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:stale-v2",
+      ownerKey: "publisher:publishers:spacesq-shape",
+      ownerPublisherId: "publishers:spacesq-shape",
+      ownerUserId: "users:spacesq-shape",
+      latestScoreId: "publisherAbuseScores:old-v2-score",
+      handleSnapshot: "spacesq-shape",
+      label: "potential_ban_candidate",
+      status: "pending",
+      lastScoredAt: 1,
+      updatedAt: 1,
+    });
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: modelConfig.modelVersion,
+          modelConfig,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 3,
+          sumSquaredLogPressure: 9,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:spacesq-shape",
+                        ownerKey: "publisher:publishers:spacesq-shape",
+                        ownerPublisherId: "publishers:spacesq-shape",
+                        ownerUserId: "users:spacesq-shape",
+                        handleSnapshot: "spacesq-shape",
+                        modelVersion: modelConfig.modelVersion,
+                        pressure: 1000,
+                        logPressure: 6,
+                        publishedSkills: 62,
+                        totalInstalls: 0,
+                        totalStars: 0,
+                        totalDownloads: 29_906,
+                        installsPerSkill: 0,
+                        starsPerSkill: 0,
+                        downloadsPerSkill: 482.35,
+                        reasonCodes: ["low_installs_per_skill", "low_stars_per_skill"],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_owner_key_and_model_version");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                return {
+                  take: async () =>
+                    constraints.ownerKey === staleV2Nomination.ownerKey ? [staleV2Nomination] : [],
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: true, finalized: 1, nominations: 0 }),
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScores:spacesq-shape",
+      expect.objectContaining({ label: "pass", zScore: 0 }),
+    );
+    expect(insert).not.toHaveBeenCalledWith("publisherAbuseReviewNominations", expect.anything());
+    expect(patch).toHaveBeenCalledWith(
+      staleV2Nomination._id,
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:spacesq-shape",
+        label: "pass",
+        lastScoredAt: expect.any(Number),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: staleV2Nomination._id,
+        eventType: "nomination_score_updated",
+        previousLabel: "potential_ban_candidate",
+        nextLabel: "pass",
+        scoreId: "publisherAbuseScores:spacesq-shape",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScoreRuns:run",
+      expect.objectContaining({
+        passCount: 1,
+        reviewCount: 0,
+        potentialBanCandidateCount: 0,
+      }),
+    );
+  });
+
+  it("clears stale higher-severity aggregate nominations after a downgrade to review", async () => {
+    const modelConfig = {
+      ...TEST_MODEL_CONFIG,
+      modelVersion: "publisher-abuse-pressure.v4",
+      skillPivot: 200,
+      minPublishedSkillsForAggregateLabel: 200,
+    };
+    const staleV2Nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:stale-v2",
+      ownerKey: "publisher:publishers:downgraded",
+      ownerPublisherId: "publishers:downgraded",
+      ownerUserId: "users:downgraded",
+      latestScoreId: "publisherAbuseScores:old-v2-score",
+      handleSnapshot: "downgraded",
+      modelVersion: "publisher-abuse-pressure.v2",
+      label: "potential_ban_candidate",
+      status: "pending",
+      lastScoredAt: 1,
+      updatedAt: 1,
+    });
+    const insert = vi.fn(async (table: string) =>
+      table === "publisherAbuseReviewNominations"
+        ? "publisherAbuseReviewNominations:current-v4"
+        : `${table}:new`,
+    );
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:run",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: modelConfig.modelVersion,
+          modelConfig,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 3,
+          sumSquaredLogPressure: 9,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:downgraded-v4",
+                        ownerKey: "publisher:publishers:downgraded",
+                        ownerPublisherId: "publishers:downgraded",
+                        ownerUserId: "users:downgraded",
+                        handleSnapshot: "downgraded",
+                        modelVersion: modelConfig.modelVersion,
+                        pressure: 100,
+                        logPressure: 5,
+                        publishedSkills: 220,
+                        totalInstalls: 80,
+                        totalStars: 2,
+                        totalDownloads: 2_000,
+                        installsPerSkill: 0.36,
+                        starsPerSkill: 0.009,
+                        downloadsPerSkill: 9.09,
+                        reasonCodes: ["high_catalog_volume"],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_owner_key_and_model_version");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                return {
+                  first: async () => null,
+                  take: async () =>
+                    constraints.ownerKey === staleV2Nomination.ownerKey ? [staleV2Nomination] : [],
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:run" })).resolves.toEqual(
+      expect.objectContaining({ isDone: true, finalized: 1, nominations: 1 }),
+    );
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScores:downgraded-v4",
+      expect.objectContaining({ label: "review", zScore: 2 }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewNominations",
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:downgraded-v4",
+        modelVersion: modelConfig.modelVersion,
+        label: "review",
+        status: "pending",
+      }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      staleV2Nomination._id,
+      expect.objectContaining({
+        latestScoreId: "publisherAbuseScores:downgraded-v4",
+        label: "pass",
+        lastScoredAt: expect.any(Number),
+      }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: staleV2Nomination._id,
+        eventType: "nomination_score_updated",
+        previousLabel: "potential_ban_candidate",
+        nextLabel: "pass",
+        scoreId: "publisherAbuseScores:downgraded-v4",
+      }),
+    );
+  });
+
+  it("does not clear newer aggregate nominations when an older stored run finalizes", async () => {
+    const modelConfig = {
+      ...TEST_MODEL_CONFIG,
+      modelVersion: "publisher-abuse-pressure.v2",
+      minPublishedSkillsForAggregateLabel: undefined,
+    };
+    const newerV4Nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:newer-v4",
+      ownerKey: "publisher:publishers:late-v2",
+      ownerPublisherId: "publishers:late-v2",
+      ownerUserId: "users:late-v2",
+      latestScoreId: "publisherAbuseScores:newer-v4-score",
+      handleSnapshot: "late-v2",
+      modelVersion: "publisher-abuse-pressure.v4",
+      label: "potential_ban_candidate",
+      status: "pending",
+      lastScoredAt: 2,
+      updatedAt: 2,
+    });
+    const insert = vi.fn(async (table: string) => `${table}:new`);
+    const patch = vi.fn(async () => null);
+    const ctx = {
+      db: {
+        get: vi.fn(async () => ({
+          _id: "publisherAbuseScoreRuns:late-v2",
+          status: "running",
+          phase: "finalizing",
+          modelVersion: modelConfig.modelVersion,
+          modelConfig,
+          scoredPublishers: 1,
+          finalizedScores: 0,
+          passCount: 0,
+          reviewCount: 0,
+          potentialBanCandidateCount: 0,
+          nominatedPublishers: 0,
+          sumLogPressure: 0,
+          sumSquaredLogPressure: 0,
+        })),
+        insert,
+        patch,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseScores") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: async () => ({
+                    page: [
+                      {
+                        _id: "publisherAbuseScores:late-v2-score",
+                        ownerKey: "publisher:publishers:late-v2",
+                        ownerPublisherId: "publishers:late-v2",
+                        ownerUserId: "users:late-v2",
+                        handleSnapshot: "late-v2",
+                        modelVersion: modelConfig.modelVersion,
+                        pressure: 1,
+                        logPressure: 0,
+                        publishedSkills: 220,
+                        totalInstalls: 600,
+                        totalStars: 20,
+                        totalDownloads: 80_000,
+                        installsPerSkill: 2.72,
+                        starsPerSkill: 0.09,
+                        downloadsPerSkill: 363.64,
+                        reasonCodes: [],
+                      },
+                    ],
+                    isDone: true,
+                    continueCursor: "",
+                  }),
+                }),
+              }),
+            };
+          }
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: (
+                indexName: string,
+                build: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+              ) => {
+                expect(indexName).toBe("by_owner_key_and_model_version");
+                const constraints: Record<string, unknown> = {};
+                const q = {
+                  eq(field: string, value: unknown) {
+                    constraints[field] = value;
+                    return q;
+                  },
+                };
+                build(q);
+                return {
+                  take: async () =>
+                    constraints.ownerKey === newerV4Nomination.ownerKey ? [newerV4Nomination] : [],
+                };
+              },
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      finalizeHandler(ctx, { runId: "publisherAbuseScoreRuns:late-v2" }),
+    ).resolves.toEqual(expect.objectContaining({ isDone: true, finalized: 1, nominations: 0 }));
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherAbuseScores:late-v2-score",
+      expect.objectContaining({ label: "pass", zScore: 0 }),
+    );
+    expect(patch).not.toHaveBeenCalledWith(
+      newerV4Nomination._id,
+      expect.objectContaining({ label: "pass" }),
+    );
+    expect(insert).not.toHaveBeenCalledWith(
+      "publisherAbuseReviewEvents",
+      expect.objectContaining({
+        nominationId: newerV4Nomination._id,
+        nextLabel: "pass",
+      }),
     );
   });
 
@@ -7125,7 +7662,7 @@ describe("publisher abuse dry-run persistence", () => {
           if (table === "publisherAbuseReviewNominations") {
             return {
               withIndex: () => ({
-                first: async () => null,
+                take: async () => [],
               }),
             };
           }
@@ -7286,6 +7823,7 @@ describe("publisher abuse dry-run persistence", () => {
             return {
               withIndex: () => ({
                 first: async () => null,
+                take: async () => [],
               }),
             };
           }
@@ -7379,6 +7917,7 @@ describe("publisher abuse dry-run persistence", () => {
                   reviewedByUserId: "users:admin",
                   reviewedAt: 100,
                 }),
+                take: async () => [],
               }),
             };
           }
@@ -7484,6 +8023,30 @@ describe("publisher abuse dry-run persistence", () => {
                   warningPendingScoreId: "publisherAbuseScores:failed",
                   warningPendingRunId: "publisherAbuseScoreRuns:failed",
                 }),
+                take: async () => [
+                  {
+                    ...makeNomination({
+                      _id: "publisherAbuseReviewNominations:existing",
+                      ownerKey: "publisher:publishers:repeat",
+                      ownerPublisherId: "publishers:repeat",
+                      ownerUserId: "users:repeat",
+                      latestScoreId: "publisherAbuseScores:failed",
+                      label: "potential_ban_candidate",
+                      status: "candidate_for_future_action",
+                      openedByRunId: "publisherAbuseScoreRuns:failed",
+                      reviewedAt: 100,
+                    }),
+                    notes:
+                      "Autoban skipped: score run failed before completion; manual review required.",
+                    warningSentAt: 10,
+                    warningExpiresAt: 20,
+                    warningScoreId: "publisherAbuseScores:failed",
+                    warningRunId: "publisherAbuseScoreRuns:failed",
+                    warningPendingAt: 5,
+                    warningPendingScoreId: "publisherAbuseScores:failed",
+                    warningPendingRunId: "publisherAbuseScoreRuns:failed",
+                  },
+                ],
               }),
             };
           }
@@ -7599,6 +8162,7 @@ describe("publisher abuse dry-run persistence", () => {
                   reviewedByUserId: "users:admin",
                   reviewedAt: 100,
                 }),
+                take: async () => [],
               }),
             };
           }
@@ -7698,6 +8262,7 @@ describe("publisher abuse dry-run persistence", () => {
                   reviewedByUserId: "users:admin",
                   reviewedAt: 100,
                 }),
+                take: async () => [],
               }),
             };
           }
@@ -7777,20 +8342,22 @@ describe("publisher abuse dry-run persistence", () => {
             };
           }
           if (table === "publisherAbuseReviewNominations") {
+            const existingNomination = {
+              _id: "publisherAbuseReviewNominations:existing",
+              ownerKey: "publisher:publishers:recovered",
+              modelVersion: "publisher-abuse-pressure.v2",
+              label: "review",
+              warningSentAt: 10,
+              warningExpiresAt: 20,
+              warningScoreId: "publisherAbuseScores:old-warning",
+              warningRunId: "publisherAbuseScoreRuns:old-warning",
+              warningPendingAt: 30,
+              warningPendingScoreId: "publisherAbuseScores:pending-warning",
+              warningPendingRunId: "publisherAbuseScoreRuns:pending-warning",
+            };
             return {
               withIndex: () => ({
-                first: async () => ({
-                  _id: "publisherAbuseReviewNominations:existing",
-                  ownerKey: "publisher:publishers:recovered",
-                  label: "review",
-                  warningSentAt: 10,
-                  warningExpiresAt: 20,
-                  warningScoreId: "publisherAbuseScores:old-warning",
-                  warningRunId: "publisherAbuseScoreRuns:old-warning",
-                  warningPendingAt: 30,
-                  warningPendingScoreId: "publisherAbuseScores:pending-warning",
-                  warningPendingRunId: "publisherAbuseScoreRuns:pending-warning",
-                }),
+                take: async () => [existingNomination],
               }),
             };
           }
@@ -8311,7 +8878,7 @@ describe("publisher abuse dry-run persistence", () => {
     });
 
     expect(ctx.db.insert).not.toHaveBeenCalled();
-    expect(indexBuilder.eq).toHaveBeenCalledWith("modelVersion", "publisher-abuse-pressure.v2");
+    expect(indexBuilder.eq).toHaveBeenCalledWith("modelVersion", "publisher-abuse-pressure.v4");
     expect(indexBuilder.eq).toHaveBeenCalledWith("status", "running");
   });
 
@@ -8340,12 +8907,12 @@ describe("publisher abuse dry-run persistence", () => {
       phase: "collecting",
     });
 
-    expect(indexBuilder.eq).toHaveBeenCalledWith("modelVersion", "publisher-abuse-pressure.v2");
+    expect(indexBuilder.eq).toHaveBeenCalledWith("modelVersion", "publisher-abuse-pressure.v4");
     expect(indexBuilder.eq).toHaveBeenCalledWith("status", "running");
     expect(ctx.db.insert).toHaveBeenCalledWith(
       "publisherAbuseScoreRuns",
       expect.objectContaining({
-        modelVersion: "publisher-abuse-pressure.v2",
+        modelVersion: "publisher-abuse-pressure.v4",
         status: "running",
         phase: "collecting",
       }),

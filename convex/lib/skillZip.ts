@@ -81,6 +81,7 @@ export function buildDeterministicPackageZip(entries: ZipEntry[]) {
 export interface MergedExportManifestEntry {
   publisher: string;
   slug: string;
+  sourceRef?: "public-clawhub" | "public-github";
   version: string | null;
   displayName: string;
   createdAt: number;

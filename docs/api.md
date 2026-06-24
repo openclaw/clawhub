@@ -20,7 +20,7 @@ Guidelines:
 - Use public read endpoints such as `GET /api/v1/skills`, `GET /api/v1/search`, and `GET /api/v1/skills/{slug}` for catalog listings.
 - Cache responses and respect `429`, `Retry-After`, and rate-limit headers instead of polling aggressively.
 - Link back to the canonical ClawHub skill URL when displaying listings so users can inspect the source registry record.
-- Use canonical page URLs in the form `https://clawhub.ai/<owner>/<slug>`.
+- Use canonical page URLs in the form `https://clawhub.ai/<owner>/skills/<slug>`.
 - Do not imply that ClawHub endorses, verifies, or operates the third-party site.
 - Do not mirror hidden, private, or moderation-blocked content by bypassing public API filters or auth boundaries.
 
@@ -83,7 +83,7 @@ Public read:
   - Optional filters: `highlightedOnly=true`, `nonSuspiciousOnly=true`
   - Legacy alias: `nonSuspicious=true`
 - `GET /api/v1/skills?limit=&cursor=&sort=`
-  - `sort`: `updated` (default), `recommended` (`default`), `createdAt` (`newest`), `stars` (`rating`), `installsCurrent` (`installs`), `installsAllTime`, `trending`
+  - `sort`: `updated` (default), `recommended` (`default`), `createdAt` (`newest`), `downloads`, `stars` (`rating`), legacy install aliases `installsCurrent`/`installs`/`installsAllTime` map to `downloads`, `trending`
   - Invalid `sort` values return `400`
   - `cursor` applies to non-`trending` sorts
   - Optional filter: `nonSuspiciousOnly=true`
@@ -98,11 +98,18 @@ Public read:
 - `GET /api/v1/skills/{slug}/file?path=&version=&tag=`
 - `GET /api/v1/resolve?slug=&hash=`
 - `GET /api/v1/download?slug=&version=&tag=`
+  - Hosted skills return deterministic ZIP bytes.
+  - Current GitHub-backed skills with a `clean` or `suspicious` scan return a
+    JSON `public-github` handoff descriptor instead of ClawHub bytes.
+- `GET /api/v1/skills/export?startDate=&endDate=&limit=&cursor=`
+  - Hosted skills are exported as stored files.
+  - Current GitHub-backed skills with a `clean` or `suspicious` scan are exported
+    as `public-github` handoff descriptors.
 - `GET /api/v1/packages?limit=&cursor=&sort=`
-  - `sort`: `updated` (default), `recommended`, `installs`
+  - `sort`: `updated` (default), `recommended`, `downloads`, legacy alias `installs`
   - Invalid `sort` values return `400`
 - `GET /api/v1/plugins?limit=&cursor=&sort=`
-  - `sort`: `recommended` (default), `installs`, `updated`
+  - `sort`: `recommended` (default), `downloads`, `updated`, legacy alias `installs`
 - `GET /api/v1/plugins/search?q=...`
 - `GET /api/v1/packages/{name}/versions/{version}/artifact`
 - `GET /api/v1/packages/{name}/versions/{version}/security`
@@ -124,6 +131,7 @@ Auth required:
 - `POST /api/v1/skills/{slug}/transfer/accept`
 - `POST /api/v1/skills/{slug}/transfer/reject`
 - `POST /api/v1/skills/{slug}/transfer/cancel`
+- `GET /api/v1/skills/export?startDate=&endDate=&limit=&cursor=`
 - `GET /api/v1/plugins/export?startDate=&endDate=&limit=&cursor=&family=`
 - `GET /api/v1/transfers/incoming`
 - `GET /api/v1/transfers/outgoing`

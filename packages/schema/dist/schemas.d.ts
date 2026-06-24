@@ -212,6 +212,21 @@ export declare const ApiV1PublisherDeleteResponseSchema: import("arktype/interna
     memberCount: number;
 }, {}>;
 export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
+export declare const ApiV1PublisherReclaimResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
+    ok: true;
+    publisherId: string;
+    handle: string;
+    dryRun: boolean;
+    hardDeleted: boolean;
+    activeSkills: number;
+    activePackages: number;
+    memberCount: number;
+    githubSources: number;
+    githubSourceContents: number;
+    officialPublisher: boolean;
+    confirmationToken: string;
+}, {}>;
+export type ApiV1PublisherReclaimResponse = (typeof ApiV1PublisherReclaimResponseSchema)[inferred];
 export declare const ApiV1StaffEmailSendResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     ok: true;
     sent: true;
@@ -252,6 +267,7 @@ export declare const ApiV1SkillListResponseSchema: import("arktype/internal/vari
         updatedAt: number;
         summary?: string | null | undefined;
         description?: string | null | undefined;
+        topics?: string[] | undefined;
         latestVersion?: {
             version: string;
             createdAt: number;
@@ -279,6 +295,7 @@ export declare const ApiV1SkillResponseSchema: import("arktype/internal/variants
         updatedAt: number;
         summary?: string | null | undefined;
         description?: string | null | undefined;
+        topics?: string[] | undefined;
     } | null;
     latestVersion: {
         version: string;

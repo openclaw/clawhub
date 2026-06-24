@@ -60,17 +60,31 @@ function contrastRatio(foreground: string, background: string) {
 }
 
 describe("restored UI design contract", () => {
+  const rootRoute = () => read("src/routes/__root.tsx");
   const header = () => read("src/components/Header.tsx");
   const footer = () => read("src/components/Footer.tsx");
   const home = () => read("src/routes/index.tsx");
   const navItems = () => read("src/lib/nav-items.ts");
+  const publicRegistry = () => read("src/lib/publicRegistry.ts");
   const settings = () => read("src/routes/settings.tsx");
   const styles = () => read("src/styles.css");
   const theme = () => read("src/lib/theme.ts");
 
+  it("keeps Vercel browser instrumentation mounted outside local dev", () => {
+    const rootSource = rootRoute();
+
+    expect(rootSource).toContain('import { Analytics } from "@vercel/analytics/react";');
+    expect(rootSource).toContain('import { SpeedInsights } from "@vercel/speed-insights/react";');
+    expect(rootSource).toContain('!["localhost", "127.0.0.1", "::1"].includes');
+    expect(rootSource).toContain("{showAnalytics ? (");
+    expect(rootSource).toContain("<Analytics />");
+    expect(rootSource).toContain("<SpeedInsights />");
+  });
+
   it("requires the responsive header rail, search overlay, and theme controls", () => {
     const headerSource = header();
     const navSource = navItems();
+    const publicRegistrySource = publicRegistry();
     const css = styles();
 
     expect(headerSource).toContain('className="navbar-top"');
@@ -93,14 +107,17 @@ describe("restored UI design contract", () => {
     expect(headerSource).toContain('className="github-sign-in-button"');
     expect(headerSource).toContain('className="sign-in-full-copy"');
     expect(headerSource).toContain('className="sign-in-compact-copy"');
-    expect(headerSource).toContain("Search skills and plugins");
+    expect(headerSource).toContain("Search skills, plugins, and creators");
     expect(headerSource).not.toContain('className="navbar-tabs-primary"');
     expect(headerSource).not.toContain('className="navbar-tabs-secondary"');
 
     expect(navSource).toContain("export const SECONDARY_NAV_ITEMS");
-    expect(navSource).toContain('label: "Publishers"');
+    expect(navSource).toContain('label: "Creators"');
     expect(navSource).toContain('label: "Docs"');
-    expect(navSource).toContain('href: "https://docs.openclaw.ai/clawhub/"');
+    expect(navSource).toContain("href: CLAWHUB_DOCS_URL");
+    expect(publicRegistrySource).toContain(
+      'export const CLAWHUB_DOCS_URL = "https://docs.openclaw.ai/clawhub/"',
+    );
     expect(navSource).not.toContain('icon: "wrench"');
     expect(navSource).not.toContain('icon: "plug"');
     expect(navSource).not.toContain('label: "About"');
@@ -161,42 +178,29 @@ describe("restored UI design contract", () => {
     expect(compact).not.toContain(".navbar-search {\n    display: none;");
   });
 
-  it("requires the restored home hero, carousel, category grid, and Trending Now sections", () => {
+  it("requires the experiment hero and canonical home catalog without later sections", () => {
     const homeSource = home();
+    const listingSource = read("src/components/HomeListingSection.tsx");
     const css = styles();
 
-    expect(homeSource).toContain("BUILT BY THE COMMUNITY.");
-    expect(homeSource).toContain("Tools built by thousands, ready in one search.");
-    expect(homeSource).toContain("api.skills.listHighlightedPublic");
-    expect(homeSource).toContain("api.skills.listPublicPageV4");
-    expect(homeSource).toContain("const [popular, setPopular]");
-    expect(homeSource).toContain('className="home-v2-carousel-section"');
-    expect(homeSource).toContain(
-      'data-source={carouselUsesHighlighted ? "highlighted" : "popular"}',
+    expect(homeSource).not.toContain("BUILT BY THE COMMUNITY");
+    expect(homeSource).not.toContain("Unleash.");
+    expect(homeSource).not.toContain("Ship.");
+    expect(homeSource).not.toContain("Build.");
+    expect(homeSource).not.toContain("Create.");
+    expect(homeSource).toContain("Discover skills and plugins from top creators");
+    expect(homeSource).not.toContain("home-v2-sub-stat");
+    expect(homeSource).toContain("HomeListingSection");
+    expect(homeSource).not.toContain("What are you looking for?");
+    expect(homeSource).not.toContain("Featured skills");
+    expect(homeSource).not.toContain("Trending Now");
+    expect(listingSource).toContain("SKILL_CATEGORIES");
+    expect(listingSource).toContain("PLUGIN_CATEGORIES");
+    expect(listingSource).toContain("HomeListingCategorySelect");
+    expect(cssRule(css, ".home-v2-listing-toolbar")).toContain("display: flex");
+    expect(cssRule(css, ".home-v2-listing-grid")).toContain(
+      "grid-template-columns: repeat(3, minmax(0, 1fr))",
     );
-    expect(homeSource).toContain("Featured skills");
-    expect(homeSource).toContain("Trending Now");
-    expect(homeSource).toContain('className="home-v2-trending-grid"');
-
-    const searchShell = cssRule(css, ".home-v2-search-bar");
-    expect(searchShell).toContain("border: 1px solid var(--hv2-border-strong)");
-    expect(searchShell).not.toContain("border-color: var(--hv2-accent-border)");
-
-    const searchFocus = cssRule(css, ".home-v2-search-bar:focus-within");
-    expect(searchFocus).toContain("border-color: var(--hv2-accent-border)");
-
-    const categories = cssRule(css, ".home-v2-categories-grid");
-    expect(categories).toContain("--home-v2-category-columns: 3");
-    expect(categories).toContain("grid-template-columns: repeat(var(--home-v2-category-columns)");
-
-    const trending = cssRule(css, ".home-v2-trending-grid");
-    expect(trending).toContain("grid-template-columns: repeat(3, 1fr)");
-    cssMediaContaining(css, "(max-width: 1024px)", [
-      ".home-v2-trending-grid {\n    grid-template-columns: repeat(2, 1fr);",
-    ]);
-    cssMediaContaining(css, "(max-width: 768px)", [
-      ".home-v2-trending-grid {\n    grid-template-columns: 1fr;",
-    ]);
   });
 
   it("requires the restored footer columns and mobile section toggles", () => {
@@ -206,8 +210,8 @@ describe("restored UI design contract", () => {
 
     expect(navSource).toContain('title: "Browse"');
     expect(navSource).toContain('title: "Publish"');
+    expect(navSource).toContain('title: "Ecosystem"');
     expect(navSource).toContain('title: "Community"');
-    expect(navSource).toContain('title: "Platform"');
     expect(navSource).toContain('label: "Publish Skill"');
     expect(navSource).toContain('label: "Publish Plugin"');
     expect(navSource).toContain('label: "GitHub"');
@@ -249,8 +253,12 @@ describe("restored UI design contract", () => {
     const css = styles();
     const installCardSource = read("src/components/SkillInstallCard.tsx");
 
-    expect(installCardSource).toContain("runtime-requirements-panel");
-    expect(cssRule(css, ".runtime-requirements-panel .stat")).toContain("color: var(--ink)");
+    expect(installCardSource).toContain("requirements-env-row");
+    expect(cssRule(css, ".tab-body.skill-install-tabs")).toContain("color: var(--ink)");
+    expect(cssRule(css, ".requirements-env-main code")).toContain("color: var(--ink)");
+    expect(cssRule(css, ".requirements-token,\n.requirements-badge")).toContain(
+      "color: var(--ink)",
+    );
 
     const darkRatio = contrastRatio(
       tokenValue(css, ":root", "--ink"),
@@ -274,10 +282,33 @@ describe("restored UI design contract", () => {
     expect(cssRule(css, ".skill-hero-lower.has-sidebar")).toContain(
       "grid-template-columns: minmax(0, 1fr) minmax(300px, 360px)",
     );
-    expect(cssRule(css, ".skill-hero-main-extra")).toContain("overflow: hidden");
+    expect(cssRule(css, ".skill-hero-main-extra")).toContain("overflow-x: clip");
     expect(cssRule(css, ".skill-install-command-shell")).toContain("max-width: 100%");
     expect(cssRule(css, ".skill-hero-action-grid")).toContain(
       "grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
     );
+  });
+
+  it("keeps typeahead creator avatars round for users and square for orgs", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user")).toContain(
+      "border-radius: 999px",
+    );
+    expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-org")).toContain(
+      "border-radius: 8px",
+    );
+    expect(
+      cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-image"),
+    ).toContain("filter: none");
+    expect(
+      cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-org .marketplace-icon-image"),
+    ).toContain("filter: grayscale(1)");
+    expect(
+      cssRule(
+        css,
+        ".navbar-search-typeahead-icon .marketplace-icon-user:has(.marketplace-icon-image)",
+      ),
+    ).toContain("background: transparent");
   });
 });

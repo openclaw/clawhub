@@ -13,8 +13,9 @@ import type { QueryCtx } from "./_generated/server";
 import { action, internalQuery } from "./functions";
 import { isSkillHighlighted } from "./lib/badges";
 import { generateEmbedding } from "./lib/embeddings";
+import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import type { HydratableSkill, PublicPublisher } from "./lib/public";
-import { toPublicPublisher, toPublicSkill } from "./lib/public";
+import { toPublicSkill } from "./lib/public";
 import { getOwnerPublisher } from "./lib/publishers";
 import {
   matchesAllTokens,
@@ -42,8 +43,8 @@ function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
     const ownerPromise = getOwnerPublisher(ctx, {
       ownerPublisherId,
       ownerUserId,
-    }).then((ownerDoc) => {
-      const owner = toPublicPublisher(ownerDoc);
+    }).then(async (ownerDoc) => {
+      const owner = await toPublicPublisherWithOfficial(ctx, ownerDoc);
       return {
         ownerHandle: owner?.handle ?? null,
         owner,
@@ -51,6 +52,20 @@ function makeOwnerInfoGetter(ctx: Pick<QueryCtx, "db">) {
     });
     ownerCache.set(cacheKey, ownerPromise);
     return ownerPromise;
+  };
+}
+
+async function withOfficialOwnerInfo(ctx: Pick<QueryCtx, "db">, ownerInfo: OwnerInfo) {
+  if (!ownerInfo.owner) return ownerInfo;
+  if (ownerInfo.owner.official) return ownerInfo;
+  const official = await hasOfficialPublisherRow(ctx, ownerInfo.owner._id);
+  if (!official) return ownerInfo;
+  return {
+    ...ownerInfo,
+    owner: {
+      ...ownerInfo.owner,
+      official: true,
+    },
   };
 }
 
@@ -290,6 +305,7 @@ export const searchSkills: ReturnType<typeof action> = action({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+    excludePendingScan: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
   },
@@ -316,14 +332,20 @@ export const searchSkills: ReturnType<typeof action> = action({
         : rawExactSlugMatches
           ? [rawExactSlugMatches]
           : []
-    ).filter((entry) => !args.highlightedOnly || isSkillHighlighted(entry.skill));
-    const directPrefixMatches = (await ctx.runQuery(internal.search.directPrefixSkillMatches, {
-      query,
-      highlightedOnly: args.highlightedOnly,
-      nonSuspiciousOnly: args.nonSuspiciousOnly,
-      categorySlug,
-      topic,
-    })) as SkillSearchEntry[];
+    ).filter(
+      (entry) =>
+        (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
+        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
+    );
+    const directPrefixMatches = (
+      (await ctx.runQuery(internal.search.directPrefixSkillMatches, {
+        query,
+        highlightedOnly: args.highlightedOnly,
+        nonSuspiciousOnly: args.nonSuspiciousOnly,
+        categorySlug,
+        topic,
+      })) as SkillSearchEntry[]
+    ).filter((entry) => !args.excludePendingScan || entry.skill.githubScanStatus !== "pending");
     let vector: number[] | null;
     try {
       vector = await generateEmbedding(query);
@@ -385,7 +407,9 @@ export const searchSkills: ReturnType<typeof action> = action({
         // Skills already have badges from their docs (via toPublicSkill).
         // No need for a separate badge table lookup.
         const filtered = hydrated.filter(
-          (entry) => !args.highlightedOnly || isSkillHighlighted(entry.skill),
+          (entry) =>
+            (!args.highlightedOnly || isSkillHighlighted(entry.skill)) &&
+            (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
         );
 
         exactMatches = filtered.filter((entry) =>
@@ -426,12 +450,15 @@ export const searchSkills: ReturnType<typeof action> = action({
             ),
             highlightedOnly: args.highlightedOnly,
             nonSuspiciousOnly: args.nonSuspiciousOnly,
+            excludePendingScan: args.excludePendingScan,
             skipExactSlugLookup: true,
             categorySlug,
             topic,
           })) as SkillSearchEntry[]);
-    const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches).filter((entry) =>
-      matchesCatalogFilters(entry.skill, categorySlug, topic),
+    const mergedMatches = mergeUniqueBySkillId(primaryMatches, fallbackMatches).filter(
+      (entry) =>
+        matchesCatalogFilters(entry.skill, categorySlug, topic) &&
+        (!args.excludePendingScan || entry.skill.githubScanStatus !== "pending"),
     );
 
     const rankedMatches = mergedMatches
@@ -798,7 +825,7 @@ export const directPrefixSkillMatches = internalQuery({
         if (!matchesCatalogFilters(skill, categorySlug, topic)) return null;
         const preResolved = digestToOwnerInfo(digest);
         const resolved = preResolved?.owner
-          ? preResolved
+          ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSearchSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
@@ -857,7 +884,7 @@ export const hydrateResults = internalQuery({
         // Fall back to live lookup when digest owner is null (deactivated/deleted user).
         const preResolved = digest ? digestToOwnerInfo(digest) : null;
         const resolved = preResolved?.owner
-          ? preResolved
+          ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSearchSkill(skill);
         if (!publicSkill || !resolved.owner) return null;
@@ -882,6 +909,7 @@ export const lexicalFallbackSkills = internalQuery({
     limit: v.optional(v.number()),
     highlightedOnly: v.optional(v.boolean()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+    excludePendingScan: v.optional(v.boolean()),
     skipExactSlugLookup: v.optional(v.boolean()),
     categorySlug: v.optional(v.string()),
     topic: v.optional(v.string()),
@@ -916,6 +944,7 @@ export const lexicalFallbackSkills = internalQuery({
         if (
           !exactSlugSkill.softDeletedAt &&
           (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
+          (!args.excludePendingScan || exactSlugSkill.githubScanStatus !== "pending") &&
           matchesCatalogFilters(exactSlugSkill, categorySlug, topic)
         ) {
           seenSkillIds.add(exactSlugSkill._id);
@@ -958,6 +987,7 @@ export const lexicalFallbackSkills = internalQuery({
       const skill = digestToHydratableSkill(digest);
       return (
         (!args.highlightedOnly || isSkillHighlighted(skill)) &&
+        (!args.excludePendingScan || skill.githubScanStatus !== "pending") &&
         matchesCatalogFilters(skill, categorySlug, topic) &&
         matchesExactTokens(args.queryTokens, [
           skill.displayName,
@@ -986,6 +1016,7 @@ export const lexicalFallbackSkills = internalQuery({
         if (seenSkillIds.has(digest.skillId)) continue;
         const skill = digestToHydratableSkill(digest);
         if (args.nonSuspiciousOnly && isSkillSuspicious(skill)) continue;
+        if (args.excludePendingScan && skill.githubScanStatus === "pending") continue;
         if (!matchesCatalogFilters(skill, categorySlug, topic)) continue;
         seenSkillIds.add(digest.skillId);
         candidates.push(skill);
@@ -1015,7 +1046,7 @@ export const lexicalFallbackSkills = internalQuery({
       matched.map(async (skill) => {
         const preResolved = preResolvedOwners.get(skill._id);
         const resolved = preResolved?.owner
-          ? preResolved
+          ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
         const publicSkill = toPublicSearchSkill(skill);
         if (!publicSkill || !resolved.owner) return null;

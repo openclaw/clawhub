@@ -15,6 +15,9 @@ function readClientMetaEnv(name: string) {
 }
 
 export function getRuntimeEnv(name: string) {
+  if (typeof window !== "undefined") {
+    return readClientMetaEnv(name) ?? readProcessEnv(name);
+  }
   return readProcessEnv(name) ?? readClientMetaEnv(name);
 }
 

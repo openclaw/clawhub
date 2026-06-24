@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
+  authTables: {},
 }));
 
 vi.mock("./lib/access", async () => {
@@ -1526,6 +1527,58 @@ describe("users.getHoverStats", () => {
     });
     expect(takeLimits).toHaveLength(4);
     expect(takeLimits.every((limit) => limit > 0 && limit <= 200)).toBe(true);
+  });
+
+  it("uses installs as the download fallback for legacy hover aggregates", async () => {
+    const get = vi.fn(async (id: string) => {
+      if (id === "users:owner") {
+        return {
+          _id: "users:owner",
+          _creationTime: 1,
+          handle: "owner",
+          displayName: "Owner",
+          name: "Owner",
+          email: "owner@example.com",
+          role: "user",
+          createdAt: 1,
+          personalPublisherId: "publishers:owner",
+        };
+      }
+      if (id === "publishers:owner") {
+        return {
+          _id: "publishers:owner",
+          _creationTime: 1,
+          kind: "user",
+          handle: "owner",
+          displayName: "Owner",
+          publishedSkills: 4,
+          totalStars: 5,
+          totalInstalls: 37,
+          createdAt: 1,
+          updatedAt: 1,
+        };
+      }
+      return null;
+    });
+
+    const result = await getHoverStatsHandler(
+      {
+        db: {
+          get,
+          query: vi.fn(() => {
+            throw new Error("publisher lookup should use personalPublisherId");
+          }),
+        },
+      },
+      { userId: "users:owner" },
+    );
+
+    expect(result).toEqual({
+      publishedSkills: 4,
+      totalStars: 5,
+      totalDownloads: 37,
+      totalInstalls: 37,
+    });
   });
 });
 

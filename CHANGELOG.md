@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23.0 - 2026-06-23
+
+### Changes
+
+- CLI: restore `clawhub sync` for scanning local skill folders and publishing new or changed skills in batches, including dry-run, JSON, owner, version-bump, provenance, and non-interactive `--all` options.
+
 ## 0.22.0 - 2026-06-15
 
 ### Changes

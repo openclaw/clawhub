@@ -18,6 +18,7 @@ import {
   recoverPersonalPublisherInternal,
   createOrg,
   deleteOrg,
+  reclaimDeletedOrgHandleInternal,
   removeMember,
   addOfficialPublisherInternal,
   createOrgPublisherForUserInternal,
@@ -29,6 +30,7 @@ import {
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
+  authTables: {},
 }));
 
 type WrappedHandler<TArgs, TResult = unknown> = {
@@ -177,7 +179,7 @@ const listPublicHandler = (
       items: Array<{
         handle: string;
         kind: "user" | "org";
-        stats: { installs: number };
+        stats: { downloads: number; installs: number };
         publishedItems?: Array<{ displayName: string }>;
       }>;
       total: number;
@@ -191,14 +193,17 @@ const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
       kind?: "user" | "org";
+      official?: boolean;
       query?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
       page: Array<{
         handle: string;
+        displayName?: string;
         kind: "user" | "org";
-        stats: { installs: number };
+        official?: boolean;
+        stats: { downloads: number; installs: number };
         publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
       }>;
       counts: { all: number; individuals: number; organizations: number };
@@ -348,6 +353,32 @@ const deleteSoleOwnerOrgsForAccountDeletionInternalHandler = (
       deletedOrgs: number;
       hiddenSkills: number;
       deletedPackages: number;
+    }
+  >
+)._handler;
+
+const reclaimDeletedOrgHandleInternalHandler = (
+  reclaimDeletedOrgHandleInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      reason: string;
+      dryRun?: boolean;
+      confirmationToken?: string;
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      dryRun: boolean;
+      hardDeleted: boolean;
+      activeSkills: number;
+      activePackages: number;
+      memberCount: number;
+      githubSources: number;
+      githubSourceContents: number;
+      officialPublisher: boolean;
+      confirmationToken: string;
     }
   >
 )._handler;
@@ -810,6 +841,189 @@ describe("publishers membership controls", () => {
     expect(runMutation).not.toHaveBeenCalled();
   });
 
+  function makeReclaimDeletedOrgCtx(
+    options: {
+      publisher?: Record<string, unknown> | null;
+      activeSkills?: Array<Record<string, unknown>>;
+      activePackages?: Array<Record<string, unknown>>;
+    } = {},
+  ) {
+    const publisher = options.publisher ?? {
+      _id: "publishers:tencent",
+      kind: "org",
+      handle: "tencent",
+      displayName: "TENCENT",
+      deletedAt: 2_000,
+      deactivatedAt: 2_000,
+      createdAt: 1,
+      updatedAt: 2_000,
+    };
+    const members = [
+      {
+        _id: "publisherMembers:owner",
+        publisherId: "publishers:tencent",
+        userId: "users:spammer",
+        role: "owner",
+      },
+    ];
+    const deleted = vi.fn();
+    const insert = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_handle") throw new Error(`unexpected index ${indexName}`);
+            return { unique: vi.fn(async () => publisher) };
+          }),
+        };
+      }
+      if (table === "skills") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_owner_publisher_active_updated") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { take: vi.fn(async () => options.activeSkills ?? []) };
+          }),
+        };
+      }
+      if (table === "packages") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_owner_publisher_active_updated") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { take: vi.fn(async () => options.activePackages ?? []) };
+          }),
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_publisher") throw new Error(`unexpected index ${indexName}`);
+            return { collect: vi.fn(async () => members) };
+          }),
+        };
+      }
+      if (table === "githubSkillSources" || table === "githubSkillContents") {
+        return emptyOwnedResourcesQuery();
+      }
+      if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+      throw new Error(`unexpected table ${table}`);
+    });
+    return {
+      ctx: {
+        scheduler: { runAfter: vi.fn() },
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:admin") return { _id: id, role: "admin" };
+            return null;
+          }),
+          query,
+          insert,
+          delete: deleted,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          normalizeId: vi.fn(() => null),
+        },
+      },
+      deleted,
+      insert,
+    };
+  }
+
+  it("dry-runs hard deletion for a deleted empty org handle", async () => {
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+
+    const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      handle: "Tencent",
+      reason: "Free spam org handle",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      publisherId: "publishers:tencent",
+      handle: "tencent",
+      dryRun: true,
+      hardDeleted: false,
+      activeSkills: 0,
+      activePackages: 0,
+      memberCount: 1,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+    expect(deleted).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("requires the confirmation token before hard deleting", async () => {
+    const { ctx, deleted } = makeReclaimDeletedOrgCtx();
+
+    await expect(
+      reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+        dryRun: false,
+      }),
+    ).rejects.toThrow('Confirmation token must be "reclaim-deleted-org:tencent"');
+    expect(deleted).not.toHaveBeenCalled();
+  });
+
+  it("hard deletes the deleted org publisher row and records an audit log", async () => {
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+
+    const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      handle: "tencent",
+      reason: "Free spam org handle",
+      dryRun: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      hardDeleted: true,
+      memberCount: 1,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "publisher.org.reclaim_deleted_handle",
+        targetType: "publisher",
+        targetId: "publishers:tencent",
+        metadata: expect.objectContaining({
+          handle: "tencent",
+          reason: "Free spam org handle",
+        }),
+      }),
+    );
+    expect(deleted).toHaveBeenCalledWith("publisherMembers:owner");
+    expect(deleted).toHaveBeenCalledWith("publishers:tencent");
+  });
+
+  it("refuses to reclaim an active org handle", async () => {
+    const { ctx } = makeReclaimDeletedOrgCtx({
+      publisher: {
+        _id: "publishers:tencent",
+        kind: "org",
+        handle: "tencent",
+        displayName: "TENCENT",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    });
+
+    await expect(
+      reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+      }),
+    ).rejects.toThrow("Publisher is active; use org delete before reclaiming the handle");
+  });
+
   it("deletes sole-owner account orgs when other owner memberships are inactive", async () => {
     const patch = vi.fn();
     const insert = vi.fn();
@@ -983,7 +1197,7 @@ describe("publishers membership controls", () => {
     },
   );
 
-  it("lists individual and org publishers ranked by aggregate installs", async () => {
+  it("lists individual and org publishers ranked by aggregate downloads", async () => {
     const publisherRows = [
       {
         _id: "publishers:alice",
@@ -1053,7 +1267,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_installs") {
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
@@ -1083,7 +1297,7 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 2, individuals: 1, organizations: 1 });
     expect(result.items.map((item) => item.handle)).toEqual(["openclaw", "alice"]);
     expect(result.items.map((item) => item.kind)).toEqual(["org", "user"]);
-    expect(result.items.map((item) => item.stats.installs)).toEqual([15, 5]);
+    expect(result.items.map((item) => item.stats.downloads)).toEqual([20, 9]);
   });
 
   it("filters public publisher listings by kind", async () => {
@@ -1137,14 +1351,14 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_installs") {
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_installs"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               return indexedRows([]);
             }
@@ -1236,7 +1450,7 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "publishers" && indexName === "by_active_total_installs") {
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
               return {
                 order: vi.fn(() => ({ collect: vi.fn(async () => publisherRows) })),
               };
@@ -1244,7 +1458,7 @@ describe("publishers membership controls", () => {
             if (table === "officialPublishers" && indexName === "by_publisher") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "skills" && indexName === "by_owner_publisher_active_installs") {
+            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async (limit: number) =>
@@ -1255,7 +1469,7 @@ describe("publishers membership controls", () => {
                 })),
               };
             }
-            if (table === "packages" && indexName === "by_owner_publisher_active_installs") {
+            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
               return {
                 order: vi.fn(() => ({ take: vi.fn(async () => []) })),
               };
@@ -1328,9 +1542,18 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
             const q = {
               eq: (field: string, value: unknown) => {
                 fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
                 return q;
               },
             };
@@ -1338,12 +1561,32 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
+            if (table === "publishers" && indexName === "by_active_kind_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  collect: vi.fn(async () =>
+                    publisherRows.filter((publisher) => publisher.kind === fields.kind),
+                  ),
+                  take: vi.fn(async () =>
+                    publisherRows.filter((publisher) => publisher.kind === fields.kind),
+                  ),
+                })),
+              };
+            }
             if (table === "publishers" && indexName === "by_active_kind_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () =>
                     publisherRows.filter((publisher) => publisher.kind === fields.kind),
                   ),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  collect: vi.fn(async () => publisherRows),
+                  take: vi.fn(async () => publisherRows),
                 })),
               };
             }
@@ -1356,14 +1599,18 @@ describe("publishers membership controls", () => {
             }
             if (table === "publishers" && indexName === "by_active_kind_handle") {
               return {
-                collect: vi.fn(async () =>
-                  publisherRows.filter((publisher) => publisher.kind === fields.kind),
-                ),
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  return publisherRows.filter(
+                    (publisher) =>
+                      publisher.kind === fields.kind && publisher.handle.startsWith(prefix),
+                  );
+                }),
               };
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_installs"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               return indexedRows([]);
             }
@@ -1385,6 +1632,255 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
     expect(result.globalCounts).toEqual({ all: 3, individuals: 2, organizations: 1 });
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
+  });
+
+  it("finds publishers outside the popular install window via handle prefix search", async () => {
+    const popularRows = Array.from({ length: 500 }, (_, index) => ({
+      _id: `publishers:popular-${index}`,
+      _creationTime: index,
+      kind: "user" as const,
+      handle: `popular-${index}`,
+      displayName: `Popular ${index}`,
+      linkedUserId: `users:popular-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 500 - index,
+      totalDownloads: 500 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const vincentkoc = {
+      _id: "publishers:vincentkoc",
+      _creationTime: 1,
+      kind: "user" as const,
+      handle: "vincentkoc",
+      displayName: "Vincent Koc",
+      linkedUserId: "users:vincentkoc",
+      publishedSkills: 0,
+      publishedPackages: 0,
+      totalInstalls: 0,
+      totalDownloads: 0,
+      totalStars: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:vincentkoc") {
+            return { _id: id, image: "https://github.com/vincentkoc.png" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  fields.handle === "vincent"
+                    ? null
+                    : fields.handle === "vincentkoc"
+                      ? vincentkoc
+                      : null,
+                ),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_installs") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  const upper = (range.lt as { value: string } | undefined)?.value ?? "";
+                  if (fields.kind === "user" && prefix === "vincent" && upper === "vincent\uffff") {
+                    return [vincentkoc];
+                  }
+                  return [];
+                }),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_downloads"
+            ) {
+              return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      query: "vincent",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page.map((item) => item.handle)).toEqual(["vincentkoc"]);
+    expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
+  });
+
+  it("finds publishers with published skills outside the popular install window", async () => {
+    const popularRows = Array.from({ length: 500 }, (_, index) => ({
+      _id: `publishers:popular-${index}`,
+      _creationTime: index,
+      kind: "user" as const,
+      handle: `popular-${index}`,
+      displayName: `Popular ${index}`,
+      linkedUserId: `users:popular-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 500 - index,
+      totalDownloads: 500 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const vyctorbrzezowski = {
+      _id: "publishers:vyctorbrzezowski",
+      _creationTime: 1,
+      kind: "user" as const,
+      handle: "vyctorbrzezowski",
+      displayName: "Vyctor Brzezowski",
+      linkedUserId: "users:vyctorbrzezowski",
+      publishedSkills: 5,
+      publishedPackages: 1,
+      totalInstalls: 46,
+      totalDownloads: 1288,
+      totalStars: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:vyctorbrzezowski") {
+            return { _id: id, image: "https://github.com/vyctorbrzezowski.png" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  fields.handle === "vyctorbrzezowski" ? vyctorbrzezowski : null,
+                ),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_installs") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  const upper = (range.lt as { value: string } | undefined)?.value ?? "";
+                  if (fields.kind === "user" && prefix === "vyctor" && upper === "vyctor\uffff") {
+                    return [vyctorbrzezowski];
+                  }
+                  return [];
+                }),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
+              return indexedRows([
+                {
+                  _id: "skills:vyctor-demo",
+                  ownerPublisherId: "publishers:vyctorbrzezowski",
+                  softDeletedAt: undefined,
+                  displayName: "Demo Skill",
+                  statsInstallsAllTime: 46,
+                  statsDownloads: 1288,
+                  statsStars: 0,
+                  updatedAt: 1,
+                },
+              ]);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
+              return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const prefixResult = await listPublicPageHandler(ctx as never, {
+      query: "vyctor",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+    const exactResult = await listPublicPageHandler(ctx as never, {
+      query: "vyctorbrzezowski",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(prefixResult.page.map((item) => item.handle)).toEqual(["vyctorbrzezowski"]);
+    expect(exactResult.page.map((item) => item.handle)).toEqual(["vyctorbrzezowski"]);
   });
 
   it("filters hidden legacy user publishers before counting and paginating public publisher pages", async () => {
@@ -1444,6 +1940,14 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  collect: vi.fn(async () => publisherRows),
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
             if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
@@ -1453,7 +1957,7 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_installs"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               ownerPublisherQueries.push(String(fields.ownerPublisherId));
               return indexedRows([]);
@@ -1495,7 +1999,133 @@ describe("publishers membership controls", () => {
     expect(ownerPublisherQueries).toEqual(["publishers:alice", "publishers:alice"]);
   });
 
-  it("orders and renders public publisher card previews by installs", async () => {
+  it("lists official creators and organizations from the official publisher index", async () => {
+    const publishers = [
+      {
+        _id: "publishers:steipete",
+        _creationTime: 1,
+        kind: "user",
+        handle: "steipete",
+        displayName: "steipete",
+        linkedUserId: "users:steipete",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 85_400,
+        totalDownloads: 100_000,
+        totalStars: 100,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 2,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        publishedSkills: 6,
+        publishedPackages: 59,
+        totalInstalls: 130,
+        totalDownloads: 95_000,
+        totalStars: 4,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      {
+        _id: "publishers:community",
+        _creationTime: 3,
+        kind: "org",
+        handle: "community",
+        displayName: "Community",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 1_000,
+        totalDownloads: 1_000,
+        totalStars: 1,
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ];
+    const officialRows = [
+      {
+        _id: "officialPublishers:steipete",
+        publisherId: "publishers:steipete",
+        createdAt: 1,
+      },
+      {
+        _id: "officialPublishers:openclaw",
+        publisherId: "publishers:openclaw",
+        createdAt: 2,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:steipete") {
+            return {
+              _id: id,
+              displayName: "Peter Steinberger",
+              image: "https://github.com/steipete.png",
+            };
+          }
+          return publishers.find((publisher) => publisher._id === id) ?? null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery?: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery?.(q);
+
+            if (table === "officialPublishers" && indexName === "by_created") {
+              return {
+                order: vi.fn(() => ({ take: vi.fn(async () => officialRows) })),
+              };
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return {
+                unique: vi.fn(async () =>
+                  officialRows.find((row) => row.publisherId === fields.publisherId),
+                ),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_downloads"
+            ) {
+              return indexedRows([]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      official: true,
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page.map((publisher) => publisher.handle)).toEqual(["steipete", "openclaw"]);
+    expect(result.page.map((publisher) => publisher.kind)).toEqual(["user", "org"]);
+    expect(result.page[0]?.displayName).toBe("Peter Steinberger");
+    expect(result.page.every((publisher) => publisher.official)).toBe(true);
+    expect(result.isDone).toBe(true);
+
+    const creators = await listPublicPageHandler(ctx as never, {
+      official: true,
+      kind: "user",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(creators.page.map((publisher) => publisher.handle)).toEqual(["steipete"]);
+    expect(creators.globalCounts).toEqual({ all: 2, individuals: 1, organizations: 1 });
+  });
+
+  it("orders and renders public publisher card previews by downloads", async () => {
     const publisherRows = [
       {
         _id: "publishers:openclaw",
@@ -1563,20 +2193,19 @@ describe("publishers membership controls", () => {
         updatedAt: 3,
       },
     ];
-    const rowsByInstalls = <
+    const rowsByDownloads = <
       T extends {
         updatedAt: number;
-        stats?: { installs?: number; installsAllTime?: number };
-        statsInstallsAllTime?: number;
+        stats?: { downloads?: number };
+        statsDownloads?: number;
       },
     >(
       rows: T[],
     ) =>
       [...rows].sort(
         (a, b) =>
-          (b.statsInstallsAllTime ?? b.stats?.installs ?? b.stats?.installsAllTime ?? 0) -
-            (a.statsInstallsAllTime ?? a.stats?.installs ?? a.stats?.installsAllTime ?? 0) ||
-          b.updatedAt - a.updatedAt,
+          (b.statsDownloads ?? b.stats?.downloads ?? 0) -
+            (a.statsDownloads ?? a.stats?.downloads ?? 0) || b.updatedAt - a.updatedAt,
       );
     const ctx = {
       db: {
@@ -1594,6 +2223,14 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  collect: vi.fn(async () => publisherRows),
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
             if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
@@ -1604,16 +2241,16 @@ describe("publishers membership controls", () => {
             if (table === "officialPublishers" && indexName === "by_publisher") {
               return { unique: vi.fn(async () => null) };
             }
-            if (table === "skills" && indexName === "by_owner_publisher_active_installs") {
+            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
               return indexedRows(
-                rowsByInstalls(
+                rowsByDownloads(
                   skillRows.filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId),
                 ),
               );
             }
-            if (table === "packages" && indexName === "by_owner_publisher_active_installs") {
+            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
               return indexedRows(
-                rowsByInstalls(
+                rowsByDownloads(
                   packageRows.filter((pkg) => pkg.ownerPublisherId === fields.ownerPublisherId),
                 ),
               );
@@ -1629,12 +2266,12 @@ describe("publishers membership controls", () => {
     });
 
     expect(result.page[0]?.publishedItems.map((item) => item.displayName)).toEqual([
-      "Recent Plugin",
-      "Recent Tool",
+      "Popular Plugin",
       "Popular Skill",
+      "Recent Plugin",
     ]);
-    expect(result.page[0]?.publishedItems.map((item) => item.installs)).toEqual([50, 40, 35]);
-    expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([12, 10, 98]);
+    expect(result.page[0]?.publishedItems.map((item) => item.installs)).toEqual([5, 35, 50]);
+    expect(result.page[0]?.publishedItems.map((item) => item.downloads)).toEqual([128, 98, 12]);
   });
 
   it("does not hydrate every publisher catalog preview before filtering public publisher pages", async () => {
@@ -1671,6 +2308,14 @@ describe("publishers membership controls", () => {
             if (table === "publishers" && indexName === "by_handle") {
               return { unique: vi.fn(async () => null) };
             }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  collect: vi.fn(async () => publisherRows),
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
             if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
@@ -1680,7 +2325,7 @@ describe("publishers membership controls", () => {
             }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_installs"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               ownerPublisherQueries.push(String(fields.ownerPublisherId));
               return indexedRows([]);
@@ -1703,6 +2348,155 @@ describe("publishers membership controls", () => {
     expect(get).toHaveBeenCalledTimes(120);
     expect(get).toHaveBeenCalledWith("users:user-0");
     expect(ownerPublisherQueries).toEqual(["publishers:user-0", "publishers:user-0"]);
+  });
+
+  it("ranks bounded legacy publishers missing download aggregates before paginating", async () => {
+    const rankedPublisherRows = Array.from({ length: 2 }, (_, index) => ({
+      _id: `publishers:user-${index}`,
+      _creationTime: index,
+      kind: "user",
+      handle: `user-${index}`,
+      displayName: `User ${index}`,
+      linkedUserId: `users:user-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 500 - index,
+      totalDownloads: 500 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const legacyFillerRows = Array.from({ length: 500 }, (_, index) => ({
+      _id: `publishers:legacy-filler-${index}`,
+      _creationTime: 100 + index,
+      kind: "user",
+      handle: `legacy-filler-${index}`,
+      displayName: `Legacy Filler ${index}`,
+      linkedUserId: `users:legacy-filler-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 500 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1_000 - index,
+    }));
+    const legacyPublisher = {
+      _id: "publishers:legacy-popular",
+      _creationTime: 600,
+      kind: "user",
+      handle: "legacy-popular",
+      displayName: "Legacy Popular",
+      linkedUserId: "users:legacy-popular",
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 1_000,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const legacyRowsByDownloadsIndex = [...legacyFillerRows, legacyPublisher];
+    const legacyRowsByInstallsIndex = [legacyPublisher, ...legacyFillerRows];
+    const skillRows = [
+      {
+        _id: "skills:legacy-popular",
+        ownerPublisherId: "publishers:legacy-popular",
+        softDeletedAt: undefined,
+        displayName: "Legacy Popular Skill",
+        moderationStatus: "active",
+        statsDownloads: 1000,
+        statsStars: 1,
+        statsInstallsAllTime: 1,
+        stats: { downloads: 1000, stars: 1, installsCurrent: 1, installsAllTime: 1 },
+        updatedAt: 1,
+      },
+    ];
+    const get = vi.fn(async (id: string) => ({ _id: id, image: `https://github.com/${id}.png` }));
+    const legacyFallbackCollect = vi.fn(async () => {
+      throw new Error("legacy publisher fallback must stay bounded");
+    });
+    const legacyDownloadsFallbackTake = vi.fn(async (limit: number) =>
+      legacyRowsByDownloadsIndex.slice(0, limit),
+    );
+    const legacyInstallsFallbackTake = vi.fn(async (limit: number) =>
+      legacyRowsByInstallsIndex.slice(0, limit),
+    );
+    const ctx = {
+      db: {
+        get,
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const explicitFields = new Set<string>();
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                explicitFields.add(field);
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              const rows = explicitFields.has("totalDownloads")
+                ? legacyRowsByDownloadsIndex
+                : rankedPublisherRows;
+              return {
+                order: vi.fn(() => ({
+                  collect: explicitFields.has("totalDownloads")
+                    ? legacyFallbackCollect
+                    : vi.fn(async () => rows),
+                  take: explicitFields.has("totalDownloads")
+                    ? legacyDownloadsFallbackTake
+                    : vi.fn(async (limit: number) => rows.slice(0, limit)),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_installs") {
+              return {
+                order: vi.fn(() => ({
+                  collect: legacyFallbackCollect,
+                  take: legacyInstallsFallbackTake,
+                })),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows(
+                skillRows.filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId),
+              );
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
+              return indexedRows([]);
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_downloads"
+            ) {
+              return indexedRows(
+                table === "skills"
+                  ? skillRows.filter((skill) => skill.ownerPublisherId === fields.ownerPublisherId)
+                  : [],
+              );
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((item) => item.handle)).toEqual(["legacy-popular"]);
+    expect(result.page.map((item) => item.stats.downloads)).toEqual([1000]);
+    expect(legacyDownloadsFallbackTake).not.toHaveBeenCalled();
+    expect(legacyInstallsFallbackTake).toHaveBeenCalledWith(500);
+    expect(legacyFallbackCollect).not.toHaveBeenCalled();
   });
 
   it("does not hydrate publisher catalog previews when a public publisher search has no matches", async () => {
@@ -1729,13 +2523,33 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
             const q = {
               eq: (field: string, value: unknown) => {
                 fields[field] = value;
                 return q;
               },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
+                return q;
+              },
             };
             buildQuery(q);
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  collect: vi.fn(async () => publisherRows),
+                  take: vi.fn(async () => publisherRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
@@ -1743,9 +2557,14 @@ describe("publishers membership controls", () => {
                 })),
               };
             }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => []),
+              };
+            }
             if (
               (table === "skills" || table === "packages") &&
-              indexName === "by_owner_publisher_active_installs"
+              indexName === "by_owner_publisher_active_downloads"
             ) {
               ownerPublisherQueries.push(String(fields.ownerPublisherId));
               return indexedRows([]);
@@ -1768,7 +2587,7 @@ describe("publishers membership controls", () => {
     expect(ownerPublisherQueries).toEqual([]);
   });
 
-  it("normalizes legacy downloads catalog sorts to install-backed profile items", async () => {
+  it("orders profile catalog items by downloads", async () => {
     const publisher = {
       _id: "publishers:openclaw",
       _creationTime: 1,
@@ -1802,14 +2621,25 @@ describe("publishers membership controls", () => {
             if (table === "packages" && indexName === "by_owner_publisher_active_updated") {
               return indexedRows([
                 {
-                  _id: "packages:plugin",
+                  _id: "packages:low-download-plugin",
                   ownerPublisherId: "publishers:openclaw",
                   softDeletedAt: undefined,
                   family: "code-plugin",
-                  name: "@openclaw/example-plugin",
-                  displayName: "Example Plugin",
+                  name: "@openclaw/low-download-plugin",
+                  displayName: "Low Download Plugin",
                   summary: "Scoped plugin",
-                  stats: { downloads: 7, installs: 3, stars: 1, versions: 1 },
+                  stats: { downloads: 7, installs: 300, stars: 1, versions: 1 },
+                  updatedAt: 6,
+                },
+                {
+                  _id: "packages:high-download-plugin",
+                  ownerPublisherId: "publishers:openclaw",
+                  softDeletedAt: undefined,
+                  family: "code-plugin",
+                  name: "@openclaw/high-download-plugin",
+                  displayName: "High Download Plugin",
+                  summary: "Scoped plugin",
+                  stats: { downloads: 70, installs: 3, stars: 1, versions: 1 },
                   updatedAt: 5,
                 },
               ]);
@@ -1831,10 +2661,16 @@ describe("publishers membership controls", () => {
 
     expect(result.page).toMatchObject([
       {
-        displayName: "Example Plugin",
-        downloads: 7,
-        href: "/plugins/@openclaw/example-plugin",
+        displayName: "High Download Plugin",
+        downloads: 70,
+        href: "/plugins/@openclaw/high-download-plugin",
         installs: 3,
+      },
+      {
+        displayName: "Low Download Plugin",
+        downloads: 7,
+        href: "/plugins/@openclaw/low-download-plugin",
+        installs: 300,
       },
     ]);
   });

@@ -12,6 +12,7 @@ import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
+  isReservedOpenClawExtensionHandle,
   isReservedPublicOwnerHandle,
 } from "./lib/publicRouteReservations";
 import {
@@ -44,6 +45,8 @@ import { readCanonicalStat } from "./lib/skillStats";
 import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
+const LEGACY_PUBLISHER_DOWNLOAD_FALLBACK_LIMIT = MAX_PUBLIC_PUBLISHER_LIST_LIMIT;
+const MAX_PUBLISHER_HANDLE_PREFIX_CANDIDATES = 100;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
 const GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT = 10;
 const PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT = 100;
@@ -64,6 +67,12 @@ type PublisherListStats = {
 type PublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
+  summary?: string | null;
+  slug?: string;
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: Id<"skillVersions">;
+  inferredFromVersionId?: Id<"skillVersions">;
   installs: number;
   /** Legacy response field retained while older frontend bundles are cached. */
   downloads: number;
@@ -100,8 +109,8 @@ type PublisherCatalogItem = {
   sourceVerifiedCommit?: string | null;
 };
 
-type PublisherCatalogSort = "installs" | "recent";
-type PublisherCatalogSortArg = PublisherCatalogSort | "downloads";
+type PublisherCatalogSort = "downloads" | "recent";
+type PublisherCatalogSortArg = PublisherCatalogSort | "installs";
 
 type PublisherListItem = NonNullable<ReturnType<typeof toPublicPublisher>> & {
   stats: PublisherListStats;
@@ -268,14 +277,14 @@ async function getPublisherPublishedPreviewRows(
   const [skills, packages] = await Promise.all([
     ctx.db
       .query("skills")
-      .withIndex("by_owner_publisher_active_installs", (q) =>
+      .withIndex("by_owner_publisher_active_downloads", (q) =>
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .order("desc")
       .take(PUBLISHER_LIST_PREVIEW_LIMIT),
     ctx.db
       .query("packages")
-      .withIndex("by_owner_publisher_active_installs", (q) =>
+      .withIndex("by_owner_publisher_active_downloads", (q) =>
         q.eq("ownerPublisherId", publisherId).eq("softDeletedAt", undefined),
       )
       .order("desc")
@@ -312,22 +321,35 @@ function getPublisherPublishedItems(
     ...rows.skills.map((skill) => ({
       kind: "skill" as const,
       displayName: skill.displayName,
+      summary: skill.summary,
+      slug: skill.slug,
+      categories: skill.categories,
+      inferredCategories: skill.inferredCategories,
+      latestVersionId: skill.latestVersionId,
+      inferredFromVersionId: skill.inferredFromVersionId,
       downloads: readCanonicalStat(skill, "downloads"),
       installs: readCanonicalStat(skill, "installsAllTime"),
     })),
     ...rows.packages.map((pkg) => ({
       kind: pkg.family === "skill" ? ("skill" as const) : ("plugin" as const),
       displayName: pkg.displayName,
+      categories: pkg.categories,
       downloads: pkg.stats.downloads,
       installs: pkg.stats.installs,
     })),
   ];
   return items
-    .sort((a, b) => b.installs - a.installs || a.displayName.localeCompare(b.displayName))
+    .sort((a, b) => b.downloads - a.downloads || a.displayName.localeCompare(b.displayName))
     .slice(0, limit)
     .map((item) => ({
       kind: item.kind,
       displayName: item.displayName,
+      summary: item.summary,
+      slug: item.slug,
+      categories: item.categories,
+      inferredCategories: item.inferredCategories,
+      latestVersionId: item.latestVersionId,
+      inferredFromVersionId: item.inferredFromVersionId,
       installs: item.installs,
       downloads: item.downloads,
     }));
@@ -351,14 +373,14 @@ function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
     if (sort === "recent") {
       return (
         b.updatedAt - a.updatedAt ||
-        b.installs - a.installs ||
+        b.downloads - a.downloads ||
         b.stars - a.stars ||
         a.displayName.localeCompare(b.displayName)
       );
     }
 
     return (
-      b.installs - a.installs ||
+      b.downloads - a.downloads ||
       b.stars - a.stars ||
       b.updatedAt - a.updatedAt ||
       a.displayName.localeCompare(b.displayName)
@@ -367,14 +389,14 @@ function comparePublisherCatalogItems(sort: PublisherCatalogSort) {
 }
 
 function normalizePublisherCatalogSort(sort?: PublisherCatalogSortArg): PublisherCatalogSort {
-  return sort === "recent" ? "recent" : "installs";
+  return sort === "recent" ? "recent" : "downloads";
 }
 
 function getPublisherCatalogItems(
   publisher: Doc<"publishers">,
   rows: PublisherPublishedRows,
   publisherOfficial: boolean,
-  sort: PublisherCatalogSort = "installs",
+  sort: PublisherCatalogSort = "downloads",
 ): PublisherCatalogItem[] {
   return [
     ...rows.skills.map((skill) => ({
@@ -506,6 +528,7 @@ async function toPublisherListItem(
       : undefined;
   return {
     ...publicPublisher,
+    displayName: resolvePublisherDisplayName(publisher, linkedUser),
     image: publicPublisher.image ?? linkedUser?.image,
     bio: publicPublisher.bio ?? linkedUser?.bio,
     stats,
@@ -534,31 +557,102 @@ async function toVisiblePublisherListSummary(
 ): Promise<PublisherListSummary | null> {
   const visibility = await getPublicPublisherVisibility(ctx, publisher);
   if (!visibility) return null;
+  if (!hasPublisherStats(visibility.publisher)) {
+    const item = await toPublisherListItem(ctx, visibility.publisher, {
+      forceComputedStats: true,
+      visibility,
+    });
+    return item ? { publisher: visibility.publisher, item, visibility } : null;
+  }
   const summary = toPublisherListSummary(visibility.publisher);
   if (!summary) return null;
-  return { ...summary, visibility };
+  return {
+    ...summary,
+    item: {
+      ...summary.item,
+      displayName: resolvePublisherDisplayName(visibility.publisher, visibility.linkedUser),
+    },
+    visibility,
+  };
 }
 
 function hasPublisherListContent(summary: PublisherListSummary) {
-  if (!hasPublisherStats(summary.publisher)) return true;
   return summary.item.stats.skills + summary.item.stats.packages > 0;
+}
+
+function mergePublisherRows(
+  rankedRows: Doc<"publishers">[],
+  legacyRows: Doc<"publishers">[],
+): Doc<"publishers">[] {
+  const rowsById = new Map<Id<"publishers">, Doc<"publishers">>();
+  for (const row of rankedRows) rowsById.set(row._id, row);
+  for (const row of legacyRows) rowsById.set(row._id, row);
+  return [...rowsById.values()];
+}
+
+async function getActivePublisherRowsByDownloads(
+  ctx: Pick<QueryCtx, "db">,
+  kindFilter?: PublicPublisherKindFilter,
+): Promise<Doc<"publishers">[]> {
+  const rankedRows = kindFilter
+    ? await ctx.db
+        .query("publishers")
+        .withIndex("by_active_kind_total_downloads", (q) =>
+          q.eq("deletedAt", undefined).eq("deactivatedAt", undefined).eq("kind", kindFilter),
+        )
+        .order("desc")
+        .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
+    : await ctx.db
+        .query("publishers")
+        .withIndex("by_active_total_downloads", (q) =>
+          q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
+        )
+        .order("desc")
+        .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT);
+
+  const legacyRows = kindFilter
+    ? await ctx.db
+        .query("publishers")
+        .withIndex("by_active_kind_total_installs", (q) =>
+          q.eq("deletedAt", undefined).eq("deactivatedAt", undefined).eq("kind", kindFilter),
+        )
+        .order("desc")
+        .take(LEGACY_PUBLISHER_DOWNLOAD_FALLBACK_LIMIT)
+    : await ctx.db
+        .query("publishers")
+        .withIndex("by_active_total_installs", (q) =>
+          q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
+        )
+        .order("desc")
+        .take(LEGACY_PUBLISHER_DOWNLOAD_FALLBACK_LIMIT);
+
+  return mergePublisherRows(rankedRows, legacyRows);
+}
+
+function shouldIncludePublisherListSummary(
+  summary: PublisherListSummary,
+  options?: { includeEmptyPublishers?: boolean },
+) {
+  return options?.includeEmptyPublishers || hasPublisherListContent(summary);
 }
 
 async function getVisiblePublisherListSummaries(
   ctx: Pick<QueryCtx, "db">,
   publishers: Doc<"publishers">[],
+  options?: { includeEmptyPublishers?: boolean },
 ) {
   const summaries = await Promise.all(
     publishers.map((publisher) => toVisiblePublisherListSummary(ctx, publisher)),
   );
   return summaries
     .filter((summary): summary is PublisherListSummary => Boolean(summary))
-    .filter(hasPublisherListContent);
+    .filter((summary) => shouldIncludePublisherListSummary(summary, options));
 }
 
 async function hydratePublisherListSummaries(
   ctx: Pick<QueryCtx, "db">,
   summaries: PublisherListSummary[],
+  options?: { includeEmptyPublishers?: boolean },
 ) {
   const items = await Promise.all(
     summaries.map((summary) =>
@@ -570,7 +664,9 @@ async function hydratePublisherListSummaries(
   );
   return items
     .filter((item): item is PublisherListItem => Boolean(item))
-    .filter((item) => item.stats.skills + item.stats.packages > 0);
+    .filter(
+      (item) => options?.includeEmptyPublishers || item.stats.skills + item.stats.packages > 0,
+    );
 }
 
 async function getUserStarredCount(ctx: Pick<QueryCtx, "db">, userId: Id<"users">) {
@@ -636,7 +732,7 @@ function comparePublisherListItems(a: PublisherListItem, b: PublisherListItem) {
   const bPublishedCount = b.stats.skills + b.stats.packages;
 
   return (
-    b.stats.installs - a.stats.installs ||
+    b.stats.downloads - a.stats.downloads ||
     b.stats.stars - a.stats.stars ||
     bPublishedCount - aPublishedCount ||
     a.displayName.localeCompare(b.displayName)
@@ -648,6 +744,69 @@ function matchesPublisherQuery(publisher: PublisherListItem, queryText: string) 
   const haystack =
     `${publisher.displayName} ${publisher.handle} ${publisher.bio ?? ""}`.toLowerCase();
   return haystack.includes(queryText);
+}
+
+function resolvePublisherDisplayName(
+  publisher: Pick<Doc<"publishers">, "kind" | "displayName">,
+  linkedUser: Pick<Doc<"users">, "displayName" | "name"> | null | undefined,
+) {
+  if (publisher.kind !== "user") return publisher.displayName;
+  return linkedUser?.displayName?.trim() || linkedUser?.name?.trim() || publisher.displayName;
+}
+
+function publisherHandlePrefixUpperBound(value: string) {
+  return `${value}\uffff`;
+}
+
+async function queryActivePublishersByHandlePrefix(
+  ctx: Pick<QueryCtx, "db">,
+  kind: PublicPublisherKindFilter,
+  handlePrefix: string,
+) {
+  return await ctx.db
+    .query("publishers")
+    .withIndex("by_active_kind_handle", (q) =>
+      q
+        .eq("deletedAt", undefined)
+        .eq("deactivatedAt", undefined)
+        .eq("kind", kind)
+        .gte("handle", handlePrefix)
+        .lt("handle", publisherHandlePrefixUpperBound(handlePrefix)),
+    )
+    .take(MAX_PUBLISHER_HANDLE_PREFIX_CANDIDATES);
+}
+
+async function collectActivePublisherRowsForListPage(
+  ctx: Pick<QueryCtx, "db">,
+  args: {
+    kindFilter?: PublicPublisherKindFilter;
+    queryText?: string;
+    browseRows?: Doc<"publishers">[];
+  },
+) {
+  const browseRows =
+    args.browseRows ?? (await getActivePublisherRowsByDownloads(ctx, args.kindFilter));
+  const normalizedQuery = args.queryText ? normalizePublisherHandle(args.queryText) : undefined;
+  if (!normalizedQuery) return browseRows;
+
+  const kinds: PublicPublisherKindFilter[] = args.kindFilter ? [args.kindFilter] : ["user", "org"];
+  const [exactMatch, ...prefixMatches] = await Promise.all([
+    getPublisherByHandle(ctx, normalizedQuery),
+    ...kinds.map((kind) => queryActivePublishersByHandlePrefix(ctx, kind, normalizedQuery)),
+  ]);
+  const merged = new Map<Id<"publishers">, Doc<"publishers">>();
+  for (const publisher of browseRows) {
+    merged.set(publisher._id, publisher);
+  }
+  if (exactMatch && isPublisherActive(exactMatch)) {
+    merged.set(exactMatch._id, exactMatch);
+  }
+  for (const rows of prefixMatches) {
+    for (const publisher of rows) {
+      merged.set(publisher._id, publisher);
+    }
+  }
+  return [...merged.values()];
 }
 
 function getPublisherListCounts(items: PublisherListItem[]): PublisherListCounts {
@@ -919,6 +1078,9 @@ async function ensureOrgPublisherHandleWithActor(
 
   if (!normalizePublisherHandle(args.memberHandle)) {
     throw new ConvexError("memberHandle required when creating org publisher");
+  }
+  if (!existingPublisher && !existingUser && isReservedOpenClawExtensionHandle(handle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
   }
 
   const publisherId = await ctx.db.insert("publishers", {
@@ -1528,6 +1690,9 @@ async function createOrgPublisherForUser(
   if (await isHandleReservedForAnotherUser(ctx, handle, args.actorUserId)) {
     throw new ConvexError(`Handle "@${handle}" is reserved for another user`);
   }
+  if (isReservedOpenClawExtensionHandle(handle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
+  }
 
   const now = Date.now();
   const publisherId = await ctx.db.insert("publishers", {
@@ -1566,7 +1731,7 @@ async function createOrgPublisherForUser(
   };
 }
 
-async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
+async function inspectPublisherHardDeleteRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
   const sources = await ctx.db
     .query("githubSkillSources")
     .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
@@ -1578,6 +1743,29 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
       .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
       .collect();
     sourceContents += contents.length;
+  }
+
+  const members = await ctx.db
+    .query("publisherMembers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .collect();
+
+  const official = await ctx.db
+    .query("officialPublishers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .unique();
+
+  return { sources, sourceContents, members, official };
+}
+
+async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
+  const preview = await inspectPublisherHardDeleteRows(ctx, publisherId);
+
+  for (const source of preview.sources) {
+    const contents = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+      .collect();
     for (const content of contents) await ctx.db.delete(content._id);
     await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
       sourceId: source._id,
@@ -1585,25 +1773,17 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
     await ctx.db.delete(source._id);
   }
 
-  const members = await ctx.db
-    .query("publisherMembers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
-    .collect();
-  for (const member of members) await ctx.db.delete(member._id);
+  for (const member of preview.members) await ctx.db.delete(member._id);
 
-  const official = await ctx.db
-    .query("officialPublishers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
-    .unique();
-  if (official) await ctx.db.delete(official._id);
+  if (preview.official) await ctx.db.delete(preview.official._id);
 
   await ctx.db.delete(publisherId);
 
   return {
-    sources: sources.length,
-    sourceContents,
-    members: members.length,
-    official: Boolean(official),
+    sources: preview.sources.length,
+    sourceContents: preview.sourceContents,
+    members: preview.members.length,
+    official: Boolean(preview.official),
   };
 }
 
@@ -2067,7 +2247,7 @@ export const listPublic = query({
     const kindFilter = args.kind as PublicPublisherKindFilter | undefined;
     const activeRows = await ctx.db
       .query("publishers")
-      .withIndex("by_active_total_installs", (q) =>
+      .withIndex("by_active_total_downloads", (q) =>
         q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
       )
       .order("desc")
@@ -2103,6 +2283,7 @@ export const listPublic = query({
 export const listPublicPage = query({
   args: {
     kind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+    official: v.optional(v.boolean()),
     query: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
@@ -2112,22 +2293,35 @@ export const listPublicPage = query({
     const queryText = args.query?.trim();
     const offset = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : 0;
     const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
-    const activeRows = kindFilter
-      ? await ctx.db
-          .query("publishers")
-          .withIndex("by_active_kind_total_installs", (q) =>
-            q.eq("deletedAt", undefined).eq("deactivatedAt", undefined).eq("kind", kindFilter),
+    const officialRows = args.official
+      ? (
+          await Promise.all(
+            (
+              await ctx.db
+                .query("officialPublishers")
+                .withIndex("by_created")
+                .order("desc")
+                .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
+            ).map((row) => ctx.db.get(row.publisherId)),
           )
-          .order("desc")
-          .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
-      : await ctx.db
-          .query("publishers")
-          .withIndex("by_active_total_installs", (q) =>
-            q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
-          )
-          .order("desc")
-          .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT);
-    const publisherSummaries = await getVisiblePublisherListSummaries(ctx, activeRows);
+        ).filter((publisher): publisher is Doc<"publishers"> =>
+          Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt),
+        )
+      : undefined;
+    const browseRows = officialRows
+      ? officialRows.filter((publisher) => !kindFilter || publisher.kind === kindFilter)
+      : await getActivePublisherRowsByDownloads(ctx, kindFilter);
+    const activeRows = queryText
+      ? await collectActivePublisherRowsForListPage(ctx, {
+          kindFilter,
+          queryText,
+          browseRows,
+        })
+      : browseRows;
+    const includeEmptyPublishers = Boolean(queryText);
+    const publisherSummaries = await getVisiblePublisherListSummaries(ctx, activeRows, {
+      includeEmptyPublishers,
+    });
     const itemSummaries = publisherSummaries
       .filter(
         (summary) =>
@@ -2136,16 +2330,9 @@ export const listPublicPage = query({
       )
       .sort((a, b) => comparePublisherListItems(a.item, b.item));
     const globalPublisherSummaries = kindFilter
-      ? await getVisiblePublisherListSummaries(
-          ctx,
-          await ctx.db
-            .query("publishers")
-            .withIndex("by_active_total_installs", (q) =>
-              q.eq("deletedAt", undefined).eq("deactivatedAt", undefined),
-            )
-            .order("desc")
-            .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT),
-        )
+      ? officialRows
+        ? await getVisiblePublisherListSummaries(ctx, officialRows)
+        : await getVisiblePublisherListSummaries(ctx, await getActivePublisherRowsByDownloads(ctx))
       : publisherSummaries;
     const globalCounts = getPublisherListSummaryCounts(globalPublisherSummaries);
     const counts = queryText ? getPublisherListSummaryCounts(itemSummaries) : globalCounts;
@@ -2153,6 +2340,7 @@ export const listPublicPage = query({
     const page = await hydratePublisherListSummaries(
       ctx,
       itemSummaries.slice(safeOffset, nextOffset),
+      { includeEmptyPublishers },
     );
 
     return {
@@ -2512,6 +2700,115 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
       activeSkills: 0,
       activePackages: 0,
       memberCount: members.length,
+    };
+  },
+});
+
+export const reclaimDeletedOrgHandleInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+    confirmationToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle)) {
+      throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
+    }
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher) throw new ConvexError("Publisher not found");
+    if (publisher.kind !== "org") throw new ConvexError("Publisher is not an org");
+    if (!publisher.deletedAt && !publisher.deactivatedAt) {
+      throw new ConvexError("Publisher is active; use org delete before reclaiming the handle");
+    }
+
+    const [activeSkills, activePackages, preview] = await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+        )
+        .take(1),
+      ctx.db
+        .query("packages")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+        )
+        .take(1),
+      inspectPublisherHardDeleteRows(ctx, publisher._id),
+    ]);
+
+    if (activeSkills.length > 0 || activePackages.length > 0) {
+      throw new ConvexError(
+        `Publisher has active skills or packages and cannot be reclaimed with this command`,
+      );
+    }
+
+    const confirmationToken = `reclaim-deleted-org:${handle}`;
+    const dryRun = args.dryRun !== false;
+    const baseResult = {
+      ok: true as const,
+      publisherId: publisher._id,
+      handle,
+      activeSkills: activeSkills.length,
+      activePackages: activePackages.length,
+      memberCount: preview.members.length,
+      githubSources: preview.sources.length,
+      githubSourceContents: preview.sourceContents,
+      officialPublisher: Boolean(preview.official),
+      confirmationToken,
+    };
+    if (dryRun) {
+      return {
+        ...baseResult,
+        dryRun: true,
+        hardDeleted: false,
+      };
+    }
+
+    if (args.confirmationToken !== confirmationToken) {
+      throw new ConvexError(`Confirmation token must be "${confirmationToken}"`);
+    }
+
+    const now = Date.now();
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.org.reclaim_deleted_handle",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        handle,
+        reason,
+        deletedAt: publisher.deletedAt,
+        deactivatedAt: publisher.deactivatedAt,
+        memberCount: preview.members.length,
+        githubSources: preview.sources.length,
+        githubSourceContents: preview.sourceContents,
+        officialPublisher: Boolean(preview.official),
+        source: "publisher.org.admin_reclaim",
+      },
+      createdAt: now,
+    });
+    const deletedRows = await hardDeletePublisherRows(ctx, publisher._id);
+
+    return {
+      ...baseResult,
+      dryRun: false,
+      hardDeleted: true,
+      memberCount: deletedRows.members,
+      githubSources: deletedRows.sources,
+      githubSourceContents: deletedRows.sourceContents,
+      officialPublisher: deletedRows.official,
     };
   },
 });

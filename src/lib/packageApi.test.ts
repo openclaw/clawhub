@@ -10,6 +10,7 @@ vi.mock("@tanstack/react-start/server", () => ({
 
 import {
   fetchPackageDetail,
+  fetchPackageFile,
   fetchPackageReadme,
   fetchPackageVersion,
   fetchPackageVersions,
@@ -413,6 +414,75 @@ describe("fetchPackages", () => {
     );
   });
 
+  it("preserves plugin manifest summaries from package version responses", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          package: {
+            name: "example-ai-plugin",
+            displayName: "Example AI Plugin",
+            family: "code-plugin",
+          },
+          version: {
+            version: "1.2.3",
+            createdAt: 1,
+            changelog: "demo",
+            files: [],
+            pluginManifestSummary: {
+              schemaVersion: 1,
+              compatibility: { pluginApiRange: "^2.0.0" },
+              configFields: [
+                {
+                  name: "EXAMPLE_PLUGIN_API_KEY",
+                  description: "API key used to connect to the example service.",
+                  required: true,
+                  sensitive: true,
+                },
+              ],
+              mcpServers: [{ name: "exampleMcp" }],
+              bundledSkills: [
+                {
+                  name: "research",
+                  description: "Deep research assistant.",
+                  rootPath: "skills/research",
+                  skillMdPath: "skills/research/SKILL.md",
+                  sha256: "a".repeat(64),
+                  size: 128,
+                },
+              ],
+            },
+          },
+        }),
+        { status: 200 },
+      ),
+    );
+
+    const result = await fetchPackageVersion("example-ai-plugin", "1.2.3");
+
+    expect(result?.version?.pluginManifestSummary).toMatchObject({
+      compatibility: { pluginApiRange: "^2.0.0" },
+      mcpServers: [{ name: "exampleMcp" }],
+      bundledSkills: [expect.objectContaining({ skillMdPath: "skills/research/SKILL.md" })],
+    });
+  });
+
+  it("fetches arbitrary package text files with encoded paths for lazy previews", async () => {
+    vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("# Research", { status: 200 }));
+
+    await expect(
+      fetchPackageFile("example-ai-plugin", "skills/research/SKILL.md", "1.2.3"),
+    ).resolves.toBe("# Research");
+
+    const url = new URL(fetchMock.mock.calls[0]?.[0] as string);
+    expect(url.pathname).toBe("/api/v1/packages/example-ai-plugin/file");
+    expect(url.searchParams.get("path")).toBe("skills/research/SKILL.md");
+    expect(url.searchParams.get("version")).toBe("1.2.3");
+  });
+
   it("fetches scoped package version history with pagination", async () => {
     vi.stubEnv("VITE_CONVEX_URL", "https://registry.example");
     const response = {
@@ -576,13 +646,13 @@ describe("fetchPluginCatalog", () => {
     expect(url.searchParams.get("sort")).toBe("updated");
 
     await fetchPluginCatalog({
-      sort: "installs",
+      sort: "downloads",
       limit: 20,
     });
 
-    const installsUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
-    expect(installsUrl.pathname).toBe("/api/v1/plugins");
-    expect(installsUrl.searchParams.get("sort")).toBe("installs");
+    const downloadsUrl = new URL(fetchMock.mock.calls[1]?.[0] as string);
+    expect(downloadsUrl.pathname).toBe("/api/v1/plugins");
+    expect(downloadsUrl.searchParams.get("sort")).toBe("downloads");
   });
 
   it("uses the dedicated plugins search endpoint for search mode", async () => {

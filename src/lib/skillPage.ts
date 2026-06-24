@@ -81,6 +81,13 @@ function ownerMatchesLookup(
   return candidates.includes(requested);
 }
 
+function readActionText(value: unknown) {
+  if (value && typeof value === "object" && "text" in value && typeof value.text === "string") {
+    return value.text;
+  }
+  return null;
+}
+
 async function querySkillBySlug(slug: string, ownerHandle?: string): Promise<SkillLookupResult> {
   if (!ownerHandle) {
     const result = (await convexHttp.query(api.skills.getBySlug, { slug })) as SkillBySlugResult;
@@ -124,10 +131,10 @@ export async function fetchSkillPageData(
 
     if (result.latestVersion?._id) {
       try {
-        const response = (await convexHttp.action(api.skills.getReadme, {
+        const response = await convexHttp.action(api.skills.getReadme, {
           versionId: result.latestVersion._id,
-        })) as { text: string };
-        readme = response.text;
+        });
+        readme = readActionText(response);
       } catch (error) {
         readmeError = error instanceof Error ? error.message : "Failed to load SKILL.md";
       }

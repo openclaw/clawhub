@@ -4,7 +4,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => {
   const interval = vi.fn();
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
-  const registryArtifactBackupRetryRef = Symbol("registry-artifact-backup-retry");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const publisherAbuseAutobanRef = Symbol("publisher-abuse-autobans");
   const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
@@ -12,12 +11,12 @@ const mocks = vi.hoisted(() => {
   const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
   const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
+  const packageStatEventPruneRef = Symbol("package-stat-event-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
   const authRefreshTokensPruneRef = Symbol("auth-refresh-tokens-prune");
   return {
     interval,
     githubSkillSyncRef,
-    registryArtifactBackupRetryRef,
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
     publisherAbuseScoreRefreshRef,
@@ -25,6 +24,7 @@ const mocks = vi.hoisted(() => {
     publisherTemporalAbuseScanRef,
     rateLimitCountersPruneRef,
     skillStatEventPruneRef,
+    packageStatEventPruneRef,
     authSessionsPruneRef,
     authRefreshTokensPruneRef,
   };
@@ -38,9 +38,6 @@ vi.mock("convex/server", () => ({
 
 vi.mock("./_generated/api", () => ({
   internal: {
-    registryArtifactBackupsNode: {
-      processRegistryArtifactBackupRetriesInternal: mocks.registryArtifactBackupRetryRef,
-    },
     githubSkillSyncNode: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
     leaderboards: { rebuildTrendingLeaderboardAction: Symbol("trending-leaderboard") },
     statsMaintenance: {
@@ -54,6 +51,7 @@ vi.mock("./_generated/api", () => ({
     },
     packages: {
       processPackageStatEventsInternal: Symbol("package-stat-events"),
+      pruneProcessedPackageStatEventsInternal: mocks.packageStatEventPruneRef,
       backfillPackageReleaseScansInternal: Symbol("package-scan-backfill"),
     },
     publisherAbuse: {
@@ -103,17 +101,6 @@ describe("crons", () => {
     await import("./crons");
 
     expect(mocks.interval).not.toHaveBeenCalled();
-  });
-
-  it("drains registry artifact backup retries frequently enough for publish bursts", async () => {
-    await import("./crons");
-
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "registry-artifact-backup-retries",
-      { minutes: 5 },
-      mocks.registryArtifactBackupRetryRef,
-      {},
-    );
   });
 
   it("runs GitHub skill source sync every 15 minutes", async () => {
@@ -240,6 +227,22 @@ describe("crons", () => {
         batchSize: 1000,
         maxBatches: 20,
         confirmationToken: "PRUNE_PROCESSED_SKILL_STAT_EVENTS",
+      },
+    );
+  });
+
+  it("prunes processed package stat events daily with a seven-day retention window", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "package-stat-events-prune",
+      { hours: 24 },
+      mocks.packageStatEventPruneRef,
+      {
+        retentionDays: 7,
+        batchSize: 1000,
+        maxBatches: 20,
+        confirmationToken: "PRUNE_PROCESSED_PACKAGE_STAT_EVENTS",
       },
     );
   });

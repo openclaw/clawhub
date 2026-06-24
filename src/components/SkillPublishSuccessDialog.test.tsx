@@ -14,7 +14,7 @@ function renderDialog(overrides: Partial<Parameters<typeof SkillPublishSuccessDi
     <SkillPublishSuccessDialog
       isOpen
       displayName="Agent Helper"
-      skillPath="/vyctor/agent-helper"
+      skillPath="/vyctor/skills/agent-helper"
       skill={{
         slug: "agent-helper",
         displayName: "Agent Helper",
@@ -65,7 +65,7 @@ describe("SkillPublishSuccessDialog", () => {
     expect(xHref).toContain("https://twitter.com/intent/tweet?");
     const xParams = new URL(xHref).searchParams;
     expect(xParams.get("text")).toBe(
-      "Agent Helper is now live on ClawHub 🦞 Check it out: https://clawhub.ai/vyctor/agent-helper",
+      "Agent Helper is now live on ClawHub 🦞 Check it out: https://clawhub.ai/vyctor/skills/agent-helper",
     );
     expect(xParams.get("url")).toBeNull();
   });
@@ -89,8 +89,8 @@ describe("SkillPublishSuccessDialog", () => {
 
       renderDialog();
 
-      const skillLink = screen.getByRole("link", { name: "clawhub.ai/vyctor/agent-helper" });
-      expect(skillLink.getAttribute("href")).toBe("https://clawhub.ai/vyctor/agent-helper");
+      const skillLink = screen.getByRole("link", { name: "clawhub.ai/vyctor/skills/agent-helper" });
+      expect(skillLink.getAttribute("href")).toBe("https://clawhub.ai/vyctor/skills/agent-helper");
     },
   );
 
@@ -100,9 +100,11 @@ describe("SkillPublishSuccessDialog", () => {
     fireEvent.click(screen.getByRole("button", { name: /Copy skill link/i }));
 
     await waitFor(() => {
-      expect(writeTextMock).toHaveBeenCalledWith(expect.stringContaining("/vyctor/agent-helper"));
+      expect(writeTextMock).toHaveBeenCalledWith(
+        expect.stringContaining("/vyctor/skills/agent-helper"),
+      );
     });
-    expect(screen.getByText("Copied")).toBeTruthy();
+    expect(await screen.findByText("Copied")).toBeTruthy();
   });
 
   it("copies a ready Discord message before opening the Discord channel", async () => {
@@ -112,7 +114,7 @@ describe("SkillPublishSuccessDialog", () => {
 
     await waitFor(() => {
       expect(writeTextMock).toHaveBeenCalledWith(
-        "I just published Agent Helper on ClawHub: https://clawhub.ai/vyctor/agent-helper",
+        "I just published Agent Helper on ClawHub: https://clawhub.ai/vyctor/skills/agent-helper",
       );
     });
   });

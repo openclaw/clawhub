@@ -224,6 +224,22 @@ export const ApiV1PublisherDeleteResponseSchema = type({
 });
 export type ApiV1PublisherDeleteResponse = (typeof ApiV1PublisherDeleteResponseSchema)[inferred];
 
+export const ApiV1PublisherReclaimResponseSchema = type({
+  ok: "true",
+  publisherId: "string",
+  handle: "string",
+  dryRun: "boolean",
+  hardDeleted: "boolean",
+  activeSkills: "number",
+  activePackages: "number",
+  memberCount: "number",
+  githubSources: "number",
+  githubSourceContents: "number",
+  officialPublisher: "boolean",
+  confirmationToken: "string",
+});
+export type ApiV1PublisherReclaimResponse = (typeof ApiV1PublisherReclaimResponseSchema)[inferred];
+
 export const ApiV1StaffEmailSendResponseSchema = type({
   ok: "true",
   sent: "true",
@@ -264,6 +280,7 @@ export const ApiV1SkillListResponseSchema = type({
     displayName: "string",
     summary: "string|null?",
     description: "string|null?",
+    topics: "string[]?",
     tags: "unknown",
     stats: "unknown",
     createdAt: "number",
@@ -294,6 +311,7 @@ export const ApiV1SkillResponseSchema = type({
     displayName: "string",
     summary: "string|null?",
     description: "string|null?",
+    topics: "string[]?",
     tags: "unknown",
     stats: "unknown",
     createdAt: "number",

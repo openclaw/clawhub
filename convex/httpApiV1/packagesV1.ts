@@ -309,7 +309,14 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
-const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "installs"] as const;
+const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "downloads", "installs"] as const;
+const PACKAGE_SCAN_STATUS_VALUES = [
+  "clean",
+  "suspicious",
+  "malicious",
+  "pending",
+  "not-run",
+] as const;
 const LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES = {
   "mcp-tooling": "tools",
   data: "tools",
@@ -330,6 +337,27 @@ function resolvePluginCategoryFilter(value: string | undefined): PluginCategoryS
   return LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES[
     value as keyof typeof LEGACY_PLUGIN_CATEGORY_FILTER_ALIASES
   ];
+}
+
+function parseExcludedScanStatuses(value: string | null) {
+  if (!value) return { ok: true as const, value: undefined };
+  const statuses = [
+    ...new Set(
+      value
+        .split(",")
+        .map((status) => status.trim())
+        .filter(Boolean),
+    ),
+  ];
+  const invalid = statuses.find(
+    (status) =>
+      !PACKAGE_SCAN_STATUS_VALUES.includes(status as (typeof PACKAGE_SCAN_STATUS_VALUES)[number]),
+  );
+  if (invalid) return { ok: false as const, message: `Invalid excludeScanStatus: ${invalid}` };
+  return {
+    ok: true as const,
+    value: statuses as Array<(typeof PACKAGE_SCAN_STATUS_VALUES)[number]>,
+  };
 }
 
 function invalidQueryParamMessage(name: string) {
@@ -430,6 +458,7 @@ type PackageListQueryArgs = {
   category?: string;
   topic?: string;
   officialFirst?: boolean;
+  excludedScanStatuses?: Array<(typeof PACKAGE_SCAN_STATUS_VALUES)[number]>;
   sort?: (typeof PACKAGE_LIST_SORT_VALUES)[number];
   viewerUserId?: Id<"users">;
   paginationOpts: { cursor: string | null; numItems: number };
@@ -440,6 +469,7 @@ type SkillPackageDocLike = {
   slug: string;
   displayName: string;
   summary?: string | null;
+  topics?: string[];
   latestVersionId?: Id<"skillVersions">;
   tags: Record<string, Id<"skillVersions">>;
   stats?: unknown;
@@ -479,6 +509,7 @@ type ReleaseLike = {
     contentType?: string;
   }>;
   compatibility?: Doc<"packageReleases">["compatibility"];
+  pluginManifestSummary?: Doc<"packageReleases">["pluginManifestSummary"];
   verification?: Doc<"packageReleases">["verification"];
   extractedPackageJson?: Doc<"packageReleases">["extractedPackageJson"];
   sha256hash?: string;
@@ -815,15 +846,23 @@ type UnifiedCatalogCursorState = {
   packages: CatalogSourceCursorState;
   skills: CatalogSourceCursorState;
   recommendedFallback?: RecommendedFallbackSort;
+  legacyInstallSort?: LegacyInstallSortMarker;
 };
 
 type PluginCatalogCursorState = {
   codePlugins: CatalogSourceCursorState;
   bundlePlugins: CatalogSourceCursorState;
   recommendedFallback?: RecommendedFallbackSort;
+  legacyInstallSort?: LegacyInstallSortMarker;
 };
 
-type RecommendedFallbackSort = "updated" | "installs";
+type RecommendedFallbackSort = "updated" | "downloads";
+type LegacyInstallSortMarker = "downloads";
+
+type PackagePageCursorState = {
+  cursor: string | null;
+  legacyInstallSort?: LegacyInstallSortMarker;
+};
 
 type CatalogPageResult<T> = {
   page: T[];
@@ -843,7 +882,7 @@ const PLUGIN_CATALOG_CURSOR_PREFIX = "pkgplugins:";
 const LEGACY_PLUGIN_SEARCH_CURSOR_PREFIX = "pkgpluginsearch:";
 const SKILL_CATALOG_CURSOR_PREFIX = "skillcat:";
 const PACKAGE_PAGE_CURSOR_PREFIX = "pkgpage:";
-const RECOMMENDED_FALLBACK_SORT = "installs" as const;
+const RECOMMENDED_FALLBACK_SORT = "downloads" as const;
 const CATALOG_CURSOR_PREFIXES = [
   UNIFIED_CATALOG_CURSOR_PREFIX,
   PLUGIN_CATALOG_CURSOR_PREFIX,
@@ -853,11 +892,30 @@ const CATALOG_CURSOR_PREFIXES = [
 ];
 
 function normalizeRecommendedFallbackSort(value: unknown): RecommendedFallbackSort | undefined {
+  if (value === "installs") return "downloads";
   return value === "updated" || value === RECOMMENDED_FALLBACK_SORT ? value : undefined;
 }
 
 function defaultCatalogSourceCursorState(): CatalogSourceCursorState {
   return { cursor: null, offset: 0, pageSize: null, done: false };
+}
+
+function readObjectField(input: unknown, field: string): unknown {
+  if (input === null || typeof input !== "object") return undefined;
+  return Object.getOwnPropertyDescriptor(input, field)?.value;
+}
+
+function normalizeCatalogSourceCursorState(input: unknown): CatalogSourceCursorState {
+  const cursor = readObjectField(input, "cursor");
+  const offset = readObjectField(input, "offset");
+  const pageSize = readObjectField(input, "pageSize");
+  const done = readObjectField(input, "done");
+  return {
+    cursor: typeof cursor === "string" ? cursor : null,
+    offset: typeof offset === "number" && offset > 0 ? offset : 0,
+    pageSize: typeof pageSize === "number" && pageSize > 0 ? pageSize : null,
+    done: done === true,
+  };
 }
 
 function encodeUnifiedCatalogCursor(state: UnifiedCatalogCursorState) {
@@ -879,21 +937,17 @@ function decodeUnifiedCatalogCursor(raw: string | null | undefined): UnifiedCata
     };
   }
   try {
-    const parsed = JSON.parse(
-      raw.slice(UNIFIED_CATALOG_CURSOR_PREFIX.length),
-    ) as Partial<UnifiedCatalogCursorState>;
-    const normalize = (
-      input: Partial<CatalogSourceCursorState> | undefined,
-    ): CatalogSourceCursorState => ({
-      cursor: typeof input?.cursor === "string" ? input.cursor : null,
-      offset: typeof input?.offset === "number" && input.offset > 0 ? input.offset : 0,
-      pageSize: typeof input?.pageSize === "number" && input.pageSize > 0 ? input.pageSize : null,
-      done: input?.done === true,
-    });
+    const parsed: unknown = JSON.parse(raw.slice(UNIFIED_CATALOG_CURSOR_PREFIX.length));
+    const recommendedFallbackValue = readObjectField(parsed, "recommendedFallback");
+    const resetLegacyInstallCursorState = recommendedFallbackValue === "installs";
     return {
-      packages: normalize(parsed.packages),
-      skills: normalize(parsed.skills),
-      recommendedFallback: normalizeRecommendedFallbackSort(parsed.recommendedFallback),
+      packages: resetLegacyInstallCursorState
+        ? defaultCatalogSourceCursorState()
+        : normalizeCatalogSourceCursorState(readObjectField(parsed, "packages")),
+      skills: resetLegacyInstallCursorState
+        ? defaultCatalogSourceCursorState()
+        : normalizeCatalogSourceCursorState(readObjectField(parsed, "skills")),
+      recommendedFallback: normalizeRecommendedFallbackSort(recommendedFallbackValue),
     };
   } catch {
     return {
@@ -907,19 +961,44 @@ function encodePluginCatalogCursor(state: PluginCatalogCursorState) {
   return `${PLUGIN_CATALOG_CURSOR_PREFIX}${JSON.stringify(state)}`;
 }
 
+function encodePackagePageCursor(state: PackagePageCursorState) {
+  return `${PACKAGE_PAGE_CURSOR_PREFIX}${JSON.stringify(state)}`;
+}
+
+function parsePrefixedCursorPayload(raw: string | null | undefined, prefix: string): unknown {
+  if (!raw?.startsWith(prefix)) return null;
+  try {
+    return JSON.parse(raw.slice(prefix.length));
+  } catch {
+    return null;
+  }
+}
+
+function hasDownloadsMappedLegacyInstallCursor(raw: string | null | undefined, prefix: string) {
+  const payload = parsePrefixedCursorPayload(raw, prefix);
+  return readObjectField(payload, "legacyInstallSort") === "downloads";
+}
+
+function normalizeLegacyInstallAggregateCursor(raw: string | null, prefix: string) {
+  if (!raw) return null;
+  return hasDownloadsMappedLegacyInstallCursor(raw, prefix) ? raw : null;
+}
+
+function decodeLegacyInstallPageCursor(raw: string | null) {
+  const payload = parsePrefixedCursorPayload(raw, PACKAGE_PAGE_CURSOR_PREFIX);
+  if (readObjectField(payload, "legacyInstallSort") !== "downloads") return null;
+  const cursor = readObjectField(payload, "cursor");
+  return typeof cursor === "string" ? cursor : null;
+}
+
+function legacyInstallSortMarker(isLegacyInstallSortRequest: boolean) {
+  return isLegacyInstallSortRequest ? ("downloads" as const) : undefined;
+}
+
 function decodeMultiPluginCursor(
   raw: string | null | undefined,
   prefix: string,
 ): PluginCatalogCursorState {
-  const normalize = (
-    input: Partial<CatalogSourceCursorState> | undefined,
-  ): CatalogSourceCursorState => ({
-    cursor: typeof input?.cursor === "string" ? input.cursor : null,
-    offset: typeof input?.offset === "number" && input.offset > 0 ? input.offset : 0,
-    pageSize: typeof input?.pageSize === "number" && input.pageSize > 0 ? input.pageSize : null,
-    done: input?.done === true,
-  });
-
   if (!raw?.startsWith(prefix)) {
     return {
       codePlugins: {
@@ -930,11 +1009,17 @@ function decodeMultiPluginCursor(
     };
   }
   try {
-    const parsed = JSON.parse(raw.slice(prefix.length)) as Partial<PluginCatalogCursorState>;
+    const parsed: unknown = JSON.parse(raw.slice(prefix.length));
+    const recommendedFallbackValue = readObjectField(parsed, "recommendedFallback");
+    const resetLegacyInstallCursorState = recommendedFallbackValue === "installs";
     return {
-      codePlugins: normalize(parsed.codePlugins),
-      bundlePlugins: normalize(parsed.bundlePlugins),
-      recommendedFallback: normalizeRecommendedFallbackSort(parsed.recommendedFallback),
+      codePlugins: resetLegacyInstallCursorState
+        ? defaultCatalogSourceCursorState()
+        : normalizeCatalogSourceCursorState(readObjectField(parsed, "codePlugins")),
+      bundlePlugins: resetLegacyInstallCursorState
+        ? defaultCatalogSourceCursorState()
+        : normalizeCatalogSourceCursorState(readObjectField(parsed, "bundlePlugins")),
+      recommendedFallback: normalizeRecommendedFallbackSort(recommendedFallbackValue),
     };
   } catch {
     return {
@@ -1012,6 +1097,10 @@ function compareCatalogItems(a: CatalogListItem, b: CatalogListItem) {
   return a.name.localeCompare(b.name);
 }
 
+function normalizePublicPackageSort(sort: (typeof PACKAGE_LIST_SORT_VALUES)[number] | undefined) {
+  return sort === "installs" ? "downloads" : sort;
+}
+
 function compareCatalogItemsForSort(
   a: CatalogListItem,
   b: CatalogListItem,
@@ -1032,9 +1121,9 @@ function compareCatalogItemsForSort(
     );
     if (score !== 0) return score;
   }
-  if (sort === "installs") {
-    const installs = (b.stats?.installs ?? 0) - (a.stats?.installs ?? 0);
-    if (installs !== 0) return installs;
+  if (sort === "downloads" || sort === "installs") {
+    const downloads = (b.stats?.downloads ?? 0) - (a.stats?.downloads ?? 0);
+    if (downloads !== 0) return downloads;
   }
   return compareCatalogItems(a, b);
 }
@@ -1066,6 +1155,7 @@ async function searchPackageCatalog(
     highlightedOnly?: boolean;
     category?: string;
     topic?: string;
+    excludedScanStatuses?: Array<(typeof PACKAGE_SCAN_STATUS_VALUES)[number]>;
     viewerUserId?: Id<"users">;
   },
 ): Promise<CatalogSearchEntry[]> {
@@ -1081,6 +1171,7 @@ async function searchPackageCatalog(
       highlightedOnly: args.highlightedOnly,
       category: args.category,
       topic: args.topic,
+      excludedScanStatuses: args.excludedScanStatuses,
       viewerUserId: args.viewerUserId,
     },
   );
@@ -1115,6 +1206,7 @@ function toSkillPackageDetail(
       channel: isSkillOfficial(skill) ? ("official" as const) : ("community" as const),
       isOfficial: isSkillOfficial(skill),
       summary: skill.summary ?? null,
+      topics: skill.topics,
       ownerHandle: owner?.handle ?? null,
       createdAt: skill.createdAt,
       updatedAt: skill.updatedAt,
@@ -1463,12 +1555,15 @@ async function listPackages(
   if (!highlightedOnlyParam.ok) return text(highlightedOnlyParam.message, 400, rate.headers);
   const sortParam = parseEnumQueryParam(url.searchParams, "sort", PACKAGE_LIST_SORT_VALUES);
   if (!sortParam.ok) return text(sortParam.message, 400, rate.headers);
-  const cursor = rawCursor;
   const rawCategory = url.searchParams.get("category")?.trim() || undefined;
   const category = resolvePluginCategoryFilter(rawCategory);
   const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
   const officialFirst = parseBooleanQueryParam(url.searchParams, "officialFirst");
   if (!officialFirst.ok) return text(officialFirst.message, 400, rate.headers);
+  const excludedScanStatuses = parseExcludedScanStatuses(url.searchParams.get("excludeScanStatus"));
+  if (!excludedScanStatuses.ok) {
+    return text(excludedScanStatuses.message, 400, rate.headers);
+  }
   if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
@@ -1482,7 +1577,8 @@ async function listPackages(
     (highlightedOnly || category)
       ? RECOMMENDED_FALLBACK_SORT
       : options?.defaultSort;
-  const effectiveSort = sortParam.value ?? pluginDefaultSort;
+  const isLegacyInstallSortRequest = sortParam.value === "installs";
+  const effectiveSort = normalizePublicPackageSort(sortParam.value ?? pluginDefaultSort);
   if (category && (effectiveFamily === "skill" || (!effectiveFamily && includeSkills))) {
     return text(
       "Plugin category is only supported for plugin package endpoints",
@@ -1492,6 +1588,9 @@ async function listPackages(
   }
 
   if (effectiveFamily === "skill") {
+    const cursor = isLegacyInstallSortRequest
+      ? decodeLegacyInstallPageCursor(rawCursor)
+      : rawCursor;
     const result = await runQueryRef<{
       page: CatalogListItem[];
       isDone: boolean;
@@ -1505,13 +1604,26 @@ async function listPackages(
       paginationOpts: { cursor, numItems: limit },
     });
     return json(
-      { items: result.page, nextCursor: result.isDone ? null : result.continueCursor },
+      {
+        items: result.page,
+        nextCursor: result.isDone
+          ? null
+          : isLegacyInstallSortRequest
+            ? encodePackagePageCursor({
+                cursor: result.continueCursor,
+                legacyInstallSort: "downloads",
+              })
+            : result.continueCursor,
+      },
       200,
       rate.headers,
     );
   }
 
   if (!effectiveFamily && includeSkills) {
+    const cursor = isLegacyInstallSortRequest
+      ? normalizeLegacyInstallAggregateCursor(rawCursor, UNIFIED_CATALOG_CURSOR_PREFIX)
+      : rawCursor;
     const decodedCursor = decodeUnifiedCatalogCursor(cursor);
     const isFreshRecommendedRequest = effectiveSort === "recommended" && !cursor;
     const [hasMissingPackageRecommendationScores, hasMissingSkillRecommendationScores] =
@@ -1557,6 +1669,7 @@ async function listPackages(
             category,
             topic,
             officialFirst: officialFirst.value,
+            excludedScanStatuses: excludedScanStatuses.value,
             sort: unifiedListSort,
             viewerUserId: viewerUserId ?? undefined,
             paginationOpts: { cursor: pageCursor, numItems },
@@ -1606,6 +1719,7 @@ async function listPackages(
       packages: finalizeCatalogSource(packageSource),
       skills: finalizeCatalogSource(skillSource),
       recommendedFallback,
+      legacyInstallSort: legacyInstallSortMarker(isLegacyInstallSortRequest),
     };
     const isDoneAll =
       nextState.packages.done &&
@@ -1623,13 +1737,20 @@ async function listPackages(
   }
 
   if (!effectiveFamily && options?.pluginFamilies?.length) {
+    const shouldMarkDefaultDownloadCursor =
+      !sortParam.value && pluginDefaultSort === RECOMMENDED_FALLBACK_SORT;
+    const cursor =
+      isLegacyInstallSortRequest || shouldMarkDefaultDownloadCursor
+        ? normalizeLegacyInstallAggregateCursor(rawCursor, PLUGIN_CATALOG_CURSOR_PREFIX)
+        : rawCursor;
     const includeTotalCount =
       !includeSkills &&
       !category &&
       !topic &&
       !channelParam.value &&
       typeof isOfficial.value !== "boolean" &&
-      !highlightedOnly;
+      !highlightedOnly &&
+      !excludedScanStatuses.value?.length;
     const totalCount = includeTotalCount
       ? await runQueryRef<number | null>(ctx, internalRefs.packages.countPublicPluginsInternal, {})
       : null;
@@ -1673,6 +1794,7 @@ async function listPackages(
         category,
         topic,
         officialFirst: officialFirst.value,
+        excludedScanStatuses: excludedScanStatuses.value,
         sort: pluginListSort,
         viewerUserId: viewerUserId ?? undefined,
         paginationOpts: { cursor: pageCursor, numItems },
@@ -1723,6 +1845,9 @@ async function listPackages(
       codePlugins: finalizeCatalogSource(codePluginSource),
       bundlePlugins: finalizeCatalogSource(bundlePluginSource),
       recommendedFallback,
+      legacyInstallSort: legacyInstallSortMarker(
+        isLegacyInstallSortRequest || shouldMarkDefaultDownloadCursor,
+      ),
     };
     const isDoneAll =
       nextState.codePlugins.done &&
@@ -1740,6 +1865,7 @@ async function listPackages(
     );
   }
 
+  const cursor = isLegacyInstallSortRequest ? decodeLegacyInstallPageCursor(rawCursor) : rawCursor;
   const result = await runQueryRef<{
     page: unknown[];
     isDone: boolean;
@@ -1752,12 +1878,23 @@ async function listPackages(
     category,
     topic,
     officialFirst: officialFirst.value,
+    excludedScanStatuses: excludedScanStatuses.value,
     sort: effectiveSort,
     viewerUserId: viewerUserId ?? undefined,
     paginationOpts: { cursor, numItems: limit },
   } satisfies PackageListQueryArgs);
   return json(
-    { items: result.page, nextCursor: result.isDone ? null : result.continueCursor },
+    {
+      items: result.page,
+      nextCursor: result.isDone
+        ? null
+        : isLegacyInstallSortRequest
+          ? encodePackagePageCursor({
+              cursor: result.continueCursor,
+              legacyInstallSort: "downloads",
+            })
+          : result.continueCursor,
+    },
     200,
     rate.headers,
   );
@@ -3090,7 +3227,7 @@ function ambiguousSkillChoicesForPackageRequest(
         slug,
         ref: `@${ownerHandle}/${slug}`,
         url: new URL(
-          `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(slug)}`,
+          `/${encodeURIComponent(ownerHandle)}/skills/${encodeURIComponent(slug)}`,
           request.url,
         ).toString(),
       },
@@ -3201,6 +3338,10 @@ async function searchPackages(
   const rawCategory = url.searchParams.get("category")?.trim() || undefined;
   const category = resolvePluginCategoryFilter(rawCategory);
   const topic = url.searchParams.get("topic")?.trim().toLowerCase() || undefined;
+  const excludedScanStatuses = parseExcludedScanStatuses(url.searchParams.get("excludeScanStatus"));
+  if (!excludedScanStatuses.ok) {
+    return text(excludedScanStatuses.message, 400, rate.headers);
+  }
   if (rawCategory && !category) {
     return text("Invalid plugin category", 400, rate.headers);
   }
@@ -3241,6 +3382,7 @@ async function searchPackages(
             highlightedOnly: highlightedOnly || undefined,
             category,
             topic,
+            excludedScanStatuses: excludedScanStatuses.value,
             viewerUserId: viewerUserId ?? undefined,
           }),
         ),
@@ -3266,6 +3408,7 @@ async function searchPackages(
         highlightedOnly: highlightedOnly || undefined,
         category,
         topic,
+        excludedScanStatuses: excludedScanStatuses.value,
         viewerUserId: viewerUserId ?? undefined,
       });
     }
@@ -3279,6 +3422,7 @@ async function searchPackages(
         highlightedOnly: highlightedOnly || undefined,
         category,
         topic,
+        excludedScanStatuses: excludedScanStatuses.value,
         viewerUserId: viewerUserId ?? undefined,
       }),
       runQueryRef<CatalogSearchEntry[]>(
@@ -3537,11 +3681,13 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
         rate.headers,
       );
     }
+    const tags = await resolvePackageTags(ctx, publicPackage!.tags);
+
     return json(
       {
         package: {
           ...toPackageDetailResponsePackage(publicPackage!),
-          tags: await resolvePackageTags(ctx, publicPackage!.tags),
+          tags,
         },
         owner: packageOwner
           ? {
@@ -3766,6 +3912,7 @@ export async function packagesGetRouterV1Handler(ctx: ActionCtx, request: Reques
             contentType: file.contentType,
           })),
           compatibility: result.version.compatibility ?? null,
+          pluginManifestSummary: result.version.pluginManifestSummary ?? null,
           verification,
           artifact: toReleaseArtifact(result.version, result.package.name),
           sha256hash: result.version.sha256hash ?? null,

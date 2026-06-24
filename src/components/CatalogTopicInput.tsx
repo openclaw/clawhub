@@ -66,7 +66,7 @@ export function CatalogTopicInput({ id, value, disabled, onChange }: CatalogTopi
       (existingTopic) => normalizeCatalogTopic(existingTopic) === topicSlug,
     );
     if (!duplicate) {
-      onChange(formatCatalogTopicsInput([...topics, topic]));
+      onChange(formatCatalogTopicsInput([...topics, topicSlug ?? topic]));
     }
     setDraft("");
   }

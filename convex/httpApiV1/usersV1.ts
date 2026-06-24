@@ -20,6 +20,7 @@ const usersV1InternalRefs = internal as unknown as {
     addOfficialPublisherInternal: unknown;
     deleteEmptyOrgPublisherInternal: unknown;
     listOfficialPublishersInternal: unknown;
+    reclaimDeletedOrgHandleInternal: unknown;
     removeOrgPublisherMemberInternal: unknown;
     removeOfficialPublisherInternal: unknown;
     recoverPersonalPublisherInternal: unknown;
@@ -86,7 +87,6 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "ban" &&
     action !== "unban" &&
     action !== "role" &&
-    action !== "restore" &&
     action !== "reclassify-ban" &&
     action !== "ban-appeal-unban" &&
     action !== "reclaim" &&
@@ -96,6 +96,7 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     action !== "publisher-delete" &&
     action !== "publisher-official" &&
     action !== "publisher-member" &&
+    action !== "publisher-reclaim" &&
     action !== "publisher-recovery"
   ) {
     return text("Not found", 404, rate.headers);
@@ -113,13 +114,6 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
   if (!authResult.ok) return authResult.response;
   const actorUserId = authResult.userId;
   const actorUser = authResult.user;
-
-  // Restore and reclaim have different parameter shapes, handle them separately
-  if (action === "restore") {
-    const admin = requireAdminOrResponse(actorUser, rate.headers);
-    if (!admin.ok) return admin.response;
-    return handleAdminRestore(ctx, request, payload, actorUserId, rate.headers);
-  }
 
   if (action === "reclassify-ban") {
     const admin = requireAdminOrResponse(actorUser, rate.headers);
@@ -167,6 +161,12 @@ export async function usersPostRouterV1Handler(ctx: ActionCtx, request: Request)
     const admin = requireAdminOrResponse(actorUser, rate.headers);
     if (!admin.ok) return admin.response;
     return handleAdminRemovePublisherMember(ctx, payload, actorUserId, rate.headers);
+  }
+
+  if (action === "publisher-reclaim") {
+    const admin = requireAdminOrResponse(actorUser, rate.headers);
+    if (!admin.ok) return admin.response;
+    return handleAdminReclaimDeletedOrgHandle(ctx, payload, actorUserId, rate.headers);
   }
 
   if (action === "publisher-recovery") {
@@ -300,6 +300,49 @@ async function handleAdminDeletePublisher(
     const message = error instanceof Error ? error.message : "Publisher delete failed";
     if (message.toLowerCase().includes("forbidden")) {
       return text("Forbidden", 403, headers);
+    }
+    if (message.toLowerCase().includes("not found")) {
+      return text(message, 404, headers);
+    }
+    return text(message, 400, headers);
+  }
+}
+
+async function handleAdminReclaimDeletedOrgHandle(
+  ctx: ActionCtx,
+  payload: Record<string, unknown>,
+  actorUserId: Id<"users">,
+  headers: HeadersInit,
+) {
+  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
+  const reason = typeof payload.reason === "string" ? payload.reason.trim() : "";
+  const dryRun = payload.dryRun !== false;
+  const confirmationToken =
+    typeof payload.confirmationToken === "string" ? payload.confirmationToken.trim() : undefined;
+  if (!handle) return text("Missing handle", 400, headers);
+  if (!reason) return text("Missing reason", 400, headers);
+  if (reason.length > 500) return text("Reason too long (max 500 chars)", 400, headers);
+
+  try {
+    const result = await runUsersV1MutationRef(
+      ctx,
+      usersV1InternalRefs.publishers.reclaimDeletedOrgHandleInternal,
+      {
+        actorUserId,
+        handle,
+        reason,
+        dryRun,
+        confirmationToken,
+      },
+    );
+    return json(result, 200, headers);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Publisher reclaim failed";
+    if (message.toLowerCase().includes("forbidden")) {
+      return text("Forbidden", 403, headers);
+    }
+    if (message.toLowerCase().includes("unauthorized")) {
+      return text("Unauthorized", 401, headers);
     }
     if (message.toLowerCase().includes("not found")) {
       return text(message, 404, headers);
@@ -551,68 +594,6 @@ export async function usersGetRouterV1Handler(ctx: ActionCtx, request: Request) 
       return text("Unauthorized", 401, rate.headers);
     }
     return text(message, 400, rate.headers);
-  }
-}
-
-/**
- * POST /api/v1/users/restore
- * Admin-only: restore skills from registry artifact backup for a user.
- * Body: { handle: string, slugs: string[], versionsBySlug: Record<string, string>, forceOverwriteSquatter?: boolean }
- */
-async function handleAdminRestore(
-  ctx: ActionCtx,
-  _request: Request,
-  payload: Record<string, unknown>,
-  actorUserId: Id<"users">,
-  headers: HeadersInit,
-) {
-  const handle = typeof payload.handle === "string" ? payload.handle.trim().toLowerCase() : "";
-  if (!handle) return text("Missing handle", 400, headers);
-
-  const slugs = Array.isArray(payload.slugs)
-    ? payload.slugs.filter((s): s is string => typeof s === "string")
-    : [];
-  if (slugs.length === 0) return text("Missing slugs array", 400, headers);
-  if (slugs.length > 100) return text("Too many slugs (max 100)", 400, headers);
-
-  const versionsBySlug =
-    payload.versionsBySlug && typeof payload.versionsBySlug === "object"
-      ? Object.fromEntries(
-          Object.entries(payload.versionsBySlug).filter(
-            (entry): entry is [string, string] =>
-              typeof entry[0] === "string" && typeof entry[1] === "string",
-          ),
-        )
-      : undefined;
-  if (!versionsBySlug) return text("Missing versionsBySlug", 400, headers);
-  const missingVersionSlug = slugs.find((slug) => !versionsBySlug[slug]?.trim());
-  if (missingVersionSlug) {
-    return text(`Missing backup version for slug ${missingVersionSlug}`, 400, headers);
-  }
-  const forceOverwriteSquatter = Boolean(payload.forceOverwriteSquatter);
-
-  const targetUser = await ctx.runQuery(api.users.getByHandle, { handle });
-  if (!targetUser?._id) return text("User not found", 404, headers);
-
-  try {
-    const result = await ctx.runAction(
-      internal.registryArtifactRestore.restoreUserSkillsFromBackup,
-      {
-        actorUserId,
-        ownerHandle: handle,
-        ownerUserId: targetUser._id,
-        slugs,
-        versionsBySlug,
-        forceOverwriteSquatter,
-      },
-    );
-    return json(result, 200, headers);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Restore failed";
-    if (message.toLowerCase().includes("forbidden")) {
-      return text("Forbidden", 403, headers);
-    }
-    return text(message, 400, headers);
   }
 }
 

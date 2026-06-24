@@ -44,6 +44,12 @@ import {
 import { getSkillBadgeMap, getSkillBadgeMaps, isSkillHighlighted } from "./lib/badges";
 import { scheduleNextBatchIfNeeded } from "./lib/batching";
 import { generateChangelogPreview as buildChangelogPreview } from "./lib/changelog";
+import {
+  ACTIVITY_TREND_DAYS,
+  buildDailyMetricTrends,
+  clampActivityTrendEndDay,
+  getActivityTrendRangeForEndDay,
+} from "./lib/downloadTrend";
 import { embeddingVisibilityFor } from "./lib/embeddingVisibility";
 import {
   canHealSkillOwnershipByGitHubProviderAccountId,
@@ -2262,6 +2268,23 @@ function toPublicSkillListVersionFromSummary(
   };
 }
 
+async function buildSkillActivityTrend(
+  ctx: Pick<QueryCtx, "db">,
+  skill: Doc<"skills">,
+  endDay: number,
+) {
+  const safeEndDay = clampActivityTrendEndDay(endDay, Date.now());
+  const { startDay, endDay: normalizedEndDay } = getActivityTrendRangeForEndDay(safeEndDay);
+  const rows = await ctx.db
+    .query("skillDailyStats")
+    .withIndex("by_skill_day", (q) =>
+      q.eq("skillId", skill._id).gte("day", startDay).lte("day", normalizedEndDay),
+    )
+    .take(ACTIVITY_TREND_DAYS);
+
+  return buildDailyMetricTrends(rows, normalizedEndDay);
+}
+
 async function buildManagementSkillEntries(ctx: QueryCtx, skills: Doc<"skills">[]) {
   const ownerCache = new Map<Id<"users">, Promise<Doc<"users"> | null>>();
   const badgeMapBySkillId = await getSkillBadgeMaps(
@@ -2721,6 +2744,26 @@ export const getBySlug = query({
   },
 });
 
+export const getGitHubDownloadTargetInternal = internalQuery({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.installKind !== "github") return null;
+    const source = skill.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+
+    return {
+      installKind: "github" as const,
+      repo: source?.repo ?? null,
+      path: skill.githubPath ?? null,
+      commit: skill.githubCurrentCommit ?? null,
+      contentHash: skill.githubCurrentContentHash ?? null,
+      currentStatus: skill.githubCurrentStatus ?? null,
+      scanStatus: skill.githubScanStatus ?? null,
+      removedAt: skill.githubRemovedAt ?? null,
+    };
+  },
+});
+
 export const getVerifyTargetBySlugInternal = internalQuery({
   args: { slug: v.string(), ownerHandle: v.optional(v.string()) },
   handler: async (ctx, args) => {
@@ -2905,12 +2948,9 @@ export const checkSlugAvailability = query({
       };
     }
 
-    const requestedPublisherMatchesSkill = requestedPublisher
-      ? skill.ownerPublisherId
-        ? requestedPublisher._id === skill.ownerPublisherId
-        : requestedPublisher.kind === "user" &&
-          requestedPublisher.linkedUserId === skill.ownerUserId
-      : !requestedHandle;
+    const requestedPublisherMatchesSkill = skill.ownerPublisherId
+      ? requestedPublisher._id === skill.ownerPublisherId
+      : requestedPublisher.kind === "user" && requestedPublisher.linkedUserId === skill.ownerUserId;
 
     if (userId && skill.ownerUserId === userId && requestedPublisherMatchesSkill) {
       return {
@@ -3113,6 +3153,22 @@ export const getSkillBySlugInternal = internalQuery({
   handler: async (ctx, args) => {
     const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
     return resolved.skill;
+  },
+});
+
+export const getActivityTrendForSlug = query({
+  args: { slug: v.string(), ownerHandle: v.optional(v.string()), endDay: v.number() },
+  handler: async (ctx, args) => {
+    const resolved = await resolveSkillBySlugOrAliasForOwner(ctx, args.slug, args.ownerHandle);
+    const skill = resolved.skill;
+    if (!skill || !isPublicSkillDoc(skill)) return null;
+    const ownerPublisher = await getOwnerPublisher(ctx, {
+      ownerPublisherId: skill.ownerPublisherId,
+      ownerUserId: skill.ownerUserId,
+    });
+    if (!toPublicPublisher(ownerPublisher)) return null;
+
+    return await buildSkillActivityTrend(ctx, skill, args.endDay);
   },
 });
 
@@ -5826,7 +5882,7 @@ export const listAuditPage = query({
     const { numItems, cursor } = normalizePublicListPagination(args.paginationOpts);
     const result = await ctx.db
       .query("skillSearchDigest")
-      .withIndex("by_active_stats_installs_all_time", (q) => q.eq("softDeletedAt", undefined))
+      .withIndex("by_active_stats_downloads", (q) => q.eq("softDeletedAt", undefined))
       .order("desc")
       .paginate({ cursor, numItems });
 
@@ -5954,6 +6010,7 @@ async function buildPublicSkillApiListEntryFromDigest(
       slug: publicSkill.slug,
       displayName: publicSkill.displayName,
       summary: publicSkill.summary,
+      topics: publicSkill.topics,
       tags: publicSkill.tags,
       stats: publicSkill.stats,
       createdAt: publicSkill.createdAt,
@@ -6100,16 +6157,22 @@ type SkillCatalogCursorState = {
   recommendedFallback?: SkillCatalogRecommendedFallbackSort;
 };
 
-type SkillCatalogRecommendedFallbackSort = "updated" | "installs";
+type SkillCatalogRecommendedFallbackSort = "updated" | "downloads";
 
-const SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT = "installs" as const;
+const SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT = "downloads" as const;
 
 function normalizeSkillCatalogRecommendedFallbackSort(
   value: unknown,
 ): SkillCatalogRecommendedFallbackSort | undefined {
+  if (value === "installs") return "downloads";
   return value === "updated" || value === SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
     ? value
     : undefined;
+}
+
+function readSkillCatalogCursorField(input: unknown, field: string): unknown {
+  if (input === null || typeof input !== "object") return undefined;
+  return Object.getOwnPropertyDescriptor(input, field)?.value;
 }
 
 function encodeSkillCatalogCursor(state: SkillCatalogCursorState) {
@@ -6123,15 +6186,26 @@ function decodeSkillCatalogCursor(raw: string | null | undefined): SkillCatalogC
     return { cursor: raw, offset: 0, pageSize: null, done: false };
   }
   try {
-    const parsed = JSON.parse(
-      raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length),
-    ) as Partial<SkillCatalogCursorState>;
+    const parsed: unknown = JSON.parse(raw.slice(SKILL_CATALOG_CURSOR_PREFIX.length));
+    const recommendedFallbackValue = readSkillCatalogCursorField(parsed, "recommendedFallback");
+    const resetLegacyInstallCursorState = recommendedFallbackValue === "installs";
+    const cursorValue = readSkillCatalogCursorField(parsed, "cursor");
+    const offsetValue = readSkillCatalogCursorField(parsed, "offset");
+    const pageSizeValue = readSkillCatalogCursorField(parsed, "pageSize");
+    const doneValue = readSkillCatalogCursorField(parsed, "done");
     return {
-      cursor: typeof parsed.cursor === "string" ? parsed.cursor : null,
-      offset: typeof parsed.offset === "number" && parsed.offset > 0 ? parsed.offset : 0,
-      pageSize: typeof parsed.pageSize === "number" && parsed.pageSize > 0 ? parsed.pageSize : null,
-      done: parsed.done === true,
-      recommendedFallback: normalizeSkillCatalogRecommendedFallbackSort(parsed.recommendedFallback),
+      cursor:
+        !resetLegacyInstallCursorState && typeof cursorValue === "string" ? cursorValue : null,
+      offset:
+        !resetLegacyInstallCursorState && typeof offsetValue === "number" && offsetValue > 0
+          ? offsetValue
+          : 0,
+      pageSize:
+        !resetLegacyInstallCursorState && typeof pageSizeValue === "number" && pageSizeValue > 0
+          ? pageSizeValue
+          : null,
+      done: !resetLegacyInstallCursorState && doneValue === true,
+      recommendedFallback: normalizeSkillCatalogRecommendedFallbackSort(recommendedFallbackValue),
     };
   } catch {
     return { cursor: null, offset: 0, pageSize: null, done: false };
@@ -9481,6 +9555,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
     topics: v.optional(v.array(v.string())),
+    summary: v.optional(v.string()),
     forkOf: v.optional(
       v.object({
         slug: v.string(),
@@ -9507,7 +9582,7 @@ export const publishVersion: ReturnType<typeof action> = action({
       actorUserId: userId,
       ownerHandle: args.ownerHandle,
       minimumRole: "publisher",
-    })) as { publisherId: Id<"publishers"> };
+    })) as { publisherId: Id<"publishers">; handle: string };
     const sourceOwnerHandle =
       args.migrateOwner === true
         ? args.sourceOwnerHandle?.trim() || user.handle?.trim() || undefined
@@ -9523,6 +9598,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     const { icon: _legacyIcon, ...publishArgs } = args;
     return publishVersionForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
+      ownerHandle: target.handle,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
     });
@@ -9883,112 +9959,8 @@ export const updateTags = mutation({
     if (latestEntry) {
       await setSkillEmbeddingsLatestVersion(ctx, skill._id, latestEntry.versionId, now);
     }
-
-    if (latestEntry && latestEntry.versionId !== skill.latestVersionId) {
-      const version = versionsById.get(latestEntry.versionId);
-      const owner = await getOwnerPublisher(ctx, {
-        ownerPublisherId: skill.ownerPublisherId,
-        ownerUserId: skill.ownerUserId,
-      });
-      if (version && owner) {
-        await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
-          skill,
-          version,
-          isLatest: true,
-          ownerHandle: owner.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId),
-          logContext: "latest refresh",
-        });
-      }
-    }
   },
 });
-
-async function scheduleRegistryArtifactSkillVersionBackupRefresh(
-  ctx: MutationCtx,
-  params: {
-    skill: Pick<Doc<"skills">, "_id" | "slug" | "displayName" | "ownerUserId" | "ownerPublisherId">;
-    version: Doc<"skillVersions">;
-    ownerHandle: string;
-    isLatest: boolean;
-    logContext: string;
-  },
-) {
-  try {
-    await ctx.scheduler.runAfter(
-      0,
-      internal.registryArtifactBackupsNode.backupSkillForPublishInternal,
-      {
-        skillId: params.skill._id,
-        versionId: params.version._id,
-        slug: params.skill.slug,
-        version: params.version.version,
-        isLatest: params.isLatest,
-        displayName: params.skill.displayName,
-        ownerHandle: params.ownerHandle,
-        files: params.version.files,
-        publishedAt: params.version.createdAt,
-      },
-    );
-  } catch (error) {
-    console.error(`registry artifact backup ${params.logContext} scheduling failed`, error);
-    await enqueueSkillVersionBackupRetryJob(ctx, {
-      versionId: params.version._id,
-      error: errorMessageForBackupJob(error),
-    }).catch((enqueueError) => {
-      console.error(
-        `registry artifact backup ${params.logContext} retry enqueue failed`,
-        enqueueError,
-      );
-    });
-  }
-}
-
-async function enqueueSkillVersionBackupRetryJob(
-  ctx: Pick<MutationCtx, "db">,
-  args: { versionId: Id<"skillVersions">; error?: string },
-) {
-  const now = Date.now();
-  const lastError = truncateBackupJobError(args.error);
-  const existing = await ctx.db
-    .query("registryArtifactBackupJobs")
-    .withIndex("by_skill_version", (q) => q.eq("skillVersionId", args.versionId))
-    .unique();
-  if (existing) {
-    await ctx.db.patch(existing._id, {
-      status: "pending",
-      reason: "retry",
-      attempts: 0,
-      lastError,
-      nextRunAt: now,
-      createdAt: now,
-      updatedAt: now,
-      exhaustedAt: undefined,
-      completedAt: undefined,
-    });
-    return;
-  }
-  await ctx.db.insert("registryArtifactBackupJobs", {
-    targetKind: "skillVersion",
-    skillVersionId: args.versionId,
-    packageReleaseId: undefined,
-    status: "pending",
-    reason: "retry",
-    attempts: 0,
-    nextRunAt: now,
-    lastError,
-    createdAt: now,
-    updatedAt: now,
-  });
-}
-
-function errorMessageForBackupJob(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function truncateBackupJobError(error: string | undefined) {
-  if (!error) return undefined;
-  return error.length > 4000 ? `${error.slice(0, 3997)}...` : error;
-}
 
 export const deleteTags = mutation({
   args: {
@@ -10087,11 +10059,31 @@ export const setCatalogMetadata = mutation({
       ...skill,
       categories,
       topics: topics.length ? topics : undefined,
+      inferredCategories: undefined,
+      inferredTopics: undefined,
+      inferredFromVersionId: undefined,
+      inferredCategoryConfidence: undefined,
+      inferredTopicConfidence: undefined,
+      inferredClassifierVersion: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredInputHash: undefined,
+      inferredTopicInputHash: undefined,
+      inferredAt: undefined,
       updatedAt: now,
     };
     await ctx.db.patch(skill._id, {
       categories: nextSkill.categories,
       topics: nextSkill.topics,
+      inferredCategories: nextSkill.inferredCategories,
+      inferredTopics: nextSkill.inferredTopics,
+      inferredFromVersionId: nextSkill.inferredFromVersionId,
+      inferredCategoryConfidence: nextSkill.inferredCategoryConfidence,
+      inferredTopicConfidence: nextSkill.inferredTopicConfidence,
+      inferredClassifierVersion: nextSkill.inferredClassifierVersion,
+      inferredTopicClassifierVersion: nextSkill.inferredTopicClassifierVersion,
+      inferredInputHash: nextSkill.inferredInputHash,
+      inferredTopicInputHash: nextSkill.inferredTopicInputHash,
+      inferredAt: nextSkill.inferredAt,
       updatedAt: now,
     });
     await syncSkillSearchDigestForSkillDoc(ctx, nextSkill);
@@ -10613,23 +10605,6 @@ async function renameOwnedSkillByActor(
     createdAt: now,
   });
 
-  if (skill.latestVersionId) {
-    const latestVersion = await ctx.db.get(skill.latestVersionId);
-    const owner = await getOwnerPublisher(ctx, {
-      ownerPublisherId: skill.ownerPublisherId,
-      ownerUserId: skill.ownerUserId,
-    });
-    if (latestVersion && !latestVersion.softDeletedAt && owner) {
-      await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
-        skill: { ...skill, slug: newSlug },
-        version: latestVersion,
-        isLatest: true,
-        ownerHandle: owner.handle ?? String(skill.ownerPublisherId ?? skill.ownerUserId),
-        logContext: "rename refresh",
-      });
-    }
-  }
-
   return { ok: true as const, slug: newSlug, previousSlug: skill.slug };
 }
 
@@ -11062,23 +11037,6 @@ export const transferSkillOwnerForUserInternal = internalMutation({
       },
       createdAt: now,
     });
-
-    if (skill.latestVersionId) {
-      const latestVersion = await ctx.db.get(skill.latestVersionId);
-      if (latestVersion && !latestVersion.softDeletedAt) {
-        await scheduleRegistryArtifactSkillVersionBackupRefresh(ctx, {
-          skill: {
-            ...skill,
-            ownerUserId: nextOwner._id,
-            ownerPublisherId: destinationPublisher._id,
-          },
-          version: latestVersion,
-          isLatest: true,
-          ownerHandle: destinationPublisher.handle,
-          logContext: "owner transfer refresh",
-        });
-      }
-    }
 
     return {
       ok: true as const,
@@ -12230,6 +12188,20 @@ export const insertVersion = internalMutation({
       tags: nextTags,
       categories: isNewLatest ? args.categories : skill.categories,
       topics: isNewLatest ? args.topics : skill.topics,
+      ...(isNewLatest
+        ? {
+            inferredCategories: undefined,
+            inferredTopics: undefined,
+            inferredFromVersionId: undefined,
+            inferredCategoryConfidence: undefined,
+            inferredTopicConfidence: undefined,
+            inferredClassifierVersion: undefined,
+            inferredTopicClassifierVersion: undefined,
+            inferredInputHash: undefined,
+            inferredTopicInputHash: undefined,
+            inferredAt: undefined,
+          }
+        : {}),
       stats: { ...skill.stats, versions: skill.stats.versions + 1 },
       softDeletedAt: undefined,
       moderationStatus: initialModerationStatus,
@@ -12814,10 +12786,22 @@ export const listByDateRange = internalQuery({
 function isExportableSkillDigest(
   skill: Pick<
     Doc<"skillSearchDigest">,
-    "latestVersionId" | "softDeletedAt" | "moderationStatus" | "moderationFlags"
+    | "latestVersionId"
+    | "installKind"
+    | "githubCurrentStatus"
+    | "githubScanStatus"
+    | "softDeletedAt"
+    | "moderationStatus"
+    | "moderationFlags"
   >,
 ) {
-  return Boolean(skill.latestVersionId) && isPublicSkillDoc(skill);
+  if (!isPublicSkillDoc(skill)) return false;
+  if (skill.latestVersionId) return true;
+  return (
+    skill.installKind === "github" &&
+    skill.githubCurrentStatus === "present" &&
+    (skill.githubScanStatus === "clean" || skill.githubScanStatus === "suspicious")
+  );
 }
 
 export const __test = {

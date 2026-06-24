@@ -12,8 +12,8 @@ read_when:
 
 - Minimal, fast SPA for browsing and publishing agent skills.
 - Skills stored in Convex (files + metadata + versions + stats).
-- GitHub OAuth login; R2/object storage backs up hosted registry artifacts for
-  disaster recovery.
+- GitHub OAuth login; Convex backups with file storage are the source of truth
+  for hosted registry artifact disaster recovery.
 - Vector-based search over skill text + metadata.
 - Versioning, tags (`latest` + user tags), changelog, rollback (tag movement).
 - Public read access; upload requires auth.
@@ -149,7 +149,7 @@ Local fixture data lives in `convex/devSeed.ts` and `fixtures/public-corpus/`.
 
 ## Vercel
 
-- Env vars: Convex deployment URLs + GitHub OAuth client + OpenAI key (if used) + registry artifact backup R2 credentials.
+- Env vars: Convex deployment URLs + GitHub OAuth client + OpenAI key (if used).
 - SPA feel: client-side transitions, prefetching, optimistic UI.
 
 ## Open questions (carry forward)

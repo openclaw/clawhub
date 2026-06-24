@@ -17,10 +17,10 @@ env:
   VITE_CONVEX_URL: https://example.invalid
 
 jobs:
-  static:
-    name: static
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  pr-gates:
+    name: pr-gates
+    runs-on: blacksmith-8vcpu-ubuntu-2404
+    timeout-minutes: 45
 
     steps:
       - uses: actions/checkout@v6
@@ -32,61 +32,91 @@ jobs:
       - name: Static checks
         run: bun run ci:static
 
-  unit:
-    name: unit
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/setup-bun
-
-      - name: Coverage
+      - name: Unit coverage
         run: bun run ci:unit
-
-  packages:
-    name: packages
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/setup-bun
 
       - name: Package checks
         run: bun run ci:packages
 
-  types-build:
-    name: types-build
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/setup-bun
-
       - name: Typecheck and build
         run: bun run ci:types-build
-
-  e2e-http:
-    name: e2e-http
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: ./.github/actions/setup-bun
 
       - name: HTTP e2e
         run: bun run ci:e2e-http
 
+  static:
+    name: static
+    runs-on: ubuntu-latest
+    needs: pr-gates
+    if: ${{ always() }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Mirror pr-gates result
+        env:
+          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
+        run: |
+          test "$PR_GATES_RESULT" = "success"
+
+  unit:
+    name: unit
+    runs-on: ubuntu-latest
+    needs: pr-gates
+    if: ${{ always() }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Mirror pr-gates result
+        env:
+          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
+        run: |
+          test "$PR_GATES_RESULT" = "success"
+
+  packages:
+    name: packages
+    runs-on: ubuntu-latest
+    needs: pr-gates
+    if: ${{ always() }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Mirror pr-gates result
+        env:
+          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
+        run: |
+          test "$PR_GATES_RESULT" = "success"
+
+  types-build:
+    name: types-build
+    runs-on: ubuntu-latest
+    needs: pr-gates
+    if: ${{ always() }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Mirror pr-gates result
+        env:
+          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
+        run: |
+          test "$PR_GATES_RESULT" = "success"
+
+  e2e-http:
+    name: e2e-http
+    runs-on: ubuntu-latest
+    needs: pr-gates
+    if: ${{ always() }}
+    timeout-minutes: 5
+
+    steps:
+      - name: Mirror pr-gates result
+        env:
+          PR_GATES_RESULT: ${{ needs.pr-gates.result }}
+        run: |
+          test "$PR_GATES_RESULT" = "success"
+
   playwright-smoke:
     name: playwright-smoke
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-8vcpu-ubuntu-2404
     timeout-minutes: 25
 
     steps:
@@ -118,34 +148,35 @@ jobs:
 
   playwright-local-auth-shard:
     name: playwright-local-auth / ${{ matrix.name }}
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      max-parallel: 3
       matrix:
         include:
-          - name: delete-account
-            spec: e2e/local-auth/delete-account-resources.pw.test.ts
-          - name: delete-org
-            spec: e2e/local-auth/delete-org-resources.pw.test.ts
-          - name: header-profile-link
-            spec: e2e/local-auth/header-profile-link.pw.test.ts
-          - name: malicious-skill-ban
-            spec: e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
-          - name: manage-context-proof
-            spec: e2e/local-auth/manage-context-proof.pw.test.ts
-          - name: plugin-inspector-findings
-            spec: e2e/local-auth/plugin-inspector-findings.pw.test.ts
+          - name: account-cleanup
+            specs: |
+              e2e/local-auth/delete-account-resources.pw.test.ts
+              e2e/local-auth/delete-org-resources.pw.test.ts
+          - name: profile-context
+            specs: |
+              e2e/local-auth/header-profile-link.pw.test.ts
+              e2e/local-auth/manage-context-proof.pw.test.ts
+          - name: moderation-star
+            specs: |
+              e2e/local-auth/malicious-skill-ban-flow.pw.test.ts
+              e2e/local-auth/skill-star-sync.pw.test.ts
+          - name: inspector-version
+            specs: |
+              e2e/local-auth/plugin-inspector-findings.pw.test.ts
+              e2e/local-auth/version-delete.pw.test.ts
           - name: publish-generated-card
-            spec: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
+            specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
             grep: publishing a skill queues scan
           - name: publish-new-version
-            spec: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
+            specs: e2e/local-auth/publish-skill-lifecycle.pw.test.ts
             grep: skill publishers can create a skill
-          - name: skill-star-sync
-            spec: e2e/local-auth/skill-star-sync.pw.test.ts
-          - name: version-delete
-            spec: e2e/local-auth/version-delete.pw.test.ts
 
     steps:
       - uses: actions/checkout@v6
@@ -166,10 +197,11 @@ jobs:
       - name: Local-auth browser e2e
         env:
           PLAYWRIGHT_GREP: ${{ matrix.grep || '' }}
-          PLAYWRIGHT_SPEC: ${{ matrix.spec }}
+          PLAYWRIGHT_SPECS: ${{ matrix.specs }}
         run: |
           set -euo pipefail
-          args=(--project=chromium "$PLAYWRIGHT_SPEC")
+          mapfile -t specs < <(printf '%s\n' "$PLAYWRIGHT_SPECS" | sed '/^[[:space:]]*$/d')
+          args=(--project=chromium "${specs[@]}")
           if [[ -n "$PLAYWRIGHT_GREP" ]]; then
             args+=(--grep "$PLAYWRIGHT_GREP")
           fi

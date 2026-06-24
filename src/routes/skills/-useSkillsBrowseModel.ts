@@ -209,27 +209,25 @@ export function useSkillsBrowseModel({
     searchRequest.current += 1;
     const requestId = searchRequest.current;
     setIsSearching(true);
-    const handle = window.setTimeout(() => {
-      void (async () => {
-        try {
-          const data = (await searchSkills({
-            query: trimmedQuery,
-            highlightedOnly: featuredOnly,
-            categorySlug: activeCategory?.slug,
-            topic: activeTopic,
-            limit: searchLimit,
-          })) as Array<SkillSearchEntry>;
-          if (requestId === searchRequest.current) {
-            setSearchResults(data);
-          }
-        } finally {
-          if (requestId === searchRequest.current) {
-            setIsSearching(false);
-          }
+    void (async () => {
+      try {
+        const data = (await searchSkills({
+          query: trimmedQuery,
+          highlightedOnly: featuredOnly,
+          categorySlug: activeCategory?.slug,
+          topic: activeTopic,
+          limit: searchLimit,
+        })) as Array<SkillSearchEntry>;
+        if (requestId === searchRequest.current) {
+          setSearchResults(data);
         }
-      })();
-    }, 220);
-    return () => window.clearTimeout(handle);
+      } finally {
+        if (requestId === searchRequest.current) {
+          setIsSearching(false);
+        }
+      }
+    })();
+    return () => {};
   }, [
     activeCategory?.slug,
     activeTopic,
@@ -278,11 +276,8 @@ export function useSkillsBrowseModel({
       switch (sort) {
         case "relevance":
           return ((a.searchScore ?? 0) - (b.searchScore ?? 0)) * multiplier;
-        case "installs":
-          return (
-            ((a.skill.stats.installsAllTime ?? 0) - (b.skill.stats.installsAllTime ?? 0)) *
-              multiplier || tieBreak()
-          );
+        case "downloads":
+          return (a.skill.stats.downloads - b.skill.stats.downloads) * multiplier || tieBreak();
         case "stars":
           return (a.skill.stats.stars - b.skill.stats.stars) * multiplier || tieBreak();
         case "updated":
@@ -372,7 +367,7 @@ export function useSkillsBrowseModel({
           },
           replace: true,
         });
-      }, 220);
+      }, 250);
     },
     [navigate],
   );

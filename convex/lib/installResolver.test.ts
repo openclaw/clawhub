@@ -42,6 +42,30 @@ describe("buildSkillInstallResolution", () => {
     });
   });
 
+  it("keeps ownerHandle in archive download URLs for scoped installs", () => {
+    const resolution = buildSkillInstallResolution({
+      origin: "https://clawhub.ai",
+      skill: {
+        slug: "direct-skill",
+        displayName: "Direct Skill",
+        latestVersionSummary: { version: "1.2.3" },
+      },
+      source: null,
+      ownerHandle: "acme",
+    });
+
+    expect(resolution).toEqual({
+      ok: true,
+      slug: "direct-skill",
+      installKind: "archive",
+      archive: {
+        version: "1.2.3",
+        downloadUrl:
+          "https://clawhub.ai/api/v1/download?slug=direct-skill&ownerHandle=acme&version=1.2.3",
+      },
+    });
+  });
+
   it("returns a pinned GitHub descriptor when current upstream state is scan-clean", () => {
     const resolution = buildSkillInstallResolution({
       origin: "https://clawhub.ai",
@@ -59,6 +83,23 @@ describe("buildSkillInstallResolution", () => {
         commit: "1".repeat(40),
         contentHash: "hash-aiq-deploy",
         sourceUrl: `https://github.com/NVIDIA/skills/tree/${"1".repeat(40)}/skills/aiq-deploy`,
+      },
+    });
+  });
+
+  it("returns a pinned GitHub descriptor when current upstream state is scan-suspicious", () => {
+    const resolution = buildSkillInstallResolution({
+      origin: "https://clawhub.ai",
+      skill: { ...baseSkill, githubScanStatus: "suspicious" },
+      source,
+    });
+
+    expect(resolution).toMatchObject({
+      ok: true,
+      installKind: "github",
+      github: {
+        commit: "1".repeat(40),
+        contentHash: "hash-aiq-deploy",
       },
     });
   });
@@ -133,8 +174,8 @@ describe("buildSkillInstallResolution", () => {
       status: 403,
     },
     {
-      name: "scan is suspicious",
-      patch: { githubScanStatus: "suspicious" as const },
+      name: "scan is malicious",
+      patch: { githubScanStatus: "malicious" as const },
       reason: "github_scan_failed",
       status: 403,
     },

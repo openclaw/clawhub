@@ -1,6 +1,9 @@
 import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
+import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
+import { getSkillCategoryForSkill } from "../lib/categories";
 import type { PublicSkill } from "../lib/publicUser";
+import { truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
 import { OfficialBadge } from "./OfficialBadge";
@@ -15,6 +18,7 @@ type SkillCardProps = {
   meta: ReactNode;
   href?: string;
   className?: string;
+  ownerHandle?: string | null;
 };
 
 export function SkillCard({
@@ -26,11 +30,17 @@ export function SkillCard({
   meta,
   href,
   className,
+  ownerHandle,
 }: SkillCardProps) {
   const owner = encodeURIComponent(String(skill.ownerUserId));
   const link = href ?? `/${owner}/${skill.slug}`;
   const badges = Array.isArray(badge) ? badge : badge ? [badge] : [];
-  const hasTags = badges.length || chip || platformLabels?.length || skill.topics?.length;
+  const isOfficial = badges.includes("Official");
+  const visibleBadges = ownerHandle ? badges.filter((label) => label !== "Official") : badges;
+  const primaryCategory = getSkillCategoryForSkill(skill);
+  const hasSecondaryTags =
+    visibleBadges.length || chip || platformLabels?.length || skill.topics?.length;
+  const hasTags = primaryCategory || hasSecondaryTags;
 
   return (
     <Link to={link} className={["card skill-card", className].filter(Boolean).join(" ")}>
@@ -42,12 +52,33 @@ export function SkillCard({
           skill={skill}
           size="md"
         />
-        <h3 className="skill-card-title">{skill.displayName}</h3>
+        <div className="skill-card-identity">
+          <h3 className="skill-card-title">{truncateText(skill.displayName, 40)}</h3>
+          {ownerHandle ? (
+            <span className="skill-card-owner-row">
+              <span className="skill-card-owner">@{ownerHandle}</span>
+              {isOfficial ? <OfficialBadge /> : null}
+            </span>
+          ) : null}
+        </div>
       </div>
-      <p className="skill-card-summary">{skill.summary ?? summaryFallback}</p>
+      <p className="skill-card-summary">{truncateText(skill.summary ?? summaryFallback, 100)}</p>
       {hasTags ? (
         <div className="skill-card-tags">
-          {badges.map((label) =>
+          {primaryCategory ? (
+            <span className="skill-card-tag-category">
+              <BrowseCategoryIcon
+                slug={primaryCategory.slug}
+                icon={primaryCategory.icon}
+                size={13}
+              />
+              {primaryCategory.label}
+            </span>
+          ) : null}
+          {primaryCategory && hasSecondaryTags ? (
+            <span className="skill-card-tag-separator" aria-hidden="true" />
+          ) : null}
+          {visibleBadges.map((label) =>
             label === "Official" ? (
               <OfficialBadge key={label} />
             ) : (
@@ -63,7 +94,11 @@ export function SkillCard({
           <CatalogTopicList topics={skill.topics} limit={3} />
         </div>
       ) : null}
-      <div className="skill-card-footer">{meta}</div>
+      <div className="skill-card-footer">
+        <div className="skill-card-bottom-row">
+          <div className="skill-card-bottom-meta">{meta}</div>
+        </div>
+      </div>
     </Link>
   );
 }

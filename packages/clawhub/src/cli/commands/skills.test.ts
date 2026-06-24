@@ -248,7 +248,7 @@ describe("cmdExplore", () => {
     }
   });
 
-  it("keeps legacy download aliases on the all-time install sort", async () => {
+  it("supports downloads sort", async () => {
     mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
 
     await cmdExplore(makeOpts(), { sort: "downloads" });
@@ -256,8 +256,27 @@ describe("cmdExplore", () => {
 
     for (const call of mockApiRequest.mock.calls) {
       const url = new URL(String(call[1]?.url));
+      expect(url.searchParams.get("sort")).toBe("downloads");
+    }
+  });
+
+  it("keeps legacy install aliases on the all-time install sort", async () => {
+    mockApiRequest.mockResolvedValue({ items: [], nextCursor: null });
+
+    await cmdExplore(makeOpts(), { sort: "installs" });
+    await cmdExplore(makeOpts(), { sort: "install" });
+
+    for (const call of mockApiRequest.mock.calls) {
+      const url = new URL(String(call[1]?.url));
       expect(url.searchParams.get("sort")).toBe("installsAllTime");
     }
+  });
+
+  it("lists accepted legacy install aliases in invalid sort guidance", async () => {
+    await expect(cmdExplore(makeOpts(), { sort: "bad-sort" })).rejects.toThrow(
+      'Invalid sort "bad-sort". Use newest, updated, rating, downloads, installs, installs-current, installs-all-time, or trending.',
+    );
+    expect(mockApiRequest).not.toHaveBeenCalled();
   });
 });
 

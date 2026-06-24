@@ -175,12 +175,11 @@ Without `OPENAI_API_KEY`, public corpus import still works, but semantic search 
 
 These features degrade gracefully without their keys:
 
-| Variable                                                                                                                           | Purpose                                                   |
-| ---------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| `OPENAI_API_KEY`                                                                                                                   | Embeddings and vector search (falls back to zero vectors) |
-| `VT_API_KEY`                                                                                                                       | VirusTotal malware scanning                               |
-| `DISCORD_WEBHOOK_URL`                                                                                                              | Discord notifications                                     |
-| `REGISTRY_BACKUP_R2_ACCOUNT_ID` / `REGISTRY_BACKUP_BUCKET` / `REGISTRY_BACKUP_ACCESS_KEY_ID` / `REGISTRY_BACKUP_SECRET_ACCESS_KEY` | Registry artifact publish backup and seed/backfill        |
+| Variable              | Purpose                                                   |
+| --------------------- | --------------------------------------------------------- |
+| `OPENAI_API_KEY`      | Embeddings and vector search (falls back to zero vectors) |
+| `VT_API_KEY`          | VirusTotal malware scanning                               |
+| `DISCORD_WEBHOOK_URL` | Discord notifications                                     |
 
 ## CLI Development
 

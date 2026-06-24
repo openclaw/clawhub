@@ -299,6 +299,13 @@ export function redactText(value: string | null | undefined, maxLength = MAX_RED
   return `${redacted.slice(0, maxLength - 1)}...`;
 }
 
+export function hasSecretLikeValue(value: string) {
+  return SECRET_PATTERNS.some((pattern) => {
+    pattern.lastIndex = 0;
+    return pattern.test(value);
+  });
+}
+
 export function redactSkillContent(value: string | null | undefined) {
   return redactText(value, MAX_REDACTED_SKILL_CONTENT_LENGTH);
 }
@@ -342,16 +349,18 @@ export function assignSplit(splitKey: string): DatasetSplit {
 
 function buildArtifactRow(input: ArtifactExportInput, artifactId: string): ArtifactRow {
   const bundleFiles = buildBundleFileRows(input);
+  const publicOwnerHandle = redactMetadata(input.publicOwnerHandle);
+  const publicSlug = redactMetadata(input.publicSlug);
   return {
     artifact_id: artifactId,
     source_kind: input.sourceKind,
     source_table: input.sourceKind === "skill" ? "skillVersions" : "packageReleases",
     source_doc_id_hash: hashString(input.sourceDocId),
     parent_doc_id_hash: hashString(input.parentDocId),
-    public_name: input.publicName,
-    public_owner_handle: input.publicOwnerHandle,
-    public_slug: input.publicSlug,
-    public_qualified_slug: qualifiedPublicSlug(input),
+    public_name: redactMetadata(input.publicName) ?? "",
+    public_owner_handle: publicOwnerHandle,
+    public_slug: publicSlug,
+    public_qualified_slug: qualifiedPublicSlug(input.sourceKind, publicOwnerHandle, publicSlug),
     version: input.version,
     artifact_sha256: input.artifactSha256,
     ...(input.sourceKind === "skill" && input.skillMdContentRedacted
@@ -380,7 +389,7 @@ function buildBundleFileRows(
 ): NonNullable<ArtifactRow["bundle_files_redacted"]> {
   if (input.sourceKind !== "skill" || !Array.isArray(input.bundleFilesRedacted)) return [];
   return input.bundleFilesRedacted.flatMap((file) => {
-    const path = file.path.trim();
+    const path = redactBundlePath(file.path);
     if (!path || !file.content) return [];
     const content = redactBundleContent(file.content);
     if (Buffer.byteLength(content, "utf8") > MAX_REDACTED_BUNDLE_FILE_BYTES) return [];
@@ -395,6 +404,14 @@ function buildBundleFileRows(
   });
 }
 
+function redactMetadata(value: string | null | undefined) {
+  return redactText(value);
+}
+
+function redactBundlePath(value: string) {
+  return redactText(value.trim(), 2048) ?? "";
+}
+
 export function redactBundleContent(value: string) {
   let redacted = "";
   for (let index = 0; index < value.length; index += 1) {
@@ -407,10 +424,14 @@ export function redactBundleContent(value: string) {
   return redacted;
 }
 
-function qualifiedPublicSlug(input: ArtifactExportInput) {
-  if (input.sourceKind !== "skill") return null;
-  if (!input.publicOwnerHandle || !input.publicSlug) return null;
-  return `${input.publicOwnerHandle}/${input.publicSlug}`;
+function qualifiedPublicSlug(
+  sourceKind: SourceKind,
+  publicOwnerHandle: string | null,
+  publicSlug: string | null,
+) {
+  if (sourceKind !== "skill") return null;
+  if (!publicOwnerHandle || !publicSlug) return null;
+  return `${publicOwnerHandle}/${publicSlug}`;
 }
 
 function buildScanResultRows(input: ArtifactExportInput, artifactId: string): ScanResultRow[] {

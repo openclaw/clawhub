@@ -330,7 +330,7 @@ describe("built CLI artifact", () => {
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
     expect(result.stdout).toContain("Usage: clawhub");
-    expect(result.stdout).not.toContain("sync");
+    expect(result.stdout).toContain("sync");
   });
 
   it("prints help for bare logged-in invocations", async () => {
@@ -349,11 +349,56 @@ describe("built CLI artifact", () => {
     expect(requests).toHaveLength(0);
   });
 
-  it("does not expose the removed sync command", async () => {
-    const result = runNode([binPath, "sync"]);
+  it("exposes the restored sync command", async () => {
+    const result = runNode([binPath, "sync", "--help"]);
 
-    expect(result.status).toBe(1);
-    expect(result.stderr).toContain("error: unknown command 'sync'");
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    expect(result.stdout).toContain("Scan local skills and publish new or changed ones");
+    expect(result.stdout).toContain("--dry-run");
+    expect(result.stdout).toContain("--json");
+  });
+
+  it("plans sync publishes without install telemetry", async () => {
+    const { registry, requests } = await startLocalRegistry();
+    const workdir = await makeTmpDir("clawhub-artifact-sync-");
+    const root = join(workdir, "skills");
+    await mkdir(join(root, "new-skill"), { recursive: true });
+    await mkdir(join(root, "changed-skill"), { recursive: true });
+    await mkdir(join(root, "synced-skill"), { recursive: true });
+    await writeFile(join(root, "new-skill", "SKILL.md"), "# New\n", "utf8");
+    await writeFile(join(root, "changed-skill", "SKILL.md"), "# Changed\n", "utf8");
+    await writeFile(join(root, "synced-skill", "SKILL.md"), "# Synced\n", "utf8");
+
+    const result = await runNodeAsync([
+      binPath,
+      "--workdir",
+      workdir,
+      "--registry",
+      registry,
+      "--no-input",
+      "sync",
+      "--root",
+      root,
+      "--all",
+      "--dry-run",
+      "--json",
+    ]);
+
+    expect(result.status).toBe(0);
+    expect(result.stderr).toBe("");
+    const parsed = JSON.parse(result.stdout) as {
+      ok: boolean;
+      summary: { wouldPublish: number; alreadySynced: number };
+      wouldPublish: Array<{ slug: string; version: string; status: string }>;
+    };
+    expect(parsed.ok).toBe(true);
+    expect(parsed.summary).toMatchObject({ wouldPublish: 2, alreadySynced: 1 });
+    expect(parsed.wouldPublish.map((entry) => [entry.slug, entry.version, entry.status])).toEqual([
+      ["changed-skill", "1.2.4", "update"],
+      ["new-skill", "1.0.0", "new"],
+    ]);
+    expect(requests.map((request) => request.path)).not.toContain("/api/cli/telemetry/install");
   });
 
   it("reports unknown top-level commands clearly", async () => {

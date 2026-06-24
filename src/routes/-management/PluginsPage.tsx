@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { familyLabel } from "../../lib/packageLabels";
+import { buildPluginDetailHref } from "../../lib/pluginRoutes";
 import { formatTimestamp, type PluginByNameResult } from "./managementShared";
 
 type PluginPackageId = NonNullable<NonNullable<PluginByNameResult>["package"]>["_id"];
@@ -75,13 +76,12 @@ export function PluginsPage({
             const owner = selectedPlugin.owner;
             const latestRelease = selectedPlugin.latestRelease;
             const isHighlighted = Boolean(selectedPlugin.highlighted);
+            const pluginHref = buildPluginDetailHref(plugin.name, { ownerHandle: owner?.handle });
 
             return (
               <div key={plugin._id} className="management-item management-item-detail">
                 <div className="management-item-main">
-                  <Link to="/plugins/$name" params={{ name: plugin.name }}>
-                    {plugin.displayName}
-                  </Link>
+                  <Link to={pluginHref}>{plugin.displayName}</Link>
                   <div className="section-subtitle m-0">
                     {owner?.handle ? `@${owner.handle}` : "unknown owner"} ·{" "}
                     {familyLabel(plugin.family)} · v{latestRelease?.version ?? "—"} · updated{" "}
@@ -115,9 +115,7 @@ export function PluginsPage({
                 </div>
                 <div className="management-actions management-action-grid">
                   <Button asChild className="management-action-btn">
-                    <Link to="/plugins/$name" params={{ name: plugin.name }}>
-                      View
-                    </Link>
+                    <Link to={pluginHref}>View</Link>
                   </Button>
                   <Button
                     className="management-action-btn"

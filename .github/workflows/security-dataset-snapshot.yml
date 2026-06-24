@@ -1,0 +1,336 @@
+name: Security Dataset Snapshot
+
+on:
+  workflow_dispatch:
+    inputs:
+      upload:
+        description: "Upload sanitized dataset files to Hugging Face"
+        required: true
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+      limit:
+        description: "Optional source artifact cap for validation runs"
+        required: false
+        default: ""
+      hf-revision:
+        description: "Hugging Face branch/revision to upload to"
+        required: true
+        default: "main"
+      page-size:
+        description: "Live export page size per Convex request"
+        required: true
+        default: "25"
+      min-page-size:
+        description: "Smallest page size to retry after Convex timeouts"
+        required: true
+        default: "1"
+      batch-pages:
+        description: "Live export pages per Convex request"
+        required: true
+        default: "1"
+      concurrency:
+        description: "Concurrent live export shards"
+        required: true
+        default: "2"
+      shards:
+        description: "Created-at shards per source kind"
+        required: true
+        default: "128"
+  schedule:
+    - cron: "17 9 * * *"
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: clawhub-security-dataset-snapshot
+  cancel-in-progress: false
+
+jobs:
+  plan-security-dataset:
+    name: Plan sanitized security dataset shards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    environment: Production
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      source_snapshot_id: ${{ steps.plan.outputs.source_snapshot_id }}
+    env:
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
+      HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
+      HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
+      SNAPSHOT_LIMIT: ${{ inputs.limit || '' }}
+      SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
+      SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '1' }}
+      SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
+      SNAPSHOT_CONCURRENCY: ${{ inputs.concurrency || '1' }}
+      SNAPSHOT_SHARDS: ${{ inputs.shards || '128' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Check configuration
+        run: |
+          set -euo pipefail
+          if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
+            echo "::error::SECURITY_SCAN_WORKER_TOKEN is required"
+            exit 1
+          fi
+          echo "Upload enabled: $HF_UPLOAD"
+          echo "Convex URL: $CONVEX_URL"
+          echo "Hugging Face repo: $HF_DATASET_REPO"
+          echo "Hugging Face revision: $HF_REVISION"
+          echo "Shard count per source kind: $SNAPSHOT_SHARDS"
+
+      - name: Plan live export shards
+        id: plan
+        run: |
+          set -euo pipefail
+          source_snapshot_id="live-convex-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          matrix_path="$RUNNER_TEMP/security-dataset-shards.json"
+          bun scripts/security-dataset/export-snapshot.ts \
+            --convex-url "$CONVEX_URL" \
+            --worker-token "$SECURITY_SCAN_WORKER_TOKEN" \
+            --source-snapshot-id "$source_snapshot_id" \
+            --hf-repo "$HF_DATASET_REPO" \
+            --hf-revision "$HF_REVISION" \
+            --page-size "$SNAPSHOT_PAGE_SIZE" \
+            --min-page-size "$SNAPSHOT_MIN_PAGE_SIZE" \
+            --batch-pages "$SNAPSHOT_BATCH_PAGES" \
+            --concurrency "$SNAPSHOT_CONCURRENCY" \
+            --shards "$SNAPSHOT_SHARDS" \
+            --write-shard-matrix "$matrix_path"
+          echo "source_snapshot_id=$source_snapshot_id" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(jq -c . "$matrix_path")" >> "$GITHUB_OUTPUT"
+          jq '{shard_count: (.include | length), first: .include[0], last: .include[-1]}' "$matrix_path"
+
+  export-security-dataset-shards:
+    name: Export sanitized shard ${{ matrix.index }}
+    needs: plan-security-dataset
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: Production
+    strategy:
+      fail-fast: false
+      max-parallel: 12
+      matrix: ${{ fromJson(needs.plan-security-dataset.outputs.matrix) }}
+    env:
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
+      HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
+      SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
+      SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '1' }}
+      SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
+      SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/shard
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Export sanitized shard
+        run: |
+          set -euo pipefail
+          mkdir -p "$SANITIZED_OUT_DIR"
+          args=(
+            --convex-url "$CONVEX_URL"
+            --worker-token "$SECURITY_SCAN_WORKER_TOKEN"
+            --source-snapshot-id "${{ needs.plan-security-dataset.outputs.source_snapshot_id }}"
+            --out-dir "$SANITIZED_OUT_DIR"
+            --hf-dataset
+            --hf-repo "$HF_DATASET_REPO"
+            --hf-revision "$HF_REVISION"
+            --source-kind "${{ matrix.sourceKind }}"
+            --created-after "${{ matrix.createdAtGte }}"
+            --created-before "${{ matrix.createdAtLt }}"
+            --page-size "$SNAPSHOT_PAGE_SIZE"
+            --min-page-size "$SNAPSHOT_MIN_PAGE_SIZE"
+            --batch-pages "$SNAPSHOT_BATCH_PAGES"
+            --concurrency 1
+            --shards 1
+          )
+          bun scripts/security-dataset/export-snapshot.ts "${args[@]}" | tee "$SANITIZED_OUT_DIR/summary.json"
+          snapshot_dir="$(jq -r '.snapshotDir' "$SANITIZED_OUT_DIR/summary.json")"
+          if [[ -z "$snapshot_dir" || "$snapshot_dir" == "null" ]]; then
+            echo "::error::export summary did not include snapshotDir"
+            exit 1
+          fi
+          echo "SNAPSHOT_DIR=$snapshot_dir" >> "$GITHUB_ENV"
+          jq '.manifest.row_counts, .manifest.huggingface_dataset' "$SANITIZED_OUT_DIR/summary.json"
+
+      - name: Upload shard artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-dataset-shard-${{ matrix.index }}
+          path: ${{ env.SNAPSHOT_DIR }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-security-dataset:
+    name: Publish sanitized security dataset
+    needs:
+      - plan-security-dataset
+      - export-security-dataset-shards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: Production
+    env:
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
+      HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals
+      HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
+      HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
+      SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized
+      WORK_DIR: /tmp/clawhub-security-dataset
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      - uses: actions/setup-python@v6
+        if: ${{ env.HF_UPLOAD == 'true' }}
+        with:
+          python-version: "3.12"
+
+      - name: Download sanitized shard artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: security-dataset-shard-*
+          path: ${{ env.WORK_DIR }}/shards
+
+      - name: Merge sanitized shard outputs
+        run: |
+          set -euo pipefail
+          mkdir -p "$SANITIZED_OUT_DIR"
+          source_snapshot_id="${{ needs.plan-security-dataset.outputs.source_snapshot_id }}"
+          bun scripts/security-dataset/merge-snapshots.ts \
+            --shards-dir "$WORK_DIR/shards" \
+            --out-dir "$SANITIZED_OUT_DIR" \
+            --source-snapshot-id "$source_snapshot_id" \
+            --hf-repo "$HF_DATASET_REPO" \
+            --hf-revision "$HF_REVISION" | tee "$SANITIZED_OUT_DIR/summary.json"
+          snapshot_dir="$(jq -r '.snapshotDir' "$SANITIZED_OUT_DIR/summary.json")"
+          if [[ -z "$snapshot_dir" || "$snapshot_dir" == "null" ]]; then
+            echo "::error::merge summary did not include snapshotDir"
+            exit 1
+          fi
+          echo "SNAPSHOT_DIR=$snapshot_dir" >> "$GITHUB_ENV"
+          jq '.manifest.row_counts, .manifest.huggingface_dataset' "$SANITIZED_OUT_DIR/summary.json"
+
+      - name: Validate sanitized output guardrails
+        run: |
+          set -euo pipefail
+          bun scripts/security-dataset/validate-guardrails.ts --snapshot-dir "$SNAPSHOT_DIR"
+
+      - name: Install Hugging Face uploader
+        if: ${{ env.HF_UPLOAD == 'true' }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'huggingface_hub[hf_xet]'
+
+      - name: Upload sanitized dataset to Hugging Face
+        if: ${{ env.HF_UPLOAD == 'true' }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import urllib.request
+          from pathlib import Path
+          from huggingface_hub import HfApi
+
+          def get_github_oidc_token() -> str:
+              request_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
+              separator = "&" if "?" in request_url else "?"
+              request = urllib.request.Request(
+                  f"{request_url}{separator}audience=https://huggingface.co",
+                  headers={
+                      "Authorization": f"bearer {os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']}",
+                      "Accept": "application/json",
+                  },
+              )
+              with urllib.request.urlopen(request) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              return payload["value"]
+
+          def exchange_hugging_face_token(oidc_token: str, resource: str) -> str:
+              body = json.dumps({
+                  "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+                  "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
+                  "subject_token": oidc_token,
+                  "resource": resource,
+              }).encode("utf-8")
+              request = urllib.request.Request(
+                  "https://huggingface.co/oauth/token",
+                  data=body,
+                  headers={
+                      "Content-Type": "application/json",
+                      "Accept": "application/json",
+                  },
+                  method="POST",
+              )
+              with urllib.request.urlopen(request) as response:
+                  payload = json.loads(response.read().decode("utf-8"))
+              return payload["access_token"]
+
+          snapshot_dir = Path(os.environ["SNAPSHOT_DIR"])
+          repo_id = os.environ["HF_DATASET_REPO"]
+          revision = os.environ["HF_REVISION"]
+          token = exchange_hugging_face_token(
+              get_github_oidc_token(),
+              os.environ["HF_OIDC_RESOURCE"],
+          )
+          api = HfApi(token=token)
+
+          data_commit = api.upload_folder(
+              folder_path=str(snapshot_dir / "hf-dataset" / "data"),
+              path_in_repo="data",
+              repo_id=repo_id,
+              repo_type="dataset",
+              revision=revision,
+              delete_patterns="data/*.jsonl",
+              commit_message="Update nightly ClawHub security dataset splits",
+          )
+
+          manifest_path = snapshot_dir / "manifest.json"
+          manifest = json.loads(manifest_path.read_text())
+          manifest["huggingface_dataset"]["commit"] = data_commit.oid
+          manifest["huggingface_dataset"]["revision"] = revision
+          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+
+          manifest_commit = api.upload_file(
+              path_or_fileobj=str(manifest_path),
+              path_in_repo="metadata/latest-manifest.json",
+              repo_id=repo_id,
+              repo_type="dataset",
+              revision=revision,
+              commit_message="Update nightly ClawHub security dataset manifest",
+          )
+          print(json.dumps({
+              "data_commit": data_commit.oid,
+              "manifest_commit": manifest_commit.oid,
+              "repo": repo_id,
+              "revision": revision,
+          }, indent=2))
+          PY
+
+      - name: Upload sanitized summary artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-dataset-summary-${{ github.run_id }}
+          path: |
+            ${{ env.SANITIZED_OUT_DIR }}/summary.json
+            ${{ env.SNAPSHOT_DIR }}/manifest.json
+          if-no-files-found: ignore
+
+      - name: Cleanup transient dataset files
+        if: ${{ always() }}
+        run: rm -rf "$WORK_DIR"

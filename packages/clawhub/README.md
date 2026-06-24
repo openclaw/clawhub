@@ -51,6 +51,8 @@ clawhub update --all --no-input --force
 clawhub unpin bear-notes
 clawhub skill publish ./my-skill-pack --slug my-skill-pack --name "My Skill Pack" --changelog "Fixes + docs"
 clawhub skill publish ./org-skill --owner openclaw --changelog "Org publish"
+clawhub sync --all --dry-run
+clawhub sync --all
 clawhub package explore --family skill
 clawhub package explore --family code-plugin
 clawhub package inspect @openclaw/example-plugin

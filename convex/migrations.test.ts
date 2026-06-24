@@ -5,10 +5,51 @@ import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { computeRecommendationScore } from "./lib/recommendationScore";
+import { DOWNLOAD_BACKFILL_BASELINE } from "./lib/skillDownloadBackfill";
 import { INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME } from "./lib/skillInstallBackfill";
-import { backfillOneSkillInstallEstimate, runSkillInstallBackfill } from "./migrations";
+import {
+  backfillOneNvidiaGitHubDownloadCount,
+  backfillOneSkillInstallEstimate,
+  buildCanonicalCatalogMetadataPatch,
+  runNvidiaGitHubDownloadBackfill,
+  runCatalogMetadataCanonicalization,
+  runPluginManifestSummaryBackfill,
+  runPluginManifestSummaryBackfillPage,
+  runSkillInstallBackfill,
+} from "./migrations";
 
 type InstallBackfillWrappedHandler = {
+  _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
+};
+
+type DownloadBackfillWrappedHandler = {
+  _handler: (
+    ctx: unknown,
+    args: { dryRun?: boolean; confirm?: string; previewLimit?: number },
+  ) => Promise<unknown>;
+};
+
+type PluginManifestSummaryBackfillWrappedHandler = {
+  _handler: (
+    ctx: unknown,
+    args: { dryRun?: boolean; confirm?: string; maxPackages?: number },
+  ) => Promise<unknown>;
+};
+
+type PluginManifestSummaryBackfillPageWrappedHandler = {
+  _handler: (
+    ctx: unknown,
+    args: {
+      family: "code-plugin" | "bundle-plugin";
+      cursor?: string | null;
+      limit?: number;
+      dryRun?: boolean;
+      confirm?: string;
+    },
+  ) => Promise<unknown>;
+};
+
+type CatalogMetadataCanonicalizationWrappedHandler = {
   _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
 };
 
@@ -26,6 +67,8 @@ const skillId = testId("skills", "skills:demo");
 const ownerUserId = testId("users", "users:owner");
 const publisherId = testId("publishers", "publishers:owner");
 const digestId = testId("skillSearchDigest", "skillSearchDigest:demo");
+const githubSourceId = testId("githubSkillSources", "githubSkillSources:nvidia");
+const packageReleaseId = testId("packageReleases", "packageReleases:demo");
 
 function makeSkillDoc(): Doc<"skills"> {
   return {
@@ -109,6 +152,193 @@ function makeSkillSearchDigestDoc(): Doc<"skillSearchDigest"> {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
+
+describe("catalog metadata canonicalization migration", () => {
+  it("promotes current inferred categories and topics into canonical fields", () => {
+    expect(
+      buildCanonicalCatalogMetadataPatch({
+        categoryKind: "skill",
+        categories: undefined,
+        topics: undefined,
+        inferredCategories: ["development", "research"],
+        inferredTopics: ["TypeScript", "Code Review"],
+        currentSourceId: "skillVersions:v1",
+        inferredSourceId: "skillVersions:v1",
+        inferredCategoryConfidence: "high",
+        inferredTopicConfidence: "high",
+        inferredClassifierVersion: "taxonomy-prototype-v9",
+        inferredTopicClassifierVersion: "topic-prototype-v1",
+        inferredInputHash: "category-hash",
+        inferredTopicInputHash: "topic-hash",
+        inferredAt: 123,
+      }),
+    ).toEqual({
+      categories: ["development", "research"],
+      topics: ["TypeScript", "Code Review"],
+      inferredCategories: undefined,
+      inferredTopics: undefined,
+      inferredCategoryConfidence: undefined,
+      inferredTopicConfidence: undefined,
+      inferredClassifierVersion: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredInputHash: undefined,
+      inferredTopicInputHash: undefined,
+      inferredAt: undefined,
+    });
+  });
+
+  it("preserves explicit publisher metadata while clearing inferred metadata", () => {
+    expect(
+      buildCanonicalCatalogMetadataPatch({
+        categoryKind: "plugin",
+        categories: ["tools"],
+        topics: [],
+        inferredCategories: ["models"],
+        inferredTopics: ["TypeScript"],
+        currentSourceId: "skillVersions:v1",
+        inferredSourceId: "skillVersions:v1",
+        inferredCategoryConfidence: "medium",
+        inferredTopicConfidence: "high",
+      }),
+    ).toEqual({
+      inferredCategories: undefined,
+      inferredTopics: undefined,
+      inferredCategoryConfidence: undefined,
+      inferredTopicConfidence: undefined,
+      inferredClassifierVersion: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredInputHash: undefined,
+      inferredTopicInputHash: undefined,
+      inferredAt: undefined,
+    });
+  });
+
+  it("does not promote stale inferred metadata", () => {
+    expect(
+      buildCanonicalCatalogMetadataPatch({
+        categoryKind: "skill",
+        categories: undefined,
+        topics: undefined,
+        inferredCategories: ["development"],
+        inferredTopics: ["TypeScript"],
+        currentSourceId: "skillVersions:v2",
+        inferredSourceId: "skillVersions:v1",
+        inferredClassifierVersion: "taxonomy-prototype-v9",
+        inferredTopicClassifierVersion: "topic-prototype-v1",
+      }),
+    ).toEqual({
+      inferredCategories: undefined,
+      inferredTopics: undefined,
+      inferredCategoryConfidence: undefined,
+      inferredTopicConfidence: undefined,
+      inferredClassifierVersion: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredInputHash: undefined,
+      inferredTopicInputHash: undefined,
+      inferredAt: undefined,
+    });
+  });
+
+  it("does not promote inferred categories for legacy skill-family package rows", () => {
+    expect(
+      buildCanonicalCatalogMetadataPatch({
+        categoryKind: "none",
+        categories: undefined,
+        topics: undefined,
+        inferredCategories: ["models"],
+        inferredTopics: ["TypeScript"],
+        currentSourceId: "packageReleases:v1",
+        inferredSourceId: "packageReleases:v1",
+        inferredCategoryConfidence: "high",
+        inferredTopicConfidence: "high",
+      }),
+    ).toEqual({
+      topics: ["TypeScript"],
+      inferredCategories: undefined,
+      inferredTopics: undefined,
+      inferredCategoryConfidence: undefined,
+      inferredTopicConfidence: undefined,
+      inferredClassifierVersion: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredInputHash: undefined,
+      inferredTopicInputHash: undefined,
+      inferredAt: undefined,
+    });
+  });
+
+  it("does not promote inferred metadata after a publisher metadata save", () => {
+    expect(
+      buildCanonicalCatalogMetadataPatch({
+        categoryKind: "skill",
+        categories: undefined,
+        topics: undefined,
+        inferredCategories: ["development"],
+        inferredTopics: ["TypeScript"],
+        currentSourceId: "skillVersions:v1",
+        inferredSourceId: "skillVersions:v1",
+        inferredCategoryConfidence: "high",
+        inferredTopicConfidence: "high",
+        hasPublisherCatalogIntent: true,
+      }),
+    ).toEqual({
+      inferredCategories: undefined,
+      inferredTopics: undefined,
+      inferredCategoryConfidence: undefined,
+      inferredTopicConfidence: undefined,
+      inferredClassifierVersion: undefined,
+      inferredTopicClassifierVersion: undefined,
+      inferredInputHash: undefined,
+      inferredTopicInputHash: undefined,
+      inferredAt: undefined,
+    });
+  });
+
+  it("is a no-op when no inferred catalog state exists", () => {
+    expect(
+      buildCanonicalCatalogMetadataPatch({
+        categoryKind: "skill",
+        categories: ["development"],
+        topics: ["Publisher Topic"],
+        currentSourceId: "skillVersions:v1",
+      }),
+    ).toBeNull();
+  });
+
+  it("dry-runs both tracked canonicalization migrations", async () => {
+    const runMutation = vi.fn().mockResolvedValue({});
+    const handler = (
+      runCatalogMetadataCanonicalization as unknown as CatalogMetadataCanonicalizationWrappedHandler
+    )._handler;
+
+    const result = await handler({ runMutation }, {});
+
+    expect(runMutation).toHaveBeenNthCalledWith(1, internal.migrations.run, {
+      fn: "migrations:canonicalizeSkillCatalogMetadata",
+      dryRun: true,
+      reset: true,
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(2, internal.migrations.run, {
+      fn: "migrations:canonicalizePackageCatalogMetadata",
+      dryRun: true,
+      reset: true,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "canonicalize-catalog-metadata",
+    });
+  });
+
+  it("requires explicit confirmation before canonicalizing catalog metadata", async () => {
+    const handler = (
+      runCatalogMetadataCanonicalization as unknown as CatalogMetadataCanonicalizationWrappedHandler
+    )._handler;
+
+    await expect(handler({ runMutation: vi.fn() }, { dryRun: false })).rejects.toThrow(
+      'Pass confirm="canonicalize-catalog-metadata" to apply.',
+    );
+  });
+});
 
 describe("skill install backfill migration", () => {
   it("dry-runs the install backfill migration through the tracked runner", async () => {
@@ -497,5 +727,498 @@ describe("skill install backfill migration", () => {
         }),
       }),
     );
+  });
+});
+
+describe("NVIDIA GitHub download backfill migration", () => {
+  it("dry-runs the tracked migration and returns a structured preview", async () => {
+    const runMutation = vi.fn().mockResolvedValue({});
+    const preview = {
+      sourceRepo: "NVIDIA/skills",
+      modelVersion: "nvidia-github-weekly-public-hosted-average-v1",
+      basis: "public-hosted-downloads-per-published-week",
+      baselineCollectedAt: DOWNLOAD_BACKFILL_BASELINE.collectedAt,
+      baselinePublicHostedSkillCount: DOWNLOAD_BACKFILL_BASELINE.publicHostedSkillCount,
+      baselinePublicHostedDownloads: DOWNLOAD_BACKFILL_BASELINE.publicHostedDownloads,
+      baselinePublicHostedSkillWeeks: DOWNLOAD_BACKFILL_BASELINE.publicHostedSkillWeeks,
+      baselineAverageDownloadsPerSkillWeek: DOWNLOAD_BACKFILL_BASELINE.averageDownloadsPerSkillWeek,
+      eligibleSkills: 234,
+      skillsWithDelta: 234,
+      publishedSkillWeeks: 570,
+      currentDownloads: 0,
+      targetDownloads: 43_456,
+      proposedDelta: 43_456,
+      alreadyMarked: 0,
+      ageBuckets: { "1": 34, "2": 64, "3": 136 },
+      truncated: false,
+      samples: [],
+    };
+    const runQuery = vi.fn().mockResolvedValue(preview);
+    const handler = (runNvidiaGitHubDownloadBackfill as unknown as DownloadBackfillWrappedHandler)
+      ._handler;
+
+    const result = await handler({ runMutation, runQuery }, {});
+
+    expect(runMutation).toHaveBeenCalledWith(internal.migrations.run, {
+      fn: "migrations:backfillNvidiaGitHubDownloadCounts",
+      dryRun: true,
+      reset: true,
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.migrations.previewNvidiaGitHubDownloadBackfillInternal,
+      { limit: 20 },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "apply-nvidia-github-download-backfill",
+      preview,
+    });
+  });
+
+  it("requires an explicit confirmation before applying the download backfill", async () => {
+    const handler = (runNvidiaGitHubDownloadBackfill as unknown as DownloadBackfillWrappedHandler)
+      ._handler;
+
+    await expect(
+      handler({ runMutation: vi.fn(), runQuery: vi.fn() }, { dryRun: false }),
+    ).rejects.toThrow('Pass confirm="apply-nvidia-github-download-backfill" to apply.');
+  });
+
+  it("accounts for pending download events newer than the daily stats cursor", async () => {
+    const now = INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME + 15 * 24 * 60 * 60 * 1000;
+    const publishedAt = INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME;
+    const targetDownloads = Math.round(3 * DOWNLOAD_BACKFILL_BASELINE.averageDownloadsPerSkillWeek);
+    const nvidiaSkill = {
+      ...makeSkillDoc(),
+      installKind: "github" as const,
+      githubSourceId,
+      githubCurrentStatus: "present" as const,
+      createdAt: publishedAt,
+      statsDownloads: 0,
+      statsInstallsAllTime: 0,
+      stats: {
+        ...makeSkillDoc().stats,
+        downloads: 0,
+        installsAllTime: 0,
+      },
+    };
+    const docs = new Map<string, Record<string, unknown>>([
+      [skillId, nvidiaSkill],
+      [ownerUserId, { _id: ownerUserId, publishedSkills: 1, totalStars: 0, totalDownloads: 0 }],
+      [publisherId, { ...makePublisherDoc(), totalDownloads: 0, skillTotalDownloads: 0 }],
+      [digestId, { ...makeSkillSearchDigestDoc(), statsDownloads: 0 }],
+      [
+        githubSourceId,
+        {
+          _id: githubSourceId,
+          _creationTime: 4,
+          repo: "NVIDIA/skills",
+          createdAt: 10,
+          updatedAt: 20,
+        },
+      ],
+      [
+        "skillStatUpdateCursors:1",
+        {
+          _id: "skillStatUpdateCursors:1",
+          _creationTime: 5,
+          key: "skill_stat_events",
+          cursorCreationTime: INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME,
+        },
+      ],
+      [
+        "skillStatEvents:newer-install",
+        {
+          _id: "skillStatEvents:newer-install",
+          _creationTime: publishedAt + 1,
+          skillId,
+          kind: "download",
+          occurredAt: publishedAt + 1,
+          processedAt: undefined,
+        },
+      ],
+      [
+        "skillStatEvents:second-newer-install",
+        {
+          _id: "skillStatEvents:second-newer-install",
+          _creationTime: publishedAt + 2,
+          skillId,
+          kind: "download",
+          occurredAt: publishedAt + 2,
+          processedAt: undefined,
+        },
+      ],
+    ]);
+    const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      const existing = docs.get(id);
+      if (!existing) throw new Error(`Missing test doc ${id}`);
+      docs.set(id, { ...existing, ...value });
+    });
+    const db = {
+      get: vi.fn(async (id: string) => docs.get(id) ?? null),
+      patch,
+      insert: vi.fn(async (tableName: string, value: Record<string, unknown>) => {
+        const id = `${tableName}:inserted`;
+        docs.set(id, { ...value, _id: id, _creationTime: 0 });
+        return id;
+      }),
+      delete: vi.fn(async (id: string) => {
+        docs.delete(id);
+      }),
+      query: vi.fn((tableName: string) => ({
+        withIndex: vi.fn(
+          (
+            indexName: string,
+            queryBuilder: (q: {
+              eq: (
+                field: string,
+                value: unknown,
+              ) => {
+                eq: (field: string, value: unknown) => unknown;
+              };
+            }) => unknown,
+          ) => {
+            const filters: Record<string, unknown> = {};
+            const builder = {
+              eq: (field: string, value: unknown) => {
+                filters[field] = value;
+                return builder;
+              },
+            };
+            queryBuilder(builder);
+            return {
+              unique: vi.fn(async () => {
+                if (tableName === "skillSearchDigest" && indexName === "by_skill") {
+                  return docs.get(digestId) ?? null;
+                }
+                if (tableName === "skillStatUpdateCursors" && indexName === "by_key") {
+                  return docs.get("skillStatUpdateCursors:1") ?? null;
+                }
+                return null;
+              }),
+              collect: vi.fn(async () => []),
+              take: vi.fn(async () => {
+                if (tableName === "skillStatEvents" && indexName === "by_skill_processed") {
+                  return [...docs.values()].filter(
+                    (doc) =>
+                      doc.skillId === filters.skillId &&
+                      doc.processedAt === filters.processedAt &&
+                      String(doc._id).startsWith("skillStatEvents:"),
+                  );
+                }
+                return [];
+              }),
+            };
+          },
+        ),
+      })),
+    };
+
+    await backfillOneNvidiaGitHubDownloadCount(
+      { db } as unknown as Pick<MutationCtx, "db">,
+      nvidiaSkill,
+      now,
+    );
+
+    const skill = docs.get(skillId);
+    expect(skill?.statsDownloads).toBe(targetDownloads - 2);
+    expect(isRecord(skill?.downloadBackfill) ? skill.downloadBackfill.targetDownloads : 0).toBe(
+      targetDownloads,
+    );
+    expect(
+      isRecord(skill?.downloadBackfill) ? skill.downloadBackfill.pendingSkillDocDownloads : 0,
+    ).toBe(2);
+    expect(docs.get(ownerUserId)?.totalDownloads).toBe(targetDownloads - 2);
+    expect(docs.get(publisherId)?.totalDownloads).toBe(targetDownloads - 2);
+    expect(docs.get(digestId)?.statsDownloads).toBe(targetDownloads - 2);
+  });
+});
+
+describe("plugin manifest summary backfill migration", () => {
+  it("dry-runs latest active plugin release summary backfill by default", async () => {
+    const runQuery = vi.fn().mockResolvedValue({
+      page: [],
+      isDone: true,
+      continueCursor: "",
+    });
+    const handler = (
+      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
+    )._handler;
+
+    const result = await handler({ runQuery, runMutation: vi.fn(), storage: {} }, {});
+
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      family: "code-plugin",
+      cursor: null,
+      limit: 50,
+    });
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      family: "bundle-plugin",
+      cursor: null,
+      limit: 50,
+    });
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "backfill-plugin-manifest-summaries",
+      scannedPackages: 0,
+      eligibleReleases: 0,
+      changedReleases: 0,
+      patchedReleases: 0,
+    });
+  });
+
+  it("requires explicit confirmation before applying plugin manifest summary backfill", async () => {
+    const handler = (
+      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
+    )._handler;
+
+    await expect(
+      handler({ runQuery: vi.fn(), runMutation: vi.fn(), storage: {} }, { dryRun: false }),
+    ).rejects.toThrow('Pass confirm="backfill-plugin-manifest-summaries" to apply.');
+  });
+
+  it("applies one cursor page for a single plugin family", async () => {
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      page: [
+        {
+          packageName: "example-ai-plugin",
+          displayName: "Example AI Plugin",
+          release: {
+            _id: packageReleaseId,
+            version: "1.0.0",
+            files: [],
+            compatibility: { builtWithOpenClawVersion: "1.0.0" },
+            extractedPluginManifest: {
+              configSchema: {
+                EXAMPLE_DATABASE_URL: {
+                  type: "string",
+                  required: true,
+                  uiHints: { sensitive: true },
+                },
+              },
+              mcpServers: {
+                exampleMcp: {
+                  command: "node",
+                  args: ["server.js"],
+                },
+              },
+            },
+          },
+        },
+      ],
+      isDone: false,
+      continueCursor: "next-page",
+    });
+    const runMutation = vi.fn().mockResolvedValue(true);
+    const handler = (
+      runPluginManifestSummaryBackfillPage as unknown as PluginManifestSummaryBackfillPageWrappedHandler
+    )._handler;
+
+    const result = await handler(
+      { runQuery, runMutation, storage: {} },
+      {
+        family: "bundle-plugin",
+        cursor: "current-page",
+        limit: 25,
+        dryRun: false,
+        confirm: "backfill-plugin-manifest-summaries",
+      },
+    );
+
+    expect(runQuery).toHaveBeenCalledWith(expect.anything(), {
+      family: "bundle-plugin",
+      cursor: "current-page",
+      limit: 25,
+    });
+    expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
+      releaseId: packageReleaseId,
+      pluginManifestSummary: expect.objectContaining({
+        configFields: [
+          {
+            name: "EXAMPLE_DATABASE_URL",
+            required: true,
+            sensitive: true,
+          },
+        ],
+        mcpServers: [{ name: "exampleMcp" }],
+      }),
+    });
+    expect(JSON.stringify(runMutation.mock.calls[0]?.[1]?.pluginManifestSummary)).not.toContain(
+      "server.js",
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      family: "bundle-plugin",
+      continueCursor: "next-page",
+      isDone: false,
+      scannedPackages: 1,
+      eligibleReleases: 1,
+      changedReleases: 1,
+      patchedReleases: 1,
+      skillMarkdownReadErrors: 0,
+    });
+  });
+
+  it("derives a summary from stored openclaw.plugin.json when the extracted manifest is missing", async () => {
+    const storageGet = vi.fn(async () => {
+      return new Blob([
+        JSON.stringify({
+          configSchema: {
+            EXAMPLE_PLUGIN_API_KEY: {
+              type: "string",
+              description: "API key used to connect to the example service.",
+              required: true,
+              uiHints: { sensitive: true },
+            },
+          },
+          mcpServers: {
+            exampleMcp: {
+              command: "node",
+              args: ["server.js"],
+            },
+          },
+          skills: ["skills/research"],
+          compat: {
+            pluginApi: "^2.0.0",
+          },
+        }),
+      ]);
+    });
+    const runQuery = vi.fn().mockResolvedValueOnce({
+      page: [
+        {
+          packageName: "example-ai-plugin",
+          displayName: "Example AI Plugin",
+          release: {
+            _id: packageReleaseId,
+            version: "1.0.0",
+            files: [
+              {
+                path: "openclaw.plugin.json",
+                storageId: "storage:manifest",
+                size: 512,
+                sha256: "a".repeat(64),
+              },
+              {
+                path: "skills/research/SKILL.md",
+                storageId: "storage:skill",
+                size: 128,
+                sha256: "b".repeat(64),
+              },
+            ],
+            compatibility: { builtWithOpenClawVersion: "1.0.0" },
+            extractedPluginManifest: null,
+          },
+        },
+      ],
+      isDone: true,
+      continueCursor: "",
+    });
+    const runMutation = vi.fn().mockResolvedValue(true);
+    const handler = (
+      runPluginManifestSummaryBackfillPage as unknown as PluginManifestSummaryBackfillPageWrappedHandler
+    )._handler;
+
+    const result = await handler(
+      {
+        runQuery,
+        runMutation,
+        storage: { get: storageGet },
+      },
+      {
+        family: "bundle-plugin",
+        dryRun: false,
+        confirm: "backfill-plugin-manifest-summaries",
+      },
+    );
+
+    expect(storageGet).toHaveBeenCalledWith("storage:manifest");
+    const mutationArgs = runMutation.mock.calls[0]?.[1];
+    expect(mutationArgs?.releaseId).toBe(packageReleaseId);
+    expect(mutationArgs?.pluginManifestSummary).toMatchObject({
+      configFields: [
+        {
+          name: "EXAMPLE_PLUGIN_API_KEY",
+          description: "API key used to connect to the example service.",
+          required: true,
+          sensitive: true,
+        },
+      ],
+      mcpServers: [{ name: "exampleMcp" }],
+      bundledSkills: [expect.objectContaining({ rootPath: "skills/research" })],
+      compatibility: expect.objectContaining({ builtWithOpenClawVersion: "1.0.0" }),
+    });
+    expect(JSON.stringify(mutationArgs?.pluginManifestSummary)).not.toContain("server.js");
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      eligibleReleases: 1,
+      changedReleases: 1,
+      patchedReleases: 1,
+      skippedMissingManifest: 0,
+      skillMarkdownReadErrors: 0,
+    });
+  });
+
+  it("skips applying a degraded summary when skill markdown cannot be read", async () => {
+    const runQuery = vi
+      .fn()
+      .mockResolvedValueOnce({
+        page: [
+          {
+            packageName: "example-ai-plugin",
+            displayName: "Example AI Plugin",
+            release: {
+              _id: packageReleaseId,
+              version: "1.0.0",
+              files: [
+                {
+                  path: "skills/research/SKILL.md",
+                  storageId: "storage:missing",
+                  size: 128,
+                  sha256: "a".repeat(64),
+                },
+              ],
+              extractedPluginManifest: {
+                skills: ["skills/research"],
+              },
+            },
+          },
+        ],
+        isDone: true,
+        continueCursor: "",
+      })
+      .mockResolvedValue({
+        page: [],
+        isDone: true,
+        continueCursor: "",
+      });
+    const runMutation = vi.fn();
+    const handler = (
+      runPluginManifestSummaryBackfill as unknown as PluginManifestSummaryBackfillWrappedHandler
+    )._handler;
+
+    const result = await handler(
+      {
+        runQuery,
+        runMutation,
+        storage: { get: vi.fn(async () => null) },
+      },
+      { dryRun: false, confirm: "backfill-plugin-manifest-summaries" },
+    );
+
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: false,
+      eligibleReleases: 1,
+      changedReleases: 0,
+      patchedReleases: 0,
+      skippedSkillMarkdownReadErrorReleases: 1,
+      skillMarkdownReadErrors: 1,
+    });
   });
 });

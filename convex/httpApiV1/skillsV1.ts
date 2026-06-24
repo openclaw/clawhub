@@ -18,6 +18,13 @@ import { api, internal } from "../_generated/api";
 import type { Doc, Id } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUserId, requireApiTokenUser } from "../lib/apiTokenAuth";
+import {
+  buildGitHubSkillHandoffDescriptor,
+  getGitHubHandoffBlock,
+  isReadyGitHubHandoffTarget,
+  type GitHubHandoffTarget,
+  type ReadyGitHubHandoffTarget,
+} from "../lib/githubHandoff";
 import { mergeHeaders } from "../lib/httpHeaders";
 import { applyRateLimit } from "../lib/httpRateLimit";
 import { parseBooleanQueryParam, resolveBooleanQueryParam } from "../lib/httpUtils";
@@ -107,6 +114,7 @@ type ListSkillsResult = {
       slug: string;
       displayName: string;
       summary?: string;
+      topics?: string[];
       tags: Record<string, Id<"skillVersions">>;
       stats: unknown;
       createdAt: number;
@@ -196,6 +204,7 @@ type GetBySlugResult = {
     slug: string;
     displayName: string;
     summary?: string;
+    topics?: string[];
     tags: Record<string, Id<"skillVersions">>;
     stats: unknown;
     createdAt: number;
@@ -1011,7 +1020,7 @@ function buildSkillPageUrl(request: Request, owner: SkillUrlOwner, slug: string)
     return new URL(`/api/v1/skills/${encodeURIComponent(slug)}`, origin).toString();
   }
   return new URL(
-    `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}`,
+    `/${encodeURIComponent(ownerSegment)}/skills/${encodeURIComponent(slug)}`,
     origin,
   ).toString();
 }
@@ -1026,7 +1035,7 @@ function buildSecurityAuditUrl(
   if (!ownerSegment) return null;
 
   const url = new URL(
-    `/${encodeURIComponent(ownerSegment)}/${encodeURIComponent(slug)}/security-audit`,
+    `/${encodeURIComponent(ownerSegment)}/skills/${encodeURIComponent(slug)}/security-audit`,
     publicApiOrigin(request),
   );
   url.searchParams.set("version", version);
@@ -1420,17 +1429,9 @@ export async function resolveSkillVersionV1Handler(ctx: ActionCtx, request: Requ
   );
 }
 
-type SkillListSort =
-  | "recommended"
-  | "createdAt"
-  | "updated"
-  | "downloads"
-  | "stars"
-  | "installsCurrent"
-  | "installsAllTime"
-  | "trending";
+type SkillListSort = "recommended" | "createdAt" | "updated" | "downloads" | "stars" | "trending";
 
-type PublicListSort = "recommended" | "newest" | "updated" | "downloads" | "stars" | "installs";
+type PublicListSort = "recommended" | "newest" | "updated" | "downloads" | "stars";
 
 function parseListSort(value: string | null): SkillListSort | null {
   if (value === null) return "updated";
@@ -1449,10 +1450,10 @@ function parseListSort(value: string | null): SkillListSort | null {
     normalized === "installscurrent" ||
     normalized === "installs-current"
   ) {
-    return "installsCurrent";
+    return "downloads";
   }
   if (normalized === "installsalltime" || normalized === "installs-all-time") {
-    return "installsAllTime";
+    return "downloads";
   }
   if (normalized === "trending") return "trending";
   if (normalized === "updated") return "updated";
@@ -1460,11 +1461,19 @@ function parseListSort(value: string | null): SkillListSort | null {
 }
 
 function toPublicListSort(sort: Exclude<SkillListSort, "trending">): PublicListSort {
-  if (sort === "recommended") return "recommended";
-  if (sort === "createdAt") return "newest";
-  if (sort === "updated") return "updated";
-  if (sort === "stars") return sort;
-  return "installs";
+  switch (sort) {
+    case "recommended":
+      return "recommended";
+    case "createdAt":
+      return "newest";
+    case "updated":
+      return "updated";
+    case "downloads":
+      return "downloads";
+    case "stars":
+      return "stars";
+  }
+  throw new Error("Unhandled skill list sort");
 }
 
 export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
@@ -1518,6 +1527,7 @@ export async function listSkillsV1Handler(ctx: ActionCtx, request: Request) {
     displayName: item.skill.displayName,
     summary: item.skill.summary ?? null,
     description: item.latestVersion?.parsed?.description ?? null,
+    topics: item.skill.topics,
     tags: resolvedTagsList[idx],
     stats: item.skill.stats,
     createdAt: item.skill.createdAt,
@@ -1617,6 +1627,7 @@ function ambiguousSkillChoicesForRequest(
   request: Request,
   matches: Array<{ slug: string; ownerHandle?: string | null }> | undefined,
 ): AmbiguousSkillSlugChoice[] {
+  const origin = publicApiOrigin(request);
   return (matches ?? []).flatMap((match) => {
     const ownerHandle = match.ownerHandle?.trim().replace(/^@+/, "");
     if (!ownerHandle) return [];
@@ -1628,8 +1639,8 @@ function ambiguousSkillChoicesForRequest(
         slug,
         ref: `@${ownerHandle}/${slug}`,
         url: new URL(
-          `/${encodeURIComponent(ownerHandle)}/${encodeURIComponent(slug)}`,
-          request.url,
+          `/${encodeURIComponent(ownerHandle)}/skills/${encodeURIComponent(slug)}`,
+          origin,
         ).toString(),
       },
     ];
@@ -1820,7 +1831,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           moderationFlags?: string[];
         })
       | null
-    >(ctx, internalRefs.skills.getSkillBySlugInternal, { slug })) as
+    >(ctx, internalRefs.skills.getSkillBySlugInternal, skillLookupArgs)) as
       | (InstallResolverSkill & {
           _id: Id<"skills">;
           githubSourceId?: Id<"githubSkillSources">;
@@ -1844,12 +1855,14 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
       origin: publicApiOrigin(request),
       skill,
       source,
+      ownerHandle,
       forceInstall,
     });
 
-    const publicSkillResult = (await ctx.runQuery(api.skills.getBySlug, {
-      slug,
-    })) as GetBySlugResult;
+    const publicSkillResult = (await ctx.runQuery(
+      api.skills.getBySlug,
+      skillLookupArgs,
+    )) as GetBySlugResult;
     const publiclyVisible = publicSkillResult?.skill?._id === skill._id;
     if (!publiclyVisible) {
       if (!resolution.ok && shouldExposeHiddenGitHubInstallBlock(skill, resolution)) {
@@ -1902,6 +1915,7 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
           displayName: result.skill.displayName,
           summary: result.skill.summary ?? null,
           description: description ?? result.latestVersion?.parsed?.description ?? null,
+          topics: result.skill.topics,
           tags,
           stats: result.skill.stats,
           createdAt: result.skill.createdAt,
@@ -2320,12 +2334,12 @@ export async function skillsGetRouterV1Handler(ctx: ActionCtx, request: Request)
         slug: skillResult.skill.slug,
         displayName: skillResult.skill.displayName,
         pageUrl: publisherOwnerHandle
-          ? `https://clawhub.ai/${publisherOwnerHandle}/${skillResult.skill.slug}`
+          ? `https://clawhub.ai/${publisherOwnerHandle}/skills/${skillResult.skill.slug}`
           : `https://clawhub.ai/api/v1/skills/${skillResult.skill.slug}`,
         publisherHandle: publisherOwnerHandle,
         publisherDisplayName: ownerDisplayName,
         publisherProfileUrl: publisherOwnerHandle
-          ? `https://clawhub.ai/user/${publisherOwnerHandle}`
+          ? `https://clawhub.ai/${publisherOwnerHandle}`
           : null,
         version: version.version,
         resolvedFrom,
@@ -3440,6 +3454,7 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
       slug: string;
       displayName: string;
       latestVersionId?: Id<"skillVersions">;
+      installKind?: "github";
       createdAt: number;
       updatedAt: number;
       stats?: Record<string, unknown> | null;
@@ -3500,8 +3515,19 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
           })
         : Promise.resolve(null),
     );
+    const githubTargets = await chunkedParallel(result.page, 100, (digest) =>
+      isGitHubSourceExportDigest(digest)
+        ? ctx.runQuery(internal.skills.getGitHubDownloadTargetInternal, {
+            skillId: digest.skillId,
+          })
+        : Promise.resolve(null),
+    );
     logContext.versionCount = versionDocs.filter(Boolean).length;
     const exportableVersions: Array<Doc<"skillVersions"> | null> = Array.from(
+      { length: result.page.length },
+      () => null,
+    );
+    const exportableGitHubTargets: Array<ReadyGitHubHandoffTarget | null> = Array.from(
       { length: result.page.length },
       () => null,
     );
@@ -3515,6 +3541,26 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
       const version = versionDocs[i] as Doc<"skillVersions"> | null;
 
       if (!version) {
+        if (isGitHubSourceExportDigest(digest)) {
+          const target = githubTargets[i] as GitHubHandoffTarget;
+          const block = getGitHubHandoffBlock(target);
+          if (block) {
+            exportErrors.push({
+              slug: digest.slug,
+              error: block.message,
+            });
+            continue;
+          }
+          if (!isReadyGitHubHandoffTarget(target)) {
+            exportErrors.push({
+              slug: digest.slug,
+              error: "GitHub-backed skill source metadata is incomplete.",
+            });
+            continue;
+          }
+          exportableGitHubTargets[i] = target;
+          continue;
+        }
         exportErrors.push({
           slug: digest.slug,
           error: `version not found (latestVersionId: ${digest.latestVersionId ?? "null"})`,
@@ -3594,7 +3640,6 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
         version?: string;
         files?: Array<{ storageId: Id<"_storage">; path: string }>;
       } | null;
-      if (!version?.files) continue;
       if (!validateSlug(digest.slug)) continue;
 
       const publisherSegment = getExportPublisherSegment(digest);
@@ -3606,6 +3651,38 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
         continue;
       }
       const exportRoot = `${publisherSegment}/${digest.slug}`;
+      const githubTarget = exportableGitHubTargets[i];
+      if (githubTarget) {
+        const descriptor = buildGitHubSkillHandoffDescriptor(githubTarget);
+        zipEntries.push({
+          path: `${exportRoot}/_source_handoff.json`,
+          bytes: new TextEncoder().encode(JSON.stringify(descriptor, null, 2)),
+        });
+
+        const skillMeta = buildExportSkillMeta(digest, {
+          sourceRef: "public-github",
+          version: null,
+        });
+        zipEntries.push({
+          path: `${exportRoot}/_export_skill_meta.json`,
+          bytes: new TextEncoder().encode(JSON.stringify(skillMeta, null, 2)),
+        });
+
+        manifest.push({
+          publisher: publisherSegment,
+          slug: digest.slug,
+          sourceRef: "public-github",
+          version: null,
+          displayName: digest.displayName,
+          createdAt: digest.createdAt,
+          updatedAt: digest.updatedAt,
+          stats: (digest.stats as Record<string, unknown>) ?? null,
+          fileCount: 0,
+        });
+        continue;
+      }
+
+      if (!version?.files) continue;
       const digestBlobs = blobsByDigest.get(i);
       if (!digestBlobs) continue;
 
@@ -3643,18 +3720,10 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
         fileCount++;
       }
 
-      const skillMeta = {
-        slug: digest.slug,
-        displayName: digest.displayName,
+      const skillMeta = buildExportSkillMeta(digest, {
+        sourceRef: "public-clawhub",
         version: version.version ?? null,
-        createdAt: digest.createdAt,
-        updatedAt: digest.updatedAt,
-        stats: digest.stats ?? null,
-        owner: {
-          handle: digest.ownerHandle ?? null,
-          displayName: digest.ownerDisplayName ?? null,
-        },
-      };
+      });
       zipEntries.push({
         path: `${exportRoot}/_export_skill_meta.json`,
         bytes: new TextEncoder().encode(JSON.stringify(skillMeta, null, 2)),
@@ -3663,6 +3732,7 @@ export async function exportSkillsV1Handler(ctx: ActionCtx, request: Request) {
       manifest.push({
         publisher: publisherSegment,
         slug: digest.slug,
+        sourceRef: "public-clawhub",
         version: version.version ?? null,
         displayName: digest.displayName,
         createdAt: digest.createdAt,
@@ -3712,4 +3782,38 @@ function getExportPublisherSegment(digest: {
   if (ownerHandle && validateSlug(ownerHandle)) return ownerHandle;
   const fallback = String(digest.ownerUserId).replace(/[^a-zA-Z0-9._-]/g, "-");
   return validateSlug(fallback) ? fallback : null;
+}
+
+function isGitHubSourceExportDigest(digest: {
+  installKind?: "github";
+  latestVersionId?: Id<"skillVersions">;
+}) {
+  return digest.installKind === "github" && !digest.latestVersionId;
+}
+
+function buildExportSkillMeta(
+  digest: {
+    slug: string;
+    displayName: string;
+    createdAt: number;
+    updatedAt: number;
+    stats?: Record<string, unknown> | null;
+    ownerHandle?: string | null;
+    ownerDisplayName?: string | null;
+  },
+  source: { sourceRef: "public-clawhub" | "public-github"; version: string | null },
+) {
+  return {
+    slug: digest.slug,
+    displayName: digest.displayName,
+    sourceRef: source.sourceRef,
+    version: source.version,
+    createdAt: digest.createdAt,
+    updatedAt: digest.updatedAt,
+    stats: digest.stats ?? null,
+    owner: {
+      handle: digest.ownerHandle ?? null,
+      displayName: digest.ownerDisplayName ?? null,
+    },
+  };
 }

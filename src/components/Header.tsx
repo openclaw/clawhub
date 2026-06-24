@@ -3,6 +3,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "convex/react";
 import {
   ArrowRight,
+  ExternalLink,
   ChevronDown,
   Command,
   LayoutDashboard,
@@ -26,16 +27,20 @@ import {
 } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
+import { buildPublisherProfileHref, buildSkillDetailHref } from "../lib/ownerRoute";
+import { buildPluginDetailHref, displayPluginPackageName } from "../lib/pluginRoutes";
 import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
 import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import {
   useUnifiedSearch,
+  type UnifiedCreatorResult,
   type UnifiedPluginResult,
   type UnifiedSkillResult,
 } from "../lib/useUnifiedSearch";
 import { MarketplaceIcon } from "./MarketplaceIcon";
+import { OfficialBadge } from "./OfficialBadge";
 import { Button } from "./ui/button";
 import {
   DropdownMenu,
@@ -44,14 +49,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "./ui/dropdown-menu";
-import {
-  Sheet,
-  SheetClose,
-  SheetContent,
-  SheetDescription,
-  SheetHeader,
-  SheetTitle,
-} from "./ui/sheet";
+import { Sheet, SheetClose, SheetContent, SheetHeader, SheetTitle } from "./ui/sheet";
 
 const THEME_MODE_ITEMS = [
   { mode: "system", label: "System theme", Icon: Monitor },
@@ -97,7 +95,7 @@ function GitHubLogo({ className }: { className?: string }) {
   );
 }
 
-type TypeaheadTab = "skills" | "plugins";
+type TypeaheadSection = "skills" | "plugins" | "creators";
 
 type TypeaheadItem =
   | {
@@ -111,9 +109,14 @@ type TypeaheadItem =
       result: UnifiedPluginResult;
     }
   | {
+      kind: "creator";
+      key: string;
+      result: UnifiedCreatorResult;
+    }
+  | {
       kind: "footer";
       key: string;
-      section: TypeaheadTab;
+      section: TypeaheadSection;
       label: string;
     };
 
@@ -135,7 +138,6 @@ export default function Header() {
   );
   const [navSearchQuery, setNavSearchQuery] = useState("");
   const [typeaheadOpen, setTypeaheadOpen] = useState(false);
-  const [typeaheadTab, setTypeaheadTab] = useState<TypeaheadTab>("skills");
   const [typeaheadActiveIndex, setTypeaheadActiveIndex] = useState(0);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -153,11 +155,12 @@ export default function Header() {
   const {
     skillResults,
     pluginResults,
+    creatorResults,
     isSearching: typeaheadSearching,
   } = useUnifiedSearch(navSearchQuery, "all", {
     debounceMs: 180,
     enabled: typeaheadOpen && hasNavSearchQuery,
-    limits: { skills: 4, plugins: 4 },
+    limits: { skills: 4, plugins: 4, creators: 4 },
   });
   const typeaheadSkillItems = useMemo<TypeaheadItem[]>(() => {
     if (!hasNavSearchQuery) return [];
@@ -193,7 +196,27 @@ export default function Header() {
     return items;
   }, [hasNavSearchQuery, pluginResults, trimmedNavSearchQuery]);
 
-  const typeaheadItems = typeaheadTab === "skills" ? typeaheadSkillItems : typeaheadPluginItems;
+  const typeaheadCreatorItems = useMemo<TypeaheadItem[]>(() => {
+    if (!hasNavSearchQuery) return [];
+    const items: TypeaheadItem[] = [];
+    for (const result of creatorResults) {
+      items.push({ kind: "creator", key: `creator-${result.creator._id}`, result });
+    }
+    if (creatorResults.length > 0) {
+      items.push({
+        kind: "footer",
+        key: "footer-creators",
+        section: "creators",
+        label: `See creator results for "${trimmedNavSearchQuery}"`,
+      });
+    }
+    return items;
+  }, [creatorResults, hasNavSearchQuery, trimmedNavSearchQuery]);
+
+  const typeaheadItems = useMemo(
+    () => [...typeaheadSkillItems, ...typeaheadPluginItems, ...typeaheadCreatorItems],
+    [typeaheadCreatorItems, typeaheadPluginItems, typeaheadSkillItems],
+  );
   const activeTypeaheadItem = showTypeahead ? typeaheadItems[typeaheadActiveIndex] : undefined;
   const activeTypeaheadId = activeTypeaheadItem
     ? getTypeaheadOptionId(activeTypeaheadItem)
@@ -201,16 +224,11 @@ export default function Header() {
 
   useEffect(() => {
     setTypeaheadActiveIndex(0);
-    setTypeaheadTab("skills");
   }, [trimmedNavSearchQuery]);
 
   useEffect(() => {
     setTypeaheadActiveIndex((index) => Math.min(index, Math.max(typeaheadItems.length - 1, 0)));
   }, [typeaheadItems.length]);
-
-  useEffect(() => {
-    setTypeaheadActiveIndex(0);
-  }, [typeaheadTab]);
 
   useEffect(() => {
     if (!typeaheadOpen && !mobileSearchOpen) return () => {};
@@ -303,12 +321,28 @@ export default function Header() {
         return;
       }
       void navigate({
-        to: `/${encodeURIComponent(resultOwnerHandle)}/${encodeURIComponent(item.result.skill.slug)}`,
+        to: buildSkillDetailHref(resultOwnerHandle, item.result.skill.slug),
       });
     } else if (item.kind === "plugin") {
       void navigate({
-        to: "/plugins/$name",
-        params: { name: item.result.plugin.name },
+        to: buildPluginDetailHref(item.result.plugin.name, {
+          ownerHandle: item.result.plugin.ownerHandle,
+        }),
+      });
+    } else if (item.kind === "creator") {
+      const publisherHandle = item.result.creator.handle.trim();
+      if (!publisherHandle) {
+        void navigate({
+          to: "/search",
+          search: { q: trimmedNavSearchQuery, type: "creators" },
+        });
+        setNavSearchQuery("");
+        setTypeaheadOpen(false);
+        setMobileSearchOpen(false);
+        return;
+      }
+      void navigate({
+        to: buildPublisherProfileHref(publisherHandle),
       });
     } else {
       void navigate({
@@ -373,18 +407,15 @@ export default function Header() {
                   <SheetHeader className="pr-10">
                     <SheetTitle>
                       <span className="mobile-nav-brand">
-                        <span className="mobile-nav-brand-mark" aria-hidden="true">
-                          <img
-                            src={CLAWHUB_BRAND_MARK_SRC}
-                            alt=""
-                            aria-hidden="true"
-                            className="mobile-nav-brand-mark-image"
-                          />
-                        </span>
+                        <img
+                          src={CLAWHUB_BRAND_MARK_SRC}
+                          alt=""
+                          aria-hidden="true"
+                          className="mobile-nav-brand-mark-image"
+                        />
                         <span className="mobile-nav-brand-name">{SITE_NAME}</span>
                       </span>
                     </SheetTitle>
-                    <SheetDescription>Browse sections and access account actions.</SheetDescription>
                   </SheetHeader>
                   <div className="mobile-nav-section">
                     <SheetClose asChild>
@@ -406,8 +437,18 @@ export default function Header() {
                     {SECONDARY_NAV_ITEMS.map((item) => (
                       <SheetClose key={(item.href ?? item.to ?? "") + item.label} asChild>
                         {item.href ? (
-                          <a href={item.href} className="mobile-nav-link">
-                            {item.label}
+                          <a
+                            href={item.href}
+                            className="mobile-nav-link"
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            <span>{item.label}</span>
+                            <ExternalLink
+                              size={16}
+                              className="mobile-nav-link-external"
+                              aria-hidden="true"
+                            />
                           </a>
                         ) : (
                           <Link
@@ -423,7 +464,7 @@ export default function Header() {
                   </div>
                   {!isAuthResolving && !isAuthenticated ? (
                     <div className="mobile-nav-section mobile-nav-appearance-section">
-                      <span className="mobile-nav-section-title">Theme</span>
+                      <span className="mobile-nav-section-title">Appearance</span>
                       <NavbarThemeSwitcher mode={mode} onSetMode={setThemeMode} />
                     </div>
                   ) : null}
@@ -505,7 +546,7 @@ export default function Header() {
                   className="navbar-search-input"
                   type="search"
                   role="combobox"
-                  placeholder="Search skills and plugins"
+                  placeholder="Search skills, plugins, and creators"
                   value={navSearchQuery}
                   onChange={(e) => {
                     setNavSearchQuery(e.target.value);
@@ -525,12 +566,10 @@ export default function Header() {
               {showTypeahead && !mobileSearchOpen ? (
                 <SearchTypeahead
                   activeIndex={typeaheadActiveIndex}
-                  activeTab={typeaheadTab}
-                  items={typeaheadItems}
                   loading={typeaheadSearching}
                   onHoverItem={setTypeaheadActiveIndex}
                   onSelectItem={navigateToTypeaheadItem}
-                  onTabChange={setTypeaheadTab}
+                  creatorItems={typeaheadCreatorItems}
                   pluginItems={typeaheadPluginItems}
                   query={trimmedNavSearchQuery}
                   skillItems={typeaheadSkillItems}
@@ -580,8 +619,8 @@ export default function Header() {
                   {profileHandle ? (
                     <DropdownMenuItem asChild>
                       <Link
-                        to="/user/$handle"
-                        params={{ handle: profileHandle }}
+                        to="/$slug"
+                        params={{ slug: profileHandle }}
                         className="flex items-center gap-2"
                       >
                         <UserRound size={14} aria-hidden="true" />
@@ -696,7 +735,7 @@ export default function Header() {
                 className="navbar-search-input"
                 type="search"
                 role="combobox"
-                placeholder="Search skills and plugins"
+                placeholder="Search skills, plugins, and creators"
                 value={navSearchQuery}
                 onChange={(e) => {
                   setNavSearchQuery(e.target.value);
@@ -730,12 +769,10 @@ export default function Header() {
             {showMobileTypeahead ? (
               <SearchTypeahead
                 activeIndex={typeaheadActiveIndex}
-                activeTab={typeaheadTab}
-                items={typeaheadItems}
                 loading={typeaheadSearching}
                 onHoverItem={setTypeaheadActiveIndex}
                 onSelectItem={navigateToTypeaheadItem}
-                onTabChange={setTypeaheadTab}
+                creatorItems={typeaheadCreatorItems}
                 pluginItems={typeaheadPluginItems}
                 query={trimmedNavSearchQuery}
                 skillItems={typeaheadSkillItems}
@@ -787,23 +824,19 @@ function HeaderNavTab({
 
 function SearchTypeahead({
   activeIndex,
-  activeTab,
-  items,
+  creatorItems,
   loading,
   onHoverItem,
   onSelectItem,
-  onTabChange,
   pluginItems,
   query,
   skillItems,
 }: {
   activeIndex: number;
-  activeTab: TypeaheadTab;
-  items: TypeaheadItem[];
+  creatorItems: TypeaheadItem[];
   loading: boolean;
   onHoverItem: (index: number) => void;
   onSelectItem: (item: TypeaheadItem) => void;
-  onTabChange: (tab: TypeaheadTab) => void;
   pluginItems: TypeaheadItem[];
   query: string;
   skillItems: TypeaheadItem[];
@@ -811,81 +844,20 @@ function SearchTypeahead({
   const hasQuery = query.length > 0;
   const hasSkillMatches = skillItems.some((item) => item.kind === "skill");
   const hasPluginMatches = pluginItems.some((item) => item.kind === "plugin");
-  const hasMatches = hasSkillMatches || hasPluginMatches;
-  const activeTabHasItems = items.length > 0;
-  const emptyTabLabel = activeTab === "skills" ? "skills" : "plugins";
-  const skillsTabRef = useRef<HTMLButtonElement | null>(null);
-  const pluginsTabRef = useRef<HTMLButtonElement | null>(null);
-
-  const handleTabKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
-    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-    event.preventDefault();
-    const nextTab = activeTab === "skills" ? "plugins" : "skills";
-    onTabChange(nextTab);
-    (nextTab === "skills" ? skillsTabRef : pluginsTabRef).current?.focus();
-  };
+  const hasCreatorMatches = creatorItems.some((item) => item.kind === "creator");
+  const hasMatches = hasSkillMatches || hasPluginMatches || hasCreatorMatches;
+  const pluginStartIndex = skillItems.length;
+  const creatorStartIndex = skillItems.length + pluginItems.length;
 
   return (
     <div className="navbar-search-typeahead" id="navbar-search-typeahead">
-      <div className="navbar-search-typeahead-top">
-        <div
-          className="navbar-search-typeahead-tabs clawhub-segmented"
-          role="tablist"
-          aria-label="Result type"
-        >
-          <button
-            ref={skillsTabRef}
-            type="button"
-            role="tab"
-            id="navbar-search-typeahead-tab-skills"
-            aria-selected={activeTab === "skills"}
-            aria-controls="navbar-search-typeahead-panel"
-            tabIndex={activeTab === "skills" ? 0 : -1}
-            className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "skills" ? " is-active" : ""}`}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onTabChange("skills")}
-            onKeyDown={handleTabKeyDown}
-          >
-            Skills
-          </button>
-          <button
-            ref={pluginsTabRef}
-            type="button"
-            role="tab"
-            id="navbar-search-typeahead-tab-plugins"
-            aria-selected={activeTab === "plugins"}
-            aria-controls="navbar-search-typeahead-panel"
-            tabIndex={activeTab === "plugins" ? 0 : -1}
-            className={`navbar-search-typeahead-tab clawhub-segmented-btn${activeTab === "plugins" ? " is-active" : ""}`}
-            onMouseDown={(event) => event.preventDefault()}
-            onClick={() => onTabChange("plugins")}
-            onKeyDown={handleTabKeyDown}
-          >
-            Plugins
-          </button>
-        </div>
-        <div className="navbar-search-typeahead-hint" aria-hidden="true">
-          <kbd>←</kbd>
-          <kbd>→</kbd>
-          <span>tabs</span>
-          <kbd>↑</kbd>
-          <kbd>↓</kbd>
-          <span>results</span>
-        </div>
-      </div>
-      <div
-        id="navbar-search-typeahead-panel"
-        className="navbar-search-typeahead-panel"
-        role="tabpanel"
-        aria-labelledby={
-          activeTab === "skills"
-            ? "navbar-search-typeahead-tab-skills"
-            : "navbar-search-typeahead-tab-plugins"
-        }
-      >
+      <div className="navbar-search-typeahead-panel">
         {!hasQuery ? (
-          <div className="navbar-search-typeahead-status">
-            Start typing to search skills and plugins
+          <div className="navbar-search-typeahead-status is-empty">
+            <span className="navbar-search-typeahead-status-icon" aria-hidden="true">
+              <Search size={17} />
+            </span>
+            <span>Start typing to search skills, plugins, and creators</span>
           </div>
         ) : null}
         {hasQuery && loading && !hasMatches ? (
@@ -893,7 +865,7 @@ function SearchTypeahead({
         ) : null}
         {hasQuery && !loading && !hasMatches ? (
           <div className="navbar-search-typeahead-status">
-            No skills or plugins found for "{query}"
+            No skills, plugins, or creators found for "{query}"
           </div>
         ) : null}
         {hasMatches ? (
@@ -902,22 +874,78 @@ function SearchTypeahead({
             role="listbox"
             aria-label="Search suggestions"
           >
-            {activeTabHasItems ? (
-              items.map((item, index) => (
-                <TypeaheadRow
-                  key={item.key}
-                  active={activeIndex === index}
-                  item={item}
-                  index={index}
-                  onHoverItem={onHoverItem}
-                  onSelectItem={onSelectItem}
-                />
-              ))
-            ) : (
-              <div className="navbar-search-typeahead-status">
-                No {emptyTabLabel} found for "{query}"
+            {hasSkillMatches ? (
+              <div
+                className="navbar-search-typeahead-section"
+                role="group"
+                aria-labelledby="navbar-search-typeahead-skills-heading"
+              >
+                <div
+                  id="navbar-search-typeahead-skills-heading"
+                  className="navbar-search-typeahead-heading"
+                >
+                  Skills
+                </div>
+                {skillItems.map((item, index) => (
+                  <TypeaheadRow
+                    key={item.key}
+                    active={activeIndex === index}
+                    item={item}
+                    index={index}
+                    onHoverItem={onHoverItem}
+                    onSelectItem={onSelectItem}
+                  />
+                ))}
               </div>
-            )}
+            ) : null}
+            {hasPluginMatches ? (
+              <div
+                className="navbar-search-typeahead-section"
+                role="group"
+                aria-labelledby="navbar-search-typeahead-plugins-heading"
+              >
+                <div
+                  id="navbar-search-typeahead-plugins-heading"
+                  className="navbar-search-typeahead-heading"
+                >
+                  Plugins
+                </div>
+                {pluginItems.map((item, index) => (
+                  <TypeaheadRow
+                    key={item.key}
+                    active={activeIndex === pluginStartIndex + index}
+                    item={item}
+                    index={pluginStartIndex + index}
+                    onHoverItem={onHoverItem}
+                    onSelectItem={onSelectItem}
+                  />
+                ))}
+              </div>
+            ) : null}
+            {hasCreatorMatches ? (
+              <div
+                className="navbar-search-typeahead-section"
+                role="group"
+                aria-labelledby="navbar-search-typeahead-creators-heading"
+              >
+                <div
+                  id="navbar-search-typeahead-creators-heading"
+                  className="navbar-search-typeahead-heading"
+                >
+                  Creators
+                </div>
+                {creatorItems.map((item, index) => (
+                  <TypeaheadRow
+                    key={item.key}
+                    active={activeIndex === creatorStartIndex + index}
+                    item={item}
+                    index={creatorStartIndex + index}
+                    onHoverItem={onHoverItem}
+                    onSelectItem={onSelectItem}
+                  />
+                ))}
+              </div>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -938,9 +966,17 @@ function TypeaheadRow({
   onHoverItem: (index: number) => void;
   onSelectItem: (item: TypeaheadItem) => void;
 }) {
+  const rowRef = useRef<HTMLButtonElement | null>(null);
   const body = getTypeaheadRowBody(item);
+
+  useEffect(() => {
+    if (!active) return;
+    rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [active]);
+
   return (
     <button
+      ref={rowRef}
       id={getTypeaheadOptionId(item)}
       className={`navbar-search-typeahead-row${active ? " is-active" : ""}${item.kind === "footer" ? " is-footer" : ""}`}
       type="button"
@@ -969,7 +1005,7 @@ function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
     const label = item.result.skill.displayName || item.result.skill.slug;
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
-        <MarketplaceIcon kind="skill" label={label} size="xs" />
+        <MarketplaceIcon kind="skill" label={label} skill={item.result.skill} size="xs" />
       </span>
     );
   }
@@ -978,7 +1014,26 @@ function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
     const label = item.result.plugin.displayName || item.result.plugin.name;
     return (
       <span className="navbar-search-typeahead-icon" aria-hidden="true">
-        <MarketplaceIcon kind="plugin" label={label} size="xs" />
+        <MarketplaceIcon
+          kind="plugin"
+          label={label}
+          categorySlug={item.result.plugin.categories?.[0]}
+          size="xs"
+        />
+      </span>
+    );
+  }
+
+  if (item.kind === "creator") {
+    const publisher = item.result.creator;
+    return (
+      <span className="navbar-search-typeahead-icon" aria-hidden="true">
+        <MarketplaceIcon
+          kind={publisher.kind === "org" ? "org" : "user"}
+          label={publisher.displayName}
+          imageUrl={publisher.image}
+          size="xs"
+        />
       </span>
     );
   }
@@ -991,22 +1046,75 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
     const owner = item.result.ownerHandle ? `@${item.result.ownerHandle}` : "Skill";
     return {
       title: item.result.skill.displayName,
-      meta: `${owner} / ${item.result.skill.slug}`,
+      meta: (
+        <TypeaheadPublisherMeta
+          owner={owner}
+          official={item.result.owner?.official === true}
+          packageName={item.result.skill.slug}
+        />
+      ),
     };
   }
   if (item.kind === "plugin") {
-    const owner = item.result.plugin.ownerHandle
-      ? `@${item.result.plugin.ownerHandle} / ${item.result.plugin.name}`
-      : item.result.plugin.name;
+    const packageName = displayPluginPackageName(item.result.plugin.name);
+    const owner = item.result.plugin.ownerHandle ? `@${item.result.plugin.ownerHandle}` : null;
     return {
       title: item.result.plugin.displayName,
-      meta: owner,
+      meta: owner ? (
+        <TypeaheadPublisherMeta
+          owner={owner}
+          official={item.result.plugin.isOfficial}
+          packageName={packageName}
+        />
+      ) : (
+        packageName
+      ),
+    };
+  }
+  if (item.kind === "creator") {
+    const publisher = item.result.creator;
+    return {
+      title: publisher.displayName,
+      meta: (
+        <TypeaheadCreatorMeta
+          handle={`@${publisher.handle}`}
+          official={publisher.official === true}
+        />
+      ),
     };
   }
   return {
     title: item.label,
     meta: null,
   };
+}
+
+function TypeaheadPublisherMeta({
+  owner,
+  official,
+  packageName,
+}: {
+  owner: string;
+  official: boolean;
+  packageName: string;
+}) {
+  return (
+    <>
+      <span className="navbar-search-typeahead-publisher">{owner}</span>
+      {official ? <OfficialBadge /> : null}
+      <span className="navbar-search-typeahead-separator"> / </span>
+      <span className="navbar-search-typeahead-package">{packageName}</span>
+    </>
+  );
+}
+
+function TypeaheadCreatorMeta({ handle, official }: { handle: string; official: boolean }) {
+  return (
+    <>
+      <span className="navbar-search-typeahead-publisher">{handle}</span>
+      {official ? <OfficialBadge /> : null}
+    </>
+  );
 }
 function NavbarThemeSwitcher({
   mode,

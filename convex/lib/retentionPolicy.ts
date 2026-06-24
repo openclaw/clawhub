@@ -122,9 +122,10 @@ export const RETENTION_POLICIES = {
   packageStatEvents: ephemeral("Package stat event log only needs to survive processing.", {
     expirationField: "processedAt",
     expirationIndex: "by_unprocessed",
-    prune: "pending packageStatEvents retention work",
-    retention: "After stat processing succeeds.",
+    prune: "packages.pruneProcessedPackageStatEventsInternal",
+    retention: "Processed and older than 7 days.",
   }),
+  packageDailyStats: permanent("Daily aggregate package stats are product analytics."),
   packageTrustedPublishers: permanent("Trusted publishing configuration."),
   packagePublishTokens: ephemeral("Package publish tokens expire and can be revoked.", {
     expirationField: "expiresAt",
@@ -176,6 +177,7 @@ export const RETENTION_POLICIES = {
   packageAppeals: permanent("Package moderation appeals and audit history."),
   packageModerationEventLogs: permanent("Package moderation event audit log."),
   officialPluginMigrations: permanent("Official plugin migration state."),
+  catalogFeedPublications: permanent("Current published hosted catalog feed snapshot."),
   stars: permanent("User star records."),
   auditLogs: permanent("Audit logs are durable compliance/security history."),
   systemSettings: permanent("Durable operator-controlled system settings."),
@@ -241,8 +243,8 @@ export const RETENTION_POLICIES = {
     retention: "Slug reservation cooldown.",
   }),
   reservedHandles: permanent("Reserved handles are explicit policy records until released."),
-  registryArtifactBackupSyncState: permanent("Registry artifact backup cursor state."),
-  registryArtifactBackupJobs: permanent("Registry artifact backup job history and retry state."),
+  registryArtifactBackupSyncState: permanent("Legacy registry artifact backup cursor state."),
+  registryArtifactBackupJobs: permanent("Legacy registry artifact backup job history."),
   userSkillInstalls: permanent("Current user install records."),
   skillOwnershipTransfers: ephemeral("Ownership transfer invitations expire.", {
     expirationField: "expiresAt",

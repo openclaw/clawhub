@@ -37,7 +37,7 @@ type CommandResult = {
 
 type JsonRecord = Record<string, unknown>;
 
-export const DEFAULT_BATCH_LIMIT = 6;
+export const DEFAULT_BATCH_LIMIT = 4;
 export const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 export const DEFAULT_LEASE_MS = 60 * 60 * 1000;
 const DEFAULT_CODEX_TIMEOUT_MS = 15 * 60 * 1000;

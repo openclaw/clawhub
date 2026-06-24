@@ -21,6 +21,7 @@ import {
   SheetTitle,
 } from "../../components/ui/sheet";
 import { Textarea } from "../../components/ui/textarea";
+import { buildPublisherProfileHref } from "../../lib/ownerRoute";
 import {
   formatRatio,
   formatScore,
@@ -344,8 +345,7 @@ export function AbusePage({
                   {selectedPublisher ? (
                     <Link
                       className="pa-profile-link"
-                      to="/p/$handle"
-                      params={{ handle: selectedPublisher.handle }}
+                      to={buildPublisherProfileHref(selectedPublisher.handle)}
                     >
                       <ExternalLink size={12} />
                       Profile

@@ -521,6 +521,49 @@ const packageCompatibilityValidator = v.optional(
   }),
 );
 
+const pluginManifestSummaryValidator = v.object({
+  schemaVersion: v.literal(1),
+  compatibility: v.optional(
+    v.object({
+      pluginApiRange: v.optional(v.string()),
+      builtWithOpenClawVersion: v.optional(v.string()),
+      pluginSdkVersion: v.optional(v.string()),
+      minGatewayVersion: v.optional(v.string()),
+    }),
+  ),
+  manifestIdentity: v.optional(
+    v.object({
+      name: v.optional(v.string()),
+      description: v.optional(v.string()),
+      version: v.optional(v.string()),
+      family: v.optional(v.string()),
+    }),
+  ),
+  configFields: v.array(
+    v.object({
+      name: v.string(),
+      description: v.optional(v.string()),
+      required: v.boolean(),
+      sensitive: v.boolean(),
+    }),
+  ),
+  mcpServers: v.array(
+    v.object({
+      name: v.string(),
+    }),
+  ),
+  bundledSkills: v.array(
+    v.object({
+      name: v.string(),
+      description: v.optional(v.string()),
+      rootPath: v.string(),
+      skillMdPath: v.string(),
+      sha256: v.string(),
+      size: v.number(),
+    }),
+  ),
+});
+
 const packageVerificationValidator = v.optional(
   v.object({
     tier: packageVerificationTierValidator,
@@ -788,6 +831,25 @@ const skills = defineTable({
       maxSmoothedRate: v.number(),
       smoothedRate: v.number(),
       pendingSkillDocInstallsAllTime: v.number(),
+      appliedAt: v.number(),
+    }),
+  ),
+  downloadBackfill: v.optional(
+    v.object({
+      modelVersion: v.string(),
+      sourceRepo: v.string(),
+      basis: v.literal("public-hosted-downloads-per-published-week"),
+      baselineCollectedAt: v.number(),
+      baselinePublicHostedSkillCount: v.number(),
+      baselinePublicHostedDownloads: v.number(),
+      baselinePublicHostedSkillWeeks: v.number(),
+      baselineAverageDownloadsPerSkillWeek: v.number(),
+      publishedAt: v.number(),
+      publishedWeeks: v.number(),
+      previousDownloads: v.number(),
+      targetDownloads: v.number(),
+      estimatedBackfilledDownloads: v.number(),
+      pendingSkillDocDownloads: v.number(),
       appliedAt: v.number(),
     }),
   ),
@@ -1386,8 +1448,22 @@ const packages = defineTable({
   .index("by_active_updated", ["softDeletedAt", "updatedAt"])
   .index("by_active_downloads", ["softDeletedAt", "stats.downloads", "updatedAt"])
   .index("by_active_family_downloads", ["softDeletedAt", "family", "stats.downloads", "updatedAt"])
+  .index("by_active_family_official_downloads", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "stats.downloads",
+    "updatedAt",
+  ])
   .index("by_active_installs", ["softDeletedAt", "stats.installs", "updatedAt"])
   .index("by_active_family_installs", ["softDeletedAt", "family", "stats.installs", "updatedAt"])
+  .index("by_active_family_official_installs", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "stats.installs",
+    "updatedAt",
+  ])
   .index("by_active_recommended_rank", [
     "softDeletedAt",
     "stats.stars",
@@ -1439,6 +1515,7 @@ const packageReleases = defineTable({
   extractedPackageJson: v.optional(v.any()),
   extractedPluginManifest: v.optional(v.any()),
   normalizedBundleManifest: v.optional(v.any()),
+  pluginManifestSummary: v.optional(pluginManifestSummaryValidator),
   compatibility: packageCompatibilityValidator,
   runtimeId: v.optional(v.string()),
   sourceRepo: v.optional(v.string()),
@@ -1714,6 +1791,14 @@ const packageStatEvents = defineTable({
   .index("by_unprocessed", ["processedAt"])
   .index("by_package", ["packageId"]);
 
+const packageDailyStats = defineTable({
+  packageId: v.id("packages"),
+  day: v.number(),
+  downloads: v.number(),
+  installs: v.number(),
+  updatedAt: v.number(),
+}).index("by_package_day", ["packageId", "day"]);
+
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
   provider: v.literal("github-actions"),
@@ -1817,7 +1902,12 @@ const packageSearchDigest = defineTable({
   ])
   .index("by_active_normalized_name", ["softDeletedAt", "normalizedName", "updatedAt"])
   .index("by_active_runtime_id", ["softDeletedAt", "runtimeId", "updatedAt"])
-  .index("by_active_name", ["softDeletedAt", "displayName"]);
+  .index("by_active_owner_handle", ["softDeletedAt", "ownerHandle", "updatedAt"])
+  .index("by_active_name", ["softDeletedAt", "displayName"])
+  .searchIndex("search_by_display_name", {
+    searchField: "displayName",
+    filterFields: ["softDeletedAt"],
+  });
 
 const packageTopicSearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -1860,6 +1950,53 @@ const packageTopicSearchDigest = defineTable({
   ])
   .index("by_active_official_topic_downloads", [
     "softDeletedAt",
+    "isOfficial",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_topic_downloads", [
+    "softDeletedAt",
+    "family",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_channel_topic_downloads", [
+    "softDeletedAt",
+    "channel",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_topic_downloads", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_official_topic_downloads", [
+    "softDeletedAt",
+    "family",
+    "isOfficial",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_topic_downloads", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "topic",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_official_topic_downloads", [
+    "softDeletedAt",
+    "family",
+    "channel",
     "isOfficial",
     "topic",
     "stats.downloads",
@@ -1960,6 +2097,21 @@ const packagePluginCategorySearchDigest = defineTable({
     "stats.downloads",
     "updatedAt",
   ])
+  .index("by_active_channel_category_downloads", [
+    "softDeletedAt",
+    "channel",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "channel",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
   .index("by_active_family_category_installs", [
     "softDeletedAt",
     "family",
@@ -1998,6 +2150,23 @@ const packagePluginCategorySearchDigest = defineTable({
   .index("by_active_family_official_category_downloads", [
     "softDeletedAt",
     "family",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_channel_official_category_downloads", [
+    "softDeletedAt",
+    "channel",
+    "isOfficial",
+    "pluginCategory",
+    "stats.downloads",
+    "updatedAt",
+  ])
+  .index("by_active_family_channel_official_category_downloads", [
+    "softDeletedAt",
+    "family",
+    "channel",
     "isOfficial",
     "pluginCategory",
     "stats.downloads",
@@ -2289,6 +2458,16 @@ const officialPluginMigrations = defineTable({
   .index("by_phase_updatedAt", ["phase", "updatedAt"])
   .index("by_updatedAt", ["updatedAt"]);
 
+const catalogFeedPublications = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  expiresAt: v.string(),
+  payload: v.string(),
+  payloadSha256: v.string(),
+  publishedAt: v.number(),
+}).index("by_feed", ["feedId"]);
+
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2308,6 +2487,7 @@ const auditLogs = defineTable({
 })
   .index("by_actor", ["actorUserId"])
   .index("by_target", ["targetType", "targetId"])
+  .index("by_target_action", ["targetType", "targetId", "action"])
   .index("by_target_createdAt", ["targetType", "targetId", "createdAt"]);
 
 const systemSettings = defineTable({
@@ -2804,6 +2984,7 @@ export default defineSchema({
   skillScanRequestFileChunks,
   skillCardGenerationJobs,
   packageStatEvents,
+  packageDailyStats,
   packageTrustedPublishers,
   packagePublishTokens,
   packagePublishUploadTickets,
@@ -2833,6 +3014,7 @@ export default defineSchema({
   packageAppeals,
   packageModerationEventLogs,
   officialPluginMigrations,
+  catalogFeedPublications,
   stars,
   auditLogs,
   systemSettings,

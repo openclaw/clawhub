@@ -83,21 +83,48 @@ describe("SkillsIndex", () => {
     );
     expect(args).not.toHaveProperty("sort");
     expect(args).not.toHaveProperty("officialFirst");
-    expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
     const sortOptions = Array.from(
-      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions.slice(0, 2)).toEqual(["Recommended", "Featured"]);
+    expect(sortOptions).toEqual(["All", "Top", "Most starred", "Featured"]);
   });
 
-  it("offers installs without exposing downloads as a browse sort", async () => {
+  it("offers Top without exposing downloads as a browse view", async () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(screen.getByRole("radio", { name: "Most installed" })).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Top" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
+  });
+
+  it("separates primary views from secondary sort options", async () => {
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const views = Array.from(
+      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
+    ).map((option) => option.textContent);
+    fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
+    const sortOptions = screen.getAllByRole("option").map((option) => option.textContent);
+
+    expect(views).toEqual(["All", "Top", "Most starred", "Featured"]);
+    expect(sortOptions).toEqual(["Recently updated", "Newest", "Name"]);
+  });
+
+  it("preserves a secondary sort when switching to Featured", async () => {
+    searchMock = { sort: "updated", dir: "desc" };
+    render(<SkillsIndex />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Featured" }));
+
+    const lastCall = getLastNavigateCall();
+    expect(lastCall.search({ sort: "updated", dir: "desc" })).toEqual({
+      sort: "updated",
+      dir: "desc",
+      featured: true,
+      highlighted: undefined,
+    });
   });
 
   it("renders an empty state when no skills are returned", async () => {
@@ -133,7 +160,7 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    fireEvent.click(screen.getByRole("button", { name: "Clear skill search" }));
+    fireEvent.click(screen.getByRole("button", { name: "Close search" }));
 
     expect(navigateMock).toHaveBeenCalled();
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
@@ -153,6 +180,25 @@ describe("SkillsIndex", () => {
     });
     expect(lastCall.replace).toBe(true);
     expect(screen.queryByRole("button", { name: "Clear" })).toBeNull();
+  });
+
+  it("keeps search collapsed until slash opens and focuses it", async () => {
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+
+    render(<SkillsIndex />);
+    await act(async () => {});
+
+    const input = screen.getByPlaceholderText("Search skills...");
+    const panel = input.closest(".browse-search-panel");
+    expect(panel?.hasAttribute("hidden")).toBe(true);
+
+    fireEvent.keyDown(window, { key: "/" });
+
+    expect(panel?.hasAttribute("hidden")).toBe(false);
+    expect(document.activeElement).toBe(input);
   });
 
   it("does not render a browse count when more pages exist", async () => {
@@ -236,7 +282,7 @@ describe("SkillsIndex", () => {
     const listButton = screen.getByRole("button", { name: "List" });
     const searchInput = screen.getByPlaceholderText("Search skills...");
 
-    expect(listButton.closest(".browse-page-header")).not.toBeNull();
+    expect(listButton.closest(".browse-controls")).not.toBeNull();
     expect(
       Boolean(listButton.compareDocumentPosition(searchInput) & Node.DOCUMENT_POSITION_FOLLOWING),
     ).toBe(true);
@@ -328,7 +374,7 @@ describe("SkillsIndex", () => {
     });
   });
 
-  it("keeps recommended as the visible default search sort", async () => {
+  it("keeps All as the visible default search view", async () => {
     searchMock = { q: "notion" };
     const actionFn = vi.fn().mockResolvedValue([]);
     convexReactMocks.useAction.mockReturnValue(actionFn);
@@ -336,14 +382,12 @@ describe("SkillsIndex", () => {
 
     render(<SkillsIndex />);
 
-    expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
     const sortOptions = Array.from(
-      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions[0]).toBe("Recommended");
+    expect(sortOptions[0]).toBe("All");
   });
 
   it("keeps recommended sort stable while typing a search", async () => {
@@ -354,9 +398,7 @@ describe("SkillsIndex", () => {
     const input = screen.getByPlaceholderText("Search skills...");
     fireEvent.change(input, { target: { value: "agent" } });
 
-    expect(screen.getByRole("radio", { name: "Recommended" }).getAttribute("aria-checked")).toBe(
-      "true",
-    );
+    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
     expect(screen.queryByRole("radio", { name: "Relevance" })).toBeNull();
   });
 
@@ -366,12 +408,12 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
 
     const beforeTyping = Array.from(
-      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
     const input = screen.getByPlaceholderText("Search skills...");
     fireEvent.change(input, { target: { value: "agent" } });
     const whileTyping = Array.from(
-      screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
+      screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
 
     expect(whileTyping).toEqual(beforeTyping);
@@ -391,7 +433,10 @@ describe("SkillsIndex", () => {
       await vi.runAllTimersAsync();
     });
 
-    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
+    fireEvent.click(screen.getByRole("combobox", { name: "Category" }));
+    expect(screen.getByRole("radio", { name: "All categories" }).getAttribute("aria-checked")).toBe(
+      "true",
+    );
     expect(screen.getByRole("radio", { name: "Development" }).getAttribute("aria-checked")).toBe(
       "false",
     );
@@ -427,8 +472,8 @@ describe("SkillsIndex", () => {
     });
   });
 
-  it("preserves explicitly user-set installs sort when entering search", async () => {
-    searchMock = { sort: "installs", dir: "desc" };
+  it("preserves explicitly user-set downloads sort when entering search", async () => {
+    searchMock = { sort: "downloads", dir: "desc" };
     vi.useFakeTimers();
 
     render(<SkillsIndex />);
@@ -445,9 +490,9 @@ describe("SkillsIndex", () => {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
     };
     expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ sort: "installs", dir: "desc" })).toEqual({
+    expect(lastCall.search({ sort: "downloads", dir: "desc" })).toEqual({
       q: "cli-design-framework",
-      sort: "installs",
+      sort: "downloads",
       dir: "desc",
     });
   });
@@ -477,12 +522,12 @@ describe("SkillsIndex", () => {
     searchMock = { sort: "recommended", dir: "asc" };
     render(<SkillsIndex />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Most installed" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Top" }));
 
     const lastCall = getLastNavigateCall();
     expect(lastCall.replace).toBe(true);
     expect(lastCall.search({ sort: "recommended", dir: "asc" })).toEqual({
-      sort: "installs",
+      sort: "downloads",
       dir: "desc",
     });
   });
@@ -491,27 +536,27 @@ describe("SkillsIndex", () => {
     searchMock = { q: "notion", sort: "relevance", dir: "asc" };
     render(<SkillsIndex />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Most installed" }));
+    fireEvent.click(screen.getByRole("radio", { name: "Top" }));
 
     const lastCall = getLastNavigateCall();
     expect(lastCall.replace).toBe(true);
     expect(lastCall.search({ q: "notion", sort: "relevance", dir: "asc" })).toEqual({
       q: "notion",
-      sort: "installs",
+      sort: "downloads",
       dir: "desc",
     });
   });
 
-  it("clears direction when returning to recommended browse sort", async () => {
-    searchMock = { sort: "installs", dir: "asc" };
+  it("clears direction when returning to the All view", async () => {
+    searchMock = { sort: "downloads", dir: "asc" };
     render(<SkillsIndex />);
 
-    fireEvent.click(screen.getByRole("radio", { name: "Recommended" }));
+    fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     const lastCall = getLastNavigateCall();
     expect(lastCall.replace).toBe(true);
-    expect(lastCall.search({ sort: "installs", dir: "asc" })).toEqual({
-      sort: "recommended",
+    expect(lastCall.search({ sort: "downloads", dir: "asc" })).toEqual({
+      sort: undefined,
       dir: undefined,
     });
   });
@@ -674,7 +719,7 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    const category = screen.getByRole("radio", { name: "Development" });
+    const category = screen.getByRole("combobox", { name: "Category" });
     const firstTopic = screen.getByRole("button", { name: "#typescript" });
     expect(
       Boolean(category.compareDocumentPosition(firstTopic) & Node.DOCUMENT_POSITION_FOLLOWING),

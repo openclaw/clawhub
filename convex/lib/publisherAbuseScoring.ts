@@ -1,4 +1,4 @@
-export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v2";
+export const PUBLISHER_ABUSE_MODEL_VERSION = "publisher-abuse-pressure.v4";
 export const PUBLISHER_TEMPORAL_ABUSE_MODEL_VERSION = "publisher-abuse-temporal.v1";
 
 export type PublisherAbuseLabel = "pass" | "review" | "potential_ban_candidate";
@@ -101,15 +101,17 @@ export type TemporalAbuseCohortBenchmark = {
 
 export const DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG = {
   modelVersion: PUBLISHER_ABUSE_MODEL_VERSION,
-  skillPivot: 100,
+  skillPivot: 200,
   // Two installs per skill is only a rough review calibration point. It can be
   // the author plus one friend, so it is not proof of legitimacy or abuse.
   installsPerSkillPivot: 2,
   starsPerSkillPivot: 0.05,
   downloadsPerSkillPivot: 250,
-  outputElasticity: 1.5,
-  installTrustElasticity: 0.8,
-  starTrustElasticity: 1,
+  outputElasticity: 1.2,
+  engagementElasticity: 0.25,
+  minPublishedSkillsForAggregateLabel: 200,
+  installTrustElasticity: 1,
+  starTrustElasticity: 1.1,
   downloadDemandElasticity: 0.2,
   minInstallsPerSkill: 0.05,
   minStarsPerSkill: 0.02,
@@ -272,16 +274,19 @@ export function scorePublisherAbuseCohort(
   config: PublisherAbuseModelConfig = DEFAULT_PUBLISHER_ABUSE_MODEL_CONFIG,
 ): PublisherAbuseScore[] {
   const rawScores = inputs.map((input) => computePublisherAbuseRawScore(input, config));
-  const mean = average(rawScores.map((score) => score.logPressure));
+  const scoredRawScores = rawScores.filter((score) => score.publishedSkills > 0);
+  const mean = average(scoredRawScores.map((score) => score.logPressure));
   const stdDev = standardDeviation(
-    rawScores.map((score) => score.logPressure),
+    scoredRawScores.map((score) => score.logPressure),
     mean,
   );
   const safeStdDev = stdDev === 0 ? 1 : stdDev;
 
   return rawScores
     .map((score) => {
-      const zScore = (score.logPressure - mean) / safeStdDev;
+      const zScore = isPublisherAbuseCheckEligible(score, config)
+        ? (score.logPressure - mean) / safeStdDev
+        : 0;
       return {
         ...score,
         zScore,
@@ -489,6 +494,7 @@ function reasonCodesForPublisher(input: {
 }) {
   const codes: string[] = [];
   if (input.publishedSkills <= 0) return codes;
+  if (!isPublisherAbuseCheckEligible(input, input.config)) return codes;
   if (input.publishedSkills >= input.config.skillPivot) codes.push("high_catalog_volume");
   if (input.installsPerSkill < input.config.installsPerSkillPivot) {
     codes.push("low_installs_per_skill");

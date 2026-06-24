@@ -42,7 +42,7 @@ describe("run-skill-card-worker Codex skill setup", () => {
   });
 
   it("uses the same batch, runtime, and lease defaults as the security worker", () => {
-    expect(DEFAULT_BATCH_LIMIT).toBe(6);
+    expect(DEFAULT_BATCH_LIMIT).toBe(4);
     expect(DEFAULT_MAX_RUNTIME_MS).toBe(40 * 60 * 1000);
     expect(DEFAULT_LEASE_MS).toBe(60 * 60 * 1000);
   });

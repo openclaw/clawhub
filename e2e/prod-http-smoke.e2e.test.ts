@@ -77,7 +77,6 @@ async function fetchWithRetry(
   options: { maxAttempts?: number; timeoutMs?: number } = {},
 ) {
   const maxAttempts = options.maxAttempts ?? MAX_RATE_LIMIT_RETRIES;
-  let lastError: unknown;
   for (let attempt = 1; ; attempt += 1) {
     try {
       const response = await fetchWithTimeout(input, init, options.timeoutMs);
@@ -92,13 +91,10 @@ async function fetchWithRetry(
       }
       return response;
     } catch (error) {
-      lastError = error;
       if (attempt >= maxAttempts) throw error;
       await new Promise((resolve) => setTimeout(resolve, TRANSIENT_RETRY_DELAY_MS * attempt));
     }
   }
-
-  throw lastError;
 }
 
 async function fetchHtml(pathname: string) {
@@ -108,6 +104,22 @@ async function fetchHtml(pathname: string) {
   expect(response.ok).toBe(true);
   expect(response.headers.get("content-type")).toContain("text/html");
   return response.text();
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function expectLinkWithRelAndHref(html: string, rel: string, href: string) {
+  const relPattern = new RegExp(`\\brel=["']${escapeRegExp(rel)}["']`, "i");
+  const hrefPattern = new RegExp(`\\bhref=["']${escapeRegExp(href)}["']`, "i");
+  const hasLink = [...html.matchAll(/<link\b[^>]*>/gi)].some(
+    ([tag]) => relPattern.test(tag) && hrefPattern.test(tag),
+  );
+
+  expect(hasLink, `expected HTML to contain <link> with rel="${rel}" and href="${href}"`).toBe(
+    true,
+  );
 }
 
 type SkillDetailResponse = {
@@ -151,8 +163,10 @@ describe("prod http smoke", () => {
     const html = await fetchHtml(`/${owner}/${detail.skill.slug}`);
 
     expect(html).toContain(`<title>${detail.skill.displayName} — ClawHub</title>`);
-    expect(html).toContain(
-      `<link rel="canonical" href="${getSiteBase()}/${owner}/${detail.skill.slug}"/>`,
+    expectLinkWithRelAndHref(
+      html,
+      "canonical",
+      `${getSiteBase()}/${owner}/skills/${detail.skill.slug}`,
     );
     if (detail.skill.summary) {
       expect(html).toContain(detail.skill.summary);

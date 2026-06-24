@@ -2,61 +2,75 @@
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
-const navigateMock = vi.fn();
-const { convexQueryMock, fetchFeaturedPluginsMock } = vi.hoisted(() => ({
-  convexQueryMock: vi.fn(),
-  fetchFeaturedPluginsMock: vi.fn(),
-}));
+const initialListingFixture = {
+  kind: "skills",
+  tab: "popular",
+  categorySlugs: [],
+  fetchLimit: 20,
+  items: [
+    {
+      skill: {
+        _id: "skills:initial",
+        slug: "initial-skill",
+        displayName: "Initial Skill",
+        stats: { installsAllTime: 10 },
+      },
+      ownerHandle: "builder",
+    },
+  ],
+  hasMore: false,
+};
+
+const homeListingSectionMock = vi.fn();
+const fetchInitialHomeListingMock = vi.fn(() => Promise.resolve(initialListingFixture));
 
 vi.mock("@tanstack/react-router", () => ({
-  createFileRoute: () => (config: { component?: unknown }) => ({
-    __config: config,
-  }),
+  createFileRoute: () => (config: { component?: unknown }) => {
+    const route = {
+      __config: config,
+      useLoaderData: () => initialListingFixture,
+    };
+    return route;
+  },
   Link: ({ children, className, to }: { children: ReactNode; className?: string; to?: string }) => (
     <a className={className} href={to ?? "/"}>
       {children}
     </a>
   ),
-  useNavigate: () => navigateMock,
 }));
 
-vi.mock("convex/react", () => ({
-  useAction: () => vi.fn(),
-  useQuery: () => undefined,
-}));
-
-vi.mock("../../convex/_generated/api", () => ({
-  api: {
-    skills: {
-      listHighlightedPublic: "skills:listHighlightedPublic",
-      listPublicPageV4: "skills:listPublicPageV4",
-    },
+vi.mock("../components/HomeListingSection", () => ({
+  HomeListingSection: (props: unknown) => {
+    homeListingSectionMock(props);
+    return <section data-testid="home-listing-stub" />;
   },
 }));
 
-vi.mock("../convex/client", () => ({
-  convexHttp: {
-    query: convexQueryMock,
-  },
+vi.mock("../lib/homeListingData", () => ({
+  fetchInitialHomeListing: () => fetchInitialHomeListingMock(),
 }));
 
-vi.mock("../lib/featuredCatalog", () => ({
-  fetchFeaturedPlugins: fetchFeaturedPluginsMock,
+vi.mock("../components/HomePopularPublishersSection", () => ({
+  HomePopularPublishersSection: () => <section data-testid="home-publishers-stub" />,
+}));
+
+vi.mock("../components/HomeAppsSection", () => ({
+  HomeAppsSection: () => <section data-testid="home-apps-stub" />,
+}));
+
+vi.mock("../components/HomeBringSkillsSection", () => ({
+  HomeBringSkillsSection: () => <section data-testid="home-bring-skills-stub" />,
 }));
 
 describe("home route", () => {
-  beforeEach(() => {
-    convexQueryMock.mockResolvedValue([]);
-    fetchFeaturedPluginsMock.mockResolvedValue([]);
-    navigateMock.mockReset();
-  });
-
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    homeListingSectionMock.mockClear();
+    fetchInitialHomeListingMock.mockClear();
   });
 
   async function renderHome() {
@@ -67,29 +81,72 @@ describe("home route", () => {
     render(<Component />);
   }
 
-  function clickHeroLabelTriple() {
-    const label = screen.getByText("BUILT BY THE COMMUNITY.");
-    act(() => {
-      fireEvent.click(label);
-      fireEvent.click(label);
-      fireEvent.click(label);
-    });
-    return label;
+  async function getRouteLoader() {
+    const { Route } = await import("../routes/index");
+    return (Route as unknown as { __config: { loader: () => Promise<unknown> } }).__config.loader;
   }
 
-  it("renders the restored community hero copy", async () => {
+  function clickHeroHeadlineTriple() {
+    const headline = screen.getByRole("button", { name: /Equip/ });
+    act(() => {
+      fireEvent.click(headline);
+      fireEvent.click(headline);
+      fireEvent.click(headline);
+    });
+  }
+
+  it("renders the polished hero copy without the community eyebrow", async () => {
     await renderHome();
 
-    expect(screen.getByText("BUILT BY THE COMMUNITY.")).toBeTruthy();
-    expect(screen.getByText("Tools built by thousands, ready in one search.")).toBeTruthy();
+    expect(screen.queryByText("BUILT BY THE COMMUNITY")).toBeNull();
+    expect(
+      Array.from(document.querySelectorAll(".home-v2-cycle-word")).map((el) => el.textContent),
+    ).toEqual(["Unleash", "Ship", "Build", "Create", "Unleash"]);
+    expect(screen.getByText("Discover skills and plugins from top creators").textContent).toBe(
+      "Discover skills and plugins from top creators",
+    );
+    expect(screen.queryByRole("link", { name: "200k+ publishers" })).toBeNull();
+    expect(screen.getByRole("button", { name: /Equip/ }).tabIndex).toBe(0);
   });
 
-  it("renders the three home category options", async () => {
+  it("renders the catalog and new homepage sections without the old hero search", async () => {
     await renderHome();
 
-    expect(screen.getByText("Skills")).toBeTruthy();
-    expect(screen.getByText("Plugins")).toBeTruthy();
-    expect(screen.getByText("Publishers")).toBeTruthy();
+    expect(screen.getByTestId("home-listing-stub").tagName).toBe("SECTION");
+    expect(screen.getByTestId("home-publishers-stub").tagName).toBe("SECTION");
+    expect(screen.getByTestId("home-apps-stub").tagName).toBe("SECTION");
+    expect(screen.getByTestId("home-bring-skills-stub").tagName).toBe("SECTION");
+    expect(screen.queryByPlaceholderText("What are you looking for?")).toBeNull();
+    expect(screen.queryByText("Featured skills")).toBeNull();
+    expect(screen.queryByText("Trending Now")).toBeNull();
+    expect(screen.queryByText(/claw for your claw/i)).toBeNull();
+  });
+
+  it("passes the loader listing into the home listing section", async () => {
+    await renderHome();
+
+    expect(homeListingSectionMock).toHaveBeenCalledWith({
+      initialListing: initialListingFixture,
+    });
+  });
+
+  it("loads the default home listing in the route loader", async () => {
+    const loader = await getRouteLoader();
+
+    await expect(loader()).resolves.toBe(initialListingFixture);
+    expect(fetchInitialHomeListingMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to client loading when the default listing loader fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    fetchInitialHomeListingMock.mockRejectedValueOnce(new Error("offline"));
+    const loader = await getRouteLoader();
+
+    await expect(loader()).resolves.toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(
+      "Failed to load initial home listing:",
+      expect.any(Error),
+    );
   });
 
   it("does not render the homepage social proof stats strip", async () => {
@@ -102,172 +159,14 @@ describe("home route", () => {
     expect(screen.queryByText("avg rating")).toBeNull();
   });
 
-  it("keeps the featured skill carousel as a duplicated scrolling track", async () => {
-    convexQueryMock.mockResolvedValue([
-      {
-        skill: {
-          _id: "skill-one",
-          ownerUserId: "user-one",
-          slug: "one",
-          displayName: "One",
-          summary: "First highlighted skill.",
-          stats: { stars: 3, downloads: 12 },
-        },
-        ownerHandle: "openclaw",
-      },
-      {
-        skill: {
-          _id: "skill-two",
-          ownerUserId: "user-two",
-          slug: "two",
-          displayName: "Two",
-          summary: "Second highlighted skill.",
-          stats: { stars: 5, downloads: 24 },
-        },
-        ownerHandle: "ritual",
-      },
-    ]);
-
-    await renderHome();
-
-    expect(await screen.findByText("Featured skills")).toBeTruthy();
-    expect(document.querySelector(".home-v2-carousel-track")).toBeTruthy();
-    expect(document.querySelectorAll(".home-v2-carousel-track .home-v2-c-card")).toHaveLength(4);
-    expect(
-      document.querySelector(".home-v2-carousel-track .home-v2-c-card")?.getAttribute("href"),
-    ).toBe("/openclaw/one");
-  });
-
-  it("wires carousel previous and next controls to scroll the featured track", async () => {
-    const scrollByMock = vi.fn();
-    Object.defineProperty(HTMLElement.prototype, "scrollBy", {
-      configurable: true,
-      value: scrollByMock,
-    });
-    Object.defineProperty(HTMLElement.prototype, "offsetWidth", {
-      configurable: true,
-      get: () => 320,
-    });
-    convexQueryMock.mockResolvedValue([
-      {
-        skill: {
-          _id: "skill-one",
-          ownerUserId: "user-one",
-          slug: "one",
-          displayName: "One",
-          summary: "First highlighted skill.",
-          stats: { stars: 3, downloads: 12 },
-        },
-        ownerHandle: "openclaw",
-      },
-    ]);
-
-    await renderHome();
-    fireEvent.click(await screen.findByLabelText("Next"));
-    fireEvent.click(screen.getByLabelText("Previous"));
-
-    expect(scrollByMock).toHaveBeenNthCalledWith(1, { left: 336, behavior: "smooth" });
-    expect(scrollByMock).toHaveBeenNthCalledWith(2, { left: -336, behavior: "smooth" });
-  });
-
-  it("falls back to recommended public skill cards when no highlighted carousel cards exist", async () => {
-    convexQueryMock.mockImplementation((queryName: string) => {
-      if (queryName === "skills:listHighlightedPublic") return Promise.resolve([]);
-      if (queryName === "skills:listPublicPageV4") {
-        return Promise.resolve({
-          page: [
-            {
-              skill: {
-                _id: "skill-popular",
-                ownerUserId: "user-popular",
-                slug: "popular",
-                displayName: "Popular",
-                summary: "Popular fallback skill.",
-                stats: { stars: 8, downloads: 48 },
-              },
-              ownerHandle: "clawhub",
-            },
-          ],
-        });
-      }
-      return Promise.resolve([]);
-    });
-
-    await renderHome();
-
-    expect(await screen.findByText("Featured skills")).toBeTruthy();
-    expect(
-      Array.from(document.querySelectorAll(".home-v2-carousel-track .home-v2-c-name")).map(
-        (node) => node.textContent,
-      ),
-    ).toEqual(["Popular", "Popular"]);
-    expect(document.querySelector(".home-v2-carousel-section")?.getAttribute("data-source")).toBe(
-      "popular",
-    );
-    expect(document.querySelectorAll(".home-v2-carousel-track .home-v2-c-card")).toHaveLength(2);
-    const listArgs = getListPublicPageArgs();
-    expect(listArgs).toEqual(
-      expect.objectContaining({
-        numItems: 6,
-        dir: "desc",
-      }),
-    );
-    expect(listArgs).not.toHaveProperty("sort");
-  });
-
-  it("restores the Trending Now skill grid from the recommended public feed", async () => {
-    const trendingEntries = Array.from({ length: 6 }, (_, index) => ({
-      skill: {
-        _id: `skill-trending-${index}`,
-        ownerUserId: `user-trending-${index}`,
-        slug: `trending-${index}`,
-        displayName: `Trending Skill ${index + 1}`,
-        summary: `Trending skill ${index + 1} summary.`,
-        stats: { stars: 100 + index, downloads: 12_000 + index * 1000 },
-      },
-      ownerHandle: `creator${index + 1}`,
-    }));
-
-    convexQueryMock.mockImplementation((queryName: string) => {
-      if (queryName === "skills:listHighlightedPublic") {
-        return Promise.resolve([
-          {
-            skill: {
-              _id: "skill-highlighted",
-              ownerUserId: "user-highlighted",
-              slug: "highlighted",
-              displayName: "Highlighted",
-              summary: "Highlighted skill.",
-              stats: { stars: 1, downloads: 2 },
-            },
-            ownerHandle: "featured",
-          },
-        ]);
-      }
-      if (queryName === "skills:listPublicPageV4") {
-        return Promise.resolve({ page: trendingEntries });
-      }
-      return Promise.resolve([]);
-    });
-
-    await renderHome();
-
-    expect(await screen.findByText("Trending Now")).toBeTruthy();
-    expect(document.querySelectorAll(".home-v2-trending-grid .home-v2-trend-card")).toHaveLength(6);
-    expect(document.querySelector(".home-v2-trend-title")?.textContent).toBe("Trending Skill 1");
-    expect(document.querySelector(".home-v2-trend-creator")?.textContent).toBe("by creator1");
-    expect(document.querySelector(".home-v2-trend-install")?.textContent).toContain("Install");
-  });
-
   it("starts the slot machine when the community label is triple-clicked", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-04-29T00:00:00Z"));
     vi.spyOn(Math, "random").mockReturnValue(0.5);
 
     await renderHome();
-    const label = clickHeroLabelTriple();
+    clickHeroHeadlineTriple();
 
-    expect(label.className).toContain("home-v2-hero-label-active");
     expect(document.querySelector(".home-v2-headline-slots")).toBeTruthy();
     expect(document.querySelector(".home-v2-confetti")).toBeTruthy();
   });
@@ -285,7 +184,7 @@ describe("home route", () => {
       .mockReturnValueOnce(0.3);
 
     await renderHome();
-    clickHeroLabelTriple();
+    clickHeroHeadlineTriple();
 
     act(() => {
       vi.advanceTimersByTime(2400);
@@ -307,7 +206,7 @@ describe("home route", () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
 
     await renderHome();
-    clickHeroLabelTriple();
+    clickHeroHeadlineTriple();
 
     act(() => {
       vi.advanceTimersByTime(2400);
@@ -320,18 +219,3 @@ describe("home route", () => {
     expect(document.querySelector(".home-v2-hack-lobster")).toBeTruthy();
   });
 });
-
-function getListPublicPageArgs(): Record<string, unknown> {
-  const call = convexQueryMock.mock.calls.find((candidate: unknown[]) => {
-    return candidate[0] === "skills:listPublicPageV4";
-  });
-  const args = call?.[1];
-  if (!isRecord(args)) {
-    throw new Error("Expected listPublicPageV4 args to be an object");
-  }
-  return args;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}

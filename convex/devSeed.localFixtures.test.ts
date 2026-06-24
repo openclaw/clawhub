@@ -1,12 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { Id } from "./_generated/dataModel";
 import {
+  backfillExistingPublicCorpusBatchRows,
   currentUserSeedPackageName,
   currentUserSeedSkillSlug,
   seedFeaturedPluginPackagesMutation,
   seedGitHubBackedSkillSourceMutation,
   seedLocalFixtures,
   seedLocalModerationFixturesHandler,
+  seedPublicCorpusBatch,
   seedPublicCorpusBatchMutation,
   seedSkillMutation,
 } from "./devSeed";
@@ -27,8 +29,14 @@ const seedGitHubBackedSkillSourceHandler = (
 const seedLocalFixturesHandler = (
   seedLocalFixtures as unknown as WrappedHandler<{ reset?: boolean }>
 )._handler;
+const seedPublicCorpusBatchActionHandler = (
+  seedPublicCorpusBatch as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
 const seedPublicCorpusBatchHandler = (
   seedPublicCorpusBatchMutation as unknown as WrappedHandler<Record<string, unknown>>
+)._handler;
+const backfillExistingPublicCorpusBatchRowsHandler = (
+  backfillExistingPublicCorpusBatchRows as unknown as WrappedHandler<Record<string, unknown>>
 )._handler;
 
 function chainEq(constraints: Record<string, unknown>) {
@@ -261,6 +269,651 @@ describe("devSeed local fixtures", () => {
       }),
     );
     expect(tables.skillEmbeddings?.[0]).not.toHaveProperty("ownerPublisherId");
+    expect(
+      (tables.skillDailyStats ?? []).reduce((sum, row) => sum + Number(row.downloads), 0),
+    ).toBe(tables.skills?.[0]?.statsDownloads);
+    expect((tables.skillDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0)).toBe(
+      tables.skills?.[0]?.statsInstallsAllTime,
+    );
+  });
+
+  it("backfills daily activity for existing public corpus skills", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const publisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      linkedUserId: userId,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+
+    await db.insert("skills", {
+      slug: "corpus-demo",
+      displayName: "Corpus Demo",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      batch: "public-corpus-v1",
+      tags: {},
+      badges: {},
+      statsDownloads: 143,
+      statsStars: 7,
+      statsInstallsCurrent: 18,
+      statsInstallsAllTime: 23,
+      stats: {
+        downloads: 143,
+        stars: 7,
+        installsCurrent: 18,
+        installsAllTime: 23,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const result = await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "skill",
+            slug: "corpus-demo",
+            displayName: "Corpus Demo",
+            version: "0.1.0",
+            skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+            storageId: "storage:corpus-demo",
+            embedding: [0, 1, 2],
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    const rows = tables.skillDailyStats ?? [];
+    expect(result).toEqual({ ok: true, seeded: [], skipped: ["skill:corpus-demo"] });
+    expect(rows).toHaveLength(30);
+    expect(rows.reduce((sum, row) => sum + Number(row.downloads), 0)).toBe(143);
+    expect(rows.reduce((sum, row) => sum + Number(row.installs), 0)).toBe(23);
+  });
+
+  it("pre-skips existing public corpus rows before storage and embedding prep", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const publisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      linkedUserId: userId,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+
+    await db.insert("skills", {
+      slug: "corpus-demo",
+      displayName: "Corpus Demo",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      batch: "public-corpus-v1",
+      tags: {},
+      badges: {},
+      statsDownloads: 143,
+      statsStars: 7,
+      statsInstallsCurrent: 18,
+      statsInstallsAllTime: 23,
+      stats: {
+        downloads: 143,
+        stars: 7,
+        installsCurrent: 18,
+        installsAllTime: 23,
+        versions: 1,
+        comments: 0,
+      },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+    await db.insert("packages", {
+      name: "demo-plugin",
+      normalizedName: "demo-plugin",
+      displayName: "Demo Plugin",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      stats: { downloads: 57, installs: 13, stars: 2, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    });
+
+    const mutationCtx = createMutationCtx(db);
+    const storageStore = async () => {
+      throw new Error("existing public corpus rows should not store files");
+    };
+    const result = await seedPublicCorpusBatchActionHandler(
+      {
+        storage: { store: storageStore },
+        runMutation: async (_ref: unknown, args: Record<string, unknown>) =>
+          backfillExistingPublicCorpusBatchRowsHandler(mutationCtx as never, args),
+      } as never,
+      {
+        rows: [
+          {
+            kind: "skill",
+            slug: "corpus-demo",
+            displayName: "Corpus Demo",
+            version: "0.1.0",
+            skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+          {
+            kind: "plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "0.1.0",
+            readme: "# Demo plugin",
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    expect(result).toEqual({
+      ok: true,
+      seeded: [],
+      skipped: ["skill:corpus-demo", "plugin:demo-plugin"],
+    });
+    expect(tables.skillDailyStats).toHaveLength(30);
+    expect((tables.packageDailyStats ?? []).length).toBeGreaterThan(0);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.downloads), 0),
+    ).toBe(57);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0),
+    ).toBe(13);
+  });
+
+  it("seeds daily activity for new public corpus packages", async () => {
+    const { db, tables } = createDb();
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "plugin",
+            name: "demo-plugin",
+            displayName: "Demo Plugin",
+            version: "0.1.0",
+            readme: "# Demo plugin",
+            storageId: "storage:demo-plugin",
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    const pkg = tables.packages?.find((candidate) => candidate.name === "demo-plugin");
+    const stats = pkg?.stats;
+    const downloads =
+      stats &&
+      typeof stats === "object" &&
+      "downloads" in stats &&
+      typeof stats.downloads === "number"
+        ? stats.downloads
+        : null;
+    const installs =
+      stats &&
+      typeof stats === "object" &&
+      "installs" in stats &&
+      typeof stats.installs === "number"
+        ? stats.installs
+        : null;
+    expect(pkg).toBeTruthy();
+    expect(downloads).not.toBeNull();
+    expect(installs).not.toBeNull();
+    expect((tables.packageDailyStats ?? []).length).toBeGreaterThan(0);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.downloads), 0),
+    ).toBe(downloads);
+    expect(
+      (tables.packageDailyStats ?? []).reduce((sum, row) => sum + Number(row.installs), 0),
+    ).toBe(installs);
+  });
+
+  it("populates public corpus plugin catalog metadata, digests, and validation findings", async () => {
+    const { db, tables } = createDb();
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "plugin",
+            name: "gmail-agent-plugin",
+            displayName: "Gmail Agent Plugin",
+            version: "0.1.0",
+            readme: "# Gmail Agent Plugin\n\nWatches Gmail and notifies an OpenClaw channel.",
+            storageId: "storage:gmail-agent-plugin",
+            categories: ["channels", "tools"],
+            topics: ["Gmail", "Notifications"],
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    const pkg = tables.packages?.find((candidate) => candidate.name === "gmail-agent-plugin");
+    const release = tables.packageReleases?.find((candidate) => candidate.packageId === pkg?._id);
+
+    expect(pkg).toEqual(
+      expect.objectContaining({
+        categories: ["channels", "tools"],
+        topics: ["Gmail", "Notifications"],
+      }),
+    );
+    expect(tables.packageSearchDigest?.[0]).toEqual(
+      expect.objectContaining({
+        packageId: pkg?._id,
+        categories: ["channels", "tools"],
+        topics: ["Gmail", "Notifications"],
+        pluginCategoryTags: ["channels", "tools"],
+      }),
+    );
+    expect(
+      tables.packagePluginCategorySearchDigest
+        ?.map((row) => String(row.pluginCategory))
+        .sort((left, right) => left.localeCompare(right)),
+    ).toEqual(["channels", "tools"]);
+    expect(
+      tables.packageTopicSearchDigest
+        ?.map((row) => String(row.topic))
+        .sort((left, right) => left.localeCompare(right)),
+    ).toEqual(["gmail", "notifications"]);
+    expect(tables.packageInspectorWarnings).toEqual([
+      expect.objectContaining({
+        packageId: pkg?._id,
+        releaseId: release?._id,
+        packageName: "gmail-agent-plugin",
+        version: "0.1.0",
+        findingKind: "warning",
+        code: "package-min-host-version-drift",
+        authorRemediation: expect.objectContaining({
+          docsUrl:
+            "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-min-host-version-drift",
+        }),
+      }),
+    ]);
+  });
+
+  it("backfills catalog metadata and validation findings for existing public corpus packages", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const publisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "corpus-owner",
+      displayName: "Corpus Owner",
+      linkedUserId: userId,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+    const packageId = (await db.insert("packages", {
+      name: "gmail-agent-plugin",
+      normalizedName: "gmail-agent-plugin",
+      displayName: "Gmail Agent Plugin",
+      summary: "Existing public corpus plugin fixture.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      runtimeId: "gmail-agent-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      compatibility: { pluginApiRange: ">=0.1.0" },
+      verification: {
+        tier: "structural",
+        scope: "artifact-only",
+        summary: "Seeded from the public corpus fixture.",
+        scanStatus: "clean",
+      },
+      scanStatus: "clean",
+      stats: { downloads: 57, installs: 13, stars: 2, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"packages">;
+    const releaseId = (await db.insert("packageReleases", {
+      packageId,
+      version: "0.1.0",
+      changelog: "Existing public corpus fixture.",
+      distTags: ["latest"],
+      files: [],
+      integritySha256: "existing-integrity",
+      compatibility: { pluginApiRange: ">=0.1.0" },
+      verification: {
+        tier: "structural",
+        scope: "artifact-only",
+        summary: "Seeded from the public corpus fixture.",
+        scanStatus: "clean",
+      },
+      createdBy: userId,
+      publishActor: { kind: "user", userId },
+      createdAt: 1,
+    })) as Id<"packageReleases">;
+    await db.patch(packageId, {
+      latestReleaseId: releaseId,
+      latestVersionSummary: {
+        version: "0.1.0",
+        createdAt: 1,
+        changelog: "Existing public corpus fixture.",
+        compatibility: { pluginApiRange: ">=0.1.0" },
+        verification: {
+          tier: "structural",
+          scope: "artifact-only",
+          summary: "Seeded from the public corpus fixture.",
+          scanStatus: "clean",
+        },
+      },
+    });
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "plugin",
+            name: "gmail-agent-plugin",
+            displayName: "Gmail Agent Plugin",
+            version: "0.1.0",
+            readme: "# Gmail Agent Plugin\n\nWatches Gmail and notifies an OpenClaw channel.",
+            storageId: "storage:gmail-agent-plugin",
+            categories: ["channels", "tools"],
+            topics: ["Gmail", "Notifications"],
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    expect(tables.packages?.[0]).toEqual(
+      expect.objectContaining({
+        categories: ["channels", "tools"],
+        topics: ["Gmail", "Notifications"],
+      }),
+    );
+    expect(tables.packageSearchDigest?.[0]).toEqual(
+      expect.objectContaining({
+        packageId,
+        pluginCategoryTags: ["channels", "tools"],
+      }),
+    );
+    expect(tables.packageInspectorWarnings).toHaveLength(1);
+  });
+
+  it("does not backfill catalog metadata onto non-corpus package name collisions", async () => {
+    const { db, tables } = createDb();
+    const userId = (await db.insert("users", {
+      handle: "real-owner",
+      displayName: "Real Owner",
+      role: "user",
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"users">;
+    const publisherId = (await db.insert("publishers", {
+      kind: "user",
+      handle: "real-owner",
+      displayName: "Real Owner",
+      linkedUserId: userId,
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"publishers">;
+    const packageId = (await db.insert("packages", {
+      name: "gmail-agent-plugin",
+      normalizedName: "gmail-agent-plugin",
+      displayName: "Gmail Agent Plugin",
+      summary: "A real package that happens to collide with the corpus fixture.",
+      ownerUserId: userId,
+      ownerPublisherId: publisherId,
+      family: "code-plugin",
+      channel: "community",
+      isOfficial: false,
+      runtimeId: "gmail-agent-plugin",
+      latestReleaseId: undefined,
+      latestVersionSummary: undefined,
+      tags: {},
+      categories: ["models"],
+      topics: ["Original Topic"],
+      compatibility: { pluginApiRange: ">=0.1.0" },
+      verification: {
+        tier: "structural",
+        scope: "artifact-only",
+        summary: "Real package verification.",
+        scanStatus: "clean",
+      },
+      scanStatus: "clean",
+      stats: { downloads: 57, installs: 13, stars: 2, versions: 1 },
+      createdAt: 1,
+      updatedAt: 1,
+    })) as Id<"packages">;
+    const releaseId = (await db.insert("packageReleases", {
+      packageId,
+      version: "0.1.0",
+      changelog: "Real package release.",
+      distTags: ["latest"],
+      files: [],
+      integritySha256: "existing-integrity",
+      compatibility: { pluginApiRange: ">=0.1.0" },
+      verification: {
+        tier: "structural",
+        scope: "artifact-only",
+        summary: "Real package verification.",
+        scanStatus: "clean",
+      },
+      createdBy: userId,
+      publishActor: { kind: "user", userId },
+      createdAt: 1,
+    })) as Id<"packageReleases">;
+    await db.patch(packageId, {
+      latestReleaseId: releaseId,
+      latestVersionSummary: {
+        version: "0.1.0",
+        createdAt: 1,
+        changelog: "Real package release.",
+        compatibility: { pluginApiRange: ">=0.1.0" },
+        verification: {
+          tier: "structural",
+          scope: "artifact-only",
+          summary: "Real package verification.",
+          scanStatus: "clean",
+        },
+      },
+    });
+
+    await backfillExistingPublicCorpusBatchRowsHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "plugin",
+            name: "gmail-agent-plugin",
+            displayName: "Gmail Agent Plugin",
+            version: "0.1.0",
+            readme: "# Gmail Agent Plugin\n\nWatches Gmail and notifies an OpenClaw channel.",
+            storageId: "storage:gmail-agent-plugin",
+            categories: ["channels", "tools"],
+            topics: ["Gmail", "Notifications"],
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    expect(tables.packages?.[0]).toEqual(
+      expect.objectContaining({
+        categories: ["models"],
+        topics: ["Original Topic"],
+      }),
+    );
+    expect(tables.packageSearchDigest).toBeUndefined();
+    expect(tables.packageDailyStats).toBeUndefined();
+    expect(tables.packageInspectorWarnings).toBeUndefined();
+  });
+
+  it("caps inferred public corpus plugin categories at the catalog limit", async () => {
+    const { db, tables } = createDb();
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      {
+        rows: [
+          {
+            kind: "plugin",
+            name: "context-security-openclaw-email-guard-plugin",
+            displayName: "Context Security Email Guard Plugin",
+            version: "0.1.0",
+            readme:
+              "# Context Security Email Guard Plugin\n\nA runtime plugin for Gmail, model providers, memory, context, web search, GitHub tools, gateway operations, and OAuth policy checks.",
+            storageId: "storage:context-security-openclaw-email-guard-plugin",
+            dummyOwner: {
+              handle: "corpus-owner",
+              displayName: "Corpus Owner",
+              image: "https://example.invalid/avatar.png",
+            },
+          },
+        ],
+      } as never,
+    );
+
+    const pkg = tables.packages?.find(
+      (candidate) => candidate.name === "context-security-openclaw-email-guard-plugin",
+    );
+    const categories = Array.isArray(pkg?.categories) ? pkg.categories : [];
+
+    expect(categories.length).toBeLessThanOrEqual(3);
+    expect(categories.length).toBeGreaterThan(0);
+  });
+
+  it("removes public corpus daily activity rows during reset", async () => {
+    const { db, tables } = createDb();
+    await db.insert("globalStats", {
+      key: "default",
+      activeSkillsCount: 0,
+      activePluginsCount: 0,
+      updatedAt: 1,
+    });
+    const rows = [
+      {
+        kind: "skill",
+        slug: "corpus-demo",
+        displayName: "Corpus Demo",
+        version: "0.1.0",
+        skillMd: "---\ndescription: Corpus demo\n---\n# Corpus demo",
+        storageId: "storage:corpus-demo",
+        embedding: [0, 1, 2],
+        dummyOwner: {
+          handle: "corpus-owner",
+          displayName: "Corpus Owner",
+          image: "https://example.invalid/avatar.png",
+        },
+      },
+      {
+        kind: "plugin",
+        name: "demo-plugin",
+        displayName: "Demo Plugin",
+        version: "0.1.0",
+        readme: "# Demo plugin",
+        storageId: "storage:demo-plugin",
+        dummyOwner: {
+          handle: "corpus-owner",
+          displayName: "Corpus Owner",
+          image: "https://example.invalid/avatar.png",
+        },
+      },
+    ];
+
+    await seedPublicCorpusBatchHandler(createMutationCtx(db) as never, { rows } as never);
+    const firstSkillId = tables.skills?.[0]?._id;
+    const firstPackageId = tables.packages?.[0]?._id;
+    const firstSkillDailyRows = tables.skillDailyStats?.length ?? 0;
+    const firstPackageDailyRows = tables.packageDailyStats?.length ?? 0;
+    const firstPackageDigestRows = tables.packageSearchDigest?.length ?? 0;
+    const firstPackageCategoryDigestRows = tables.packagePluginCategorySearchDigest?.length ?? 0;
+    const firstPackageTopicDigestRows = tables.packageTopicSearchDigest?.length ?? 0;
+    const firstPackageInspectorWarningRows = tables.packageInspectorWarnings?.length ?? 0;
+    const firstActivePluginsCount = tables.globalStats?.[0]?.activePluginsCount;
+
+    await seedPublicCorpusBatchHandler(
+      createMutationCtx(db) as never,
+      { reset: true, resetOwnerHandles: ["corpus-owner"], rows } as never,
+    );
+
+    expect(firstSkillDailyRows).toBeGreaterThan(0);
+    expect(firstPackageDailyRows).toBeGreaterThan(0);
+    expect(tables.skillDailyStats).toHaveLength(firstSkillDailyRows);
+    expect(tables.packageDailyStats).toHaveLength(firstPackageDailyRows);
+    expect(tables.skillDailyStats?.some((row) => row.skillId === firstSkillId)).toBe(false);
+    expect(tables.packageDailyStats?.some((row) => row.packageId === firstPackageId)).toBe(false);
+    expect(firstPackageDigestRows).toBeGreaterThan(0);
+    expect(firstPackageCategoryDigestRows).toBeGreaterThan(0);
+    expect(firstPackageTopicDigestRows).toBeGreaterThan(0);
+    expect(firstPackageInspectorWarningRows).toBeGreaterThan(0);
+    expect(tables.packageSearchDigest?.some((row) => row.packageId === firstPackageId)).toBe(false);
+    expect(
+      tables.packagePluginCategorySearchDigest?.some((row) => row.packageId === firstPackageId),
+    ).toBe(false);
+    expect(tables.packageTopicSearchDigest?.some((row) => row.packageId === firstPackageId)).toBe(
+      false,
+    );
+    expect(tables.packageInspectorWarnings?.some((row) => row.packageId === firstPackageId)).toBe(
+      false,
+    );
+    expect(firstActivePluginsCount).toBe(1);
+    expect(tables.globalStats?.[0]?.activePluginsCount).toBe(1);
   });
 
   it("seeds a GitHub-backed source and skills without creating mirrored versions", async () => {
@@ -520,6 +1173,18 @@ describe("devSeed local fixtures", () => {
         }),
       ]),
     );
+    const scannedPackageId = tables.packages?.find((pkg) => pkg.name === scannedPluginName)?._id;
+    const scannedPackageDailyStats = (tables.packageDailyStats ?? []).filter(
+      (row) => row.packageId === scannedPackageId,
+    );
+    expect(tables.packageDailyStats).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          packageId: scannedPackageId,
+        }),
+      ]),
+    );
+    expect(scannedPackageDailyStats.reduce((sum, row) => sum + Number(row.downloads), 0)).toBe(7);
     expect(tables.packageInspectorWarnings).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

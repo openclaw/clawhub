@@ -346,10 +346,6 @@ export function Management() {
     if (!stillVisible) setSelectedPublisherAbuseNominationId(null);
   }, [filteredPublisherAbuseItems, selectedPublisherAbuseNominationId]);
 
-  useEffect(() => {
-    setPublisherAbuseNotes("");
-  }, [selectedPublisherAbuseNominationId]);
-
   if (isAuthLoading) {
     return <ManagementSkeleton />;
   }

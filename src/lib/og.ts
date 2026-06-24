@@ -1,3 +1,5 @@
+import { buildSkillDetailHref, buildPublisherProfileHref } from "./ownerRoute";
+import { buildPluginDetailHref } from "./pluginRoutes";
 import { getRuntimeEnv } from "./runtimeEnv";
 import { getClawHubSiteUrl, SITE_DESCRIPTION } from "./site";
 
@@ -30,6 +32,9 @@ type PublisherMetaSource = {
   handle: string;
   displayName?: string | null;
   bio?: string | null;
+  image?: string | null;
+  kind?: "user" | "org";
+  downloads?: number | null;
 };
 
 type BasicMeta = {
@@ -39,9 +44,9 @@ type BasicMeta = {
   url: string;
 };
 
-const OG_SKILL_IMAGE_LAYOUT_VERSION = "8";
-const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "3";
-const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "3";
+const OG_SKILL_IMAGE_LAYOUT_VERSION = "10";
+const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "5";
+const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "7";
 
 function getSiteUrl() {
   return getClawHubSiteUrl();
@@ -86,7 +91,7 @@ export function buildSkillMeta(source: SkillMetaSource): SkillMeta {
   const description =
     summary || (owner ? `Agent skill by @${owner} on ClawHub.` : SITE_DESCRIPTION);
   const ownerPath = owner || ownerId || "unknown";
-  const url = `${siteUrl}/${ownerPath}/${source.slug}`;
+  const url = `${siteUrl}${buildSkillDetailHref(ownerPath, source.slug)}`;
   const imageParams = new URLSearchParams();
   imageParams.set("v", OG_SKILL_IMAGE_LAYOUT_VERSION);
   imageParams.set("slug", source.slug);
@@ -109,7 +114,7 @@ export function buildPluginMeta(source: PluginMetaSource): BasicMeta {
   const latestVersion = clean(source.latestVersion);
   const title = `${displayName} — ClawHub Plugins`;
   const description = summary || (owner ? `Plugin by @${owner} on ClawHub.` : SITE_DESCRIPTION);
-  const url = `${siteUrl}/plugins/${source.name.startsWith("@") ? source.name : encodeURIComponent(source.name)}`;
+  const url = `${siteUrl}${buildPluginDetailHref(source.name, { ownerHandle: owner })}`;
   const imageParams = new URLSearchParams();
   imageParams.set("v", OG_PLUGIN_IMAGE_LAYOUT_VERSION);
   imageParams.set("name", source.name);
@@ -127,16 +132,24 @@ export function buildPublisherMeta(source: PublisherMetaSource): BasicMeta {
   const handle = clean(source.handle).replace(/^@+/, "");
   const displayName = clean(source.displayName) || `@${handle}`;
   const bio = clean(source.bio);
+  const image = clean(source.image);
   const title = `${displayName} — ClawHub`;
   const description = bio || `Publisher @${handle} on ClawHub.`;
   const imageParams = new URLSearchParams();
   imageParams.set("v", OG_PUBLISHER_IMAGE_LAYOUT_VERSION);
   imageParams.set("handle", handle);
+  imageParams.set("title", displayName);
+  imageParams.set("description", truncate(description, 200));
+  if (source.kind === "org") imageParams.set("kind", "org");
+  if (image) imageParams.set("avatar", image);
+  if (typeof source.downloads === "number" && Number.isFinite(source.downloads)) {
+    imageParams.set("downloads", String(Math.max(0, Math.trunc(source.downloads))));
+  }
   return {
     title,
     description: truncate(description, 200),
     image: `${siteUrl}/og/profile?${imageParams.toString()}`,
-    url: `${siteUrl}/user/${handle}`,
+    url: `${siteUrl}${buildPublisherProfileHref(handle)}`,
   };
 }
 

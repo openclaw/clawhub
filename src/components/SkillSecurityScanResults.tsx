@@ -273,7 +273,7 @@ export function ScanResultBadge({
   return (
     <Badge
       variant={variant as BadgeProps["variant"]}
-      className={`min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3]${className ? ` ${className}` : ""}`}
+      className={`min-h-0 rounded-[4px] px-2.5 py-0.5 text-[0.78rem] leading-[1.3] ${statusInfo.className}${className ? ` ${className}` : ""}`}
     >
       {label ?? statusInfo.label}
     </Badge>
@@ -673,11 +673,11 @@ export function SecurityScanResults({
 
   if (variant === "badge") {
     return (
-      <>
+      <div className="version-scan-badge-row">
         {sha256hash ? (
           <div className="version-scan-badge">
             <VirusTotalIcon className="version-scan-icon version-scan-icon-vt" />
-            <ScanResultBadge status={vtStatus} />
+            <ScanResultBadge status={vtStatus} className="version-scan-status-badge" />
             {vtUrl ? (
               <a
                 href={vtUrl}
@@ -694,10 +694,10 @@ export function SecurityScanResults({
         {llmStatusInfo ? (
           <div className="version-scan-badge">
             <ClawScanIcon className="version-scan-icon version-scan-icon-oc" />
-            <ScanResultBadge status={llmDisplayStatus} />
+            <ScanResultBadge status={llmDisplayStatus} className="version-scan-status-badge" />
           </div>
         ) : null}
-      </>
+      </div>
     );
   }
 

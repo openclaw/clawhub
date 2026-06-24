@@ -29,7 +29,7 @@ Before installing, review:
 - the risk level
 - any listed findings
 - required credentials, permissions, or environment variables
-- owner, source, version, changelog, installs, stars, and other trust signals
+- owner, source, version, changelog, downloads, stars, and other trust signals
 
 Install only content you understand and trust.
 
@@ -105,7 +105,7 @@ power is expected, disclosed, and proportionate.
 Artifact pages link to the full audit at:
 
 ```text
-/<owner>/<slug>/security-audit
+/<owner>/skills/<slug>/security-audit
 ```
 
 The audit page combines:

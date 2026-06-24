@@ -34,6 +34,17 @@ Production deploy notes:
 - The workflow must be started from `main`.
 - The catalog-taxonomy digest and high-/medium-confidence classification rollout migrations were
   one-time production operations and are no longer part of the deploy checklist.
+- While `migrations:runCatalogMetadataCanonicalization` exists, backend deploys that include it require
+  an operator to dry-run, explicitly apply, and verify both tracked migrations before inferred-topic
+  and inferred-category compatibility can be removed:
+
+  ```bash
+  bunx convex run migrations:runCatalogMetadataCanonicalization '{"dryRun":true}' --prod
+  bunx convex run migrations:runCatalogMetadataCanonicalization \
+    '{"dryRun":false,"confirm":"canonicalize-catalog-metadata"}' --prod
+  bunx convex run --component migrations lib:getStatus --watch --prod
+  ```
+
 - Deploy targets:
   - `full`: deploy Convex, verify contract, wait for the matching Vercel production deploy, then run smoke tests
   - `backend`: deploy Convex, verify contract, then run smoke tests against current production
@@ -157,6 +168,21 @@ The CLI can discover the API base from:
 3. site URL registry metadata
 
 Keep production rewrites and discovery metadata aligned before release.
+
+### Hosted catalog feed
+
+Refresh the OpenClaw hosted plugin and skill feeds after the production Convex
+deployment has the catalog projections:
+
+```bash
+gh workflow run publish-catalog-feed.yml --repo openclaw/clawhub --ref main
+```
+
+The workflow stores both current feed snapshots in Convex and serves them
+through `/v1/feeds/plugins` and `/v1/feeds/skills` with public edge-cache
+validators. The unversioned `/feeds/plugins` and `/feeds/skills` paths redirect
+to their versioned routes. Attach `registry.openclaw.ai` to the same Vercel
+project before configuring OpenClaw's default feed URLs.
 
 ## 5) Post-deploy checks
 

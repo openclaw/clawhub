@@ -162,6 +162,21 @@ function expectIrreversibleConfirmation(version: string) {
   expect(screen.getByText(/recovery is publishing a new version/i)).toBeTruthy();
 }
 
+function getVersionRowButton(version: string) {
+  const versionPattern = new RegExp(`v${version.replaceAll(".", "\\.")}`);
+  const toggle = screen
+    .getAllByRole("button", { hidden: true })
+    .find(
+      (button) =>
+        button.classList.contains("skill-version-release-toggle") &&
+        versionPattern.test(button.textContent ?? ""),
+    );
+  if (!toggle) {
+    throw new Error(`Version toggle for v${version} not found`);
+  }
+  return toggle;
+}
+
 describe("version Delete UI", () => {
   beforeEach(() => {
     useMutationMock.mockReset();
@@ -188,7 +203,7 @@ describe("version Delete UI", () => {
     await waitFor(() => {
       expect(deleteOwnedVersion).toHaveBeenCalledWith({ versionId: olderSkillVersionId });
       expect(screen.queryByText("Older skill release")).toBeNull();
-      expect(screen.getByText("Current skill release")).toBeTruthy();
+      expect(getVersionRowButton("2.0.0")).toBeTruthy();
       expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
     });
   });
@@ -258,7 +273,7 @@ describe("version Delete UI", () => {
     expect(screen.queryByRole("button", { name: /Delete version/ })).toBeNull();
   });
 
-  it("keeps unavailable staff-history skill versions visible without Zip or Delete actions", () => {
+  it("keeps unavailable staff-history skill versions visible without download or Delete actions", () => {
     useMutationMock.mockReturnValue(vi.fn());
     const unavailableVersions = [
       skillVersions[0],
@@ -278,28 +293,30 @@ describe("version Delete UI", () => {
 
     render(makeSkillVersionsPanel({ versions: unavailableVersions }));
 
-    expect(screen.getByText("Older skill release")).toBeTruthy();
-    expect(screen.getByText("Owner-deleted skill release")).toBeTruthy();
+    expect(getVersionRowButton("1.0.0")).toBeTruthy();
+    expect(getVersionRowButton("0.9.0")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Delete version 1.0.0" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Delete version 0.9.0" })).toBeNull();
     expect(
       screen
-        .getAllByRole("link", { name: "Zip" })
+        .getAllByRole("link", { name: /Download version v/ })
         .map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get("version")),
     ).toEqual(["2.0.0"]);
   });
 
-  it("keeps Zip and Delete actions on active skill version rows", () => {
+  it("keeps Download version and Delete actions on active skill version rows", () => {
     useMutationMock.mockReturnValue(vi.fn());
 
     renderSkillVersions();
 
     expect(screen.getByText("Latest")).toBeTruthy();
+    expect(screen.queryByText("Checks")).toBeNull();
+    expect(screen.getAllByText("Download version")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Delete version 2.0.0" })).toBeNull();
     expect(screen.getByRole("button", { name: "Delete version 1.0.0" })).toBeTruthy();
     expect(
       screen
-        .getAllByRole("link", { name: "Zip" })
+        .getAllByRole("link", { name: /Download version v/ })
         .map((link) => new URL((link as HTMLAnchorElement).href).searchParams.get("version")),
     ).toEqual(["2.0.0", "1.0.0"]);
   });
@@ -343,7 +360,7 @@ describe("version Delete UI", () => {
         "Publish a replacement version before deleting the current latest version.",
       );
     });
-    expect(screen.getByText("Older skill release")).toBeTruthy();
+    expect(getVersionRowButton("1.0.0")).toBeTruthy();
   });
 
   it("lets a plugin owner confirm deletion and refresh route metadata", async () => {
@@ -366,8 +383,8 @@ describe("version Delete UI", () => {
         version: "1.0.0",
       });
     });
-    expect(screen.queryByText("Older plugin release")).toBeNull();
-    expect(screen.getByText("Current plugin release")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /v1\.0\.0/ })).toBeNull();
+    expect(getVersionRowButton("2.0.0")).toBeTruthy();
     expect(onVersionDeleted).toHaveBeenCalledTimes(1);
     expect(toast.success).toHaveBeenCalledWith("Deleted version 1.0.0.");
   });
@@ -430,7 +447,7 @@ describe("version Delete UI", () => {
 
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Delete version 1.0.0?" })).toBeTruthy();
-      expect(screen.getByText("Older other plugin release")).toBeTruthy();
+      expect(getVersionRowButton("1.0.0")).toBeTruthy();
       expect(screen.getByRole("button", { name: "Delete version" }).hasAttribute("disabled")).toBe(
         true,
       );
@@ -481,7 +498,7 @@ describe("version Delete UI", () => {
         "Publish a replacement release before deleting the current latest release.",
       );
     });
-    expect(screen.getByText("Older plugin release")).toBeTruthy();
+    expect(getVersionRowButton("1.0.0")).toBeTruthy();
   });
 
   it("keeps plugin pagination behavior while exposing Delete on loaded owner rows", async () => {
@@ -512,7 +529,7 @@ describe("version Delete UI", () => {
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     await waitFor(() => {
-      expect(screen.getByText("Loaded older plugin release")).toBeTruthy();
+      expect(getVersionRowButton("0.9.0")).toBeTruthy();
     });
     expect(fetchPackageVersions).toHaveBeenCalledWith("demo-plugin", {
       cursor: "versions:next",

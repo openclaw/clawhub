@@ -42,7 +42,13 @@ const getExactSkillSlugMatchHandler = (
     _handler: (
       ctx: unknown,
       args: unknown,
-    ) => Promise<Array<{ skill: { slug: string; _id: string }; ownerHandle: string | null }>>;
+    ) => Promise<
+      Array<{
+        skill: { slug: string; _id: string };
+        ownerHandle: string | null;
+        owner: { official?: boolean } | null;
+      }>
+    >;
   }
 )._handler;
 const hydrateResultsHandler = (
@@ -793,6 +799,26 @@ describe("search helpers", () => {
       "skills:org-demo",
     ]);
     expect(result.map((entry) => entry.ownerHandle)).toEqual(["alice", "org"]);
+  });
+
+  it("includes official publisher status on skill search owners", async () => {
+    const ctx = makeLexicalCtx({
+      exactSlugSkills: [
+        makeSkillDoc({
+          id: "skills:org-demo",
+          slug: "demo",
+          displayName: "Org Demo",
+          ownerPublisherId: "publishers:org",
+        }),
+      ],
+      officialPublisherIds: ["publishers:org"],
+      recentSkills: [],
+    });
+
+    const result = await getExactSkillSlugMatchHandler(ctx, { slug: "demo" });
+
+    expect(result[0]?.ownerHandle).toBe("org");
+    expect(result[0]?.owner?.official).toBe(true);
   });
 
   it("filters duplicate exact slug matches by topic", async () => {
@@ -2181,6 +2207,40 @@ describe("search helpers", () => {
     expect(result[0].skill.slug).toBe("the-news");
     expect(result[0].score).toBeGreaterThan(2.8);
   });
+
+  it("filters pending scans before applying the search result limit", async () => {
+    generateEmbeddingMock.mockRejectedValueOnce(new Error("embedding unavailable"));
+    const pending = {
+      skill: makePublicSkill({
+        id: "skills:pending",
+        slug: "search-term-pending",
+        displayName: "Search Term Pending",
+        githubScanStatus: "pending",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const clean = {
+      skill: makePublicSkill({
+        id: "skills:clean",
+        slug: "search-term-clean",
+        displayName: "Search Term Clean",
+        githubScanStatus: "clean",
+      }),
+      version: null,
+      ownerHandle: "owner",
+      owner: null,
+    };
+    const runQuery = vi.fn().mockResolvedValueOnce([pending, clean]).mockResolvedValueOnce([]);
+
+    const result = await searchSkillsHandler(
+      { vectorSearch: vi.fn(), runQuery },
+      { query: "search term", limit: 1, excludePendingScan: true },
+    );
+
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["search-term-clean"]);
+  });
 });
 
 function makePublicSkill(params: {
@@ -2194,6 +2254,7 @@ function makePublicSkill(params: {
   stars?: number;
   categories?: string[];
   topics?: string[];
+  githubScanStatus?: "pending" | "clean" | "suspicious" | "malicious" | "not-run";
 }) {
   return {
     _id: params.id,
@@ -2209,6 +2270,7 @@ function makePublicSkill(params: {
     tags: {},
     categories: params.categories,
     topics: params.topics,
+    githubScanStatus: params.githubScanStatus,
     badges: {},
     stats: {
       downloads: params.downloads ?? 0,
@@ -2266,11 +2328,13 @@ function makePaginatedRows<T>(rows: T[], onPaginate?: () => void) {
 function makeLexicalCtx(params: {
   exactSlugSkill?: ReturnType<typeof makeSkillDoc> | null;
   exactSlugSkills?: Array<ReturnType<typeof makeSkillDoc>>;
+  officialPublisherIds?: string[];
   recentSkills: Array<ReturnType<typeof makeSkillDoc>>;
   recentByCreated?: Array<ReturnType<typeof makeSkillDoc>>;
 }) {
   const exactSlugSkills =
     params.exactSlugSkills ?? (params.exactSlugSkill ? [params.exactSlugSkill] : []);
+  const officialPublisherIds = new Set(params.officialPublisherIds ?? []);
   // Convert skill docs to digest-shaped rows (add skillId + owner fields).
   const toDigestRows = (skills: Array<ReturnType<typeof makeSkillDoc>>) =>
     skills.map((skill) => ({
@@ -2294,6 +2358,29 @@ function makeLexicalCtx(params: {
     },
     db: {
       query: vi.fn((table: string) => {
+        if (table === "officialPublishers") {
+          return {
+            withIndex: (
+              index: string,
+              builder: (q: { eq: (field: string, value: unknown) => unknown }) => unknown,
+            ) => {
+              usedIndexes.push(index);
+              let publisherId = "";
+              const q = {
+                eq: (field: string, value: unknown) => {
+                  if (field === "publisherId") publisherId = String(value);
+                  return q;
+                },
+              };
+              builder(q);
+              return {
+                unique: vi.fn(async () =>
+                  officialPublisherIds.has(publisherId) ? { publisherId } : null,
+                ),
+              };
+            },
+          };
+        }
         if (table === "skills") {
           return {
             withIndex: (index: string) => {
@@ -2453,6 +2540,13 @@ function makeDirectPrefixCtx(skills: Array<ReturnType<typeof makeSkillDoc>>) {
                 }),
               };
             },
+          };
+        }
+        if (table === "officialPublishers") {
+          return {
+            withIndex: () => ({
+              unique: vi.fn(async () => null),
+            }),
           };
         }
         if (table !== "skillSearchDigest") throw new Error(`Unexpected table ${table}`);

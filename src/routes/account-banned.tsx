@@ -33,7 +33,8 @@ export function AccountBannedPage() {
           This account cannot sign in to ClawHub.
         </p>
         <p className="mt-2 max-w-2xl text-base leading-7 text-[color:var(--ink-soft)]">
-          Visit appeals.openclaw.ai to open an appeal if you believe this was a mistake.
+          Check your email for details about this ban. If you believe this was a mistake, you can
+          open an appeal.
         </p>
         <div className="mt-7 flex flex-wrap gap-3">
           <Button asChild variant="primary">

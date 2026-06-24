@@ -54,7 +54,7 @@ vi.mock("../lib/skillPage", () => ({
 }));
 
 async function loadRoute() {
-  return (await import("../routes/$owner/$slug/security-audit")).Route as unknown as {
+  return (await import("../routes/$owner/skills/$slug/security-audit")).Route as unknown as {
     __config: {
       component?: ComponentType;
       loader?: (args: { params: { owner: string; slug: string } }) => Promise<unknown>;

@@ -56,7 +56,7 @@ export function ReportsPage({
             return (
               <div key={skill._id} className="management-item">
                 <div className="management-item-main">
-                  <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
+                  <Link to="/$owner/skills/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
                     {skill.displayName}
                   </Link>
                   <div className="section-subtitle m-0">

@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 
 vi.mock("@convex-dev/auth/server", () => ({
   getAuthUserId: vi.fn(),
+  authTables: {},
 }));
 
 vi.mock("./lib/apiTokenAuth", () => ({
@@ -80,13 +81,13 @@ describe("ambiguous skill slug responses", () => {
           ownerHandle: "openclaw",
           slug: "demo",
           ref: "@openclaw/demo",
-          url: "https://example.com/openclaw/demo",
+          url: "https://example.com/openclaw/skills/demo",
         },
         {
           ownerHandle: "patrick",
           slug: "demo",
           ref: "@patrick/demo",
-          url: "https://example.com/patrick/demo",
+          url: "https://example.com/patrick/skills/demo",
         },
       ],
     });
@@ -119,13 +120,13 @@ describe("ambiguous skill slug responses", () => {
           ownerHandle: "openclaw",
           slug: "demo",
           ref: "@openclaw/demo",
-          url: "https://example.com/openclaw/demo",
+          url: "https://example.com/openclaw/skills/demo",
         },
         {
           ownerHandle: "patrick",
           slug: "demo",
           ref: "@patrick/demo",
-          url: "https://example.com/patrick/demo",
+          url: "https://example.com/patrick/skills/demo",
         },
       ],
     });

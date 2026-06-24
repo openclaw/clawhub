@@ -1,7 +1,11 @@
 /* @vitest-environment node */
 
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { fetchImageDataUrl, isTrustedOgImageUrl } from "./fetchImageDataUrl";
+import {
+  fetchImageDataUrl,
+  isSafePublicHttpsOgImageUrl,
+  isTrustedOgImageUrl,
+} from "./fetchImageDataUrl";
 
 describe("fetchImageDataUrl", () => {
   afterEach(() => {
@@ -17,6 +21,18 @@ describe("fetchImageDataUrl", () => {
     expect(isTrustedOgImageUrl("https://example.com/avatar.png")).toBe(false);
   });
 
+  it("allows public https org profile images on domain names", () => {
+    expect(
+      isSafePublicHttpsOgImageUrl("https://iprsoftwaremedia.com/219/files/202512/nvidia-logo.png"),
+    ).toBe(true);
+    expect(isSafePublicHttpsOgImageUrl("https://avatars.githubusercontent.com/u/1?v=4")).toBe(true);
+    expect(isSafePublicHttpsOgImageUrl("http://example.com/logo.png")).toBe(false);
+    expect(isSafePublicHttpsOgImageUrl("https://127.0.0.1/logo.png")).toBe(false);
+    expect(isSafePublicHttpsOgImageUrl("https://localhost/logo.png")).toBe(false);
+    expect(isSafePublicHttpsOgImageUrl("https://metadata.google.internal/logo.png")).toBe(false);
+    expect(isSafePublicHttpsOgImageUrl("https://192.168.0.10/logo.png")).toBe(false);
+  });
+
   it("does not fetch untrusted image URLs", async () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
@@ -24,6 +40,22 @@ describe("fetchImageDataUrl", () => {
     await expect(fetchImageDataUrl("https://127.0.0.1/avatar.png")).resolves.toBeNull();
 
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fetches public https org profile images", async () => {
+    const fetchMock = vi.fn(async () => {
+      return new Response(new Uint8Array([1, 2]), {
+        status: 200,
+        headers: { "content-type": "image/png" },
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(
+      fetchImageDataUrl("https://cdn.example.com/org-logo.png", {
+        allowPublicHttps: true,
+      }),
+    ).resolves.toBe("data:image/png;base64,AQI=");
   });
 
   it("converts trusted image responses to data URLs", async () => {

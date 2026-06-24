@@ -25,13 +25,16 @@ describe("skill-card-worker workflow", () => {
     };
     const job = workflow.jobs["skill-card-worker"];
 
-    expect(workflow.on?.workflow_dispatch?.inputs?.["batch-limit"]?.default).toBe("6");
+    expect(workflow.on?.workflow_dispatch?.inputs?.["batch-limit"]?.default).toBe("4");
     expect(workflow.on?.workflow_dispatch?.inputs?.["max-runtime-minutes"]?.default).toBe("40");
-    expect(workflow.concurrency).toBeUndefined();
+    expect(workflow.concurrency).toEqual({
+      group: "clawhub-skill-card-worker",
+      "cancel-in-progress": false,
+    });
     expect(job["timeout-minutes"]).toBe(60);
-    expect(job.strategy?.matrix?.shard).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(job.strategy?.matrix?.shard).toEqual([0, 1, 2, 3]);
     expect(job.env?.SKILL_CARD_WORKER_LIMIT).toBe(
-      "${{ github.event.inputs['batch-limit'] || '6' }}",
+      "${{ github.event.inputs['batch-limit'] || '4' }}",
     );
     expect(job.env?.SKILL_CARD_WORKER_MAX_RUNTIME_MINUTES).toBe(
       "${{ github.event.inputs['max-runtime-minutes'] || '40' }}",

@@ -8,6 +8,19 @@ const Dialog = DialogPrimitive.Root;
 const DialogTrigger = DialogPrimitive.Trigger;
 const DialogPortal = DialogPrimitive.Portal;
 
+function isPortalledDialogChild(target: EventTarget | null) {
+  if (typeof Element === "undefined" || !(target instanceof Element)) return false;
+  return Boolean(
+    target.closest(
+      [
+        '[data-slot="dropdown-menu-content"]',
+        '[data-slot="select-content"]',
+        "[data-radix-popper-content-wrapper]",
+      ].join(","),
+    ),
+  );
+}
+
 const DialogOverlay = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Overlay>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Overlay>
@@ -31,12 +44,19 @@ const DialogContent = React.forwardRef<
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content> & {
     showCloseButton?: boolean;
   }
->(({ className, children, showCloseButton = true, ...props }, ref) => (
+>(({ className, children, showCloseButton = true, onInteractOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
       data-slot="dialog-content"
+      onInteractOutside={(event) => {
+        if (isPortalledDialogChild(event.target)) {
+          event.preventDefault();
+          return;
+        }
+        onInteractOutside?.(event);
+      }}
       className={cn(
         // Matches .report-dialog
         "fixed top-1/2 left-1/2 z-80 grid w-[min(100%,560px)] -translate-x-1/2 -translate-y-1/2 gap-3 rounded-[var(--radius-md)] border border-[color:var(--line)] bg-[color:var(--surface)] p-5 shadow-dialog",

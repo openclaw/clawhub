@@ -40,10 +40,6 @@ temporary migration code.
   schema narrowing, data cleanup, or cleanup-code removal. Do not invent a new
   Convex migration function when the issue or PR specifies an operator command
   such as `convex import --replace`.
-- Before any production migration apply, force the operator to visit
-  `https://dashboard.convex.dev/`, manually click **Backup Now** on the target
-  deployment, wait for completion, and explicitly confirm in the thread. Do not
-  automate dashboard backup creation.
 - Never remove migration code until after presenting apply/verification results
   and receiving explicit user confirmation in the current thread.
 - Keep production commands pointed at the explicit deployment name when known;
@@ -115,30 +111,15 @@ or deployment plan explicitly compensate with an equivalent runtime proof.
 5. Merge only after required checks are green or the user explicitly accepts a
    documented risk.
 6. Deploy the relevant production target from `main`.
-7. Wait for deployment success before starting the manual backup gate.
+7. Wait for deployment success before running the production dry run.
 
-## Phase 5: Manual Backup Gate
+## Phase 5: Production Dry Run
 
-Before any production dry run or production migration apply:
-
-1. Tell the operator to open `https://dashboard.convex.dev/`.
-2. Tell the operator to select the target deployment and manually click
-   **Backup Now**.
-3. Wait until the Convex dashboard shows that the backup completed.
-4. Require the operator to explicitly confirm in the thread that the dashboard
-   backup completed for the target deployment.
-5. Do not automate this step and do not proceed on implied confirmation,
-   partial screenshots, or "go ahead" messages that do not say the backup
-   completed.
-
-## Phase 6: Production Dry Run
-
-1. Run only after explicit user confirmation from the manual backup gate.
-2. Run the production dry run with bounded batch settings.
-3. Resume until either:
+1. Run the production dry run with bounded batch settings.
+2. Resume until either:
    - `isDone: true`, or
    - a clearly documented safety cap is reached.
-4. Present results to the user before apply:
+3. Present results to the user before apply:
    - deployment name
    - command shape
    - `dryRun`
@@ -148,12 +129,11 @@ Before any production dry run or production migration apply:
    - sample IDs
    - resume cursors if incomplete
    - known user-visible or operational implications
-5. Stop and wait for explicit user confirmation before applying.
+4. Stop and wait for explicit user confirmation before applying.
 
-## Phase 7: Production Apply
+## Phase 6: Production Apply
 
-1. Run only after explicit user confirmation of the dry-run results and the
-   completed manual backup gate.
+1. Run only after explicit user confirmation of the dry-run results.
 2. Use the destructive confirmation token.
 3. Resume in bounded batches until complete or until a documented safety cap.
 4. Present apply results:
@@ -166,7 +146,7 @@ Before any production dry run or production migration apply:
    - explain why remaining targets are expected.
 6. Stop and wait for explicit user confirmation before cleanup-code removal.
 
-## Phase 8: Cleanup PR
+## Phase 7: Cleanup PR
 
 1. Remove temporary migration functions, tests, docs, scripts, and generated API
    entries that are no longer needed.
@@ -187,7 +167,6 @@ Report:
 - implementation PR URL and merge SHA
 - production deploy run URL and deployed SHA
 - dry-run result
-- manual Convex dashboard backup confirmation
 - apply result
 - verification result
 - cleanup PR URL, merge SHA, and deploy run URL

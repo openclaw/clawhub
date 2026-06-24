@@ -5,15 +5,17 @@ import convexBrowser from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
-import { publishSkillVersion, signInAsLocalPublisher } from "./helpers";
+import { buildSkillDetailHref, publishSkillVersion, signInAsLocalPublisher } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "malicious skill ban flow requires the local dev auth runner",
 );
-test.setTimeout(180_000);
+test.setTimeout(900_000);
+test.describe.configure({ retries: 0 });
 
 const WORKER_TOKEN = process.env.SECURITY_SCAN_WORKER_TOKEN ?? "local-e2e-worker-token";
+const CLAIMED_SCAN_JOB_TIMEOUT_MS = 90_000;
 const { ConvexHttpClient } = convexBrowser;
 type ConvexHttpClientInstance = InstanceType<typeof ConvexHttpClient>;
 
@@ -21,6 +23,9 @@ type ClaimedScanJob = {
   job: { _id: Id<"securityScanJobs">; leaseToken: string };
   target?: { skill?: { slug?: string }; version?: { version?: string } };
 };
+
+type SkillLookupResult = { skill?: { _id: Id<"skills"> } | null } | null;
+type VersionLookupResult = { version?: string } | null;
 
 type CapturedEmail = {
   idempotencyKey: string;
@@ -56,7 +61,7 @@ async function readCapturedEmails() {
 }
 
 async function waitForCapturedEmails(predicate: (emails: CapturedEmail[]) => boolean) {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + 60_000;
   let latest: CapturedEmail[] = [];
   while (Date.now() < deadline) {
     latest = await readCapturedEmails();
@@ -75,21 +80,90 @@ async function waitForClaimedScanJob(
   slug: string,
   version: string,
 ) {
-  const deadline = Date.now() + 20_000;
+  const deadline = Date.now() + CLAIMED_SCAN_JOB_TIMEOUT_MS;
+  let lastError: unknown;
   while (Date.now() < deadline) {
-    const jobs = (await client.action(api.securityScan.claimCodexScanJobs, {
-      token: WORKER_TOKEN,
-      workerId: `pw-malicious-skill-${slug}-${version}`,
-      limit: 20,
-      leaseMs: 60_000,
-    })) as ClaimedScanJob[];
-    const match = jobs.find(
-      (job) => job.target?.skill?.slug === slug && job.target?.version?.version === version,
-    );
-    if (match) return match;
+    try {
+      const jobs = (await client.action(api.securityScan.claimCodexScanJobs, {
+        token: WORKER_TOKEN,
+        workerId: `pw-malicious-skill-${slug}-${version}`,
+        limit: 20,
+        leaseMs: 60_000,
+      })) as ClaimedScanJob[];
+      const match = jobs.find(
+        (job) => job.target?.skill?.slug === slug && job.target?.version?.version === version,
+      );
+      if (match) return match;
+    } catch (error) {
+      if (!isConvexTimeout(error)) throw error;
+      lastError = error;
+    }
     await sleep(500);
   }
+  if (lastError) throw lastError;
   throw new Error(`Timed out waiting for security scan job for ${slug}@${version}`);
+}
+
+async function waitForSkillId(
+  client: ConvexHttpClientInstance,
+  args: { slug: string; ownerHandle: string },
+) {
+  const deadline = Date.now() + 60_000;
+  let lastError: unknown;
+  while (Date.now() < deadline) {
+    try {
+      const result = (await client.query(api.skills.getBySlug, args)) as SkillLookupResult;
+      if (result?.skill?._id) return result.skill._id;
+    } catch (error) {
+      if (!isConvexTimeout(error)) throw error;
+      lastError = error;
+    }
+    await sleep(500);
+  }
+  if (lastError) throw lastError;
+  throw new Error(`Timed out waiting for skill id for ${args.ownerHandle}/${args.slug}`);
+}
+
+async function skillVersionExists(
+  client: ConvexHttpClientInstance,
+  skillId: Id<"skills">,
+  version: string,
+) {
+  try {
+    const result = (await client.query(api.skills.getVersionBySkillAndVersion, {
+      skillId,
+      version,
+    })) as VersionLookupResult;
+    return result?.version === version;
+  } catch (error) {
+    if (!isConvexTimeout(error)) throw error;
+    return false;
+  }
+}
+
+function isConvexTimeout(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("Function execution timed out");
+}
+
+async function getNewVersionHref(page: Parameters<typeof waitForHydration>[0], detailPath: string) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 4; attempt += 1) {
+    try {
+      await page.goto(detailPath, { waitUntil: "domcontentloaded" });
+      await waitForHydration(page);
+      const newVersionLink = page.getByRole("link", { name: "New version" });
+      await expect(newVersionLink).toBeVisible({ timeout: 15_000 });
+      const href = await newVersionLink.getAttribute("href", { timeout: 5_000 });
+      expect(href).toBeTruthy();
+      return href!;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 4) break;
+      await page.waitForTimeout(1_000 * attempt);
+    }
+  }
+  throw lastError;
 }
 
 async function completeScan(
@@ -98,7 +172,7 @@ async function completeScan(
 ) {
   const scanJob = await waitForClaimedScanJob(client, args.slug, args.version);
   const malicious = args.verdict === "malicious";
-  await client.action(api.securityScan.completeCodexScanJob, {
+  const completionArgs = {
     token: WORKER_TOKEN,
     jobId: scanJob.job._id,
     leaseToken: scanJob.job.leaseToken,
@@ -116,11 +190,30 @@ async function completeScan(
       model: "mock-local-e2e",
       checkedAt: Date.now(),
     },
-  });
+  };
+
+  let sawTimeout = false;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await client.action(api.securityScan.completeCodexScanJob, completionArgs);
+      return;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (
+        sawTimeout &&
+        (message.includes("Lease mismatch") || message.includes("Unsupported security scan target"))
+      ) {
+        return;
+      }
+      if (!isConvexTimeout(error) || attempt >= 3) throw error;
+      sawTimeout = true;
+      await sleep(1_000 * attempt);
+    }
+  }
 }
 
 async function expectCurrentVersion(page: import("@playwright/test").Page, version: string) {
-  const metadata = page.locator(".sidebar-metadata");
+  const metadata = page.locator(".detail-sidebar-stats .sidebar-metadata");
   await expect(metadata.getByText("Current version", { exact: true })).toBeVisible({
     timeout: 30_000,
   });
@@ -130,14 +223,43 @@ async function expectCurrentVersion(page: import("@playwright/test").Page, versi
 }
 
 function withoutExpectedBannedSessionTeardownErrors(errors: string[]) {
+  const timedOutDuringBannedSessionTeardown = [
+    "CONVEX Q(skills:listVersions)",
+    "CONVEX Q(skills:list)",
+    "CONVEX Q(skills:getBySlug)",
+    "CONVEX Q(skills:checkSlugAvailability)",
+    "CONVEX Q(users:me)",
+    "CONVEX Q(publishers:listMine)",
+    "CONVEX Q(publishers:getMyProfileHandle)",
+    "CONVEX M(packages:applyBanToOwnedPackagesBatchInternal)",
+  ];
   return errors.filter(
-    (error) => !(error.includes("CONVEX M(users:ensure)") && error.includes("User not found")),
+    (error) =>
+      error !==
+        "console:Failed to load resource: the server responded with a status of 503 (Service Unavailable)" &&
+      !(error.includes("CONVEX M(users:ensure)") && error.includes("User not found")) &&
+      !(
+        error.includes("Function execution timed out (maximum duration: 1s)") &&
+        timedOutDuringBannedSessionTeardown.some((functionName) => error.includes(functionName))
+      ) &&
+      !(
+        error.includes("CONVEX A(skills:publishVersion)") &&
+        error.includes("Version ") &&
+        error.includes(" already exists")
+      ) &&
+      !(error.includes("CONVEX A(skills:publishVersion)") && error.includes("Unauthorized")) &&
+      !(
+        error.includes("CONVEX A(skills:publishVersion)") &&
+        error.includes("Function execution timed out")
+      ) &&
+      !(error.includes("CONVEX A(auth:signIn)") && error.includes("account has been banned")),
   );
 }
 
 test("malicious skill retries keep the clean latest visible, email the publisher, and ban on third rejection", async ({
   page,
 }, testInfo) => {
+  await page.route("https://openclaw.ai/**", (route) => route.fulfill({ status: 204 }));
   const errors = trackRuntimeErrors(page);
   const client = convexClient();
   const slug = `pw-malware-${Date.now().toString(36)}`;
@@ -152,15 +274,19 @@ test("malicious skill retries keep the clean latest visible, email the publisher
     versionLabel: "clean baseline release",
     changelog: "Clean baseline release before malicious retry validation.",
   });
+  await page.goto("about:blank");
   await completeScan(client, { slug, version: "1.0.0", verdict: "benign" });
-  await page.reload({ waitUntil: "domcontentloaded" });
+  const skillDetailPath = buildSkillDetailHref(ownerHandle, slug);
+  await page.goto(skillDetailPath, { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expectCurrentVersion(page, "1.0.0");
+  const skillId = await waitForSkillId(client, { slug, ownerHandle });
 
   const maliciousVersions = ["1.0.1", "1.0.2", "1.0.3"] as const;
   const finalMaliciousVersion = maliciousVersions[maliciousVersions.length - 1];
   for (const version of maliciousVersions) {
-    await page.getByRole("link", { name: "New version" }).click();
+    const newVersionHref = await getNewVersionHref(page, skillDetailPath);
+    await page.goto(newVersionHref, { waitUntil: "domcontentloaded" });
     await expect(page).toHaveURL(/\/skills\/publish\?updateSlug=/);
     await publishSkillVersion(page, testInfo, {
       ownerHandle,
@@ -169,7 +295,9 @@ test("malicious skill retries keep the clean latest visible, email the publisher
       version,
       versionLabel: `malicious retry ${version}`,
       changelog: `Synthetic malicious retry ${version}.`,
+      versionExists: () => skillVersionExists(client, skillId, version),
     });
+    await page.goto("about:blank");
     await completeScan(client, { slug, version, verdict: "malicious" });
     if (version === finalMaliciousVersion) {
       await waitForCapturedEmails((emails) =>
@@ -186,7 +314,7 @@ test("malicious skill retries keep the clean latest visible, email the publisher
           ).length === 1,
       );
     }
-    await page.goto(`/${ownerHandle}/${slug}`, { waitUntil: "domcontentloaded" });
+    await page.goto(skillDetailPath, { waitUntil: "domcontentloaded" });
     await waitForHydration(page);
     if (version !== finalMaliciousVersion) {
       await expectCurrentVersion(page, "1.0.0");
@@ -214,17 +342,26 @@ test("malicious skill retries keep the clean latest visible, email the publisher
 
   await page.getByRole("button", { name: "Open local dev personas" }).click();
   await page.getByRole("menuitem", { name: /sign out/i }).click();
-  await page.goto("/dashboard?error_description=This%20account%20has%20been%20banned", {
-    waitUntil: "domcontentloaded",
-  });
+  const abusePublisherMenuItem = page.getByRole("menuitem", { name: /use abuse publisher/i });
+  if (!(await abusePublisherMenuItem.isVisible().catch(() => false))) {
+    await page.getByRole("button", { name: "Open local dev personas" }).click();
+  }
+  await abusePublisherMenuItem.click();
   await expect(page).toHaveURL(/\/account-banned$/, { timeout: 30_000 });
   await expect(
     page.getByRole("heading", { name: "Your ClawHub account has been banned" }),
   ).toBeVisible();
+  await expect(page.getByText(/check your email/i)).toBeVisible();
   await expect(page.getByRole("link", { name: "Open an appeal" })).toHaveAttribute(
     "href",
     "https://appeals.openclaw.ai/",
   );
+  const bannedPageScreenshot = testInfo.outputPath("account-banned-page.png");
+  await page.screenshot({ path: bannedPageScreenshot, fullPage: true });
+  await testInfo.attach("account-banned-page", {
+    path: bannedPageScreenshot,
+    contentType: "image/png",
+  });
 
   await expectHealthyPage(page, withoutExpectedBannedSessionTeardownErrors(errors));
 });

@@ -29,7 +29,7 @@ export function DuplicatesPage({
               <div className="management-dupe-head">
                 <div className="management-item-main">
                   <Link
-                    to="/$owner/$slug"
+                    to="/$owner/skills/$slug"
                     params={{
                       owner: resolveOwnerParam(
                         entry.owner?.handle ?? null,
@@ -51,7 +51,7 @@ export function DuplicatesPage({
                 <div className="management-actions">
                   <Button asChild>
                     <Link
-                      to="/$owner/$slug"
+                      to="/$owner/skills/$slug"
                       params={{
                         owner: resolveOwnerParam(
                           entry.owner?.handle ?? null,
@@ -80,7 +80,7 @@ export function DuplicatesPage({
                     <div className="management-actions">
                       <Button asChild>
                         <Link
-                          to="/$owner/$slug"
+                          to="/$owner/skills/$slug"
                           params={{
                             owner: resolveOwnerParam(
                               match.owner?.handle ?? null,

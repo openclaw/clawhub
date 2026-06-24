@@ -1,4 +1,8 @@
 import type { Doc } from "../_generated/dataModel";
+import {
+  isSecurityScanStatusBlockedFromPublic,
+  normalizeSecurityScanStatus,
+} from "./securityScanPolicy";
 
 export type PackageScanStatus = Doc<"packages">["scanStatus"];
 
@@ -8,19 +12,8 @@ type PackageReleaseSecurityLike = Pick<
 >;
 
 export function normalizePackageScanStatus(status: string | null | undefined): PackageScanStatus {
-  const normalized = status?.trim().toLowerCase();
-  switch (normalized) {
-    case "benign":
-      return "clean";
-    case "clean":
-    case "suspicious":
-    case "malicious":
-    case "pending":
-    case "not-run":
-      return normalized as PackageScanStatus;
-    default:
-      return undefined;
-  }
+  const normalized = normalizeSecurityScanStatus(status);
+  return normalized === "failed" ? undefined : (normalized as PackageScanStatus);
 }
 
 export function resolvePackageReleaseScanStatus(
@@ -64,7 +57,7 @@ export function resolvePackageReleaseScanStatus(
 }
 
 export function isPackageBlockedFromPublic(scanStatus: PackageScanStatus) {
-  return scanStatus === "malicious";
+  return isSecurityScanStatusBlockedFromPublic(scanStatus);
 }
 
 export function isPackageReleaseTrustStale(release: Pick<Doc<"packageReleases">, "vtAnalysis">) {
@@ -100,7 +93,7 @@ export function getPackageDownloadSecurityBlock(release: PackageReleaseSecurityL
 
   const scanStatus = resolvePackageReleaseScanStatus(release);
 
-  if (scanStatus === "malicious") {
+  if (isSecurityScanStatusBlockedFromPublic(scanStatus)) {
     return {
       status: 403,
       message:

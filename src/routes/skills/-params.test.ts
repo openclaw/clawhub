@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { parseSort, sortKeys } from "./-params";
 
 describe("skill sort params", () => {
-  it("normalizes legacy downloads sort links to installs", () => {
-    expect(parseSort("downloads")).toBe("installs");
+  it("normalizes legacy installs sort links to downloads", () => {
+    expect(parseSort("installs")).toBe("downloads");
   });
 
-  it("does not expose downloads as a supported sort", () => {
-    expect(sortKeys).not.toContain("downloads");
+  it("exposes downloads as a supported sort", () => {
+    expect(sortKeys).toContain("downloads");
   });
 });
