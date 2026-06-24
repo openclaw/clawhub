@@ -804,6 +804,24 @@ describe("skills.insertVersion owner migration", () => {
     });
   });
 
+  it("classifies same-slug publish under another owner as a new scoped skill", async () => {
+    const fixture = createMigrationFixture({
+      skillSource: "other-personal",
+      sourceMemberships: [],
+    });
+
+    const result = await getSkillForPublishPreflightHandler(
+      { db: fixture.db } as never,
+      {
+        userId: "users:caller",
+        slug: "nano",
+        ownerPublisherId: "publishers:org",
+      } as never,
+    );
+
+    expect(result).toBeNull();
+  });
+
   it("rejects an explicit migration when the source owner no longer has the slug", async () => {
     const fixture = createMigrationFixture({
       skillSource: "caller-personal",
