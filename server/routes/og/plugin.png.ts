@@ -2,7 +2,7 @@ import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, getRequestHost, setHeader } from "h3";
 import { fetchImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchPluginOgMeta } from "../../og/fetchPluginOgMeta";
-import { formatOgStat, readOgDownloadsQuery } from "../../og/formatOgStats";
+import { resolveOgDownloadsDisplay } from "../../og/formatOgStats";
 import {
   ensureResvgWasm,
   FONT_MONO,
@@ -13,6 +13,7 @@ import {
 } from "../../og/ogAssets";
 import { buildPluginOgSvg } from "../../og/pluginOgSvg";
 import { pngResponse } from "../../og/pngResponse";
+import { buildOgDownloadsStat } from "../../og/registryOgSvg";
 
 type OgQuery = {
   name?: string;
@@ -64,7 +65,6 @@ export default defineEventHandler(async (event) => {
   const ownerFromQuery = cleanString(query.owner);
   const titleFromQuery = cleanString(query.title);
   const descriptionFromQuery = cleanString(query.description);
-  const downloadsFromQuery = readOgDownloadsQuery(query);
   const auditFromQuery = cleanString(query.audit);
   const avatarFromQuery = cleanString(query.avatar);
   const needFetch = !ownerFromQuery || !titleFromQuery || !descriptionFromQuery;
@@ -100,10 +100,7 @@ export default defineEventHandler(async (event) => {
       target: `clawhub:${packageName}`,
     },
     stats: [
-      {
-        value: downloadsFromQuery || formatOgStat(meta?.stats.downloads),
-        label: "Downloads",
-      },
+      buildOgDownloadsStat(resolveOgDownloadsDisplay(query, meta?.stats.downloads)),
       {
         value: (auditFromQuery || getAuditLabel(meta?.verification?.scanStatus)).replace(
           /^Audit\s+/i,

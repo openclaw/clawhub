@@ -16,7 +16,7 @@ describe("skill OG SVG", () => {
         target: "discord-doctor",
       },
       stats: [
-        { value: "1.2k", label: "Downloads" },
+        { value: "1.2k", label: "downloads", icon: "download" },
         { value: "PASS", label: "Audit" },
       ],
     });

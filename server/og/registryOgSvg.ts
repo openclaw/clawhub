@@ -5,7 +5,47 @@ export const OPENCLAW_RED = "#D4453A";
 export type RegistryOgStat = {
   value: string;
   label: string;
+  icon?: "download";
 };
+
+export function buildOgDownloadsStat(value: string): RegistryOgStat {
+  return { value, label: "downloads", icon: "download" };
+}
+
+function downloadIconMarkup(x: number, y: number, size = 20) {
+  const stroke = "#9D9692";
+  const strokeWidth = 2.2;
+  return `<svg x="${x}" y="${y}" width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+    <path d="M12 15V3" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="m7 10 5 5 5-5" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>`;
+}
+
+export function statLabelMarkup(
+  x: number,
+  y: number,
+  label: string,
+  options?: { icon?: "download"; fontSize?: number },
+) {
+  const fontSize = options?.fontSize ?? 21;
+  if (options?.icon === "download") {
+    const iconSize = fontSize + 2;
+    return `<g>
+      ${downloadIconMarkup(x, y - iconSize + 4, iconSize)}
+      <text x="${x + iconSize + 8}" y="${y}"
+        fill="#9D9692"
+        font-size="${fontSize}"
+        font-weight="700"
+        font-family="${FONT_SANS}, sans-serif">${escapeXml(label)}</text>
+    </g>`;
+  }
+  return `<text x="${x}" y="${y}"
+    fill="#9D9692"
+    font-size="${fontSize}"
+    font-weight="700"
+    font-family="${FONT_SANS}, sans-serif">${escapeXml(label)}</text>`;
+}
 
 export type RegistryOgCommand = {
   subject: string;
@@ -152,11 +192,7 @@ function statColumns(stats: RegistryOgStat[], contentX: number) {
     .map((stat, index) => {
       const x = contentX + index * 190;
       return `<g>
-        <text x="${x}" y="424"
-          fill="#9D9692"
-          font-size="21"
-          font-weight="700"
-          font-family="${FONT_SANS}, sans-serif">${escapeXml(stat.label)}</text>
+        ${statLabelMarkup(x, 424, stat.label, { icon: stat.icon })}
         <text x="${x}" y="464"
           fill="#F7F1EA"
           font-size="34"

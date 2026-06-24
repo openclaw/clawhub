@@ -337,11 +337,11 @@ describe("skill route loader", () => {
         { property: "og:url", content: "https://clawhub.ai/steipete/skills/weather" },
         {
           property: "og:image",
-          content: "https://clawhub.ai/og/skill?v=8&slug=weather&owner=steipete&version=1.0.0",
+          content: "https://clawhub.ai/og/skill?v=9&slug=weather&owner=steipete&version=1.0.0",
         },
         {
           name: "twitter:image",
-          content: "https://clawhub.ai/og/skill?v=8&slug=weather&owner=steipete&version=1.0.0",
+          content: "https://clawhub.ai/og/skill?v=9&slug=weather&owner=steipete&version=1.0.0",
         },
       ]),
     );

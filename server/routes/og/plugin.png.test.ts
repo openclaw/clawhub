@@ -126,7 +126,7 @@ describe("plugin og route", () => {
     expect(buildPluginOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "1.2k", label: "Downloads" },
+          { value: "1.2k", label: "downloads", icon: "download" },
           { value: "PENDING", label: "Audit" },
         ],
       }),
@@ -153,7 +153,7 @@ describe("plugin og route", () => {
     expect(buildPluginOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "1.2k", label: "Downloads" },
+          { value: "1.2k", label: "downloads", icon: "download" },
           { value: "PASS", label: "Audit" },
         ],
       }),
@@ -176,7 +176,7 @@ describe("plugin og route", () => {
     expect(buildPluginOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "0", label: "Downloads" },
+          { value: "0", label: "downloads", icon: "download" },
           { value: "UNKNOWN", label: "Audit" },
         ],
       }),
@@ -200,7 +200,7 @@ describe("plugin og route", () => {
     expect(buildPluginOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "0", label: "Downloads" },
+          { value: "0", label: "downloads", icon: "download" },
           { value: "UNKNOWN", label: "Audit" },
         ],
       }),

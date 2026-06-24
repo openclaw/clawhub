@@ -1,3 +1,5 @@
+import { formatCompactStat } from "../../src/lib/numberFormat";
+
 function cleanQueryString(value: unknown) {
   if (typeof value !== "string") return "";
   return value.trim();
@@ -11,8 +13,32 @@ export function readOgDownloadsQuery(query: { downloads?: unknown; installs?: un
 
 export function formatOgStat(value: number | null | undefined) {
   const numericValue = typeof value === "number" && Number.isFinite(value) ? value : 0;
-  const abs = Math.abs(numericValue);
-  if (abs >= 1_000_000) return `${(numericValue / 1_000_000).toFixed(abs >= 10_000_000 ? 0 : 1)}m`;
-  if (abs >= 1_000) return `${(numericValue / 1_000).toFixed(abs >= 10_000 ? 0 : 1)}k`;
-  return String(numericValue);
+  return formatCompactStat(numericValue);
+}
+
+function parseRawOgStatValue(raw: string) {
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  if (/^-?\d+$/.test(trimmed)) {
+    const parsed = Number.parseInt(trimmed, 10);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  const compact = /^(-?\d+(?:\.\d+)?)([kKmM])$/.exec(trimmed);
+  if (!compact) return null;
+  const base = Number.parseFloat(compact[1]);
+  if (!Number.isFinite(base)) return null;
+  return compact[2].toLowerCase() === "k" ? Math.round(base * 1_000) : Math.round(base * 1_000_000);
+}
+
+export function resolveOgDownloadsDisplay(
+  query: { downloads?: unknown; installs?: unknown },
+  fallback?: number | null,
+) {
+  const raw = readOgDownloadsQuery(query);
+  if (raw) {
+    const numeric = parseRawOgStatValue(raw);
+    if (numeric !== null) return formatOgStat(numeric);
+    return raw;
+  }
+  return formatOgStat(fallback);
 }

@@ -132,7 +132,7 @@ describe("skill og route", () => {
         target: "gifgrep",
       },
       stats: [
-        { value: "0", label: "Downloads" },
+        { value: "0", label: "downloads", icon: "download" },
         { value: "PASS", label: "Audit" },
       ],
     });
@@ -177,7 +177,7 @@ describe("skill og route", () => {
         ownerLabel: "@steipete",
         versionLabel: "latest",
         stats: [
-          { value: "1.2k", label: "Downloads" },
+          { value: "1.2k", label: "downloads", icon: "download" },
           { value: "PASS", label: "Audit" },
         ],
       }),
@@ -202,7 +202,30 @@ describe("skill og route", () => {
     expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "0", label: "Downloads" },
+          { value: "0", label: "downloads", icon: "download" },
+          { value: "PASS", label: "Audit" },
+        ],
+      }),
+    );
+  });
+
+  it("formats raw integer downloads query params", async () => {
+    getQueryMock.mockReturnValue({
+      slug: "gifgrep",
+      owner: "steipete",
+      version: "1.0.1",
+      title: "Gifgrep",
+      description: "Search GIFs fast",
+      downloads: "43456",
+    });
+
+    const handler = (await import("./skill.png")).default;
+    await handler({} as never);
+
+    expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        stats: [
+          { value: "43.5k", label: "downloads", icon: "download" },
           { value: "PASS", label: "Audit" },
         ],
       }),
