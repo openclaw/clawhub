@@ -336,7 +336,10 @@ function sanitizedTargetForDiagnostic(target: ClaimedJob["target"]) {
     version: pickIdentity(target.version, ["_id", "version", "sha256hash"]),
     package: pickIdentity(target.package, ["_id", "name", "normalizedName"]),
     release: pickIdentity(target.release, ["_id", "version", "integritySha256"]),
-    files: target.files?.map(({ url: _url, ...file }) => file),
+    files: target.files?.map(({ url: _url, ...file }) => ({
+      ...file,
+      path: safeWorkerArtifactPathLabel(file.path),
+    })),
     clawpackUrl: Boolean(target.clawpackUrl),
     trustedOpenClawPlugin: target.trustedOpenClawPlugin,
   };

@@ -743,7 +743,7 @@ describe("run-codex-scan-worker diagnostics", () => {
         target: {
           files: [
             {
-              path: "SKILL.md",
+              path: "artifacts/ghp_1234567890abcdefghijklmnopqrstuv.md",
               sha256: "abc123",
               size: 42,
               url: "https://signed.example.invalid/file?token=secret",
@@ -832,10 +832,13 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(diagnostic.error).toBe(
       "Codex result did not match ClawScan schema: [redacted result body]",
     );
-    expect(diagnostic.target.files).toEqual([{ path: "SKILL.md", sha256: "abc123", size: 42 }]);
+    expect(diagnostic.target.files).toEqual([
+      { path: "[redacted-path]", sha256: "abc123", size: 42 },
+    ]);
 
     const diagnosticText = await readFile(join(jobDir, "diagnostic.json"), "utf8");
     expect(diagnosticText).not.toContain("lease-secret");
+    expect(diagnosticText).not.toContain("ghp_1234567890abcdefghijklmnopqrstuv");
     expect(diagnosticText).not.toContain("token=secret");
     expect(diagnosticText).not.toContain("quoted artifact payload");
     expect(diagnosticText).not.toContain("SkillSpector artifact payload");
