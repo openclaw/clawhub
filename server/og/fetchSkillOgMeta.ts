@@ -1,4 +1,9 @@
-import { readCanonicalStat } from "../../convex/lib/skillStats";
+import { readCanonicalStat, type SkillStatReadable } from "../../convex/lib/skillStats";
+
+type SkillApiPayload = SkillStatReadable & {
+  displayName?: string;
+  summary?: string | null;
+};
 
 export type SkillOgMeta = {
   displayName: string | null;
@@ -28,7 +33,7 @@ export async function fetchSkillOgMeta(
     const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
     if (!response.ok) return null;
     const payload = (await response.json()) as {
-      skill?: { displayName?: string; summary?: string | null; stats?: unknown } | null;
+      skill?: SkillApiPayload | null;
       owner?: { handle?: string | null; image?: string | null } | null;
       latestVersion?: { version?: string | null } | null;
       moderation?: {
