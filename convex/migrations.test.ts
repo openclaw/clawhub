@@ -5,10 +5,13 @@ import { internal } from "./_generated/api";
 import type { Doc, Id, TableNames } from "./_generated/dataModel";
 import type { MutationCtx } from "./_generated/server";
 import { computeRecommendationScore } from "./lib/recommendationScore";
+import { DOWNLOAD_BACKFILL_BASELINE } from "./lib/skillDownloadBackfill";
 import { INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME } from "./lib/skillInstallBackfill";
 import {
+  backfillOneNvidiaGitHubDownloadCount,
   backfillOneSkillInstallEstimate,
   buildCanonicalCatalogMetadataPatch,
+  runNvidiaGitHubDownloadBackfill,
   runCatalogMetadataCanonicalization,
   runPluginManifestSummaryBackfill,
   runPluginManifestSummaryBackfillPage,
@@ -17,6 +20,13 @@ import {
 
 type InstallBackfillWrappedHandler = {
   _handler: (ctx: unknown, args: { dryRun?: boolean; confirm?: string }) => Promise<unknown>;
+};
+
+type DownloadBackfillWrappedHandler = {
+  _handler: (
+    ctx: unknown,
+    args: { dryRun?: boolean; confirm?: string; previewLimit?: number },
+  ) => Promise<unknown>;
 };
 
 type PluginManifestSummaryBackfillWrappedHandler = {
@@ -57,6 +67,7 @@ const skillId = testId("skills", "skills:demo");
 const ownerUserId = testId("users", "users:owner");
 const publisherId = testId("publishers", "publishers:owner");
 const digestId = testId("skillSearchDigest", "skillSearchDigest:demo");
+const githubSourceId = testId("githubSkillSources", "githubSkillSources:nvidia");
 const packageReleaseId = testId("packageReleases", "packageReleases:demo");
 
 function makeSkillDoc(): Doc<"skills"> {
@@ -716,6 +727,211 @@ describe("skill install backfill migration", () => {
         }),
       }),
     );
+  });
+});
+
+describe("NVIDIA GitHub download backfill migration", () => {
+  it("dry-runs the tracked migration and returns a structured preview", async () => {
+    const runMutation = vi.fn().mockResolvedValue({});
+    const preview = {
+      sourceRepo: "NVIDIA/skills",
+      modelVersion: "nvidia-github-weekly-public-hosted-average-v1",
+      basis: "public-hosted-downloads-per-published-week",
+      baselineCollectedAt: DOWNLOAD_BACKFILL_BASELINE.collectedAt,
+      baselinePublicHostedSkillCount: DOWNLOAD_BACKFILL_BASELINE.publicHostedSkillCount,
+      baselinePublicHostedDownloads: DOWNLOAD_BACKFILL_BASELINE.publicHostedDownloads,
+      baselinePublicHostedSkillWeeks: DOWNLOAD_BACKFILL_BASELINE.publicHostedSkillWeeks,
+      baselineAverageDownloadsPerSkillWeek: DOWNLOAD_BACKFILL_BASELINE.averageDownloadsPerSkillWeek,
+      eligibleSkills: 234,
+      skillsWithDelta: 234,
+      publishedSkillWeeks: 570,
+      currentDownloads: 0,
+      targetDownloads: 43_456,
+      proposedDelta: 43_456,
+      alreadyMarked: 0,
+      ageBuckets: { "1": 34, "2": 64, "3": 136 },
+      truncated: false,
+      samples: [],
+    };
+    const runQuery = vi.fn().mockResolvedValue(preview);
+    const handler = (runNvidiaGitHubDownloadBackfill as unknown as DownloadBackfillWrappedHandler)
+      ._handler;
+
+    const result = await handler({ runMutation, runQuery }, {});
+
+    expect(runMutation).toHaveBeenCalledWith(internal.migrations.run, {
+      fn: "migrations:backfillNvidiaGitHubDownloadCounts",
+      dryRun: true,
+      reset: true,
+    });
+    expect(runQuery).toHaveBeenCalledWith(
+      internal.migrations.previewNvidiaGitHubDownloadBackfillInternal,
+      { limit: 20 },
+    );
+    expect(result).toMatchObject({
+      ok: true,
+      dryRun: true,
+      confirmRequired: "apply-nvidia-github-download-backfill",
+      preview,
+    });
+  });
+
+  it("requires an explicit confirmation before applying the download backfill", async () => {
+    const handler = (runNvidiaGitHubDownloadBackfill as unknown as DownloadBackfillWrappedHandler)
+      ._handler;
+
+    await expect(
+      handler({ runMutation: vi.fn(), runQuery: vi.fn() }, { dryRun: false }),
+    ).rejects.toThrow('Pass confirm="apply-nvidia-github-download-backfill" to apply.');
+  });
+
+  it("accounts for pending download events newer than the daily stats cursor", async () => {
+    const now = INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME + 15 * 24 * 60 * 60 * 1000;
+    const publishedAt = INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME;
+    const targetDownloads = Math.round(3 * DOWNLOAD_BACKFILL_BASELINE.averageDownloadsPerSkillWeek);
+    const nvidiaSkill = {
+      ...makeSkillDoc(),
+      installKind: "github" as const,
+      githubSourceId,
+      githubCurrentStatus: "present" as const,
+      createdAt: publishedAt,
+      statsDownloads: 0,
+      statsInstallsAllTime: 0,
+      stats: {
+        ...makeSkillDoc().stats,
+        downloads: 0,
+        installsAllTime: 0,
+      },
+    };
+    const docs = new Map<string, Record<string, unknown>>([
+      [skillId, nvidiaSkill],
+      [ownerUserId, { _id: ownerUserId, publishedSkills: 1, totalStars: 0, totalDownloads: 0 }],
+      [publisherId, { ...makePublisherDoc(), totalDownloads: 0, skillTotalDownloads: 0 }],
+      [digestId, { ...makeSkillSearchDigestDoc(), statsDownloads: 0 }],
+      [
+        githubSourceId,
+        {
+          _id: githubSourceId,
+          _creationTime: 4,
+          repo: "NVIDIA/skills",
+          createdAt: 10,
+          updatedAt: 20,
+        },
+      ],
+      [
+        "skillStatUpdateCursors:1",
+        {
+          _id: "skillStatUpdateCursors:1",
+          _creationTime: 5,
+          key: "skill_stat_events",
+          cursorCreationTime: INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME,
+        },
+      ],
+      [
+        "skillStatEvents:newer-install",
+        {
+          _id: "skillStatEvents:newer-install",
+          _creationTime: publishedAt + 1,
+          skillId,
+          kind: "download",
+          occurredAt: publishedAt + 1,
+          processedAt: undefined,
+        },
+      ],
+      [
+        "skillStatEvents:second-newer-install",
+        {
+          _id: "skillStatEvents:second-newer-install",
+          _creationTime: publishedAt + 2,
+          skillId,
+          kind: "download",
+          occurredAt: publishedAt + 2,
+          processedAt: undefined,
+        },
+      ],
+    ]);
+    const patch = vi.fn(async (id: string, value: Record<string, unknown>) => {
+      const existing = docs.get(id);
+      if (!existing) throw new Error(`Missing test doc ${id}`);
+      docs.set(id, { ...existing, ...value });
+    });
+    const db = {
+      get: vi.fn(async (id: string) => docs.get(id) ?? null),
+      patch,
+      insert: vi.fn(async (tableName: string, value: Record<string, unknown>) => {
+        const id = `${tableName}:inserted`;
+        docs.set(id, { ...value, _id: id, _creationTime: 0 });
+        return id;
+      }),
+      delete: vi.fn(async (id: string) => {
+        docs.delete(id);
+      }),
+      query: vi.fn((tableName: string) => ({
+        withIndex: vi.fn(
+          (
+            indexName: string,
+            queryBuilder: (q: {
+              eq: (
+                field: string,
+                value: unknown,
+              ) => {
+                eq: (field: string, value: unknown) => unknown;
+              };
+            }) => unknown,
+          ) => {
+            const filters: Record<string, unknown> = {};
+            const builder = {
+              eq: (field: string, value: unknown) => {
+                filters[field] = value;
+                return builder;
+              },
+            };
+            queryBuilder(builder);
+            return {
+              unique: vi.fn(async () => {
+                if (tableName === "skillSearchDigest" && indexName === "by_skill") {
+                  return docs.get(digestId) ?? null;
+                }
+                if (tableName === "skillStatUpdateCursors" && indexName === "by_key") {
+                  return docs.get("skillStatUpdateCursors:1") ?? null;
+                }
+                return null;
+              }),
+              collect: vi.fn(async () => []),
+              take: vi.fn(async () => {
+                if (tableName === "skillStatEvents" && indexName === "by_skill_processed") {
+                  return [...docs.values()].filter(
+                    (doc) =>
+                      doc.skillId === filters.skillId &&
+                      doc.processedAt === filters.processedAt &&
+                      String(doc._id).startsWith("skillStatEvents:"),
+                  );
+                }
+                return [];
+              }),
+            };
+          },
+        ),
+      })),
+    };
+
+    await backfillOneNvidiaGitHubDownloadCount(
+      { db } as unknown as Pick<MutationCtx, "db">,
+      nvidiaSkill,
+      now,
+    );
+
+    const skill = docs.get(skillId);
+    expect(skill?.statsDownloads).toBe(targetDownloads - 2);
+    expect(isRecord(skill?.downloadBackfill) ? skill.downloadBackfill.targetDownloads : 0).toBe(
+      targetDownloads,
+    );
+    expect(
+      isRecord(skill?.downloadBackfill) ? skill.downloadBackfill.pendingSkillDocDownloads : 0,
+    ).toBe(2);
+    expect(docs.get(ownerUserId)?.totalDownloads).toBe(targetDownloads - 2);
+    expect(docs.get(publisherId)?.totalDownloads).toBe(targetDownloads - 2);
+    expect(docs.get(digestId)?.statsDownloads).toBe(targetDownloads - 2);
   });
 });
 

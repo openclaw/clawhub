@@ -7,11 +7,19 @@ import {
 import { ConvexError, v } from "convex/values";
 import { components, internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import type { ActionCtx, MutationCtx } from "./_generated/server";
+import type { ActionCtx, MutationCtx, QueryCtx } from "./_generated/server";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { syncPackageSearchDigestForPackageId } from "./functions";
 import { derivePluginManifestSummary } from "./lib/packageRegistry";
 import { adjustPublisherStatsForSkillChange } from "./lib/publisherStats";
+import {
+  buildSkillDownloadBackfillPatch,
+  calculatePublishedWeeks,
+  DOWNLOAD_BACKFILL_BASELINE,
+  DOWNLOAD_BACKFILL_BASIS,
+  DOWNLOAD_BACKFILL_MODEL_VERSION,
+  NVIDIA_GITHUB_DOWNLOAD_BACKFILL_SOURCE_REPO,
+} from "./lib/skillDownloadBackfill";
 import {
   buildSkillInstallBackfillPatch,
   INSTALL_BACKFILL_CLEAN_WINDOW,
@@ -19,10 +27,13 @@ import {
   INSTALL_BACKFILL_DEFAULTS,
 } from "./lib/skillInstallBackfill";
 import { syncSkillSearchDigestForSkill } from "./lib/skillSearchDigest";
+import { readCanonicalStat } from "./lib/skillStats";
+import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 import schema from "./schema";
 
 const CANONICALIZE_CATALOG_METADATA_CONFIRM = "canonicalize-catalog-metadata";
 const APPLY_SKILL_INSTALL_BACKFILL_CONFIRM = "apply-skill-install-backfill";
+const APPLY_NVIDIA_GITHUB_DOWNLOAD_BACKFILL_CONFIRM = "apply-nvidia-github-download-backfill";
 const BACKFILL_PLUGIN_MANIFEST_SUMMARIES_CONFIRM = "backfill-plugin-manifest-summaries";
 const SKILL_STAT_EVENTS_CURSOR_KEY = "skill_stat_events";
 const MAX_PENDING_SKILL_STAT_EVENTS_PER_SKILL = 1_000;
@@ -30,6 +41,40 @@ const PLUGIN_PACKAGE_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const PLUGIN_MANIFEST_SUMMARY_BACKFILL_PAGE_SIZE = 50;
 const PLUGIN_MANIFEST_SUMMARY_BACKFILL_MAX_PACKAGES = 5_000;
 const pluginPackageFamilyValidator = v.union(v.literal("code-plugin"), v.literal("bundle-plugin"));
+
+const nvidiaGitHubDownloadBackfillSampleValidator = v.object({
+  slug: v.string(),
+  skillId: v.id("skills"),
+  publishedAt: v.number(),
+  publishedWeeks: v.number(),
+  currentDownloads: v.number(),
+  targetDownloads: v.number(),
+  proposedDelta: v.number(),
+  githubScanStatus: v.optional(v.string()),
+  alreadyMarked: v.boolean(),
+});
+
+const nvidiaGitHubDownloadBackfillPreviewValidator = v.object({
+  sourceRepo: v.string(),
+  sourceId: v.optional(v.id("githubSkillSources")),
+  modelVersion: v.string(),
+  basis: v.literal("public-hosted-downloads-per-published-week"),
+  baselineCollectedAt: v.number(),
+  baselinePublicHostedSkillCount: v.number(),
+  baselinePublicHostedDownloads: v.number(),
+  baselinePublicHostedSkillWeeks: v.number(),
+  baselineAverageDownloadsPerSkillWeek: v.number(),
+  eligibleSkills: v.number(),
+  skillsWithDelta: v.number(),
+  publishedSkillWeeks: v.number(),
+  currentDownloads: v.number(),
+  targetDownloads: v.number(),
+  proposedDelta: v.number(),
+  alreadyMarked: v.number(),
+  ageBuckets: v.record(v.string(), v.number()),
+  truncated: v.boolean(),
+  samples: v.array(nvidiaGitHubDownloadBackfillSampleValidator),
+});
 
 export const migrations = new Migrations(components.migrations, {
   schema,
@@ -227,10 +272,12 @@ async function readSkillInstallCleanWindowStats(
   return { downloads, installs };
 }
 
-async function readDailyStatsAppliedPendingSkillDocDeltas(
-  ctx: Pick<MutationCtx, "db">,
+async function readAppliedPendingSkillDocDeltas(
+  ctx: Pick<MutationCtx | QueryCtx, "db">,
   skillId: Id<"skills">,
   now: number,
+  backfillName: string,
+  options?: { includeEventsAfterCursor?: boolean },
 ) {
   const cursor = await ctx.db
     .query("skillStatUpdateCursors")
@@ -239,13 +286,13 @@ async function readDailyStatsAppliedPendingSkillDocDeltas(
   const cursorCreationTime = cursor?.cursorCreationTime;
   if (cursorCreationTime === undefined) {
     throw new ConvexError(
-      "Skill install backfill requires skill stat daily aggregation through the clean window before applying.",
+      `${backfillName} requires skill stat daily aggregation through the clean window before applying.`,
     );
   }
   if (cursorCreationTime < INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME) {
     if (now < INSTALL_BACKFILL_CLEAN_WINDOW_READY_CURSOR_CREATION_TIME) {
       throw new ConvexError(
-        "Skill install backfill requires skill stat daily aggregation through the clean window before applying.",
+        `${backfillName} requires skill stat daily aggregation through the clean window before applying.`,
       );
     }
     const nextEvent = await ctx.db
@@ -254,7 +301,7 @@ async function readDailyStatsAppliedPendingSkillDocDeltas(
       .take(1);
     if (nextEvent.length > 0) {
       throw new ConvexError(
-        "Skill install backfill requires skill stat daily aggregation through the clean window before applying.",
+        `${backfillName} requires skill stat daily aggregation through the clean window before applying.`,
       );
     }
   }
@@ -264,15 +311,13 @@ async function readDailyStatsAppliedPendingSkillDocDeltas(
     .withIndex("by_skill_processed", (q) => q.eq("skillId", skillId).eq("processedAt", undefined))
     .take(MAX_PENDING_SKILL_STAT_EVENTS_PER_SKILL + 1);
   if (pendingEvents.length > MAX_PENDING_SKILL_STAT_EVENTS_PER_SKILL) {
-    throw new ConvexError(
-      "Skill install backfill requires draining skill stat doc sync before applying.",
-    );
+    throw new ConvexError(`${backfillName} requires draining skill stat doc sync before applying.`);
   }
 
   let downloads = 0;
   let installsAllTime = 0;
   for (const event of pendingEvents) {
-    if (event._creationTime > cursorCreationTime) continue;
+    if (!options?.includeEventsAfterCursor && event._creationTime > cursorCreationTime) continue;
     if (event.kind === "download") {
       downloads += 1;
     } else if (event.kind === "install_new") {
@@ -290,10 +335,11 @@ export async function backfillOneSkillInstallEstimate(
   now: number = Date.now(),
 ) {
   const cleanStats = await readSkillInstallCleanWindowStats(ctx, skill._id);
-  const pendingSkillDocDeltas = await readDailyStatsAppliedPendingSkillDocDeltas(
+  const pendingSkillDocDeltas = await readAppliedPendingSkillDocDeltas(
     ctx,
     skill._id,
     now,
+    "Skill install backfill",
   );
   const patch = buildSkillInstallBackfillPatch({
     skill,
@@ -320,6 +366,189 @@ export const backfillSkillInstallEstimates = migrations.define({
   batchSize: 10,
   migrateOne: async (ctx, skill) => {
     await backfillOneSkillInstallEstimate(ctx, skill);
+  },
+});
+
+function isEligibleNvidiaGitHubDownloadBackfillSkill(
+  skill: Doc<"skills">,
+  source: Doc<"githubSkillSources"> | null,
+) {
+  return (
+    source?.repo === NVIDIA_GITHUB_DOWNLOAD_BACKFILL_SOURCE_REPO &&
+    skill.installKind === "github" &&
+    skill.githubSourceId === source._id &&
+    !skill.softDeletedAt &&
+    (!skill.moderationStatus || skill.moderationStatus === "active") &&
+    skill.moderationVerdict !== "malicious" &&
+    !skill.moderationFlags?.includes("blocked.malware") &&
+    skill.githubCurrentStatus === "present" &&
+    !skill.githubRemovedAt
+  );
+}
+
+export async function backfillOneNvidiaGitHubDownloadCount(
+  ctx: Pick<MutationCtx, "db">,
+  skill: Doc<"skills">,
+  now: number = Date.now(),
+) {
+  const source = skill.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+  if (!isEligibleNvidiaGitHubDownloadBackfillSkill(skill, source)) return false;
+
+  const pendingSkillDocDeltas = await readAppliedPendingSkillDocDeltas(
+    ctx,
+    skill._id,
+    now,
+    "NVIDIA GitHub download backfill",
+    { includeEventsAfterCursor: true },
+  );
+  const patch = buildSkillDownloadBackfillPatch({
+    skill,
+    now,
+    pendingSkillDocDownloads: pendingSkillDocDeltas.downloads,
+  });
+  if (!patch) return false;
+
+  const nextSkill: Doc<"skills"> = { ...skill, ...patch };
+  await ctx.db.patch(skill._id, patch);
+  await adjustPublisherStatsForSkillChange(ctx, skill, nextSkill);
+  await adjustUserSkillStatsForSkillChange(ctx, skill, nextSkill);
+  await syncSkillSearchDigestForSkill(ctx, nextSkill);
+  return true;
+}
+
+export const backfillNvidiaGitHubDownloadCounts = migrations.define({
+  table: "skills",
+  batchSize: 10,
+  migrateOne: async (ctx, skill) => {
+    await backfillOneNvidiaGitHubDownloadCount(ctx, skill);
+  },
+});
+
+export const previewNvidiaGitHubDownloadBackfillInternal = internalQuery({
+  args: { limit: v.optional(v.number()) },
+  returns: nvidiaGitHubDownloadBackfillPreviewValidator,
+  handler: async (ctx, args) => {
+    const source = await ctx.db
+      .query("githubSkillSources")
+      .withIndex("by_repo", (q) => q.eq("repo", NVIDIA_GITHUB_DOWNLOAD_BACKFILL_SOURCE_REPO))
+      .unique();
+    const sampleLimit = Math.max(0, Math.min(100, Math.trunc(args.limit ?? 20)));
+    if (!source) {
+      return {
+        sourceRepo: NVIDIA_GITHUB_DOWNLOAD_BACKFILL_SOURCE_REPO,
+        modelVersion: DOWNLOAD_BACKFILL_MODEL_VERSION,
+        basis: DOWNLOAD_BACKFILL_BASIS,
+        baselineCollectedAt: DOWNLOAD_BACKFILL_BASELINE.collectedAt,
+        baselinePublicHostedSkillCount: DOWNLOAD_BACKFILL_BASELINE.publicHostedSkillCount,
+        baselinePublicHostedDownloads: DOWNLOAD_BACKFILL_BASELINE.publicHostedDownloads,
+        baselinePublicHostedSkillWeeks: DOWNLOAD_BACKFILL_BASELINE.publicHostedSkillWeeks,
+        baselineAverageDownloadsPerSkillWeek:
+          DOWNLOAD_BACKFILL_BASELINE.averageDownloadsPerSkillWeek,
+        eligibleSkills: 0,
+        skillsWithDelta: 0,
+        publishedSkillWeeks: 0,
+        currentDownloads: 0,
+        targetDownloads: 0,
+        proposedDelta: 0,
+        alreadyMarked: 0,
+        ageBuckets: {},
+        truncated: false,
+        samples: [],
+      };
+    }
+
+    let eligibleSkills = 0;
+    let skillsWithDelta = 0;
+    let publishedSkillWeeks = 0;
+    let currentDownloads = 0;
+    let targetDownloads = 0;
+    let proposedDelta = 0;
+    let alreadyMarked = 0;
+    const ageBuckets: Record<string, number> = {};
+    const samples: Array<{
+      slug: string;
+      skillId: Id<"skills">;
+      publishedAt: number;
+      publishedWeeks: number;
+      currentDownloads: number;
+      targetDownloads: number;
+      proposedDelta: number;
+      githubScanStatus?: string;
+      alreadyMarked: boolean;
+    }> = [];
+
+    for await (const skill of ctx.db
+      .query("skills")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))) {
+      if (!isEligibleNvidiaGitHubDownloadBackfillSkill(skill, source)) continue;
+
+      eligibleSkills += 1;
+      const now = Date.now();
+      const pendingSkillDocDeltas = await readAppliedPendingSkillDocDeltas(
+        ctx,
+        skill._id,
+        now,
+        "NVIDIA GitHub download backfill",
+        { includeEventsAfterCursor: true },
+      );
+      const publishedWeeks = calculatePublishedWeeks({ publishedAt: skill.createdAt, now });
+      const patch = buildSkillDownloadBackfillPatch({
+        skill,
+        now,
+        pendingSkillDocDownloads: pendingSkillDocDeltas.downloads,
+      });
+      const stableDownloads =
+        readCanonicalStat(skill, "downloads") + pendingSkillDocDeltas.downloads;
+      const skillTargetDownloads = Math.max(
+        stableDownloads,
+        Math.round(publishedWeeks * DOWNLOAD_BACKFILL_BASELINE.averageDownloadsPerSkillWeek),
+      );
+      const skillDelta = Math.max(0, skillTargetDownloads - stableDownloads);
+      currentDownloads += stableDownloads;
+      publishedSkillWeeks += publishedWeeks;
+      targetDownloads += skillTargetDownloads;
+      proposedDelta += skillDelta;
+      ageBuckets[String(publishedWeeks)] = (ageBuckets[String(publishedWeeks)] ?? 0) + 1;
+      if (skill.downloadBackfill?.modelVersion === DOWNLOAD_BACKFILL_MODEL_VERSION) {
+        alreadyMarked += 1;
+      }
+      if (patch) skillsWithDelta += 1;
+      if (patch && samples.length < sampleLimit) {
+        samples.push({
+          slug: skill.slug,
+          skillId: skill._id,
+          publishedAt: skill.createdAt,
+          publishedWeeks,
+          currentDownloads: stableDownloads,
+          targetDownloads: skillTargetDownloads,
+          proposedDelta: skillDelta,
+          githubScanStatus: skill.githubScanStatus,
+          alreadyMarked: skill.downloadBackfill?.modelVersion === DOWNLOAD_BACKFILL_MODEL_VERSION,
+        });
+      }
+    }
+
+    return {
+      sourceRepo: NVIDIA_GITHUB_DOWNLOAD_BACKFILL_SOURCE_REPO,
+      sourceId: source._id,
+      modelVersion: DOWNLOAD_BACKFILL_MODEL_VERSION,
+      basis: DOWNLOAD_BACKFILL_BASIS,
+      baselineCollectedAt: DOWNLOAD_BACKFILL_BASELINE.collectedAt,
+      baselinePublicHostedSkillCount: DOWNLOAD_BACKFILL_BASELINE.publicHostedSkillCount,
+      baselinePublicHostedDownloads: DOWNLOAD_BACKFILL_BASELINE.publicHostedDownloads,
+      baselinePublicHostedSkillWeeks: DOWNLOAD_BACKFILL_BASELINE.publicHostedSkillWeeks,
+      baselineAverageDownloadsPerSkillWeek: DOWNLOAD_BACKFILL_BASELINE.averageDownloadsPerSkillWeek,
+      eligibleSkills,
+      skillsWithDelta,
+      publishedSkillWeeks,
+      currentDownloads,
+      targetDownloads,
+      proposedDelta,
+      alreadyMarked,
+      ageBuckets,
+      truncated: samples.length >= sampleLimit && skillsWithDelta > sampleLimit,
+      samples,
+    };
   },
 });
 
@@ -929,6 +1158,51 @@ export const runSkillInstallBackfill = internalAction({
         cleanWindowEndDay: INSTALL_BACKFILL_CLEAN_WINDOW.endDay,
         ...INSTALL_BACKFILL_DEFAULTS,
       },
+    };
+  },
+});
+
+export const runNvidiaGitHubDownloadBackfill = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    previewLimit: v.optional(v.number()),
+  },
+  returns: v.object({
+    ok: v.literal(true),
+    dryRun: v.boolean(),
+    confirmRequired: v.optional(v.string()),
+    preview: nvidiaGitHubDownloadBackfillPreviewValidator,
+  }),
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun !== false;
+    if (!dryRun && args.confirm !== APPLY_NVIDIA_GITHUB_DOWNLOAD_BACKFILL_CONFIRM) {
+      throw new ConvexError(
+        `Pass confirm="${APPLY_NVIDIA_GITHUB_DOWNLOAD_BACKFILL_CONFIRM}" to apply.`,
+      );
+    }
+    if (dryRun) {
+      await ctx.runMutation(internal.migrations.run, {
+        fn: "migrations:backfillNvidiaGitHubDownloadCounts",
+        dryRun: true,
+        reset: true,
+      });
+    } else {
+      await runToCompletion(
+        ctx,
+        components.migrations,
+        internal.migrations.backfillNvidiaGitHubDownloadCounts,
+      );
+    }
+    const preview: typeof nvidiaGitHubDownloadBackfillPreviewValidator.type = await ctx.runQuery(
+      internal.migrations.previewNvidiaGitHubDownloadBackfillInternal,
+      { limit: args.previewLimit ?? 20 },
+    );
+    return {
+      ok: true as const,
+      dryRun,
+      confirmRequired: dryRun ? APPLY_NVIDIA_GITHUB_DOWNLOAD_BACKFILL_CONFIRM : undefined,
+      preview,
     };
   },
 });
