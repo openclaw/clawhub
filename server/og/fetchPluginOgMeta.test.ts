@@ -8,7 +8,7 @@ describe("fetchPluginOgMeta", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reads installs from package API stats", async () => {
+  it("reads downloads from package API stats", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({
@@ -31,6 +31,6 @@ describe("fetchPluginOgMeta", () => {
       "https://clawhub.ai/api/v1/packages/%40openclaw%2Fcodex",
       { headers: { Accept: "application/json" } },
     );
-    expect(meta?.stats.installs).toBe(1200);
+    expect(meta?.stats.downloads).toBe(99);
   });
 });

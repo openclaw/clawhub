@@ -6,7 +6,7 @@ export type PluginOgMeta = {
   ownerImage: string | null;
   latestVersion: string | null;
   stats: {
-    installs: number;
+    downloads: number;
   };
   verification: {
     scanStatus: string | null;
@@ -41,7 +41,7 @@ export async function fetchPluginOgMeta(
       ownerImage: payload.owner?.image ?? null,
       latestVersion: payload.package?.latestVersion ?? null,
       stats: {
-        installs: readNumber(stats.installs),
+        downloads: readNumber(stats.downloads),
       },
       verification: payload.package?.verification
         ? { scanStatus: payload.package.verification.scanStatus ?? null }

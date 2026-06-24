@@ -108,7 +108,7 @@ describe("skill og route", () => {
       version: "1.0.1",
       title: "Gifgrep",
       description: "Search GIFs fast",
-      installs: "0",
+      downloads: "0",
     });
 
     const handler = (await import("./skill.png")).default;
@@ -132,7 +132,7 @@ describe("skill og route", () => {
         target: "gifgrep",
       },
       stats: [
-        { value: "0", label: "Installs" },
+        { value: "0", label: "Downloads" },
         { value: "PASS", label: "Audit" },
       ],
     });
@@ -157,7 +157,7 @@ describe("skill og route", () => {
       displayName: "Gifgrep",
       summary: "Search GIFs fast",
       ownerImage: null,
-      stats: { installsAllTime: 1200 },
+      stats: { downloads: 1200 },
       moderation: { verdict: "clean", isSuspicious: false, isMalwareBlocked: false },
     });
 
@@ -177,22 +177,22 @@ describe("skill og route", () => {
         ownerLabel: "@steipete",
         versionLabel: "latest",
         stats: [
-          { value: "1.2k", label: "Installs" },
+          { value: "1.2k", label: "Downloads" },
           { value: "PASS", label: "Audit" },
         ],
       }),
     );
   });
 
-  it("uses explicit installs over legacy downloads query params", async () => {
+  it("uses explicit downloads over legacy installs query params", async () => {
     getQueryMock.mockReturnValue({
       slug: "gifgrep",
       owner: "steipete",
       version: "1.0.1",
       title: "Gifgrep",
       description: "Search GIFs fast",
-      installs: "0",
-      downloads: "9.9k",
+      downloads: "0",
+      installs: "9.9k",
     });
 
     const handler = (await import("./skill.png")).default;
@@ -202,7 +202,7 @@ describe("skill og route", () => {
     expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "0", label: "Installs" },
+          { value: "0", label: "Downloads" },
           { value: "PASS", label: "Audit" },
         ],
       }),

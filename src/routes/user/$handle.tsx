@@ -102,7 +102,7 @@ export const Route = createFileRoute("/user/$handle")({
       bio: publisher?.bio,
       image: publisher?.image,
       kind: publisher?.kind,
-      installs: publisher?.stats.installs,
+      downloads: publisher?.stats.downloads,
     });
     return {
       meta: [

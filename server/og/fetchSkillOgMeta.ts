@@ -1,3 +1,5 @@
+import { readCanonicalStat } from "../../convex/lib/skillStats";
+
 export type SkillOgMeta = {
   displayName: string | null;
   summary: string | null;
@@ -5,7 +7,7 @@ export type SkillOgMeta = {
   ownerImage: string | null;
   version: string | null;
   stats: {
-    installsAllTime: number;
+    downloads: number;
   };
   moderation: {
     verdict: "clean" | "suspicious" | "malicious" | null;
@@ -35,7 +37,6 @@ export async function fetchSkillOgMeta(
         isMalwareBlocked?: boolean;
       } | null;
     };
-    const stats = readStats(payload.skill?.stats);
     return {
       displayName: payload.skill?.displayName ?? null,
       summary: payload.skill?.summary ?? null,
@@ -43,7 +44,7 @@ export async function fetchSkillOgMeta(
       ownerImage: payload.owner?.image ?? null,
       version: payload.latestVersion?.version ?? null,
       stats: {
-        installsAllTime: readNumber(stats.installsAllTime),
+        downloads: payload.skill ? readCanonicalStat(payload.skill, "downloads") : 0,
       },
       moderation: payload.moderation
         ? {
@@ -56,12 +57,4 @@ export async function fetchSkillOgMeta(
   } catch {
     return null;
   }
-}
-
-function readStats(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function readNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }

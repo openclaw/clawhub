@@ -1,33 +1,15 @@
 ## Visual proof
 
-Captured from local ClawHub (`http://localhost:3002`) with production Convex data via headless Chrome.
+Publisher OG images captured from local ClawHub at `http://localhost:3000` against production Convex data.
 
-### @nvidia (org with custom profile image)
+### @nvidia (org with custom profile image + Downloads stat)
 
-Profile page:
+![NVIDIA publisher OG image](nvidia-og.png)
 
-![NVIDIA profile page](nvidia-profile.png)
+### @openclaw (org with GitHub avatar + Downloads stat)
 
-OG card (shows NVIDIA logo, not default lobster avatar):
+![OpenClaw publisher OG image](openclaw-og.png)
 
-![NVIDIA publisher OG image](nvidia-og-browser.png)
+### @expediagroup (org without profile image — default mark + Downloads stat)
 
-### @openclaw (org with GitHub avatar)
-
-Profile page:
-
-![OpenClaw profile page](openclaw-profile.png)
-
-OG card:
-
-![OpenClaw publisher OG image](openclaw-og-browser.png)
-
-### @expediagroup (org without profile image — default mark expected)
-
-Profile page:
-
-![Expedia Group profile page](expediagroup-profile.png)
-
-OG card (falls back to default ClawHub mark):
-
-![Expedia Group publisher OG image](expediagroup-og-browser.png)
+![Expedia Group publisher OG image](expediagroup-og.png)

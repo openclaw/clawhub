@@ -8,7 +8,7 @@ describe("fetchSkillOgMeta", () => {
     vi.unstubAllGlobals();
   });
 
-  it("reads all-time installs from the public skill API stats", async () => {
+  it("reads downloads from the public skill API stats", async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,
       json: async () => ({
@@ -16,6 +16,7 @@ describe("fetchSkillOgMeta", () => {
           displayName: "Gifgrep",
           summary: "Search GIFs fast",
           stats: { downloads: 99, installsAllTime: 1200 },
+          statsDownloads: 1200,
         },
         owner: { handle: "steipete", image: "https://avatars.githubusercontent.com/u/1?v=4" },
         latestVersion: { version: "1.0.1" },
@@ -32,6 +33,6 @@ describe("fetchSkillOgMeta", () => {
         headers: { Accept: "application/json" },
       },
     );
-    expect(meta?.stats.installsAllTime).toBe(1200);
+    expect(meta?.stats.downloads).toBe(1200);
   });
 });

@@ -2,7 +2,7 @@ import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, setHeader } from "h3";
 import { fetchPublisherProfileImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchPublisherOgMeta } from "../../og/fetchPublisherOgMeta";
-import { formatOgStat } from "../../og/formatOgStats";
+import { formatOgStat, readOgDownloadsQuery } from "../../og/formatOgStats";
 import {
   ensureResvgWasm,
   FONT_MONO,
@@ -18,6 +18,7 @@ type OgQuery = {
   handle?: string;
   title?: string;
   description?: string;
+  downloads?: string;
   installs?: string;
   kind?: string;
   avatar?: string;
@@ -43,12 +44,12 @@ export default defineEventHandler(async (event) => {
 
   const titleFromQuery = cleanString(query.title);
   const descriptionFromQuery = cleanString(query.description);
-  const installsFromQuery = cleanString(query.installs);
+  const downloadsFromQuery = readOgDownloadsQuery(query);
   const kindFromQuery = cleanString(query.kind);
   const avatarFromQuery = cleanString(query.avatar);
   const convexUrl = getConvexUrl();
   const needFetch =
-    !titleFromQuery || !descriptionFromQuery || !installsFromQuery || !avatarFromQuery;
+    !titleFromQuery || !descriptionFromQuery || !downloadsFromQuery || !avatarFromQuery;
   const meta = needFetch && convexUrl ? await fetchPublisherOgMeta(handle, convexUrl) : null;
   const handleLabel = `@${meta?.handle || handle}`;
   const title = titleFromQuery || meta?.displayName || handleLabel;
@@ -71,8 +72,8 @@ export default defineEventHandler(async (event) => {
     handleLabel,
     stats: [
       {
-        value: installsFromQuery || formatOgStat(meta?.stats.installs),
-        label: "Installs",
+        value: downloadsFromQuery || formatOgStat(meta?.stats.downloads),
+        label: "Downloads",
       },
     ],
   });
