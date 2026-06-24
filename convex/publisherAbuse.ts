@@ -83,6 +83,7 @@ const MISSING_WARNING_EMAIL_AUTOBAN_SKIP_NOTE =
 const FAILED_TEMPORAL_RUN_NOMINATION_NOTE =
   "Publisher abuse temporal score run failed before completion; rerun required.";
 const PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY = "publisherAbuseAutobanEnabled" as const;
+const PUBLISHER_ABUSE_AUTOBAN_SETTING_READ_LIMIT = 32;
 const FAILED_TEMPORAL_CLEANUP_LABELS = [
   "potential_ban_candidate",
   "review",
@@ -212,7 +213,7 @@ type PublisherAbuseAutobanEligibility =
   | { kind: "pending_run" }
   | { kind: "defer"; status: TriageStatus; notes: string };
 
-type PublisherAbuseAutobanSettingDoc = Doc<"systemSettings"> | null;
+type PublisherAbuseAutobanSettingDoc = Doc<"systemSettings">;
 
 type PublisherAbuseWarningTarget = Pick<Doc<"users">, "_id" | "email" | "handle" | "role">;
 
@@ -396,17 +397,23 @@ export const setPublisherAbuseAutobanEnabled = mutation({
     assertAdmin(user);
 
     const now = Date.now();
-    const existing = await getPublisherAbuseAutobanSettingDoc(ctx);
-    if (existing?.enabled === args.enabled) {
+    const existingSettings = await getPublisherAbuseAutobanSettingDocs(ctx);
+    const existing = existingSettings[0] ?? null;
+    if (existing && existingSettings.every((setting) => setting.enabled === args.enabled)) {
       return summarizePublisherAbuseAutobanSetting(existing);
     }
 
-    if (existing) {
-      await ctx.db.patch(existing._id, {
-        enabled: args.enabled,
-        updatedAt: now,
-        updatedByUserId: user._id,
-      });
+    if (existingSettings.length > 0) {
+      for (const setting of existingSettings) {
+        if (setting.enabled === args.enabled && setting.updatedByUserId === user._id) {
+          continue;
+        }
+        await ctx.db.patch(setting._id, {
+          enabled: args.enabled,
+          updatedAt: now,
+          updatedByUserId: user._id,
+        });
+      }
     } else {
       await ctx.db.insert("systemSettings", {
         key: PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY,
@@ -1063,13 +1070,21 @@ export const getPublisherAbuseAutobanEnabledInternal = internalQuery({
   },
 });
 
-async function getPublisherAbuseAutobanSettingDoc(
+async function getPublisherAbuseAutobanSettingDocs(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
-): Promise<PublisherAbuseAutobanSettingDoc> {
+): Promise<PublisherAbuseAutobanSettingDoc[]> {
   return await ctx.db
     .query("systemSettings")
     .withIndex("by_key", (q) => q.eq("key", PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY))
-    .unique();
+    .order("desc")
+    .take(PUBLISHER_ABUSE_AUTOBAN_SETTING_READ_LIMIT);
+}
+
+async function getPublisherAbuseAutobanSettingDoc(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+): Promise<PublisherAbuseAutobanSettingDoc | null> {
+  const settings = await getPublisherAbuseAutobanSettingDocs(ctx);
+  return settings[0] ?? null;
 }
 
 async function getPublisherAbuseAutobanEnabled(ctx: Pick<QueryCtx | MutationCtx, "db">) {
@@ -1077,7 +1092,7 @@ async function getPublisherAbuseAutobanEnabled(ctx: Pick<QueryCtx | MutationCtx,
   return setting?.enabled ?? true;
 }
 
-function summarizePublisherAbuseAutobanSetting(setting: PublisherAbuseAutobanSettingDoc) {
+function summarizePublisherAbuseAutobanSetting(setting: PublisherAbuseAutobanSettingDoc | null) {
   return {
     enabled: setting?.enabled ?? true,
     updatedAt: setting?.updatedAt ?? null,

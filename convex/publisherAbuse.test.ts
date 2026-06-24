@@ -567,6 +567,7 @@ function makeLatestCompletedCurrentTemporalRunQuery(run: unknown) {
 }
 
 function makePublisherAbuseAutobanSettingQuery(setting: unknown) {
+  const settings = Array.isArray(setting) ? setting : setting ? [setting] : [];
   return {
     withIndex: (
       indexName: string,
@@ -583,7 +584,12 @@ function makePublisherAbuseAutobanSettingQuery(setting: unknown) {
       build(q);
       expect(constraints).toEqual({ key: "publisherAbuseAutobanEnabled" });
       return {
-        unique: async () => setting,
+        order: (direction: "asc" | "desc") => {
+          expect(direction).toBe("desc");
+          return {
+            take: async (limit: number) => settings.slice(0, limit),
+          };
+        },
       };
     },
   };
@@ -665,6 +671,47 @@ describe("publisher abuse dry-run persistence", () => {
     expect(assertModerator).toHaveBeenCalledWith(user);
   });
 
+  it("reads the newest publisher abuse autoban setting when duplicate rows exist", async () => {
+    const user = { _id: "users:moderator", role: "moderator" };
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user,
+    } as never);
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === "systemSettings") {
+            return makePublisherAbuseAutobanSettingQuery([
+              {
+                _id: "systemSettings:newer",
+                key: "publisherAbuseAutobanEnabled",
+                enabled: false,
+                updatedAt: 20,
+                updatedByUserId: "users:admin",
+              },
+              {
+                _id: "systemSettings:older",
+                key: "publisherAbuseAutobanEnabled",
+                enabled: true,
+                updatedAt: 10,
+                updatedByUserId: "users:other-admin",
+              },
+            ]);
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(getPublisherAbuseAutobanSettingHandler(ctx, {})).resolves.toEqual({
+      enabled: false,
+      updatedAt: 20,
+      updatedByUserId: "users:admin",
+    });
+
+    expect(assertModerator).toHaveBeenCalledWith(user);
+  });
+
   it("lets admins disable publisher abuse autobans with an audit log", async () => {
     const user = { _id: "users:admin", role: "admin" };
     vi.mocked(requireUser).mockResolvedValue({
@@ -704,6 +751,80 @@ describe("publisher abuse dry-run persistence", () => {
           updatedByUserId: "users:admin",
         },
       },
+      {
+        table: "auditLogs",
+        value: {
+          actorUserId: "users:admin",
+          action: "publisher_abuse.autoban_setting.set",
+          targetType: "system",
+          targetId: "publisherAbuseAutobanEnabled",
+          metadata: {
+            previousEnabled: true,
+            nextEnabled: false,
+          },
+          createdAt: expect.any(Number),
+        },
+      },
+    ]);
+  });
+
+  it("repairs duplicate publisher abuse autoban settings on admin writes", async () => {
+    const user = { _id: "users:admin", role: "admin" };
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:admin",
+      user,
+    } as never);
+    const inserted: Array<{ table: string; value: unknown }> = [];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === "systemSettings") {
+            return makePublisherAbuseAutobanSettingQuery([
+              {
+                _id: "systemSettings:newer",
+                key: "publisherAbuseAutobanEnabled",
+                enabled: true,
+                updatedAt: 20,
+                updatedByUserId: "users:other-admin",
+              },
+              {
+                _id: "systemSettings:older",
+                key: "publisherAbuseAutobanEnabled",
+                enabled: true,
+                updatedAt: 10,
+                updatedByUserId: "users:older-admin",
+              },
+            ]);
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        insert: vi.fn(async (table: string, value: unknown) => {
+          inserted.push({ table, value });
+          return `${table}:new`;
+        }),
+        patch: vi.fn(),
+      },
+    };
+
+    await expect(setPublisherAbuseAutobanEnabledHandler(ctx, { enabled: false })).resolves.toEqual({
+      enabled: false,
+      updatedAt: expect.any(Number),
+      updatedByUserId: "users:admin",
+    });
+
+    expect(assertAdmin).toHaveBeenCalledWith(user);
+    expect(ctx.db.patch).toHaveBeenCalledTimes(2);
+    expect(ctx.db.patch).toHaveBeenNthCalledWith(1, "systemSettings:newer", {
+      enabled: false,
+      updatedAt: expect.any(Number),
+      updatedByUserId: "users:admin",
+    });
+    expect(ctx.db.patch).toHaveBeenNthCalledWith(2, "systemSettings:older", {
+      enabled: false,
+      updatedAt: expect.any(Number),
+      updatedByUserId: "users:admin",
+    });
+    expect(inserted).toEqual([
       {
         table: "auditLogs",
         value: {
@@ -1790,22 +1911,12 @@ describe("publisher abuse dry-run persistence", () => {
         patch,
         query: vi.fn((table: string) => {
           if (table !== "systemSettings") throw new Error(`unexpected table ${table}`);
-          return {
-            withIndex: (
-              _index: string,
-              build: (q: { eq: (field: string, value: string) => unknown }) => unknown,
-            ) => {
-              build({ eq: vi.fn() });
-              return {
-                unique: async () => ({
-                  key: "publisherAbuseAutobanEnabled",
-                  enabled: false,
-                  updatedAt: 1,
-                  updatedByUserId: "users:admin",
-                }),
-              };
-            },
-          };
+          return makePublisherAbuseAutobanSettingQuery({
+            key: "publisherAbuseAutobanEnabled",
+            enabled: false,
+            updatedAt: 1,
+            updatedByUserId: "users:admin",
+          });
         }),
       },
     };
