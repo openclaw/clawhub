@@ -1169,6 +1169,16 @@ code {
   outline: none;
 }
 
+[data-theme-resolved="light"]
+  .user-dropdown-content
+  [data-slot="dropdown-menu-item"]:not(.user-dropdown-theme-button):where(
+    :hover,
+    :focus,
+    [data-highlighted]
+  ) {
+  background: var(--hover-bg);
+}
+
 .user-dropdown-theme-row {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -18566,6 +18576,8 @@ a.publisher-profile-detail:hover {
   color: var(--ink);
 }
 
+[data-theme-resolved="light"] .stars-view-tabs .publisher-filter-tab.is-active,
+[data-theme-resolved="light"] .audits-tab[data-active="true"],
 [data-theme-resolved="light"] .publisher-profile-catalog-tabs button.is-active {
   background: var(--hover-bg);
 }
