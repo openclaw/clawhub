@@ -473,13 +473,21 @@ function makeBanCtx(
           typeof constraints.publisherId === "string" ? constraints.publisherId : "";
         const role = typeof constraints.role === "string" ? constraints.role : "";
         return {
-          take: vi
-            .fn()
-            .mockResolvedValue(
-              publisherMembers.filter(
+          paginate: vi.fn(
+            async ({ cursor, numItems }: { cursor: string | null; numItems: number }) => {
+              const members = publisherMembers.filter(
                 (member) => member.publisherId === publisherId && member.role === role,
-              ),
-            ),
+              );
+              const offset = cursor ? Number(cursor) : 0;
+              const page = members.slice(offset, offset + numItems);
+              const nextOffset = offset + page.length;
+              return {
+                page,
+                isDone: nextOffset >= members.length,
+                continueCursor: String(nextOffset),
+              };
+            },
+          ),
         };
       }
       throw new Error(`Unexpected table ${table}`);
@@ -3716,7 +3724,7 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
     });
   });
 
-  it("does not ban when an org publisher manager scan is truncated", async () => {
+  it("does not ban when a staff org publisher manager is on a later page", async () => {
     const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx({
       publisherMembers: Array.from({ length: 101 }, (_, index) => ({
         _id: `publisherMembers:community-admin-${index}`,
@@ -3734,6 +3742,9 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
           handle: "target-user",
           email: "target@example.com",
         };
+      }
+      if (id === "users:community-admin-100") {
+        return { _id: id, role: "moderator" };
       }
       if (id.startsWith("users:community-admin-")) {
         return { _id: id, role: "user" };

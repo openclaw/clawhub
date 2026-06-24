@@ -251,16 +251,21 @@ async function hasStaffPublisherManager(
   publisherId: Id<"publishers">,
 ) {
   for (const role of STAFF_PUBLISHER_MANAGER_ROLES) {
-    const members = await ctx.db
-      .query("publisherMembers")
-      .withIndex("by_publisher_and_role", (q) => q.eq("publisherId", publisherId).eq("role", role))
-      .take(MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN + 1);
-    if (members.length > MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN) return true;
+    let cursor: string | null = null;
+    do {
+      const page = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher_and_role", (q) =>
+          q.eq("publisherId", publisherId).eq("role", role),
+        )
+        .paginate({ cursor, numItems: MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN });
 
-    for (const member of members) {
-      const user = await ctx.db.get(member.userId);
-      if (user?.role === "admin" || user?.role === "moderator") return true;
-    }
+      for (const member of page.page) {
+        const user = await ctx.db.get(member.userId);
+        if (user?.role === "admin" || user?.role === "moderator") return true;
+      }
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor !== null);
   }
   return false;
 }

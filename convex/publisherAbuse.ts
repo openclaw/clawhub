@@ -3215,37 +3215,38 @@ async function hasStaffPublisherManager(
   budget?: StaffPublisherManagerExclusionBudget,
 ) {
   for (const role of STAFF_PUBLISHER_MANAGER_ROLES) {
-    const memberTakeLimit = budget
-      ? Math.min(MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN + 1, budget.remainingDocReads)
-      : MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN + 1;
-    if (memberTakeLimit <= 0) return true;
+    let cursor: string | null = null;
+    do {
+      if (budget?.remainingDocReads !== undefined && budget.remainingDocReads <= 0) return false;
+      const memberTakeLimit = Math.min(
+        MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN,
+        budget?.remainingDocReads ?? MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN,
+      );
+      const page = await ctx.db
+        .query("publisherMembers")
+        .withIndex("by_publisher_and_role", (q) =>
+          q.eq("publisherId", publisherId).eq("role", role),
+        )
+        .paginate({ cursor, numItems: memberTakeLimit });
+      if (budget) budget.remainingDocReads -= page.page.length;
 
-    const members = await ctx.db
-      .query("publisherMembers")
-      .withIndex("by_publisher_and_role", (q) => q.eq("publisherId", publisherId).eq("role", role))
-      .take(memberTakeLimit);
-    if (budget) budget.remainingDocReads -= members.length;
-    if (members.length > MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN) return true;
-    const possiblyTruncatedByBudget =
-      memberTakeLimit < MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN + 1 &&
-      members.length === memberTakeLimit;
-
-    for (const member of members) {
-      const cached = budget?.userStaffCache.get(member.userId);
-      if (cached !== undefined) {
-        if (cached) return true;
-        continue;
+      for (const member of page.page) {
+        const cached = budget?.userStaffCache.get(member.userId);
+        if (cached !== undefined) {
+          if (cached) return true;
+          continue;
+        }
+        if (budget) {
+          if (budget.remainingDocReads <= 0) return false;
+          budget.remainingDocReads -= 1;
+        }
+        const user = await ctx.db.get(member.userId);
+        const isStaff = user?.role === "admin" || user?.role === "moderator";
+        budget?.userStaffCache.set(member.userId, isStaff);
+        if (isStaff) return true;
       }
-      if (budget) {
-        if (budget.remainingDocReads <= 0) return true;
-        budget.remainingDocReads -= 1;
-      }
-      const user = await ctx.db.get(member.userId);
-      const isStaff = user?.role === "admin" || user?.role === "moderator";
-      budget?.userStaffCache.set(member.userId, isStaff);
-      if (isStaff) return true;
-    }
-    if (possiblyTruncatedByBudget) return true;
+      cursor = page.isDone ? null : page.continueCursor;
+    } while (cursor !== null);
   }
   return false;
 }
