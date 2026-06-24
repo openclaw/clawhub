@@ -865,6 +865,7 @@ export function PublisherProfilePage({
                   groups={catalogGroups}
                   selectedGroup={selectedCatalogGroup}
                   onSelectedGroupChange={setSelectedCatalogGroup}
+                  totalCount={catalogSearch.trim() ? undefined : catalogCount}
                   footer={
                     showCatalogLoadMore ? (
                       <div className="publisher-profile-load-more">
@@ -1026,10 +1027,14 @@ export function groupPublisherCatalogItemsByTopic(
     });
 }
 
-export function buildPublisherGroupTabOptions(groups: PublisherCatalogGroup[]) {
-  const totalCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+export function buildPublisherGroupTabOptions(
+  groups: PublisherCatalogGroup[],
+  options?: { totalCount?: number },
+) {
+  const loadedCount = groups.reduce((sum, group) => sum + group.items.length, 0);
+  const allCount = options?.totalCount ?? loadedCount;
   return [
-    { value: "all", label: "All", count: formatCatalogTabCount(totalCount) },
+    { value: "all", label: "All", count: formatCatalogTabCount(allCount) },
     ...groups.map((group) => ({
       value: group.key,
       label: group.title,
@@ -1086,15 +1091,17 @@ export function PublisherGroupedCatalog({
   selectedGroup,
   onSelectedGroupChange,
   footer,
+  totalCount,
 }: {
   groups: PublisherCatalogGroup[];
   selectedGroup: string;
   onSelectedGroupChange: (value: string) => void;
   footer?: ReactNode;
+  totalCount?: number;
 }) {
   const activeGroup =
     selectedGroup === "all" ? null : (groups.find((group) => group.key === selectedGroup) ?? null);
-  const groupTabOptions = buildPublisherGroupTabOptions(groups);
+  const groupTabOptions = buildPublisherGroupTabOptions(groups, { totalCount });
 
   return (
     <div className="publisher-profile-grouped-catalog">

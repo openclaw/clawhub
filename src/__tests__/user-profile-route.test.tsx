@@ -5,6 +5,7 @@ import type { ComponentType, ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildPublisherCatalogCategoryOptions,
+  buildPublisherGroupTabOptions,
   formatRelativeUpdatedAt,
   getCatalogItemShortTypeLabel,
   groupPublisherCatalogItemsByTopic,
@@ -263,7 +264,7 @@ describe("user profile route", () => {
     render(<Component />);
 
     const groupTabs = screen.getByRole("radiogroup", { name: "Catalog groups" });
-    expect(within(groupTabs).getByRole("radio", { name: /all 3/i })).toBeTruthy();
+    expect(within(groupTabs).getByRole("radio", { name: /all 136/i })).toBeTruthy();
     expect(within(groupTabs).getByRole("radio", { name: /gpu development 1/i })).toBeTruthy();
     expect(within(groupTabs).getByRole("radio", { name: /travel 1/i })).toBeTruthy();
     expect(within(groupTabs).getByRole("radio", { name: /uncategorized 1/i })).toBeTruthy();
@@ -282,6 +283,83 @@ describe("user profile route", () => {
     expect(screen.queryByText("GPU Helper")).toBeNull();
     expect(screen.queryByText("Orphan Helper")).toBeNull();
   });
+
+  it("shows publisher total in grouped All tab while catalog is paginated", async () => {
+    const openclawPublisher = {
+      ...publisher,
+      handle: "openclaw",
+      displayName: "OpenClaw",
+      stats: {
+        ...publisher.stats,
+        skills: 6,
+        packages: 59,
+      },
+    };
+    loaderDataMock.mockReturnValue({ publisher: openclawPublisher });
+    queryMock.mockImplementation((_query, args: Record<string, unknown> | "skip") => {
+      if (args === "skip") return undefined;
+      if ("publisherHandle" in args) return { publisher: openclawPublisher, members: [] };
+      if ("kind" in args) return null;
+      return openclawPublisher;
+    });
+    paginatedQueryMock.mockReturnValue({
+      loadMore: vi.fn(),
+      results: [
+        {
+          _id: "packages:codex",
+          kind: "plugin",
+          displayName: "Codex",
+          summary: null,
+          topics: ["Codex"],
+          icon: null,
+          href: "/openclaw/plugins/codex",
+          installs: 1,
+          stars: 0,
+          isOfficial: true,
+          updatedAt: 1,
+        },
+        {
+          _id: "packages:diagnostics",
+          kind: "plugin",
+          displayName: "Diagnostics",
+          summary: null,
+          topics: ["Diagnostics"],
+          icon: null,
+          href: "/openclaw/plugins/diagnostics",
+          installs: 1,
+          stars: 0,
+          isOfficial: true,
+          updatedAt: 1,
+        },
+        ...Array.from({ length: 10 }, (_, index) => ({
+          _id: `packages:plugin-${index}`,
+          kind: "plugin" as const,
+          displayName: `Plugin ${index}`,
+          summary: null,
+          topics: ["Feishu"],
+          icon: null,
+          href: `/openclaw/plugins/plugin-${index}`,
+          installs: 1,
+          stars: 0,
+          isOfficial: true,
+          updatedAt: 1,
+        })),
+      ],
+      status: "CanLoadMore",
+    });
+
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    fireEvent.click(screen.getByRole("button", { name: /plugins 59/i }));
+
+    const groupTabs = screen.getByRole("radiogroup", { name: "Catalog groups" });
+    expect(within(groupTabs).getByRole("radio", { name: /all 59/i })).toBeTruthy();
+    expect(within(groupTabs).getByRole("radio", { name: /codex 1/i })).toBeTruthy();
+    expect(within(groupTabs).getByRole("radio", { name: /feishu 10/i })).toBeTruthy();
+  });
 });
 
 describe("publisher profile helpers", () => {
@@ -294,6 +372,46 @@ describe("publisher profile helpers", () => {
     );
     expect(resolveDefaultCatalogTab({ stats: { skills: 5, packages: 2 } } as never)).toBe("skills");
     expect(resolveDefaultCatalogTab({ stats: { skills: 0, packages: 0 } } as never)).toBe("skills");
+  });
+
+  it("uses publisher total for grouped All tab when provided", () => {
+    const groups = groupPublisherCatalogItemsByTopic([
+      {
+        _id: "packages:a",
+        kind: "plugin",
+        displayName: "A",
+        summary: null,
+        topics: ["Codex"],
+        icon: null,
+        href: "/openclaw/plugins/a",
+        installs: 0,
+        stars: 0,
+        isOfficial: false,
+        updatedAt: 1,
+      },
+      {
+        _id: "packages:b",
+        kind: "plugin",
+        displayName: "B",
+        summary: null,
+        topics: ["Diagnostics"],
+        icon: null,
+        href: "/openclaw/plugins/b",
+        installs: 0,
+        stars: 0,
+        isOfficial: false,
+        updatedAt: 1,
+      },
+    ]);
+
+    expect(
+      buildPublisherGroupTabOptions(groups).find((option) => option.value === "all")?.count,
+    ).toBe("2");
+    expect(
+      buildPublisherGroupTabOptions(groups, { totalCount: 59 }).find(
+        (option) => option.value === "all",
+      )?.count,
+    ).toBe("59");
   });
 
   it("parses publisher-scoped plugin routes from catalog hrefs", () => {
