@@ -44,6 +44,12 @@ describe("home app icons", () => {
 
       expect(svg.trimStart(), id).toMatch(/^(<\?xml[^>]*>\s*)?<svg\b/);
       expect(svg, id).not.toMatch(/<image\b|data:image|base64/i);
+
+      const size = readSvgViewport(svg);
+      expect(
+        Math.max(size.width, size.height) / Math.min(size.width, size.height),
+        id,
+      ).toBeLessThanOrEqual(1.5);
     }
 
     for (const src of imageIconSrcs) {
@@ -99,3 +105,15 @@ describe("home app icons", () => {
     expect(icon.src).toBe("/app-icons/openclaw.svg");
   });
 });
+
+function readSvgViewport(svg: string) {
+  const viewBox = svg.match(/\bviewBox="([^"]+)"/)?.[1];
+  if (viewBox) {
+    const [, , width, height] = viewBox.split(/[ ,]+/).map(Number);
+    return { width, height };
+  }
+
+  const width = Number(svg.match(/\bwidth="([0-9.]+)"/)?.[1]);
+  const height = Number(svg.match(/\bheight="([0-9.]+)"/)?.[1]);
+  return { width, height };
+}
