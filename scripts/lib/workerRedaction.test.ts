@@ -62,6 +62,7 @@ describe("worker transport redaction", () => {
       "GITHUB_TOKEN=runtime-token-secret",
       "CONVEX_DEPLOY_KEY=convex-deploy-secret",
       "api_key=plugin-api-token",
+      'PRIVATE_KEY="secret-part-one,secret-part-two"',
       'token=["array-token-secret"]',
       'Authorization: ["array-auth-secret"]',
       '{"token":["json-token-secret"],"authorization":["json-auth-secret"]}',
@@ -80,6 +81,8 @@ describe("worker transport redaction", () => {
     expect(redacted).not.toContain("runtime-token-secret");
     expect(redacted).not.toContain("convex-deploy-secret");
     expect(redacted).not.toContain("plugin-api-token");
+    expect(redacted).not.toContain("secret-part-one");
+    expect(redacted).not.toContain("secret-part-two");
     expect(redacted).not.toContain("array-token-secret");
     expect(redacted).not.toContain("array-auth-secret");
     expect(redacted).not.toContain("json-token-secret");

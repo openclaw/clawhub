@@ -1,10 +1,10 @@
-const WORKER_SECRET_VALUE_PATTERN_SOURCE = String.raw`(?:\[\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\]\s"',}]+)(?:\s*,\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\]\s"',}]+))*\s*\]|"[^"\r\n,}]*"|'[^'\r\n,}]*'|[^\s"',}]+)`;
+const WORKER_SECRET_VALUE_PATTERN_SOURCE = String.raw`(?:\[\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\]\s"',}]+)(?:\s*,\s*(?:"[^"\r\n]*"|'[^'\r\n]*'|[^\]\s"',}]+))*\s*\]|"[^"\r\n]*"|'[^'\r\n]*'|[^\s"',}]+)`;
 const WORKER_SECRET_KEY_VALUE_PATTERN = new RegExp(
-  String.raw`\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|[_-]KEY|AUTHORIZATION|CREDENTIAL)[A-Z0-9_]*|token|secret|password|api[_-]?key|authorization|credential)(["']?\s*[:=]\s*["']?)${WORKER_SECRET_VALUE_PATTERN_SOURCE}`,
+  String.raw`\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|[_-]KEY|AUTHORIZATION|CREDENTIAL)[A-Z0-9_]*|token|secret|password|api[_-]?key|authorization|credential)(["']?\s*[:=]\s*)${WORKER_SECRET_VALUE_PATTERN_SOURCE}`,
   "gi",
 );
 const WORKER_AUTHORIZATION_KEY_VALUE_PATTERN = new RegExp(
-  String.raw`\b(authorization)(["']?\s*[:=]\s*["']?)${WORKER_SECRET_VALUE_PATTERN_SOURCE}`,
+  String.raw`\b(authorization)(["']?\s*[:=]\s*)${WORKER_SECRET_VALUE_PATTERN_SOURCE}`,
   "gi",
 );
 const WORKER_COMMON_TOKEN_PATTERN =
