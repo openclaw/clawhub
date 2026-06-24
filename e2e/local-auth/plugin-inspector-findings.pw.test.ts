@@ -139,21 +139,21 @@ async function expectDashboardWarningLink(page: Page, warningName: string) {
   return dashboardWarningLink;
 }
 
-async function expectValidationTabSelected(page: Page, warningName: string) {
+async function expectValidationSectionVisible(page: Page, warningName: string) {
   const detailHref = buildPluginValidationHref(warningName);
-  const validationTab = page.getByRole("tab", { name: /Validation \(\d+\)/ });
+  const validationSection = page.locator("#validation");
 
   for (let attempt = 1; attempt <= 6; attempt += 1) {
     await waitForHydration(page).catch(() => {});
-    if ((await validationTab.count()) > 0) {
-      await expect(validationTab).toHaveAttribute("aria-selected", "true", { timeout: 10_000 });
+    if ((await validationSection.count()) > 0) {
+      await expect(validationSection).toBeVisible({ timeout: 10_000 });
       return;
     }
     await page.goto(detailHref, { waitUntil: "domcontentloaded" });
     await page.waitForTimeout(500 * attempt);
   }
 
-  await expect(validationTab).toHaveAttribute("aria-selected", "true", { timeout: 10_000 });
+  await expect(validationSection).toBeVisible({ timeout: 10_000 });
 }
 
 async function publishWarningPluginWithRetry(args: {
@@ -271,13 +271,13 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
   await expect(page).toHaveURL(
     new RegExp(`${escapeRegExp(buildPluginValidationHref(warningName))}$`),
   );
-  await expectValidationTabSelected(page, warningName);
+  await expectValidationSectionVisible(page, warningName);
   await expect(
-    page.locator(".plugin-warning-item-header code").filter({
+    page.locator(".plugin-warning-item-code").filter({
       hasText: /^legacy-before-agent-start$/,
     }),
   ).toBeVisible();
-  await expect(page.getByText("deprecation-warning")).toBeVisible();
+  await expect(page.getByText(/Warning · Deprecated API · P2/)).toBeVisible();
   await expect(page.getByText(/before_agent_start hook compatibility/i)).toBeVisible();
   await captureProof(page, testInfo, "04-plugin-public-warnings");
 

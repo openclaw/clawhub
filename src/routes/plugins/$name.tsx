@@ -9,6 +9,7 @@ import { useMutation, useQuery } from "convex/react";
 import {
   AlertTriangle,
   Braces,
+  ChevronRight,
   Download,
   FileArchive,
   Files,
@@ -16,6 +17,7 @@ import {
   HardDrive,
   Info,
   Package,
+  Plus,
   Server,
   Sparkles,
   Tag,
@@ -34,7 +36,6 @@ import {
 import { useDownloadsSidebarMetricBlock } from "../../components/DownloadsMetricCard";
 import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
-import { OpenClawCliInstallCommand } from "../../components/SkillInstallSurface";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
 import { OfficialTag } from "../../components/OfficialBadge";
@@ -44,6 +45,7 @@ import {
 } from "../../components/PluginVersionsPanel";
 import { SidebarMetadata } from "../../components/SidebarMetadata";
 import { SkillDetailSkeleton } from "../../components/skeletons/SkillDetailSkeleton";
+import { OpenClawCliInstallCommand } from "../../components/SkillInstallSurface";
 import { Alert, AlertDescription } from "../../components/ui/alert";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
@@ -104,8 +106,7 @@ type PluginDetailTab =
   | "compatibility"
   | "configuration"
   | "mcpServers"
-  | "skills"
-  | "validation";
+  | "skills";
 
 type PluginInspectorFinding = {
   packageName: string;
@@ -299,14 +300,13 @@ function formatArtifactSize(value: number | null | undefined): string | null {
 
 function pluginDetailTabFromHash(hashValue: string): PluginDetailTab {
   const hash = hashValue.replace("#", "");
-  if (hash === "warnings") return "validation";
+  if (hash === "warnings" || hash === "validation") return "readme";
   if (hash === "verification") return "compatibility";
   if (hash === "mcp-servers" || hash === "mcpServers") return "mcpServers";
   return hash === "versions" ||
     hash === "compatibility" ||
     hash === "configuration" ||
-    hash === "skills" ||
-    hash === "validation"
+    hash === "skills"
     ? hash
     : "readme";
 }
@@ -323,8 +323,6 @@ function PluginDetailTabs({
   configurationPanel,
   mcpServersPanel,
   skillsPanel,
-  validationPanel,
-  validationCount,
 }: {
   activeTab: PluginDetailTab;
   setActiveTab: (tab: PluginDetailTab) => void;
@@ -335,8 +333,6 @@ function PluginDetailTabs({
   configurationPanel: ReactNode | null;
   mcpServersPanel: ReactNode | null;
   skillsPanel: ReactNode | null;
-  validationPanel: ReactNode | null;
-  validationCount: number;
 }) {
   const [hasMountedVersions, setHasMountedVersions] = useState(activeTab === "versions");
   const [isReadmeExpanded, setIsReadmeExpanded] = useState(false);
@@ -374,9 +370,7 @@ function PluginDetailTabs({
             ? "mcpServers"
             : activeTab === "skills" && skillsPanel
               ? "skills"
-              : activeTab === "validation" && validationPanel
-                ? "validation"
-                : "readme";
+              : "readme";
   useEffect(() => {
     if (effectiveActiveTab === "versions") setHasMountedVersions(true);
   }, [effectiveActiveTab]);
@@ -415,9 +409,7 @@ function PluginDetailTabs({
           ? mcpServersPanel
           : effectiveActiveTab === "skills" && skillsPanel
             ? skillsPanel
-            : effectiveActiveTab === "validation" && validationPanel
-              ? validationPanel
-              : readmePanel;
+            : readmePanel;
 
   return (
     <div className="tab-card detail-mobile-tabs">
@@ -496,19 +488,6 @@ function PluginDetailTabs({
         >
           Versions
         </button>
-        {validationPanel ? (
-          <button
-            id="plugin-tab-validation"
-            className={`tab-button${effectiveActiveTab === "validation" ? " is-active" : ""}`}
-            type="button"
-            role="tab"
-            aria-selected={effectiveActiveTab === "validation"}
-            aria-controls="plugin-tabpanel-validation"
-            onClick={() => selectTab("validation")}
-          >
-            Validation ({validationCount})
-          </button>
-        ) : null}
       </div>
       {effectiveActiveTab !== "versions" ? (
         <div
@@ -700,6 +679,297 @@ function PluginManifestSkillsPanel({
   );
 }
 
+const PLUGIN_VALIDATE_CLI = "clawhub package validate <path-to-plugin>";
+
+const INSPECTOR_ISSUE_CLASS_LABELS: Record<string, string> = {
+  "upstream-metadata": "Metadata",
+  "deprecation-warning": "Deprecated API",
+  "compatibility-error": "Compatibility",
+  "compatibility-warning": "Compatibility",
+};
+
+function formatInspectorIssueClassLabel(issueClass?: string) {
+  if (!issueClass || issueClass === "inspector-gap") return null;
+  if (INSPECTOR_ISSUE_CLASS_LABELS[issueClass]) {
+    return INSPECTOR_ISSUE_CLASS_LABELS[issueClass];
+  }
+  return issueClass
+    .split("-")
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(" ");
+}
+
+function parseInspectorPriority(severity?: string) {
+  const match = severity?.match(/^P(\d+)$/i);
+  return match ? Number.parseInt(match[1] ?? "99", 10) : 99;
+}
+
+function compareInspectorFindings(a: PluginInspectorFinding, b: PluginInspectorFinding) {
+  const priorityDiff = parseInspectorPriority(a.severity) - parseInspectorPriority(b.severity);
+  if (priorityDiff !== 0) return priorityDiff;
+  const categoryA = formatInspectorIssueClassLabel(a.issueClass) ?? "";
+  const categoryB = formatInspectorIssueClassLabel(b.issueClass) ?? "";
+  return categoryA.localeCompare(categoryB);
+}
+
+function formatValidationSummaryHint(errorCount: number, warningCount: number) {
+  if (errorCount > 0 && warningCount > 0) {
+    return "Fix errors first to avoid publishing or compatibility issues.";
+  }
+  if (errorCount > 0) {
+    return errorCount === 1 ? "1 error needs attention." : `${errorCount} errors need attention.`;
+  }
+  if (warningCount > 0) {
+    return warningCount === 1
+      ? "No blocking errors. 1 warning should be reviewed."
+      : `No blocking errors. ${warningCount} warnings should be reviewed.`;
+  }
+  return null;
+}
+
+function formatValidationFindingMessage(message: string) {
+  const trimmed = message.trim();
+  if (!trimmed) return trimmed;
+  const normalized = trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+  return normalized.endsWith(".") ? normalized : `${normalized}.`;
+}
+
+function buildValidationAgentFixPrompt(args: {
+  packageName: string;
+  releaseVersion?: string | null;
+  findings: PluginInspectorFinding[];
+}) {
+  const sortedFindings = [...args.findings].sort(compareInspectorFindings);
+  const errors = sortedFindings.filter((finding) => finding.findingKind === "error");
+  const warnings = sortedFindings.filter((finding) => finding.findingKind !== "error");
+
+  const lines = [
+    `Fix the following OpenClaw plugin validation findings for package "${args.packageName}".`,
+  ];
+  if (args.releaseVersion) {
+    lines.push(`Validated release: v${args.releaseVersion}.`);
+  }
+  lines.push(
+    "",
+    "Make the minimum code and manifest changes needed to resolve every issue below.",
+    "After editing, run locally:",
+    PLUGIN_VALIDATE_CLI,
+    "",
+  );
+
+  const appendFindings = (title: string, findings: PluginInspectorFinding[]) => {
+    if (findings.length === 0) return;
+    lines.push(`## ${title}`, "");
+    for (const finding of findings) {
+      const kind = finding.findingKind === "error" ? "Error" : "Warning";
+      const categoryLabel = formatInspectorIssueClassLabel(finding.issueClass);
+      const heading = [finding.code, categoryLabel, finding.severity].filter(Boolean).join(" · ");
+      lines.push(`### ${heading}`);
+      lines.push(`**${kind}:** ${formatValidationFindingMessage(finding.message)}`);
+      if (finding.authorRemediation?.summary) {
+        lines.push(`**How to fix:** ${finding.authorRemediation.summary}`);
+      }
+      if (finding.authorRemediation?.docsUrl) {
+        lines.push(`**Docs:** ${finding.authorRemediation.docsUrl}`);
+      }
+      const metadataLine = [
+        finding.version ? `Release v${finding.version}` : null,
+        finding.targetOpenClawVersion ? `Target OpenClaw ${finding.targetOpenClawVersion}` : null,
+      ]
+        .filter(Boolean)
+        .join(" · ");
+      if (metadataLine) {
+        lines.push(`**Context:** ${metadataLine}`);
+      }
+      if (finding.evidence && finding.evidence.length > 0) {
+        lines.push("**Evidence:**");
+        for (const entry of finding.evidence) {
+          lines.push(`- ${entry}`);
+        }
+      }
+      lines.push("");
+    }
+  };
+
+  if (errors.length > 0) {
+    appendFindings(`Errors (${errors.length}) — fix first`, errors);
+  }
+  if (warnings.length > 0) {
+    appendFindings(`Warnings (${warnings.length})`, warnings);
+  }
+
+  lines.push("Confirm all findings are resolved before publishing a new release.");
+  return lines.join("\n").trim();
+}
+
+function buildDevValidationFindingMocks(
+  template: PluginInspectorFinding,
+): PluginInspectorFinding[] {
+  return [
+    {
+      ...template,
+      code: "package-min-host-version-drift",
+      findingKind: "warning",
+      issueClass: "upstream-metadata",
+      severity: "P2",
+      message: "OpenClaw package minimum host version drifts from build target.",
+      authorRemediation: {
+        summary:
+          "Set the package minimum host version to the OpenClaw version range the plugin was built and tested against.",
+        docsUrl:
+          "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-min-host-version-drift",
+      },
+      evidence: ["minHostVersion: >=2026.4.25", "buildOpenClawVersion: 2026.6.9"],
+    },
+    {
+      ...template,
+      code: "missing-expected-seam",
+      findingKind: "warning",
+      issueClass: "compatibility-warning",
+      severity: "P3",
+      message: "Plugin manifest does not declare the expected registration seam.",
+      authorRemediation: {
+        summary: "Export activate() and register capabilities through the current plugin API.",
+        docsUrl:
+          "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#missing-expected-seam",
+      },
+      evidence: ["manifest.extensions missing ./dist/index.js reference"],
+    },
+    {
+      ...template,
+      code: "package-plugin-api-compat-missing",
+      findingKind: "error",
+      issueClass: "compatibility-error",
+      severity: "P0",
+      message: "openclaw.compat.pluginApi is missing from package.json.",
+      authorRemediation: {
+        summary:
+          "Add openclaw.compat.pluginApi with the minimum API version your plugin supports.",
+        docsUrl:
+          "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-plugin-api-compat-missing",
+      },
+      evidence: ['package.json has no "openclaw.compat.pluginApi" field'],
+    },
+  ];
+}
+
+function shouldShowDevValidationFindingMocks() {
+  // Visual iteration only — remove before PR. Skips Vitest (`MODE === "test"`).
+  return import.meta.env.DEV && import.meta.env.MODE === "development";
+}
+
+function PluginValidationFindingCard({
+  finding,
+  compact = false,
+}: {
+  finding: PluginInspectorFinding;
+  compact?: boolean;
+}) {
+  const kind = finding.findingKind ?? "warning";
+  const categoryLabel = formatInspectorIssueClassLabel(finding.issueClass);
+  const evidence = finding.evidence ?? [];
+  const visibleEvidence = evidence.slice(0, 4);
+  const hiddenEvidenceCount = Math.max(evidence.length - visibleEvidence.length, 0);
+  const metadataLine = [
+    finding.version ? `Release v${finding.version}` : null,
+    finding.targetOpenClawVersion ? `Target OpenClaw ${finding.targetOpenClawVersion}` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const kicker = [kind === "error" ? "Error" : "Warning", categoryLabel, finding.severity]
+    .filter(Boolean)
+    .join(" · ");
+
+  const summaryCopy = (
+    <div className="plugin-warning-item-copy">
+      <p className="plugin-warning-item-message">
+        {formatValidationFindingMessage(finding.message)}
+      </p>
+      <p className={`plugin-warning-item-tags is-${kind}`}>{kicker}</p>
+    </div>
+  );
+
+  const fixGuide = finding.authorRemediation?.summary ? (
+    <div className="plugin-warning-fix-guide">
+      <p className="plugin-warning-fix-copy">
+        <span className="plugin-warning-fix-guide-label">How to fix</span>{" "}
+        {finding.authorRemediation.summary}
+        {finding.authorRemediation.docsUrl ? (
+          <>
+            {" "}
+            <a
+              className="plugin-warning-fix-link"
+              href={finding.authorRemediation.docsUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View fix guide ↗
+            </a>
+          </>
+        ) : null}
+      </p>
+    </div>
+  ) : null;
+
+  const metadata = metadataLine ? (
+    <p className="plugin-warning-meta-line">{metadataLine}</p>
+  ) : null;
+
+  const evidenceDetails =
+    visibleEvidence.length > 0 ? (
+      <details className="plugin-warning-evidence-details">
+        <summary className="plugin-warning-evidence-summary">
+          <span className="plugin-warning-evidence-summary-label">Technical evidence</span>
+          <ChevronRight className="plugin-warning-evidence-chevron" size={14} aria-hidden="true" />
+        </summary>
+        <div className="plugin-warning-evidence-block">
+          {visibleEvidence.map((entry) => (
+            <div className="plugin-warning-evidence-line" key={entry}>
+              {entry}
+            </div>
+          ))}
+          {hiddenEvidenceCount > 0 ? (
+            <p className="plugin-warning-evidence-more">+{hiddenEvidenceCount} more</p>
+          ) : null}
+        </div>
+      </details>
+    ) : null;
+
+  const body = (
+    <div className="plugin-warning-item-body">
+      {fixGuide}
+      {metadata}
+      {evidenceDetails}
+    </div>
+  );
+
+  if (compact) {
+    return (
+      <details
+        className={`plugin-warning-item plugin-warning-item-details is-${kind}`}
+        open={kind === "error"}
+      >
+        <summary className="plugin-warning-item-summary">
+          {summaryCopy}
+          <code className="plugin-warning-item-code">{finding.code}</code>
+          <ChevronRight className="plugin-warning-item-chevron" size={14} aria-hidden="true" />
+        </summary>
+        {body}
+      </details>
+    );
+  }
+
+  return (
+    <article className={`plugin-warning-item is-${kind}`}>
+      <div className="plugin-warning-item-main">
+        {summaryCopy}
+        <code className="plugin-warning-item-code">{finding.code}</code>
+      </div>
+      {body}
+    </article>
+  );
+}
+
 function PluginDetailRoute() {
   const { name } = Route.useParams();
   const loaderData = Route.useLoaderData() as PluginDetailLoaderData;
@@ -766,6 +1036,13 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const authorInspectorFindings = Array.isArray(inspectorFindings)
     ? inspectorFindings.filter((finding) => finding.authorRemediation?.summary)
     : undefined;
+  const displayInspectorFindings =
+    authorInspectorFindings && shouldShowDevValidationFindingMocks()
+      ? [
+          ...authorInspectorFindings,
+          ...buildDevValidationFindingMocks(authorInspectorFindings[0]),
+        ]
+      : authorInspectorFindings;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
   const [mobileDetailPanel, setMobileDetailPanel] = useState<"content" | "stats">("content");
   const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
@@ -951,7 +1228,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         skills={pluginManifestSummary.bundledSkills}
       />
     ) : null;
-  const validationCount = authorInspectorFindings?.length ?? validationSummary?.findingCount ?? 0;
   const incompatibilityAlert =
     validationSummary &&
     validationSummary.errorCount > 0 &&
@@ -964,73 +1240,144 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         </AlertDescription>
       </Alert>
     ) : null;
-  const validationPanel =
-    authorInspectorFindings && authorInspectorFindings.length > 0 ? (
-      <div className="plugin-tab-panel plugin-warnings-panel">
-        <Alert variant="info" role="status">
-          <Info size={16} aria-hidden="true" />
-          <AlertDescription>
-            <span>
-              Validation outputs are only visible to plugin owners and admins. Run locally using the
-              CLI:
-            </span>
-            <code className="plugin-validation-command">
-              clawhub package validate &lt;path-to-plugin&gt;
-            </code>
-          </AlertDescription>
-        </Alert>
-        <div className="plugin-warning-list">
-          {authorInspectorFindings.map((finding) => (
-            <article
-              key={`${finding.version}:${finding.code}:${finding.message}`}
-              className={`plugin-warning-item is-${finding.findingKind ?? "warning"}`}
-            >
-              <div className="plugin-warning-item-header">
-                <Badge variant={finding.findingKind === "error" ? "destructive" : "warning"}>
-                  {finding.findingKind === "error" ? "Error" : "Warning"}
-                </Badge>
-                <code>{finding.code}</code>
-                {finding.issueClass ? <span>{finding.issueClass}</span> : null}
-                {finding.severity ? <span>{finding.severity}</span> : null}
-              </div>
-              <p>{finding.message}</p>
-              <dl className="plugin-warning-meta">
-                <div>
-                  <dt>Plugin version</dt>
-                  <dd>v{finding.version}</dd>
-                </div>
-                {finding.targetOpenClawVersion ? (
-                  <div>
-                    <dt>Target</dt>
-                    <dd>OpenClaw {finding.targetOpenClawVersion}</dd>
-                  </div>
-                ) : null}
-              </dl>
-              {finding.evidence && finding.evidence.length > 0 ? (
-                <ul className="plugin-warning-evidence">
-                  {finding.evidence.slice(0, 4).map((entry) => (
-                    <li key={entry}>{entry}</li>
-                  ))}
-                </ul>
-              ) : null}
-              {finding.authorRemediation?.summary ? (
-                <div className="plugin-warning-remediation">
-                  <h4>Fix</h4>
-                  <p>{finding.authorRemediation.summary}</p>
-                  {finding.authorRemediation.docsUrl ? (
-                    <>
-                      <h4>Docs</h4>
-                      <a href={finding.authorRemediation.docsUrl} target="_blank" rel="noreferrer">
-                        {finding.authorRemediation.docsUrl}
-                      </a>
-                    </>
-                  ) : null}
-                </div>
-              ) : null}
-            </article>
-          ))}
-        </div>
+  const validationErrors = (
+    displayInspectorFindings?.filter((finding) => finding.findingKind === "error") ?? []
+  ).sort(compareInspectorFindings);
+  const validationWarnings = (
+    displayInspectorFindings?.filter((finding) => finding.findingKind !== "error") ?? []
+  ).sort(compareInspectorFindings);
+  const showValidationGroups = validationErrors.length > 0 && validationWarnings.length > 0;
+  const validationSummaryHint = formatValidationSummaryHint(
+    validationErrors.length,
+    validationWarnings.length,
+  );
+  const validationAgentFixPrompt =
+    authorInspectorFindings && authorInspectorFindings.length > 0
+      ? buildValidationAgentFixPrompt({
+          packageName: pkg.name,
+          releaseVersion: latestRelease?.version ?? pkg.latestVersion ?? null,
+          findings: authorInspectorFindings,
+        })
+      : null;
+  const compactFindingCards = (displayInspectorFindings?.length ?? 0) > 1;
+  const validationAgentPromptCard = validationAgentFixPrompt ? (
+    <div
+      className="plugin-validation-agent-prompt-card"
+      aria-labelledby="validation-agent-prompt-label"
+    >
+      <div className="plugin-validation-agent-prompt-copy">
+        <span id="validation-agent-prompt-label" className="plugin-validation-agent-prompt-label">
+          Fix with your agent
+        </span>
+        <p className="plugin-validation-agent-prompt-hint">
+          Paste into your coding agent to fix this check.
+        </p>
       </div>
+      <InstallCopyButton
+        text={validationAgentFixPrompt}
+        label="Copy prompt"
+        ariaLabel="Copy agent fix prompt"
+        className="plugin-validation-agent-prompt-button"
+      />
+    </div>
+  ) : null;
+  const validationPanel =
+    displayInspectorFindings && displayInspectorFindings.length > 0 ? (
+      <section
+        id="validation"
+        className="plugin-validation-panel"
+        aria-labelledby="validation-heading"
+      >
+        <header className="plugin-validation-overview">
+          <div className="plugin-validation-panel-title-row">
+            <h2 id="validation-heading" className="plugin-validation-panel-title">
+              Validation findings
+            </h2>
+            <span className="plugin-validation-panel-stats" aria-label="Validation summary">
+              <span
+                className={
+                  validationErrors.length > 0
+                    ? "plugin-validation-panel-stat is-error"
+                    : "plugin-validation-panel-stat is-muted"
+                }
+              >
+                {validationErrors.length}{" "}
+                {validationErrors.length === 1 ? "error" : "errors"}
+              </span>
+              <span className="plugin-validation-panel-stats-sep" aria-hidden="true">
+                ·
+              </span>
+              <span
+                className={
+                  validationWarnings.length > 0
+                    ? "plugin-validation-panel-stat is-warning"
+                    : "plugin-validation-panel-stat is-muted"
+                }
+              >
+                {validationWarnings.length}{" "}
+                {validationWarnings.length === 1 ? "warning" : "warnings"}
+              </span>
+            </span>
+          </div>
+          {validationSummaryHint ? (
+            <p className="plugin-validation-summary-hint">{validationSummaryHint}</p>
+          ) : null}
+          <div className="plugin-validation-cli-card" aria-labelledby="validation-cli-label">
+            <span id="validation-cli-label" className="plugin-validation-cli-label">
+              Run locally
+            </span>
+            <code className="plugin-validation-command">{PLUGIN_VALIDATE_CLI}</code>
+            <InstallCopyButton
+              text={PLUGIN_VALIDATE_CLI}
+              ariaLabel="Copy validate command"
+              showLabel={false}
+              className="plugin-validation-cli-copy"
+            />
+          </div>
+          {validationAgentPromptCard}
+        </header>
+        <section
+          className="plugin-validation-panel-findings"
+          aria-label="Issues to review"
+        >
+          {validationErrors.length > 0 ? (
+            <>
+              {showValidationGroups ? (
+                <h4 className="plugin-validation-group-label is-error">
+                  Errors ({validationErrors.length})
+                </h4>
+              ) : null}
+              <div className="plugin-warning-list">
+                {validationErrors.map((finding) => (
+                  <PluginValidationFindingCard
+                    key={`${finding.version}:${finding.code}:${finding.message}`}
+                    finding={finding}
+                    compact={compactFindingCards}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+          {validationWarnings.length > 0 ? (
+            <>
+              {showValidationGroups ? (
+                <h4 className="plugin-validation-group-label is-warning">
+                  Warnings ({validationWarnings.length})
+                </h4>
+              ) : null}
+              <div className="plugin-warning-list">
+                {validationWarnings.map((finding) => (
+                  <PluginValidationFindingCard
+                    key={`${finding.version}:${finding.code}:${finding.message}`}
+                    finding={finding}
+                    compact={compactFindingCards}
+                  />
+                ))}
+              </div>
+            </>
+          ) : null}
+        </section>
+      </section>
     ) : null;
   const sourceRepoLink = verification?.sourceRepo
     ? (() => {
@@ -1184,7 +1531,36 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 </a>
               </nav>
               <div className="skill-hero-heading-stack">
-                {headerCategories.length > 0 || headerTopics.length > 0 ? (
+                {showCatalogMetadataEmptyState ? (
+                  <div
+                    className="plugin-catalog-empty-alert plugin-catalog-empty-alert--hero"
+                    role="status"
+                  >
+                    <span className="plugin-catalog-empty-alert-visibility">
+                      Visible only to you
+                    </span>
+                    <div className="plugin-catalog-empty-alert-row">
+                      <div className="plugin-catalog-empty-alert-icon" aria-hidden="true">
+                        <Sparkles size={14} />
+                      </div>
+                      <span className="plugin-catalog-empty-alert-title">
+                        Categorize your plugin
+                      </span>
+                      <span className="skill-hero-taxonomy-separator" aria-hidden="true" />
+                      <Button
+                        type="button"
+                        variant="link"
+                        size="xs"
+                        className="plugin-catalog-empty-alert-cta"
+                        aria-label="Add categories and topics"
+                        onClick={() => setIsCatalogMetadataDialogOpen(true)}
+                      >
+                        <Plus size={13} aria-hidden="true" />
+                        Add categories & topics
+                      </Button>
+                    </div>
+                  </div>
+                ) : headerCategories.length > 0 || headerTopics.length > 0 ? (
                   <div className="skill-hero-taxonomy-row" aria-label="Plugin metadata">
                     {headerCategories.length > 0 ? (
                       <div className="skill-category-meta-list" aria-label="Categories">
@@ -1272,57 +1648,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
             </div>
           }
         >
-          <div className="plugin-install-stack detail-mobile-install">
-            {incompatibilityAlert}
-            <Card className="skill-install-command-card">
-              <CardHeader className="detail-hero-summary-row plugin-install-card-header">
-                <CardTitle className="skill-install-panel-title">Install</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="skill-install-command-wrap">
-                  <div className="skill-install-command-shell skill-install-command-shell-cli">
-                    <span className="skill-install-command-prompt" aria-hidden="true">
-                      $
-                    </span>
-                    <pre className="skill-install-command">
-                      <OpenClawCliInstallCommand command={installSnippet} />
-                    </pre>
-                    <InstallCopyButton
-                      text={installSnippet}
-                      ariaLabel="Copy plugin install command"
-                      showLabel={false}
-                      className="skill-install-command-inline-button"
-                    />
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            {showCatalogMetadataEmptyState ? (
-              <div className="plugin-catalog-empty-alert" role="status">
-                <div className="plugin-catalog-empty-alert-icon" aria-hidden="true">
-                  <Sparkles size={15} />
-                </div>
-                <div className="plugin-catalog-empty-alert-copy">
-                  <div className="plugin-catalog-empty-alert-heading">
-                    <span>Categorize this plugin</span>
-                    <span className="plugin-catalog-empty-alert-visibility">
-                      Visible only to you
-                    </span>
-                  </div>
-                  <p>Add categories and topics.</p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="plugin-catalog-empty-alert-cta"
-                  onClick={() => setIsCatalogMetadataDialogOpen(true)}
-                >
-                  Categorize
-                </Button>
-              </div>
-            ) : null}
-          </div>
           <div className="detail-mobile-master-tabs" data-active={mobileDetailPanel}>
             <div
               className="detail-mobile-master-tab-list"
@@ -1365,6 +1690,33 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
               aria-labelledby="plugin-mobile-master-tab-content"
               hidden={mobileDetailPanel !== "content"}
             >
+              {validationPanel}
+              <div className="plugin-install-stack detail-mobile-install">
+                {incompatibilityAlert}
+                <Card className="skill-install-command-card">
+                  <CardHeader className="detail-hero-summary-row plugin-install-card-header">
+                    <CardTitle className="skill-install-panel-title">Install</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="skill-install-command-wrap">
+                      <div className="skill-install-command-shell skill-install-command-shell-cli">
+                        <span className="skill-install-command-prompt" aria-hidden="true">
+                          $
+                        </span>
+                        <pre className="skill-install-command">
+                          <OpenClawCliInstallCommand command={installSnippet} />
+                        </pre>
+                        <InstallCopyButton
+                          text={installSnippet}
+                          ariaLabel="Copy plugin install command"
+                          showLabel={false}
+                          className="skill-install-command-inline-button"
+                        />
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
               <PluginDetailTabs
                 activeTab={activeTab}
                 setActiveTab={setActiveTab}
@@ -1375,8 +1727,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 configurationPanel={configurationPanel}
                 mcpServersPanel={mcpServersPanel}
                 skillsPanel={skillsPanel}
-                validationPanel={validationPanel}
-                validationCount={validationCount}
               />
             </div>
             {pluginSidebarStatsContent && isMobileDetailLayout ? (
@@ -1397,8 +1747,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         <Dialog open={isCatalogMetadataDialogOpen} onOpenChange={setIsCatalogMetadataDialogOpen}>
           <DialogContent className="plugin-catalog-metadata-dialog">
             <DialogHeader>
-              <DialogTitle>Catalog metadata</DialogTitle>
-              <DialogDescription>Choose categories and topics for this plugin.</DialogDescription>
+              <DialogTitle>Categorize this plugin</DialogTitle>
+              <DialogDescription>
+                Select up to 3 categories and add topics to organize this plugin.
+              </DialogDescription>
             </DialogHeader>
             <CatalogMetadataEditor
               kind="plugin"

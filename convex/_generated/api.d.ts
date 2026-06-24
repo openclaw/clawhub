@@ -103,6 +103,7 @@ import type * as lib_reservedSlugs from "../lib/reservedSlugs.js";
 import type * as lib_retentionPolicy from "../lib/retentionPolicy.js";
 import type * as lib_searchText from "../lib/searchText.js";
 import type * as lib_securityPrompt from "../lib/securityPrompt.js";
+import type * as lib_securityScanPolicy from "../lib/securityScanPolicy.js";
 import type * as lib_skillBackfill from "../lib/skillBackfill.js";
 import type * as lib_skillCards from "../lib/skillCards.js";
 import type * as lib_skillDownloadBackfill from "../lib/skillDownloadBackfill.js";
@@ -255,6 +256,7 @@ declare const fullApi: ApiFromModules<{
   "lib/retentionPolicy": typeof lib_retentionPolicy;
   "lib/searchText": typeof lib_searchText;
   "lib/securityPrompt": typeof lib_securityPrompt;
+  "lib/securityScanPolicy": typeof lib_securityScanPolicy;
   "lib/skillBackfill": typeof lib_skillBackfill;
   "lib/skillCards": typeof lib_skillCards;
   "lib/skillDownloadBackfill": typeof lib_skillDownloadBackfill;

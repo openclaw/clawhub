@@ -1675,7 +1675,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });
 
-  it("shows validation outputs to plugin managers on the validation tab", async () => {
+  it("shows validation outputs to plugin managers above the detail tabs", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -1775,32 +1775,27 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("tab", { name: "Validation (1)" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Validation findings" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Validation findings", level: 2 })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByRole("link", { name: "2 warnings" })).toBeNull();
-    expect(
-      screen.getByText(
-        /Validation outputs are only visible to plugin owners and admins. Run locally using the CLI:/,
-      ),
-    ).toBeTruthy();
     expect(screen.getByText("clawhub package validate <path-to-plugin>")).toBeTruthy();
+    expect(screen.getByText(/Run locally/)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy validate command" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy agent fix prompt" })).toBeTruthy();
     expect(screen.getByText("legacy-before-agent-start")).toBeTruthy();
+    expect(screen.getByText(/Warning · Deprecated API · P2/)).toBeTruthy();
+    expect(screen.queryByText("deprecation-warning")).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
     expect(screen.queryByText("registerTool is no longer available")).toBeNull();
     expect(screen.queryByText("Inspector")).toBeNull();
     expect(screen.queryByText("Scan")).toBeNull();
-    expect(screen.getByText("Fix")).toBeTruthy();
-    expect(
-      screen.getByText("Replace the legacy before_agent_start hook with current prompt hooks."),
-    ).toBeTruthy();
-    expect(
-      screen
-        .getByRole("link", {
-          name: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-        })
-        .getAttribute("href"),
-    ).toBe("https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start");
-    expect(screen.getByText("Docs")).toBeTruthy();
-    expect(screen.getAllByText("OpenClaw 0.9.0").length).toBeGreaterThan(0);
+    expect(screen.getByRole("link", { name: "View fix guide ↗" }).getAttribute("href")).toBe(
+      "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+    );
+    expect(screen.getByText(/Release v1\.0\.0 · Target OpenClaw 0\.9\.0/)).toBeTruthy();
+    expect(screen.getByText(/Legacy before_agent_start hook is deprecated\./)).toBeTruthy();
+    expect(screen.getByText(/No blocking errors\. 1 warning should be reviewed\./)).toBeTruthy();
   });
 
   it("does not show validation outputs to signed-out viewers when the hash changes", async () => {
