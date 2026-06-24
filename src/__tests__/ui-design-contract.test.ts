@@ -288,4 +288,24 @@ describe("restored UI design contract", () => {
       "grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr))",
     );
   });
+
+  it("keeps typeahead creator avatars round for users and square for orgs", () => {
+    const css = styles();
+
+    expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user")).toContain(
+      "border-radius: 999px",
+    );
+    expect(cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-org")).toContain(
+      "border-radius: 8px",
+    );
+    expect(
+      cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-image"),
+    ).toContain("filter: none");
+    expect(
+      cssRule(
+        css,
+        ".navbar-search-typeahead-icon .marketplace-icon-user:has(.marketplace-icon-image)",
+      ),
+    ).toContain("background: transparent");
+  });
 });

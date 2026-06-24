@@ -27962,6 +27962,25 @@ a[class*="rounded-full"] {
   opacity: 0.82;
 }
 
+.navbar-search-typeahead-icon .marketplace-icon-user {
+  border-radius: 999px;
+}
+
+.navbar-search-typeahead-icon .marketplace-icon-org {
+  border-radius: 8px;
+}
+
+.navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-glyph,
+.navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-image {
+  filter: none;
+  opacity: 1;
+}
+
+.navbar-search-typeahead-icon .marketplace-icon-user:has(.marketplace-icon-image) {
+  background: transparent !important;
+  border: none !important;
+}
+
 .navbar-search-typeahead-icon .marketplace-icon-glyph {
   width: 15px;
   height: 15px;
