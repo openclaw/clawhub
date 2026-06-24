@@ -27970,7 +27970,12 @@ a[class*="rounded-full"] {
   border-radius: 8px;
 }
 
-.navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-glyph,
+.navbar-search-typeahead-icon .marketplace-icon-org .marketplace-icon-glyph,
+.navbar-search-typeahead-icon .marketplace-icon-org .marketplace-icon-image {
+  filter: grayscale(1);
+  opacity: 0.82;
+}
+
 .navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-image {
   filter: none;
   opacity: 1;

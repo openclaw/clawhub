@@ -302,6 +302,9 @@ describe("restored UI design contract", () => {
       cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-user .marketplace-icon-image"),
     ).toContain("filter: none");
     expect(
+      cssRule(css, ".navbar-search-typeahead-icon .marketplace-icon-org .marketplace-icon-image"),
+    ).toContain("filter: grayscale(1)");
+    expect(
       cssRule(
         css,
         ".navbar-search-typeahead-icon .marketplace-icon-user:has(.marketplace-icon-image)",
