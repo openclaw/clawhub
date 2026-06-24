@@ -132,7 +132,7 @@ describe("skill og route", () => {
         target: "gifgrep",
       },
       stats: [
-        { value: "0", label: "downloads", icon: "download" },
+        { value: "0", label: "Downloads" },
         { value: "PASS", label: "Audit" },
       ],
     });
@@ -177,7 +177,7 @@ describe("skill og route", () => {
         ownerLabel: "@steipete",
         versionLabel: "latest",
         stats: [
-          { value: "1.2k", label: "downloads", icon: "download" },
+          { value: "1.2k", label: "Downloads" },
           { value: "PASS", label: "Audit" },
         ],
       }),
@@ -202,7 +202,7 @@ describe("skill og route", () => {
     expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "0", label: "downloads", icon: "download" },
+          { value: "0", label: "Downloads" },
           { value: "PASS", label: "Audit" },
         ],
       }),
@@ -225,7 +225,7 @@ describe("skill og route", () => {
     expect(buildSkillOgSvgMock).toHaveBeenCalledWith(
       expect.objectContaining({
         stats: [
-          { value: "43.5k", label: "downloads", icon: "download" },
+          { value: "43.5k", label: "Downloads" },
           { value: "PASS", label: "Audit" },
         ],
       }),

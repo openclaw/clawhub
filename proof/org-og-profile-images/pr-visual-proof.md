@@ -2,7 +2,7 @@
 
 Publisher OG images captured from local ClawHub at `http://localhost:3000/og/profile` against production Convex data.
 
-Each card shows the org logo (or default lobster mark), compact downloads (e.g. `43.5k`), a download icon, and lowercase `downloads` — not Installs.
+Each card shows the org logo (or default lobster mark) and compact downloads (e.g. `43.5k`) with a muted **Downloads** label — not Installs.
 
 ### @nvidia (org with custom profile image + compact downloads)
 

@@ -21,7 +21,7 @@ export type PublisherOgSvgParams = {
 function statBlock(stats: RegistryOgStat[] | undefined, x: number, y: number) {
   const stat = stats?.[0] ?? { value: "ClawHub", label: "Publisher" };
   return `<g>
-    ${statLabelMarkup(x, y, stat.label, { icon: stat.icon, fontSize: 22 })}
+    ${statLabelMarkup(x, y, stat.label, { fontSize: 22 })}
     <text x="${x}" y="${y + 44}"
       fill="#F7F1EA"
       font-size="44"
