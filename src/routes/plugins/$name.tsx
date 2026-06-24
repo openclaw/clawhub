@@ -1442,7 +1442,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const pluginHeroCreator = heroCreatorPublisher ? (
     <UserBadge
       user={heroCreatorPublisher}
-      fallbackHandle={owner.handle ?? pkg.ownerHandle ?? null}
+      fallbackHandle={heroCreatorPublisher.handle ?? pkg.ownerHandle ?? null}
       prefix=""
       size="md"
       showName

@@ -939,7 +939,7 @@ describe("plugin detail route", () => {
           channel: "official",
           isOfficial: true,
         },
-        owner: { handle: "openclaw", displayName: "OpenClaw", image: null, official: true },
+        owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
       },
     };
     const route = await loadRoute();

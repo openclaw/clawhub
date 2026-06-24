@@ -25,9 +25,7 @@ export function OfficialBadge({ className, iconOnly = false, size = 12 }: Offici
     const iconClassName = className
       ? `official-badge-icon-only ${className}`
       : "official-badge-icon-only";
-    return (
-      <BadgeCheck size={size} className={iconClassName} aria-label="Official" title="Official" />
-    );
+    return <BadgeCheck size={size} className={iconClassName} aria-label="Official" />;
   }
 
   return (

@@ -1,10 +1,20 @@
 import { useQuery } from "convex/react";
-import { useMemo } from "react";
 import { api } from "../../convex/_generated/api";
-import type { PublicPublisher } from "./publicUser";
+
+type HeroCreatorPublisher = {
+  _id?: string;
+  _creationTime?: number;
+  kind?: "user" | "org";
+  handle?: string | null;
+  displayName?: string | null;
+  image?: string | null;
+  bio?: string | null;
+  linkedUserId?: string;
+  official?: boolean;
+};
 
 type UseHeroCreatorPublisherArgs = {
-  owner: PublicPublisher | null | undefined;
+  owner: HeroCreatorPublisher | null | undefined;
   skillOfficial?: boolean;
   packageOfficial?: boolean;
 };
@@ -19,15 +29,13 @@ export function useHeroCreatorPublisher({
   const publisherOfficialLookup = useQuery(
     api.publishers.getByHandle,
     shouldLookupPublisherOfficial && owner?.handle ? { handle: owner.handle } : "skip",
-  ) as PublicPublisher | null | undefined;
+  ) as HeroCreatorPublisher | null | undefined;
 
-  return useMemo(() => {
-    if (!owner) return owner;
-    const showOfficial =
-      owner.official === true ||
-      publisherOfficialLookup?.official === true ||
-      skillOfficial ||
-      packageOfficial;
-    return showOfficial ? { ...owner, official: true as const } : owner;
-  }, [owner, publisherOfficialLookup, skillOfficial, packageOfficial]);
+  if (!owner) return owner;
+  const showOfficial =
+    owner.official === true ||
+    publisherOfficialLookup?.official === true ||
+    skillOfficial ||
+    packageOfficial;
+  return showOfficial ? { ...owner, official: true as const } : owner;
 }
