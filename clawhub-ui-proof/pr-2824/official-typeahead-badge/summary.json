@@ -1,0 +1,24 @@
+{
+  "status": "pass",
+  "mode": "feature",
+  "scenario": "Global search typeahead shows official publisher badge for official plugin result",
+  "provider": "Codex in-app browser",
+  "candidate": "pe/official-badges-search-typeahead@7ab3c3b5",
+  "generatedAt": "2026-06-24T00:02:51.744Z",
+  "lanes": [
+    {
+      "name": "candidate",
+      "ref": "pe/official-badges-search-typeahead@7ab3c3b5",
+      "status": "pass",
+      "steps": [
+        {
+          "lane": "candidate",
+          "name": "official badge in global typeahead metadata",
+          "screenshot": "screenshots/official-typeahead-brave.png",
+          "slug": "official-typeahead-brave",
+          "status": "pass"
+        }
+      ]
+    }
+  ]
+}
