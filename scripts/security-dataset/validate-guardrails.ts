@@ -2,6 +2,7 @@ import { createReadStream } from "node:fs";
 import { readFile, stat } from "node:fs/promises";
 import { join, relative, resolve } from "node:path";
 import { createInterface } from "node:readline";
+import { hasSecretLikeValue } from "./normalize";
 
 type Options = {
   snapshotDir: string;
@@ -15,8 +16,6 @@ type Finding = {
 };
 
 const HF_SPLITS = ["train", "validation", "test", "eval_holdout"] as const;
-const SECRET_PATTERN =
-  /gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z0-9 ]*(PRIVATE KEY|CERTIFICATE)-----/;
 const RAW_CONVEX_REF_PATTERN = /\b(?:skillVersions|packageReleases):[a-z0-9]{6,}\b/i;
 const RAW_STORAGE_PATH_PATTERN = /(^|\/)_storage\//;
 
@@ -130,7 +129,7 @@ function inspectValue(
       reason: "raw Convex document id reference is not allowed",
     });
   }
-  if (SECRET_PATTERN.test(value)) {
+  if (hasSecretLikeValue(value)) {
     findings.push({
       file,
       line,

@@ -16,7 +16,8 @@ describe("security dataset guardrail validator", () => {
         skill_bundle_content: [
           {
             path: "references/components/data_collection_&_storage.md",
-            content: "A user file may mention storageId as code text without leaking a raw field.",
+            content:
+              "A user file may mention storageId as code text or ask-abcdefghijklmnopqrstuvwxyz without leaking a raw field.",
           },
         ],
       },
