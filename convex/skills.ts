@@ -9555,6 +9555,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
     topics: v.optional(v.array(v.string())),
+    summary: v.optional(v.string()),
     forkOf: v.optional(
       v.object({
         slug: v.string(),

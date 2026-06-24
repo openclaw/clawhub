@@ -15193,6 +15193,19 @@ a.agentic-risk-finding-title:focus-visible {
   min-width: 0;
 }
 
+.catalog-metadata-field-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.catalog-metadata-field-actions {
+  flex-shrink: 0;
+}
+
 @media (max-width: 960px) {
   .browse-page .skill-list-item,
   .browse-page .skill-list-item-has-creator,

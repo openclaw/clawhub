@@ -35,6 +35,10 @@ import {
 } from "../../components/PublisherOwnerSelect";
 import { PublishFormSkeleton } from "../../components/PublishFormSkeleton";
 import { SignInButton } from "../../components/SignInButton";
+import {
+  SKILL_SHORT_SUMMARY_MAX_LENGTH,
+  SkillShortSummaryField,
+} from "../../components/SkillShortSummaryField";
 import { Badge } from "../../components/ui/badge";
 import { Button } from "../../components/ui/button";
 import { Card, CardContent, CardTitle } from "../../components/ui/card";
@@ -133,11 +137,13 @@ export function Upload() {
   const [tags, setTags] = useState("latest");
   const [categories, setCategories] = useState<string[]>([]);
   const [topics, setTopics] = useState("");
+  const [summary, setSummary] = useState("");
   const [uploadedSkillSummary, setUploadedSkillSummary] = useState<string | undefined>();
   const [acceptedLicenseTerms, setAcceptedLicenseTerms] = useState(false);
   const [changelog, setChangelog] = useState("");
   const categoriesTouchedRef = useRef(false);
   const topicsTouchedRef = useRef(false);
+  const summaryTouchedRef = useRef(false);
   const [changelogStatus, setChangelogStatus] = useState<"idle" | "loading" | "ready" | "error">(
     "idle",
   );
@@ -261,6 +267,7 @@ export function Upload() {
   );
   const trimmedChangelog = changelog.trim();
   const trimmedVersion = version.trim();
+  const trimmedSummary = summary.trim();
   const slugAvailability = useQuery(
     api.skills.checkSlugAvailability,
     isAuthenticated && ownerHandle && trimmedSlug && SLUG_PATTERN.test(trimmedSlug)
@@ -328,9 +335,19 @@ export function Upload() {
       const nextTopics = formatCatalogTopicsInput(existing.skill.topics ?? []);
       setTopics((current) => (current === nextTopics ? current : nextTopics));
     }
+    if (!summaryTouchedRef.current) {
+      const nextSummary = existing.skill.summary ?? "";
+      setSummary((current) => (current === nextSummary ? current : nextSummary));
+    }
     const nextVersion = semver.inc(existing.latestVersion.version, "patch");
     if (nextVersion) setVersion(nextVersion);
   }, [existing]);
+
+  useEffect(() => {
+    if (summaryTouchedRef.current) return;
+    if (!uploadedSkillSummary) return;
+    setSummary((current) => (current === uploadedSkillSummary ? current : uploadedSkillSummary));
+  }, [uploadedSkillSummary]);
 
   useEffect(() => {
     // In update mode, default the Owner selector to the skill's current owner
@@ -489,6 +506,9 @@ export function Upload() {
     if (totalBytes > MAX_PUBLISH_TOTAL_BYTES) {
       issues.push("Total file size exceeds 50MB.");
     }
+    if (trimmedSummary.length > SKILL_SHORT_SUMMARY_MAX_LENGTH) {
+      issues.push(`Summary must be ${SKILL_SHORT_SUMMARY_MAX_LENGTH} characters or less.`);
+    }
     if (effectiveSlugCollision) {
       issues.push(effectiveSlugCollision.message);
     }
@@ -513,6 +533,7 @@ export function Upload() {
     confirmMigrateOwner,
     existingOwnerHandle,
     ownerHandle,
+    trimmedSummary,
   ]);
   const shouldShowSlugIssue = hasAttempted || dirtyFields.slug || Boolean(trimmedSlug);
   const shouldShowDisplayNameIssue = hasAttempted || dirtyFields.displayName;
@@ -738,6 +759,7 @@ export function Upload() {
         ...(topics.trim() || topicsTouchedRef.current
           ? { topics: parseCatalogTopicsInput(topics) }
           : {}),
+        ...(trimmedSummary || summaryTouchedRef.current ? { summary: trimmedSummary } : {}),
         files: uploaded,
       });
       setStatus(null);
@@ -1077,19 +1099,13 @@ export function Upload() {
                     </a>
                   ) : null}
                 </div>
-                <CatalogMetadataFields
-                  kind="skill"
-                  categories={categories}
-                  suggestedCategories={suggestedCategories}
-                  topics={topics}
+                <SkillShortSummaryField
+                  id="skillSummary"
+                  value={summary}
                   disabled={isSubmitting}
-                  onCategoriesChange={(nextCategories) => {
-                    categoriesTouchedRef.current = true;
-                    setCategories(nextCategories);
-                  }}
-                  onTopicsChange={(nextTopics) => {
-                    topicsTouchedRef.current = true;
-                    setTopics(nextTopics);
+                  onChange={(nextSummary) => {
+                    summaryTouchedRef.current = true;
+                    setSummary(nextSummary);
                   }}
                 />
               </div>
@@ -1104,7 +1120,7 @@ export function Upload() {
               ) : null}
 
               <div className="flex flex-col gap-2">
-                <Label htmlFor="ownerHandle">Owner</Label>
+                <Label htmlFor="ownerHandle">Publishing as</Label>
                 <PublisherOwnerSelect
                   id="ownerHandle"
                   value={ownerHandle}
@@ -1174,6 +1190,32 @@ export function Upload() {
                   ))}
                 </ul>
               ) : null}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="gap-4">
+              <div>
+                <CardTitle>Catalog metadata</CardTitle>
+                <p className="text-sm text-[color:var(--ink-soft)]">
+                  Choose browse categories and author topics for this skill.
+                </p>
+              </div>
+              <CatalogMetadataFields
+                kind="skill"
+                categories={categories}
+                suggestedCategories={suggestedCategories}
+                topics={topics}
+                disabled={isSubmitting}
+                onCategoriesChange={(nextCategories) => {
+                  categoriesTouchedRef.current = true;
+                  setCategories(nextCategories);
+                }}
+                onTopicsChange={(nextTopics) => {
+                  topicsTouchedRef.current = true;
+                  setTopics(nextTopics);
+                }}
+              />
             </CardContent>
           </Card>
 

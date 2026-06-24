@@ -66,8 +66,31 @@ export function PublisherOwnerSelect({
   );
 }
 
-function PublisherOwnerOption({ membership }: { membership: PublisherOwnerMembership }) {
+function formatPublisherRole(role: PublisherOwnerMembership["role"]) {
+  return role.charAt(0).toUpperCase() + role.slice(1);
+}
+
+function PublisherOwnerOptionLabel({ membership }: { membership: PublisherOwnerMembership }) {
   const { publisher, role } = membership;
+  return (
+    <span className="min-w-0 truncate">
+      <span className="text-[color:var(--ink-soft)]">@{publisher.handle}</span>
+      <span className="text-[color:var(--ink-soft)]" aria-hidden="true">
+        {" "}
+        ·{" "}
+      </span>
+      <span className="font-medium text-[color:var(--ink)]">{publisher.displayName}</span>
+      <span className="text-[color:var(--ink-soft)]" aria-hidden="true">
+        {" "}
+        ·{" "}
+      </span>
+      <span className="text-[color:var(--ink-soft)]">{formatPublisherRole(role)}</span>
+    </span>
+  );
+}
+
+function PublisherOwnerOption({ membership }: { membership: PublisherOwnerMembership }) {
+  const { publisher } = membership;
   return (
     <span className="flex min-w-0 items-center gap-2 leading-none">
       <span className="inline-flex h-[26px] w-[26px] shrink-0 items-center justify-center rounded-full">
@@ -78,9 +101,7 @@ function PublisherOwnerOption({ membership }: { membership: PublisherOwnerMember
           size="xs"
         />
       </span>
-      <span className="min-w-0 truncate">
-        @{publisher.handle} · {publisher.displayName} · {role}
-      </span>
+      <PublisherOwnerOptionLabel membership={membership} />
     </span>
   );
 }
