@@ -80,6 +80,7 @@ type Options = {
   huggingFaceDataset: boolean;
   huggingFaceRepo: string;
   huggingFaceRevision: string;
+  writeShardMatrix: string | null;
 };
 
 type ExportShard = {
@@ -127,6 +128,11 @@ const HF_SPLITS: DatasetSplit[] = ["train", "validation", "test", "eval_holdout"
 
 async function main() {
   const options = parseArgs(process.argv.slice(2));
+  if (options.writeShardMatrix) {
+    await writeShardMatrix(options);
+    return;
+  }
+
   const snapshotId = buildSnapshotId(options);
   const snapshotDir = resolve(options.outDir, snapshotId);
   const writers = options.dryRun ? null : await openSnapshotWriters(snapshotDir, options);
@@ -162,6 +168,31 @@ async function main() {
     if (writers && !writersClosed) await closeSnapshotWriters(writers).catch(() => {});
     throw error;
   }
+}
+
+async function writeShardMatrix(options: Options) {
+  const shards = await buildExportShards(options);
+  const matrix = {
+    include: shards.map((shard, index) => ({
+      index,
+      sourceKind: shard.sourceKind,
+      createdAtGte: shard.createdAtGte,
+      createdAtLt: shard.createdAtLt,
+      label: shard.label,
+    })),
+  };
+  await writeFile(options.writeShardMatrix!, `${JSON.stringify(matrix, null, 2)}\n`);
+  console.log(
+    JSON.stringify(
+      {
+        shardCount: shards.length,
+        matrixPath: options.writeShardMatrix,
+        sourceKinds: Array.from(new Set(shards.map((shard) => shard.sourceKind))).sort(),
+      },
+      null,
+      2,
+    ),
+  );
 }
 
 async function exportRemoteShards(input: {
@@ -832,6 +863,7 @@ function parseArgs(args: string[]): Options {
     huggingFaceDataset: false,
     huggingFaceRepo: process.env.HF_DATASET_REPO ?? "OpenClaw/clawhub-security-signals",
     huggingFaceRevision: process.env.HF_REVISION ?? "main",
+    writeShardMatrix: null,
   };
 
   for (let index = 0; index < args.length; index += 1) {
@@ -878,6 +910,8 @@ function parseArgs(args: string[]): Options {
       options.huggingFaceRepo = readValue(args, ++index, arg);
     } else if (arg === "--hf-revision") {
       options.huggingFaceRevision = readValue(args, ++index, arg);
+    } else if (arg === "--write-shard-matrix") {
+      options.writeShardMatrix = readValue(args, ++index, arg);
     } else if (arg === "--mode") {
       const mode = readValue(args, ++index, arg);
       if (mode !== "public") throw new Error(`Unsupported mode: ${mode}`);

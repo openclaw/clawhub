@@ -38,7 +38,7 @@ on:
       shards:
         description: "Created-at shards per source kind"
         required: true
-        default: "24"
+        default: "96"
   schedule:
     - cron: "17 9 * * *"
 
@@ -51,24 +51,141 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  publish-security-dataset:
-    name: Publish sanitized security dataset
+  plan-security-dataset:
+    name: Plan sanitized security dataset shards
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
+    timeout-minutes: 15
     environment: Production
+    outputs:
+      matrix: ${{ steps.plan.outputs.matrix }}
+      source_snapshot_id: ${{ steps.plan.outputs.source_snapshot_id }}
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
       SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
       HF_DATASET_REPO: OpenClaw/clawhub-security-signals
-      HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals
       HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
       HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
       SNAPSHOT_LIMIT: ${{ inputs.limit || '' }}
       SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
       SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '5' }}
       SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
-      SNAPSHOT_CONCURRENCY: ${{ inputs.concurrency || '2' }}
-      SNAPSHOT_SHARDS: ${{ inputs.shards || '24' }}
+      SNAPSHOT_CONCURRENCY: ${{ inputs.concurrency || '1' }}
+      SNAPSHOT_SHARDS: ${{ inputs.shards || '96' }}
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Check configuration
+        run: |
+          set -euo pipefail
+          if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
+            echo "::error::SECURITY_SCAN_WORKER_TOKEN is required"
+            exit 1
+          fi
+          echo "Upload enabled: $HF_UPLOAD"
+          echo "Convex URL: $CONVEX_URL"
+          echo "Hugging Face repo: $HF_DATASET_REPO"
+          echo "Hugging Face revision: $HF_REVISION"
+          echo "Shard count per source kind: $SNAPSHOT_SHARDS"
+
+      - name: Plan live export shards
+        id: plan
+        run: |
+          set -euo pipefail
+          source_snapshot_id="live-convex-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          matrix_path="$RUNNER_TEMP/security-dataset-shards.json"
+          bun scripts/security-dataset/export-snapshot.ts \
+            --convex-url "$CONVEX_URL" \
+            --worker-token "$SECURITY_SCAN_WORKER_TOKEN" \
+            --source-snapshot-id "$source_snapshot_id" \
+            --hf-repo "$HF_DATASET_REPO" \
+            --hf-revision "$HF_REVISION" \
+            --page-size "$SNAPSHOT_PAGE_SIZE" \
+            --min-page-size "$SNAPSHOT_MIN_PAGE_SIZE" \
+            --batch-pages "$SNAPSHOT_BATCH_PAGES" \
+            --concurrency "$SNAPSHOT_CONCURRENCY" \
+            --shards "$SNAPSHOT_SHARDS" \
+            --write-shard-matrix "$matrix_path"
+          echo "source_snapshot_id=$source_snapshot_id" >> "$GITHUB_OUTPUT"
+          echo "matrix=$(jq -c . "$matrix_path")" >> "$GITHUB_OUTPUT"
+          jq '{shard_count: (.include | length), first: .include[0], last: .include[-1]}' "$matrix_path"
+
+  export-security-dataset-shards:
+    name: Export sanitized shard ${{ matrix.index }}
+    needs: plan-security-dataset
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: Production
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix: ${{ fromJson(needs.plan-security-dataset.outputs.matrix) }}
+    env:
+      CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
+      SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
+      HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
+      SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
+      SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '5' }}
+      SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
+      SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/shard
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: ./.github/actions/setup-bun
+
+      - name: Export sanitized shard
+        run: |
+          set -euo pipefail
+          mkdir -p "$SANITIZED_OUT_DIR"
+          args=(
+            --convex-url "$CONVEX_URL"
+            --worker-token "$SECURITY_SCAN_WORKER_TOKEN"
+            --source-snapshot-id "${{ needs.plan-security-dataset.outputs.source_snapshot_id }}"
+            --out-dir "$SANITIZED_OUT_DIR"
+            --hf-dataset
+            --hf-repo "$HF_DATASET_REPO"
+            --hf-revision "$HF_REVISION"
+            --source-kind "${{ matrix.sourceKind }}"
+            --created-after "${{ matrix.createdAtGte }}"
+            --created-before "${{ matrix.createdAtLt }}"
+            --page-size "$SNAPSHOT_PAGE_SIZE"
+            --min-page-size "$SNAPSHOT_MIN_PAGE_SIZE"
+            --batch-pages "$SNAPSHOT_BATCH_PAGES"
+            --concurrency 1
+            --shards 1
+          )
+          bun scripts/security-dataset/export-snapshot.ts "${args[@]}" | tee "$SANITIZED_OUT_DIR/summary.json"
+          snapshot_dir="$(jq -r '.snapshotDir' "$SANITIZED_OUT_DIR/summary.json")"
+          if [[ -z "$snapshot_dir" || "$snapshot_dir" == "null" ]]; then
+            echo "::error::export summary did not include snapshotDir"
+            exit 1
+          fi
+          echo "SNAPSHOT_DIR=$snapshot_dir" >> "$GITHUB_ENV"
+          jq '.manifest.row_counts, .manifest.huggingface_dataset' "$SANITIZED_OUT_DIR/summary.json"
+
+      - name: Upload shard artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-dataset-shard-${{ matrix.index }}
+          path: ${{ env.SNAPSHOT_DIR }}
+          if-no-files-found: error
+          retention-days: 1
+
+  publish-security-dataset:
+    name: Publish sanitized security dataset
+    needs:
+      - plan-security-dataset
+      - export-security-dataset-shards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: Production
+    env:
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
+      HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals
+      HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
+      HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized
       WORK_DIR: /tmp/clawhub-security-dataset
     steps:
@@ -81,45 +198,26 @@ jobs:
         with:
           python-version: "3.12"
 
-      - name: Check configuration
-        run: |
-          set -euo pipefail
-          if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
-            echo "::error::SECURITY_SCAN_WORKER_TOKEN is required"
-            exit 1
-          fi
-          echo "Upload enabled: $HF_UPLOAD"
-          echo "Convex URL: $CONVEX_URL"
-          echo "Hugging Face repo: $HF_DATASET_REPO"
-          echo "Hugging Face OIDC resource: $HF_OIDC_RESOURCE"
-          echo "Hugging Face revision: $HF_REVISION"
+      - name: Download sanitized shard artifacts
+        uses: actions/download-artifact@v7
+        with:
+          pattern: security-dataset-shard-*
+          path: ${{ env.WORK_DIR }}/shards
 
-      - name: Export sanitized live dataset
+      - name: Merge sanitized shard outputs
         run: |
           set -euo pipefail
           mkdir -p "$SANITIZED_OUT_DIR"
-          source_snapshot_id="live-convex-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
-          args=(
-            --convex-url "$CONVEX_URL"
-            --worker-token "$SECURITY_SCAN_WORKER_TOKEN"
-            --source-snapshot-id "$source_snapshot_id"
-            --out-dir "$SANITIZED_OUT_DIR"
-            --hf-dataset
-            --hf-repo "$HF_DATASET_REPO"
-            --hf-revision "$HF_REVISION"
-            --page-size "$SNAPSHOT_PAGE_SIZE"
-            --min-page-size "$SNAPSHOT_MIN_PAGE_SIZE"
-            --batch-pages "$SNAPSHOT_BATCH_PAGES"
-            --concurrency "$SNAPSHOT_CONCURRENCY"
-            --shards "$SNAPSHOT_SHARDS"
-          )
-          if [[ -n "$SNAPSHOT_LIMIT" ]]; then
-            args+=(--limit "$SNAPSHOT_LIMIT")
-          fi
-          bun scripts/security-dataset/export-snapshot.ts "${args[@]}" | tee "$SANITIZED_OUT_DIR/summary.json"
+          source_snapshot_id="${{ needs.plan-security-dataset.outputs.source_snapshot_id }}"
+          bun scripts/security-dataset/merge-snapshots.ts \
+            --shards-dir "$WORK_DIR/shards" \
+            --out-dir "$SANITIZED_OUT_DIR" \
+            --source-snapshot-id "$source_snapshot_id" \
+            --hf-repo "$HF_DATASET_REPO" \
+            --hf-revision "$HF_REVISION" | tee "$SANITIZED_OUT_DIR/summary.json"
           snapshot_dir="$(jq -r '.snapshotDir' "$SANITIZED_OUT_DIR/summary.json")"
           if [[ -z "$snapshot_dir" || "$snapshot_dir" == "null" ]]; then
-            echo "::error::export summary did not include snapshotDir"
+            echo "::error::merge summary did not include snapshotDir"
             exit 1
           fi
           echo "SNAPSHOT_DIR=$snapshot_dir" >> "$GITHUB_ENV"
