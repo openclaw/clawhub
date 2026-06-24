@@ -15,21 +15,35 @@ import {
   homePluginShortcutIcon,
   homeSkillAppIcon,
   SKILLS_BROWSE_SEARCH,
-  type HomeSimpleIcon,
+  type HomeAppIcon,
   type HomePluginShortcut,
   type HomeSkillApp,
 } from "../lib/homeApps";
 import { buildPluginDetailHref } from "../lib/pluginRoutes";
 
-type SimpleIconMarkProps = {
-  icon: HomeSimpleIcon;
+type HomeAppIconMarkProps = {
+  icon: HomeAppIcon;
   className?: string;
 };
 
-function SimpleIconMark({ icon, className }: SimpleIconMarkProps) {
+function HomeAppIconMark({ icon, className }: HomeAppIconMarkProps) {
+  if (icon.kind === "image") {
+    return (
+      <img
+        src={icon.src}
+        className={`${className ?? ""} home-v2-apps-icon-mark--image`.trim()}
+        alt=""
+        width={40}
+        height={40}
+        loading="lazy"
+        decoding="async"
+      />
+    );
+  }
+
   return (
     <span
-      className={className}
+      className={`${className ?? ""} home-v2-apps-icon-mark--simple`.trim()}
       data-simple-icon-slug={icon.slug}
       style={
         {
@@ -52,7 +66,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
       title={app.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <SimpleIconMark icon={icon} className={homeAppsTileLogoClassName(app.id)} />
+        <HomeAppIconMark icon={icon} className={homeAppsTileLogoClassName(app.id)} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{app.name}</span>
@@ -73,7 +87,7 @@ function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcu
       title={shortcut.description}
     >
       <span className="home-v2-apps-tile-icon" aria-hidden="true">
-        <SimpleIconMark icon={icon} className={homeAppsTileLogoClassName(shortcut.id)} />
+        <HomeAppIconMark icon={icon} className={homeAppsTileLogoClassName(shortcut.id)} />
       </span>
       <span className="home-v2-apps-tile-copy">
         <span className="home-v2-apps-tile-name">{shortcut.name}</span>
@@ -211,7 +225,7 @@ const appCategories = [
 
 const workflowHeaderTiles: ReadonlyArray<{
   label: string;
-  icon: HomeSimpleIcon;
+  icon: HomeAppIcon;
   className: string;
   badge?: string;
 }> = [
@@ -275,7 +289,7 @@ export function HomeAppsSection() {
                 {tile.badge ? (
                   <span className="home-v2-apps-workflow-badge">{tile.badge}</span>
                 ) : null}
-                <SimpleIconMark icon={tile.icon} className="home-v2-apps-workflow-logo" />
+                <HomeAppIconMark icon={tile.icon} className="home-v2-apps-workflow-logo" />
               </span>
             ))}
           </div>

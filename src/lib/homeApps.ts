@@ -1,6 +1,7 @@
 /** Curated shortcuts for the home apps constellation (design-time). */
 
 const SIMPLE_ICON_ASSET_BASE = "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons";
+const DOMAIN_ICON_ASSET_BASE = "https://www.google.com/s2/favicons";
 
 const HOME_APP_SIMPLE_ICON_SLUGS = {
   airtable: "airtable",
@@ -8,20 +9,15 @@ const HOME_APP_SIMPLE_ICON_SLUGS = {
   "apple-pim": "apple",
   aws: "amazonwebservices",
   brave: "brave",
-  cerebras: "simpleicons",
   "cloudflare-gateway": "cloudflare",
   chrome: "googlechrome",
-  codex: "simpleicons",
+  codex: "openai",
   cursor: "cursor",
-  deepinfra: "simpleicons",
   "diagnostics-prometheus": "prometheus",
   discord: "discord",
   docker: "docker",
   dropbox: "dropbox",
-  exa: "simpleicons",
-  feishu: "simpleicons",
   figma: "figma",
-  firecrawl: "simpleicons",
   github: "github",
   gitlab: "gitlab",
   "gmail-plugin": "gmail",
@@ -31,7 +27,6 @@ const HOME_APP_SIMPLE_ICON_SLUGS = {
   "google-drive": "googledrive",
   "google-meet": "googlemeet",
   "google-sheets": "googlesheets",
-  groq: "simpleicons",
   hubspot: "hubspot",
   jira: "jira",
   kubernetes: "kubernetes",
@@ -44,14 +39,11 @@ const HOME_APP_SIMPLE_ICON_SLUGS = {
   notion: "notion",
   obsidian: "obsidian",
   openai: "openai",
-  openclaw: "simpleicons",
-  parallel: "simpleicons",
   perplexity: "perplexity",
   qqbot: "qq",
   qwen: "qwen",
   raycast: "raycast",
-  salesforce: "simpleicons",
-  scraperapi: "simpleicons",
+  salesforce: "salesforce",
   slack: "slack",
   telegram: "telegram",
   trello: "trello",
@@ -59,6 +51,22 @@ const HOME_APP_SIMPLE_ICON_SLUGS = {
   "voice-call": "twilio",
   vscode: "visualstudiocode",
   whatsapp: "whatsapp",
+} as const;
+
+function domainIcon(domain: string) {
+  return `${DOMAIN_ICON_ASSET_BASE}?domain=${encodeURIComponent(domain)}&sz=64`;
+}
+
+const HOME_APP_IMAGE_ICON_SOURCES = {
+  cerebras: domainIcon("cerebras.ai"),
+  deepinfra: domainIcon("deepinfra.com"),
+  exa: domainIcon("exa.ai"),
+  feishu: domainIcon("larksuite.com"),
+  firecrawl: domainIcon("firecrawl.dev"),
+  groq: domainIcon("groq.com"),
+  openclaw: "/logo-transparent.png",
+  parallel: domainIcon("parallel.ai"),
+  scraperapi: domainIcon("scraperapi.com"),
 } as const;
 
 const HOME_APP_SIMPLE_ICON_COLORS = {
@@ -98,7 +106,7 @@ const HOME_APP_SIMPLE_ICON_COLORS = {
   qq: "1EBAFC",
   qwen: "615CED",
   raycast: "FF6363",
-  simpleicons: "111111",
+  salesforce: "00A1E0",
   slack: "4A154B",
   telegram: "26A5E4",
   trello: "0052CC",
@@ -111,11 +119,19 @@ const HOME_APP_SIMPLE_ICON_COLORS = {
   string
 >;
 
-export type HomeSimpleIcon = {
+type HomeSimpleIcon = {
+  kind: "simple";
   src: string;
   color: string;
   slug: string;
 };
+
+type HomeImageIcon = {
+  kind: "image";
+  src: string;
+};
+
+export type HomeAppIcon = HomeSimpleIcon | HomeImageIcon;
 
 export type HomeSkillApp = {
   id: string;
@@ -123,7 +139,7 @@ export type HomeSkillApp = {
   description: string;
   /** Skills browse search query. */
   browseQuery: string;
-  /** Brand domain retained for browse metadata. Icons are sourced from Simple Icons. */
+  /** Brand domain retained for browse metadata and image fallbacks. */
   iconDomain: string;
 };
 
@@ -133,7 +149,7 @@ export type HomePluginShortcut = {
   name: string;
   description: string;
   packageName: string;
-  /** Brand domain retained for browse metadata. Icons are sourced from Simple Icons. */
+  /** Brand domain retained for browse metadata and image fallbacks. */
   iconDomain: string;
 };
 
@@ -567,12 +583,18 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
   },
 ];
 
-function homeSimpleIcon(id: string): HomeSimpleIcon {
+function homeAppIcon(id: string): HomeAppIcon {
+  if (id in HOME_APP_IMAGE_ICON_SOURCES) {
+    return {
+      kind: "image",
+      src: HOME_APP_IMAGE_ICON_SOURCES[id as keyof typeof HOME_APP_IMAGE_ICON_SOURCES],
+    };
+  }
+
   const slug =
-    id in HOME_APP_SIMPLE_ICON_SLUGS
-      ? HOME_APP_SIMPLE_ICON_SLUGS[id as keyof typeof HOME_APP_SIMPLE_ICON_SLUGS]
-      : "simpleicons";
+    HOME_APP_SIMPLE_ICON_SLUGS[id as keyof typeof HOME_APP_SIMPLE_ICON_SLUGS] ?? "openai";
   return {
+    kind: "simple",
     src: `${SIMPLE_ICON_ASSET_BASE}/${slug}.svg`,
     color: `#${HOME_APP_SIMPLE_ICON_COLORS[slug]}`,
     slug,
@@ -580,11 +602,11 @@ function homeSimpleIcon(id: string): HomeSimpleIcon {
 }
 
 export function homeSkillAppIcon(app: HomeSkillApp) {
-  return homeSimpleIcon(app.id);
+  return homeAppIcon(app.id);
 }
 
 export function homePluginShortcutIcon(shortcut: HomePluginShortcut) {
-  return homeSimpleIcon(shortcut.id);
+  return homeAppIcon(shortcut.id);
 }
 
 export const SKILLS_BROWSE_SEARCH = {

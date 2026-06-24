@@ -25266,9 +25266,16 @@ a.publisher-profile-detail:hover {
   display: block;
   width: 42px;
   height: 42px;
+}
+
+.home-v2-apps-workflow-logo.home-v2-apps-icon-mark--simple {
   background: var(--home-simple-icon-color);
   mask: var(--home-simple-icon-url) center / contain no-repeat;
   -webkit-mask: var(--home-simple-icon-url) center / contain no-repeat;
+}
+
+.home-v2-apps-workflow-logo.home-v2-apps-icon-mark--image {
+  object-fit: contain;
 }
 
 .home-v2-apps-workflow-tile.is-openai .home-v2-apps-workflow-logo,
@@ -25704,9 +25711,16 @@ a.home-v2-apps-see-all:focus-visible svg {
   width: 21px;
   height: 21px;
   border-radius: 0;
+}
+
+.home-v2-apps-tile-logo.home-v2-apps-icon-mark--simple {
   background: var(--home-simple-icon-color);
   mask: var(--home-simple-icon-url) center / contain no-repeat;
   -webkit-mask: var(--home-simple-icon-url) center / contain no-repeat;
+}
+
+.home-v2-apps-tile-logo.home-v2-apps-icon-mark--image {
+  object-fit: contain;
 }
 
 .home-v2-apps-tile-copy {
