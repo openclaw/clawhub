@@ -10,9 +10,11 @@ const HOME_APP_IMAGE_ICON_SOURCES = {
   feishu: `${LOCAL_APP_ICON_BASE}/feishu.svg`,
   firecrawl: `${LOCAL_APP_ICON_BASE}/firecrawl.svg`,
   groq: `${LOCAL_APP_ICON_BASE}/groq.svg`,
+  openai: `${LOCAL_APP_ICON_BASE}/openai.svg`,
   openclaw: `${LOCAL_APP_ICON_BASE}/openclaw.svg`,
   parallel: `${LOCAL_APP_ICON_BASE}/parallel.svg`,
   scraperapi: `${LOCAL_APP_ICON_BASE}/scraperapi.svg`,
+  slack: `${LOCAL_APP_ICON_BASE}/slack.svg`,
 } as const;
 
 export const HOME_APP_IMAGE_ICON_PRELOADS = [
@@ -563,13 +565,22 @@ function resolveSimpleIconSlug(source: { id: string; simpleIconSlug?: SimpleIcon
   return isSimpleIconSlug(slug) ? slug : "openai";
 }
 
-function homeAppIcon(source: { id: string; simpleIconSlug?: SimpleIconSlug }): HomeAppIcon {
-  const { id } = source;
+function resolveLocalImageIconSource(source: { id: string; simpleIconSlug?: SimpleIconSlug }) {
+  const localIconKey = source.id in HOME_APP_IMAGE_ICON_SOURCES ? source.id : source.simpleIconSlug;
 
-  if (id in HOME_APP_IMAGE_ICON_SOURCES) {
+  if (localIconKey && localIconKey in HOME_APP_IMAGE_ICON_SOURCES) {
+    return HOME_APP_IMAGE_ICON_SOURCES[localIconKey as keyof typeof HOME_APP_IMAGE_ICON_SOURCES];
+  }
+
+  return null;
+}
+
+function homeAppIcon(source: { id: string; simpleIconSlug?: SimpleIconSlug }): HomeAppIcon {
+  const localIconSource = resolveLocalImageIconSource(source);
+  if (localIconSource) {
     return {
       kind: "image",
-      src: HOME_APP_IMAGE_ICON_SOURCES[id as keyof typeof HOME_APP_IMAGE_ICON_SOURCES],
+      src: localIconSource,
     };
   }
 

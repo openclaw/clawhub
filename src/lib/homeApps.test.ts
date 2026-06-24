@@ -75,7 +75,7 @@ describe("home app icons", () => {
     }
   });
 
-  it("uses local SVGs for brands missing exact Simple Icons entries", () => {
+  it("uses local SVGs for curated brand marks", () => {
     const iconById = new Map(
       HOME_PLUGIN_SHORTCUTS.map((shortcut) => [shortcut.id, homePluginShortcutIcon(shortcut)]),
     );
@@ -88,6 +88,20 @@ describe("home app icons", () => {
     expect(iconById.get("groq")?.src).toBe("/app-icons/groq.svg");
     expect(iconById.get("deepinfra")?.src).toBe("/app-icons/deepinfra.svg");
     expect(iconById.get("cerebras")?.src).toBe("/app-icons/cerebras.svg");
+    expect(iconById.get("slack")?.src).toBe("/app-icons/slack.svg");
+    expect(iconById.get("codex")?.src).toBe("/app-icons/openai.svg");
+
+    const skillIconById = new Map(HOME_SKILL_APPS.map((app) => [app.id, homeSkillAppIcon(app)]));
+    expect(skillIconById.get("slack")?.src).toBe("/app-icons/slack.svg");
+    expect(
+      homeSkillAppIcon({
+        id: "openai",
+        name: "OpenAI",
+        description: "",
+        browseQuery: "openai",
+        iconDomain: "openai.com",
+      }).src,
+    ).toBe("/app-icons/openai.svg");
   });
 
   it("uses the OpenClaw site lobster mark for the OpenClaw workflow logo", () => {
