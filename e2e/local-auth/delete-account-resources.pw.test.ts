@@ -74,6 +74,7 @@ type AccountDeletionFixture = {
   publisherId: string;
   handle: string;
   skillId: string;
+  skillSlug: string;
   packageId: string;
 };
 
