@@ -1,4 +1,5 @@
 import { expect, test, type APIRequestContext, type Page } from "@playwright/test";
+import { stubExternalMediaInVitePreview } from "./helpers/externalMedia";
 import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpers/runtimeErrors";
 
 type SeedFixtures = {
@@ -30,12 +31,6 @@ function pluginDetailPath(name: string) {
 function seedApiUrl(path: string) {
   const convexSiteUrl = process.env.VITE_CONVEX_SITE_URL?.trim();
   return convexSiteUrl ? new URL(path, convexSiteUrl).toString() : path;
-}
-
-async function stubVercelImageOptimizerInVitePreview(page: Page) {
-  if (process.env.PLAYWRIGHT_BASE_URL) return;
-  // Vite preview does not serve Vercel's production-only image optimizer.
-  await page.route("**/_vercel/image?**", (route) => route.fulfill({ status: 204 }));
 }
 
 async function getSeedFixture(request: APIRequestContext, path: string) {
@@ -212,7 +207,7 @@ async function expectPublicRouteHealthy(
   route: PublicRouteCase,
   fixtures: SeedFixtures,
 ) {
-  await stubVercelImageOptimizerInVitePreview(page);
+  await stubExternalMediaInVitePreview(page);
   const errors = trackRuntimeErrors(page);
   const path = route.path(fixtures);
   const response = await page.goto(path, { waitUntil: "domcontentloaded" });

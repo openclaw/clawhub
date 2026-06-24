@@ -13,9 +13,11 @@ import {
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveLocalAuthRunnerConfig } from "./playwright-local-auth-config";
+import {
+  resolveLocalAuthDeployment,
+  resolveLocalAuthRunnerConfig,
+} from "./playwright-local-auth-config";
 
-const DEFAULT_CONVEX_DEPLOYMENT = "anonymous-agent";
 const DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT = "anonymous:anonymous-agent";
 const DEFAULT_PLAYWRIGHT_PORT = 4173;
 const DEFAULT_E2E_WORKER_TOKEN = "local-e2e-worker-token";
@@ -468,8 +470,10 @@ async function main() {
   isolateLocalState();
 
   const authKeys = buildAuthKeys();
-  const deployment =
-    runnerConfig.convexDeployment ?? readLocalDeployment() ?? DEFAULT_CONVEX_DEPLOYMENT;
+  const deployment = resolveLocalAuthDeployment(
+    runnerConfig.convexDeployment,
+    readLocalDeployment(),
+  );
   const e2eEnv: NodeJS.ProcessEnv = {
     ...process.env,
     AUTH_GITHUB_ID: process.env.AUTH_GITHUB_ID ?? "local-dev",

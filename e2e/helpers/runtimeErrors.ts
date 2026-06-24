@@ -1,4 +1,12 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type ConsoleMessage, type Page } from "@playwright/test";
+import { isKnownOpenClawMediaUrl } from "./externalMedia";
+
+const EXTERNAL_RESOURCE_DNS_ERROR = "Failed to load resource: net::ERR_NAME_NOT_RESOLVED";
+
+function isIgnoredExternalResourceDnsError(message: ConsoleMessage) {
+  if (message.text() !== EXTERNAL_RESOURCE_DNS_ERROR) return false;
+  return isKnownOpenClawMediaUrl(message.location().url);
+}
 
 export function trackRuntimeErrors(page: Page) {
   const errors: string[] = [];
@@ -9,6 +17,7 @@ export function trackRuntimeErrors(page: Page) {
 
   page.on("console", (message) => {
     if (message.type() !== "error") return;
+    if (isIgnoredExternalResourceDnsError(message)) return;
     errors.push(`console:${message.text()}`);
   });
 

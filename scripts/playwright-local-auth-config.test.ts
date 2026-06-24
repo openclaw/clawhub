@@ -1,7 +1,24 @@
 import { describe, expect, it } from "vitest";
-import { resolveLocalAuthRunnerConfig } from "./playwright-local-auth-config";
+import {
+  resolveLocalAuthDeployment,
+  resolveLocalAuthRunnerConfig,
+} from "./playwright-local-auth-config";
 
 describe("playwright local-auth runner config", () => {
+  it("defaults local-auth Convex to the anonymous deployment marker", () => {
+    expect(resolveLocalAuthDeployment(undefined, null)).toBe("anonymous:anonymous-agent");
+    expect(resolveLocalAuthDeployment(undefined, undefined)).toBe("anonymous:anonymous-agent");
+  });
+
+  it("prefers explicit and discovered local-auth deployments before the default", () => {
+    expect(resolveLocalAuthDeployment("anonymous:explicit-agent", "anonymous:local-agent")).toBe(
+      "anonymous:explicit-agent",
+    );
+    expect(resolveLocalAuthDeployment(undefined, "anonymous:local-agent")).toBe(
+      "anonymous:local-agent",
+    );
+  });
+
   it("does not inherit the generic CI Convex URL", () => {
     expect(
       resolveLocalAuthRunnerConfig({
