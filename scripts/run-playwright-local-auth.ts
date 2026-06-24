@@ -19,7 +19,7 @@ const DEFAULT_CONVEX_DEPLOYMENT = "anonymous-agent";
 const DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT = "anonymous:anonymous-agent";
 const DEFAULT_PLAYWRIGHT_PORT = 4173;
 const DEFAULT_E2E_WORKER_TOKEN = "local-e2e-worker-token";
-const START_TIMEOUT_MS = 300_000;
+const START_TIMEOUT_MS = 120_000;
 const FUNCTION_READY_TIMEOUT_MS = 120_000;
 const POLL_MS = 500;
 const LOCAL_CONVEX_STATE_DIR = ".convex/local/default";
@@ -256,7 +256,6 @@ function isFunctionReadinessRetryableOutput(output: string) {
   return (
     isFunctionUnavailableOutput(output) ||
     isLocalConvexModuleStillPreparingOutput(output) ||
-    output.includes("ConcurrentPush") ||
     output.includes("Function execution timed out (maximum duration: 1s)")
   );
 }
