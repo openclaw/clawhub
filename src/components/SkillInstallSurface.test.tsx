@@ -3,7 +3,11 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { SkillCommandLineCard, OpenClawCliInstallCommand, SkillInstallSurface } from "./SkillInstallSurface";
+import {
+  SkillCommandLineCard,
+  OpenClawCliInstallCommand,
+  SkillInstallSurface,
+} from "./SkillInstallSurface";
 import { TooltipProvider } from "./ui/tooltip";
 
 const writeTextMock = vi.fn();
@@ -112,9 +116,7 @@ describe("SkillInstallSurface", () => {
   });
 
   it("splits plugin install commands into muted verb and highlighted target", () => {
-    render(
-      <OpenClawCliInstallCommand command="openclaw plugins install clawhub:demo-plugin" />,
-    );
+    render(<OpenClawCliInstallCommand command="openclaw plugins install clawhub:demo-plugin" />);
 
     expect(screen.getByText("openclaw plugins install")).toBeTruthy();
     expect(screen.getByText("clawhub:demo-plugin")).toBeTruthy();

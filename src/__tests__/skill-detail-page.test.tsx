@@ -1110,9 +1110,8 @@ describe("SkillDetailPage", () => {
     expect(sidebarMetadata).toBeTruthy();
 
     expect(screen.getAllByRole("heading", { name: "Install" }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText("openclaw skills install @steipete/weather").length).toBeGreaterThan(
-      0,
-    );
+    expect(screen.getAllByText("openclaw skills install").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("@steipete/weather").length).toBeGreaterThan(0);
     expect(screen.queryByText("npx clawhub@latest install @steipete/weather")).toBeNull();
     expect(screen.queryByRole("tab", { name: "ClawHub" })).toBeNull();
     expect(screen.getByRole("tab", { name: "CLI" }).getAttribute("aria-selected")).toBe("true");

@@ -240,30 +240,30 @@ export function SkillHeader({
         ) : null}
         {hasOwnerActions || isStaff ? (
           <div className="skill-management-toolbar-inner">
-          {newVersionHref ? (
-            <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
-              <a href={newVersionHref} aria-label="New version">
-                <Upload size={13} aria-hidden="true" />
-                New version
-              </a>
-            </Button>
-          ) : null}
-          {settingsHref ? (
-            <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
-              <a href={settingsHref} aria-label="Settings">
-                <Settings size={13} aria-hidden="true" />
-                Settings
-              </a>
-            </Button>
-          ) : null}
-          {isStaff ? (
-            <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
-              <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
-                <ShieldCheck size={13} aria-hidden="true" />
-                Manage
-              </Link>
-            </Button>
-          ) : null}
+            {newVersionHref ? (
+              <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
+                <a href={newVersionHref} aria-label="New version">
+                  <Upload size={13} aria-hidden="true" />
+                  New version
+                </a>
+              </Button>
+            ) : null}
+            {settingsHref ? (
+              <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
+                <a href={settingsHref} aria-label="Settings">
+                  <Settings size={13} aria-hidden="true" />
+                  Settings
+                </a>
+              </Button>
+            ) : null}
+            {isStaff ? (
+              <Button asChild variant="ghost" size="xs" className="skill-management-toolbar-action">
+                <Link to="/management" search={{ skill: skill.slug, plugin: undefined }}>
+                  <ShieldCheck size={13} aria-hidden="true" />
+                  Manage
+                </Link>
+              </Button>
+            ) : null}
           </div>
         ) : null}
       </div>

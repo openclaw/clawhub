@@ -14,6 +14,7 @@ import {
   FileArchive,
   Files,
   Fingerprint,
+  Hammer,
   HardDrive,
   Info,
   Package,
@@ -680,6 +681,7 @@ function PluginManifestSkillsPanel({
 }
 
 const PLUGIN_VALIDATE_CLI = "clawhub package validate <path-to-plugin>";
+const PLUGIN_VALIDATE_TOOLBAR_LABEL = "Validate locally before publishing";
 
 const INSPECTOR_ISSUE_CLASS_LABELS: Record<string, string> = {
   "upstream-metadata": "Metadata",
@@ -712,19 +714,25 @@ function compareInspectorFindings(a: PluginInspectorFinding, b: PluginInspectorF
   return categoryA.localeCompare(categoryB);
 }
 
-function formatValidationSummaryHint(errorCount: number, warningCount: number) {
-  if (errorCount > 0 && warningCount > 0) {
-    return "Fix errors first to avoid publishing or compatibility issues.";
-  }
-  if (errorCount > 0) {
-    return errorCount === 1 ? "1 error needs attention." : `${errorCount} errors need attention.`;
-  }
-  if (warningCount > 0) {
-    return warningCount === 1
-      ? "No blocking errors. 1 warning should be reviewed."
-      : `No blocking errors. ${warningCount} warnings should be reviewed.`;
-  }
-  return null;
+function ValidationSummaryHint({
+  issueCount,
+  packageName,
+  version,
+}: {
+  issueCount: number;
+  packageName: string;
+  version: string | null;
+}) {
+  const issueLabel = issueCount === 1 ? "1 issue" : `${issueCount} issues`;
+  const versionLabel = version ? `version ${version}` : "this release";
+
+  return (
+    <>
+      Hey, we found <strong>{issueLabel}</strong> with {versionLabel} of{" "}
+      <strong>{packageName}</strong>. Review the findings below, apply the fix, and upload a new
+      version.
+    </>
+  );
 }
 
 function formatValidationFindingMessage(message: string) {
@@ -830,8 +838,7 @@ function buildDevValidationFindingMocks(
       message: "Plugin manifest does not declare the expected registration seam.",
       authorRemediation: {
         summary: "Export activate() and register capabilities through the current plugin API.",
-        docsUrl:
-          "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#missing-expected-seam",
+        docsUrl: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#missing-expected-seam",
       },
       evidence: ["manifest.extensions missing ./dist/index.js reference"],
     },
@@ -843,8 +850,7 @@ function buildDevValidationFindingMocks(
       severity: "P0",
       message: "openclaw.compat.pluginApi is missing from package.json.",
       authorRemediation: {
-        summary:
-          "Add openclaw.compat.pluginApi with the minimum API version your plugin supports.",
+        summary: "Add openclaw.compat.pluginApi with the minimum API version your plugin supports.",
         docsUrl:
           "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#package-plugin-api-compat-missing",
       },
@@ -856,6 +862,11 @@ function buildDevValidationFindingMocks(
 function shouldShowDevValidationFindingMocks() {
   // Visual iteration only — remove before PR. Skips Vitest (`MODE === "test"`).
   return import.meta.env.DEV && import.meta.env.MODE === "development";
+}
+
+function shouldShowValidationPriorityBadge(severity?: string) {
+  const priority = parseInspectorPriority(severity);
+  return Boolean(severity) && priority <= 1;
 }
 
 function PluginValidationFindingCard({
@@ -870,29 +881,54 @@ function PluginValidationFindingCard({
   const evidence = finding.evidence ?? [];
   const visibleEvidence = evidence.slice(0, 4);
   const hiddenEvidenceCount = Math.max(evidence.length - visibleEvidence.length, 0);
-  const metadataLine = [
-    finding.version ? `Release v${finding.version}` : null,
-    finding.targetOpenClawVersion ? `Target OpenClaw ${finding.targetOpenClawVersion}` : null,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-  const kicker = [kind === "error" ? "Error" : "Warning", categoryLabel, finding.severity]
-    .filter(Boolean)
-    .join(" · ");
+  const showPriorityBadge = shouldShowValidationPriorityBadge(finding.severity);
+  const hasMetadata = Boolean(finding.version || finding.targetOpenClawVersion);
 
   const summaryCopy = (
-    <div className="plugin-warning-item-copy">
-      <p className="plugin-warning-item-message">
-        {formatValidationFindingMessage(finding.message)}
-      </p>
-      <p className={`plugin-warning-item-tags is-${kind}`}>{kicker}</p>
+    <div className="plugin-warning-item-lead">
+      <span className={`plugin-warning-severity-dot is-${kind}`} aria-hidden="true" />
+      <div className="plugin-warning-item-copy">
+        <div className="plugin-warning-item-title-row">
+          <p className="plugin-warning-item-message">
+            {formatValidationFindingMessage(finding.message)}
+          </p>
+          {showPriorityBadge ? (
+            <span className={`plugin-warning-priority-badge is-${kind}`}>{finding.severity}</span>
+          ) : null}
+          {compact ? (
+            <ChevronRight
+              className="plugin-warning-item-expand-chevron"
+              size={14}
+              aria-hidden="true"
+            />
+          ) : null}
+        </div>
+        <p className="plugin-warning-item-meta">
+          <span className="plugin-warning-item-meta-text">
+            {categoryLabel ? <span>{categoryLabel}</span> : null}
+            {categoryLabel && finding.code ? (
+              <span className="plugin-warning-item-meta-sep" aria-hidden="true">
+                {" · "}
+              </span>
+            ) : null}
+            {finding.code ? (
+              <code className="plugin-warning-item-code" title={finding.code}>
+                {finding.code}
+              </code>
+            ) : null}
+          </span>
+        </p>
+      </div>
     </div>
   );
 
   const fixGuide = finding.authorRemediation?.summary ? (
     <div className="plugin-warning-fix-guide">
       <div className="plugin-warning-fix-guide-copy">
-        <p className="plugin-warning-fix-guide-label">How to fix</p>
+        <p className="plugin-warning-fix-guide-label">
+          <Hammer size={14} aria-hidden="true" />
+          How to fix
+        </p>
         <p className="plugin-warning-fix-copy">{finding.authorRemediation.summary}</p>
       </div>
       {finding.authorRemediation.docsUrl ? (
@@ -908,60 +944,63 @@ function PluginValidationFindingCard({
     </div>
   ) : null;
 
-  const metadata = metadataLine ? (
-    <p className="plugin-warning-meta-line">{metadataLine}</p>
+  const metadata = hasMetadata ? (
+    <dl className="plugin-warning-meta-group">
+      {finding.version ? (
+        <div className="plugin-warning-meta-field">
+          <dt className="plugin-warning-meta-key">Release</dt>
+          <dd className="plugin-warning-meta-value">v{finding.version}</dd>
+        </div>
+      ) : null}
+      {finding.targetOpenClawVersion ? (
+        <div className="plugin-warning-meta-field">
+          <dt className="plugin-warning-meta-key">Target</dt>
+          <dd className="plugin-warning-meta-value">OpenClaw {finding.targetOpenClawVersion}</dd>
+        </div>
+      ) : null}
+    </dl>
   ) : null;
 
-  const evidenceDetails =
+  const evidenceBlock =
     visibleEvidence.length > 0 ? (
-      <details className="plugin-warning-evidence-details">
-        <summary className="plugin-warning-evidence-summary">
-          <span className="plugin-warning-evidence-summary-label">Technical evidence</span>
-          <ChevronRight className="plugin-warning-evidence-chevron" size={14} aria-hidden="true" />
-        </summary>
-        <div className="plugin-warning-evidence-block">
-          {visibleEvidence.map((entry) => (
-            <div className="plugin-warning-evidence-line" key={entry}>
-              {entry}
-            </div>
-          ))}
-          {hiddenEvidenceCount > 0 ? (
-            <p className="plugin-warning-evidence-more">+{hiddenEvidenceCount} more</p>
-          ) : null}
-        </div>
-      </details>
+      <div className="plugin-warning-evidence-block">
+        <p className="plugin-warning-evidence-label">Technical evidence</p>
+        {visibleEvidence.map((entry) => (
+          <div className="plugin-warning-evidence-line" key={entry}>
+            {entry}
+          </div>
+        ))}
+        {hiddenEvidenceCount > 0 ? (
+          <p className="plugin-warning-evidence-more">+{hiddenEvidenceCount} more</p>
+        ) : null}
+      </div>
     ) : null;
 
   const body = (
     <div className="plugin-warning-item-body">
       {fixGuide}
+      {evidenceBlock}
       {metadata}
-      {evidenceDetails}
     </div>
   );
+
+  const findingLabel = `${kind === "error" ? "Error" : "Warning"}: ${formatValidationFindingMessage(finding.message)}`;
 
   if (compact) {
     return (
       <details
         className={`plugin-warning-item plugin-warning-item-details is-${kind}`}
-        open={kind === "error"}
+        aria-label={findingLabel}
       >
-        <summary className="plugin-warning-item-summary">
-          {summaryCopy}
-          <code className="plugin-warning-item-code">{finding.code}</code>
-          <ChevronRight className="plugin-warning-item-chevron" size={14} aria-hidden="true" />
-        </summary>
+        <summary className="plugin-warning-item-summary">{summaryCopy}</summary>
         {body}
       </details>
     );
   }
 
   return (
-    <article className={`plugin-warning-item is-${kind}`}>
-      <div className="plugin-warning-item-main">
-        {summaryCopy}
-        <code className="plugin-warning-item-code">{finding.code}</code>
-      </div>
+    <article className={`plugin-warning-item is-${kind}`} aria-label={findingLabel}>
+      <div className="plugin-warning-item-main">{summaryCopy}</div>
       {body}
     </article>
   );
@@ -1035,10 +1074,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     : undefined;
   const displayInspectorFindings =
     authorInspectorFindings && shouldShowDevValidationFindingMocks()
-      ? [
-          ...authorInspectorFindings,
-          ...buildDevValidationFindingMocks(authorInspectorFindings[0]),
-        ]
+      ? [...authorInspectorFindings, ...buildDevValidationFindingMocks(authorInspectorFindings[0])]
       : authorInspectorFindings;
   const [activeTab, setActiveTab] = useState<PluginDetailTab>("readme");
   const [mobileDetailPanel, setMobileDetailPanel] = useState<"content" | "stats">("content");
@@ -1243,11 +1279,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const validationWarnings = (
     displayInspectorFindings?.filter((finding) => finding.findingKind !== "error") ?? []
   ).sort(compareInspectorFindings);
+  const validationIssueCount = validationErrors.length + validationWarnings.length;
+  const validationReleaseVersion = latestRelease?.version ?? pkg.latestVersion ?? null;
   const showValidationGroups = validationErrors.length > 0 && validationWarnings.length > 0;
-  const validationSummaryHint = formatValidationSummaryHint(
-    validationErrors.length,
-    validationWarnings.length,
-  );
   const validationAgentFixPrompt =
     authorInspectorFindings && authorInspectorFindings.length > 0
       ? buildValidationAgentFixPrompt({
@@ -1257,27 +1291,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         })
       : null;
   const compactFindingCards = (displayInspectorFindings?.length ?? 0) > 1;
-  const validationAgentPromptCard = validationAgentFixPrompt ? (
-    <div
-      className="plugin-validation-agent-prompt-card"
-      aria-labelledby="validation-agent-prompt-label"
-    >
-      <div className="plugin-validation-agent-prompt-copy">
-        <span id="validation-agent-prompt-label" className="plugin-validation-agent-prompt-label">
-          Fix with your agent
-        </span>
-        <p className="plugin-validation-agent-prompt-hint">
-          Paste into your coding agent to fix this check.
-        </p>
-      </div>
-      <InstallCopyButton
-        text={validationAgentFixPrompt}
-        label="Copy prompt"
-        ariaLabel="Copy agent fix prompt"
-        className="plugin-validation-agent-prompt-button"
-      />
-    </div>
-  ) : null;
   const validationPanel =
     displayInspectorFindings && displayInspectorFindings.length > 0 ? (
       <section
@@ -1288,57 +1301,83 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         <header className="plugin-validation-overview">
           <div className="plugin-validation-panel-title-row">
             <h2 id="validation-heading" className="plugin-validation-panel-title">
-              Validation findings
+              Validation
             </h2>
-            <span className="plugin-validation-panel-stats" aria-label="Validation summary">
-              <span
-                className={
-                  validationErrors.length > 0
-                    ? "plugin-validation-panel-stat is-error"
-                    : "plugin-validation-panel-stat is-muted"
-                }
-              >
-                {validationErrors.length}{" "}
-                {validationErrors.length === 1 ? "error" : "errors"}
+            <div className="plugin-validation-panel-title-actions">
+              <span className="plugin-validation-panel-stats" aria-label="Validation summary">
+                <span
+                  className={
+                    validationErrors.length > 0
+                      ? "plugin-validation-panel-stat"
+                      : "plugin-validation-panel-stat is-muted"
+                  }
+                >
+                  {validationErrors.length} {validationErrors.length === 1 ? "error" : "errors"}
+                </span>
+                <span className="plugin-validation-panel-stats-sep" aria-hidden="true">
+                  ·
+                </span>
+                <span
+                  className={
+                    validationWarnings.length > 0
+                      ? "plugin-validation-panel-stat"
+                      : "plugin-validation-panel-stat is-muted"
+                  }
+                >
+                  {validationWarnings.length}{" "}
+                  {validationWarnings.length === 1 ? "warning" : "warnings"}
+                </span>
               </span>
-              <span className="plugin-validation-panel-stats-sep" aria-hidden="true">
-                ·
-              </span>
-              <span
-                className={
-                  validationWarnings.length > 0
-                    ? "plugin-validation-panel-stat is-warning"
-                    : "plugin-validation-panel-stat is-muted"
-                }
-              >
-                {validationWarnings.length}{" "}
-                {validationWarnings.length === 1 ? "warning" : "warnings"}
-              </span>
-            </span>
+            </div>
           </div>
-          {validationSummaryHint ? (
-            <p className="plugin-validation-summary-hint">{validationSummaryHint}</p>
+          {validationIssueCount > 0 ? (
+            <p className="plugin-validation-summary-hint">
+              <ValidationSummaryHint
+                issueCount={validationIssueCount}
+                packageName={pkg.name}
+                version={validationReleaseVersion}
+              />
+            </p>
           ) : null}
-          <div className="plugin-validation-cli-card" aria-labelledby="validation-cli-label">
-            <span id="validation-cli-label" className="plugin-validation-cli-label">
-              Run locally
-            </span>
-            <code className="plugin-validation-command">{PLUGIN_VALIDATE_CLI}</code>
-            <InstallCopyButton
-              text={PLUGIN_VALIDATE_CLI}
-              ariaLabel="Copy validate command"
-              showLabel={false}
-              className="plugin-validation-cli-copy"
-            />
+          <div className="plugin-validation-actions" role="toolbar" aria-label="Validation actions">
+            <div className="plugin-validation-actions-row">
+              <div className="plugin-validation-command-block">
+                <span id="validation-toolbar-label" className="plugin-validation-toolbar-label">
+                  {PLUGIN_VALIDATE_TOOLBAR_LABEL}
+                </span>
+                <div className="plugin-validation-toolbar">
+                  <div
+                    id="validation-toolbar-cli"
+                    className="plugin-validation-toolbar-cli"
+                    aria-labelledby="validation-toolbar-label"
+                  >
+                    <code className="plugin-validation-command">{PLUGIN_VALIDATE_CLI}</code>
+                    <InstallCopyButton
+                      text={PLUGIN_VALIDATE_CLI}
+                      ariaLabel="Copy validate command"
+                      showLabel={false}
+                      className="plugin-validation-toolbar-copy"
+                    />
+                  </div>
+                </div>
+              </div>
+              {validationAgentFixPrompt ? (
+                <div className="plugin-validation-toolbar-agent">
+                  <InstallCopyButton
+                    text={validationAgentFixPrompt}
+                    label="Copy instructions"
+                    tooltip="Paste into your coding agent to fix these findings."
+                    ariaLabel="Copy fix instructions"
+                    className="plugin-validation-panel-agent"
+                  />
+                </div>
+              ) : null}
+            </div>
           </div>
-          {validationAgentPromptCard}
         </header>
-        <section
-          className="plugin-validation-panel-findings"
-          aria-label="Issues to review"
-        >
+        <section className="plugin-validation-panel-findings" aria-label="Issues to review">
           {validationErrors.length > 0 ? (
-            <>
+            <div className="plugin-validation-findings-group is-error">
               {showValidationGroups ? (
                 <h4 className="plugin-validation-group-label is-error">
                   Errors ({validationErrors.length})
@@ -1353,10 +1392,10 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   />
                 ))}
               </div>
-            </>
+            </div>
           ) : null}
           {validationWarnings.length > 0 ? (
-            <>
+            <div className="plugin-validation-findings-group is-warning">
               {showValidationGroups ? (
                 <h4 className="plugin-validation-group-label is-warning">
                   Warnings ({validationWarnings.length})
@@ -1371,7 +1410,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   />
                 ))}
               </div>
-            </>
+            </div>
           ) : null}
         </section>
       </section>

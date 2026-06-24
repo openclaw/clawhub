@@ -2,6 +2,7 @@ import { Check, Copy } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "../lib/utils";
 import { Button } from "./ui/button";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type CopyState = "idle" | "copied" | "failed";
 
@@ -36,12 +37,16 @@ export function InstallCopyButton({
   text,
   label = "Copy",
   ariaLabel,
+  title,
+  tooltip,
   className,
   showLabel = true,
 }: {
   text: string;
   label?: string;
   ariaLabel?: string;
+  title?: string;
+  tooltip?: string;
   className?: string;
   showLabel?: boolean;
 }) {
@@ -71,13 +76,14 @@ export function InstallCopyButton({
   const buttonLabel =
     copyState === "copied" ? "Copied" : copyState === "failed" ? "Copy Failed" : label;
 
-  return (
+  const button = (
     <Button
       type="button"
       size="sm"
       variant="outline"
       className={cn("skill-install-copy-button", className)}
       aria-label={ariaLabel ?? label}
+      title={tooltip ? undefined : title}
       data-copy-state={copyState}
       onClick={() => {
         void copyText(text)
@@ -98,5 +104,20 @@ export function InstallCopyButton({
       )}
       {showLabel ? <span aria-live="polite">{buttonLabel}</span> : null}
     </Button>
+  );
+
+  if (!tooltip) {
+    return button;
+  }
+
+  return (
+    <TooltipProvider delayDuration={120}>
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipContent side="top" align="end">
+          {tooltip}
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

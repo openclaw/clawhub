@@ -277,7 +277,8 @@ test("plugin inspector blocks hard publish errors and publishes warning findings
       hasText: /^legacy-before-agent-start$/,
     }),
   ).toBeVisible();
-  await expect(page.getByText(/Warning · Deprecated API · P2/)).toBeVisible();
+  await expect(page.getByText(/Deprecated API/)).toBeVisible();
+  await expect(page.getByText(/legacy-before-agent-start/)).toBeVisible();
   await expect(page.getByText(/before_agent_start hook compatibility/i)).toBeVisible();
   await captureProof(page, testInfo, "04-plugin-public-warnings");
 
