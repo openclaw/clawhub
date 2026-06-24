@@ -4884,8 +4884,9 @@ code {
 }
 
 .plugin-validation-panel .plugin-warning-fix-guide {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -4894,11 +4895,11 @@ code {
   background: color-mix(in srgb, var(--status-success-fg) 5%, transparent);
 }
 
-.plugin-validation-panel .plugin-warning-fix-guide-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+.plugin-validation-panel .plugin-warning-fix-guide-copy {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
 }
 
 .plugin-validation-panel .plugin-warning-fix-guide-label {
@@ -4919,7 +4920,7 @@ code {
 
 .plugin-validation-panel .plugin-warning-fix-link {
   flex-shrink: 0;
-  color: color-mix(in srgb, #7ab7ff 88%, white);
+  color: #0099ff;
   font-weight: 500;
   text-decoration: none;
   white-space: nowrap;
@@ -5121,8 +5122,9 @@ code {
 }
 
 .plugin-warning-fix-guide {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
   width: 100%;
   padding: 8px 10px;
   border: 0;
@@ -5131,11 +5133,11 @@ code {
   background: color-mix(in srgb, var(--status-success-fg) 5%, transparent);
 }
 
-.plugin-warning-fix-guide-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
+.plugin-warning-fix-guide-copy {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
 }
 
 .plugin-warning-fix-guide-label {
@@ -5272,7 +5274,7 @@ code {
 
 .plugin-warning-fix-link {
   flex-shrink: 0;
-  color: color-mix(in srgb, #7ab7ff 88%, white);
+  color: #0099ff;
   font-size: 0.84rem;
   font-weight: 650;
   text-decoration: none;
@@ -5281,7 +5283,7 @@ code {
 
 .plugin-warning-fix-link:hover,
 .plugin-warning-fix-link:focus-visible {
-  color: color-mix(in srgb, var(--official-fg) 82%, white);
+  color: #33adff;
   text-decoration: underline;
 }
 
