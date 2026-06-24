@@ -1128,7 +1128,16 @@ describe("SkillDetailPage", () => {
     const securityAuditLabelIndex = sidebarLabels.findIndex((label) =>
       label?.startsWith("Security audit"),
     );
-    expect(securityAuditLabelIndex).toBe(sidebarLabels.indexOf("Creator") + 1);
+    expect(sidebarLabels).not.toContain("Creator");
+    expect(securityAuditLabelIndex).toBeGreaterThanOrEqual(0);
+    const heroCreator = document.querySelector(".skill-hero-creator");
+    expect(heroCreator).toBeTruthy();
+    const summary = document.querySelector(".skill-summary-block");
+    expect(
+      summary &&
+        heroCreator &&
+        summary.compareDocumentPosition(heroCreator) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
     expect(
       screen.getByRole("button", {
         name: "Security checks across malware telemetry and agentic risk",

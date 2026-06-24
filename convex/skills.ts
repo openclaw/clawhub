@@ -79,6 +79,7 @@ import {
   summarizeReasonCodes,
   verdictFromCodes,
 } from "./lib/moderationReasonCodes";
+import { toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import {
   type HydratableSkill,
   type PublicPublisher,
@@ -1855,7 +1856,8 @@ async function loadPublicSkillReference(ctx: QueryCtx, skillId: Id<"skills"> | n
   const skill = await ctx.db.get(skillId);
   if (!isPublicSkillDoc(skill)) return null;
 
-  const owner = toPublicPublisher(
+  const owner = await toPublicPublisherWithOfficial(
+    ctx,
     await getOwnerPublisher(ctx, {
       ownerPublisherId: skill.ownerPublisherId,
       ownerUserId: skill.ownerUserId,
@@ -2619,7 +2621,7 @@ export const getBySlug = query({
     const latestVersion = toPublicSkillVersion(publicLatestVersionDoc);
     const generatedSkillCard = await getGeneratedSkillCardPublicFile(ctx, publicLatestVersionDoc);
     if (latestVersion) latestVersion.generatedSkillCard = generatedSkillCard;
-    const owner = toPublicPublisher(ownerPublisher);
+    const owner = await toPublicPublisherWithOfficial(ctx, ownerPublisher);
     if (!owner) return null;
     const badges = await getSkillBadgeMap(ctx, skill._id);
 
@@ -3045,7 +3047,7 @@ export const getBySlugForStaff = query({
       ownerPublisherId: skill.ownerPublisherId,
       ownerUserId: skill.ownerUserId,
     });
-    const owner = toPublicPublisher(ownerPublisher);
+    const owner = await toPublicPublisherWithOfficial(ctx, ownerPublisher);
     const badges = await getSkillBadgeMap(ctx, skill._id);
     const rawAuditLogs = await ctx.db
       .query("auditLogs")

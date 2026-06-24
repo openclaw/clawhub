@@ -5906,6 +5906,7 @@ code {
   .skill-hero-layout.has-sidebar {
     grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
     column-gap: clamp(56px, 7vw, 96px);
+    row-gap: 64px;
   }
 
   .skill-hero-layout.has-sidebar > .skill-hero-main {
@@ -6143,8 +6144,80 @@ code {
   align-items: flex-start;
 }
 
-.skill-hero-mobile-creator {
+.skill-hero-creator {
+  display: inline-flex;
+  min-width: 0;
+  margin-top: 12px;
+}
+
+.skill-hero-title > .skill-summary-block:has(+ .skill-hero-creator) {
+  margin-bottom: 0;
+}
+
+.skill-hero-creator .user-badge,
+.skill-hero-creator .user-badge-link {
+  display: inline-grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  column-gap: 10px;
+  row-gap: 2px;
+  align-items: center;
+  min-width: 0;
+  color: var(--ink-soft);
+  text-decoration: none;
+}
+
+.skill-hero-creator .user-avatar {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.skill-hero-creator .user-name-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  grid-column: 2;
+  grid-row: 1;
+  align-self: center;
+  min-width: 0;
+}
+
+.skill-hero-creator .user-name {
+  color: var(--ink);
+  font-weight: 680;
+  font-size: 0.88rem;
+  line-height: 1.15;
+}
+
+.skill-hero-creator .official-badge-icon-only {
+  flex: 0 0 auto;
+  color: var(--official-fg);
+}
+
+.skill-hero-creator .user-name-sep {
   display: none;
+}
+
+.skill-hero-creator .user-handle {
+  grid-column: 2;
+  grid-row: 2;
+  color: var(--ink-soft);
+  font-weight: 560;
+  font-size: 0.8rem;
+  line-height: 1.15;
+}
+
+.skill-hero-creator .user-badge-link:hover,
+.skill-hero-creator .user-badge-link:focus-visible {
+  text-decoration: none;
+}
+
+.skill-hero-creator .user-badge-link:hover .user-name,
+.skill-hero-creator .user-badge-link:focus-visible .user-name,
+.skill-hero-creator .user-badge-link:hover .user-handle,
+.skill-hero-creator .user-badge-link:focus-visible .user-handle {
+  text-decoration: none;
 }
 
 .plugin-catalog-empty-alert {
@@ -6798,7 +6871,7 @@ code {
 
 .detail-mobile-master-tab-list[hidden],
 .detail-mobile-master-panel[hidden],
-.skill-hero-mobile-creator[hidden] {
+.skill-hero-creator[hidden] {
   display: none !important;
 }
 
@@ -7329,9 +7402,42 @@ code {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 4px 8px;
+  gap: 8px 14px;
   min-width: 0;
+  margin-top: 2px;
   overflow-wrap: anywhere;
+}
+
+.skill-hero-meta-item {
+  display: inline-flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  font-size: 0.82rem;
+  line-height: 1.3;
+}
+
+.skill-hero-meta-label {
+  color: var(--ink-soft);
+  font-weight: 520;
+}
+
+.skill-hero-meta-link {
+  color: var(--accent);
+  font-weight: 560;
+  text-decoration: none;
+}
+
+.skill-hero-meta-link:hover,
+.skill-hero-meta-link:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+.skill-hero-meta-version {
+  color: var(--ink-soft);
+  font-weight: 520;
 }
 
 .skill-hero-badges {
@@ -8168,33 +8274,20 @@ code {
     gap: 10px;
   }
 
-  .skill-hero-mobile-creator {
-    display: inline-flex;
-    align-items: center;
+  :is(.skill-detail-page, .plugin-detail-page) .skill-summary-block {
+    margin-top: 4px;
+  }
+
+  :is(.skill-detail-page, .plugin-detail-page) .skill-hero-creator {
+    margin-top: 18px;
+  }
+
+  .skill-detail-page .skill-hero-lower.has-sidebar {
+    order: 3;
+    display: grid;
+    gap: 12px;
+    width: 100%;
     min-width: 0;
-    color: var(--ink-soft);
-  }
-
-  .skill-hero-mobile-creator .user-badge {
-    min-width: 0;
-  }
-
-  .skill-hero-mobile-creator .user-badge-md .user-name,
-  .skill-hero-mobile-creator .user-badge-md .user-name-sep,
-  .skill-hero-mobile-creator .user-badge-md .user-handle {
-    font-size: 0.88rem;
-    line-height: 1.15;
-  }
-
-  .skill-hero-mobile-creator .user-badge-md .user-name {
-    color: var(--ink);
-    font-weight: 680;
-  }
-
-  .skill-hero-mobile-creator .user-badge-md .user-name-sep,
-  .skill-hero-mobile-creator .user-badge-md .user-handle {
-    color: var(--ink-soft);
-    font-weight: 560;
   }
 
   .detail-mobile-master-tabs {

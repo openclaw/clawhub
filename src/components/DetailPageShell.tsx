@@ -1,6 +1,8 @@
 import type { ReactNode } from "react";
 import { cn } from "../lib/utils";
 
+export const DETAIL_HERO_TOPIC_LIMIT = 4;
+
 type DetailPageShellProps = {
   children: ReactNode;
   className?: string;
