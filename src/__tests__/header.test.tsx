@@ -60,10 +60,36 @@ const defaultUnifiedSearchResult = {
       },
     },
   ],
+  creatorResults: [
+    {
+      type: "creator",
+      creator: {
+        _id: "publishers:local",
+        _creationTime: 1,
+        kind: "org",
+        handle: "local",
+        displayName: "Local Creator",
+        image: undefined,
+        bio: "Creator weather tools.",
+        linkedUserId: undefined,
+        official: true,
+        stats: {
+          skills: 1,
+          packages: 1,
+          installs: 0,
+          downloads: 3,
+          stars: 0,
+        },
+        publishedItems: [],
+      },
+    },
+  ],
   skillCount: 1,
   pluginCount: 1,
+  creatorCount: 1,
   skillHasMore: false,
   pluginHasMore: false,
+  creatorHasMore: false,
   isSearching: false,
 };
 
@@ -277,7 +303,7 @@ describe("Header", () => {
     expect(screen.queryByText("About")).toBeNull();
     expect(screen.queryByText("Dashboard")).toBeNull();
     expect(screen.queryByText("Manage")).toBeNull();
-    expect(screen.getByPlaceholderText("Search skills and plugins")).toBeTruthy();
+    expect(screen.getByPlaceholderText("Search skills, plugins, and creators")).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Open menu" }));
 
@@ -405,7 +431,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.change(input, { target: { value: "weather" } });
     fireEvent.submit(screen.getByRole("search", { name: "Site search" }));
 
@@ -418,13 +444,13 @@ describe("Header", () => {
   it("opens the empty typeahead state from the global search shortcut", () => {
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.keyDown(window, { key: "k", metaKey: true });
 
     expect(document.activeElement).toBe(input);
     expect(input.getAttribute("aria-expanded")).toBe("true");
     expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
-    expect(screen.getByText("Start typing to search skills and plugins")).toBeTruthy();
+    expect(screen.getByText("Start typing to search skills, plugins, and creators")).toBeTruthy();
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith(
       "",
       "all",
@@ -435,7 +461,7 @@ describe("Header", () => {
   it("preserves caret navigation and moves through the unified results with vertical arrows", () => {
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather plugin" } });
 
@@ -448,28 +474,34 @@ describe("Header", () => {
     expect(scrollIntoViewMock).toHaveBeenLastCalledWith({ block: "nearest" });
   });
 
-  it("shows skills and plugins together in grouped typeahead sections", () => {
+  it("shows skills, plugins, and creators together in grouped typeahead sections", () => {
     navigateMock.mockReset();
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
 
     const typeahead = screen.getByRole("listbox");
     const skillGroup = within(typeahead).getByRole("group", { name: "Skills" });
     const pluginGroup = within(typeahead).getByRole("group", { name: "Plugins" });
+    const creatorGroup = within(typeahead).getByRole("group", { name: "Creators" });
     expect(screen.getByText("Weather Skill")).toBeTruthy();
     expect(screen.getByText("Weather Plugin")).toBeTruthy();
+    expect(screen.getByText("Local Creator")).toBeTruthy();
     expect(
       screen.getByText("Weather Skill").closest(".navbar-search-typeahead-row")?.textContent,
     ).toContain("@local / weather");
     expect(
       screen.getByText("Weather Plugin").closest(".navbar-search-typeahead-row")?.textContent,
     ).toContain("@local / weather-plugin");
+    expect(
+      screen.getByText("Local Creator").closest(".navbar-search-typeahead-row")?.textContent,
+    ).toContain("@local");
     expect(skillGroup.querySelector("svg.lucide-wrench")).not.toBeNull();
     expect(pluginGroup.querySelector("svg.lucide-message-circle")).not.toBeNull();
+    expect(creatorGroup.querySelector("svg.lucide-building-2")).not.toBeNull();
     expect(typeahead.querySelector("svg.lucide-package")).toBeNull();
     expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
     expect(input.getAttribute("role")).toBe("combobox");
@@ -480,6 +512,7 @@ describe("Header", () => {
     expect(document.getElementById(activeDescendant ?? "")).toBeTruthy();
     expect(within(typeahead).queryByText("Publishers")).toBeNull();
     expect(within(typeahead).queryByText('See user results for "weather"')).toBeNull();
+    expect(within(typeahead).getByText('See creator results for "weather"')).toBeTruthy();
 
     fireEvent.keyDown(input, { key: "ArrowDown" });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -487,6 +520,30 @@ describe("Header", () => {
     expect(navigateMock).toHaveBeenCalledWith({
       to: "/search",
       search: { q: "weather", type: "skills" },
+    });
+  });
+
+  it("navigates creator typeahead rows to profiles and creator footers to scoped search", () => {
+    navigateMock.mockReset();
+
+    render(<Header />);
+
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.click(screen.getByRole("option", { name: /Local Creator/i }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/local",
+    });
+
+    fireEvent.focus(input);
+    fireEvent.change(input, { target: { value: "weather" } });
+    fireEvent.click(screen.getByRole("option", { name: /See creator results/i }));
+
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "weather", type: "creators" },
     });
   });
 
@@ -508,7 +565,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "firecrawl" } });
 
@@ -541,7 +598,7 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
     fireEvent.click(screen.getByRole("option", { name: /Weather Skill/i }));
@@ -562,23 +619,27 @@ describe("Header", () => {
       results: [],
       skillResults: [],
       pluginResults: [],
+      creatorResults: [],
       skillCount: 0,
       pluginCount: 0,
+      creatorCount: 0,
       skillHasMore: false,
       pluginHasMore: false,
+      creatorHasMore: false,
       isSearching: false,
     });
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "zzzz" } });
 
-    expect(screen.getByText('No skills or plugins found for "zzzz"')).toBeTruthy();
+    expect(screen.getByText('No skills, plugins, or creators found for "zzzz"')).toBeTruthy();
     expect(screen.queryByRole("tablist", { name: "Result type" })).toBeNull();
     expect(screen.queryByText('See skill results for "zzzz"')).toBeNull();
     expect(screen.queryByText('See plugin results for "zzzz"')).toBeNull();
+    expect(screen.queryByText('See creator results for "zzzz"')).toBeNull();
   });
 
   it("shows Home above Skills in the mobile menu", () => {
@@ -660,12 +721,13 @@ describe("Header", () => {
 
     render(<Header />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins");
+    const input = screen.getByPlaceholderText("Search skills, plugins, and creators");
     fireEvent.focus(input);
     fireEvent.change(input, { target: { value: "weather" } });
 
     const skillRow = screen.getByText("Weather Skill").closest(".navbar-search-typeahead-row");
     const pluginRow = screen.getByText("Weather Plugin").closest(".navbar-search-typeahead-row");
+    const creatorRow = screen.getByText("Local Creator").closest(".navbar-search-typeahead-row");
 
     expect(skillRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
       "@local / weather",
@@ -673,7 +735,11 @@ describe("Header", () => {
     expect(pluginRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
       "@local / weather-plugin",
     );
+    expect(creatorRow?.querySelector(".navbar-search-typeahead-meta")?.textContent).toContain(
+      "@local",
+    );
     expect(skillRow?.querySelector(".official-badge")).toBeTruthy();
     expect(pluginRow?.querySelector(".official-badge")).toBeTruthy();
+    expect(creatorRow?.querySelector(".official-badge")).toBeTruthy();
   });
 });

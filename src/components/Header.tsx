@@ -27,7 +27,7 @@ import {
 } from "../lib/authErrorMessage";
 import { gravatarUrl } from "../lib/gravatar";
 import { PRIMARY_NAV_ITEMS, SECONDARY_NAV_ITEMS } from "../lib/nav-items";
-import { buildSkillDetailHref } from "../lib/ownerRoute";
+import { buildPublisherProfileHref, buildSkillDetailHref } from "../lib/ownerRoute";
 import { buildPluginDetailHref, displayPluginPackageName } from "../lib/pluginRoutes";
 import { SITE_NAME } from "../lib/site";
 import { applyTheme, useThemeMode } from "../lib/theme";
@@ -35,6 +35,7 @@ import { clearAuthError, setAuthError } from "../lib/useAuthError";
 import { useAuthStatus } from "../lib/useAuthStatus";
 import {
   useUnifiedSearch,
+  type UnifiedCreatorResult,
   type UnifiedPluginResult,
   type UnifiedSkillResult,
 } from "../lib/useUnifiedSearch";
@@ -94,7 +95,7 @@ function GitHubLogo({ className }: { className?: string }) {
   );
 }
 
-type TypeaheadSection = "skills" | "plugins";
+type TypeaheadSection = "skills" | "plugins" | "creators";
 
 type TypeaheadItem =
   | {
@@ -106,6 +107,11 @@ type TypeaheadItem =
       kind: "plugin";
       key: string;
       result: UnifiedPluginResult;
+    }
+  | {
+      kind: "creator";
+      key: string;
+      result: UnifiedCreatorResult;
     }
   | {
       kind: "footer";
@@ -149,11 +155,12 @@ export default function Header() {
   const {
     skillResults,
     pluginResults,
+    creatorResults,
     isSearching: typeaheadSearching,
   } = useUnifiedSearch(navSearchQuery, "all", {
     debounceMs: 180,
     enabled: typeaheadOpen && hasNavSearchQuery,
-    limits: { skills: 4, plugins: 4 },
+    limits: { skills: 4, plugins: 4, creators: 4 },
   });
   const typeaheadSkillItems = useMemo<TypeaheadItem[]>(() => {
     if (!hasNavSearchQuery) return [];
@@ -189,9 +196,26 @@ export default function Header() {
     return items;
   }, [hasNavSearchQuery, pluginResults, trimmedNavSearchQuery]);
 
+  const typeaheadCreatorItems = useMemo<TypeaheadItem[]>(() => {
+    if (!hasNavSearchQuery) return [];
+    const items: TypeaheadItem[] = [];
+    for (const result of creatorResults) {
+      items.push({ kind: "creator", key: `creator-${result.creator._id}`, result });
+    }
+    if (creatorResults.length > 0) {
+      items.push({
+        kind: "footer",
+        key: "footer-creators",
+        section: "creators",
+        label: `See creator results for "${trimmedNavSearchQuery}"`,
+      });
+    }
+    return items;
+  }, [creatorResults, hasNavSearchQuery, trimmedNavSearchQuery]);
+
   const typeaheadItems = useMemo(
-    () => [...typeaheadSkillItems, ...typeaheadPluginItems],
-    [typeaheadPluginItems, typeaheadSkillItems],
+    () => [...typeaheadSkillItems, ...typeaheadPluginItems, ...typeaheadCreatorItems],
+    [typeaheadCreatorItems, typeaheadPluginItems, typeaheadSkillItems],
   );
   const activeTypeaheadItem = showTypeahead ? typeaheadItems[typeaheadActiveIndex] : undefined;
   const activeTypeaheadId = activeTypeaheadItem
@@ -304,6 +328,21 @@ export default function Header() {
         to: buildPluginDetailHref(item.result.plugin.name, {
           ownerHandle: item.result.plugin.ownerHandle,
         }),
+      });
+    } else if (item.kind === "creator") {
+      const publisherHandle = item.result.creator.handle.trim();
+      if (!publisherHandle) {
+        void navigate({
+          to: "/search",
+          search: { q: trimmedNavSearchQuery, type: "creators" },
+        });
+        setNavSearchQuery("");
+        setTypeaheadOpen(false);
+        setMobileSearchOpen(false);
+        return;
+      }
+      void navigate({
+        to: buildPublisherProfileHref(publisherHandle),
       });
     } else {
       void navigate({
@@ -507,7 +546,7 @@ export default function Header() {
                   className="navbar-search-input"
                   type="search"
                   role="combobox"
-                  placeholder="Search skills and plugins"
+                  placeholder="Search skills, plugins, and creators"
                   value={navSearchQuery}
                   onChange={(e) => {
                     setNavSearchQuery(e.target.value);
@@ -530,6 +569,7 @@ export default function Header() {
                   loading={typeaheadSearching}
                   onHoverItem={setTypeaheadActiveIndex}
                   onSelectItem={navigateToTypeaheadItem}
+                  creatorItems={typeaheadCreatorItems}
                   pluginItems={typeaheadPluginItems}
                   query={trimmedNavSearchQuery}
                   skillItems={typeaheadSkillItems}
@@ -695,7 +735,7 @@ export default function Header() {
                 className="navbar-search-input"
                 type="search"
                 role="combobox"
-                placeholder="Search skills and plugins"
+                placeholder="Search skills, plugins, and creators"
                 value={navSearchQuery}
                 onChange={(e) => {
                   setNavSearchQuery(e.target.value);
@@ -732,6 +772,7 @@ export default function Header() {
                 loading={typeaheadSearching}
                 onHoverItem={setTypeaheadActiveIndex}
                 onSelectItem={navigateToTypeaheadItem}
+                creatorItems={typeaheadCreatorItems}
                 pluginItems={typeaheadPluginItems}
                 query={trimmedNavSearchQuery}
                 skillItems={typeaheadSkillItems}
@@ -783,6 +824,7 @@ function HeaderNavTab({
 
 function SearchTypeahead({
   activeIndex,
+  creatorItems,
   loading,
   onHoverItem,
   onSelectItem,
@@ -791,6 +833,7 @@ function SearchTypeahead({
   skillItems,
 }: {
   activeIndex: number;
+  creatorItems: TypeaheadItem[];
   loading: boolean;
   onHoverItem: (index: number) => void;
   onSelectItem: (item: TypeaheadItem) => void;
@@ -801,8 +844,10 @@ function SearchTypeahead({
   const hasQuery = query.length > 0;
   const hasSkillMatches = skillItems.some((item) => item.kind === "skill");
   const hasPluginMatches = pluginItems.some((item) => item.kind === "plugin");
-  const hasMatches = hasSkillMatches || hasPluginMatches;
+  const hasCreatorMatches = creatorItems.some((item) => item.kind === "creator");
+  const hasMatches = hasSkillMatches || hasPluginMatches || hasCreatorMatches;
   const pluginStartIndex = skillItems.length;
+  const creatorStartIndex = skillItems.length + pluginItems.length;
 
   return (
     <div className="navbar-search-typeahead" id="navbar-search-typeahead">
@@ -812,7 +857,7 @@ function SearchTypeahead({
             <span className="navbar-search-typeahead-status-icon" aria-hidden="true">
               <Search size={17} />
             </span>
-            <span>Start typing to search skills and plugins</span>
+            <span>Start typing to search skills, plugins, and creators</span>
           </div>
         ) : null}
         {hasQuery && loading && !hasMatches ? (
@@ -820,7 +865,7 @@ function SearchTypeahead({
         ) : null}
         {hasQuery && !loading && !hasMatches ? (
           <div className="navbar-search-typeahead-status">
-            No skills or plugins found for "{query}"
+            No skills, plugins, or creators found for "{query}"
           </div>
         ) : null}
         {hasMatches ? (
@@ -871,6 +916,30 @@ function SearchTypeahead({
                     active={activeIndex === pluginStartIndex + index}
                     item={item}
                     index={pluginStartIndex + index}
+                    onHoverItem={onHoverItem}
+                    onSelectItem={onSelectItem}
+                  />
+                ))}
+              </div>
+            ) : null}
+            {hasCreatorMatches ? (
+              <div
+                className="navbar-search-typeahead-section"
+                role="group"
+                aria-labelledby="navbar-search-typeahead-creators-heading"
+              >
+                <div
+                  id="navbar-search-typeahead-creators-heading"
+                  className="navbar-search-typeahead-heading"
+                >
+                  Creators
+                </div>
+                {creatorItems.map((item, index) => (
+                  <TypeaheadRow
+                    key={item.key}
+                    active={activeIndex === creatorStartIndex + index}
+                    item={item}
+                    index={creatorStartIndex + index}
                     onHoverItem={onHoverItem}
                     onSelectItem={onSelectItem}
                   />
@@ -955,6 +1024,20 @@ function TypeaheadRowIcon({ item }: { item: TypeaheadItem }) {
     );
   }
 
+  if (item.kind === "creator") {
+    const publisher = item.result.creator;
+    return (
+      <span className="navbar-search-typeahead-icon" aria-hidden="true">
+        <MarketplaceIcon
+          kind={publisher.kind === "org" ? "org" : "user"}
+          label={publisher.displayName}
+          imageUrl={publisher.image}
+          size="xs"
+        />
+      </span>
+    );
+  }
+
   return null;
 }
 
@@ -988,6 +1071,19 @@ function getTypeaheadRowBody(item: TypeaheadItem) {
       ),
     };
   }
+  if (item.kind === "creator") {
+    const publisher = item.result.creator;
+    return {
+      title: publisher.displayName,
+      meta: (
+        <TypeaheadCreatorMeta
+          handle={`@${publisher.handle}`}
+          official={publisher.official === true}
+          kind={publisher.kind}
+        />
+      ),
+    };
+  }
   return {
     title: item.label,
     meta: null,
@@ -1009,6 +1105,29 @@ function TypeaheadPublisherMeta({
       {official ? <OfficialBadge /> : null}
       <span className="navbar-search-typeahead-separator"> / </span>
       <span className="navbar-search-typeahead-package">{packageName}</span>
+    </>
+  );
+}
+
+function TypeaheadCreatorMeta({
+  handle,
+  kind,
+  official,
+}: {
+  handle: string;
+  kind: "user" | "org";
+  official: boolean;
+}) {
+  return (
+    <>
+      <span className="navbar-search-typeahead-publisher">{handle}</span>
+      {official ? <OfficialBadge /> : null}
+      {kind === "org" ? (
+        <>
+          <span className="navbar-search-typeahead-separator"> / </span>
+          <span className="navbar-search-typeahead-package">Org</span>
+        </>
+      ) : null}
     </>
   );
 }
