@@ -445,6 +445,46 @@ describe("buildGitHubSkillSyncPlan", () => {
     expect(plan.stats.unchanged).toBe(1);
   });
 
+  it("preserves failed scan status for unchanged current bytes", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "3".repeat(40),
+      entries: repoEntries({
+        "skills/aiq-deploy/SKILL.md": "# AIQ Deploy\n",
+      }),
+    });
+    const contentHash = snapshot.skills[0]?.contentHash ?? "";
+
+    const plan = buildGitHubSkillSyncPlan({
+      sourceId: "githubSkillSources:nvidia",
+      ownerUserId: "users:nvidia",
+      ownerPublisherId: "publishers:nvidia",
+      existingSkills: [
+        {
+          _id: "skills:aiq-deploy",
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          githubPath: "skills/aiq-deploy",
+          githubCurrentStatus: "present",
+          githubCurrentContentHash: contentHash,
+          githubScanStatus: "failed",
+        },
+      ],
+      snapshot,
+      now: 123,
+    });
+
+    expect(plan.skillPatches[0]?.patch).toMatchObject({
+      githubCurrentContentHash: contentHash,
+      githubScanStatus: "failed",
+      moderationStatus: "hidden",
+      moderationReason: "scanner.failed",
+    });
+    expect(plan.skillPatches[0]?.patch).not.toHaveProperty("updatedAt");
+    expect(plan.stats.unchanged).toBe(1);
+  });
+
   it("revives soft-deleted skills when a configured repo is synced again", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "mattpocock/skills",

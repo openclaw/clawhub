@@ -2765,6 +2765,51 @@ describe("httpApiV1 handlers", () => {
     });
   });
 
+  it("skill install resolver returns a pinned GitHub descriptor for scan-suspicious source-backed skills", async () => {
+    const runQuery = makeInstallResolverRunQuery({
+      skill: {
+        _id: "skills:aiq-review",
+        slug: "aiq-review",
+        displayName: "AIQ Review",
+        moderationStatus: "active",
+        moderationReason: "scanner.llm.suspicious",
+        moderationVerdict: "suspicious",
+        moderationFlags: ["flagged.suspicious"],
+        installKind: "github",
+        githubSourceId: "githubSkillSources:nvidia",
+        githubPath: "skills/aiq-review",
+        githubCurrentCommit: "1".repeat(40),
+        githubCurrentContentHash: "hash-aiq-review",
+        githubCurrentStatus: "present",
+        githubScanStatus: "suspicious",
+      },
+      source: {
+        _id: "githubSkillSources:nvidia",
+        repo: "NVIDIA/skills",
+        defaultBranch: "main",
+      },
+    });
+    const runMutation = vi.fn().mockResolvedValue(okRate());
+
+    const response = await __handlers.skillsGetRouterV1Handler(
+      makeCtx({ runQuery, runMutation }),
+      new Request("https://example.com/api/v1/skills/aiq-review/install"),
+    );
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      slug: "aiq-review",
+      installKind: "github",
+      github: {
+        repo: "NVIDIA/skills",
+        path: "skills/aiq-review",
+        commit: "1".repeat(40),
+        contentHash: "hash-aiq-review",
+      },
+    });
+  });
+
   it.each([
     {
       name: "hosted direct uploads",

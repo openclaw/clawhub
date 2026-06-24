@@ -1,4 +1,11 @@
-export type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
+import {
+  isSecurityScanStatusBlockedFromPublic,
+  isSecurityScanStatusCompletedNonBlocked,
+  type SourceBackedSkillScanStatus,
+} from "./securityScanPolicy";
+
+export type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
+
 export type GitHubCurrentStatus = "present" | "missing" | "unknown";
 
 export type InstallResolverSkill = {
@@ -96,11 +103,7 @@ export function buildSkillInstallResolution({
   if (skill.githubCurrentStatus === "missing") {
     return block(skill.slug, "github_upstream_missing", 410);
   }
-  if (
-    skill.githubScanStatus === "failed" ||
-    skill.githubScanStatus === "malicious" ||
-    skill.githubScanStatus === "suspicious"
-  ) {
+  if (isSecurityScanStatusBlockedFromPublic(skill.githubScanStatus)) {
     return block(skill.slug, "github_scan_failed", 403);
   }
   if (!source || !skill.githubPath) {
@@ -114,7 +117,7 @@ export function buildSkillInstallResolution({
     return block(skill.slug, "github_upstream_unknown", 423);
   }
   if (
-    skill.githubScanStatus !== "clean" &&
+    !isSecurityScanStatusCompletedNonBlocked(skill.githubScanStatus) &&
     !(forceInstall && skill.githubScanStatus === "pending")
   ) {
     return block(skill.slug, "github_verification_pending", 423);

@@ -27,6 +27,7 @@ import {
   computeRecommendationScore,
   RECOMMENDATION_SCORE_VERSION,
 } from "./lib/recommendationScore";
+import type { SourceBackedSkillScanStatus } from "./lib/securityScanPolicy";
 import { buildEmbeddingText, parseClawdisMetadata, parseFrontmatter } from "./lib/skills";
 import { readCanonicalStat } from "./lib/skillStats";
 import { generateToken, hashToken } from "./lib/tokens";
@@ -108,7 +109,7 @@ const githubSkillScanStatusValidator = v.union(
   v.literal("failed"),
 );
 
-type GitHubSkillScanStatus = "clean" | "suspicious" | "malicious" | "pending" | "failed";
+type GitHubSkillScanStatus = SourceBackedSkillScanStatus;
 
 type SeedGitHubBackedSkillSourceArgs = {
   reset?: boolean;

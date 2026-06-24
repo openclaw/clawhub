@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  CATALOG_FEED_GITHUB_SOURCE_REF,
   CATALOG_FEED_ID,
   CATALOG_FEED_SCHEMA_VERSION,
   CATALOG_FEED_SOURCE_REF,
@@ -94,7 +95,7 @@ describe("catalog feed schema", () => {
   });
 
   it("rejects unsupported versions and expired feeds", () => {
-    expect(() => parseCatalogFeed(makeFeed({ schemaVersion: 2 } as never))).toThrow(
+    expect(() => parseCatalogFeed(makeFeed({ schemaVersion: 1 } as never))).toThrow(
       "Unsupported catalog feed schema version",
     );
     expect(() => parseCatalogFeed(makeFeed({ expiresAt: "2026-06-22T00:00:00.000Z" }))).toThrow(
@@ -143,5 +144,53 @@ describe("catalog feed schema", () => {
     });
 
     expect(parseCatalogFeed(feed).entries[0]?.type).toBe("skill");
+  });
+
+  it("preserves public GitHub source identity on skill candidates", () => {
+    const feed = makeFeed({
+      id: CATALOG_SKILLS_FEED_ID,
+      entries: [
+        {
+          type: "skill",
+          id: "@nvidia/aiq-deploy",
+          title: "AIQ Deploy",
+          version: "1111111111111111111111111111111111111111",
+          state: "available",
+          publisher: { id: "nvidia", trust: "official" },
+          install: {
+            candidates: [
+              {
+                sourceRef: CATALOG_FEED_GITHUB_SOURCE_REF,
+                package: "@nvidia/aiq-deploy",
+                version: "1111111111111111111111111111111111111111",
+                integrity: "sha256:hash-aiq-deploy",
+                github: {
+                  repo: "NVIDIA/skills",
+                  path: "skills/aiq-deploy",
+                  commit: "1111111111111111111111111111111111111111",
+                  contentHash: "hash-aiq-deploy",
+                },
+              },
+            ],
+          },
+        },
+      ],
+    });
+
+    const serialized = serializeCatalogFeed(feed);
+    const parsed = parseCatalogFeed(JSON.parse(serialized));
+
+    expect(parsed.entries[0]?.install.candidates[0]).toEqual({
+      sourceRef: "public-github",
+      package: "@nvidia/aiq-deploy",
+      version: "1111111111111111111111111111111111111111",
+      integrity: "sha256:hash-aiq-deploy",
+      github: {
+        repo: "NVIDIA/skills",
+        path: "skills/aiq-deploy",
+        commit: "1111111111111111111111111111111111111111",
+        contentHash: "hash-aiq-deploy",
+      },
+    });
   });
 });

@@ -1,12 +1,20 @@
 import { type } from "arktype";
 export const CatalogFeedStateSchema = type('"available"|"recommended"|"disabled"|"blocked"|"deprecated"');
 export const CatalogFeedPublisherTrustSchema = type('"official"|"community"');
+export const CatalogFeedGitHubSourceSchema = type({
+    "+": "reject",
+    repo: "string",
+    path: "string",
+    commit: "string",
+    contentHash: "string",
+});
 export const CatalogFeedInstallCandidateSchema = type({
     "+": "reject",
     sourceRef: "string",
     package: "string",
     version: "string",
     integrity: "string",
+    github: CatalogFeedGitHubSourceSchema.optional(),
 });
 const CatalogFeedEntryBaseSchema = {
     "+": "reject",
@@ -43,9 +51,10 @@ export const CatalogFeedSchema = type({
     description: "string?",
     entries: CatalogFeedEntrySchema.array(),
 });
-export const CATALOG_FEED_SCHEMA_VERSION = 1;
+export const CATALOG_FEED_SCHEMA_VERSION = 2;
 export const CATALOG_FEED_ID = "clawhub-official";
 export const CATALOG_FEED_SOURCE_REF = "public-clawhub";
+export const CATALOG_FEED_GITHUB_SOURCE_REF = "public-github";
 export const CATALOG_SKILLS_FEED_ID = "clawhub-official-skills";
 export const CATALOG_SKILLS_FEED_DESCRIPTION = "Skills published by verified OpenClaw publishers on ClawHub.";
 export function parseCatalogFeed(value) {
@@ -89,6 +98,16 @@ export function serializeCatalogFeed(feed) {
                 package: candidate.package,
                 version: candidate.version,
                 integrity: candidate.integrity,
+                ...(candidate.github
+                    ? {
+                        github: {
+                            repo: candidate.github.repo,
+                            path: candidate.github.path,
+                            commit: candidate.github.commit,
+                            contentHash: candidate.github.contentHash,
+                        },
+                    }
+                    : {}),
             })),
         },
     }));

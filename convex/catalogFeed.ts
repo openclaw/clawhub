@@ -1,4 +1,5 @@
 import {
+  CATALOG_FEED_GITHUB_SOURCE_REF,
   CATALOG_FEED_ID,
   CATALOG_FEED_SCHEMA_VERSION,
   CATALOG_FEED_SOURCE_REF,
@@ -19,6 +20,7 @@ import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import { isPackageBlockedFromPublic, resolvePackageReleaseScanStatus } from "./lib/packageSecurity";
 import { getOwnerPublisher } from "./lib/publishers";
+import { isSecurityScanStatusCompletedNonBlocked } from "./lib/securityScanPolicy";
 import {
   getPublicSkillVersionDownloadBlock,
   getSkillFileModerationInfoFromSkill,
@@ -62,6 +64,14 @@ const catalogFeedEntryFields = {
         package: v.string(),
         version: v.string(),
         integrity: v.string(),
+        github: v.optional(
+          v.object({
+            repo: v.string(),
+            path: v.string(),
+            commit: v.string(),
+            contentHash: v.string(),
+          }),
+        ),
       }),
     ),
   }),
@@ -159,21 +169,80 @@ async function buildSkillEntry(
   if (
     !isPublicSkillDoc(skill) ||
     !skill.ownerPublisherId ||
-    !skill.latestVersionId ||
     (trustedOwner && skill.ownerPublisherId !== trustedOwner._id)
   ) {
     return null;
   }
 
-  const [owner, version] = await Promise.all([
-    trustedOwner ?? ctx.db.get(skill.ownerPublisherId),
-    ctx.db.get(skill.latestVersionId),
-  ]);
+  const owner = trustedOwner ?? (await ctx.db.get(skill.ownerPublisherId));
   if (
     !owner ||
     (trustedOwner
       ? Boolean(owner.deletedAt || owner.deactivatedAt)
-      : !(await isOfficialPublisher(ctx, owner))) ||
+      : !(await isOfficialPublisher(ctx, owner)))
+  ) {
+    return null;
+  }
+
+  const publisherId = owner.handle?.trim();
+  const slug = skill.slug.trim();
+  const title = skill.displayName.trim() || slug;
+  const packageName = `@${publisherId}/${slug}`;
+  if (!publisherId || !slug || !title) return null;
+
+  if (skill.installKind === "github") {
+    if (
+      !skill.githubSourceId ||
+      !skill.githubPath ||
+      !skill.githubCurrentCommit ||
+      !skill.githubCurrentContentHash ||
+      skill.githubCurrentStatus !== "present" ||
+      !isSecurityScanStatusCompletedNonBlocked(skill.githubScanStatus) ||
+      skill.githubRemovedAt
+    ) {
+      return null;
+    }
+    const source = await ctx.db.get(skill.githubSourceId);
+    if (!source || source.ownerPublisherId !== skill.ownerPublisherId) return null;
+
+    const repo = source.repo.trim();
+    const path = skill.githubPath.trim();
+    const commit = skill.githubCurrentCommit.trim();
+    const contentHash = skill.githubCurrentContentHash.trim();
+    if (!repo || !path || !commit || !contentHash) return null;
+
+    return {
+      type: "skill",
+      id: packageName,
+      title,
+      version: commit,
+      state: "available",
+      publisher: {
+        id: publisherId,
+        trust: "official",
+      },
+      install: {
+        candidates: [
+          {
+            sourceRef: CATALOG_FEED_GITHUB_SOURCE_REF,
+            package: packageName,
+            version: commit,
+            integrity: `sha256:${contentHash}`,
+            github: {
+              repo,
+              path,
+              commit,
+              contentHash,
+            },
+          },
+        ],
+      },
+    };
+  }
+
+  if (!skill.latestVersionId) return null;
+  const version = await ctx.db.get(skill.latestVersionId);
+  if (
     !version ||
     !isPublicSkillVersionAvailableForSkill(version, skill._id) ||
     getPublicSkillVersionDownloadBlock(getSkillFileModerationInfoFromSkill(skill), version) ||
@@ -183,13 +252,9 @@ async function buildSkillEntry(
     return null;
   }
 
-  const publisherId = owner.handle?.trim();
-  const slug = skill.slug.trim();
-  const title = skill.displayName.trim() || slug;
   const versionName = version.version.trim();
-  if (!publisherId || !slug || !title || !versionName) return null;
+  if (!versionName) return null;
 
-  const packageName = `@${publisherId}/${slug}`;
   return {
     type: "skill",
     id: packageName,

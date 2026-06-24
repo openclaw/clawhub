@@ -15,9 +15,10 @@ skill records; they are not second catalogs.
 ## Contract
 
 - Feed id: `clawhub-official`
-- Schema version: `1`
-- Initial scope: `code-plugin` and `bundle-plugin` packages only
-- Source profile: `public-clawhub`
+- Schema version: `2`
+- Initial scope: `code-plugin` and `bundle-plugin` packages plus official skills
+- Source profiles: `public-clawhub` for ClawHub-hosted artifacts and
+  `public-github` for source-backed skills available through the public feed
 - Entry identity: normalized ClawHub package name
 - Install coordinate: package name plus exact release version
 - Integrity: `sha256:<artifact sha256>`
@@ -42,6 +43,19 @@ coordinates. It includes only skills with an active latest published version,
 non-empty files, a SHA-256 integrity hash, and an active official publisher
 record. Both verified organization and personal publishers are included;
 unverified publishers are excluded.
+
+GitHub-backed skills are emitted only when the current upstream content is
+available through the public feed gate: `installKind: "github"`,
+`githubCurrentStatus: "present"`, `githubScanStatus: "clean"` or
+`"suspicious"`, no upstream removal marker, complete repo/path/commit/content
+hash fields, and a live GitHub source row owned by the same official publisher.
+These entries use a `public-github` candidate with the commit as `version`,
+`sha256:<githubCurrentContentHash>` as integrity, and an additive `github`
+object containing immutable `repo`, `path`, `commit`, and `contentHash`.
+Suspicious GitHub-backed entries follow the same public feed visibility pattern
+as suspicious hosted packages and skills.
+Pending, failed, malicious, missing, removed, hidden, soft-deleted, or
+incomplete GitHub-backed skills are not emitted.
 
 ## Publication
 

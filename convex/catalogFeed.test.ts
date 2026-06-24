@@ -69,6 +69,21 @@ function makeSkill(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeGitHubSkill(overrides: Record<string, unknown> = {}) {
+  return makeSkill({
+    installKind: "github",
+    githubSourceId: "githubSkillSources:1",
+    githubPath: "skills/aiq-deploy",
+    githubCurrentCommit: "1".repeat(40),
+    githubCurrentContentHash: "hash-aiq-deploy",
+    githubCurrentStatus: "present",
+    githubScanStatus: "clean",
+    latestVersionId: undefined,
+    latestVersionSummary: undefined,
+    ...overrides,
+  });
+}
+
 function makeSkillVersion(overrides: Record<string, unknown> = {}) {
   return {
     _id: "skillVersions:1",
@@ -77,6 +92,16 @@ function makeSkillVersion(overrides: Record<string, unknown> = {}) {
     softDeletedAt: undefined,
     files: [{ path: "SKILL.md", size: 1, storageId: "storage:1", sha256: "file-hash" }],
     sha256hash: "skill-hash",
+    ...overrides,
+  };
+}
+
+function makeGitHubSource(overrides: Record<string, unknown> = {}) {
+  return {
+    _id: "githubSkillSources:1",
+    repo: "NVIDIA/skills",
+    ownerPublisherId: "publishers:1",
+    defaultBranch: "main",
     ...overrides,
   };
 }
@@ -225,6 +250,112 @@ describe("catalog feed projection", () => {
     });
   });
 
+  it("keeps suspicious hosted skills in hosted ClawHub install candidates", async () => {
+    const result = (await listOfficialSkillEntriesHandler(
+      makeCtx([makeSkill()], {
+        "publishers:1": { _id: "publishers:1", kind: "org", handle: "openclaw" },
+        "skillVersions:1": makeSkillVersion({
+          llmAnalysis: { status: "complete", verdict: "suspicious" },
+        }),
+      }),
+      { publisherId: "publishers:1", cursor: null },
+    )) as { entries: unknown[]; isDone: boolean };
+
+    expect(result.entries).toMatchObject([
+      {
+        id: "@openclaw/demo",
+        state: "available",
+        install: {
+          candidates: [
+            {
+              sourceRef: "public-clawhub",
+              package: "@openclaw/demo",
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
+  it("projects current GitHub-backed skills into public GitHub install candidates", async () => {
+    const result = (await listOfficialSkillEntriesHandler(
+      makeCtx([makeGitHubSkill({ slug: "aiq-deploy", displayName: "AIQ Deploy" })], {
+        "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
+        "githubSkillSources:1": makeGitHubSource(),
+      }),
+      { publisherId: "publishers:1", cursor: null },
+    )) as { entries: unknown[]; isDone: boolean };
+
+    expect(result).toMatchObject({
+      entries: [
+        {
+          type: "skill",
+          id: "@nvidia/aiq-deploy",
+          title: "AIQ Deploy",
+          version: "1111111111111111111111111111111111111111",
+          state: "available",
+          publisher: { id: "nvidia", trust: "official" },
+          install: {
+            candidates: [
+              {
+                sourceRef: "public-github",
+                package: "@nvidia/aiq-deploy",
+                version: "1111111111111111111111111111111111111111",
+                integrity: "sha256:hash-aiq-deploy",
+                github: {
+                  repo: "NVIDIA/skills",
+                  path: "skills/aiq-deploy",
+                  commit: "1111111111111111111111111111111111111111",
+                  contentHash: "hash-aiq-deploy",
+                },
+              },
+            ],
+          },
+        },
+      ],
+      isDone: true,
+    });
+  });
+
+  it("projects suspicious current GitHub-backed skills into public GitHub install candidates", async () => {
+    const result = (await listOfficialSkillEntriesHandler(
+      makeCtx(
+        [
+          makeGitHubSkill({
+            slug: "aiq-suspicious",
+            displayName: "AIQ Suspicious",
+            githubScanStatus: "suspicious",
+          }),
+        ],
+        {
+          "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
+          "githubSkillSources:1": makeGitHubSource(),
+        },
+      ),
+      { publisherId: "publishers:1", cursor: null },
+    )) as { entries: unknown[]; isDone: boolean };
+
+    expect(result.entries).toMatchObject([
+      {
+        id: "@nvidia/aiq-suspicious",
+        state: "available",
+        install: {
+          candidates: [
+            {
+              sourceRef: "public-github",
+              github: {
+                repo: "NVIDIA/skills",
+                path: "skills/aiq-deploy",
+                commit: "1111111111111111111111111111111111111111",
+                contentHash: "hash-aiq-deploy",
+              },
+            },
+          ],
+        },
+      },
+    ]);
+  });
+
   it("includes skills from verified personal publishers", async () => {
     const result = (await listOfficialSkillEntriesHandler(
       makeCtx([makeSkill({ ownerPublisherId: "publishers:steipete" })], {
@@ -253,6 +384,31 @@ describe("catalog feed projection", () => {
       }),
       { publisherId: "publishers:1", cursor: null },
     )) as { entries: unknown[]; isDone: boolean };
+
+    expect(result.entries).toEqual([]);
+  });
+
+  it("excludes unavailable GitHub-backed skills from public GitHub candidates", async () => {
+    const blockedStates = [
+      makeGitHubSkill({ slug: "pending-scan", githubScanStatus: "pending" }),
+      makeGitHubSkill({ slug: "failed-scan", githubScanStatus: "failed" }),
+      makeGitHubSkill({ slug: "malicious-scan", githubScanStatus: "malicious" }),
+      makeGitHubSkill({ slug: "missing-upstream", githubCurrentStatus: "missing" }),
+      makeGitHubSkill({ slug: "removed-upstream", githubRemovedAt: 1 }),
+      makeGitHubSkill({ slug: "hidden", moderationStatus: "hidden" }),
+      makeGitHubSkill({ slug: "missing-source", githubSourceId: undefined }),
+      makeGitHubSkill({ slug: "missing-path", githubPath: undefined }),
+      makeGitHubSkill({ slug: "missing-commit", githubCurrentCommit: undefined }),
+      makeGitHubSkill({ slug: "missing-hash", githubCurrentContentHash: undefined }),
+    ];
+
+    const result = (await listOfficialSkillEntriesHandler(
+      makeCtx(blockedStates, {
+        "publishers:1": { _id: "publishers:1", kind: "org", handle: "nvidia" },
+        "githubSkillSources:1": makeGitHubSource(),
+      }),
+      { publisherId: "publishers:1", cursor: null },
+    )) as { entries: unknown[] };
 
     expect(result.entries).toEqual([]);
   });
