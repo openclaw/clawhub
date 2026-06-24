@@ -891,23 +891,20 @@ function PluginValidationFindingCard({
 
   const fixGuide = finding.authorRemediation?.summary ? (
     <div className="plugin-warning-fix-guide">
-      <p className="plugin-warning-fix-copy">
-        <span className="plugin-warning-fix-guide-label">How to fix</span>{" "}
-        {finding.authorRemediation.summary}
+      <div className="plugin-warning-fix-guide-header">
+        <p className="plugin-warning-fix-guide-label">How to fix</p>
         {finding.authorRemediation.docsUrl ? (
-          <>
-            {" "}
-            <a
-              className="plugin-warning-fix-link"
-              href={finding.authorRemediation.docsUrl}
-              target="_blank"
-              rel="noreferrer"
-            >
-              View fix guide ↗
-            </a>
-          </>
+          <a
+            className="plugin-warning-fix-link"
+            href={finding.authorRemediation.docsUrl}
+            target="_blank"
+            rel="noreferrer"
+          >
+            View fix guide ↗
+          </a>
         ) : null}
-      </p>
+      </div>
+      <p className="plugin-warning-fix-copy">{finding.authorRemediation.summary}</p>
     </div>
   ) : null;
 

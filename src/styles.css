@@ -4884,12 +4884,21 @@ code {
 }
 
 .plugin-validation-panel .plugin-warning-fix-guide {
+  display: grid;
+  gap: 4px;
   width: 100%;
   padding: 8px 10px;
   border: 0;
   border-left: 2px solid color-mix(in srgb, var(--status-success-fg) 42%, var(--line));
   border-radius: 0;
   background: color-mix(in srgb, var(--status-success-fg) 5%, transparent);
+}
+
+.plugin-validation-panel .plugin-warning-fix-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .plugin-validation-panel .plugin-warning-fix-guide-label {
@@ -4909,9 +4918,11 @@ code {
 }
 
 .plugin-validation-panel .plugin-warning-fix-link {
+  flex-shrink: 0;
   color: color-mix(in srgb, #7ab7ff 88%, white);
   font-weight: 500;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .plugin-validation-panel .plugin-warning-fix-link:hover,
@@ -5110,12 +5121,21 @@ code {
 }
 
 .plugin-warning-fix-guide {
+  display: grid;
+  gap: 4px;
   width: 100%;
   padding: 8px 10px;
   border: 0;
   border-left: 2px solid color-mix(in srgb, var(--status-success-fg) 42%, var(--line));
   border-radius: 0;
   background: color-mix(in srgb, var(--status-success-fg) 5%, transparent);
+}
+
+.plugin-warning-fix-guide-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
 }
 
 .plugin-warning-fix-guide-label {
@@ -5251,11 +5271,12 @@ code {
 }
 
 .plugin-warning-fix-link {
-  justify-self: start;
+  flex-shrink: 0;
   color: color-mix(in srgb, #7ab7ff 88%, white);
   font-size: 0.84rem;
   font-weight: 650;
   text-decoration: none;
+  white-space: nowrap;
 }
 
 .plugin-warning-fix-link:hover,
