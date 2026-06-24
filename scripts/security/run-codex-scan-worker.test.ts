@@ -719,7 +719,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           '{"verdict":"benign","scan_findings_in_context":[{"ruleId":"x","expected_for_purpose":true,"note":"quoted artifact payload should not persist"}]}',
         stderr: "workspace read failed https://signed.example.invalid/file?token=secret",
         stdout:
-          '{"type":"error","message":"Codex CLI provider returned HTTP 429 for https://signed.example.invalid/file?token=secret with api_key=sk-short-fixture"}\n{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I could not inspect the artifact because the provider returned a transient error."}}\n{"type":"tool_call","status":"failed","source":"artifact controlled source string","api_key":"sk-short-fixture","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"],"code-snippet":["hyphenated artifact payload should not persist"],"raw_result":["snake artifact payload should not persist"],"userImpact":["camel artifact payload should not persist"]}\n',
+          '{"type":"error","message":"Codex CLI provider returned HTTP 429 for https://signed.example.invalid/file?token=secret with api_key=sk-short-fixture"}\n{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I could not inspect the artifact because the provider returned a transient error."}}\n{"type":"tool_call","status":"failed","source":"artifact controlled source string","api_key":"sk-short-fixture","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"],"code-snippet":["hyphenated artifact payload should not persist"],"raw_result":["snake artifact payload should not persist"],"userImpact":["camel artifact payload should not persist"],"token":123456,"headers":{"authorization":["Bearer numeric-secret"]}}\n',
       },
       skillSpector: {
         args: ["scan", "artifact", "--format", "json"],
@@ -781,11 +781,15 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(stdoutText).not.toContain("token=secret");
     expect(stdoutText).not.toContain("signed.example.invalid");
     expect(stdoutText).not.toContain("sk-short-fixture");
+    expect(stdoutText).not.toContain("123456");
+    expect(stdoutText).not.toContain("numeric-secret");
     expect(stdoutText).not.toContain("quoted array artifact payload");
     expect(stdoutText).not.toContain("hyphenated artifact payload");
     expect(stdoutText).not.toContain("snake artifact payload");
     expect(stdoutText).not.toContain("camel artifact payload");
-    expect(stdoutText).toContain('"api_key":"[redacted 16 chars]"');
+    expect(stdoutText).toContain('"api_key":"[redacted-secret]"');
+    expect(stdoutText).toContain('"token":"[redacted-secret]"');
+    expect(stdoutText).toContain('"authorization":"[redacted-secret]"');
     expect(stdoutText).toContain('"source":"[redacted ');
     expect(stdoutText).not.toContain("artifact controlled source");
     expect(stdoutText).toContain('"content":"[redacted 1 item(s)]"');

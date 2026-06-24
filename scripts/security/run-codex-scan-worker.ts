@@ -263,6 +263,11 @@ function isDiagnosticContentTextPath(path: string[]) {
   return DIAGNOSTIC_CONTENT_TEXT_KEYS.has(normalizeDiagnosticKey(key));
 }
 
+function isDiagnosticSecretPath(path: string[]) {
+  const key = normalizeDiagnosticKey(path.at(-1) ?? "");
+  return /(apikey|authorization|credential|password|secret|token|webhook)/i.test(key);
+}
+
 function shouldPreserveDiagnosticText(path: string[], original: string, redacted: string) {
   return (
     original === redacted &&
@@ -272,6 +277,7 @@ function shouldPreserveDiagnosticText(path: string[], original: string, redacted
 }
 
 function redactDiagnosticValue(value: unknown, path: string[] = []): unknown {
+  if (isDiagnosticSecretPath(path)) return "[redacted-secret]";
   if (typeof value === "string") {
     const redacted = redactDiagnosticText(value, 2_000);
     if (shouldPreserveDiagnosticText(path, value, redacted)) return redacted;
