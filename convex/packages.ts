@@ -65,7 +65,7 @@ import { requireGitHubAccountAge } from "./lib/githubAccount";
 import { normalizeGitHubRepository } from "./lib/githubActionsOidc";
 import { readGlobalPublicPluginsCount } from "./lib/globalStats";
 import { toDayKey } from "./lib/leaderboards";
-import { isOfficialPublisher, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
+import { isOfficialPublisher } from "./lib/officialPublishers";
 import { getPackageReleaseArtifactSha256 } from "./lib/packageArtifacts";
 import {
   assertPackageVersion,
@@ -2554,8 +2554,7 @@ export const getByName = query({
     const latestRelease = pkg.latestReleaseId ? await ctx.db.get(pkg.latestReleaseId) : null;
     const publicPackage = toPublicPackage(pkg, latestRelease);
     if (!publicPackage) return null;
-    const owner = await toPublicPublisherWithOfficial(
-      ctx,
+    const owner = toPublicPublisher(
       await getOwnerPublisher(ctx, {
         ownerPublisherId: pkg.ownerPublisherId,
         ownerUserId: pkg.ownerUserId,
