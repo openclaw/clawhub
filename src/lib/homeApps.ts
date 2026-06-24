@@ -3,56 +3,6 @@
 const SIMPLE_ICON_ASSET_BASE = "https://cdn.jsdelivr.net/npm/simple-icons@latest/icons";
 const LOCAL_APP_ICON_BASE = "/app-icons";
 
-const HOME_APP_SIMPLE_ICON_SLUGS = {
-  airtable: "airtable",
-  "amazon-bedrock": "amazonwebservices",
-  "apple-pim": "apple",
-  aws: "amazonwebservices",
-  brave: "brave",
-  "cloudflare-gateway": "cloudflare",
-  chrome: "googlechrome",
-  codex: "openai",
-  cursor: "cursor",
-  "diagnostics-prometheus": "prometheus",
-  discord: "discord",
-  docker: "docker",
-  dropbox: "dropbox",
-  figma: "figma",
-  github: "github",
-  gitlab: "gitlab",
-  "gmail-plugin": "gmail",
-  gmail: "gmail",
-  "google-calendar": "googlecalendar",
-  googlechat: "googlechat",
-  "google-drive": "googledrive",
-  "google-meet": "googlemeet",
-  "google-sheets": "googlesheets",
-  hubspot: "hubspot",
-  jira: "jira",
-  kubernetes: "kubernetes",
-  line: "line",
-  linear: "linear",
-  "llama-cpp": "ollama",
-  matrix: "matrix",
-  msteams: "microsoftteams",
-  "nextcloud-talk": "nextcloud",
-  notion: "notion",
-  obsidian: "obsidian",
-  openai: "openai",
-  perplexity: "perplexity",
-  qqbot: "qq",
-  qwen: "qwen",
-  raycast: "raycast",
-  salesforce: "salesforce",
-  slack: "slack",
-  telegram: "telegram",
-  trello: "trello",
-  twitch: "twitch",
-  "voice-call": "twilio",
-  vscode: "visualstudiocode",
-  whatsapp: "whatsapp",
-} as const;
-
 const HOME_APP_IMAGE_ICON_SOURCES = {
   cerebras: `${LOCAL_APP_ICON_BASE}/cerebras.svg`,
   deepinfra: `${LOCAL_APP_ICON_BASE}/deepinfra.svg`,
@@ -110,10 +60,9 @@ const HOME_APP_SIMPLE_ICON_COLORS = {
   twitch: "9146FF",
   visualstudiocode: "007ACC",
   whatsapp: "25D366",
-} as const satisfies Record<
-  (typeof HOME_APP_SIMPLE_ICON_SLUGS)[keyof typeof HOME_APP_SIMPLE_ICON_SLUGS],
-  string
->;
+} as const;
+
+type SimpleIconSlug = keyof typeof HOME_APP_SIMPLE_ICON_COLORS;
 
 type HomeSimpleIcon = {
   kind: "simple";
@@ -135,6 +84,8 @@ export type HomeSkillApp = {
   description: string;
   /** Skills browse search query. */
   browseQuery: string;
+  /** Set only when the app id differs from the Simple Icons slug. */
+  simpleIconSlug?: SimpleIconSlug;
   /** Brand domain retained for browse metadata and image fallbacks. */
   iconDomain: string;
 };
@@ -145,6 +96,8 @@ export type HomePluginShortcut = {
   name: string;
   description: string;
   packageName: string;
+  /** Set only when the shortcut id differs from the Simple Icons slug. */
+  simpleIconSlug?: SimpleIconSlug;
   /** Brand domain retained for browse metadata and image fallbacks. */
   iconDomain: string;
 };
@@ -156,6 +109,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Google Chrome",
     description: "Browse, scrape, and automate the web from your agent.",
     browseQuery: "chrome browser",
+    simpleIconSlug: "googlechrome",
     iconDomain: "google.com",
   },
   {
@@ -163,6 +117,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "VS Code",
     description: "Edit repos, run tasks, and ship code from the editor.",
     browseQuery: "vscode",
+    simpleIconSlug: "visualstudiocode",
     iconDomain: "code.visualstudio.com",
   },
   {
@@ -212,6 +167,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "AWS",
     description: "Operate cloud resources and deploy from agent playbooks.",
     browseQuery: "aws",
+    simpleIconSlug: "amazonwebservices",
     iconDomain: "aws.amazon.com",
   },
   {
@@ -254,6 +210,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Google Drive",
     description: "Find, create, and manage files and folders.",
     browseQuery: "google drive",
+    simpleIconSlug: "googledrive",
     iconDomain: "drive.google.com",
   },
   {
@@ -261,6 +218,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Google Sheets",
     description: "Read, write, and automate spreadsheet data.",
     browseQuery: "google sheets",
+    simpleIconSlug: "googlesheets",
     iconDomain: "sheets.google.com",
   },
   {
@@ -268,6 +226,7 @@ export const HOME_SKILL_APPS: HomeSkillApp[] = [
     name: "Google Calendar",
     description: "Create events, check availability, and manage calendars.",
     browseQuery: "google calendar",
+    simpleIconSlug: "googlecalendar",
     iconDomain: "calendar.google.com",
   },
   {
@@ -351,6 +310,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "QQ Bot",
     description: "Group and direct-message workflows for QQ.",
     packageName: "@openclaw/qqbot",
+    simpleIconSlug: "qq",
     iconDomain: "qq.com",
   },
   {
@@ -367,6 +327,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Nextcloud Talk",
     description: "Self-hosted team conversations and calls.",
     packageName: "@openclaw/nextcloud-talk",
+    simpleIconSlug: "nextcloud",
     iconDomain: "nextcloud.com",
   },
   {
@@ -375,6 +336,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Voice Call",
     description: "Phone-call workflows through Twilio, Telnyx, and Plivo.",
     packageName: "@openclaw/voice-call",
+    simpleIconSlug: "twilio",
     iconDomain: "twilio.com",
   },
   {
@@ -399,6 +361,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Codex",
     description: "Codex app-server harness and model provider.",
     packageName: "@openclaw/codex",
+    simpleIconSlug: "openai",
     iconDomain: "openai.com",
   },
   {
@@ -431,6 +394,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Microsoft Teams",
     description: "Meetings and team chat for agents.",
     packageName: "@openclaw/msteams",
+    simpleIconSlug: "microsoftteams",
     iconDomain: "teams.microsoft.com",
   },
   {
@@ -455,6 +419,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Google Meet",
     description: "Join calls through Chrome or phone transports.",
     packageName: "@openclaw/google-meet",
+    simpleIconSlug: "googlemeet",
     iconDomain: "meet.google.com",
   },
   {
@@ -503,6 +468,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Prometheus",
     description: "Runtime metrics for observability dashboards.",
     packageName: "@openclaw/diagnostics-prometheus",
+    simpleIconSlug: "prometheus",
     iconDomain: "prometheus.io",
   },
   {
@@ -511,6 +477,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Amazon Bedrock",
     description: "Bedrock models, embeddings, and guardrails.",
     packageName: "@openclaw/amazon-bedrock-provider",
+    simpleIconSlug: "amazonwebservices",
     iconDomain: "aws.amazon.com",
   },
   {
@@ -519,6 +486,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Cloudflare AI Gateway",
     description: "Model routing through Cloudflare AI Gateway.",
     packageName: "@openclaw/cloudflare-ai-gateway-provider",
+    simpleIconSlug: "cloudflare",
     iconDomain: "cloudflare.com",
   },
   {
@@ -559,6 +527,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "llama.cpp",
     description: "Local embedding provider through llama.cpp.",
     packageName: "@openclaw/llama-cpp-provider",
+    simpleIconSlug: "ollama",
     iconDomain: "github.com",
   },
   {
@@ -567,6 +536,7 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Apple PIM",
     description: "Calendar, Reminders, Contacts, and Mail on macOS.",
     packageName: "apple-pim-cli",
+    simpleIconSlug: "apple",
     iconDomain: "apple.com",
   },
   {
@@ -575,11 +545,23 @@ export const HOME_PLUGIN_SHORTCUTS: HomePluginShortcut[] = [
     name: "Gmail",
     description: "Search mailboxes, threads, and attachments.",
     packageName: "@manuelfedele/openclaw-gmail-plugin",
+    simpleIconSlug: "gmail",
     iconDomain: "mail.google.com",
   },
 ];
 
-function homeAppIcon(id: string): HomeAppIcon {
+function isSimpleIconSlug(value: string): value is SimpleIconSlug {
+  return value in HOME_APP_SIMPLE_ICON_COLORS;
+}
+
+function resolveSimpleIconSlug(source: { id: string; simpleIconSlug?: SimpleIconSlug }) {
+  const slug = source.simpleIconSlug ?? source.id;
+  return isSimpleIconSlug(slug) ? slug : "openai";
+}
+
+function homeAppIcon(source: { id: string; simpleIconSlug?: SimpleIconSlug }): HomeAppIcon {
+  const { id } = source;
+
   if (id in HOME_APP_IMAGE_ICON_SOURCES) {
     return {
       kind: "image",
@@ -587,8 +569,7 @@ function homeAppIcon(id: string): HomeAppIcon {
     };
   }
 
-  const slug =
-    HOME_APP_SIMPLE_ICON_SLUGS[id as keyof typeof HOME_APP_SIMPLE_ICON_SLUGS] ?? "openai";
+  const slug = resolveSimpleIconSlug(source);
   return {
     kind: "simple",
     src: `${SIMPLE_ICON_ASSET_BASE}/${slug}.svg`,
@@ -598,11 +579,11 @@ function homeAppIcon(id: string): HomeAppIcon {
 }
 
 export function homeSkillAppIcon(app: HomeSkillApp) {
-  return homeAppIcon(app.id);
+  return homeAppIcon(app);
 }
 
 export function homePluginShortcutIcon(shortcut: HomePluginShortcut) {
-  return homeAppIcon(shortcut.id);
+  return homeAppIcon(shortcut);
 }
 
 export const SKILLS_BROWSE_SEARCH = {

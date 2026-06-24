@@ -29,6 +29,22 @@ describe("home app icons", () => {
     }
   });
 
+  it("uses the app id as the Simple Icons slug unless the card declares an override", () => {
+    const iconSources = [
+      ...HOME_SKILL_APPS.map((app) => [app.id, app.simpleIconSlug, homeSkillAppIcon(app)] as const),
+      ...HOME_PLUGIN_SHORTCUTS.map(
+        (shortcut) =>
+          [shortcut.id, shortcut.simpleIconSlug, homePluginShortcutIcon(shortcut)] as const,
+      ),
+    ];
+
+    for (const [id, simpleIconSlug, icon] of iconSources) {
+      if (icon.kind === "image") continue;
+
+      expect(icon.slug, id).toBe(simpleIconSlug ?? id);
+    }
+  });
+
   it("uses local SVGs for brands missing exact Simple Icons entries", () => {
     const iconById = new Map(
       HOME_PLUGIN_SHORTCUTS.map((shortcut) => [shortcut.id, homePluginShortcutIcon(shortcut)]),
