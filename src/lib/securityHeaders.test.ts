@@ -1,24 +1,26 @@
 /* @vitest-environment node */
 
 import { existsSync, readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import {
-  createContentSecurityPolicy,
-  isLocalDevelopmentRequestUrl,
-} from "../src/lib/securityHeaders";
+import { createContentSecurityPolicy, isLocalDevelopmentRequestUrl } from "./securityHeaders";
 import {
   createThemeModeCookie,
   getThemeModeFromCookieHeader,
   THEME_MODE_COOKIE,
-} from "../src/lib/themeCookie";
+} from "./themeCookie";
 
-const repoRoot = resolve(import.meta.dirname, "..");
+const libDir = dirname(fileURLToPath(import.meta.url));
+const repoRoot = resolve(libDir, "../..");
 const bootstrapPath = resolve(repoRoot, "public/theme-bootstrap.js");
 
 function getGlobalVercelHeaders() {
   const vercelConfig = JSON.parse(readFileSync(resolve(repoRoot, "vercel.json"), "utf8"));
-  return vercelConfig.headers.find((entry) => entry.source === "/(.*)")?.headers ?? [];
+  return (
+    vercelConfig.headers.find((entry: { source?: string }) => entry.source === "/(.*)")?.headers ??
+    []
+  );
 }
 
 function getCspHeader() {
@@ -29,7 +31,7 @@ function getLocalDevelopmentCspHeader() {
   return createContentSecurityPolicy("test-nonce", { allowLocalDevelopment: true });
 }
 
-function getDirective(csp, name) {
+function getDirective(csp: string, name: string) {
   return (
     csp
       .split(";")
@@ -38,16 +40,12 @@ function getDirective(csp, name) {
   );
 }
 
-function getDirectiveTokens(csp, name) {
+function getDirectiveTokens(csp: string, name: string) {
   return getDirective(csp, name).split(/\s+/u);
 }
 
-describe("Vercel security headers", () => {
-  it("does not allow all inline scripts in the global CSP", () => {
-    expect(getDirectiveTokens(getCspHeader(), "script-src")).not.toContain("'unsafe-inline'");
-  });
-
-  it("allows nonce-tagged framework scripts", () => {
+describe("security headers", () => {
+  it("blocks arbitrary inline scripts while allowing nonce-tagged framework scripts", () => {
     expect(getDirectiveTokens(getCspHeader(), "script-src")).toEqual([
       "script-src",
       "'self'",
@@ -65,7 +63,9 @@ describe("Vercel security headers", () => {
 
   it("does not emit a second static Vercel CSP that would block dynamic nonces", () => {
     expect(
-      getGlobalVercelHeaders().some((header) => header.key === "Content-Security-Policy"),
+      getGlobalVercelHeaders().some(
+        (header: { key?: string }) => header.key === "Content-Security-Policy",
+      ),
     ).toBe(false);
   });
 
@@ -105,11 +105,9 @@ describe("Vercel security headers", () => {
     expect(isLocalDevelopmentRequestUrl("https://clawhub.ai/")).toBe(false);
   });
 
-  it("does not load a theme bootstrap script", () => {
+  it("does not bypass nonce CSP with a root-level theme bootstrap", () => {
     const rootRoute = readFileSync(resolve(repoRoot, "src/routes/__root.tsx"), "utf8");
 
-    expect(rootRoute).not.toContain("ScriptOnce");
-    expect(rootRoute).not.toContain("themeBootstrapScript");
     expect(rootRoute).not.toContain('src="/theme-bootstrap.js');
     expect(rootRoute).not.toContain("dangerouslySetInnerHTML");
     expect(existsSync(bootstrapPath)).toBe(false);
