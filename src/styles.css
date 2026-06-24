@@ -25720,6 +25720,8 @@ a.home-v2-apps-see-all:focus-visible svg {
 }
 
 .home-v2-apps-tile-logo.home-v2-apps-icon-mark--image {
+  width: 24px;
+  height: 24px;
   object-fit: contain;
 }
 
