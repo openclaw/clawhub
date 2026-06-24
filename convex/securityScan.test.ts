@@ -83,7 +83,9 @@ const recordGitHubSkillScanResultInternalHandler = (
 function fakeLeakyWorkerError() {
   return (
     `Download failed 403: https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123 ` +
-    "Authorization: Bearer abc"
+    `Authorization: Bearer abc OPENAI_API_KEY=openai-runtime-secret ` +
+    `GITHUB_TOKEN=github-runtime-secret CONVEX_DEPLOY_KEY=convex-deploy-secret ` +
+    `api_key=plugin-api-token sha256=${"a".repeat(64)}`
   );
 }
 
@@ -95,6 +97,15 @@ function expectNoLeakedWorkerErrorSecrets(error: string) {
   expect(error).not.toContain("X-Amz-Signature");
   expect(error).not.toContain("Authorization");
   expect(error).not.toContain("Bearer abc");
+  expect(error).not.toContain("openai-runtime-secret");
+  expect(error).not.toContain("github-runtime-secret");
+  expect(error).not.toContain("convex-deploy-secret");
+  expect(error).not.toContain("plugin-api-token");
+  expect(error).not.toContain("a".repeat(64));
+  expect(error).toContain("OPENAI_API_KEY=[redacted-secret]");
+  expect(error).toContain("GITHUB_TOKEN=[redacted-secret]");
+  expect(error).toContain("CONVEX_DEPLOY_KEY=[redacted-secret]");
+  expect(error).toContain("api_key=[redacted-secret]");
 }
 
 function makeFailurePersistenceCtx(docs: Record<string, Record<string, unknown>>) {
@@ -3586,7 +3597,9 @@ describe("securityScan", () => {
 
     const leakyError =
       `Download failed 403: https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123 ` +
-      "Authorization: Bearer abc";
+      `Authorization: Bearer abc OPENAI_API_KEY=openai-runtime-secret ` +
+      `GITHUB_TOKEN=github-runtime-secret CONVEX_DEPLOY_KEY=convex-deploy-secret ` +
+      "api_key=plugin-api-token";
     const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
       "error" in args ? { ok: true, retry: false } : { ok: true },
     );
@@ -3633,6 +3646,14 @@ describe("securityScan", () => {
       expect(error).not.toContain("X-Amz-Signature");
       expect(error).not.toContain("Authorization");
       expect(error).not.toContain("Bearer abc");
+      expect(error).not.toContain("openai-runtime-secret");
+      expect(error).not.toContain("github-runtime-secret");
+      expect(error).not.toContain("convex-deploy-secret");
+      expect(error).not.toContain("plugin-api-token");
+      expect(error).toContain("OPENAI_API_KEY=[redacted-secret]");
+      expect(error).toContain("GITHUB_TOKEN=[redacted-secret]");
+      expect(error).toContain("CONVEX_DEPLOY_KEY=[redacted-secret]");
+      expect(error).toContain("api_key=[redacted-secret]");
     }
 
     const llmAnalyses = runMutation.mock.calls
@@ -3653,6 +3674,14 @@ describe("securityScan", () => {
       expect(analysis?.findings).not.toContain("X-Amz-Signature");
       expect(analysis?.findings).not.toContain("Authorization");
       expect(analysis?.findings).not.toContain("Bearer abc");
+      expect(analysis?.findings).not.toContain("openai-runtime-secret");
+      expect(analysis?.findings).not.toContain("github-runtime-secret");
+      expect(analysis?.findings).not.toContain("convex-deploy-secret");
+      expect(analysis?.findings).not.toContain("plugin-api-token");
+      expect(analysis?.findings).toContain("OPENAI_API_KEY=[redacted-secret]");
+      expect(analysis?.findings).toContain("GITHUB_TOKEN=[redacted-secret]");
+      expect(analysis?.findings).toContain("CONVEX_DEPLOY_KEY=[redacted-secret]");
+      expect(analysis?.findings).toContain("api_key=[redacted-secret]");
     }
   });
 

@@ -32,6 +32,22 @@ async function tempDir() {
   return dir;
 }
 
+async function readAllFilesText(dir: string) {
+  const texts: string[] = [];
+  async function visit(current: string) {
+    for (const entry of await readdir(current, { withFileTypes: true })) {
+      const path = join(current, entry.name);
+      if (entry.isDirectory()) {
+        await visit(path);
+      } else if (entry.isFile()) {
+        texts.push(await readFile(path, "utf8"));
+      }
+    }
+  }
+  await visit(dir);
+  return texts.join("\n");
+}
+
 function unsafeFixtureLabels() {
   return {
     label: ["API", "key"].join(" "),
@@ -551,7 +567,7 @@ describe("run-codex-scan-worker diagnostics", () => {
     process.env.GITHUB_ACTIONS = "true";
     const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     const client = {
-      action: vi.fn(async () => ({ retry: false })),
+      action: vi.fn(async (..._args: unknown[]) => ({ retry: false })),
     };
 
     await expect(
@@ -609,6 +625,60 @@ describe("run-codex-scan-worker diagnostics", () => {
     fetchMock.mockRestore();
   });
 
+  it("sanitizes key-value secrets from non-download failures before logging or failing", async () => {
+    const previousGitHubActions = process.env.GITHUB_ACTIONS;
+    process.env.GITHUB_ACTIONS = "true";
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const client = {
+      action: vi.fn(async (..._args: unknown[]) => ({ retry: false })),
+    };
+
+    await expect(
+      processJob(
+        client,
+        "worker-token",
+        {
+          job: {
+            _id: "securityScanJobs:path-failed",
+            hasMaliciousSignal: false,
+            leaseToken: "lease-secret",
+            source: "publish",
+            targetKind: "skillVersion",
+            waitForVtUntil: 0,
+          },
+          target: {
+            files: [
+              {
+                path:
+                  "../OPENAI_API_KEY=scan-process-secret " +
+                  "CONVEX_DEPLOY_KEY=convex-process-secret.md",
+                sha256: "abc123",
+                size: 42,
+                url: "data:text/plain,%23%20Skill",
+              },
+            ],
+          },
+        },
+        undefined,
+      ),
+    ).resolves.toBe(false);
+
+    const failArgs = client.action.mock.calls[0]?.[1] as { error?: unknown } | undefined;
+    const error = String(failArgs?.error);
+    expect(error).toBe("Unsafe artifact path: [redacted-path]");
+    expect(error).not.toContain("scan-process-secret");
+    expect(error).not.toContain("convex-process-secret");
+    const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(logged).toContain("security_scan_job_failed");
+    expect(logged).toContain("Unsafe artifact path: [redacted-path]");
+    expect(logged).not.toContain("scan-process-secret");
+    expect(logged).not.toContain("convex-process-secret");
+
+    stdoutWrite.mockRestore();
+    if (previousGitHubActions === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = previousGitHubActions;
+  });
+
   it("writes redacted Codex diagnostics without copying submitted artifact files or signed URLs", async () => {
     const diagnosticsRoot = await tempDir();
     const artifactWorkspace = await tempDir();
@@ -622,7 +692,7 @@ describe("run-codex-scan-worker diagnostics", () => {
           '{"verdict":"benign","scan_findings_in_context":[{"ruleId":"x","expected_for_purpose":true,"note":"quoted artifact payload should not persist"}]}',
         stderr: "workspace read failed https://signed.example.invalid/file?token=secret",
         stdout:
-          '{"type":"error","message":"Codex CLI provider returned HTTP 429 for https://signed.example.invalid/file?token=secret with api_key=sk-short-fixture"}\n{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I could not inspect the artifact because the provider returned a transient error."}}\n{"type":"tool_call","status":"failed","api_key":"sk-short-fixture","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"]}\n',
+          '{"type":"error","message":"Codex CLI provider returned HTTP 429 for https://signed.example.invalid/file?token=secret with api_key=sk-short-fixture"}\n{"type":"item.completed","item":{"id":"item_0","type":"agent_message","text":"I could not inspect the artifact because the provider returned a transient error."}}\n{"type":"tool_call","status":"failed","source":"artifact controlled source string","api_key":"sk-short-fixture","output":"read https://signed.example.invalid/file?token=secret","content":["quoted array artifact payload should not persist"],"code-snippet":["hyphenated artifact payload should not persist"],"raw_result":["snake artifact payload should not persist"],"userImpact":["camel artifact payload should not persist"]}\n',
       },
       skillSpector: {
         args: ["scan", "artifact", "--format", "json"],
@@ -685,8 +755,16 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(stdoutText).not.toContain("signed.example.invalid");
     expect(stdoutText).not.toContain("sk-short-fixture");
     expect(stdoutText).not.toContain("quoted array artifact payload");
+    expect(stdoutText).not.toContain("hyphenated artifact payload");
+    expect(stdoutText).not.toContain("snake artifact payload");
+    expect(stdoutText).not.toContain("camel artifact payload");
     expect(stdoutText).toContain('"api_key":"[redacted 16 chars]"');
+    expect(stdoutText).toContain('"source":"[redacted ');
+    expect(stdoutText).not.toContain("artifact controlled source");
     expect(stdoutText).toContain('"content":"[redacted 1 item(s)]"');
+    expect(stdoutText).toContain('"code-snippet":"[redacted 1 item(s)]"');
+    expect(stdoutText).toContain('"raw_result":"[redacted 1 item(s)]"');
+    expect(stdoutText).toContain('"userImpact":"[redacted 1 item(s)]"');
     await expect(readFile(join(jobDir, "codex.stderr.redacted.log"), "utf8")).resolves.toContain(
       "workspace read failed",
     );
@@ -730,6 +808,13 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(diagnosticText).not.toContain("token=secret");
     expect(diagnosticText).not.toContain("quoted artifact payload");
     expect(diagnosticText).not.toContain("SkillSpector artifact payload");
+    const allDiagnosticText = await readAllFilesText(jobDir);
+    expect(allDiagnosticText).not.toContain("lease-secret");
+    expect(allDiagnosticText).not.toContain("token=secret");
+    expect(allDiagnosticText).not.toContain("signed.example.invalid");
+    expect(allDiagnosticText).not.toContain("sk-short-fixture");
+    expect(allDiagnosticText).not.toContain("quoted artifact payload");
+    expect(allDiagnosticText).not.toContain("SkillSpector artifact payload");
     expect(await readdir(jobDir)).not.toContain("artifact");
   });
 });

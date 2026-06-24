@@ -18,6 +18,8 @@ describe("worker logger", () => {
         },
         headers: { authorization: "Bearer worker-token-secret" },
         rawResult: "raw scanner output with url=https://signed.example.invalid/raw",
+        publicReason: "Download failed 403 for artifact file SKILL.md",
+        reason: "raw reason with https://signed.example.invalid/reason",
         stderr: "Authorization: Basic abc123",
         stdout: "raw stdout transcript",
         target: {
@@ -39,7 +41,9 @@ describe("worker logger", () => {
     expect(parsed.msg).toBe("structured worker event");
     expect(text).not.toContain("signed.example.invalid");
     expect(text).not.toContain("worker-token-secret");
+    expect(text).not.toContain("raw reason");
     expect(text).not.toContain("raw stdout transcript");
+    expect(text).toContain("Download failed 403 for artifact file SKILL.md");
     expect(text).toContain("[redacted-secret]");
     expect(parsed.artifact).toMatchObject({ path: "SKILL.md" });
   });

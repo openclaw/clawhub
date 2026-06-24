@@ -1,14 +1,15 @@
 /* @vitest-environment node */
 import { describe, expect, it } from "vitest";
+import { redactWorkerSignedUrlsAndAuthHeaders } from "../../convex/lib/workerTextRedaction";
 import {
   maskGitHubActionsSecret,
   maskKnownWorkerSecrets,
-  redactWorkerErrorMessage,
-  redactWorkerText,
+  redactWorkerPublicErrorMessage,
+  redactWorkerPublicText,
   safeWorkerArtifactPathLabel,
 } from "./workerRedaction";
 
-describe("worker redaction", () => {
+describe("worker transport redaction", () => {
   it("redacts URLs and auth headers without acting as a secret detector", () => {
     const sha256 = "a".repeat(64);
     const raw = [
@@ -17,11 +18,12 @@ describe("worker redaction", () => {
       "Authorization: Basic dXNlcjpwYXNz",
       "OPENAI_API_KEY=openai-runtime-secret",
       "GITHUB_TOKEN=runtime-token-secret",
+      "CONVEX_DEPLOY_KEY=convex-deploy-secret",
       "api_key=plugin-api-token",
       `artifact_sha256=${sha256}`,
     ].join("\n");
 
-    const redacted = redactWorkerText(raw);
+    const redacted = redactWorkerSignedUrlsAndAuthHeaders(raw);
 
     expect(redacted).not.toContain("https://");
     expect(redacted).not.toContain("signed.example.invalid");
@@ -38,7 +40,7 @@ describe("worker redaction", () => {
   });
 
   it("uses the same narrow cleanup for worker error messages", () => {
-    const message = redactWorkerErrorMessage(
+    const message = redactWorkerSignedUrlsAndAuthHeaders(
       "fetch failed https://signed.example.invalid/file Authorization: Bearer abc.def",
     );
 
@@ -46,6 +48,47 @@ describe("worker redaction", () => {
     expect(message).not.toContain("Bearer abc");
     expect(message).toContain("[redacted-url]");
     expect(message).toContain("[redacted-secret]");
+  });
+
+  it("redacts key-value secrets at public log and persistence boundaries", () => {
+    const sha256 = "a".repeat(64);
+    const raw = [
+      "download https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc",
+      "Authorization: Bearer abc.def.ghi",
+      "Authorization: Token token-runtime-secret",
+      "OPENAI_API_KEY=openai-runtime-secret",
+      "GITHUB_TOKEN=runtime-token-secret",
+      "CONVEX_DEPLOY_KEY=convex-deploy-secret",
+      "api_key=plugin-api-token",
+      `artifact_sha256=${sha256}`,
+    ].join("\n");
+
+    const redacted = redactWorkerPublicText(raw);
+
+    expect(redacted).not.toContain("https://");
+    expect(redacted).not.toContain("signed.example.invalid");
+    expect(redacted).not.toContain("Bearer abc");
+    expect(redacted).not.toContain("token-runtime-secret");
+    expect(redacted).not.toContain("openai-runtime-secret");
+    expect(redacted).not.toContain("runtime-token-secret");
+    expect(redacted).not.toContain("convex-deploy-secret");
+    expect(redacted).not.toContain("plugin-api-token");
+    expect(redacted).not.toContain(sha256);
+    expect(redacted).toContain("OPENAI_API_KEY=[redacted-secret]");
+    expect(redacted).toContain("GITHUB_TOKEN=[redacted-secret]");
+    expect(redacted).toContain("CONVEX_DEPLOY_KEY=[redacted-secret]");
+    expect(redacted).toContain("api_key=[redacted-secret]");
+    expect(redacted).toContain("[redacted-secret]");
+  });
+
+  it("uses the public boundary for worker error messages that can persist", () => {
+    const message = redactWorkerPublicErrorMessage(
+      "fetch failed https://signed.example.invalid/file OPENAI_API_KEY=sk-runtime-secret",
+    );
+
+    expect(message).not.toContain("https://");
+    expect(message).not.toContain("sk-runtime-secret");
+    expect(message).toContain("OPENAI_API_KEY=[redacted-secret]");
   });
 
   it("only displays artifact paths that pass a safe allowlist", () => {
@@ -65,13 +108,22 @@ describe("worker redaction", () => {
       }),
     ).toBe(true);
     expect(
+      maskGitHubActionsSecret("a%b\nc\r", {
+        env: { GITHUB_ACTIONS: "true" } as NodeJS.ProcessEnv,
+        write: (line) => lines.push(line),
+      }),
+    ).toBe(true);
+    expect(
       maskGitHubActionsSecret("local-secret", {
         env: {} as NodeJS.ProcessEnv,
         write: (line) => lines.push(line),
       }),
     ).toBe(false);
 
-    expect(lines).toEqual(["::add-mask::https://signed.example.invalid/file?token=secret\n"]);
+    expect(lines).toEqual([
+      "::add-mask::https://signed.example.invalid/file?token=secret\n",
+      "::add-mask::a%25b%0Ac%0D\n",
+    ]);
   });
 
   it("masks known worker secrets from the runtime environment", () => {

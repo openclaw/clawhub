@@ -13,6 +13,18 @@ type WorkflowStep = {
   with?: Record<string, unknown>;
 };
 
+function expectSecretStepAllowlist(
+  steps: WorkflowStep[],
+  secretName: string,
+  allowedStepNames: string[],
+) {
+  for (const step of steps) {
+    const stepName = step.name ?? step.uses ?? "<unnamed>";
+    const hasSecret = Object.hasOwn(step.env ?? {}, secretName);
+    expect(hasSecret, `${secretName} on ${stepName}`).toBe(allowedStepNames.includes(stepName));
+  }
+}
+
 describe("security-scan-codex workflow", () => {
   it("scans diagnostics with TruffleHog before uploading artifacts", async () => {
     const workflow = parseYaml(
@@ -39,14 +51,21 @@ describe("security-scan-codex workflow", () => {
       "ghcr.io/trufflesecurity/trufflehog:3.95.5@sha256:56c25710275c4b8d74c4f1346a5e7c606fa7ff4afe996f680b288d0fae3fcd9c",
     );
     expect(scanStep?.run).toContain("filesystem /scan");
+    expect(scanStep?.run).toContain('-v "$PWD/$CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR:/scan:ro"');
     expect(scanStep?.run).toContain("--only-verified");
     expect(scanStep?.run).toContain("--fail");
     expect(scanStep?.run).not.toContain("--debug");
     expect(uploadStep?.if).toBe(
       "${{ !cancelled() && steps.diagnostics_secret_scan.outcome == 'success' }}",
     );
+    expect(uploadStep?.with?.path).toBe("${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}");
     expect(jobEnv).not.toHaveProperty("OPENAI_API_KEY");
     expect(jobEnv).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expectSecretStepAllowlist(steps, "OPENAI_API_KEY", [
+      "Authenticate Codex CLI",
+      "Run Codex security worker",
+    ]);
+    expectSecretStepAllowlist(steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Codex security worker"]);
     expect(scanStep?.env ?? {}).not.toHaveProperty("OPENAI_API_KEY");
     expect(scanStep?.env ?? {}).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expect(steps.find((step) => step.name === "Check configuration")).toBeUndefined();

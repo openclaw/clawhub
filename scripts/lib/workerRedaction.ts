@@ -1,15 +1,15 @@
-import { redactWorkerTransportText } from "../../convex/lib/workerTransportRedaction";
+import { redactWorkerPublicText as redactSharedWorkerPublicText } from "../../convex/lib/workerTextRedaction";
 
 const DEFAULT_MAX_TEXT_CHARS = 20_000;
 
-export function redactWorkerText(value: string, maxChars = DEFAULT_MAX_TEXT_CHARS) {
-  const redacted = redactWorkerTransportText(value);
+export function redactWorkerPublicText(value: string, maxChars = DEFAULT_MAX_TEXT_CHARS) {
+  const redacted = redactSharedWorkerPublicText(value);
   if (redacted.length <= maxChars) return redacted;
   return `${redacted.slice(0, maxChars)}\n...[truncated ${redacted.length - maxChars} chars]`;
 }
 
-export function redactWorkerErrorMessage(value: string) {
-  return redactWorkerText(value);
+export function redactWorkerPublicErrorMessage(value: string) {
+  return redactWorkerPublicText(value);
 }
 
 export function safeWorkerArtifactPathLabel(value: string) {

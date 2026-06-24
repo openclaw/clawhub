@@ -12,7 +12,7 @@ import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
   maskKnownWorkerSecrets,
-  redactWorkerErrorMessage,
+  redactWorkerPublicErrorMessage,
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
 
@@ -136,7 +136,7 @@ function safeOutputPath(workspace: string, artifactPath: string) {
   const out = resolve(workspace, "artifact", normalized);
   const artifactRoot = resolve(workspace, "artifact");
   if (!out.startsWith(`${artifactRoot}/`) && out !== artifactRoot) {
-    throw new Error(`Unsafe artifact path: ${artifactPath}`);
+    throw new Error(`Unsafe artifact path: ${safeWorkerArtifactPathLabel(artifactPath)}`);
   }
   return out;
 }
@@ -466,7 +466,7 @@ export async function processJob(
     );
     return true;
   } catch (error) {
-    const message = redactWorkerErrorMessage(
+    const message = redactWorkerPublicErrorMessage(
       error instanceof Error ? error.message : String(error),
     );
     const failResult = (await client.action(api.skillCards.failSkillCardJob, {
@@ -481,7 +481,7 @@ export async function processJob(
         durationMs: Date.now() - startedAt,
         event: "skill_card_job_failed",
         jobId: job.job._id,
-        reason: message,
+        publicReason: message,
         retry: Boolean(failResult?.retry),
         scannerPhase: "process",
         skillSlug: job.target.skill.slug,
@@ -525,7 +525,9 @@ async function main() {
       logger.error(
         {
           event: "skill_card_claim_failed",
-          reason: redactWorkerErrorMessage(error instanceof Error ? error.message : String(error)),
+          publicReason: redactWorkerPublicErrorMessage(
+            error instanceof Error ? error.message : String(error),
+          ),
           scannerPhase: "claim",
           workerId,
         },

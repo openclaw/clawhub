@@ -24,6 +24,7 @@ export const WORKER_LOG_REDACTION_PATHS = [
   "clawpackUrl",
   "signedUrl",
   "error",
+  "reason",
   "err.message",
   "err.stack",
   "stderr",

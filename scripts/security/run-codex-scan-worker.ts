@@ -18,8 +18,8 @@ import { createWorkerLogger } from "../lib/workerLogger";
 import {
   maskGitHubActionsSecret,
   maskKnownWorkerSecrets,
-  redactWorkerErrorMessage,
-  redactWorkerText,
+  redactWorkerPublicErrorMessage,
+  redactWorkerPublicText,
   safeWorkerArtifactPathLabel,
 } from "../lib/workerRedaction";
 
@@ -194,7 +194,7 @@ function safeDiagnosticPathSegment(value: string) {
 }
 
 function redactDiagnosticText(value: string, maxChars = MAX_DIAGNOSTIC_TEXT_CHARS) {
-  return redactWorkerText(value, maxChars);
+  return redactWorkerPublicText(value, maxChars);
 }
 
 function redactDiagnosticError(value: string) {
@@ -205,60 +205,96 @@ function redactDiagnosticError(value: string) {
 }
 
 function sanitizeWorkerErrorMessage(value: string) {
-  return redactWorkerErrorMessage(redactDiagnosticError(value));
+  return redactWorkerPublicErrorMessage(redactDiagnosticError(value));
 }
 
-const DIAGNOSTIC_CONTENT_KEY_PATTERN =
-  /^(code[_-]?snippet|content|detail|evidence|explanation|finding|findings|guidance|match|message|note|notes|output|rawResult|recommendation|result|snippet|stderr|stdout|summary|text|userImpact|user_impact)$/i;
-const DIAGNOSTIC_METADATA_TEXT_KEYS = new Set([
-  "category",
-  "confidence",
-  "event",
-  "id",
-  "issueid",
-  "kind",
-  "name",
-  "phase",
-  "role",
-  "ruleid",
-  "scanner",
-  "severity",
-  "source",
-  "state",
-  "status",
-  "tool",
-  "type",
-  "verdict",
+const DIAGNOSTIC_CONTENT_TEXT_KEYS = new Set([
+  "codesnippet",
+  "content",
+  "detail",
+  "evidence",
+  "explanation",
+  "finding",
+  "findings",
+  "guidance",
+  "match",
+  "message",
+  "note",
+  "notes",
+  "output",
+  "rawresult",
+  "recommendation",
+  "result",
+  "snippet",
+  "stderr",
+  "stdout",
+  "summary",
+  "text",
+  "userimpact",
 ]);
+const DIAGNOSTIC_PUBLIC_TEXT_PATHS = new Set([
+  "codexresult.verdict",
+  "codexstdout.item.id",
+  "codexstdout.item.type",
+  "codexstdout.status",
+  "codexstdout.type",
+  "llmanalysis.confidence",
+  "llmanalysis.status",
+  "llmanalysis.verdict",
+  "skillspectoranalysis.issues.*.issueid",
+  "skillspectoranalysis.issues.*.severity",
+  "skillspectoranalysis.recommendation",
+  "skillspectoranalysis.scannerversion",
+  "skillspectoranalysis.severity",
+  "skillspectoranalysis.status",
+]);
+const DIAGNOSTIC_PUBLIC_TEXT_VALUE_PATTERN = /^[A-Za-z0-9_.:@/-]{1,160}$/;
 
-function isDiagnosticMetadataTextKey(key: string) {
-  return DIAGNOSTIC_METADATA_TEXT_KEYS.has(key.replace(/[_-]/g, "").toLowerCase());
+function normalizeDiagnosticKey(key: string) {
+  return key.replace(/[_-]/g, "").toLowerCase();
 }
 
-function redactDiagnosticValue(value: unknown, key = ""): unknown {
+function diagnosticPathKey(path: string[]) {
+  return path.map((part) => (part === "*" ? part : normalizeDiagnosticKey(part))).join(".");
+}
+
+function isDiagnosticContentTextPath(path: string[]) {
+  const key = path.at(-1) ?? "";
+  return DIAGNOSTIC_CONTENT_TEXT_KEYS.has(normalizeDiagnosticKey(key));
+}
+
+function shouldPreserveDiagnosticText(path: string[], original: string, redacted: string) {
+  return (
+    original === redacted &&
+    DIAGNOSTIC_PUBLIC_TEXT_PATHS.has(diagnosticPathKey(path)) &&
+    DIAGNOSTIC_PUBLIC_TEXT_VALUE_PATTERN.test(redacted)
+  );
+}
+
+function redactDiagnosticValue(value: unknown, path: string[] = []): unknown {
   if (typeof value === "string") {
     const redacted = redactDiagnosticText(value, 2_000);
-    if (isDiagnosticMetadataTextKey(key)) return redacted;
+    if (shouldPreserveDiagnosticText(path, value, redacted)) return redacted;
     return `[redacted ${redacted.length} chars]`;
   }
   if (Array.isArray(value)) {
-    if (DIAGNOSTIC_CONTENT_KEY_PATTERN.test(key)) return `[redacted ${value.length} item(s)]`;
-    return value.map((item) => redactDiagnosticValue(item));
+    if (isDiagnosticContentTextPath(path)) return `[redacted ${value.length} item(s)]`;
+    return value.map((item) => redactDiagnosticValue(item, [...path, "*"]));
   }
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([entryKey, entryValue]) => [
       entryKey,
-      redactDiagnosticValue(entryValue, entryKey),
+      redactDiagnosticValue(entryValue, [...path, entryKey]),
     ]),
   );
 }
 
-function redactStructuredDiagnosticText(value: string) {
+function redactStructuredDiagnosticText(value: string, rootKey: string) {
   const trimmed = value.trim();
   if (!trimmed) return "";
   try {
-    return JSON.stringify(redactDiagnosticValue(JSON.parse(trimmed)), null, 2);
+    return JSON.stringify(redactDiagnosticValue(JSON.parse(trimmed), [rootKey]), null, 2);
   } catch {
     // Codex --json writes JSONL. Redact parseable lines structurally, then fall back to text redaction.
     const lines = value.split("\n");
@@ -267,7 +303,7 @@ function redactStructuredDiagnosticText(value: string) {
         .map((line) => {
           if (!line.trim()) return line;
           try {
-            return JSON.stringify(redactDiagnosticValue(JSON.parse(line)));
+            return JSON.stringify(redactDiagnosticValue(JSON.parse(line), [rootKey]));
           } catch {
             return redactDiagnosticText(line, 2_000);
           }
@@ -314,9 +350,14 @@ function sanitizedTargetForArtifactContext(target: ClaimedJob["target"]) {
   };
 }
 
-async function writeDiagnosticText(jobDir: string, fileName: string, value: string | undefined) {
+async function writeDiagnosticText(
+  jobDir: string,
+  fileName: string,
+  value: string | undefined,
+  rootKey: string,
+) {
   if (value === undefined) return undefined;
-  const redacted = redactStructuredDiagnosticText(value);
+  const redacted = redactStructuredDiagnosticText(value, rootKey);
   await writeFile(join(jobDir, fileName), redacted.endsWith("\n") ? redacted : `${redacted}\n`);
   return fileName;
 }
@@ -330,31 +371,37 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
     jobDir,
     "codex.stdout.redacted.jsonl",
     input.codex?.stdout,
+    "codexStdout",
   );
   const stderrPath = await writeDiagnosticText(
     jobDir,
     "codex.stderr.redacted.log",
     input.codex?.stderr,
+    "codexStderr",
   );
   const rawResultPath = await writeDiagnosticText(
     jobDir,
     "codex-result.redacted.json",
     input.codex?.rawResult,
+    "codexResult",
   );
   const skillSpectorStdoutPath = await writeDiagnosticText(
     jobDir,
     "skillspector.stdout.redacted.log",
     input.skillSpector?.stdout,
+    "skillSpectorStdout",
   );
   const skillSpectorStderrPath = await writeDiagnosticText(
     jobDir,
     "skillspector.stderr.redacted.log",
     input.skillSpector?.stderr,
+    "skillSpectorStderr",
   );
   const skillSpectorRawResultPath = await writeDiagnosticText(
     jobDir,
     "skillspector-result.redacted.json",
     input.skillSpector?.rawResult,
+    "skillSpectorResult",
   );
 
   const diagnostic = {
@@ -369,9 +416,11 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       targetKind: input.job.job.targetKind,
       waitForVtUntil: input.job.job.waitForVtUntil,
     },
-    llmAnalysis: redactDiagnosticValue(input.llmAnalysis),
+    llmAnalysis: redactDiagnosticValue(input.llmAnalysis, ["llmAnalysis"]),
     runId: input.runId,
-    skillSpectorAnalysis: redactDiagnosticValue(input.skillSpectorAnalysis),
+    skillSpectorAnalysis: redactDiagnosticValue(input.skillSpectorAnalysis, [
+      "skillSpectorAnalysis",
+    ]),
     startedAt: input.startedAt,
     status: input.status,
     target: sanitizedTargetForDiagnostic(input.job.target),
@@ -399,7 +448,7 @@ function safeOutputPath(workspace: string, artifactPath: string) {
   const out = resolve(workspace, "artifact", normalized);
   const artifactRoot = resolve(workspace, "artifact");
   if (!out.startsWith(`${artifactRoot}/`) && out !== artifactRoot) {
-    throw new Error(`Unsafe artifact path: ${artifactPath}`);
+    throw new Error(`Unsafe artifact path: ${safeWorkerArtifactPathLabel(artifactPath)}`);
   }
   return out;
 }
@@ -1099,7 +1148,7 @@ export async function processJob(
         durationMs: Date.now() - startedAt,
         event: "security_scan_job_failed",
         jobId: job.job._id,
-        reason: errorMessage,
+        publicReason: errorMessage,
         retry: Boolean(failResult?.retry),
         scannerPhase: "process",
         targetKind: job.job.targetKind,
@@ -1129,7 +1178,7 @@ export async function processJob(
         {
           event: "security_scan_diagnostic_write_failed",
           jobId: job.job._id,
-          reason: sanitizeWorkerErrorMessage(message),
+          publicReason: sanitizeWorkerErrorMessage(message),
         },
         "security scan diagnostic write failed",
       );
@@ -1149,7 +1198,7 @@ export async function claimCodexScanJobBatch(
     logger.error(
       {
         event: "security_scan_claim_failed",
-        reason: sanitizeWorkerErrorMessage(message),
+        publicReason: sanitizeWorkerErrorMessage(message),
         scannerPhase: "claim",
       },
       "failed to claim security scan job",
