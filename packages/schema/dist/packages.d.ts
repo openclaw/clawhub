@@ -9,7 +9,7 @@ export declare function getPackageScopeOwnerMismatch(name: string, ownerHandle: 
 } | null;
 export declare const PackageFamilySchema: import("arktype/internal/variants/string.ts").StringType<"skill" | "code-plugin" | "bundle-plugin", {}>;
 export type PackageFamily = (typeof PackageFamilySchema)[inferred];
-export declare const PackageChannelSchema: import("arktype/internal/variants/string.ts").StringType<"official" | "community" | "private", {}>;
+export declare const PackageChannelSchema: import("arktype/internal/variants/string.ts").StringType<"community" | "official" | "private", {}>;
 export type PackageChannel = (typeof PackageChannelSchema)[inferred];
 export declare const PackageVerificationTierSchema: import("arktype/internal/variants/string.ts").StringType<"structural" | "source-linked" | "provenance-verified" | "rebuild-verified", {}>;
 export type PackageVerificationTier = (typeof PackageVerificationTierSchema)[inferred];
@@ -91,9 +91,9 @@ export declare const PackageAppealFinalActionSchema: import("arktype/internal/va
 export type PackageAppealFinalAction = (typeof PackageAppealFinalActionSchema)[inferred];
 export declare const PackageAppealListStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "all" | "accepted" | "rejected", {}>;
 export type PackageAppealListStatus = (typeof PackageAppealListStatusSchema)[inferred];
-export declare const PackageOfficialMigrationPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "ready-for-openclaw", {}>;
+export declare const PackageOfficialMigrationPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
 export type PackageOfficialMigrationPhase = (typeof PackageOfficialMigrationPhaseSchema)[inferred];
-export declare const PackageOfficialMigrationListPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"blocked" | "all" | "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "ready-for-openclaw", {}>;
+export declare const PackageOfficialMigrationListPhaseSchema: import("arktype/internal/variants/string.ts").StringType<"all" | "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw", {}>;
 export type PackageOfficialMigrationListPhase = (typeof PackageOfficialMigrationListPhaseSchema)[inferred];
 export declare const PackageArtifactSummarySchema: import("arktype/internal/variants/object.ts").ObjectType<{
     kind: "legacy-zip" | "npm-pack";
@@ -265,7 +265,7 @@ export declare const PackagePublishMetadataSchema: import("arktype/internal/vari
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
     manualOverrideReason?: string | undefined;
-    channel?: "official" | "community" | "private" | undefined;
+    channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
     categories?: string[] | undefined;
     topics?: string[] | undefined;
@@ -312,7 +312,7 @@ export declare const ServerPackagePublishRequestSchema: import("arktype/internal
     displayName?: string | undefined;
     ownerHandle?: string | undefined;
     manualOverrideReason?: string | undefined;
-    channel?: "official" | "community" | "private" | undefined;
+    channel?: "community" | "official" | "private" | undefined;
     tags?: string[] | undefined;
     categories?: string[] | undefined;
     topics?: string[] | undefined;
@@ -336,7 +336,7 @@ export declare const PackageListItemSchema: import("arktype/internal/variants/ob
     name: string;
     displayName: string;
     family: "skill" | "code-plugin" | "bundle-plugin";
-    channel: "official" | "community" | "private";
+    channel: "community" | "official" | "private";
     isOfficial: boolean;
     createdAt: number;
     updatedAt: number;
@@ -361,7 +361,7 @@ export declare const ApiV1PackageListResponseSchema: import("arktype/internal/va
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
         createdAt: number;
         updatedAt: number;
@@ -390,7 +390,7 @@ export declare const ApiV1PackageSearchResponseSchema: import("arktype/internal/
             name: string;
             displayName: string;
             family: "skill" | "code-plugin" | "bundle-plugin";
-            channel: "official" | "community" | "private";
+            channel: "community" | "official" | "private";
             isOfficial: boolean;
             createdAt: number;
             updatedAt: number;
@@ -417,7 +417,7 @@ export declare const ApiV1PackageResponseSchema: import("arktype/internal/varian
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
         createdAt: number;
         updatedAt: number;
@@ -843,7 +843,7 @@ export declare const ApiV1PackageModerationStatusResponseSchema: import("arktype
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
         reportCount: number;
         lastReportedAt?: number | null | undefined;
@@ -897,7 +897,7 @@ export declare const ApiV1PackageTransferResponseSchema: import("arktype/interna
     packageId: string;
     name: string;
     ownerUserId: string;
-    channel: "official" | "community" | "private";
+    channel: "community" | "official" | "private";
     isOfficial: boolean;
     ownerPublisherId?: string | undefined;
 }, {}>;
@@ -914,7 +914,7 @@ export declare const PackageRepairNamePackageSchema: import("arktype/internal/va
     packageId: string;
     name: string;
     ownerUserId: string;
-    channel: "official" | "community" | "private";
+    channel: "community" | "official" | "private";
     runtimeId?: string | null | undefined;
     ownerPublisherId?: string | null | undefined;
     softDeletedAt?: number | null | undefined;
@@ -935,7 +935,7 @@ export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/inter
         packageId: string;
         name: string;
         ownerUserId: string;
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         runtimeId?: string | null | undefined;
         ownerPublisherId?: string | null | undefined;
         softDeletedAt?: number | null | undefined;
@@ -944,7 +944,7 @@ export declare const ApiV1PackageRepairNameResponseSchema: import("arktype/inter
         packageId: string;
         name: string;
         ownerUserId: string;
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         runtimeId?: string | null | undefined;
         ownerPublisherId?: string | null | undefined;
         softDeletedAt?: number | null | undefined;
@@ -979,7 +979,7 @@ export declare const ApiV1PackageRepairRuntimeIdResponseSchema: import("arktype/
         packageId: string;
         name: string;
         ownerUserId: string;
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         runtimeId?: string | null | undefined;
         ownerPublisherId?: string | null | undefined;
         softDeletedAt?: number | null | undefined;
@@ -999,7 +999,7 @@ export declare const PackageOfficialMigrationUpsertRequestSchema: import("arktyp
     sourceRepo?: string | undefined;
     sourcePath?: string | undefined;
     sourceCommit?: string | undefined;
-    phase?: "blocked" | "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "ready-for-openclaw" | undefined;
+    phase?: "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw" | undefined;
     blockers?: string[] | undefined;
     hostTargetsComplete?: boolean | undefined;
     scanClean?: boolean | undefined;
@@ -1012,7 +1012,7 @@ export declare const PackageOfficialMigrationItemSchema: import("arktype/interna
     migrationId: string;
     bundledPluginId: string;
     packageName: string;
-    phase: "blocked" | "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "ready-for-openclaw";
+    phase: "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
     blockers: string[];
     hostTargetsComplete: boolean;
     scanClean: boolean;
@@ -1033,7 +1033,7 @@ export declare const ApiV1PackageOfficialMigrationListResponseSchema: import("ar
         migrationId: string;
         bundledPluginId: string;
         packageName: string;
-        phase: "blocked" | "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "ready-for-openclaw";
+        phase: "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
         blockers: string[];
         hostTargetsComplete: boolean;
         scanClean: boolean;
@@ -1058,7 +1058,7 @@ export declare const ApiV1PackageOfficialMigrationResponseSchema: import("arktyp
         migrationId: string;
         bundledPluginId: string;
         packageName: string;
-        phase: "blocked" | "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "ready-for-openclaw";
+        phase: "published" | "planned" | "clawpack-ready" | "legacy-zip-only" | "metadata-ready" | "blocked" | "ready-for-openclaw";
         blockers: string[];
         hostTargetsComplete: boolean;
         scanClean: boolean;
@@ -1075,7 +1075,7 @@ export declare const ApiV1PackageOfficialMigrationResponseSchema: import("arktyp
     };
 }, {}>;
 export type ApiV1PackageOfficialMigrationResponse = (typeof ApiV1PackageOfficialMigrationResponseSchema)[inferred];
-export declare const PackageModerationQueueStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "blocked" | "all" | "manual", {}>;
+export declare const PackageModerationQueueStatusSchema: import("arktype/internal/variants/string.ts").StringType<"open" | "all" | "blocked" | "manual", {}>;
 export type PackageModerationQueueStatus = (typeof PackageModerationQueueStatusSchema)[inferred];
 export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/internal/variants/object.ts").ObjectType<{
     items: {
@@ -1084,7 +1084,7 @@ export declare const ApiV1PackageModerationQueueResponseSchema: import("arktype/
         name: string;
         displayName: string;
         family: "skill" | "code-plugin" | "bundle-plugin";
-        channel: "official" | "community" | "private";
+        channel: "community" | "official" | "private";
         isOfficial: boolean;
         version: string;
         createdAt: number;
