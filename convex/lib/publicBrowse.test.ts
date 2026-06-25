@@ -4,6 +4,7 @@ import {
   hasPriorApprovedPublicSkillVersion,
   isPubliclyListableSkillVersion,
   isSkillPendingPublicReview,
+  resolvePublicBrowseVersionForSkill,
   shouldExcludeSkillFromPublicBrowse,
 } from "./publicBrowse";
 
@@ -102,5 +103,83 @@ describe("publicBrowse", () => {
         staticScan: undefined,
       }),
     ).toBe(false);
+  });
+
+  it("resolves the last approved version while a newer version is pending review", async () => {
+    const approvedVersion = {
+      _id: "skillVersions:approved",
+      skillId: "skills:1",
+      softDeletedAt: undefined,
+      version: "1.0.0",
+      createdAt: 1,
+      changelog: "approved",
+      changelogSource: "user",
+      parsed: { frontmatter: {}, license: "MIT" },
+      vtAnalysis: { status: "clean", checkedAt: 1 },
+      llmAnalysis: { status: "clean", checkedAt: 1 },
+      staticScan: {
+        status: "clean",
+        reasonCodes: [],
+        findings: [],
+        summary: "",
+        engineVersion: "v1",
+        checkedAt: 1,
+      },
+    };
+    const pendingVersion = {
+      _id: "skillVersions:pending",
+      skillId: "skills:1",
+      softDeletedAt: undefined,
+      version: "2.0.0",
+      createdAt: 2,
+      changelog: "pending",
+      changelogSource: "user",
+      parsed: { frontmatter: {}, license: "MIT" },
+      vtAnalysis: { status: "pending", checkedAt: 2 },
+    };
+
+    const version = await resolvePublicBrowseVersionForSkill(
+      {
+        db: {
+          get: async (id: string) => {
+            if (id === "skills:1") {
+              return {
+                _id: "skills:1",
+                latestVersionId: "skillVersions:pending",
+                moderationSourceVersionId: "skillVersions:pending",
+                moderationStatus: "active",
+                moderationReason: "pending.scan",
+                moderationFlags: undefined,
+                stats: { versions: 2 },
+              };
+            }
+            if (id === "skillVersions:pending") return pendingVersion;
+            return null;
+          },
+          query: () => ({
+            withIndex: () => ({
+              order: () => ({
+                take: async () => [pendingVersion, approvedVersion],
+              }),
+            }),
+          }),
+        },
+      } as never,
+      {
+        _id: "skills:1",
+        latestVersionId: "skillVersions:pending",
+        moderationSourceVersionId: "skillVersions:pending",
+        moderationStatus: "active",
+        moderationReason: "pending.scan",
+        moderationFlags: undefined,
+        stats: { versions: 2 },
+        softDeletedAt: undefined,
+        moderationVerdict: "clean",
+        githubScanStatus: "clean",
+      },
+    );
+
+    expect(version?._id).toBe("skillVersions:approved");
+    expect(version?.version).toBe("1.0.0");
   });
 });

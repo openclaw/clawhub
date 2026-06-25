@@ -6005,55 +6005,72 @@ async function addOfficialStatusToOwnerInfo(
 
 async function loadPublicLatestVersionForDigest(
   ctx: Pick<QueryCtx, "db">,
-  digest: Pick<Doc<"skillSearchDigest">, "skillId" | "latestVersionId" | "latestVersionSkillId">,
+  digest: Pick<
+    Doc<"skillSearchDigest">,
+    | "skillId"
+    | "latestVersionId"
+    | "latestVersionSkillId"
+    | "moderationReason"
+    | "moderationFlags"
+    | "stats"
+    | "moderationSourceVersionId"
+  >,
 ) {
   if (!digest.latestVersionId) return null;
   if (digest.latestVersionSkillId !== undefined && digest.latestVersionSkillId !== digest.skillId) {
     return null;
   }
-  const skill = await ctx.db.get(digest.skillId);
-  if (skill && isSkillPendingPublicReview(skill) && hasPriorApprovedPublicSkillVersion(skill)) {
-    const version = await resolvePublicBrowseVersionForSkill(ctx, skill);
-    return version && isPublicSkillVersionAvailableForSkill(version, digest.skillId)
-      ? version
-      : null;
-  }
-  const version = await ctx.db.get(digest.latestVersionId);
-  return isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
-}
 
-function toDigestLatestVersionForSkill(digest: Doc<"skillSearchDigest">) {
-  if (!digest.latestVersionSummary || !digest.latestVersionId) {
-    return null;
+  const needsApprovedSnapshot =
+    isSkillPendingPublicReview(digest) && hasPriorApprovedPublicSkillVersion(digest);
+
+  if (!needsApprovedSnapshot) {
+    const version = await ctx.db.get(digest.latestVersionId);
+    return isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
   }
-  if (digest.latestVersionSkillId !== digest.skillId) {
-    return null;
-  }
-  return toPublicSkillListVersionFromSummary(
-    digest.latestVersionSummary,
-    digest.latestVersionId,
-    digest.skillId,
-  );
+
+  const skill = await ctx.db.get(digest.skillId);
+  if (!skill) return null;
+  const version = await resolvePublicBrowseVersionForSkill(ctx, skill);
+  return version && isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
 }
 
 async function resolveDigestLatestVersionForSkill(
   ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
 ) {
-  if (!digest.latestVersionSummary || !digest.latestVersionId) {
-    return null;
+  const needsApprovedSnapshot =
+    isSkillPendingPublicReview(digest) && hasPriorApprovedPublicSkillVersion(digest);
+
+  if (
+    !needsApprovedSnapshot &&
+    digest.latestVersionSummary &&
+    digest.latestVersionId &&
+    (digest.latestVersionSkillId === undefined || digest.latestVersionSkillId === digest.skillId)
+  ) {
+    return toPublicSkillListVersionFromSummary(
+      digest.latestVersionSummary,
+      digest.latestVersionId,
+      digest.skillId,
+    );
   }
-  if (digest.latestVersionSkillId === undefined) {
-    const latestVersion = await loadPublicLatestVersionForDigest(ctx, digest);
-    return latestVersion
-      ? toPublicSkillListVersionFromSummary(
-          digest.latestVersionSummary,
-          digest.latestVersionId,
-          digest.skillId,
-        )
-      : null;
+
+  const version = await loadPublicLatestVersionForDigest(ctx, digest);
+  if (!version) return null;
+
+  if (
+    digest.latestVersionSummary &&
+    digest.latestVersionId === version._id &&
+    (digest.latestVersionSkillId === undefined || digest.latestVersionSkillId === digest.skillId)
+  ) {
+    return toPublicSkillListVersionFromSummary(
+      digest.latestVersionSummary,
+      version._id,
+      digest.skillId,
+    );
   }
-  return toDigestLatestVersionForSkill(digest);
+
+  return toPublicSkillListVersion(version);
 }
 
 async function buildPublicSkillApiListEntryFromDigest(
