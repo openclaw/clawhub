@@ -1,7 +1,7 @@
-import { createFileRoute, redirect } from "@tanstack/react-router";
+import { createFileRoute, Link, redirect } from "@tanstack/react-router";
 import { isPluginCategorySlug, normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
-import { BadgeCheck, PackageSearch } from "lucide-react";
+import { BadgeCheck, PackageSearch, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../../../convex/_generated/api";
 import {
@@ -707,6 +707,12 @@ function PluginsIndex() {
             <div className="empty-state">
               <p className="empty-state-title">No plugins found</p>
               <p className="empty-state-body">Try a different search term or remove filters.</p>
+              <Button asChild size="sm" className="mt-4">
+                <Link to="/add" search={{ kind: "plugin", ownerHandle: undefined }}>
+                  <Plus className="h-4 w-4" aria-hidden="true" />
+                  Add a plugin
+                </Link>
+              </Button>
             </div>
           ) : effectiveView === "grid" ? (
             <div className="grid browse-results-grid">

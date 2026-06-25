@@ -11,6 +11,7 @@ import {
   Monitor,
   Moon,
   MoreHorizontal,
+  Plus,
   Search,
   Settings,
   Star,
@@ -434,6 +435,18 @@ export default function Header() {
                         </Link>
                       </SheetClose>
                     ))}
+                    {isAuthenticated && me ? (
+                      <SheetClose asChild>
+                        <Link
+                          to="/add"
+                          search={{ kind: "skill", ownerHandle: undefined }}
+                          className="mobile-nav-link"
+                        >
+                          <Plus size={16} aria-hidden="true" />
+                          Add skill or plugin
+                        </Link>
+                      </SheetClose>
+                    ) : null}
                     {SECONDARY_NAV_ITEMS.map((item) => (
                       <SheetClose key={(item.href ?? item.to ?? "") + item.label} asChild>
                         {item.href ? (
@@ -632,6 +645,16 @@ export default function Header() {
                     <Link to="/dashboard" className="flex items-center gap-2">
                       <LayoutDashboard size={14} aria-hidden="true" />
                       Dashboard
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link
+                      to="/add"
+                      search={{ kind: "skill", ownerHandle: undefined }}
+                      className="flex items-center gap-2"
+                    >
+                      <Plus size={14} aria-hidden="true" />
+                      Add skill or plugin
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild>

@@ -20,6 +20,7 @@ import { Route as ImportRouteImport } from './routes/import'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as AuditsRouteImport } from './routes/audits'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AddRouteImport } from './routes/add'
 import { Route as AccountBannedRouteImport } from './routes/account-banned'
 import { Route as SlugRouteImport } from './routes/$slug'
 import { Route as IndexRouteImport } from './routes/index'
@@ -113,6 +114,11 @@ const AuditsRoute = AuditsRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AddRoute = AddRouteImport.update({
+  id: '/add',
+  path: '/add',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AccountBannedRoute = AccountBannedRouteImport.update({
@@ -324,6 +330,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
   '/account-banned': typeof AccountBannedRoute
+  '/add': typeof AddRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
@@ -376,6 +383,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
   '/account-banned': typeof AccountBannedRoute
+  '/add': typeof AddRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
@@ -429,6 +437,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/$slug': typeof SlugRoute
   '/account-banned': typeof AccountBannedRoute
+  '/add': typeof AddRoute
   '/admin': typeof AdminRoute
   '/audits': typeof AuditsRoute
   '/dashboard': typeof DashboardRoute
@@ -483,6 +492,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$slug'
     | '/account-banned'
+    | '/add'
     | '/admin'
     | '/audits'
     | '/dashboard'
@@ -535,6 +545,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$slug'
     | '/account-banned'
+    | '/add'
     | '/admin'
     | '/audits'
     | '/dashboard'
@@ -587,6 +598,7 @@ export interface FileRouteTypes {
     | '/'
     | '/$slug'
     | '/account-banned'
+    | '/add'
     | '/admin'
     | '/audits'
     | '/dashboard'
@@ -640,6 +652,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   SlugRoute: typeof SlugRoute
   AccountBannedRoute: typeof AccountBannedRoute
+  AddRoute: typeof AddRoute
   AdminRoute: typeof AdminRoute
   AuditsRoute: typeof AuditsRoute
   DashboardRoute: typeof DashboardRoute
@@ -754,6 +767,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/add': {
+      id: '/add'
+      path: '/add'
+      fullPath: '/add'
+      preLoaderRoute: typeof AddRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/account-banned': {
@@ -1108,6 +1128,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   SlugRoute: SlugRoute,
   AccountBannedRoute: AccountBannedRoute,
+  AddRoute: AddRoute,
   AdminRoute: AdminRoute,
   AuditsRoute: AuditsRoute,
   DashboardRoute: DashboardRoute,
