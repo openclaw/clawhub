@@ -494,6 +494,7 @@ describe("downloads helpers", () => {
   it.each(["clean", "suspicious"] as const)(
     "returns a metered public GitHub handoff descriptor for %s scan without scan metadata",
     async (scanStatus) => {
+      vi.stubEnv("TRUST_FORWARDED_IPS", "true");
       const commit = "1".repeat(40);
       const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
         if (isRateLimitArgs(args)) return okRate();
