@@ -6013,7 +6013,6 @@ async function loadPublicLatestVersionForDigest(
     | "moderationReason"
     | "moderationFlags"
     | "stats"
-    | "moderationSourceVersionId"
   >,
 ) {
   if (!digest.latestVersionId) return null;
@@ -6077,7 +6076,9 @@ async function buildPublicSkillApiListEntryFromDigest(
   ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
 ) {
-  const publicSkill = toPublicSkill(digestToHydratableSkill(digest));
+  const hydratable = digestToHydratableSkill(digest);
+  if (shouldExcludeSkillFromPublicBrowse(hydratable)) return null;
+  const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
