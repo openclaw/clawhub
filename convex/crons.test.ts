@@ -152,9 +152,9 @@ describe("crons", () => {
       {
         mode: "current",
         dryRun: false,
-        candidateLimit: 1000,
-        batchSize: 50,
-        maxPages: 20,
+        candidateLimit: 8_000,
+        batchSize: 100,
+        maxPages: 100,
         trigger: "cron",
       },
     );
