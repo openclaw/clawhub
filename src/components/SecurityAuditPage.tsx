@@ -65,6 +65,7 @@ type SecurityAuditPageProps = {
   vtAnalysis?: VtAnalysis | null;
   llmAnalysis?: LlmAnalysis | null;
   skillSpectorAnalysis?: SkillSpectorAnalysis | null;
+  skillSpectorApplicable?: boolean;
   staticScan?: StaticScan | null;
   source?: Record<string, unknown> | null;
   canManageArtifact?: boolean;
@@ -536,6 +537,16 @@ function VirusTotalSection(props: SecurityAuditPageProps) {
 }
 
 function SkillSpectorSection(props: SecurityAuditPageProps) {
+  if (props.skillSpectorApplicable === false) {
+    return (
+      <div className="security-report-panel-body security-report-panel-body-findings">
+        <div className="security-report-overview-body">
+          <p>SkillSpector was not run because this plugin release contains no bundled skills.</p>
+        </div>
+      </div>
+    );
+  }
+
   const analysis = props.skillSpectorAnalysis ?? null;
   const overviewCopy = getSkillSpectorOverviewCopy(analysis);
   const contentSnippets = useSkillSpectorContentSnippets(

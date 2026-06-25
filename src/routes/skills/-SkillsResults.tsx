@@ -1,3 +1,5 @@
+import { Link } from "@tanstack/react-router";
+import { Plus } from "lucide-react";
 import type { RefObject } from "react";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { SkillCard } from "../../components/SkillCard";
@@ -50,6 +52,12 @@ export function SkillsResults({
               ? "Try a different search term or remove filters."
               : "No skills have been published yet."}
           </p>
+          <Button asChild size="sm" className="mt-4">
+            <Link to="/add" search={{ kind: "skill", ownerHandle: undefined }}>
+              <Plus className="h-4 w-4" aria-hidden="true" />
+              Add a skill
+            </Link>
+          </Button>
         </div>
       ) : effectiveView === "grid" ? (
         <div className="grid browse-results-grid">

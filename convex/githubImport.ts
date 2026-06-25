@@ -432,7 +432,10 @@ async function listOwnedPublicGitHubReposForUser(
   url.searchParams.set("per_page", String(fallbackPerPage));
   url.searchParams.set("page", String(page));
 
-  const response = await fetchGitHubApi(url.toString(), fetcher, undefined, false);
+  // Public repo discovery still benefits from the installation token's
+  // higher rate limit. If the app cannot access this endpoint, fetchGitHubApi
+  // retries with the configured token or anonymous public access.
+  const response = await fetchGitHubApi(url.toString(), fetcher);
   if (!response.ok) throwGitHubApiError(response.status);
 
   const payload = (await response.json()) as unknown;

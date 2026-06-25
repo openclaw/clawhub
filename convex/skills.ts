@@ -5868,13 +5868,42 @@ export const listPublicTrendingPage = query({
     const kind = args.nonSuspiciousOnly
       ? TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND
       : TRENDING_LEADERBOARD_KIND;
-    const leaderboard = await ctx.db
+    let leaderboard = await ctx.db
       .query("skillLeaderboards")
       .withIndex("by_kind", (q) => q.eq("kind", kind))
       .order("desc")
       .first();
 
-    if (!leaderboard) return { items: [], nextCursor: null };
+    // Older deployments may have the general snapshot but not the
+    // non-suspicious snapshot yet. Keep trending populated during rollout.
+    if (!leaderboard && args.nonSuspiciousOnly) {
+      leaderboard = await ctx.db
+        .query("skillLeaderboards")
+        .withIndex("by_kind", (q) => q.eq("kind", TRENDING_LEADERBOARD_KIND))
+        .order("desc")
+        .first();
+    }
+
+    if (!leaderboard) {
+      // The first leaderboard snapshot may not exist yet after deployment.
+      // Use a bounded recent catalog warm-up instead of rendering an empty page.
+      const fallbackDigests = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+        .order("desc")
+        .take(Math.min(Math.max(limit * 8, limit), 200));
+      const fallbackItems: PublicSkillEntry[] = [];
+      for (const digest of fallbackDigests) {
+        if (args.nonSuspiciousOnly && digest.isSuspicious) continue;
+        if (categorySlug && !resolveStoredSkillCategories(digest).includes(categorySlug)) continue;
+        if (topic && !getCatalogTopicSlugs(digest.topics).includes(topic)) continue;
+        const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+        if (!item) continue;
+        fallbackItems.push(item);
+        if (fallbackItems.length >= limit) break;
+      }
+      return { items: fallbackItems, nextCursor: null };
+    }
 
     const items: PublicSkillEntry[] = [];
     for (const entry of leaderboard.items) {

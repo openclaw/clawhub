@@ -16,28 +16,108 @@ jobs:
   dispatch-openclaw-docs-sync:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/create-github-app-token@v3
+        id: barnacle-token
+        continue-on-error: true
+        with:
+          app-id: "2729701"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: openclaw
+          repositories: openclaw
+          permission-actions: write
+
       - name: Dispatch OpenClaw docs sync
         env:
+          BARNACLE_TOKEN: ${{ steps.barnacle-token.outputs.token }}
           OPENCLAW_GH_TOKEN: ${{ secrets.OPENCLAW_GH_TOKEN }}
           LEGACY_TOKEN: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
         run: |
           set -euo pipefail
 
-          OPENCLAW_DOCS_SYNC_TOKEN="${OPENCLAW_GH_TOKEN:-${LEGACY_TOKEN:-}}"
-
-          if [ -z "${OPENCLAW_DOCS_SYNC_TOKEN:-}" ]; then
-            echo "::error::OPENCLAW_GH_TOKEN or legacy token is required"
-            echo "::error::to dispatch openclaw/openclaw docs sync."
-            exit 1
+          if [ -z "${BARNACLE_TOKEN:-}" ] &&
+            [ -z "${LEGACY_TOKEN:-}" ] &&
+            [ -z "${OPENCLAW_GH_TOKEN:-}" ]; then
+            echo "::warning::Skipping OpenClaw docs sync dispatch because no cross-repo token is configured."
+            exit 0
           fi
 
           dispatch_url="https://api.github.com/repos/openclaw/openclaw"
           dispatch_url+="/actions/workflows/docs-sync-publish.yml/dispatches"
 
-          curl --fail-with-body --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer ${OPENCLAW_DOCS_SYNC_TOKEN}" \
-            --header "Accept: application/vnd.github+json" \
-            --header "X-GitHub-Api-Version: 2022-11-28" \
-            "${dispatch_url}" \
-            --data '{"ref":"main"}'
+          dispatch_with_token() {
+            local label="$1"
+            local token="$2"
+            local response_body
+            local http_status
+
+            response_body="$(mktemp)"
+            http_status="$(curl --silent --show-error \
+              --output "${response_body}" \
+              --write-out "%{http_code}" \
+              --request POST \
+              --header "Authorization: Bearer ${token}" \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "${dispatch_url}" \
+              --data '{"ref":"main"}' || printf '000')"
+
+            if [ "${http_status}" = "204" ]; then
+              echo "OpenClaw docs sync dispatch accepted with ${label}."
+              return 0
+            fi
+
+            if [ "${http_status}" = "401" ] || [ "${http_status}" = "403" ]; then
+              echo "::warning::OpenClaw docs sync dispatch ${label} credential was rejected with HTTP ${http_status}."
+              cat "${response_body}"
+              return 2
+            fi
+
+            cat "${response_body}"
+            echo "::error::OpenClaw docs sync dispatch failed with ${label} credential, HTTP ${http_status}."
+            return 1
+          }
+
+          auth_rejected=false
+
+          if [ -n "${BARNACLE_TOKEN:-}" ]; then
+            if dispatch_with_token "Barnacle GitHub App" "${BARNACLE_TOKEN}"; then
+              exit 0
+            fi
+            status="$?"
+            if [ "${status}" != "2" ]; then
+              exit "${status}"
+            fi
+            auth_rejected=true
+          fi
+
+          if [ -n "${OPENCLAW_GH_TOKEN:-}" ]; then
+            status=0
+            dispatch_with_token "OPENCLAW_GH_TOKEN" "${OPENCLAW_GH_TOKEN}" || status="$?"
+            if [ "${status}" = "0" ]; then
+              exit 0
+            fi
+            if [ "${status}" != "2" ]; then
+              exit "${status}"
+            fi
+            auth_rejected=true
+          fi
+
+          if [ -n "${LEGACY_TOKEN:-}" ]; then
+            status=0
+            dispatch_with_token "OPENCLAW_DOCS_SYNC_TOKEN" "${LEGACY_TOKEN}" || status="$?"
+            if [ "${status}" = "0" ]; then
+              exit 0
+            fi
+            if [ "${status}" != "2" ]; then
+              exit "${status}"
+            fi
+            auth_rejected=true
+          fi
+
+          if [ "${auth_rejected}" = "true" ]; then
+            echo "::warning::All configured OpenClaw docs sync credentials were rejected."
+            echo "::warning::Check Barnacle permissions or refresh a docs-sync token."
+            exit 0
+          fi
+
+          echo "::warning::Skipping OpenClaw docs sync dispatch because no non-empty credential was available."

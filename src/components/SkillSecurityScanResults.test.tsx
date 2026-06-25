@@ -780,6 +780,28 @@ describe("SecurityScanResults static guidance", () => {
     );
   });
 
+  it("does not show SkillSpector as pending for plugins without bundled skills", () => {
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "plugin",
+          title: "Matrix",
+          name: "@openclaw/matrix",
+          version: "2026.6.10",
+          detailPath: "/plugins/@openclaw/matrix",
+        }}
+        skillSpectorApplicable={false}
+      />,
+    );
+
+    expect(
+      screen.getByText(
+        "SkillSpector was not run because this plugin release contains no bundled skills.",
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("SkillSpector findings are pending for this release.")).toBeNull();
+  });
+
   it("renders latest audit timestamps deterministically for hydration", () => {
     render(
       <SecurityAuditPage

@@ -1338,6 +1338,7 @@ async function main() {
     }:${process.env.CODEX_SECURITY_SCAN_SHARD ?? process.env.GITHUB_JOB ?? "0"}`;
   const startedAt = Date.now();
   const claimDeadline = startedAt + maxRuntimeMs;
+  const minClaimWindowMs = Math.min(maxRuntimeMs, codexScanTimeoutMs() + 60_000);
   let totalClaimed = 0;
   let totalCompleted = 0;
   let totalFailed = 0;
@@ -1348,6 +1349,19 @@ async function main() {
   );
 
   while (Date.now() < claimDeadline) {
+    const remainingRuntimeMs = claimDeadline - Date.now();
+    if (remainingRuntimeMs < minClaimWindowMs) {
+      logger.info(
+        {
+          event: "security_scan_claim_window_closed",
+          minClaimWindowMs,
+          remainingRuntimeMs,
+          workerId,
+        },
+        "stopping before claiming another security scan batch",
+      );
+      break;
+    }
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
     const claimLimit = Math.min(batchLimit, remainingJobs);

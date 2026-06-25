@@ -78,8 +78,14 @@ function isSettingsView(value: unknown): value is SettingsView {
 }
 
 export const Route = createFileRoute("/settings")({
-  validateSearch: (search: Record<string, unknown>): { view?: SettingsView } => ({
+  validateSearch: (
+    search: Record<string, unknown>,
+  ): {
+    view?: SettingsView;
+    ownerHandle?: string;
+  } => ({
     view: isSettingsView(search.view) ? search.view : undefined,
+    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
   }),
   component: Settings,
 });
@@ -277,7 +283,7 @@ export function Settings() {
   const [createOrgDialogOpen, setCreateOrgDialogOpen] = useState(false);
   const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false);
   const [revokeTokenId, setRevokeTokenId] = useState<Id<"apiTokens"> | null>(null);
-  const { activeView, navigateToView } = useActiveSettingsView();
+  const { activeView, navigateToView, ownerHandle: requestedOwnerHandle } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
   const manageablePublishers = (publisherMemberships ?? []).filter(
     (entry) => entry.role !== "publisher",
@@ -349,6 +355,15 @@ export function Settings() {
       setSelectedSourcePublisherId("");
       return;
     }
+    const requestedPublisher = requestedOwnerHandle
+      ? officialGitHubSourcePublishers.find(
+          (entry) => entry.publisher.handle === requestedOwnerHandle,
+        )
+      : null;
+    if (requestedPublisher) {
+      setSelectedSourcePublisherId(requestedPublisher.publisher._id);
+      return;
+    }
     if (
       selectedSourcePublisherId &&
       officialGitHubSourcePublishers.some(
@@ -358,7 +373,7 @@ export function Settings() {
       return;
     }
     setSelectedSourcePublisherId(officialGitHubSourcePublishers[0]?.publisher._id ?? "");
-  }, [officialGitHubSourcePublishers, selectedSourcePublisherId]);
+  }, [officialGitHubSourcePublishers, requestedOwnerHandle, selectedSourcePublisherId]);
 
   useEffect(() => {
     if (!selectedOrg) {
@@ -2463,7 +2478,11 @@ function useActiveSettingsView() {
     void navigate({ search: { view } });
   };
 
-  return { activeView, navigateToView };
+  return {
+    activeView,
+    navigateToView,
+    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
+  };
 }
 
 function formatShortDate(value: number) {

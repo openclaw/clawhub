@@ -224,7 +224,7 @@ export function HomeBringSkillsSection() {
         </div>
 
         <div className="home-v2-byos-foot">
-          <Link to="/import" className="home-v2-byos-import">
+          <Link to="/import" search={{ ownerHandle: undefined }} className="home-v2-byos-import">
             <GitHubGlyph />
             or import from your GitHub
             <ArrowRight size={15} aria-hidden="true" />

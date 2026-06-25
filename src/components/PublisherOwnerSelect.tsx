@@ -7,6 +7,7 @@ export type PublisherOwnerMembership = {
     handle: string;
     displayName: string;
     kind: "user" | "org";
+    official?: boolean;
     image?: string | null;
   };
   role: "owner" | "admin" | "publisher";

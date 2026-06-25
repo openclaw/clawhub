@@ -1309,6 +1309,97 @@ describe("public skill list deterministic cursors", () => {
     expect(result.items[0]).toMatchObject({ latestVersion: null });
   });
 
+  it("falls back to the general trending snapshot during non-suspicious rollout", async () => {
+    const digest = makeSearchDigest();
+    const requestedKinds: string[] = [];
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === "skillLeaderboards") {
+            return {
+              withIndex: vi.fn(
+                (
+                  _indexName: string,
+                  builder: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  const queryBuilder = {
+                    eq: (_field: string, value: string) => {
+                      requestedKinds.push(value);
+                      return queryBuilder;
+                    },
+                  };
+                  builder(queryBuilder);
+                  return {
+                    order: () => ({
+                      first: async () =>
+                        requestedKinds.at(-1) === "trending_non_suspicious"
+                          ? null
+                          : { items: [{ skillId: "skills:demo" }] },
+                    }),
+                  };
+                },
+              ),
+            };
+          }
+          if (table === "skillSearchDigest") {
+            return {
+              withIndex: () => ({
+                unique: async () => digest,
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    const result = await listPublicTrendingPageHandler(ctx as never, {
+      limit: 10,
+      nonSuspiciousOnly: true,
+    });
+
+    expect(requestedKinds).toEqual(["trending_non_suspicious", "trending"]);
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ skill: { slug: "demo" } });
+  });
+
+  it("warms trending with recent public skills before the first snapshot exists", async () => {
+    const digest = makeSearchDigest({ updatedAt: 12 });
+    const ctx = {
+      db: {
+        query: vi.fn((table: string) => {
+          if (table === "skillLeaderboards") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  first: async () => null,
+                }),
+              }),
+            };
+          }
+          if (table === "skillSearchDigest") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  take: async () => [digest],
+                }),
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    const result = await listPublicTrendingPageHandler(ctx as never, {
+      limit: 10,
+      nonSuspiciousOnly: true,
+    });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0]).toMatchObject({ skill: { slug: "demo" } });
+  });
+
   it("keeps verified legacy trending latest versions without owner markers", async () => {
     const legacyDigest = makeSearchDigest({
       latestVersionSkillId: undefined,

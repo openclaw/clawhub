@@ -15,6 +15,7 @@ import {
   Download,
   Flag,
   MoreHorizontal,
+  Plus,
   Search,
   Star,
   type LucideIcon,
@@ -400,16 +401,26 @@ function PublisherProfile() {
 }
 
 function PublisherProfileChromeActions({
+  addHandle,
   isAuthenticated,
   onReport,
   requireSignIn,
 }: {
+  addHandle?: string;
   isAuthenticated: boolean;
   onReport: () => void;
   requireSignIn: () => void;
 }) {
   return (
     <div className="publisher-profile-chrome-actions">
+      {addHandle ? (
+        <Button asChild size="sm" variant="primary">
+          <Link to="/add" search={{ kind: "skill", ownerHandle: addHandle }}>
+            <Plus size={15} aria-hidden="true" />
+            Add
+          </Link>
+        </Button>
+      ) : null}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
@@ -542,6 +553,10 @@ export function PublisherProfilePage({
         (entry.role === "owner" || entry.role === "admin"),
     );
   }, [myPublisherMemberships, handle]);
+  const viewerCanAddToPublisher = useMemo(
+    () => Boolean(myPublisherMemberships?.some((entry) => entry.publisher.handle === handle)),
+    [myPublisherMemberships, handle],
+  );
 
   const {
     results: publishedResults,
@@ -713,6 +728,7 @@ export function PublisherProfilePage({
             <div className="publisher-profile-chrome-top">
               <PublisherProfileChromeIdentity publisher={publisher} />
               <PublisherProfileChromeActions
+                addHandle={viewerCanAddToPublisher ? publisher.handle : undefined}
                 isAuthenticated={isAuthenticated}
                 onReport={openReportDialog}
                 requireSignIn={() => {
