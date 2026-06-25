@@ -1,0 +1,20 @@
+{
+  "status": "passed",
+  "mode": "feature",
+  "scenario": "Official UI labels render as Verified",
+  "provider": "in-app-browser",
+  "candidate": "pe/verified-ui-copy",
+  "lanes": [
+    {
+      "name": "candidate",
+      "steps": [
+        {
+          "name": "Plugins browse filter label",
+          "slug": "verified-plugin-filter",
+          "status": "passed",
+          "screenshot": "verified-plugin-filter.png"
+        }
+      ]
+    }
+  ]
+}
