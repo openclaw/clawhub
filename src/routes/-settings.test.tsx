@@ -335,7 +335,26 @@ describe("Settings", () => {
 
   it("lets official publisher owners configure a public GitHub sync source", async () => {
     const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
-    useActionMock.mockReturnValue(configureSource);
+    const previewSource = vi.fn().mockResolvedValue({
+      ok: true,
+      repo: "NVIDIA/skills",
+      defaultBranch: "main",
+      commit: "a".repeat(40),
+      manifestStatus: "ok",
+      skills: [
+        {
+          slug: "aiq-deploy",
+          displayName: "AIQ Deploy",
+          path: "skills/aiq-deploy",
+          contentHash: "hash-aiq-deploy",
+        },
+      ],
+    });
+    useActionMock.mockImplementation((action) =>
+      getFunctionName(action) === "githubSkillSync:previewPublicGitHubSkillSource"
+        ? previewSource
+        : configureSource,
+    );
     mockSignedInSettings({
       search: { view: "githubSources" },
       memberships: [personalMembership, orgMembership],
@@ -363,9 +382,200 @@ describe("Settings", () => {
       expect(configureSource).toHaveBeenCalledWith({
         ownerPublisherId: "publisher_openclaw",
         repo: "NVIDIA/skills",
+        selectedSkillPaths: ["skills/aiq-deploy"],
       });
     });
     expect(toast.success).toHaveBeenCalledWith(expect.stringMatching(/GitHub source synced/i));
+  });
+
+  it("keeps a legacy single-skill source in all-skills mode on resync", async () => {
+    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
+    const previewSource = vi.fn().mockResolvedValue({
+      ok: true,
+      repo: "vibethon/skills",
+      defaultBranch: "main",
+      commit: "a".repeat(40),
+      manifestStatus: "ok",
+      existingSourceId: "githubSkillSources:vibethon",
+      skills: [
+        {
+          slug: "vibethon",
+          displayName: "Vibethon",
+          path: "skills/vibethon",
+          contentHash: "hash-vibethon",
+        },
+      ],
+    });
+    useActionMock.mockImplementation((action) =>
+      getFunctionName(action) === "githubSkillSync:previewPublicGitHubSkillSource"
+        ? previewSource
+        : configureSource,
+    );
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership, orgMembership],
+    });
+
+    render(<Settings />);
+    fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
+      target: { value: "https://github.com/vibethon/skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenCalledWith({
+        ownerPublisherId: "publisher_openclaw",
+        repo: "vibethon/skills",
+      });
+    });
+  });
+
+  it("does not replace a missing saved selection with an unrelated skill", async () => {
+    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
+    const previewSource = vi.fn().mockResolvedValue({
+      ok: true,
+      repo: "vibethon/skills",
+      defaultBranch: "main",
+      commit: "a".repeat(40),
+      manifestStatus: "ok",
+      existingSourceId: "githubSkillSources:vibethon",
+      selectedSkillPaths: ["skills/vibethon"],
+      skills: [
+        {
+          slug: "bundled",
+          displayName: "Bundled",
+          path: "SKILL.md",
+          contentHash: "hash-bundled",
+        },
+      ],
+    });
+    useActionMock.mockImplementation((action) =>
+      getFunctionName(action) === "githubSkillSync:previewPublicGitHubSkillSource"
+        ? previewSource
+        : configureSource,
+    );
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership, orgMembership],
+    });
+
+    render(<Settings />);
+    fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
+      target: { value: "https://github.com/vibethon/skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    expect(await screen.findByRole("heading", { name: "Select skills to sync" })).toBeTruthy();
+    expect(configureSource).not.toHaveBeenCalled();
+  });
+
+  it("asks which skills to sync when a repo contains multiple candidates", async () => {
+    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 1 } });
+    const previewSource = vi.fn().mockResolvedValue({
+      ok: true,
+      repo: "vibethon/skills",
+      defaultBranch: "main",
+      commit: "a".repeat(40),
+      manifestStatus: "missing",
+      skills: [
+        {
+          slug: "bundled",
+          displayName: "Bundled",
+          path: "SKILL.md",
+          contentHash: "hash-bundled",
+        },
+        {
+          slug: "vibethon",
+          displayName: "Vibethon",
+          path: "skills/vibethon",
+          contentHash: "hash-vibethon",
+        },
+      ],
+    });
+    useActionMock.mockImplementation((action) =>
+      getFunctionName(action) === "githubSkillSync:previewPublicGitHubSkillSource"
+        ? previewSource
+        : configureSource,
+    );
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership, orgMembership],
+    });
+
+    render(<Settings />);
+    fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
+      target: { value: "https://github.com/vibethon/skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    expect(await screen.findByRole("heading", { name: "Select skills to sync" })).toBeTruthy();
+    expect(configureSource).not.toHaveBeenCalled();
+
+    const checkboxes = screen.getAllByRole("checkbox");
+    fireEvent.click(checkboxes[1] as HTMLElement);
+    fireEvent.click(screen.getByRole("button", { name: "Sync selected skills" }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenCalledWith({
+        ownerPublisherId: "publisher_openclaw",
+        repo: "vibethon/skills",
+        selectedSkillPaths: ["skills/vibethon"],
+      });
+    });
+  });
+
+  it("preserves legacy all-skill selection when resyncing an existing source", async () => {
+    const configureSource = vi.fn().mockResolvedValue({ ok: true, stats: { discovered: 2 } });
+    const previewSource = vi.fn().mockResolvedValue({
+      ok: true,
+      repo: "vibethon/skills",
+      defaultBranch: "main",
+      commit: "a".repeat(40),
+      manifestStatus: "missing",
+      existingSourceId: "githubSkillSources:vibethon",
+      skills: [
+        {
+          slug: "bundled",
+          displayName: "Bundled",
+          path: "SKILL.md",
+          contentHash: "hash-bundled",
+        },
+        {
+          slug: "vibethon",
+          displayName: "Vibethon",
+          path: "skills/vibethon",
+          contentHash: "hash-vibethon",
+        },
+      ],
+    });
+    useActionMock.mockImplementation((action) =>
+      getFunctionName(action) === "githubSkillSync:previewPublicGitHubSkillSource"
+        ? previewSource
+        : configureSource,
+    );
+    mockSignedInSettings({
+      search: { view: "githubSources" },
+      memberships: [personalMembership, orgMembership],
+    });
+
+    render(<Settings />);
+    fireEvent.change(screen.getByLabelText("GitHub repo URL"), {
+      target: { value: "https://github.com/vibethon/skills" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Add repo/i }));
+
+    expect(await screen.findByRole("heading", { name: "Select skills to sync" })).toBeTruthy();
+    expect(
+      screen.getAllByRole("checkbox").every((checkbox) => (checkbox as HTMLInputElement).checked),
+    ).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Sync selected skills" }));
+
+    await waitFor(() => {
+      expect(configureSource).toHaveBeenCalledWith({
+        ownerPublisherId: "publisher_openclaw",
+        repo: "vibethon/skills",
+      });
+    });
   });
 
   it("shows synced repos as separate cards and lets owners delete a source", async () => {

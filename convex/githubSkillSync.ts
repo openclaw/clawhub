@@ -18,6 +18,7 @@ import {
   type DiscoveredGitHubSkill,
   type DisplayManifestStatus,
   githubBackedSkillModeration,
+  normalizeSelectedSkillPaths,
   type GitHubSkillScanStatus,
   type GitHubSkillSourceMetadataSnapshot,
   type GitHubSkillSourceSnapshot,
@@ -45,7 +46,7 @@ const MAX_SOURCE_SYNC_BATCH_SIZE = 50;
 
 type SourceForSync = Pick<
   Doc<"githubSkillSources">,
-  "_id" | "repo" | "ownerPublisherId" | "defaultBranch"
+  "_id" | "repo" | "ownerPublisherId" | "defaultBranch" | "selectedSkillPaths"
 >;
 
 type SourceForSyncPage = {
@@ -119,6 +120,24 @@ type GitHubSkillSourceSetupContext = {
   ownerUserId: Id<"users">;
   existingSource: SourceForSync | null;
   official: boolean;
+};
+
+type GitHubSkillSourcePreview = {
+  ok: true;
+  repo: string;
+  defaultBranch: string;
+  commit: string;
+  manifestStatus: DisplayManifestStatus;
+  existingSourceId?: Id<"githubSkillSources">;
+  selectedSkillPaths?: string[];
+  skills: Array<{
+    slug: string;
+    displayName: string;
+    summary?: string;
+    path: string;
+    skillCardMarkdownPath?: string;
+    contentHash: string;
+  }>;
 };
 
 type GitHubSkillVerificationTarget = {
@@ -395,6 +414,7 @@ export type ApplyGitHubSkillSourceSyncArgs = {
   repo: string;
   ownerUserId: Id<"users">;
   ownerPublisherId?: Id<"publishers">;
+  selectedSkillPaths?: string[];
   snapshot: GitHubSkillSourceMetadataSnapshot;
   now?: number;
 };
@@ -423,6 +443,9 @@ export async function applyGitHubSkillSourceSyncHandler(
   }
 
   const sourceOwnerPublisherId = args.ownerPublisherId ?? existingSource?.ownerPublisherId;
+  const selectedSkillPaths =
+    normalizeSelectedSkillPaths(args.selectedSkillPaths) ??
+    normalizeSelectedSkillPaths(existingSource?.selectedSkillPaths);
   const sourceId =
     existingSource?._id ??
     (await ctx.db.insert(
@@ -430,6 +453,7 @@ export async function applyGitHubSkillSourceSyncHandler(
       stripUndefined({
         repo,
         ownerPublisherId: sourceOwnerPublisherId,
+        selectedSkillPaths,
         createdAt: now,
         updatedAt: now,
       }) as Omit<Doc<"githubSkillSources">, "_id" | "_creationTime">,
@@ -443,6 +467,7 @@ export async function applyGitHubSkillSourceSyncHandler(
     sourceId,
     ownerUserId: args.ownerUserId,
     ...(sourceOwnerPublisherId ? { ownerPublisherId: sourceOwnerPublisherId } : {}),
+    selectedSkillPaths,
     existingSkills: existingSkills.map((skill) => ({
       _id: skill._id,
       slug: skill.slug,
@@ -840,6 +865,7 @@ export const applyGitHubSkillSourceSyncInternal = internalMutation({
     repo: v.string(),
     ownerUserId: v.id("users"),
     ownerPublisherId: v.optional(v.id("publishers")),
+    selectedSkillPaths: v.optional(v.array(v.string())),
     snapshot: sourceSnapshotValidator,
     now: v.optional(v.number()),
   },
@@ -977,7 +1003,11 @@ export async function verifyGitHubSkillHandler(
 
 export async function configurePublicGitHubSkillSourceHandler(
   ctx: ActionCtx,
-  args: { ownerPublisherId: Id<"publishers">; repo: string },
+  args: {
+    ownerPublisherId: Id<"publishers">;
+    repo: string;
+    selectedSkillPaths?: string[];
+  },
   fetcher: typeof fetch = fetch,
   authOverride?: { userId: Id<"users"> },
 ): Promise<SyncOneResult> {
@@ -1004,22 +1034,94 @@ export async function configurePublicGitHubSkillSourceHandler(
   if (snapshot.skills.length === 0) {
     throw new ConvexError("No skills were found in that public GitHub repo.");
   }
+  const hasExplicitSelection = args.selectedSkillPaths !== undefined;
+  const selectedSkillPaths = hasExplicitSelection
+    ? normalizeSelectedSkillPaths(args.selectedSkillPaths)
+    : normalizeSelectedSkillPaths(setup.existingSource?.selectedSkillPaths);
+  if (hasExplicitSelection && !selectedSkillPaths) {
+    throw new ConvexError("Select at least one skill before adding this repo.");
+  }
+  if (!setup.existingSource && !selectedSkillPaths && snapshot.skills.length > 1) {
+    throw new ConvexError("Select at least one skill before adding this repo.");
+  }
+  if (selectedSkillPaths) {
+    const discoveredPaths = new Set(snapshot.skills.map((skill) => skill.path));
+    const missingPath = selectedSkillPaths.find((path) => !discoveredPaths.has(path));
+    if (missingPath) {
+      throw new ConvexError(`Selected GitHub skill is not present in the repo: ${missingPath}`);
+    }
+  }
+  const effectiveSelectedSkillPaths =
+    !setup.existingSource && !selectedSkillPaths
+      ? [snapshot.skills[0]?.path as string]
+      : selectedSkillPaths;
   return await applyFetchedGitHubSkillSourceSnapshot(ctx, {
     sourceId: setup.existingSource?._id,
     repo: metadata.repo,
     ownerUserId: setup.ownerUserId,
     ownerPublisherId: args.ownerPublisherId,
+    selectedSkillPaths: effectiveSelectedSkillPaths,
     snapshot,
   });
+}
+
+export async function previewPublicGitHubSkillSourceHandler(
+  ctx: ActionCtx,
+  args: { ownerPublisherId: Id<"publishers">; repo: string },
+  fetcher: typeof fetch = fetch,
+  authOverride?: { userId: Id<"users"> },
+): Promise<GitHubSkillSourcePreview> {
+  const actor = authOverride ?? (await requireUserFromAction(ctx));
+  const metadata = await fetchPublicGitHubRepoMetadata(args.repo, fetcher);
+  const setup = (await ctx.runQuery(
+    internal.githubSkillSync.getPublicGitHubSkillSourceSetupContextInternal,
+    {
+      ownerPublisherId: args.ownerPublisherId,
+      actorUserId: actor.userId,
+      repo: metadata.repo,
+    },
+  )) as GitHubSkillSourceSetupContext;
+  if (!setup.official) {
+    throw new ConvexError("GitHub source sync is only available for official publishers.");
+  }
+  const snapshot = await fetchGitHubSkillSourceSnapshot(
+    { repo: metadata.repo, defaultBranch: metadata.defaultBranch },
+    fetcher,
+  );
+  if (snapshot.skills.length === 0) {
+    throw new ConvexError("No skills were found in that public GitHub repo.");
+  }
+  return {
+    ok: true,
+    repo: metadata.repo,
+    defaultBranch: metadata.defaultBranch,
+    commit: snapshot.commit,
+    manifestStatus: snapshot.manifestStatus,
+    existingSourceId: setup.existingSource?._id,
+    selectedSkillPaths: normalizeSelectedSkillPaths(setup.existingSource?.selectedSkillPaths),
+    skills: snapshot.skills.map(
+      ({ skillMarkdown: _skillMarkdown, skillCardMarkdown: _skillCardMarkdown, ...skill }) => skill,
+    ),
+  };
 }
 
 export const configurePublicGitHubSkillSource: ReturnType<typeof action> = action({
   args: {
     ownerPublisherId: v.id("publishers"),
     repo: v.string(),
+    selectedSkillPaths: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args): Promise<SyncOneResult> =>
     configurePublicGitHubSkillSourceHandler(ctx, args),
+});
+
+export const previewPublicGitHubSkillSource: ReturnType<typeof action> = action({
+  args: {
+    ownerPublisherId: v.id("publishers"),
+    repo: v.string(),
+  },
+  handler: async (ctx, args): Promise<GitHubSkillSourcePreview> =>
+    previewPublicGitHubSkillSourceHandler(ctx, args),
 });
 
 async function applyFetchedGitHubSkillSourceSnapshot(
@@ -1029,6 +1131,7 @@ async function applyFetchedGitHubSkillSourceSnapshot(
     repo: string;
     ownerUserId: Id<"users">;
     ownerPublisherId?: Id<"publishers">;
+    selectedSkillPaths?: string[];
     snapshot: GitHubSkillSourceSnapshot;
   },
 ) {
@@ -1039,6 +1142,7 @@ async function applyFetchedGitHubSkillSourceSnapshot(
       repo: args.repo,
       ownerUserId: args.ownerUserId,
       ownerPublisherId: args.ownerPublisherId,
+      ...(args.selectedSkillPaths ? { selectedSkillPaths: args.selectedSkillPaths } : {}),
       snapshot: toGitHubSkillSourceMetadataSnapshot(args.snapshot),
     },
   )) as SyncOneResult;

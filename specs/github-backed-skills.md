@@ -34,6 +34,9 @@ version.
 
 - `repo`: GitHub `owner/repo`, for example `NVIDIA/skills`
 - `ownerPublisherId`: ClawHub publisher that owns the synced catalog
+- `selectedSkillPaths`: optional explicit skill-folder paths selected for this
+  source. Legacy sources without this field retain the historical all-detected
+  skills behavior.
 - `defaultBranch`: optional branch value discovered from GitHub
 - `displayManifestKind`: currently only `skills.sh`
 - `displayManifestCommit`, `displayManifestHash`, `displayManifestFetchedAt`
@@ -94,6 +97,12 @@ applies it to ClawHub. Pagination must use a stable source cursor, not
 remain on the Node runtime action. Per-skill verification also fetches and
 expands the source archive, so verification actions must run in the Node runtime
 as well.
+
+When a new repository contains multiple detected skills, the settings flow
+previews the candidates and requires the publisher to choose one or more skill
+paths before creating the source. That selection is persisted on the source and
+applied on every scheduled sync, so unrelated root or bundled `SKILL.md` files
+cannot be silently revived after a source is deleted and added again.
 
 Sync must not pass the full repo Markdown payload through one large Convex
 mutation. The intended split is:

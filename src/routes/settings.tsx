@@ -173,6 +173,25 @@ type GitHubSkillSource = {
   updatedAt: number;
 };
 
+type GitHubSkillSourcePreview = {
+  ok: true;
+  ownerPublisherId: Id<"publishers">;
+  repo: string;
+  defaultBranch: string;
+  commit: string;
+  manifestStatus: "ok" | "missing" | "invalid" | "failed";
+  existingSourceId?: Id<"githubSkillSources">;
+  selectedSkillPaths?: string[];
+  skills: Array<{
+    slug: string;
+    displayName: string;
+    summary?: string;
+    path: string;
+    skillCardMarkdownPath?: string;
+    contentHash: string;
+  }>;
+};
+
 const navigationGroups: Array<{
   items: Array<{
     view: SettingsView;
@@ -248,6 +267,7 @@ export function Settings() {
   const updateOrgProfile = useMutation(api.publishers.updateProfile);
   const addOrgMember = useMutation(api.publishers.addMember);
   const removeOrgMember = useMutation(api.publishers.removeMember);
+  const previewGitHubSource = useAction(api.githubSkillSync.previewPublicGitHubSkillSource);
   const configureGitHubSource = useAction(api.githubSkillSync.configurePublicGitHubSkillSource);
   const deleteGitHubSource = useMutation(api.githubSkillSources.deleteForPublisher);
   const [displayName, setDisplayName] = useState("");
@@ -270,6 +290,9 @@ export function Settings() {
   const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
   const [isSyncingSource, setIsSyncingSource] = useState(false);
+  const [sourcePreview, setSourcePreview] = useState<GitHubSkillSourcePreview | null>(null);
+  const [selectedSkillPaths, setSelectedSkillPaths] = useState<string[]>([]);
+  const [isSelectingSourceSkills, setIsSelectingSourceSkills] = useState(false);
   const [deletingSourceId, setDeletingSourceId] = useState<Id<"githubSkillSources"> | null>(null);
   const [sourceToDelete, setSourceToDelete] = useState<GitHubSkillSource | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -537,11 +560,65 @@ export function Settings() {
     if (!repo) return;
     setIsSyncingSource(true);
     try {
-      const result = await configureGitHubSource({
+      const previewResult = (await previewGitHubSource({
         ownerPublisherId: selectedSourcePublisher.publisher._id,
         repo,
+      })) as Omit<GitHubSkillSourcePreview, "ownerPublisherId">;
+      const preview: GitHubSkillSourcePreview = {
+        ...previewResult,
+        ownerPublisherId: selectedSourcePublisher.publisher._id,
+      };
+      const existingSelection = new Set(preview.selectedSkillPaths ?? []);
+      const currentSkillPaths = new Set(preview.skills.map((skill) => skill.path));
+      const hasMissingExistingSelection =
+        preview.selectedSkillPaths?.some((path) => !currentSkillPaths.has(path)) ?? false;
+      const preserveLegacyAllSkills =
+        preview.existingSourceId !== undefined && preview.selectedSkillPaths === undefined;
+      const initialSelection = preview.skills
+        .filter((skill) => preserveLegacyAllSkills || existingSelection.has(skill.path))
+        .map((skill) => skill.path);
+      if (preview.skills.length > 1 || hasMissingExistingSelection) {
+        setSourcePreview(preview);
+        setSelectedSkillPaths(initialSelection);
+        setIsSelectingSourceSkills(true);
+      } else {
+        const omitSelectedSkillPaths =
+          preview.existingSourceId !== undefined && preview.selectedSkillPaths === undefined;
+        const result = await configureGitHubSource({
+          ownerPublisherId: selectedSourcePublisher.publisher._id,
+          repo: preview.repo,
+          ...(omitSelectedSkillPaths
+            ? {}
+            : { selectedSkillPaths: [preview.skills[0]?.path as string] }),
+        });
+        setGithubRepo("");
+        toast.success(formatGitHubSourceSyncToast(result?.stats));
+      }
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "GitHub source could not be synced."));
+    } finally {
+      setIsSyncingSource(false);
+    }
+  }
+
+  async function onConfirmGitHubSourceSkills() {
+    if (!sourcePreview || selectedSkillPaths.length === 0) return;
+    setIsSyncingSource(true);
+    try {
+      const preserveLegacyAllSkills =
+        sourcePreview.existingSourceId !== undefined &&
+        sourcePreview.selectedSkillPaths === undefined &&
+        selectedSkillPaths.length === sourcePreview.skills.length &&
+        sourcePreview.skills.every((skill) => selectedSkillPaths.includes(skill.path));
+      const result = await configureGitHubSource({
+        ownerPublisherId: sourcePreview.ownerPublisherId,
+        repo: sourcePreview.repo,
+        ...(preserveLegacyAllSkills ? {} : { selectedSkillPaths }),
       });
       setGithubRepo("");
+      setSourcePreview(null);
+      setSelectedSkillPaths([]);
+      setIsSelectingSourceSkills(false);
       toast.success(formatGitHubSourceSyncToast(result?.stats));
     } catch (error) {
       toast.error(getUserFacingConvexError(error, "GitHub source could not be synced."));
@@ -1342,6 +1419,22 @@ export function Settings() {
                   </div>
                 </SettingsBlock>
 
+                <GitHubSourceSkillSelectionDialog
+                  preview={sourcePreview}
+                  selectedPaths={selectedSkillPaths}
+                  isOpen={isSelectingSourceSkills}
+                  isSyncing={isSyncingSource}
+                  onOpenChange={(open) => {
+                    setIsSelectingSourceSkills(open);
+                    if (!open) {
+                      setSourcePreview(null);
+                      setSelectedSkillPaths([]);
+                    }
+                  }}
+                  onSelectedPathsChange={setSelectedSkillPaths}
+                  onConfirm={() => void onConfirmGitHubSourceSkills()}
+                />
+
                 <GitHubSourceList
                   sources={githubSources}
                   deletingSourceId={deletingSourceId}
@@ -2008,6 +2101,94 @@ function GitHubSourceDeleteDialog({
           >
             <Trash2 size={16} />
             Delete synced repo &amp; skills
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function GitHubSourceSkillSelectionDialog({
+  preview,
+  selectedPaths,
+  isOpen,
+  isSyncing,
+  onOpenChange,
+  onSelectedPathsChange,
+  onConfirm,
+}: {
+  preview: GitHubSkillSourcePreview | null;
+  selectedPaths: string[];
+  isOpen: boolean;
+  isSyncing: boolean;
+  onOpenChange: (open: boolean) => void;
+  onSelectedPathsChange: (paths: string[]) => void;
+  onConfirm: () => void;
+}) {
+  const selected = new Set(selectedPaths);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onOpenChange}>
+      <DialogContent className="flex w-[min(100%,640px)] flex-col gap-4">
+        <DialogHeader>
+          <DialogTitle>Select skills to sync</DialogTitle>
+          <DialogDescription>
+            {preview?.repo
+              ? `Choose which skills from ${preview.repo} should be published for this source.`
+              : "Choose which skills should be published for this source."}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="max-h-80 overflow-auto rounded-[var(--radius-sm)] border border-[color:var(--line)]">
+          {preview?.skills.map((skill) => {
+            const checked = selected.has(skill.path);
+            return (
+              <label
+                key={skill.path}
+                className="flex cursor-pointer items-start gap-3 border-b border-[color:var(--line)] px-3 py-3 last:border-b-0 hover:bg-[color:var(--surface-muted)]"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => {
+                    const next = new Set(selected);
+                    if (checked) next.delete(skill.path);
+                    else next.add(skill.path);
+                    onSelectedPathsChange([...next].sort((a, b) => a.localeCompare(b)));
+                  }}
+                  className="mt-1 h-4 w-4 accent-[var(--accent)]"
+                />
+                <span className="min-w-0">
+                  <span className="block text-sm font-semibold text-[color:var(--ink)]">
+                    {skill.displayName}
+                  </span>
+                  <span className="block truncate text-xs text-[color:var(--ink-soft)]">
+                    {skill.path}
+                  </span>
+                  {skill.summary ? (
+                    <span className="mt-1 block text-xs leading-5 text-[color:var(--ink-soft)]">
+                      {skill.summary}
+                    </span>
+                  ) : null}
+                </span>
+              </label>
+            );
+          })}
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" type="button" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button
+            variant="primary"
+            type="button"
+            disabled={selectedPaths.length === 0 || isSyncing}
+            loading={isSyncing}
+            onClick={onConfirm}
+          >
+            <Plus size={16} />
+            Sync selected skills
           </Button>
         </DialogFooter>
       </DialogContent>

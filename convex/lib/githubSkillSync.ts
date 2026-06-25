@@ -99,6 +99,14 @@ export type GitHubSkillSyncPlan = {
   };
 };
 
+export function normalizeSelectedSkillPaths(paths: readonly string[] | undefined) {
+  if (!paths) return undefined;
+  const normalized = [...new Set(paths.map((path) => path.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b),
+  );
+  return normalized.length > 0 ? normalized : undefined;
+}
+
 const SKILL_MARKDOWN_BASENAME = "skill.md";
 const SKILL_CARD_MARKDOWN_BASENAME = "skill-card.md";
 const MAX_STORED_MARKDOWN_BYTES = 512 * 1024;
@@ -260,6 +268,7 @@ export function buildGitHubSkillSyncPlan({
   sourceId,
   ownerUserId,
   ownerPublisherId,
+  selectedSkillPaths,
   existingSkills,
   snapshot,
   now,
@@ -267,10 +276,15 @@ export function buildGitHubSkillSyncPlan({
   sourceId: string;
   ownerUserId: string;
   ownerPublisherId?: string;
+  selectedSkillPaths?: readonly string[];
   existingSkills: ExistingGitHubSkillForSync[];
   snapshot: GitHubSkillSourceSnapshot | GitHubSkillSourceMetadataSnapshot;
   now: number;
 }): GitHubSkillSyncPlan {
+  const selectedPaths = selectedSkillPaths ? new Set(selectedSkillPaths) : null;
+  const discoveredSkills = selectedPaths
+    ? snapshot.skills.filter((skill) => selectedPaths.has(skill.path))
+    : snapshot.skills;
   const sourcePatch = {
     repo: snapshot.repo,
     defaultBranch: snapshot.defaultBranch,
@@ -283,6 +297,7 @@ export function buildGitHubSkillSyncPlan({
     displayManifestFetchedAt: now,
     displayManifestStatus: snapshot.manifestStatus,
     displayManifest: snapshot.manifest,
+    ...(selectedSkillPaths ? { selectedSkillPaths: [...selectedSkillPaths] } : {}),
     ...(ownerPublisherId ? { ownerPublisherId } : {}),
     updatedAt: now,
   };
@@ -296,14 +311,14 @@ export function buildGitHubSkillSyncPlan({
   const skillPatches: GitHubSkillPatchForSync[] = [];
   const skillInserts: GitHubSkillInsertForSync[] = [];
   const stats = {
-    discovered: snapshot.skills.length,
+    discovered: discoveredSkills.length,
     inserted: 0,
     changed: 0,
     unchanged: 0,
     removed: 0,
   };
 
-  for (const discovered of snapshot.skills) {
+  for (const discovered of discoveredSkills) {
     const existing = existingByPath.get(discovered.path) ?? existingBySlug.get(discovered.slug);
     if (!existing) {
       const scanStatus: GitHubSkillScanStatus = "pending";

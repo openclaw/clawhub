@@ -197,6 +197,38 @@ describe("buildGitHubSkillSourceSnapshot", () => {
 });
 
 describe("buildGitHubSkillSyncPlan", () => {
+  it("limits a source to its explicit selected skill paths", async () => {
+    const snapshot = await buildGitHubSkillSourceSnapshot({
+      repo: "vibethon/skills",
+      defaultBranch: "main",
+      commit: "a".repeat(40),
+      entries: repoEntries({
+        "SKILL.md": "# Bundled project skill\n",
+        "skills/vibethon/SKILL.md": "# Vibethon\n",
+      }),
+    });
+
+    const plan = buildGitHubSkillSyncPlan({
+      sourceId: "githubSkillSources:vibethon",
+      ownerUserId: "users:vibethon",
+      ownerPublisherId: "publishers:vibethon",
+      selectedSkillPaths: ["skills/vibethon"],
+      existingSkills: [],
+      snapshot,
+      now: 123,
+    });
+
+    expect(plan.stats.discovered).toBe(1);
+    expect(plan.skillInserts).toHaveLength(1);
+    expect(plan.skillInserts[0]?.doc).toMatchObject({
+      slug: "vibethon",
+      githubPath: "skills/vibethon",
+    });
+    expect(plan.sourcePatch).toMatchObject({
+      selectedSkillPaths: ["skills/vibethon"],
+    });
+  });
+
   it("marks changed upstream content pending", async () => {
     const snapshot = await buildGitHubSkillSourceSnapshot({
       repo: "NVIDIA/skills",

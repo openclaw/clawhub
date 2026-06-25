@@ -322,6 +322,7 @@ const githubSkillSourceIssueValidator = v.object({
 const githubSkillSources = defineTable({
   repo: v.string(),
   ownerPublisherId: v.optional(v.id("publishers")),
+  selectedSkillPaths: v.optional(v.array(v.string())),
   defaultBranch: v.optional(v.string()),
   lastSyncStatus: v.optional(v.union(v.literal("ok"), v.literal("failed"), v.literal("skipped"))),
   lastSyncError: v.optional(v.string()),

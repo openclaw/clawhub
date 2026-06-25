@@ -380,6 +380,111 @@ describe("configurePublicGitHubSkillSourceHandler", () => {
     );
   });
 
+  it("requires an explicit selection when a new repo contains multiple skills", async () => {
+    const zip = zipSync({
+      "skills-main/skills/bundled/SKILL.md": new TextEncoder().encode("# Bundled\n"),
+      "skills-main/skills/vibethon/SKILL.md": new TextEncoder().encode("# Vibethon\n"),
+    });
+    const runQuery = vi.fn(async () => ({
+      ownerUserId: "users:publisher-owner",
+      existingSource: null,
+      official: true,
+    }));
+    const runMutation = vi.fn();
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          full_name: "Vibethon/skills",
+          private: false,
+          visibility: "public",
+          default_branch: "main",
+          disabled: false,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ sha: "2".repeat(40) }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-length": String(zip.byteLength) }),
+        body: null,
+        arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength),
+      });
+
+    await expect(
+      configurePublicGitHubSkillSourceHandler(
+        { runQuery, runMutation, auth: { getUserIdentity: vi.fn() } } as never,
+        {
+          ownerPublisherId: "publishers:vibethon" as never,
+          repo: "Vibethon/skills",
+        },
+        fetchMock as never,
+        { userId: "users:actor" as never },
+      ),
+    ).rejects.toThrow(/select at least one skill/i);
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("preserves all-skill behavior for legacy sources without a saved selection", async () => {
+    const zip = zipSync({
+      "skills-main/skills/bundled/SKILL.md": new TextEncoder().encode("# Bundled\n"),
+      "skills-main/skills/vibethon/SKILL.md": new TextEncoder().encode("# Vibethon\n"),
+    });
+    const runQuery = vi.fn(async () => ({
+      ownerUserId: "users:publisher-owner",
+      existingSource: {
+        _id: "githubSkillSources:legacy",
+        repo: "Vibethon/skills",
+        ownerPublisherId: "publishers:vibethon",
+        defaultBranch: "main",
+      },
+      official: true,
+    }));
+    const runMutation = vi.fn(async () => ({ ok: true, stats: { discovered: 2 } }));
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          full_name: "Vibethon/skills",
+          private: false,
+          visibility: "public",
+          default_branch: "main",
+          disabled: false,
+        }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ sha: "3".repeat(40) }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        headers: new Headers({ "content-length": String(zip.byteLength) }),
+        body: null,
+        arrayBuffer: async () => zip.buffer.slice(zip.byteOffset, zip.byteOffset + zip.byteLength),
+      });
+
+    await configurePublicGitHubSkillSourceHandler(
+      { runQuery, runMutation, auth: { getUserIdentity: vi.fn() } } as never,
+      {
+        ownerPublisherId: "publishers:vibethon" as never,
+        repo: "Vibethon/skills",
+      },
+      fetchMock as never,
+      { userId: "users:actor" as never },
+    );
+
+    const syncArgs = (runMutation.mock.calls[0] as unknown[] | undefined)?.[1] as Record<
+      string,
+      unknown
+    >;
+    expect(syncArgs).not.toHaveProperty("selectedSkillPaths");
+    expect((syncArgs.snapshot as { skills: unknown[] }).skills).toHaveLength(2);
+  });
+
   it("rejects non-official publishers before fetching skill contents", async () => {
     const runQuery = vi.fn(async () => ({
       ownerUserId: "users:publisher-owner",
