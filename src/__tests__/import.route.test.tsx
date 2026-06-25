@@ -7,6 +7,7 @@ vi.mock("@tanstack/react-router", () => ({
   createFileRoute: () => (config: { component: unknown }) => config,
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
   useNavigate: () => vi.fn(),
+  useSearch: () => ({ ownerHandle: undefined }),
 }));
 
 const previewCandidate = vi.fn();

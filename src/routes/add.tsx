@@ -146,7 +146,7 @@ export function AddPage() {
               title="Git sync"
               description="Keep a public GitHub skills repo connected and sync changes automatically."
               to="/settings"
-              search={{ view: "githubSources" }}
+              search={{ view: "githubSources", ownerHandle: ownerHandle || undefined }}
               action="Configure sync"
             />
           ) : null}
@@ -156,6 +156,7 @@ export function AddPage() {
               title="Import from GitHub"
               description="Bring one or more skills over from a public repository, then review before publishing."
               to="/import"
+              search={{ ownerHandle: ownerHandle || undefined }}
               action="Import skills"
             />
           ) : null}

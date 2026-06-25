@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { inferSkillCategories, resolveSkillCategories } from "clawhub-schema";
 import {
   PLATFORM_SKILL_LICENSE,
@@ -50,6 +50,9 @@ import { formatBytes } from "../lib/uploadUtils";
 import { useAuthStatus } from "../lib/useAuthStatus";
 
 export const Route = createFileRoute("/import")({
+  validateSearch: (search: Record<string, unknown>) => ({
+    ownerHandle: typeof search.ownerHandle === "string" ? search.ownerHandle : undefined,
+  }),
   head: () => {
     const siteUrl = getClawHubSiteUrl();
     const title = `Import from GitHub | ${SITE_NAME}`;
@@ -182,6 +185,7 @@ const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export function ImportGitHub() {
   const { isAuthenticated, isLoading, me } = useAuthStatus();
+  const { ownerHandle: requestedOwnerHandle } = useSearch({ from: "/import" });
   const listOwnedRepos = useAction(api.githubImport.listOwnedPublicGitHubRepos);
   const previewCandidate = useAction(api.githubImport.previewGitHubImportCandidate);
   const importSkill = useAction(api.githubImport.importGitHubSkill);
@@ -206,7 +210,7 @@ export function ImportGitHub() {
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isBusy, setIsBusy] = useState(false);
-  const ownerHandle = me?.handle?.trim() || "";
+  const ownerHandle = requestedOwnerHandle?.trim() || me?.handle?.trim() || "";
   const repoLoadSeq = useRef(0);
   const reposRef = useRef<OwnedGitHubRepo[]>([]);
 

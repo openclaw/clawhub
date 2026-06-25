@@ -206,7 +206,7 @@ export function Dashboard() {
           {publisherSelector}
           <div className="flex flex-wrap gap-3 justify-center">
             <Button asChild variant="primary">
-              <Link to="/import">
+              <Link to="/import" search={{ ownerHandle: undefined }}>
                 <Download className="h-4 w-4" aria-hidden="true" />
                 Import from GitHub
               </Link>
@@ -253,7 +253,7 @@ export function Dashboard() {
             <h2 className="dashboard-collection-title">Skills</h2>
             <div className="flex flex-wrap gap-2">
               <Button asChild size="sm" variant="outline" className="dashboard-section-action">
-                <Link to="/import">
+                <Link to="/import" search={{ ownerHandle: undefined }}>
                   <Download className="h-4 w-4" aria-hidden="true" />
                   Import from GitHub
                 </Link>

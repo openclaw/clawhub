@@ -798,7 +798,7 @@ export function Upload() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <Button asChild variant="outline" size="sm" className="w-fit">
-              <Link to="/import">
+              <Link to="/import" search={{ ownerHandle: undefined }}>
                 <GitHubLogo className="h-3.5 w-3.5" />
                 Import from GitHub
               </Link>
