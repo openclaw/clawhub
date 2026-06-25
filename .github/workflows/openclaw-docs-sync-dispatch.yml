@@ -67,10 +67,11 @@ jobs:
           auth_rejected=false
 
           if [ -n "${OPENCLAW_GH_TOKEN:-}" ]; then
-            if dispatch_with_token "OPENCLAW_GH_TOKEN" "${OPENCLAW_GH_TOKEN}"; then
+            status=0
+            dispatch_with_token "OPENCLAW_GH_TOKEN" "${OPENCLAW_GH_TOKEN}" || status="$?"
+            if [ "${status}" = "0" ]; then
               exit 0
             fi
-            status="$?"
             if [ "${status}" != "2" ]; then
               exit "${status}"
             fi
@@ -78,10 +79,11 @@ jobs:
           fi
 
           if [ -n "${LEGACY_TOKEN:-}" ]; then
-            if dispatch_with_token "OPENCLAW_DOCS_SYNC_TOKEN" "${LEGACY_TOKEN}"; then
+            status=0
+            dispatch_with_token "OPENCLAW_DOCS_SYNC_TOKEN" "${LEGACY_TOKEN}" || status="$?"
+            if [ "${status}" = "0" ]; then
               exit 0
             fi
-            status="$?"
             if [ "${status}" != "2" ]; then
               exit "${status}"
             fi
