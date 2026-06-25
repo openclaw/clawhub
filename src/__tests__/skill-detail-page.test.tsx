@@ -271,7 +271,9 @@ describe("SkillDetailPage", () => {
 
     expect(screen.queryByRole("status", { name: /Loading skill details/i })).toBeNull();
     expect(screen.getAllByRole("heading", { name: "Github" }).length).toBeGreaterThan(0);
-    expect(screen.getByText(/Interact with GitHub using the `gh` CLI\./i)).toBeTruthy();
+    const summary = document.querySelector(".skill-summary-line");
+    expect(summary?.textContent).toBe("Interact with GitHub using the gh CLI.");
+    expect(summary?.querySelector("code.skill-summary-inline-code")?.textContent).toBe("gh");
   });
 
   it("loads skill activity graphs through a deferred one-shot query", async () => {

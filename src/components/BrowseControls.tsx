@@ -570,19 +570,49 @@ type BrowseTopicChipsProps = {
 };
 
 export function BrowseTopicChips({ topics, activeTopic, onChange }: BrowseTopicChipsProps) {
-  const safeTopics = Array.isArray(topics) ? topics : [];
-  if (safeTopics.length === 0) return null;
+  const displayTopics = useMemo(() => {
+    const safeTopics = Array.isArray(topics) ? topics.filter(Boolean) : [];
+    if (!activeTopic || safeTopics.includes(activeTopic)) return safeTopics;
+    return [activeTopic, ...safeTopics];
+  }, [activeTopic, topics]);
+
+  if (displayTopics.length === 0) return null;
+
+  const ariaLabel =
+    displayTopics.length === 1 && activeTopic ? "Active topic filter" : "Top topics";
+
   return (
-    <div className="browse-topic-chips" aria-label="Top topics">
-      {safeTopics.slice(0, 8).map((topic) => {
+    <div className="browse-topic-chips" aria-label={ariaLabel}>
+      {displayTopics.slice(0, 8).map((topic) => {
         const active = activeTopic === topic;
+        if (active) {
+          return (
+            <span
+              key={topic}
+              className="browse-topic-chip is-active"
+              role="group"
+              aria-label={`Topic filter ${topic}`}
+            >
+              <span className="browse-topic-chip-label">#{topic}</span>
+              <button
+                type="button"
+                className="browse-topic-chip-clear"
+                aria-label={`Clear topic ${topic}`}
+                onClick={() => onChange(undefined)}
+              >
+                <X size={12} strokeWidth={2.25} aria-hidden="true" />
+              </button>
+            </span>
+          );
+        }
+
         return (
           <button
             key={topic}
             type="button"
-            className={`browse-topic-chip${active ? " is-active" : ""}`}
-            aria-pressed={active}
-            onClick={() => onChange(active ? undefined : topic)}
+            className="browse-topic-chip"
+            aria-pressed={false}
+            onClick={() => onChange(topic)}
           >
             #{topic}
           </button>

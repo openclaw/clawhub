@@ -7,6 +7,7 @@ import {
   ChevronDown,
   Command,
   LayoutDashboard,
+  Loader2,
   Menu,
   Monitor,
   Moon,
@@ -884,7 +885,12 @@ function SearchTypeahead({
           </div>
         ) : null}
         {hasQuery && loading && !hasMatches ? (
-          <div className="navbar-search-typeahead-status">Searching...</div>
+          <div className="navbar-search-typeahead-status is-loading">
+            <span className="navbar-search-typeahead-status-icon" aria-hidden="true">
+              <Loader2 className="navbar-search-typeahead-status-spinner" size={17} />
+            </span>
+            <span>Searching…</span>
+          </div>
         ) : null}
         {hasQuery && !loading && !hasMatches ? (
           <div className="navbar-search-typeahead-status">

@@ -19,6 +19,8 @@ vi.mock("@tanstack/react-router", () => ({
     useNavigate: () => navigateMock,
     useSearch: () => searchMock,
   }),
+  useRouterState: (options: { select: (state: unknown) => unknown }) =>
+    options.select({ location: { searchStr: "" } }),
   redirect: (options: unknown) => ({ redirect: options }),
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
 }));
@@ -46,6 +48,20 @@ describe("SkillsIndex", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
+  });
+
+  it("maps topic search params", () => {
+    const validateSearch = (
+      SkillsRoute as unknown as {
+        __config: {
+          validateSearch: (search: Record<string, unknown>) => Record<string, unknown>;
+        };
+      }
+    ).__config.validateSearch;
+
+    expect(validateSearch({ topic: "github" })).toEqual(
+      expect.objectContaining({ topic: "github" }),
+    );
   });
 
   it("maps legacy category URLs before browsing", () => {
@@ -678,7 +694,7 @@ describe("SkillsIndex", () => {
     expect(screen.queryByText(/\d+ loaded/)).toBeNull();
   });
 
-  it("passes author topics to browse filtering without rendering topic navigation", async () => {
+  it("passes author topics to browse filtering and shows the active topic chip", async () => {
     searchMock = { topic: "google-calendar" };
     convexHttpMock.query.mockResolvedValue({
       page: [
@@ -698,7 +714,8 @@ describe("SkillsIndex", () => {
         topic: "google-calendar",
       }),
     );
-    expect(screen.queryByRole("radio", { name: "google-calendar" })).toBeNull();
+    const topicChip = screen.getByRole("button", { name: "Clear topic google-calendar" });
+    expect(topicChip).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 
@@ -741,7 +758,7 @@ describe("SkillsIndex", () => {
     expect(lastCall.replace).toBe(true);
   });
 
-  it("clears the active category topic when its chip is selected again", async () => {
+  it("clears the active category topic when its clear button is pressed", async () => {
     searchMock = { category: "development", topic: "docker" };
     convexReactMocks.useQuery.mockImplementation((_reference, args) => {
       if (
@@ -758,22 +775,19 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    const topic = screen.getByRole("button", { name: "#docker" });
-    expect(topic.getAttribute("aria-pressed")).toBe("true");
-    fireEvent.click(topic);
+    fireEvent.click(screen.getByRole("button", { name: "Clear topic docker" }));
 
     const lastCall = navigateMock.mock.calls.at(-1)?.[0] as {
       search: (prev: Record<string, unknown>) => Record<string, unknown>;
     };
     expect(lastCall.search({ category: "development", topic: "docker" })).toEqual({
       category: "development",
-      topic: undefined,
       featured: undefined,
       highlighted: undefined,
     });
   });
 
-  it("does not render an active topic in the sidebar when it has no results", async () => {
+  it("shows the active topic chip when topic filtering returns no results", async () => {
     searchMock = { topic: "google-calendar" };
     convexHttpMock.query.mockResolvedValue({
       page: [],
@@ -784,7 +798,7 @@ describe("SkillsIndex", () => {
     render(<SkillsIndex />);
     await act(async () => {});
 
-    expect(screen.queryByRole("radio", { name: "google-calendar" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Clear topic google-calendar" })).toBeTruthy();
     expect(screen.queryByRole("radio", { name: "All topics" })).toBeNull();
   });
 

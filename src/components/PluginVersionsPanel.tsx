@@ -150,16 +150,19 @@ export function PluginVersionsPanel({
           </div>
         ) : releases.length > 0 || nextCursor ? (
           <div className="skill-versions-scroll">
-            <div className="skill-versions-list">
-              <div className="skill-versions-column-header" aria-hidden="true">
-                <span>Version</span>
-                <span>Tags</span>
-                <span>Release</span>
-                <span className="skill-versions-column-header-download">
+            <div className="skill-versions-list skill-versions-list-plugins">
+              <div
+                className="skill-versions-column-header skill-versions-column-header-plugins"
+                aria-hidden="true"
+              >
+                <span className="skill-versions-col-version">Version</span>
+                <span className="skill-versions-col-tags">Tags</span>
+                <span className="skill-versions-col-release">Release</span>
+                <span className="skill-versions-col-download">
                   <Download size={13} aria-hidden="true" />
                   <span className="sr-only">Download</span>
                 </span>
-                <span />
+                <span className="skill-versions-col-expand" />
               </div>
               {releases.map((release) => {
                 const hasLatestTag = release.distTags?.includes("latest");

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  buildPluginTopicBrowseHref,
   buildSkillCategoryBrowseHref,
+  buildSkillTopicBrowseHref,
+  formatCatalogTopicLabel,
   getSkillCategoryForSkill,
   resolvePluginBrowseCategorySlug,
   resolveSkillBrowseCategorySlug,
@@ -47,5 +50,16 @@ describe("skill category helpers", () => {
     });
 
     expect(category?.slug).toBe("operations");
+  });
+});
+
+describe("catalog topic browse helpers", () => {
+  it("formats topic labels with a hash prefix", () => {
+    expect(formatCatalogTopicLabel("Agent Security")).toBe("#agent-security");
+  });
+
+  it("builds skill and plugin browse links from topic slugs", () => {
+    expect(buildSkillTopicBrowseHref("security-audit")).toBe("/skills?topic=security-audit");
+    expect(buildPluginTopicBrowseHref("security-audit")).toBe("/plugins?topic=security-audit");
   });
 });

@@ -108,12 +108,15 @@ export function SkillVersionsPanel({
           ) : null}
         </div>
         <div className="skill-versions-scroll">
-          <div className="skill-versions-list skill-versions-list-without-checks">
-            <div className="skill-versions-column-header" aria-hidden="true">
-              <span>Version</span>
-              <span>Release</span>
-              <span className="skill-versions-column-header-download">Download</span>
-              <span />
+          <div className="skill-versions-list skill-versions-list-skills">
+            <div
+              className="skill-versions-column-header skill-versions-column-header-skills"
+              aria-hidden="true"
+            >
+              <span className="skill-versions-col-version">Version</span>
+              <span className="skill-versions-col-release">Release</span>
+              <span className="skill-versions-col-download">Download</span>
+              <span className="skill-versions-col-expand" />
             </div>
             {visibleVersions.map((version) => {
               const isLatest =
