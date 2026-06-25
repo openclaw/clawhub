@@ -36,6 +36,15 @@ migration.
 - Content is owned by a publisher, not directly by a user
 - Audit actor stays user-level
 
+### Organization branding
+
+- Org logos are uploaded by an owner or admin as PNG, JPEG, or WebP files up to
+  2 MB.
+- Uploaded logos are stored in Convex storage and rendered through a cached
+  storage URL; new profiles do not hotlink arbitrary image hosts.
+- Legacy URL-backed images remain readable until an org replaces or removes
+  them.
+
 ### Scope of change
 
 - Skills: yes

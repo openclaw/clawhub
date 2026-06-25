@@ -17,6 +17,7 @@ import {
   removeOrgPublisherMemberInternal,
   recoverPersonalPublisherInternal,
   createOrg,
+  createImageUpload,
   deleteOrg,
   reclaimDeletedOrgHandleInternal,
   removeMember,
@@ -283,7 +284,13 @@ const updateProfileHandler = (
     displayName: string;
     bio?: string;
     image?: string;
+    imageStorageId?: string;
+    imageUploadTicket?: string;
   }>
+)._handler;
+
+const createImageUploadHandler = (
+  createImageUpload as unknown as WrappedHandler<{ publisherId: string }>
 )._handler;
 
 const setTrustedPublisherInternalHandler = (
@@ -3933,7 +3940,6 @@ describe("publishers membership controls", () => {
           publisherId: "publishers:org",
           displayName: "Shopify",
           bio: "Commerce platform",
-          image: "https://cdn.example.com/shopify.png",
         } as never,
       ),
     ).resolves.toEqual({
@@ -3949,7 +3955,6 @@ describe("publishers membership controls", () => {
       expect.objectContaining({
         displayName: "Shopify",
         bio: "Commerce platform",
-        image: "https://cdn.example.com/shopify.png",
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -3961,7 +3966,229 @@ describe("publishers membership controls", () => {
     );
   });
 
-  it("rejects invalid org profile image URLs", async () => {
+  it("issues logo upload tickets only to org admins", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const insert = vi.fn(async () => "publisherImageUploadTickets:1");
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") {
+            return { _id: id, kind: "org", handle: "shopify", displayName: "Shopify" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        insert,
+        patch: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: {
+        generateUploadUrl: vi.fn(async () => "https://storage.example/upload"),
+      },
+    };
+
+    await expect(
+      createImageUploadHandler(ctx as never, { publisherId: "publishers:org" }),
+    ).resolves.toEqual({
+      uploadUrl: "https://storage.example/upload",
+      uploadTicket: "publisherImageUploadTickets:1",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "publisherImageUploadTickets",
+      expect.objectContaining({
+        publisherId: "publishers:org",
+        userId: "users:admin",
+        expiresAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("accepts a validated uploaded logo and removes the previous stored image", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const publisher = {
+      _id: "publishers:org",
+      kind: "org",
+      handle: "shopify",
+      displayName: "Shopify",
+      image: "https://storage.example/old",
+      imageStorageId: "storage:old",
+    };
+    let publisherReadCount = 0;
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async () => "auditLogs:1");
+    const deleteStorage = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") {
+            publisherReadCount += 1;
+            return publisherReadCount === 1
+              ? publisher
+              : {
+                  ...publisher,
+                  image: "https://storage.example/new-logo",
+                  imageStorageId: "storage:new",
+                };
+          }
+          if (id === "publisherImageUploadTickets:1") {
+            return {
+              _id: id,
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              createdAt: 10,
+              expiresAt: Date.now() + 10_000,
+            };
+          }
+          return null;
+        }),
+        system: {
+          get: vi.fn(async () => ({
+            _creationTime: 20,
+            contentType: "image/webp",
+            size: 1000,
+          })),
+        },
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch,
+        insert,
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: {
+        getUrl: vi.fn(async () => "https://storage.example/new-logo"),
+        delete: deleteStorage,
+      },
+    };
+
+    await expect(
+      updateProfileHandler(ctx as never, {
+        publisherId: "publishers:org",
+        displayName: "Shopify",
+        imageStorageId: "storage:new",
+        imageUploadTicket: "publisherImageUploadTickets:1",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      publisher: expect.objectContaining({
+        _id: "publishers:org",
+        image: "https://storage.example/new-logo",
+      }),
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publisherImageUploadTickets:1",
+      expect.objectContaining({ storageId: "storage:new", usedAt: expect.any(Number) }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:org",
+      expect.objectContaining({
+        image: "https://storage.example/new-logo",
+        imageStorageId: "storage:new",
+      }),
+    );
+    expect(deleteStorage).toHaveBeenCalledWith("storage:old");
+  });
+
+  it("preserves an existing stored logo during ordinary profile edits", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const patch = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "shopify",
+              displayName: "Shopify Labs",
+              image: "https://storage.example/current-logo",
+              imageStorageId: "storage:current",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch,
+        insert: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      updateProfileHandler(ctx as never, {
+        publisherId: "publishers:org",
+        displayName: "Shopify Labs",
+        image: "https://storage.example/current-logo",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      publisher: expect.objectContaining({
+        handle: "shopify",
+        image: "https://storage.example/current-logo",
+      }),
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:org",
+      expect.objectContaining({
+        displayName: "Shopify Labs",
+        image: "https://storage.example/current-logo",
+        imageStorageId: "storage:current",
+      }),
+    );
+  });
+
+  it("rejects direct org profile image URL changes", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
     const ctx = {
       db: {
@@ -4009,7 +4236,7 @@ describe("publishers membership controls", () => {
           image: "not-a-url",
         } as never,
       ),
-    ).rejects.toThrow("Image must be a valid URL");
+    ).rejects.toThrow("Logo changes require an uploaded image");
   });
 });
 

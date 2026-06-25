@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Changes
+
+- Web: organization publishers can upload durable PNG, JPEG, or WebP logos from settings instead of relying on hotlinked image URLs.
+
 ## 0.23.0 - 2026-06-23
 
 ### Changes

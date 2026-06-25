@@ -87,6 +87,14 @@ export const RETENTION_POLICIES = {
   }),
   publishers: permanent("Canonical publisher profiles."),
   publisherMembers: permanent("Canonical publisher membership records."),
+  publisherImageUploadTickets: ephemeral(
+    "Organization logo upload tickets expire shortly after creation.",
+    {
+      expirationField: "expiresAt",
+      prune: "usage-time validation plus pending retention cleanup",
+      retention: "Organization logo upload ticket TTL.",
+    },
+  ),
   officialPublishers: permanent("Manual official publisher assignments."),
   githubSkillSources: permanent("Tracked GitHub source configuration."),
   githubSkillContents: derived("Cached GitHub source content snapshots.", "githubSkillSources"),
