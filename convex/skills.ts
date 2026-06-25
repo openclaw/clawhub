@@ -5868,11 +5868,21 @@ export const listPublicTrendingPage = query({
     const kind = args.nonSuspiciousOnly
       ? TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND
       : TRENDING_LEADERBOARD_KIND;
-    const leaderboard = await ctx.db
+    let leaderboard = await ctx.db
       .query("skillLeaderboards")
       .withIndex("by_kind", (q) => q.eq("kind", kind))
       .order("desc")
       .first();
+
+    // Older deployments may have the general snapshot but not the
+    // non-suspicious snapshot yet. Keep trending populated during rollout.
+    if (!leaderboard && args.nonSuspiciousOnly) {
+      leaderboard = await ctx.db
+        .query("skillLeaderboards")
+        .withIndex("by_kind", (q) => q.eq("kind", TRENDING_LEADERBOARD_KIND))
+        .order("desc")
+        .first();
+    }
 
     if (!leaderboard) return { items: [], nextCursor: null };
 
