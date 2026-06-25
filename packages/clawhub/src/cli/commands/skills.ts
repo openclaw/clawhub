@@ -111,7 +111,11 @@ function parseSkillRefOrFail(raw: string): SkillRef {
   if (ref.indexOf("/", slashIndex + 1) >= 0) {
     fail(`Invalid skill ref: ${ref}`);
   }
-  const ownerHandle = normalizeOwnerHandle(ref.slice(0, slashIndex));
+  const rawOwnerHandle = ref.slice(0, slashIndex);
+  if (rawOwnerHandle.includes("\\") || rawOwnerHandle.includes("..")) {
+    fail(`Invalid slug: ${ref}`);
+  }
+  const ownerHandle = normalizeOwnerHandle(rawOwnerHandle);
   const slug = normalizeSkillSlugOrFail(ref.slice(slashIndex + 1));
   if (!ownerHandle) fail(`Invalid skill ref: ${ref}`);
   return { slug, ownerHandle };
@@ -119,6 +123,38 @@ function parseSkillRefOrFail(raw: string): SkillRef {
 
 function isSafeSkillSlug(slug: string) {
   return Boolean(slug) && !slug.includes("/") && !slug.includes("\\") && !slug.includes("..");
+}
+
+function skillIdentity(ref: SkillRef) {
+  return ref.ownerHandle ? `@${ref.ownerHandle}/${ref.slug}` : ref.slug;
+}
+
+function skillTarget(dir: string, ref: SkillRef) {
+  return ref.ownerHandle ? join(dir, `@${ref.ownerHandle}`, ref.slug) : join(dir, ref.slug);
+}
+
+function isSafeSkillIdentity(value: string) {
+  const slashIndex = value.indexOf("/");
+  if (slashIndex < 0) return isSafeSkillSlug(value);
+  if (value.indexOf("/", slashIndex + 1) >= 0) return false;
+  const ownerHandle = value.slice(0, slashIndex).replace(/^@+/, "");
+  const slug = value.slice(slashIndex + 1);
+  return Boolean(ownerHandle) && isSafeSkillSlug(ownerHandle) && isSafeSkillSlug(slug);
+}
+
+function findExistingLockKey(
+  lock: { skills: Record<string, { ownerHandle?: string }> },
+  ref: SkillRef,
+) {
+  const key = skillIdentity(ref);
+  if (lock.skills[key]) return key;
+  if (ref.ownerHandle) {
+    const legacyEntry = lock.skills[ref.slug];
+    if (legacyEntry && normalizeOwnerHandle(legacyEntry.ownerHandle) === ref.ownerHandle) {
+      return ref.slug;
+    }
+  }
+  return key;
 }
 
 function ownerScopedUrl(registry: string, path: string, ownerHandle?: string) {
@@ -265,17 +301,20 @@ export async function cmdInstall(
 
   const registry = await getRegistry(opts, { cache: true });
   await mkdir(opts.dir, { recursive: true });
-  const target = join(opts.dir, trimmed);
+  const lock = await readLockfile(opts.workdir);
+  const lockKey = findExistingLockKey(lock, requested);
+  const localRef = lockKey === skillIdentity(requested) ? requested : parseSkillRefOrFail(lockKey);
+  const target = skillTarget(opts.dir, localRef);
   const targetExists = await fileExists(target);
-  if (!force) {
-    const exists = targetExists;
-    if (exists) fail(`Already installed: ${target} (use --force)`);
+  if (!force && targetExists) {
+    fail(`Already installed: ${target} (use --force)`);
   }
 
-  const lock = await readLockfile(opts.workdir);
-  const existingEntry = lock.skills[trimmed];
+  const existingEntry = lock.skills[lockKey];
   if (isPinnedSkillEntry(existingEntry)) {
-    fail(`skill "${trimmed}" is pinned; run \`clawhub unpin ${trimmed}\` first`);
+    fail(
+      `skill "${skillIdentity(localRef)}" is pinned; run \`clawhub unpin ${skillIdentity(localRef)}\` first`,
+    );
   }
 
   const spinner = createCrabLoader(`Resolving ${trimmed}`);
@@ -376,7 +415,7 @@ export async function cmdInstall(
       fingerprint: installedFingerprint,
     });
 
-    lock.skills[trimmed] = withOwnerMetadata(
+    lock.skills[lockKey] = withOwnerMetadata(
       resolvedVersion!,
       installedAt,
       resolvedOwnerHandle,
@@ -415,15 +454,20 @@ export async function cmdUpdate(
   if (options.version && !slug) fail("--version requires a single <skill>");
   if (options.version && !semver.valid(options.version)) fail("--version must be valid semver");
   const lock = await readLockfile(opts.workdir);
-  if (slug && isPinnedSkillEntry(lock.skills[slug])) {
-    fail(`skill "${slug}" is pinned; run \`clawhub unpin ${slug}\` first`);
+  const requestedLockKey = requestedRef ? findExistingLockKey(lock, requestedRef) : undefined;
+  if (requestedLockKey && isPinnedSkillEntry(lock.skills[requestedLockKey])) {
+    fail(
+      `skill "${skillIdentity(requestedRef!)}" is pinned; run \`clawhub unpin ${skillIdentity(requestedRef!)}\` first`,
+    );
   }
   const allowPrompt = isInteractive() && inputAllowed;
 
   const token = await getOptionalAuthToken();
 
   const registry = await getRegistry(opts, { cache: true });
-  const requestedSlugs = slug ? [slug] : Object.keys(lock.skills).filter(isSafeSkillSlug);
+  const requestedSlugs = slug
+    ? [requestedLockKey ?? skillIdentity(requestedRef!)]
+    : Object.keys(lock.skills).filter(isSafeSkillIdentity);
   const skippedPinned = slug
     ? []
     : requestedSlugs.filter((entry) => isPinnedSkillEntry(lock.skills[entry]));
@@ -453,26 +497,32 @@ export async function cmdUpdate(
   };
 
   for (const entry of slugs) {
+    const entryRef = parseSkillRefOrFail(entry);
+    const entryLock = lock.skills[entry];
     const spinner = createCrabLoader(`Checking ${entry}`);
     try {
-      const target = join(opts.dir, entry);
+      const target = skillTarget(opts.dir, entryRef);
       const exists = await fileExists(target);
       const existingOrigin = exists ? await readSkillOrigin(target) : null;
       const requestedOwnerHandle = normalizeOwnerHandle(
-        requestedRef?.ownerHandle ?? lock.skills[entry]?.ownerHandle ?? existingOrigin?.ownerHandle,
+        requestedRef?.ownerHandle ??
+          entryRef.ownerHandle ??
+          entryLock?.ownerHandle ??
+          existingOrigin?.ownerHandle,
       );
 
       // Always fetch skill metadata to check moderation status
       const skillMeta = await apiRequest(
         registry,
-        skillRequestArgs(registry, entry, requestedOwnerHandle, token),
+        skillRequestArgs(registry, entryRef.slug, requestedOwnerHandle, token),
         ApiV1SkillResponseSchema,
       );
       const resolvedOwnerHandle = normalizeOwnerHandle(
         requestedOwnerHandle ?? skillMeta.owner?.handle,
       );
-      const resolvedSlug = normalizeSkillSlugForRemote(skillMeta.skill?.slug) ?? entry;
-      const remoteSlug = existingOrigin?.slug ?? (requestedOwnerHandle ? entry : resolvedSlug);
+      const resolvedSlug = normalizeSkillSlugForRemote(skillMeta.skill?.slug) ?? entryRef.slug;
+      const remoteSlug =
+        existingOrigin?.slug ?? (requestedOwnerHandle ? entryRef.slug : resolvedSlug);
 
       // Check moderation status before proceeding
       if (skillMeta.moderation?.isMalwareBlocked) {
@@ -527,14 +577,14 @@ export async function cmdUpdate(
         if (latestInstall.installKind === "github") {
           const targetVersion = latestInstall.github.commit;
           const originFingerprint =
-            existingOrigin?.slug === entry ? existingOrigin.fingerprint : undefined;
+            existingOrigin?.slug === remoteSlug ? existingOrigin.fingerprint : undefined;
           const hasLocalChanges = Boolean(
             exists &&
             localFingerprint &&
             (!originFingerprint || originFingerprint !== localFingerprint),
           );
           const matched =
-            existingOrigin?.slug === entry &&
+            existingOrigin?.slug === remoteSlug &&
             originFingerprint &&
             localFingerprint &&
             originFingerprint === localFingerprint
@@ -588,7 +638,7 @@ export async function cmdUpdate(
           await writeSkillOrigin(target, {
             version: 1,
             registry: existingOrigin?.registry ?? registry,
-            slug: entry,
+            slug: remoteSlug,
             ...(resolvedOwnerHandle ? { ownerHandle: resolvedOwnerHandle } : {}),
             installedVersion: targetVersion,
             installedAt,
@@ -778,40 +828,44 @@ export async function cmdList(opts: GlobalOpts) {
 }
 
 export async function cmdPin(opts: GlobalOpts, slug: string, options: { reason?: string } = {}) {
-  const trimmed = normalizeSkillSlugOrFail(slug);
+  const requested = parseSkillRefOrFail(slug);
   const lock = await readLockfile(opts.workdir);
-  const existing = lock.skills[trimmed];
-  if (!existing) fail(`Not installed: ${trimmed}`);
+  const lockKey = findExistingLockKey(lock, requested);
+  const existing = lock.skills[lockKey];
+  const label = skillIdentity(requested);
+  if (!existing) fail(`Not installed: ${label}`);
 
   const reason = options.reason?.trim() || existing.pinReason;
   if (isPinnedSkillEntry(existing) && reason === existing.pinReason) {
-    console.log(`Skill "${trimmed}" is already pinned${reason ? `: ${reason}` : ""}`);
+    console.log(`Skill "${label}" is already pinned${reason ? `: ${reason}` : ""}`);
     return;
   }
 
-  lock.skills[trimmed] = {
+  lock.skills[lockKey] = {
     ...existing,
     pinned: true,
     ...(reason ? { pinReason: reason } : {}),
   };
   await writeLockfile(opts.workdir, lock);
-  console.log(`Pinned ${trimmed}${reason ? `: ${reason}` : ""}`);
+  console.log(`Pinned ${label}${reason ? `: ${reason}` : ""}`);
 }
 
 export async function cmdUnpin(opts: GlobalOpts, slug: string) {
-  const trimmed = normalizeSkillSlugOrFail(slug);
+  const requested = parseSkillRefOrFail(slug);
   const lock = await readLockfile(opts.workdir);
-  const existing = lock.skills[trimmed];
-  if (!existing) fail(`Not installed: ${trimmed}`);
-  if (!isPinnedSkillEntry(existing)) fail(`Skill "${trimmed}" is not pinned`);
+  const lockKey = findExistingLockKey(lock, requested);
+  const existing = lock.skills[lockKey];
+  const label = skillIdentity(requested);
+  if (!existing) fail(`Not installed: ${label}`);
+  if (!isPinnedSkillEntry(existing)) fail(`Skill "${label}" is not pinned`);
 
-  lock.skills[trimmed] = {
+  lock.skills[lockKey] = {
     version: existing.version,
     installedAt: existing.installedAt,
     ...(existing.ownerHandle ? { ownerHandle: existing.ownerHandle } : {}),
   };
   await writeLockfile(opts.workdir, lock);
-  console.log(`Unpinned ${trimmed}`);
+  console.log(`Unpinned ${label}`);
 }
 
 export async function cmdUninstall(
@@ -820,33 +874,37 @@ export async function cmdUninstall(
   options: { yes?: boolean } = {},
   inputAllowed: boolean,
 ) {
-  const trimmed = normalizeSkillSlugOrFail(slug);
+  const requested = parseSkillRefOrFail(slug);
 
   const lock = await readLockfile(opts.workdir);
-  if (!lock.skills[trimmed]) {
-    fail(`Not installed: ${trimmed}`);
+  const lockKey = findExistingLockKey(lock, requested);
+  if (!lock.skills[lockKey]) {
+    fail(`Not installed: ${skillIdentity(requested)}`);
   }
 
   const allowPrompt = isInteractive() && inputAllowed;
   if (!options.yes) {
     if (!allowPrompt) fail("Pass --yes (no input)");
-    const confirm = await promptConfirm(`Uninstall ${trimmed}?`);
+    const confirm = await promptConfirm(`Uninstall ${skillIdentity(requested)}?`);
     if (!confirm) {
       console.log("Cancelled.");
       return;
     }
   }
 
-  const spinner = createCrabLoader(`Uninstalling ${trimmed}`);
+  const localRef = lockKey === skillIdentity(requested) ? requested : parseSkillRefOrFail(lockKey);
+  const spinner = createCrabLoader(`Uninstalling ${skillIdentity(localRef)}`);
   try {
-    const target = join(opts.dir, trimmed);
+    const target = skillTarget(opts.dir, localRef);
 
     await rm(target, { recursive: true, force: true });
 
-    delete lock.skills[trimmed];
+    delete lock.skills[lockKey];
     await writeLockfile(opts.workdir, lock);
 
-    spinner.succeed(`${styleText("Uninstalled", "brand")} ${styleText(trimmed, "strong")}`);
+    spinner.succeed(
+      `${styleText("Uninstalled", "brand")} ${styleText(skillIdentity(localRef), "strong")}`,
+    );
   } catch (error) {
     spinner.fail(formatError(error));
     throw error;

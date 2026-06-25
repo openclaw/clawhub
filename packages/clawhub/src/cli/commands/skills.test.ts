@@ -664,6 +664,59 @@ describe("cmdUpdate", () => {
     });
   });
 
+  it("updates owner-qualified lock entries in their owner-scoped directory", async () => {
+    mockApiRequest.mockResolvedValue({
+      skill: {
+        slug: "demo",
+        displayName: "Demo",
+        summary: null,
+        tags: {},
+        stats: {},
+        createdAt: 0,
+        updatedAt: 0,
+      },
+      latestVersion: { version: "2.0.0" },
+      owner: { handle: "alice" },
+      moderation: null,
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockResolvedValue({
+      version: 1,
+      skills: {
+        "@alice/demo": { version: "1.0.0", installedAt: 123, ownerHandle: "alice" },
+      },
+    });
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(readSkillOrigin).mockResolvedValue(null);
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(listTextFiles).mockResolvedValue([]);
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+
+    await cmdUpdate(makeOpts(), undefined, { all: true }, false);
+
+    const [, requestArgs] = mockApiRequest.mock.calls[0] ?? [];
+    expect(new URL(String(requestArgs?.url)).searchParams.get("ownerHandle")).toBe("alice");
+    expect(mockDownloadZip).toHaveBeenCalledWith(
+      "https://clawhub.ai",
+      expect.objectContaining({ slug: "demo", ownerHandle: "alice", version: "2.0.0" }),
+    );
+    expect(writeSkillOrigin).toHaveBeenCalledWith(
+      "/work/skills/@alice/demo",
+      expect.objectContaining({ slug: "demo", ownerHandle: "alice" }),
+    );
+    expect(writeLockfile).toHaveBeenCalledWith("/work", {
+      version: 1,
+      skills: {
+        "@alice/demo": {
+          version: "2.0.0",
+          installedAt: expect.any(Number),
+          ownerHandle: "alice",
+        },
+      },
+    });
+  });
+
   it("preserves the owner handle across sequential GitHub-backed updates", async () => {
     const firstCommit = "a".repeat(40);
     const secondCommit = "b".repeat(40);
@@ -1494,7 +1547,7 @@ describe("cmdInstall", () => {
       }),
     );
     expect(writeSkillOrigin).toHaveBeenCalledWith(
-      "/work/skills/demo",
+      "/work/skills/@openclaw/demo",
       expect.objectContaining({
         slug: "demo",
         ownerHandle: "openclaw",
@@ -1504,8 +1557,60 @@ describe("cmdInstall", () => {
     expect(writeLockfile).toHaveBeenCalledWith("/work", {
       version: 1,
       skills: {
-        demo: { version: "1.0.0", installedAt: expect.any(Number), ownerHandle: "openclaw" },
+        "@openclaw/demo": {
+          version: "1.0.0",
+          installedAt: expect.any(Number),
+          ownerHandle: "openclaw",
+        },
       },
+    });
+  });
+
+  it("keeps same-slug installs from different owners isolated", async () => {
+    const lock = {
+      version: 1 as const,
+      skills: {} as Record<string, { version: string; installedAt: number; ownerHandle?: string }>,
+    };
+    mockApiRequest.mockImplementation(async (_registry, args) => {
+      const ownerHandle = args.url ? new URL(args.url).searchParams.get("ownerHandle") : null;
+      return {
+        skill: {
+          slug: "demo",
+          displayName: "Demo",
+          summary: null,
+          tags: {},
+          stats: {},
+          createdAt: 0,
+          updatedAt: 0,
+        },
+        latestVersion: { version: ownerHandle === "alice" ? "1.0.0" : "2.0.0" },
+        owner: { handle: ownerHandle },
+        moderation: null,
+      };
+    });
+    mockDownloadZip.mockResolvedValue(new Uint8Array([1, 2, 3]));
+    vi.mocked(readLockfile).mockImplementation(async () => lock);
+    vi.mocked(writeLockfile).mockResolvedValue();
+    vi.mocked(writeSkillOrigin).mockResolvedValue();
+    vi.mocked(extractZipToDir).mockResolvedValue();
+    vi.mocked(stat).mockRejectedValue(new Error("missing"));
+
+    await cmdInstall(makeOpts(), "@alice/demo");
+    await cmdInstall(makeOpts(), "@bob/demo");
+
+    expect(writeSkillOrigin).toHaveBeenNthCalledWith(
+      1,
+      "/work/skills/@alice/demo",
+      expect.objectContaining({ ownerHandle: "alice", slug: "demo" }),
+    );
+    expect(writeSkillOrigin).toHaveBeenNthCalledWith(
+      2,
+      "/work/skills/@bob/demo",
+      expect.objectContaining({ ownerHandle: "bob", slug: "demo" }),
+    );
+    expect(lock.skills).toEqual({
+      "@alice/demo": { version: "1.0.0", installedAt: expect.any(Number), ownerHandle: "alice" },
+      "@bob/demo": { version: "2.0.0", installedAt: expect.any(Number), ownerHandle: "bob" },
     });
   });
 
@@ -1543,7 +1648,7 @@ describe("cmdInstall", () => {
       }),
     );
     expect(writeSkillOrigin).toHaveBeenCalledWith(
-      "/work/skills/old-demo",
+      "/work/skills/@source/old-demo",
       expect.objectContaining({ slug: "old-demo", ownerHandle: "source" }),
     );
   });
@@ -1887,7 +1992,7 @@ describe("cmdUninstall", () => {
     await expect(cmdUninstall(makeOpts(), "../evil", { yes: true }, false)).rejects.toThrow(
       /invalid slug/i,
     );
-    await expect(cmdUninstall(makeOpts(), "demo/evil", { yes: true }, false)).rejects.toThrow(
+    await expect(cmdUninstall(makeOpts(), "demo/..", { yes: true }, false)).rejects.toThrow(
       /invalid slug/i,
     );
   });
