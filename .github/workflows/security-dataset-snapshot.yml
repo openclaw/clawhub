@@ -72,7 +72,7 @@ jobs:
       SNAPSHOT_CONCURRENCY: ${{ inputs.concurrency || '1' }}
       SNAPSHOT_SHARDS: ${{ inputs.shards || '128' }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-bun
 
@@ -131,7 +131,7 @@ jobs:
       SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/shard
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-bun
 
@@ -189,7 +189,7 @@ jobs:
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized
       WORK_DIR: /tmp/clawhub-security-dataset
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/setup-bun
 
@@ -199,7 +199,7 @@ jobs:
           python-version: "3.12"
 
       - name: Download sanitized shard artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           pattern: security-dataset-shard-*
           path: ${{ env.WORK_DIR }}/shards

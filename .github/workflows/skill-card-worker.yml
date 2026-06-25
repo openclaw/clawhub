@@ -47,9 +47,9 @@ jobs:
       SKILL_CARD_WORKER_ID: "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}"
       NVIDIA_TRUSTWORTHY_AI_DIR: ${{ github.workspace }}/.artifacts/nvidia-trustworthy-ai
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
 
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           repository: NVIDIA/Trustworthy-AI
           ref: fb5867e9070b4080d28818242e20334e10ac55fc
