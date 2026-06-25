@@ -1,8 +1,9 @@
 import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, setHeader } from "h3";
-import { fetchPublisherProfileImageDataUrl } from "../../og/fetchImageDataUrl";
+import { fetchImageDataUrl, fetchPublisherProfileImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchPublisherOgMeta } from "../../og/fetchPublisherOgMeta";
 import { readOgDownloadsQuery, resolveOgDownloadsDisplay } from "../../og/formatOgStats";
+import { normalizeOgLogoDataUrl } from "../../og/normalizeLogoDataUrl";
 import {
   ensureResvgWasm,
   FONT_MONO,
@@ -22,6 +23,9 @@ type OgQuery = {
   downloads?: string;
   installs?: string;
   kind?: string;
+  official?: string;
+  orgState?: string;
+  orgImages?: string;
   avatar?: string;
   v?: string;
 };
@@ -33,6 +37,21 @@ function cleanString(value: unknown) {
 
 function getConvexUrl() {
   return process.env.VITE_CONVEX_URL?.trim() || process.env.CONVEX_URL?.trim() || null;
+}
+
+function readBooleanQuery(value: unknown) {
+  const raw = cleanString(value).toLowerCase();
+  return raw === "1" || raw === "true" || raw === "yes";
+}
+
+function readOrganizationImagesQuery(value: unknown) {
+  const raw = cleanString(value);
+  if (raw === "0") return [];
+  return raw
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .slice(0, 5);
 }
 
 export default defineEventHandler(async (event) => {
@@ -47,9 +66,16 @@ export default defineEventHandler(async (event) => {
   const descriptionFromQuery = cleanString(query.description);
   const kindFromQuery = cleanString(query.kind);
   const avatarFromQuery = cleanString(query.avatar);
+  const organizationImagesFromQuery = readOrganizationImagesQuery(query.orgImages);
   const convexUrl = getConvexUrl();
   const needFetch =
-    !titleFromQuery || !descriptionFromQuery || !readOgDownloadsQuery(query) || !avatarFromQuery;
+    !titleFromQuery ||
+    !descriptionFromQuery ||
+    !readOgDownloadsQuery(query) ||
+    !avatarFromQuery ||
+    !cleanString(query.official) ||
+    !cleanString(query.orgState) ||
+    !cleanString(query.orgImages);
   const meta = needFetch && convexUrl ? await fetchPublisherOgMeta(handle, convexUrl) : null;
   const handleLabel = `@${meta?.handle || handle}`;
   const title = titleFromQuery || meta?.displayName || handleLabel;
@@ -61,15 +87,32 @@ export default defineEventHandler(async (event) => {
     ensureResvgWasm().then(() => getFontBuffers()),
   ]);
   const avatarDataUrl = await fetchPublisherProfileImageDataUrl(avatarFromQuery || meta?.image);
+  const organizationImageUrls =
+    organizationImagesFromQuery.length > 0
+      ? organizationImagesFromQuery
+      : (meta?.affiliations.map((affiliation) => affiliation.image).filter(Boolean) ?? []);
+  const organizationLogoDataUrls = (
+    await Promise.all(
+      organizationImageUrls.map(async (imageUrl) => {
+        const dataUrl = await fetchImageDataUrl(imageUrl, {
+          allowPublicHttps: true,
+          followRedirects: true,
+        });
+        return normalizeOgLogoDataUrl(dataUrl);
+      }),
+    )
+  ).filter((imageUrl): imageUrl is string => Boolean(imageUrl));
 
   const svg = buildPublisherOgSvg({
     markDataUrl,
     watermarkDataUrl,
     avatarDataUrl,
     avatarShape: kindFromQuery === "org" || meta?.kind === "org" ? "rounded" : "circle",
+    official: cleanString(query.official) ? readBooleanQuery(query.official) : meta?.official,
     title,
     description,
     handleLabel,
+    organizationLogos: organizationLogoDataUrls,
     stats: [buildOgDownloadsStat(resolveOgDownloadsDisplay(query, meta?.stats.downloads))],
   });
 

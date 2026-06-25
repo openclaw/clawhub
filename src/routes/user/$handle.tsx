@@ -102,6 +102,8 @@ export const Route = createFileRoute("/user/$handle")({
       bio: publisher?.bio,
       image: publisher?.image,
       kind: publisher?.kind,
+      official: publisher?.official,
+      affiliations: publisher?.affiliations,
       downloads: publisher?.stats.downloads,
     });
     return {

@@ -36,6 +36,16 @@ describe("fetchPublisherOgMeta", () => {
       displayName: "OpenClaw",
       bio: "Build with claws.",
       image: null,
+      official: true,
+      affiliations: [
+        {
+          publisher: {
+            handle: "github",
+            displayName: "GitHub",
+            image: "https://example.com/github.png",
+          },
+        },
+      ],
       stats: { downloads: 99, installs: 1200 },
     });
 
@@ -47,5 +57,9 @@ describe("fetchPublisherOgMeta", () => {
       handle: "openclaw",
     });
     expect(meta?.stats.downloads).toBe(99);
+    expect(meta?.official).toBe(true);
+    expect(meta?.affiliations).toEqual([
+      { handle: "github", displayName: "GitHub", image: "https://example.com/github.png" },
+    ]);
   });
 });
