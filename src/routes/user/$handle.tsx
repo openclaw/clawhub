@@ -76,6 +76,7 @@ import type {
   PublicSkill,
 } from "../../lib/publicUser";
 import { readPublicDownloadCount } from "../../lib/publicUser";
+import { isAdmin } from "../../lib/roles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 
 export const Route = createFileRoute("/user/$handle")({
@@ -488,7 +489,7 @@ export function PublisherProfilePage({
   handle: string;
   loaderPublisher: PublicPublisherListItem;
 }) {
-  const { isAuthenticated } = useAuthStatus();
+  const { isAuthenticated, me } = useAuthStatus();
   const { signIn } = useAuthActions();
   const [catalogTab, setCatalogTab] = useState<ProfileCatalogTab>(() =>
     resolveDefaultCatalogTab(loaderPublisher),
@@ -555,6 +556,8 @@ export function PublisherProfilePage({
     () => Boolean(myPublisherMemberships?.some((entry) => entry.publisher.handle === handle)),
     [myPublisherMemberships, handle],
   );
+  const viewerCanSeeOrgRoles =
+    isAdmin(me) || (me?.handle != null && me.handle === publisher.handle);
 
   const {
     results: publishedResults,
@@ -784,7 +787,7 @@ export function PublisherProfilePage({
                             />
                             <span className="publisher-profile-meta-chip-copy">
                               <strong>{entry.publisher.displayName}</strong>
-                              <small>{entry.role}</small>
+                              {viewerCanSeeOrgRoles ? <small>{entry.role}</small> : null}
                             </span>
                           </Link>
                         ))}
