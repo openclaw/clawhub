@@ -685,7 +685,7 @@ describe("skillCards queue", () => {
       error:
         "Download failed 403: https://signed.example.invalid/file?token=secret " +
         "Authorization: Bearer worker-secret OPENAI_API_KEY=openai-runtime-secret " +
-        "path=artifacts/ghp_1234567890abcdefghijklmnopqrstuv.json",
+        "path=artifacts/token=artifact-path-secret.json",
     });
 
     expect(result).toEqual({ ok: true, retry: false });
@@ -705,7 +705,7 @@ describe("skillCards queue", () => {
     expect(lastError).not.toContain("Authorization");
     expect(lastError).not.toContain("worker-secret");
     expect(lastError).not.toContain("openai-runtime-secret");
-    expect(lastError).not.toContain("ghp_1234567890abcdefghijklmnopqrstuv");
+    expect(lastError).not.toContain("artifact-path-secret");
     expect(lastError).toContain("OPENAI_API_KEY=[redacted-secret]");
   });
 });

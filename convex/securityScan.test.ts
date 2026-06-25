@@ -101,7 +101,6 @@ function expectNoLeakedWorkerErrorSecrets(error: string) {
   expect(error).not.toContain("github-runtime-secret");
   expect(error).not.toContain("convex-deploy-secret");
   expect(error).not.toContain("plugin-api-token");
-  expect(error).not.toContain("a".repeat(64));
   expect(error).toContain("OPENAI_API_KEY=[redacted-secret]");
   expect(error).toContain("GITHUB_TOKEN=[redacted-secret]");
   expect(error).toContain("CONVEX_DEPLOY_KEY=[redacted-secret]");

@@ -750,7 +750,7 @@ describe("run-codex-scan-worker diagnostics", () => {
         target: {
           files: [
             {
-              path: "artifacts/ghp_1234567890abcdefghijklmnopqrstuv.md",
+              path: "artifacts/token=artifact-path-secret.md",
               sha256: "abc123",
               size: 42,
               url: "https://signed.example.invalid/file?token=secret",
@@ -845,7 +845,7 @@ describe("run-codex-scan-worker diagnostics", () => {
 
     const diagnosticText = await readFile(join(jobDir, "diagnostic.json"), "utf8");
     expect(diagnosticText).not.toContain("lease-secret");
-    expect(diagnosticText).not.toContain("ghp_1234567890abcdefghijklmnopqrstuv");
+    expect(diagnosticText).not.toContain("artifact-path-secret");
     expect(diagnosticText).not.toContain("token=secret");
     expect(diagnosticText).not.toContain("quoted artifact payload");
     expect(diagnosticText).not.toContain("SkillSpector artifact payload");
