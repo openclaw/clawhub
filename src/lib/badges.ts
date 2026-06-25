@@ -6,7 +6,7 @@ type SkillBadgeMap = Partial<Record<BadgeKind, { byUserId: Id<"users">; at: numb
 
 type SkillLike = { badges?: SkillBadgeMap | null };
 
-type BadgeLabel = "Deprecated" | "Official";
+type BadgeLabel = "Deprecated" | "Verified";
 
 export function isSkillHighlighted(skill: SkillLike) {
   return Boolean(skill.badges?.highlighted);
@@ -23,6 +23,6 @@ export function isSkillDeprecated(skill: SkillLike) {
 export function getSkillBadges(skill: SkillLike): BadgeLabel[] {
   const badges: BadgeLabel[] = [];
   if (isSkillDeprecated(skill)) badges.push("Deprecated");
-  if (isSkillOfficial(skill)) badges.push("Official");
+  if (isSkillOfficial(skill)) badges.push("Verified");
   return badges;
 }

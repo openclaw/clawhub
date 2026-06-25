@@ -27,8 +27,8 @@ describe("SkillListItem", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Official")).toBeTruthy();
-    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.queryByText("Verified")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 

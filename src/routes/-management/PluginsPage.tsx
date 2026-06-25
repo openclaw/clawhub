@@ -91,7 +91,7 @@ export function PluginsPage({
                   </div>
                   <div className="management-tags">
                     <Badge>{plugin.channel}</Badge>
-                    {plugin.isOfficial ? <Badge variant="official">Official</Badge> : null}
+                    {plugin.isOfficial ? <Badge variant="official">Verified</Badge> : null}
                     {plugin.runtimeId ? <Badge>{plugin.runtimeId}</Badge> : null}
                   </div>
                   <div className="management-sublist">

@@ -15,8 +15,8 @@ describe("PublisherListItem", () => {
   it("renders official publishers with the compact official mark", () => {
     const { container } = render(<PublisherListItem publisher={makePublisher()} />);
 
-    expect(screen.getByLabelText("Official")).toBeTruthy();
-    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.queryByText("Verified")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 

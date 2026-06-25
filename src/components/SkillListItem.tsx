@@ -43,7 +43,7 @@ export function SkillListItem({
           <span className="skill-list-item-name">{truncateText(skill.displayName, 40)}</span>
           {handle ? <span className="skill-list-item-owner">@{handle}</span> : null}
           {badges.map((b) =>
-            b === "Official" ? (
+            b === "Verified" ? (
               <OfficialBadge key={b} />
             ) : (
               <Badge key={b} variant="compact">

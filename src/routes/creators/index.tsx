@@ -50,7 +50,7 @@ const PUBLISHER_KIND_OPTIONS = [
   { value: undefined, label: "All" },
   {
     value: "official",
-    label: "Official",
+    label: "Verified",
     icon: <BadgeCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
   },
   { value: "orgs", label: "Organizations", mobileLabel: "Orgs" },

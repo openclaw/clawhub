@@ -134,10 +134,10 @@ describe("UserBadge", () => {
     );
   });
 
-  it("shows a compact Official badge for official publishers", () => {
+  it("shows a compact Verified badge for official publishers", () => {
     const { container } = renderBadge(orgPublisher);
 
-    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
     expect(container.querySelector(".official-badge")).toBeTruthy();
     expect(container.querySelector(".official-tag")).toBeFalsy();
   });

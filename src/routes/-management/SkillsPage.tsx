@@ -407,7 +407,7 @@ export function SkillsPage({
                         type="button"
                         onClick={() => onSetOfficialBadge(skill._id, !isOfficial)}
                       >
-                        {isOfficial ? "Remove official" : "Mark official"}
+                        {isOfficial ? "Remove verified" : "Mark verified"}
                       </Button>
                       <Button
                         className="management-action-btn"

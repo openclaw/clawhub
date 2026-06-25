@@ -16,14 +16,14 @@ describe("SkillCard", () => {
     const { container } = render(
       <SkillCard
         skill={makeSkill()}
-        badge="Official"
+        badge="Verified"
         summaryFallback="Fallback summary"
         meta={<span>meta</span>}
       />,
     );
 
-    expect(screen.getByLabelText("Official")).toBeTruthy();
-    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.queryByText("Verified")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 

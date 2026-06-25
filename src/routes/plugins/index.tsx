@@ -55,7 +55,7 @@ const PLUGIN_BROWSE_TABS = [
   { value: "downloads", label: "All" },
   {
     value: "official",
-    label: "Official",
+    label: "Verified",
     icon: <BadgeCheck size={14} strokeWidth={2.25} aria-hidden="true" />,
   },
   { value: "updated", label: "Updated" },

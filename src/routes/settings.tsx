@@ -1262,7 +1262,7 @@ export function Settings() {
                       />
                     ) : (
                       <p className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 p-3 text-sm text-[color:var(--ink-soft)]">
-                        You need an official publisher profile before adding GitHub skill sync.
+                        You need a verified publisher profile before adding GitHub skill sync.
                       </p>
                     )}
                   </div>

@@ -172,7 +172,7 @@ export function SkillHeader({
   const hasOwnerActions = Boolean(newVersionHref) || Boolean(settingsHref);
   const showReportAction = !canManage || isStaff;
   const badges = getSkillBadges(skill);
-  const titleBadges = badges.filter((badge) => badge !== "Official");
+  const titleBadges = badges.filter((badge) => badge !== "Verified");
   const heroCreatorPublisher = useHeroCreatorPublisher({
     owner,
     skillOfficial: isSkillOfficial(skill),

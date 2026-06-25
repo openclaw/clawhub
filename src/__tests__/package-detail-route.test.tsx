@@ -955,7 +955,7 @@ describe("plugin detail route", () => {
     expect(packageCrumb?.textContent).toBe("firecrawl-plugin");
   });
 
-  it("labels official packages as Official", async () => {
+  it("labels official packages as Verified", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -972,7 +972,7 @@ describe("plugin detail route", () => {
 
     const { container } = render(<Component />);
 
-    expect(screen.getAllByLabelText("Official").length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText("Verified").length).toBeGreaterThan(0);
     expect(container.querySelector(".skill-hero-creator .official-badge-icon-only")).toBeTruthy();
     expect(container.querySelector(".skill-hero-title-row .official-tag")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();

@@ -603,7 +603,7 @@ describe("HomeListingSection", () => {
 
     render(<HomeListingSection />);
     fireEvent.click(screen.getByRole("button", { name: "Plugins" }));
-    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Verified" }));
 
     await waitFor(() => {
       expect(screen.getByText("Official Plugin").textContent).toBe("Official Plugin");
@@ -649,7 +649,7 @@ describe("HomeListingSection", () => {
     });
     expect(fetchPluginCatalogMock).toHaveBeenCalledTimes(2);
 
-    fireEvent.click(screen.getByRole("tab", { name: "Official" }));
+    fireEvent.click(screen.getByRole("tab", { name: "Verified" }));
 
     await waitFor(() => {
       expect(screen.getByText("Official Plugin")).toBeTruthy();

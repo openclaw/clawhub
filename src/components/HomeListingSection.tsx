@@ -64,7 +64,7 @@ const SKILL_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
 ];
 
 const PLUGIN_LISTING_TABS: Array<{ id: ListingTab; label: string }> = [
-  { id: "officials", label: "Official" },
+  { id: "officials", label: "Verified" },
   { id: "popular", label: "Top" },
   { id: "new", label: "New" },
 ];
