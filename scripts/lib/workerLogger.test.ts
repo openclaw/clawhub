@@ -3,6 +3,34 @@ import { describe, expect, it } from "vitest";
 import { createWorkerLogger } from "./workerLogger";
 
 describe("worker logger", () => {
+  it("emits structured info and error log events", () => {
+    const lines: string[] = [];
+    const logger = createWorkerLogger({
+      name: "worker-logger-test",
+      destination: { write: (line) => lines.push(line) },
+    });
+
+    logger.info({ event: "worker_test_started", jobId: "job1" }, "started");
+    logger.error({ event: "worker_test_failed", jobId: "job1" }, "failed");
+
+    expect(lines).toHaveLength(2);
+    const [info, error] = lines.map((line) => JSON.parse(line) as Record<string, unknown>);
+    expect(info).toMatchObject({
+      event: "worker_test_started",
+      jobId: "job1",
+      level: 30,
+      msg: "started",
+      service: "worker-logger-test",
+    });
+    expect(error).toMatchObject({
+      event: "worker_test_failed",
+      jobId: "job1",
+      level: 50,
+      msg: "failed",
+      service: "worker-logger-test",
+    });
+  });
+
   it("redacts configured structured fields in emitted JSON", () => {
     const lines: string[] = [];
     const logger = createWorkerLogger({
