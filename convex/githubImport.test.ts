@@ -599,6 +599,75 @@ describe("githubImport", () => {
     expect(fetchMock.mock.calls[3]?.[1]?.headers).not.toHaveProperty("Authorization");
   });
 
+  it("uses the GitHub App token for bounded repo discovery", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    process.env.GITHUB_APP_ID = "3536245";
+    process.env.GITHUB_APP_INSTALLATION_ID = "987654";
+    process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          token: "ghs_app_token",
+          expires_at: "2027-02-02T13:00:00Z",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          id: 123,
+          login: "vyctorbrzezowski",
+          avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json([
+          {
+            name: "public-skill",
+            full_name: "vyctorbrzezowski/public-skill",
+            html_url: "https://github.com/vyctorbrzezowski/public-skill",
+            default_branch: "main",
+            private: false,
+            visibility: "public",
+            owner: { id: 123, login: "vyctorbrzezowski" },
+          },
+        ]),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          truncated: false,
+          tree: [{ path: "SKILL.md", type: "blob" }],
+        }),
+      );
+
+    const result = await __test.listOwnedPublicGitHubReposForUser(
+      ctx as never,
+      "users:1" as never,
+      { page: 1, perPage: 30 },
+      fetchMock as never,
+    );
+
+    expect(result.repos).toEqual([
+      expect.objectContaining({
+        repoFullName: "vyctorbrzezowski/public-skill",
+        skillPath: "SKILL.md",
+      }),
+    ]);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[2]?.[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer ghs_app_token" }),
+      }),
+    );
+  });
+
   it("falls back to the repo archive when GitHub truncates the discovery tree", async () => {
     const ctx = {
       runQuery: vi.fn().mockResolvedValue("123"),
