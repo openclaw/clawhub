@@ -5884,7 +5884,26 @@ export const listPublicTrendingPage = query({
         .first();
     }
 
-    if (!leaderboard) return { items: [], nextCursor: null };
+    if (!leaderboard) {
+      // The first leaderboard snapshot may not exist yet after deployment.
+      // Use a bounded recent catalog warm-up instead of rendering an empty page.
+      const fallbackDigests = await ctx.db
+        .query("skillSearchDigest")
+        .withIndex("by_active_updated", (q) => q.eq("softDeletedAt", undefined))
+        .order("desc")
+        .take(Math.min(Math.max(limit * 8, limit), 200));
+      const fallbackItems: PublicSkillEntry[] = [];
+      for (const digest of fallbackDigests) {
+        if (args.nonSuspiciousOnly && digest.isSuspicious) continue;
+        if (categorySlug && !resolveStoredSkillCategories(digest).includes(categorySlug)) continue;
+        if (topic && !getCatalogTopicSlugs(digest.topics).includes(topic)) continue;
+        const item = await buildPublicSkillEntryFromDigest(ctx, digest);
+        if (!item) continue;
+        fallbackItems.push(item);
+        if (fallbackItems.length >= limit) break;
+      }
+      return { items: fallbackItems, nextCursor: null };
+    }
 
     const items: PublicSkillEntry[] = [];
     for (const entry of leaderboard.items) {
