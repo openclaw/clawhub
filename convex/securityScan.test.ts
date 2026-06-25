@@ -2997,6 +2997,39 @@ describe("securityScan", () => {
     expect(stored.issues[0]?.finding?.length).toBeLessThan(longSnippet.length);
   });
 
+  it("clears legacy plugin SkillSpector results when no new analysis is produced", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:plugin",
+        targetKind: "packageRelease",
+        leaseToken: "lease-token",
+      },
+      release: {
+        _id: "packageReleases:plugin",
+      },
+    }));
+    const runMutation = vi.fn(async (..._args: unknown[]) => ({ ok: true }));
+
+    await completeCodexScanJobHandler(
+      { runQuery, runMutation },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:plugin",
+        leaseToken: "lease-token",
+        llmAnalysis: { status: "clean", checkedAt: 123 },
+      },
+    );
+
+    expect(runMutation).toHaveBeenNthCalledWith(
+      1,
+      expect.anything(),
+      expect.objectContaining({ releaseId: "packageReleases:plugin" }),
+    );
+    const scanPatch = runMutation.mock.calls[0]?.[1] as Record<string, unknown>;
+    expect(scanPatch).not.toHaveProperty("skillSpectorAnalysis");
+  });
+
   it("persists an error ClawScan result when worker retries are exhausted", async () => {
     vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
 

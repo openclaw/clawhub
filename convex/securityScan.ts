@@ -2630,12 +2630,12 @@ export const completeCodexScanJob = action({
         llmAnalysis: args.llmAnalysis,
       });
     } else if (target.job.targetKind === "packageRelease" && target.release) {
-      if (args.skillSpectorAnalysis) {
-        await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
-          releaseId: target.release._id,
-          skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis),
-        });
-      }
+      await runMutationRef(ctx, internalRefs.packages.updateReleaseSkillSpectorAnalysisInternal, {
+        releaseId: target.release._id,
+        ...(args.skillSpectorAnalysis
+          ? { skillSpectorAnalysis: capSkillSpectorAnalysisForStorage(args.skillSpectorAnalysis) }
+          : {}),
+      });
       await runMutationRef(ctx, internalRefs.packages.updateReleaseLlmAnalysisInternal, {
         releaseId: target.release._id,
         llmAnalysis: args.llmAnalysis,

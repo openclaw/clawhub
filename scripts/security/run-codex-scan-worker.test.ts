@@ -15,6 +15,7 @@ import {
   normalizeSkillSpectorAnalysis,
   processJob,
   resolveSkillSpectorScanInput,
+  resolveSkillSpectorScanInputs,
   writeArtifactWorkspace,
   writeJobDiagnostic,
 } from "./run-codex-scan-worker";
@@ -276,6 +277,37 @@ describe("run-codex-scan-worker diagnostics", () => {
     expect(prompt).not.toContain("OWASP");
   });
 
+  it("does not reuse plugin-level SkillSpector findings when no bundled skills are declared", () => {
+    const prompt = buildPrompt(
+      {
+        job: {
+          _id: "plugin-job",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "packageRelease",
+          waitForVtUntil: 0,
+        },
+        target: {
+          release: {
+            skillSpectorAnalysis: {
+              status: "suspicious",
+              issueCount: 1,
+              checkedAt: 123,
+              issues: [{ issueId: "SDI-1", severity: "HIGH", explanation: "plugin root" }],
+            },
+            pluginManifestSummary: {
+              bundledSkills: [],
+            },
+          },
+        },
+      },
+      [],
+    );
+
+    expect(prompt).not.toContain("plugin root");
+  });
+
   it("normalizes real SkillSpector JSON risk assessment fields", () => {
     const analysis = normalizeSkillSpectorAnalysis(
       JSON.stringify({
@@ -363,6 +395,63 @@ describe("run-codex-scan-worker diagnostics", () => {
     await writeFile(join(workspace, "artifact", "SKILL.md"), "# Skill");
 
     await expect(resolveSkillSpectorScanInput(workspace)).resolves.toBe("artifact");
+  });
+
+  it("scans only bundled skill roots for plugin releases", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact", "package"), { recursive: true });
+    await writeFile(join(workspace, "artifact.tgz"), "packed artifact");
+    await writeFile(join(workspace, "artifact", "package", "package.json"), "{}");
+
+    await expect(
+      resolveSkillSpectorScanInputs(workspace, {
+        job: {
+          _id: "package-job",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "packageRelease",
+          waitForVtUntil: 0,
+        },
+        target: {
+          release: {
+            pluginManifestSummary: {
+              bundledSkills: [
+                { rootPath: "skills/first" },
+                { rootPath: "./skills/second/" },
+                { rootPath: "../package-code" },
+              ],
+            },
+          },
+        },
+      }),
+    ).resolves.toEqual(["artifact/package/skills/first", "artifact/package/skills/second"]);
+  });
+
+  it("skips SkillSpector for plugin releases without bundled skills", async () => {
+    const workspace = await tempDir();
+    await mkdir(join(workspace, "artifact"), { recursive: true });
+    await writeFile(join(workspace, "artifact", "openclaw.plugin.json"), "{}");
+
+    await expect(
+      resolveSkillSpectorScanInputs(workspace, {
+        job: {
+          _id: "plugin-job",
+          hasMaliciousSignal: false,
+          leaseToken: "lease-secret",
+          source: "publish",
+          targetKind: "packageRelease",
+          waitForVtUntil: 0,
+        },
+        target: {
+          release: {
+            pluginManifestSummary: {
+              bundledSkills: [],
+            },
+          },
+        },
+      }),
+    ).resolves.toEqual([]);
   });
 
   it("writes scanner metadata without lease tokens or signed file URLs", async () => {

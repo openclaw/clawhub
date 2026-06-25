@@ -580,46 +580,144 @@ export async function resolveSkillSpectorScanInput(workspace: string) {
   return hasClawPackExtraction ? "artifact/package" : "artifact";
 }
 
+function normalizedBundledSkillRoot(value: unknown) {
+  if (typeof value !== "string") return null;
+  const normalized = value
+    .trim()
+    .replaceAll("\\", "/")
+    .replace(/^\.\/+/, "")
+    .replace(/\/+$/, "");
+  if (
+    !normalized ||
+    normalized === "." ||
+    normalized.startsWith("/") ||
+    normalized.split("/").some((segment) => segment === "..")
+  ) {
+    return null;
+  }
+  return normalized;
+}
+
+function bundledSkillRootsForJob(job: ClaimedJob) {
+  if (job.job.targetKind !== "packageRelease") return [];
+  const release = asRecord(job.target.release);
+  const pluginManifestSummary = asRecord(release?.pluginManifestSummary);
+  const bundledSkills = pluginManifestSummary?.bundledSkills;
+  if (!Array.isArray(bundledSkills)) return [];
+  return bundledSkills
+    .map((skill) => normalizedBundledSkillRoot(asRecord(skill)?.rootPath))
+    .filter((rootPath): rootPath is string => Boolean(rootPath));
+}
+
+export async function resolveSkillSpectorScanInputs(workspace: string, job: ClaimedJob) {
+  const bundledSkillRoots = bundledSkillRootsForJob(job);
+  if (job.job.targetKind !== "packageRelease") {
+    return [await resolveSkillSpectorScanInput(workspace)];
+  }
+  if (bundledSkillRoots.length === 0) return [];
+
+  const packageRoot = await resolveSkillSpectorScanInput(workspace);
+  const artifactRoot = resolve(workspace, packageRoot);
+  return bundledSkillRoots
+    .map((rootPath) => {
+      const skillRoot = resolve(artifactRoot, rootPath);
+      return skillRoot.startsWith(`${artifactRoot}/`) ? join(packageRoot, rootPath) : null;
+    })
+    .filter((path): path is string => Boolean(path));
+}
+
+function aggregateSkillSpectorAnalyses(analyses: SkillSpectorAnalysis[]) {
+  if (analyses.length === 1) return analyses[0];
+  const statuses = analyses.map((analysis) => analysis.status);
+  const status = statuses.some((value) => value === "error" || value === "failed")
+    ? "error"
+    : statuses.includes("malicious")
+      ? "malicious"
+      : statuses.includes("suspicious")
+        ? "suspicious"
+        : "clean";
+  const severityRank = ["UNKNOWN", "LOW", "MEDIUM", "HIGH", "CRITICAL"];
+  const severity = analyses
+    .map((analysis) => analysis.severity?.toUpperCase())
+    .filter((value): value is string => Boolean(value))
+    .sort((left, right) => severityRank.indexOf(right) - severityRank.indexOf(left))[0];
+  const recommendations = [
+    ...new Set(analyses.map((analysis) => analysis.recommendation).filter(Boolean)),
+  ];
+  const scannerVersions = [
+    ...new Set(analyses.map((analysis) => analysis.scannerVersion).filter(Boolean)),
+  ];
+  const summaries = analyses.map((analysis) => analysis.summary).filter(Boolean);
+  const errors = analyses.map((analysis) => analysis.error).filter(Boolean);
+  return {
+    status,
+    score: Math.max(...analyses.map((analysis) => analysis.score ?? 0)),
+    severity,
+    recommendation: recommendations.length > 0 ? recommendations.join("; ") : undefined,
+    issueCount: analyses.reduce((total, analysis) => total + analysis.issueCount, 0),
+    issues: analyses
+      .flatMap((analysis) => analysis.issues)
+      .slice(0, MAX_STORED_SKILLSPECTOR_ISSUES),
+    scannerVersion: scannerVersions.length > 0 ? scannerVersions.join(", ") : undefined,
+    summary:
+      summaries.length > 0
+        ? `Scanned ${analyses.length} bundled skills. ${summaries.join(" ")}`
+        : `Scanned ${analyses.length} bundled skills.`,
+    error: errors.length > 0 ? errors.join("; ") : undefined,
+    checkedAt: Math.max(...analyses.map((analysis) => analysis.checkedAt)),
+  } satisfies SkillSpectorAnalysis;
+}
+
 async function runSkillSpector(
   workspace: string,
+  scanInputs: string[],
   onDiagnostic: (diagnostic: Partial<CodexCommandDiagnostic>) => void,
 ) {
-  const resultPath = join(workspace, "skillspector-report.json");
-  const scanInput = await resolveSkillSpectorScanInput(workspace);
-  const args = ["scan", scanInput, "--format", "json", "--output", resultPath];
-  onDiagnostic({ args });
-  try {
-    const output = await runCommand("skillspector", args, {
-      cwd: workspace,
-      timeoutMs: codexScanTimeoutMs(),
-    });
-    const raw = await readFile(resultPath, "utf8");
-    onDiagnostic({ exitCode: 0, rawResult: raw, stderr: output.stderr, stdout: output.stdout });
-    return normalizeSkillSpectorAnalysis(raw);
-  } catch (error) {
-    if (error instanceof CommandFailure) {
-      let rawResult: string | undefined;
-      try {
-        rawResult = await readFile(resultPath, "utf8");
-      } catch {
-        rawResult = undefined;
-      }
-      onDiagnostic({
-        exitCode: error.exitCode,
-        rawResult,
-        stderr: error.stderr,
-        stdout: error.stdout,
+  const analyses: SkillSpectorAnalysis[] = [];
+  for (const [index, scanInput] of scanInputs.entries()) {
+    const resultPath = join(workspace, `skillspector-report-${index}.json`);
+    const args = ["scan", scanInput, "--format", "json", "--output", resultPath];
+    onDiagnostic({ args });
+    try {
+      const output = await runCommand("skillspector", args, {
+        cwd: workspace,
+        timeoutMs: codexScanTimeoutMs(),
       });
-      if (rawResult) {
+      const raw = await readFile(resultPath, "utf8");
+      onDiagnostic({
+        exitCode: 0,
+        rawResult: raw,
+        stderr: output.stderr,
+        stdout: output.stdout,
+      });
+      analyses.push(normalizeSkillSpectorAnalysis(raw));
+    } catch (error) {
+      if (error instanceof CommandFailure) {
+        let rawResult: string | undefined;
         try {
-          return normalizeSkillSpectorAnalysis(rawResult);
+          rawResult = await readFile(resultPath, "utf8");
         } catch {
-          // Fall through to an error-shaped analysis; diagnostics keep the raw report.
+          rawResult = undefined;
+        }
+        onDiagnostic({
+          exitCode: error.exitCode,
+          rawResult,
+          stderr: error.stderr,
+          stdout: error.stdout,
+        });
+        if (rawResult) {
+          try {
+            analyses.push(normalizeSkillSpectorAnalysis(rawResult));
+            continue;
+          } catch {
+            // Fall through to an error-shaped analysis; diagnostics keep the raw report.
+          }
         }
       }
+      analyses.push(skillSpectorFailureAnalysis(error));
     }
-    return skillSpectorFailureAnalysis(error);
   }
+  return aggregateSkillSpectorAnalyses(analyses);
 }
 
 export function buildPrompt(
@@ -636,8 +734,11 @@ export function buildPrompt(
   );
   const skillSpector = JSON.stringify(
     skillSpectorAnalysis ??
-      (job.target.version as Record<string, unknown> | undefined)?.skillSpectorAnalysis ??
-      (job.target.release as Record<string, unknown> | undefined)?.skillSpectorAnalysis ??
+      (job.job.targetKind !== "packageRelease"
+        ? (job.target.version as Record<string, unknown> | undefined)?.skillSpectorAnalysis
+        : bundledSkillRootsForJob(job).length > 0
+          ? (job.target.release as Record<string, unknown> | undefined)?.skillSpectorAnalysis
+          : undefined) ??
       null,
     null,
     2,
@@ -1036,7 +1137,7 @@ function codexScanTimeoutMs() {
 async function runCodex(
   job: ClaimedJob,
   workspace: string,
-  skillSpectorAnalysis: SkillSpectorAnalysis,
+  skillSpectorAnalysis: SkillSpectorAnalysis | undefined,
   onDiagnostic: (diagnostic: Partial<CodexCommandDiagnostic>) => void,
 ) {
   const resultPath = join(workspace, "codex-result.json");
@@ -1115,9 +1216,12 @@ export async function processJob(
   let status: JobDiagnosticInput["status"] = "failed";
   try {
     await writeArtifactWorkspace(job, workspace);
-    skillSpectorAnalysis = await runSkillSpector(workspace, (next) => {
-      Object.assign(skillSpector, next);
-    });
+    const skillSpectorInputs = await resolveSkillSpectorScanInputs(workspace, job);
+    if (skillSpectorInputs.length > 0) {
+      skillSpectorAnalysis = await runSkillSpector(workspace, skillSpectorInputs, (next) => {
+        Object.assign(skillSpector, next);
+      });
+    }
     llmAnalysis = await runCodex(job, workspace, skillSpectorAnalysis, (next) => {
       Object.assign(codex, next);
     });
