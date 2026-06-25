@@ -19,7 +19,7 @@ describe("og helpers", () => {
     expect(meta.url).toContain("/steipete/skills/weather");
     expect(meta.owner).toBe("steipete");
     expect(meta.image).toContain("/og/skill?");
-    expect(meta.image).toContain("v=8");
+    expect(meta.image).toContain("v=10");
     expect(meta.image).toContain("slug=weather");
     expect(meta.image).toContain("owner=steipete");
     expect(meta.image).toContain("version=1.2.3");
@@ -39,7 +39,7 @@ describe("og helpers", () => {
     expect(meta.description).toBe("OpenClaw Codex harness.");
     expect(meta.url).toBe("https://clawhub.ai/openclaw/plugins/codex");
     expect(meta.image).toContain("/og/plugin?");
-    expect(meta.image).toContain("v=3");
+    expect(meta.image).toContain("v=5");
     expect(meta.image).toContain("name=%40openclaw%2Fcodex");
     expect(meta.image).toContain("version=1.0.0");
   });
@@ -49,13 +49,21 @@ describe("og helpers", () => {
       handle: "@byungkyu",
       displayName: "byungkyu",
       bio: "maton.ai",
+      image: "https://example.com/logo.png",
+      kind: "org",
+      downloads: 1200,
     });
     expect(meta.title).toBe("byungkyu — ClawHub");
     expect(meta.description).toBe("maton.ai");
     expect(meta.url).toBe("https://clawhub.ai/byungkyu");
     expect(meta.image).toContain("/og/profile?");
-    expect(meta.image).toContain("v=3");
+    expect(meta.image).toContain("v=7");
     expect(meta.image).toContain("handle=byungkyu");
+    expect(meta.image).toContain("title=byungkyu");
+    expect(meta.image).toContain("description=maton.ai");
+    expect(meta.image).toContain("kind=org");
+    expect(meta.image).toContain("avatar=https%3A%2F%2Fexample.com%2Flogo.png");
+    expect(meta.image).toContain("downloads=1200");
   });
 
   it("uses defaults when owner and summary are missing", () => {

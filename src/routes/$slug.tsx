@@ -19,6 +19,9 @@ export const Route = createFileRoute("/$slug")({
       handle: publisher.handle ?? params.slug,
       displayName: publisher.displayName,
       bio: publisher.bio,
+      image: publisher.image,
+      kind: publisher.kind,
+      downloads: publisher.stats.downloads,
     });
     return {
       meta: [

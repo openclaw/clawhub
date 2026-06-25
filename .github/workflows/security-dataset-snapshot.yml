@@ -26,7 +26,7 @@ on:
       min-page-size:
         description: "Smallest page size to retry after Convex timeouts"
         required: true
-        default: "5"
+        default: "1"
       batch-pages:
         description: "Live export pages per Convex request"
         required: true
@@ -67,7 +67,7 @@ jobs:
       HF_UPLOAD: ${{ github.event_name == 'schedule' || inputs.upload == 'true' }}
       SNAPSHOT_LIMIT: ${{ inputs.limit || '' }}
       SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
-      SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '5' }}
+      SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '1' }}
       SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
       SNAPSHOT_CONCURRENCY: ${{ inputs.concurrency || '1' }}
       SNAPSHOT_SHARDS: ${{ inputs.shards || '128' }}
@@ -127,7 +127,7 @@ jobs:
       HF_DATASET_REPO: OpenClaw/clawhub-security-signals
       HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
       SNAPSHOT_PAGE_SIZE: ${{ inputs['page-size'] || '25' }}
-      SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '5' }}
+      SNAPSHOT_MIN_PAGE_SIZE: ${{ inputs['min-page-size'] || '1' }}
       SNAPSHOT_BATCH_PAGES: ${{ inputs['batch-pages'] || '1' }}
       SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/shard
     steps:
@@ -226,19 +226,7 @@ jobs:
       - name: Validate sanitized output guardrails
         run: |
           set -euo pipefail
-          test -d "$SNAPSHOT_DIR/hf-dataset/data"
-          test -f "$SNAPSHOT_DIR/manifest.json"
-          for split in train validation test eval_holdout; do
-            test -f "$SNAPSHOT_DIR/hf-dataset/data/$split.jsonl"
-          done
-          if grep -R -E 'storageId|skillVersions:|packageReleases:|_storage/' "$SNAPSHOT_DIR/hf-dataset" "$SNAPSHOT_DIR/manifest.json"; then
-            echo "::error::sanitized output contains raw storage or internal document identifiers"
-            exit 1
-          fi
-          if grep -R -E 'gh[pousr]_[A-Za-z0-9_]{20,}|sk-[A-Za-z0-9_-]{20,}|AKIA[0-9A-Z]{16}|-----BEGIN [A-Z0-9 ]*(PRIVATE KEY|CERTIFICATE)-----' "$SNAPSHOT_DIR/hf-dataset"; then
-            echo "::error::sanitized output contains obvious secret-like values"
-            exit 1
-          fi
+          bun scripts/security-dataset/validate-guardrails.ts --snapshot-dir "$SNAPSHOT_DIR"
 
       - name: Install Hugging Face uploader
         if: ${{ env.HF_UPLOAD == 'true' }}

@@ -142,6 +142,29 @@ describe("UserBadge", () => {
     expect(container.querySelector(".official-tag")).toBeFalsy();
   });
 
+  it("places the official badge beside the display name in hero creator layout", () => {
+    const { container } = render(
+      <TooltipProvider>
+        <UserBadge
+          user={orgPublisher}
+          prefix=""
+          size="md"
+          showName
+          showHandle={false}
+          showMutedHandle
+          stackMutedHandleBelowName
+          disableTooltip
+        />
+      </TooltipProvider>,
+    );
+
+    const nameRow = container.querySelector(".user-name-row");
+    expect(nameRow?.querySelector(".user-name")?.textContent).toBe("OpenClaw");
+    expect(nameRow?.querySelector(".official-badge-icon-only")).toBeTruthy();
+    expect(nameRow?.querySelector(".official-badge")).toBeFalsy();
+    expect(container.querySelector(".user-badge > .official-badge")).toBeFalsy();
+  });
+
   it("falls back to the legacy hover metric during rollout", () => {
     expect(
       getHoverTotalDownloads({

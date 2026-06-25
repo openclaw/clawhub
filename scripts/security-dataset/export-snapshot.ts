@@ -851,7 +851,7 @@ function parseArgs(args: string[]): Options {
     mode: "public",
     limit: null,
     pageSize: DEFAULT_PAGE_SIZE,
-    minPageSize: Math.min(10, DEFAULT_PAGE_SIZE),
+    minPageSize: 1,
     batchPages: DEFAULT_BATCH_PAGES,
     concurrency: DEFAULT_CONCURRENCY,
     shards: DEFAULT_SHARDS,

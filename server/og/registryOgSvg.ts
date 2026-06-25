@@ -7,6 +7,24 @@ export type RegistryOgStat = {
   label: string;
 };
 
+export function buildOgDownloadsStat(value: string): RegistryOgStat {
+  return { value, label: "Downloads" };
+}
+
+export function statLabelMarkup(
+  x: number,
+  y: number,
+  label: string,
+  options?: { fontSize?: number },
+) {
+  const fontSize = options?.fontSize ?? 21;
+  return `<text x="${x}" y="${y}"
+    fill="#9D9692"
+    font-size="${fontSize}"
+    font-weight="700"
+    font-family="${FONT_SANS}, sans-serif">${escapeXml(label)}</text>`;
+}
+
 export type RegistryOgCommand = {
   subject: string;
   action: string;
@@ -152,11 +170,7 @@ function statColumns(stats: RegistryOgStat[], contentX: number) {
     .map((stat, index) => {
       const x = contentX + index * 190;
       return `<g>
-        <text x="${x}" y="424"
-          fill="#9D9692"
-          font-size="21"
-          font-weight="700"
-          font-family="${FONT_SANS}, sans-serif">${escapeXml(stat.label)}</text>
+        ${statLabelMarkup(x, 424, stat.label)}
         <text x="${x}" y="464"
           fill="#F7F1EA"
           font-size="34"

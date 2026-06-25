@@ -49,6 +49,7 @@ const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
+const MAX_PUBLISH_SUMMARY_LENGTH = 200;
 
 type FingerprintFile = { path: string; sha256: string };
 type SafePublishFile = PublishVersionArgs["files"][number] & { path: string };
@@ -77,6 +78,7 @@ export type PublishVersionArgs = {
   tags?: string[];
   categories?: string[];
   topics?: string[];
+  summary?: string;
   forkOf?: { slug: string; ownerHandle?: string; version?: string };
   source?: {
     kind: "github";
@@ -202,12 +204,18 @@ export async function publishVersionForUser(
   // Prioritize the new description from frontmatter over the existing skill summary
   // This ensures updates to the description are reflected on subsequent publishes (#301)
   const summaryFromFrontmatter = metadataDescription ?? directDescription;
-  const summary = await generateSkillSummary({
-    slug,
-    displayName,
-    readmeText,
-    currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
-  });
+  const explicitSummary = args.summary?.trim();
+  if (explicitSummary && explicitSummary.length > MAX_PUBLISH_SUMMARY_LENGTH) {
+    throw new ConvexError(`Summary must be ${MAX_PUBLISH_SUMMARY_LENGTH} characters or less`);
+  }
+  const summary =
+    explicitSummary ||
+    (await generateSkillSummary({
+      slug,
+      displayName,
+      readmeText,
+      currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
+    }));
 
   let qualityAssessment: QualityAssessment | null = null;
   if (isNewSkill && !options.bypassQualityGate) {

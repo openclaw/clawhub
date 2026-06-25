@@ -29,7 +29,11 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { toast } from "sonner";
 import { api } from "../../../convex/_generated/api";
 import { CatalogMetadataEditor } from "../../components/CatalogMetadataEditor";
-import { DetailHero, DetailPageShell } from "../../components/DetailPageShell";
+import {
+  DetailHero,
+  DETAIL_HERO_TOPIC_LIMIT,
+  DetailPageShell,
+} from "../../components/DetailPageShell";
 import {
   DetailSecuritySummary,
   DetailSecuritySummaryLabel,
@@ -39,7 +43,6 @@ import { EmptyState } from "../../components/EmptyState";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
-import { OfficialTag } from "../../components/OfficialBadge";
 import {
   PLUGIN_VERSIONS_PAGE_SIZE,
   PluginVersionsPanel,
@@ -94,6 +97,7 @@ import { buildReadmeAssetBaseUrl } from "../../lib/readmeAssetBaseUrl";
 import { timeAgo } from "../../lib/timeAgo";
 import { useAuthStatus } from "../../lib/useAuthStatus";
 import { useDeferredPackageActivityTrend } from "../../lib/useDeferredActivityTrend";
+import { useHeroCreatorPublisher } from "../../lib/useHeroCreatorPublisher";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 
 type PluginDetailRateLimitState = {
@@ -1136,10 +1140,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
   const headerTopics = (pkg.topics ?? [])
     .map((topic) => topic.trim())
     .filter(Boolean)
-    .slice(0, 5);
+    .slice(0, DETAIL_HERO_TOPIC_LIMIT);
   const headerSummary = pkg.summary ?? "No summary provided.";
   const hasSummaryToggle = headerSummary.length > 220;
   const owner = detail.owner;
+  const heroCreatorPublisher = useHeroCreatorPublisher({
+    owner,
+    packageOfficial: pkg.isOfficial === true,
+  });
   const latestRelease = version?.version ?? null;
   const isDownloadBlocked =
     pkg.scanStatus === "malicious" || latestRelease?.verification?.scanStatus === "malicious";
@@ -1431,24 +1439,20 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
         );
       })()
     : null;
-  const ownerMetadataValue = owner ? (
+  const pluginHeroCreator = heroCreatorPublisher ? (
     <UserBadge
-      user={{
-        ...owner,
-        ...(pkg.isOfficial ? { official: true as const } : {}),
-      }}
-      fallbackHandle={owner.handle ?? pkg.ownerHandle ?? null}
+      user={heroCreatorPublisher}
+      fallbackHandle={heroCreatorPublisher.handle ?? pkg.ownerHandle ?? null}
       prefix=""
       size="md"
       showName
       showHandle={false}
       showMutedHandle
+      stackMutedHandleBelowName
       disableTooltip
     />
   ) : null;
-  const hasSourceMetadata = Boolean(
-    sourceRepoLink || ownerMetadataValue || latestRelease || pkg.latestVersion,
-  );
+  const hasSourceMetadata = Boolean(sourceRepoLink || owner || latestRelease || pkg.latestVersion);
   const securitySummary = latestRelease ? (
     <DetailSecuritySummary
       auditHref={buildPluginSecurityAuditHref(name, { ownerHandle: owner?.handle })}
@@ -1492,7 +1496,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
     ? [
         pluginDownloadsMetricBlock,
         { label: "Repository", value: sourceRepoLink },
-        ...(ownerMetadataValue ? [{ label: "Creator", value: ownerMetadataValue }] : []),
         securitySummary
           ? {
               key: "security-audit",
@@ -1600,7 +1603,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   <div className="skill-hero-taxonomy-row" aria-label="Plugin metadata">
                     {headerCategories.length > 0 ? (
                       <div className="skill-category-meta-list" aria-label="Categories">
-                        {headerCategories.map((category, index) => (
+                        {headerCategories.map((category) => (
                           <a
                             key={category.slug}
                             className="skill-category-meta-link"
@@ -1613,10 +1616,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                               size={14}
                               className="skill-category-icon"
                             />
-                            <span>
-                              {category.label}
-                              {index < headerCategories.length - 1 ? "," : ""}
-                            </span>
+                            <span>{category.label}</span>
                           </a>
                         ))}
                       </div>
@@ -1637,11 +1637,6 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                 ) : null}
                 <div className="skill-hero-title-row">
                   <h1 className="skill-page-title">{pkg.displayName}</h1>
-                  {pkg.isOfficial ? (
-                    <div className="skill-title-badges">
-                      <OfficialTag />
-                    </div>
-                  ) : null}
                   {isDownloadBlocked ? (
                     <div className="skill-title-actions">
                       <Badge variant="destructive">Download blocked</Badge>
@@ -1668,6 +1663,9 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                   </button>
                 ) : null}
               </div>
+              {pluginHeroCreator ? (
+                <div className="skill-hero-creator">{pluginHeroCreator}</div>
+              ) : null}
 
               {rateLimited?.scope === "metadata" ? (
                 <div className="skill-hero-badges">

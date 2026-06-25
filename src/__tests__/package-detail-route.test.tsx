@@ -317,6 +317,31 @@ describe("plugin detail route", () => {
     expect(screen.getByLabelText("Topics").textContent).toContain("#research");
   });
 
+  it("renders hero category labels without comma separators", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        ...loaderDataMock.detail,
+        package: {
+          ...loaderDataMock.detail.package!,
+          categories: ["tools", "web", "channels"],
+          topics: ["Workflow"],
+        },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const taxonomy = document.querySelector(".skill-category-meta-list");
+    expect(taxonomy).toBeTruthy();
+    expect(taxonomy?.textContent).toContain("Tools");
+    expect(taxonomy?.textContent).toContain("Web");
+    expect(taxonomy?.textContent).toContain("Channels");
+    expect(taxonomy?.textContent).not.toContain(",");
+  });
+
   it("renders populated active release history on the versions tab", async () => {
     const publishedAt = new Date("2026-06-01T12:00:00Z").getTime();
     loaderDataMock = {
@@ -945,10 +970,11 @@ describe("plugin detail route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
-    render(<Component />);
+    const { container } = render(<Component />);
 
-    expect(screen.getAllByText("Official").length).toBeGreaterThan(0);
     expect(screen.getAllByLabelText("Official").length).toBeGreaterThan(0);
+    expect(container.querySelector(".skill-hero-creator .official-badge-icon-only")).toBeTruthy();
+    expect(container.querySelector(".skill-hero-title-row .official-tag")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
@@ -1081,7 +1107,8 @@ describe("plugin detail route", () => {
     const typeRow = sidebarRows.find((row) => row.text.includes("Code Plugin"));
     expect(downloadsRow?.hasDownload).toBe(false);
     expect(downloadOnlyRow).toBeTruthy();
-    expect(creatorRow).toBeTruthy();
+    expect(creatorRow).toBeUndefined();
+    expect(document.querySelector(".skill-hero-creator")?.textContent).toContain("Demo Owner");
     expect(typeRow).toBeTruthy();
     expect(sidebarRows.at(-1)).toEqual(downloadOnlyRow);
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(

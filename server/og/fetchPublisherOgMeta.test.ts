@@ -29,7 +29,7 @@ describe("fetchPublisherOgMeta", () => {
     vi.resetModules();
   });
 
-  it("reads installs from publisher profile stats", async () => {
+  it("reads downloads from publisher profile stats", async () => {
     queryMock.mockResolvedValue({
       handle: "openclaw",
       kind: "org",
@@ -46,6 +46,6 @@ describe("fetchPublisherOgMeta", () => {
     expect(queryMock).toHaveBeenCalledWith("publishers.getProfileByHandle", {
       handle: "openclaw",
     });
-    expect(meta?.stats.installs).toBe(1200);
+    expect(meta?.stats.downloads).toBe(99);
   });
 });

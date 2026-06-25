@@ -1,3 +1,10 @@
+import { readCanonicalStat, type SkillStatReadable } from "../../convex/lib/skillStats";
+
+type SkillApiPayload = SkillStatReadable & {
+  displayName?: string;
+  summary?: string | null;
+};
+
 export type SkillOgMeta = {
   displayName: string | null;
   summary: string | null;
@@ -5,7 +12,7 @@ export type SkillOgMeta = {
   ownerImage: string | null;
   version: string | null;
   stats: {
-    installsAllTime: number;
+    downloads: number;
   };
   moderation: {
     verdict: "clean" | "suspicious" | "malicious" | null;
@@ -26,7 +33,7 @@ export async function fetchSkillOgMeta(
     const response = await fetch(url.toString(), { headers: { Accept: "application/json" } });
     if (!response.ok) return null;
     const payload = (await response.json()) as {
-      skill?: { displayName?: string; summary?: string | null; stats?: unknown } | null;
+      skill?: SkillApiPayload | null;
       owner?: { handle?: string | null; image?: string | null } | null;
       latestVersion?: { version?: string | null } | null;
       moderation?: {
@@ -35,7 +42,6 @@ export async function fetchSkillOgMeta(
         isMalwareBlocked?: boolean;
       } | null;
     };
-    const stats = readStats(payload.skill?.stats);
     return {
       displayName: payload.skill?.displayName ?? null,
       summary: payload.skill?.summary ?? null,
@@ -43,7 +49,7 @@ export async function fetchSkillOgMeta(
       ownerImage: payload.owner?.image ?? null,
       version: payload.latestVersion?.version ?? null,
       stats: {
-        installsAllTime: readNumber(stats.installsAllTime),
+        downloads: payload.skill ? readCanonicalStat(payload.skill, "downloads") : 0,
       },
       moderation: payload.moderation
         ? {
@@ -56,12 +62,4 @@ export async function fetchSkillOgMeta(
   } catch {
     return null;
   }
-}
-
-function readStats(value: unknown): Record<string, unknown> {
-  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
-}
-
-function readNumber(value: unknown) {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }

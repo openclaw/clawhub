@@ -5,18 +5,18 @@ import { Flag, Settings, ShieldCheck, Star, Upload } from "lucide-react";
 import { useState, type ReactNode } from "react";
 import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { ActivityTrend } from "../lib/activityTrend";
-import { getSkillBadges } from "../lib/badges";
+import { getSkillBadges, isSkillOfficial } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
+import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
-import { DetailHero } from "./DetailPageShell";
+import { DetailHero, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
-import { OfficialTag } from "./OfficialBadge";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -48,7 +48,6 @@ type SkillCanonical = {
   owner: { handle: string | null; userId: Id<"users"> | null };
 };
 
-const MAX_HEADER_TOPICS = 5;
 const SUMMARY_COLLAPSE_THRESHOLD = 220;
 
 type MobileDetailPanel = "content" | "stats";
@@ -173,8 +172,11 @@ export function SkillHeader({
   const hasOwnerActions = Boolean(newVersionHref) || Boolean(settingsHref);
   const showReportAction = !canManage || isStaff;
   const badges = getSkillBadges(skill);
-  const isOfficial = badges.includes("Official") || owner?.official === true;
   const titleBadges = badges.filter((badge) => badge !== "Official");
+  const heroCreatorPublisher = useHeroCreatorPublisher({
+    owner,
+    skillOfficial: isSkillOfficial(skill),
+  });
   const showHeroMeta = Boolean((forkOf && forkOfHref) || canonicalHref);
   const showTitleBadges = titleBadges.length > 0;
   const headerDescription =
@@ -182,7 +184,7 @@ export function SkillHeader({
   const headerTopics = (skill.topics ?? [])
     .map((topic) => topic.trim())
     .filter(Boolean)
-    .slice(0, MAX_HEADER_TOPICS);
+    .slice(0, DETAIL_HERO_TOPIC_LIMIT);
   const headerCategories = (categories ?? (category ? [category] : [])).slice(0, 3);
   const hasSummaryToggle = headerDescription.length > SUMMARY_COLLAPSE_THRESHOLD;
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
@@ -281,6 +283,7 @@ export function SkillHeader({
         securityAuditSummary={securityAuditSummary}
         activityTrend={activityTrend}
         activityTrendLoading={activityTrendLoading}
+        hideCreator
       />
       {renderSidebarActions()}
     </>
@@ -367,7 +370,7 @@ export function SkillHeader({
                   <div className="skill-hero-taxonomy-row" aria-label="Skill metadata">
                     {headerCategories.length > 0 ? (
                       <div className="skill-category-meta-list" aria-label="Categories">
-                        {headerCategories.map((categoryItem, index) => (
+                        {headerCategories.map((categoryItem) => (
                           <a
                             key={categoryItem.slug}
                             className="skill-category-meta-link"
@@ -380,10 +383,7 @@ export function SkillHeader({
                               size={14}
                               className="skill-category-icon"
                             />
-                            <span>
-                              {categoryItem.label}
-                              {index < headerCategories.length - 1 ? "," : ""}
-                            </span>
+                            <span>{categoryItem.label}</span>
                           </a>
                         ))}
                       </div>
@@ -404,7 +404,6 @@ export function SkillHeader({
                 ) : null}
                 <div className="skill-hero-title-row">
                   <h1 className="skill-page-title">{skill.displayName}</h1>
-                  {isOfficial ? <OfficialTag /> : null}
                   {showTitleBadges ? (
                     <div className="skill-title-badges">
                       {titleBadges.map((badge) => (
@@ -416,18 +415,29 @@ export function SkillHeader({
                   ) : null}
                   {nixPlugin ? <Badge variant="accent">Plugin bundle (nix)</Badge> : null}
                 </div>
-                {owner || ownerHandle ? (
-                  <div className="skill-hero-mobile-creator">
-                    <UserBadge
-                      user={owner}
-                      fallbackHandle={ownerHandle}
-                      prefix=""
-                      size="md"
-                      showName
-                      showHandle={false}
-                      showMutedHandle
-                      disableTooltip
-                    />
+                {showHeroMeta ? (
+                  <div className="skill-hero-meta-row" aria-label="Skill lineage">
+                    {forkOf && forkOfHref ? (
+                      <span className="skill-hero-meta-item">
+                        <span className="skill-hero-meta-label">{forkOfLabel}</span>
+                        <a className="skill-hero-meta-link" href={forkOfHref}>
+                          {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
+                          {forkOf.skill.slug}
+                        </a>
+                        {forkOf.version ? (
+                          <span className="skill-hero-meta-version">({forkOf.version})</span>
+                        ) : null}
+                      </span>
+                    ) : null}
+                    {canonicalHref ? (
+                      <span className="skill-hero-meta-item">
+                        <span className="skill-hero-meta-label">canonical</span>
+                        <a className="skill-hero-meta-link" href={canonicalHref}>
+                          {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
+                          {canonical?.skill?.slug}
+                        </a>
+                      </span>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -450,39 +460,25 @@ export function SkillHeader({
                   </button>
                 ) : null}
               </div>
+              {owner || ownerHandle ? (
+                <div className="skill-hero-creator">
+                  <UserBadge
+                    user={heroCreatorPublisher}
+                    fallbackHandle={ownerHandle}
+                    prefix=""
+                    size="md"
+                    showName
+                    showHandle={false}
+                    showMutedHandle
+                    stackMutedHandleBelowName
+                    disableTooltip
+                  />
+                </div>
+              ) : null}
 
               {nixPlugin ? (
                 <div className="skill-hero-note">
                   Bundles the skill pack, CLI binary, and config requirements in one Nix install.
-                </div>
-              ) : null}
-
-              {showHeroMeta ? (
-                <div className="skill-hero-meta-row">
-                  {forkOf && forkOfHref ? (
-                    <span className="stat">
-                      {forkOfLabel}{" "}
-                      <a href={forkOfHref}>
-                        {forkOfOwnerHandle ? `@${forkOfOwnerHandle}/` : ""}
-                        {forkOf.skill.slug}
-                      </a>
-                      {forkOf.version ? ` (${forkOf.version})` : null}
-                    </span>
-                  ) : null}
-                  {canonicalHref ? (
-                    <>
-                      {forkOf && forkOfHref ? (
-                        <span className="text-ink-soft opacity-40">·</span>
-                      ) : null}
-                      <span className="stat">
-                        canonical:{" "}
-                        <a href={canonicalHref}>
-                          {canonicalOwnerHandle ? `@${canonicalOwnerHandle}/` : ""}
-                          {canonical?.skill?.slug}
-                        </a>
-                      </span>
-                    </>
-                  ) : null}
                 </div>
               ) : null}
             </div>

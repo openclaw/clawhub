@@ -8,7 +8,7 @@ export type PublisherOgMeta = {
   bio: string | null;
   image: string | null;
   stats: {
-    installs: number;
+    downloads: number;
   };
 };
 
@@ -19,6 +19,7 @@ type PublisherProfileResult = {
   bio?: string | null;
   image?: string | null;
   stats?: {
+    downloads?: number;
     installs?: number;
   };
 } | null;
@@ -40,7 +41,7 @@ export async function fetchPublisherOgMeta(
       bio: profile.bio ?? null,
       image: profile.image ?? null,
       stats: {
-        installs: readNumber(profile.stats?.installs),
+        downloads: readNumber(profile.stats?.downloads),
       },
     };
   } catch {

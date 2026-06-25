@@ -30,6 +30,8 @@ type UserBadgeProps = {
   showHandle?: boolean;
   /** Sidebar creator row: `Display Name / @handle` with muted handle suffix. */
   showMutedHandle?: boolean;
+  /** Hero creator row: stack `@handle` below the display name. */
+  stackMutedHandleBelowName?: boolean;
   disableTooltip?: boolean;
 };
 
@@ -42,6 +44,7 @@ export function UserBadge({
   showName = false,
   showHandle = true,
   showMutedHandle = false,
+  stackMutedHandleBelowName = false,
   disableTooltip = false,
 }: UserBadgeProps) {
   const userName =
@@ -51,7 +54,10 @@ export function UserBadge({
   const href = handle ? buildPublisherProfileHref(handle) : null;
   const label = handle ? `@${handle}` : "user";
   const image = user?.image ?? null;
-  const showInlineMutedHandle = showMutedHandle && Boolean(handle) && Boolean(displayName);
+  const showStackedMutedHandle =
+    stackMutedHandleBelowName && showMutedHandle && Boolean(handle) && Boolean(displayName);
+  const showInlineMutedHandle =
+    !stackMutedHandleBelowName && showMutedHandle && Boolean(handle) && Boolean(displayName);
   const resolvedShowHandle = showMutedHandle ? !displayName && Boolean(handle) : showHandle;
   const hasUsefulName =
     showName &&
@@ -68,6 +74,14 @@ export function UserBadge({
   const userId =
     user && hasOwnProperty(user, "kind") ? (user.linkedUserId ?? null) : (user?._id ?? null);
 
+  const officialBadge = isOfficial ? (
+    <OfficialBadge
+      className="user-name-official-badge"
+      iconOnly={stackMutedHandleBelowName}
+      size={stackMutedHandleBelowName ? 14 : 12}
+    />
+  ) : null;
+
   const badgeContent = (
     <>
       {prefix ? <span className="user-badge-prefix">{prefix}</span> : null}
@@ -80,7 +94,10 @@ export function UserBadge({
       </span>
       {hasUsefulName ? (
         <>
-          <span className="user-name">{displayName}</span>
+          <span className="user-name-row">
+            <span className="user-name">{displayName}</span>
+            {officialBadge}
+          </span>
           {showInlineMutedHandle ? (
             <>
               <span className="user-name-sep" aria-hidden="true">
@@ -95,8 +112,11 @@ export function UserBadge({
           ) : null}
         </>
       ) : null}
+      {showStackedMutedHandle ? (
+        <span className="user-handle user-handle-muted">{label}</span>
+      ) : null}
       {resolvedShowHandle ? <span className="user-handle">{label}</span> : null}
-      {isOfficial ? <OfficialBadge /> : null}
+      {isOfficial && !hasUsefulName ? officialBadge : null}
     </>
   );
 
