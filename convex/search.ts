@@ -16,7 +16,10 @@ import { generateEmbedding } from "./lib/embeddings";
 import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import type { HydratableSkill, PublicPublisher } from "./lib/public";
 import { toPublicSkill } from "./lib/public";
-import { shouldExcludeSkillFromPublicBrowse } from "./lib/publicBrowse";
+import {
+  hasResolvablePublicBrowseVersion,
+  shouldExcludeSkillFromPublicBrowse,
+} from "./lib/publicBrowse";
 import { getOwnerPublisher } from "./lib/publishers";
 import {
   matchesAllTokens,
@@ -901,8 +904,10 @@ export const hydrateResults = internalQuery({
         const resolved = preResolved?.owner
           ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+        if (!resolved.owner) return null;
+        if (!(await hasResolvablePublicBrowseVersion(ctx, { ...skill, _id: skillId }))) return null;
         const publicSkill = toPublicSearchSkill(skill);
-        if (!publicSkill || !resolved.owner) return null;
+        if (!publicSkill) return null;
         return {
           embeddingId,
           skill: publicSkill,
@@ -1064,8 +1069,11 @@ export const lexicalFallbackSkills = internalQuery({
         const resolved = preResolved?.owner
           ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+        if (!resolved.owner) return null;
+        if (!(await hasResolvablePublicBrowseVersion(ctx, { ...skill, _id: skill._id })))
+          return null;
         const publicSkill = toPublicSearchSkill(skill);
-        if (!publicSkill || !resolved.owner) return null;
+        if (!publicSkill) return null;
         return {
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,

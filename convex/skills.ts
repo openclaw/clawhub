@@ -88,8 +88,8 @@ import {
   toPublicUser,
 } from "./lib/public";
 import {
-  hasPriorApprovedPublicSkillVersion,
-  isSkillPendingPublicReview,
+  hostedSkillMayHavePriorApprovedVersion,
+  isHostedSkillPendingPublicReview,
   resolvePublicBrowseVersionForSkill,
   shouldExcludeSkillFromPublicBrowse,
 } from "./lib/publicBrowse";
@@ -5121,6 +5121,7 @@ export const listPublicPageV3 = query({
       );
       if (!ownerInfo?.owner) continue;
       const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
+      if (isHostedSkillPendingPublicReview(hydratable) && !latestVersion) continue;
       items.push({
         skill: publicSkill,
         latestVersion,
@@ -5985,6 +5986,7 @@ async function buildPublicSkillEntryFromDigest(
   );
   if (!ownerInfo?.owner) return null;
   const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
+  if (isHostedSkillPendingPublicReview(hydratable) && !latestVersion) return null;
   return {
     skill: publicSkill,
     latestVersion,
@@ -6013,6 +6015,7 @@ async function loadPublicLatestVersionForDigest(
     | "moderationReason"
     | "moderationFlags"
     | "stats"
+    | "installKind"
   >,
 ) {
   if (!digest.latestVersionId) return null;
@@ -6021,7 +6024,7 @@ async function loadPublicLatestVersionForDigest(
   }
 
   const needsApprovedSnapshot =
-    isSkillPendingPublicReview(digest) && hasPriorApprovedPublicSkillVersion(digest);
+    isHostedSkillPendingPublicReview(digest) && hostedSkillMayHavePriorApprovedVersion(digest);
 
   if (!needsApprovedSnapshot) {
     const version = await ctx.db.get(digest.latestVersionId);
@@ -6039,7 +6042,7 @@ async function resolveDigestLatestVersionForSkill(
   digest: Doc<"skillSearchDigest">,
 ) {
   const needsApprovedSnapshot =
-    isSkillPendingPublicReview(digest) && hasPriorApprovedPublicSkillVersion(digest);
+    isHostedSkillPendingPublicReview(digest) && hostedSkillMayHavePriorApprovedVersion(digest);
 
   if (
     !needsApprovedSnapshot &&
@@ -6083,6 +6086,7 @@ async function buildPublicSkillApiListEntryFromDigest(
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
   const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
+  if (isHostedSkillPendingPublicReview(hydratable) && !latestVersion) return null;
 
   return {
     skill: {
@@ -6335,9 +6339,11 @@ function skillCatalogMatchesFilters(
 async function toPublicSkillCatalogItem(
   ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
-): Promise<PublicSkillCatalogItem> {
+): Promise<PublicSkillCatalogItem | null> {
+  const hydratable = digestToHydratableSkill(digest);
   const ownerInfo = digestToOwnerInfo(digest);
   const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
+  if (isHostedSkillPendingPublicReview(hydratable) && !latestVersion) return null;
   return {
     name: digest.slug,
     displayName: digest.displayName,
@@ -6423,7 +6429,9 @@ async function listSkillPackageCatalogTopicPage(
         .withIndex("by_skill", (q) => q.eq("skillId", topicDigest.skillId))
         .unique();
       if (!digest || !skillCatalogMatchesFilters(digest, args)) continue;
-      collected.push(await toPublicSkillCatalogItem(ctx, digest));
+      const item = await toPublicSkillCatalogItem(ctx, digest);
+      if (!item) continue;
+      collected.push(item);
       if (collected.length >= targetCount) {
         const nextOffset = index + 1;
         if (nextOffset < page.page.length) {
@@ -6633,7 +6641,9 @@ export const listPackageCatalogPage = query({
       for (let index = offset; index < page.page.length; index += 1) {
         const digest = page.page[index];
         if (!skillCatalogMatchesFilters(digest, args)) continue;
-        collected.push(await toPublicSkillCatalogItem(ctx, digest));
+        const item = await toPublicSkillCatalogItem(ctx, digest);
+        if (!item) continue;
+        collected.push(item);
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
           if (nextOffset < page.page.length) {
@@ -6725,10 +6735,13 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
       const match = skillCatalogSearchMatch(exactDigest, queryText);
       if (match) {
         seen.add(exactDigest.skillId);
-        matches.push({
-          ...match,
-          package: await toPublicSkillCatalogItem(ctx, exactDigest),
-        });
+        const catalogItem = await toPublicSkillCatalogItem(ctx, exactDigest);
+        if (catalogItem) {
+          matches.push({
+            ...match,
+            package: catalogItem,
+          });
+        }
       }
     }
   }
@@ -6769,9 +6782,11 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
         const match = skillCatalogSearchMatch(digest, queryText);
         if (!match || seen.has(digest.skillId)) continue;
         seen.add(digest.skillId);
+        const catalogItem = await toPublicSkillCatalogItem(ctx, digest);
+        if (!catalogItem) continue;
         matches.push({
           ...match,
-          package: await toPublicSkillCatalogItem(ctx, digest),
+          package: catalogItem,
         });
         if (matches.length >= targetCount) break;
       }
@@ -6810,9 +6825,11 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
       const match = skillCatalogSearchMatch(digest, queryText);
       if (!match || seen.has(digest.skillId)) continue;
       seen.add(digest.skillId);
+      const catalogItem = await toPublicSkillCatalogItem(ctx, digest);
+      if (!catalogItem) continue;
       matches.push({
         ...match,
-        package: await toPublicSkillCatalogItem(ctx, digest),
+        package: catalogItem,
       });
     }
   }

@@ -16,6 +16,7 @@ type SkillPublicBrowseFields = Pick<
   | "moderationVerdict"
   | "moderationSourceVersionId"
   | "latestVersionId"
+  | "installKind"
   | "githubScanStatus"
   | "stats"
 >;
@@ -52,16 +53,35 @@ export function isSkillPendingPublicReview(
   return isPendingSkillModerationReason(skill.moderationReason);
 }
 
-export function hasPriorApprovedPublicSkillVersion(skill: Pick<Doc<"skills">, "stats">) {
-  return (skill.stats?.versions ?? 0) > 1;
+export function isHostedSkillPendingPublicReview(
+  skill: Pick<
+    Doc<"skills">,
+    "installKind" | "moderationStatus" | "moderationReason" | "moderationFlags"
+  >,
+) {
+  return skill.installKind !== "github" && isSkillPendingPublicReview(skill);
+}
+
+export function isHostedSkillPendingFirstPublicRelease(
+  skill: Pick<
+    Doc<"skills">,
+    "installKind" | "stats" | "moderationStatus" | "moderationReason" | "moderationFlags"
+  >,
+) {
+  return isHostedSkillPendingPublicReview(skill) && (skill.stats?.versions ?? 0) <= 1;
+}
+
+/** Cheap hint that a hosted skill may have an older public version to resolve. */
+export function hostedSkillMayHavePriorApprovedVersion(
+  skill: Pick<Doc<"skills">, "installKind" | "stats">,
+) {
+  return skill.installKind !== "github" && (skill.stats?.versions ?? 0) > 1;
 }
 
 export function shouldExcludeSkillFromPublicBrowse(skill: SkillPublicBrowseFields) {
   if (!isPublicSkillDoc(skill)) return true;
   if (isSkillSuspicious(skill)) return true;
-  if (normalizeSecurityScanStatus(skill.githubScanStatus) === "pending") return true;
-  if (!isSkillPendingPublicReview(skill)) return false;
-  return !hasPriorApprovedPublicSkillVersion(skill);
+  return isHostedSkillPendingFirstPublicRelease(skill);
 }
 
 export function isPubliclyListableSkillVersion(
@@ -75,6 +95,15 @@ export function isPubliclyListableSkillVersion(
   ];
   if (statuses.some((status) => status === "pending" || status === "not-run")) return false;
   return !statuses.some((status) => isSecurityScanStatusBlockedFromPublic(status));
+}
+
+export async function hasResolvablePublicBrowseVersion(
+  ctx: Pick<QueryCtx | MutationCtx, "db">,
+  skill: SkillPublicBrowseFields & { _id: Id<"skills"> },
+) {
+  if (shouldExcludeSkillFromPublicBrowse(skill)) return false;
+  if (!isHostedSkillPendingPublicReview(skill)) return true;
+  return (await resolvePublicBrowseVersionForSkill(ctx, skill)) !== null;
 }
 
 export async function resolvePublicBrowseVersionForSkill(
@@ -93,7 +122,7 @@ export async function resolvePublicBrowseVersionForSkill(
       : null;
   }
 
-  if (!hasPriorApprovedPublicSkillVersion(skill)) return null;
+  if (!hostedSkillMayHavePriorApprovedVersion(skill)) return null;
 
   const versions = await ctx.db
     .query("skillVersions")

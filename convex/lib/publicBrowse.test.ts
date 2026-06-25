@@ -1,7 +1,8 @@
 /* @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import {
-  hasPriorApprovedPublicSkillVersion,
+  hostedSkillMayHavePriorApprovedVersion,
+  isHostedSkillPendingFirstPublicRelease,
   isPubliclyListableSkillVersion,
   isSkillPendingPublicReview,
   resolvePublicBrowseVersionForSkill,
@@ -15,6 +16,17 @@ const emptyStats = {
   installsCurrent: 0,
   installsAllTime: 0,
   comments: 0,
+};
+
+const browseFields = {
+  softDeletedAt: undefined,
+  moderationStatus: "active" as const,
+  moderationFlags: undefined,
+  moderationVerdict: "clean" as const,
+  moderationSourceVersionId: undefined,
+  latestVersionId: "skillVersions:1" as never,
+  githubScanStatus: "clean" as const,
+  stats: emptyStats,
 };
 
 describe("publicBrowse", () => {
@@ -41,35 +53,45 @@ describe("publicBrowse", () => {
   it("excludes first-publish pending review skills from public browse", () => {
     expect(
       shouldExcludeSkillFromPublicBrowse({
-        softDeletedAt: undefined,
+        ...browseFields,
+        moderationReason: "pending.scan",
+      }),
+    ).toBe(true);
+    expect(
+      isHostedSkillPendingFirstPublicRelease({
+        installKind: undefined,
         moderationStatus: "active",
         moderationReason: "pending.scan",
         moderationFlags: undefined,
-        moderationVerdict: "clean",
-        moderationSourceVersionId: undefined,
-        latestVersionId: "skillVersions:1" as never,
-        githubScanStatus: "clean",
         stats: emptyStats,
       }),
     ).toBe(true);
   });
 
-  it("keeps previously approved skills visible while a newer version is pending review", () => {
+  it("keeps GitHub-backed pending verification visible in public browse", () => {
     expect(
-      hasPriorApprovedPublicSkillVersion({
+      shouldExcludeSkillFromPublicBrowse({
+        ...browseFields,
+        installKind: "github",
+        moderationReason: "pending.scan",
+        githubScanStatus: "pending",
+      }),
+    ).toBe(false);
+  });
+
+  it("keeps previously approved hosted skills visible while a newer version is pending review", () => {
+    expect(
+      hostedSkillMayHavePriorApprovedVersion({
+        installKind: undefined,
         stats: { ...emptyStats, versions: 2 },
       }),
     ).toBe(true);
     expect(
       shouldExcludeSkillFromPublicBrowse({
-        softDeletedAt: undefined,
-        moderationStatus: "active",
+        ...browseFields,
         moderationReason: "pending.scan",
-        moderationFlags: undefined,
-        moderationVerdict: "clean",
         moderationSourceVersionId: "skillVersions:2" as never,
         latestVersionId: "skillVersions:2" as never,
-        githubScanStatus: "clean",
         stats: { ...emptyStats, versions: 2 },
       }),
     ).toBe(false);
@@ -169,5 +191,54 @@ describe("publicBrowse", () => {
 
     expect(version?._id).toBe("skillVersions:approved");
     expect(version?.version).toBe("1.0.0");
+  });
+
+  it("returns null when every hosted version is still pending review", async () => {
+    const pendingV2 = {
+      _id: "skillVersions:pending-2" as never,
+      skillId: "skills:1" as never,
+      softDeletedAt: undefined,
+      version: "2.0.0",
+      createdAt: 2,
+      changelog: "pending",
+      changelogSource: "user" as const,
+      parsed: { frontmatter: {}, license: "MIT-0" as const },
+      vtAnalysis: { status: "pending" as const, checkedAt: 2 },
+    };
+    const pendingV1 = {
+      ...pendingV2,
+      _id: "skillVersions:pending-1" as never,
+      version: "1.0.0",
+      createdAt: 1,
+    };
+
+    const version = await resolvePublicBrowseVersionForSkill(
+      {
+        db: {
+          get: async () => null,
+          query: () => ({
+            withIndex: () => ({
+              order: () => ({
+                take: async () => [pendingV2, pendingV1],
+              }),
+            }),
+          }),
+        },
+      } as never,
+      {
+        _id: "skills:1" as never,
+        latestVersionId: "skillVersions:pending-2" as never,
+        moderationSourceVersionId: "skillVersions:pending-2" as never,
+        moderationStatus: "active",
+        moderationReason: "pending.scan",
+        moderationFlags: undefined,
+        stats: { ...emptyStats, versions: 2 },
+        softDeletedAt: undefined,
+        moderationVerdict: "clean",
+        githubScanStatus: "clean",
+      },
+    );
+
+    expect(version).toBeNull();
   });
 });
