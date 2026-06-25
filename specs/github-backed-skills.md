@@ -122,7 +122,7 @@ GitHub-backed security scanning follows the same core invariant as hosted
 uploads:
 
 > A normal install/update may only install content whose exact current content
-> hash has a clean ClawHub scan result.
+> hash has a completed, non-blocked ClawHub scan result.
 
 When a new source-backed skill appears or an existing skill's content hash
 changes:
@@ -151,7 +151,13 @@ When verification succeeds cleanly:
 - set `githubScanStatus: "clean"`
 - make the skill active/installable
 
-When verification fails, is suspicious, or is malicious:
+When verification is suspicious:
+
+- persist the final result on the same durable content-hash scan row
+- set `githubScanStatus: "suspicious"`
+- keep the skill active/installable with suspicious review metadata
+
+When verification fails or is malicious:
 
 - persist the final result on the same durable content-hash scan row
 - keep/block the skill from normal install
@@ -196,7 +202,8 @@ Normal install/update resolves through ClawHub:
 OpenClaw -> ClawHub install resolver -> pinned GitHub descriptor
 ```
 
-For clean GitHub-backed skills, ClawHub returns:
+For GitHub-backed skills with a completed non-blocked scan result, ClawHub
+returns:
 
 ```json
 {
@@ -228,12 +235,26 @@ but normal install/update returns a structured block:
 ```
 
 `--force-install` may bypass only pending GitHub-backed verification. It must not
-bypass failed, suspicious, malicious, missing, or removed upstream states.
+bypass failed, malicious, missing, or removed upstream states.
 
 ## No Mirror Contract
 
 ClawHub must not create hosted `skillVersions` or ClawHub download artifacts for
 GitHub-backed skills.
+
+`GET /api/v1/download` may still be used as a metered source handoff for current
+GitHub-backed skills whose scan verdict is `clean` or `suspicious`. In that case
+ClawHub returns only stored fetch coordinates (`sourceRef: "public-github"`,
+repo, commit, path, content hash, and an archive URL) after checking current
+upstream and scan state. It must not fetch GitHub, expand archives, proxy bytes,
+create `skillVersions`, or include detailed scan metadata in the successful
+payload.
+
+`GET /api/v1/skills/export` follows the same no-mirror contract. Hosted skills
+continue to export stored version files with `sourceRef: "public-clawhub"`.
+Current GitHub-backed skills whose scan verdict is `clean` or `suspicious` are
+included as `sourceRef: "public-github"` entries with `_source_handoff.json`
+coordinates, not ClawHub-hosted source files.
 
 This avoids two NVIDIA concerns:
 
@@ -266,7 +287,8 @@ Keep coverage for:
 - new skill -> pending scan -> blocked install
 - changed content hash -> pending scan -> no stale commit served
 - clean verification -> pinned GitHub install descriptor
-- failed/suspicious/malicious scan -> blocked install
+- suspicious verification -> pinned GitHub install descriptor with suspicious review metadata
+- failed/malicious scan -> blocked install
 - removed upstream path -> hidden/blocked install
 - cached `SKILL.md` and `skill-card.md` display content
 - no `skillVersions` for GitHub-backed skills

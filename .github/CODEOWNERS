@@ -10,7 +10,6 @@
 /.github/codeql/ @openclaw/openclaw-secops
 /.github/dependabot.yml @openclaw/openclaw-secops
 /.github/workflows/ @openclaw/openclaw-secops
-/scripts/check-staged-secrets.mjs @openclaw/openclaw-secops
 /scripts/clawhub-cli-npm-publish.sh @openclaw/openclaw-secops
 /scripts/clawhub-cli-npm-release-check.mjs @openclaw/openclaw-secops
 /scripts/github/clawhub-rescan-auto-response.mjs @openclaw/openclaw-secops

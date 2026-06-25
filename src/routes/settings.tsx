@@ -21,10 +21,12 @@ import {
   UserRound,
   Users,
   X,
+  Upload,
 } from "lucide-react";
 import {
   type ComponentProps,
   type CSSProperties,
+  type ChangeEvent,
   type FormEvent,
   type ReactNode,
   useEffect,
@@ -66,6 +68,7 @@ import { getUserFacingConvexError } from "../lib/convexError";
 import { useThemeMode } from "../lib/theme";
 import { timeAgo } from "../lib/timeAgo";
 import { useAuthStatus } from "../lib/useAuthStatus";
+import { uploadFile } from "./upload/-utils";
 
 const settingsViews = ["account", "organizations", "githubSources", "tokens", "danger"] as const;
 type SettingsView = (typeof settingsViews)[number];
@@ -97,6 +100,7 @@ type PublisherMembership = {
     displayName: string;
     kind: "user" | "org";
     image?: string | null;
+    imageStorageId?: Id<"_storage"> | null;
     bio?: string | null;
     official?: boolean;
     stats?: {
@@ -240,6 +244,7 @@ export function Settings() {
   ) as Array<PublisherMembership> | undefined;
   const createOrg = useMutation(api.publishers.createOrg);
   const deleteOrg = useMutation(api.publishers.deleteOrg);
+  const createOrgImageUpload = useMutation(api.publishers.createImageUpload);
   const updateOrgProfile = useMutation(api.publishers.updateProfile);
   const addOrgMember = useMutation(api.publishers.addMember);
   const removeOrgMember = useMutation(api.publishers.removeMember);
@@ -257,6 +262,9 @@ export function Settings() {
   const [selectedOrgDisplayName, setSelectedOrgDisplayName] = useState("");
   const [selectedOrgBio, setSelectedOrgBio] = useState("");
   const [selectedOrgImage, setSelectedOrgImage] = useState("");
+  const [selectedOrgImageFile, setSelectedOrgImageFile] = useState<File | null>(null);
+  const [selectedOrgImagePreview, setSelectedOrgImagePreview] = useState<string | null>(null);
+  const [isUploadingOrgImage, setIsUploadingOrgImage] = useState(false);
   const [memberHandle, setMemberHandle] = useState("");
   const [memberRole, setMemberRole] = useState<"owner" | "admin" | "publisher">("publisher");
   const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
@@ -294,7 +302,8 @@ export function Settings() {
   const hasOrgProfileChanges = selectedOrg
     ? selectedOrgDisplayName !== (selectedOrg.publisher.displayName ?? "") ||
       selectedOrgBio !== (selectedOrg.publisher.bio ?? "") ||
-      selectedOrgImage !== (selectedOrg.publisher.image ?? "")
+      selectedOrgImage !== (selectedOrg.publisher.image ?? "") ||
+      selectedOrgImageFile !== null
     : false;
   const hasProfileChanges = me
     ? displayName !== (me.displayName ?? "") || bio !== (me.bio ?? "")
@@ -356,12 +365,24 @@ export function Settings() {
       setSelectedOrgDisplayName("");
       setSelectedOrgBio("");
       setSelectedOrgImage("");
+      setSelectedOrgImageFile(null);
       return;
     }
     setSelectedOrgDisplayName(selectedOrg.publisher.displayName ?? "");
     setSelectedOrgBio(selectedOrg.publisher.bio ?? "");
     setSelectedOrgImage(selectedOrg.publisher.image ?? "");
+    setSelectedOrgImageFile(null);
   }, [selectedOrg]);
+
+  useEffect(() => {
+    if (!selectedOrgImageFile) {
+      setSelectedOrgImagePreview(null);
+      return undefined;
+    }
+    const previewUrl = URL.createObjectURL(selectedOrgImageFile);
+    setSelectedOrgImagePreview(previewUrl);
+    return () => URL.revokeObjectURL(previewUrl);
+  }, [selectedOrgImageFile]);
 
   if (isAuthLoading) {
     return <SettingsSkeleton />;
@@ -450,13 +471,53 @@ export function Settings() {
 
   async function onSaveOrgProfile() {
     if (!selectedOrg) return;
-    await updateOrgProfile({
-      publisherId: selectedOrg.publisher._id,
-      displayName: selectedOrgDisplayName,
-      bio: selectedOrgBio || undefined,
-      image: selectedOrgImage || undefined,
-    });
-    toast.success("Organization updated");
+    setIsUploadingOrgImage(true);
+    try {
+      if (selectedOrgImageFile) {
+        const upload = await createOrgImageUpload({
+          publisherId: selectedOrg.publisher._id,
+        });
+        const imageStorageId = await uploadFile(upload.uploadUrl, selectedOrgImageFile);
+        await updateOrgProfile({
+          publisherId: selectedOrg.publisher._id,
+          displayName: selectedOrgDisplayName,
+          bio: selectedOrgBio || undefined,
+          imageStorageId: imageStorageId as Id<"_storage">,
+          imageUploadTicket: upload.uploadTicket,
+        });
+      } else {
+        await updateOrgProfile({
+          publisherId: selectedOrg.publisher._id,
+          displayName: selectedOrgDisplayName,
+          bio: selectedOrgBio || undefined,
+          image: selectedOrgImage || undefined,
+          imageStorageId: selectedOrgImage
+            ? (selectedOrg.publisher.imageStorageId ?? undefined)
+            : undefined,
+        });
+      }
+      setSelectedOrgImageFile(null);
+      toast.success("Organization updated");
+    } catch (error) {
+      toast.error(getUserFacingConvexError(error, "Organization could not be updated."));
+    } finally {
+      setIsUploadingOrgImage(false);
+    }
+  }
+
+  function onOrgImageFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0] ?? null;
+    event.target.value = "";
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      toast.error("Choose a PNG, JPEG, or WebP logo.");
+      return;
+    }
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error("Logo must be smaller than 2 MB.");
+      return;
+    }
+    setSelectedOrgImageFile(file);
   }
 
   async function onDeleteOrg() {
@@ -831,7 +892,9 @@ export function Settings() {
                           <div className="flex min-w-0 w-full flex-col gap-5">
                             <div className="flex min-w-0 items-center gap-4">
                               <OrgLogo
-                                image={selectedOrgImage.trim() || undefined}
+                                image={
+                                  selectedOrgImagePreview ?? (selectedOrgImage.trim() || undefined)
+                                }
                                 name={selectedOrgDisplayName}
                                 handle={selectedOrg.publisher.handle}
                                 className="h-16 w-16"
@@ -862,23 +925,30 @@ export function Settings() {
                               </Field>
                               <div className="flex min-w-0 items-center gap-2">
                                 <div className="min-w-0 flex-1">
-                                  <Field label="Avatar URL" htmlFor="settings-selected-org-image">
+                                  <Field label="Logo" htmlFor="settings-selected-org-image">
                                     <Input
                                       id="settings-selected-org-image"
-                                      value={selectedOrgImage}
-                                      onChange={(event) => setSelectedOrgImage(event.target.value)}
-                                      placeholder="https://example.com/logo.png"
+                                      type="file"
+                                      accept="image/png,image/jpeg,image/webp"
+                                      onChange={onOrgImageFileChange}
+                                      className="file:mr-3 file:rounded-[var(--radius-sm)] file:border-0 file:bg-[color:var(--surface-muted)] file:px-3 file:py-2 file:font-semibold file:text-[color:var(--ink)]"
                                     />
+                                    <p className="mt-1 text-xs text-[color:var(--ink-soft)]">
+                                      PNG, JPEG, or WebP up to 2 MB.
+                                    </p>
                                   </Field>
                                 </div>
-                                {selectedOrgImage ? (
+                                {selectedOrgImage || selectedOrgImageFile ? (
                                   <Button
                                     type="button"
                                     variant="ghost"
                                     size="icon-sm"
-                                    aria-label="Clear avatar URL"
+                                    aria-label="Remove logo"
                                     className="mt-6 shrink-0"
-                                    onClick={() => setSelectedOrgImage("")}
+                                    onClick={() => {
+                                      setSelectedOrgImage("");
+                                      setSelectedOrgImageFile(null);
+                                    }}
                                   >
                                     <X size={15} />
                                   </Button>
@@ -901,9 +971,13 @@ export function Settings() {
                                     You have unsaved changes.
                                   </span>
                                 ) : null}
-                                <Button type="button" onClick={() => void onSaveOrgProfile()}>
-                                  <Save size={16} />
-                                  Save changes
+                                <Button
+                                  type="button"
+                                  disabled={isUploadingOrgImage}
+                                  onClick={() => void onSaveOrgProfile()}
+                                >
+                                  {selectedOrgImageFile ? <Upload size={16} /> : <Save size={16} />}
+                                  {isUploadingOrgImage ? "Uploading..." : "Save changes"}
                                 </Button>
                               </div>
                             </div>
@@ -1262,7 +1336,7 @@ export function Settings() {
                       />
                     ) : (
                       <p className="rounded-[var(--radius-sm)] border border-[color:var(--line)] bg-[color:var(--surface-muted)]/25 p-3 text-sm text-[color:var(--ink-soft)]">
-                        You need an official publisher profile before adding GitHub skill sync.
+                        You need a verified publisher profile before adding GitHub skill sync.
                       </p>
                     )}
                   </div>
@@ -1803,7 +1877,7 @@ function GitHubSourceList({
                         >
                           <div className="min-w-0">
                             <Link
-                              to="/$owner/$slug"
+                              to="/$owner/skills/$slug"
                               params={{
                                 owner: source.ownerPublisher?.handle ?? "",
                                 slug: skill.slug,

@@ -19,6 +19,7 @@ import {
   type HomeSkillApp,
 } from "../lib/homeApps";
 import { OPENCLAW_LOGO_URL } from "../lib/nav-items";
+import { buildPluginDetailHref } from "../lib/pluginRoutes";
 
 function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
   return (
@@ -50,8 +51,7 @@ function HomeAppsCompactSkill({ app }: { app: HomeSkillApp }) {
 function HomeAppsCompactPlugin({ plugin: shortcut }: { plugin: HomePluginShortcut }) {
   return (
     <Link
-      to="/plugins/$name"
-      params={{ name: shortcut.packageName }}
+      to={buildPluginDetailHref(shortcut.packageName)}
       className="home-v2-apps-tile"
       title={shortcut.description}
     >
@@ -185,9 +185,6 @@ const appCategories = [
   },
 ] as const;
 
-const slackWorkflowPlugin =
-  HOME_PLUGIN_SHORTCUTS.find((shortcut) => shortcut.id === "slack") ?? HOME_PLUGIN_SHORTCUTS[0];
-
 const workflowHeaderTiles: ReadonlyArray<{
   label: string;
   src: string;
@@ -196,12 +193,12 @@ const workflowHeaderTiles: ReadonlyArray<{
 }> = [
   {
     label: "OpenAI",
-    src: homeAppIconUrl("openai.com"),
+    src: "/openai-favicon.svg",
     className: "is-openai",
   },
   {
     label: "Slack",
-    src: homePluginShortcutIconUrl(slackWorkflowPlugin),
+    src: "/slack-favicon.svg",
     className: "is-slack",
   },
   {

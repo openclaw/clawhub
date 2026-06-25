@@ -34,12 +34,11 @@ jobs:
     environment: Production
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
         shard: [0, 1, 2, 3]
     env:
       CONVEX_URL: ${{ vars.CONVEX_URL || vars.VITE_CONVEX_URL || 'https://wry-manatee-359.convex.cloud' }}
-      # Shared Convex worker credential used by security and Skill Card workers.
-      SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
       SKILL_CARD_WORKER_LIMIT: ${{ github.event.inputs['batch-limit'] || '4' }}
       SKILL_CARD_WORKER_MAX_JOBS: ${{ github.event.inputs['max-jobs'] || '' }}
       SKILL_CARD_WORKER_MAX_RUNTIME_MINUTES: ${{ github.event.inputs['max-runtime-minutes'] || '40' }}
@@ -58,20 +57,6 @@ jobs:
 
       - uses: ./.github/actions/setup-bun
 
-      - name: Check configuration
-        env:
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-        run: |
-          set -euo pipefail
-          if [[ -z "$SECURITY_SCAN_WORKER_TOKEN" ]]; then
-            echo "::error::SECURITY_SCAN_WORKER_TOKEN is required"
-            exit 1
-          fi
-          if [[ -z "$OPENAI_API_KEY" ]]; then
-            echo "::error::OPENAI_API_KEY is required"
-            exit 1
-          fi
-
       - name: Install Codex CLI and renderer dependencies
         run: |
           set -euo pipefail
@@ -87,6 +72,9 @@ jobs:
         run: printf '%s' "$OPENAI_API_KEY" | codex login --with-api-key
 
       - name: Run Skill Card worker
+        env:
+          # Shared Convex worker credential used by security and Skill Card workers.
+          SECURITY_SCAN_WORKER_TOKEN: ${{ secrets.SECURITY_SCAN_WORKER_TOKEN }}
         run: |
           args=(
             --batch-limit "$SKILL_CARD_WORKER_LIMIT"

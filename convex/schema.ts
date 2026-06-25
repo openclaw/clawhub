@@ -217,6 +217,7 @@ const publishers = defineTable({
   displayName: v.string(),
   bio: v.optional(v.string()),
   image: v.optional(v.string()),
+  imageStorageId: v.optional(v.id("_storage")),
   linkedUserId: v.optional(v.id("users")),
   trustedPublisher: v.optional(v.boolean()),
   publishedSkills: v.optional(v.number()),
@@ -263,6 +264,15 @@ const publisherMembers = defineTable({
   .index("by_publisher", ["publisherId"])
   .index("by_user", ["userId"])
   .index("by_publisher_user", ["publisherId", "userId"]);
+
+const publisherImageUploadTickets = defineTable({
+  publisherId: v.id("publishers"),
+  userId: v.id("users"),
+  createdAt: v.number(),
+  expiresAt: v.number(),
+  usedAt: v.optional(v.number()),
+  storageId: v.optional(v.id("_storage")),
+}).index("by_publisher_user", ["publisherId", "userId"]);
 
 const officialPublishers = defineTable({
   publisherId: v.id("publishers"),
@@ -830,6 +840,25 @@ const skills = defineTable({
       maxSmoothedRate: v.number(),
       smoothedRate: v.number(),
       pendingSkillDocInstallsAllTime: v.number(),
+      appliedAt: v.number(),
+    }),
+  ),
+  downloadBackfill: v.optional(
+    v.object({
+      modelVersion: v.string(),
+      sourceRepo: v.string(),
+      basis: v.literal("public-hosted-downloads-per-published-week"),
+      baselineCollectedAt: v.number(),
+      baselinePublicHostedSkillCount: v.number(),
+      baselinePublicHostedDownloads: v.number(),
+      baselinePublicHostedSkillWeeks: v.number(),
+      baselineAverageDownloadsPerSkillWeek: v.number(),
+      publishedAt: v.number(),
+      publishedWeeks: v.number(),
+      previousDownloads: v.number(),
+      targetDownloads: v.number(),
+      estimatedBackfilledDownloads: v.number(),
+      pendingSkillDocDownloads: v.number(),
       appliedAt: v.number(),
     }),
   ),
@@ -1882,7 +1911,12 @@ const packageSearchDigest = defineTable({
   ])
   .index("by_active_normalized_name", ["softDeletedAt", "normalizedName", "updatedAt"])
   .index("by_active_runtime_id", ["softDeletedAt", "runtimeId", "updatedAt"])
-  .index("by_active_name", ["softDeletedAt", "displayName"]);
+  .index("by_active_owner_handle", ["softDeletedAt", "ownerHandle", "updatedAt"])
+  .index("by_active_name", ["softDeletedAt", "displayName"])
+  .searchIndex("search_by_display_name", {
+    searchField: "displayName",
+    filterFields: ["softDeletedAt"],
+  });
 
 const packageTopicSearchDigest = defineTable({
   packageId: v.id("packages"),
@@ -2433,6 +2467,16 @@ const officialPluginMigrations = defineTable({
   .index("by_phase_updatedAt", ["phase", "updatedAt"])
   .index("by_updatedAt", ["updatedAt"]);
 
+const catalogFeedPublications = defineTable({
+  feedId: v.string(),
+  sequence: v.number(),
+  generatedAt: v.string(),
+  expiresAt: v.string(),
+  payload: v.string(),
+  payloadSha256: v.string(),
+  publishedAt: v.number(),
+}).index("by_feed", ["feedId"]);
+
 const stars = defineTable({
   skillId: v.id("skills"),
   userId: v.id("users"),
@@ -2851,6 +2895,7 @@ export default defineSchema({
   users,
   publishers,
   publisherMembers,
+  publisherImageUploadTickets,
   officialPublishers,
   githubSkillSources,
   githubSkillContents,
@@ -2898,6 +2943,7 @@ export default defineSchema({
   packageAppeals,
   packageModerationEventLogs,
   officialPluginMigrations,
+  catalogFeedPublications,
   stars,
   auditLogs,
   publisherAbuseScoreRuns,

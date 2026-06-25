@@ -163,7 +163,7 @@ export function SkillsPage({
             return (
               <div key={skill._id} className="management-item management-item-detail">
                 <div className="management-item-main">
-                  <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
+                  <Link to="/$owner/skills/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
                     {skill.displayName}
                   </Link>
                   <div className="section-subtitle m-0">
@@ -355,7 +355,10 @@ export function SkillsPage({
                 </div>
                 <div className="management-actions management-action-grid">
                   <Button asChild className="management-action-btn">
-                    <Link to="/$owner/$slug" params={{ owner: ownerParam, slug: skill.slug }}>
+                    <Link
+                      to="/$owner/skills/$slug"
+                      params={{ owner: ownerParam, slug: skill.slug }}
+                    >
                       View
                     </Link>
                   </Button>
@@ -404,7 +407,7 @@ export function SkillsPage({
                         type="button"
                         onClick={() => onSetOfficialBadge(skill._id, !isOfficial)}
                       >
-                        {isOfficial ? "Remove official" : "Mark official"}
+                        {isOfficial ? "Remove verified" : "Mark verified"}
                       </Button>
                       <Button
                         className="management-action-btn"

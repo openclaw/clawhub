@@ -4,13 +4,13 @@ import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "./helpe
 const navLabels = ["Skills", "Plugins"];
 
 async function headerLink(page: Page, label: string) {
-  let link = page.getByRole("link", { name: label }).first();
+  let link = page.getByRole("link", { name: label, exact: true }).first();
   if (await link.isVisible().catch(() => false)) return link;
 
   const menuButton = page.getByRole("button", { name: "Open menu" });
   if (await menuButton.isVisible().catch(() => false)) {
     await menuButton.click();
-    link = page.getByRole("link", { name: label }).first();
+    link = page.getByRole("link", { name: label, exact: true }).first();
   }
 
   await expect(link).toBeVisible();
@@ -26,10 +26,11 @@ test("skills loads without error", async ({ page }) => {
 
 test("header menu routes render", async ({ page }) => {
   const errors = trackRuntimeErrors(page);
-  await page.goto("/", { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
 
   for (const label of navLabels) {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await waitForHydration(page);
+
     const link = await headerLink(page, label);
     await link.click();
 

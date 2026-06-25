@@ -14,16 +14,16 @@ describe("PluginListItem", () => {
   it("renders official list plugins with the compact official mark", () => {
     render(<PluginListItem item={makePlugin()} />);
 
-    expect(screen.getByLabelText("Official")).toBeTruthy();
-    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.queryByText("Verified")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
   it("renders official plugin cards with the compact official mark", () => {
     render(<PluginListItem item={makePlugin()} variant="card" />);
 
-    expect(screen.getByLabelText("Official")).toBeTruthy();
-    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.queryByText("Verified")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
@@ -32,22 +32,24 @@ describe("PluginListItem", () => {
       <PluginListItem
         item={makePlugin({
           categories: ["models"],
-          topics: ["local-models", "inference"],
+          topics: ["local-models", "inference", "routing"],
         })}
       />,
     );
 
-    expect(screen.getByText("local-models")).toBeTruthy();
-    expect(screen.getByText("inference")).toBeTruthy();
-    expect(screen.queryByText("Models")).toBeNull();
+    expect(screen.getByText("#local-models")).toBeTruthy();
+    expect(screen.getByText("#inference")).toBeTruthy();
+    expect(screen.queryByText("#routing")).toBeNull();
+    expect(screen.getByText("Models")).toBeTruthy();
     expect(screen.getByLabelText("Topics")).toBeTruthy();
+    expect(screen.getByLabelText("Category")).toBeTruthy();
   });
 
   it("renders category labels when topics are unavailable", () => {
     render(<PluginListItem item={makePlugin({ categories: ["memory", "tools"] })} />);
 
-    expect(screen.getByText("Memory")).toBeTruthy();
-    expect(screen.getByText("Tools")).toBeTruthy();
+    expect(screen.getByText("#memory")).toBeTruthy();
+    expect(screen.getByText("#tools")).toBeTruthy();
     expect(screen.getByLabelText("Categories")).toBeTruthy();
   });
 

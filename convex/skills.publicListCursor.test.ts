@@ -265,6 +265,43 @@ describe("public skill list deterministic cursors", () => {
     expect(getPageMock).not.toHaveBeenCalled();
   });
 
+  it("includes official publisher status on browse owners", async () => {
+    const digest = makeSearchDigest({
+      ownerPublisherId: "publishers:openclaw",
+      ownerHandle: "openclaw",
+      ownerKind: "org",
+      ownerName: undefined,
+      ownerDisplayName: "OpenClaw",
+    });
+    getPageMock.mockResolvedValueOnce({
+      page: [digest],
+      hasMore: false,
+      indexKeys: [[undefined, digest.updatedAt, digest._id]],
+    });
+
+    const result = await listPublicPageV4Handler(
+      {
+        db: {
+          query: vi.fn((table: string) => {
+            if (table !== "officialPublishers") {
+              throw new Error(`Unexpected table: ${table}`);
+            }
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({ publisherId: "publishers:openclaw" }),
+              })),
+            };
+          }),
+        },
+      } as never,
+      { sort: "updated", numItems: 10 },
+    );
+
+    expect((result.page as Array<{ owner?: { official?: boolean } }>)[0]?.owner?.official).toBe(
+      true,
+    );
+  });
+
   it("uses the topic digest index for topic-filtered recommended browse", async () => {
     const digest = makeSearchDigest({
       skillId: "skills:calendar",
@@ -1486,6 +1523,13 @@ describe("skills.listRelatedByCategory", () => {
       return { order };
     });
     const query = vi.fn((table: string) => {
+      if (table === "officialPublishers") {
+        return {
+          withIndex: vi.fn(() => ({
+            unique: vi.fn().mockResolvedValue(null),
+          })),
+        };
+      }
       if (table !== "skillSearchDigest") throw new Error(`Unexpected query table: ${table}`);
       return { withIndex };
     });
@@ -1555,6 +1599,13 @@ describe("skills.listRelatedByCategory", () => {
       return { order };
     });
     const query = vi.fn((table: string) => {
+      if (table === "officialPublishers") {
+        return {
+          withIndex: vi.fn(() => ({
+            unique: vi.fn().mockResolvedValue(null),
+          })),
+        };
+      }
       if (table !== "skillSearchDigest") throw new Error(`Unexpected query table: ${table}`);
       return { withIndex };
     });
@@ -1584,7 +1635,16 @@ describe("skills.listRelatedByCategory", () => {
       builder({ eq });
       return { order };
     });
-    const query = vi.fn(() => ({ withIndex }));
+    const query = vi.fn((table: string) => {
+      if (table === "officialPublishers") {
+        return {
+          withIndex: vi.fn(() => ({
+            unique: vi.fn().mockResolvedValue(null),
+          })),
+        };
+      }
+      return { withIndex };
+    });
 
     const result = await listRelatedByCategoryHandler({ db: { query } } as never, {
       skillId: "skills:current",

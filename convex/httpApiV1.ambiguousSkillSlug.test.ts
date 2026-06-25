@@ -65,13 +65,13 @@ describe("ambiguous skill slug responses", () => {
           ownerHandle: "openclaw",
           slug: "demo",
           ref: "@openclaw/demo",
-          url: "https://example.com/openclaw/demo",
+          url: "https://example.com/openclaw/skills/demo",
         },
         {
           ownerHandle: "patrick",
           slug: "demo",
           ref: "@patrick/demo",
-          url: "https://example.com/patrick/demo",
+          url: "https://example.com/patrick/skills/demo",
         },
       ],
     });
@@ -104,13 +104,13 @@ describe("ambiguous skill slug responses", () => {
           ownerHandle: "openclaw",
           slug: "demo",
           ref: "@openclaw/demo",
-          url: "https://example.com/openclaw/demo",
+          url: "https://example.com/openclaw/skills/demo",
         },
         {
           ownerHandle: "patrick",
           slug: "demo",
           ref: "@patrick/demo",
-          url: "https://example.com/patrick/demo",
+          url: "https://example.com/patrick/skills/demo",
         },
       ],
     });

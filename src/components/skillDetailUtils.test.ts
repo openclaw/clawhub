@@ -57,7 +57,7 @@ describe("skill detail install helpers", () => {
     });
 
     expect(prompt).toContain("@steipete/weather");
-    expect(prompt).toContain("https://clawhub.ai/steipete/weather");
+    expect(prompt).toContain("https://clawhub.ai/steipete/skills/weather");
     expect(prompt).toContain("WEATHER_API_KEY");
     expect(prompt).toContain("curl");
     expect(prompt).toContain("~/.weatherrc");

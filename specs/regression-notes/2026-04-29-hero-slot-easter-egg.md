@@ -8,12 +8,13 @@ Follow-up behavior changes:
 
 - `cb75011` by Val Alexander on 2026-04-18 tuned odds to 1/25 for any jackpot and 1/100 for the Hack jackpot.
 - `fec5db7` by Val Alexander on 2026-04-18 added timer and interval cleanup on unmount.
+- This PR proposes moving the trigger from the removed community label into a keyboard-accessible button inside the hero headline while preserving the same slot timing and odds.
 
 The easter egg was removed from `src/routes/index.tsx` in commit `6c0163f` by Patrick Erichsen on 2026-04-28 as part of `feat: add skills plugins search typeahead`.
 
 Expected behavior:
 
-- Triple-click `BUILT BY THE COMMUNITY.` within 800ms to trigger the slot-machine headline.
+- Activate the hero headline button three times within 800ms to trigger the slot-machine headline.
 - Reels stop at 1200ms, 1800ms, and 2400ms.
 - Non-jackpot spins reroll accidental triples so jackpot odds stay controlled.
 - Jackpot odds are 1/25 overall.

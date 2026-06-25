@@ -2,7 +2,7 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   assertCodexWorkerExecutionAllowed,
   isCodexWorkerExecutionAllowed,
@@ -17,13 +17,16 @@ import {
   DEFAULT_MAX_RUNTIME_MS,
   neutralTemplatePath,
   prepareNvidiaSkillCardSkill,
+  processJob,
   skillCardWorkerId,
   trustedRendererPath,
+  writeWorkspace,
 } from "./run-skill-card-worker";
 
 const tempDirs: string[] = [];
 
 afterEach(async () => {
+  vi.restoreAllMocks();
   await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { force: true, recursive: true })));
 });
 
@@ -206,5 +209,166 @@ describe("run-skill-card-worker Codex skill setup", () => {
       verify: false,
       verify_reason: "",
     });
+  });
+
+  it("omits signed artifact URLs from workspace download failure errors", async () => {
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("forbidden", { status: 403 }));
+    const workspace = await tempDir();
+
+    const error = await writeWorkspace(
+      {
+        job: {
+          _id: "skillCardGenerationJobs:download-failed",
+          leaseToken: "lease-secret",
+          source: "scan",
+        },
+        target: {
+          evidence: {},
+          files: [
+            {
+              path: "SKILL.md",
+              sha256: "abc123",
+              size: 42,
+              url: "https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123",
+            },
+          ],
+          skill: { displayName: "Demo Skill", slug: "demo-skill" },
+          version: { version: "1.2.3" },
+        },
+      },
+      workspace,
+    ).catch((caught: unknown) => caught);
+
+    const message = error instanceof Error ? error.message : String(error);
+    expect(message).toContain("Download failed 403 for artifact file SKILL.md");
+    expect(message).not.toContain("https://");
+    expect(message).not.toContain("signed.example.invalid");
+    expect(message).not.toContain("token=secret");
+    expect(message).not.toContain("X-Amz-Signature");
+    fetchMock.mockRestore();
+  });
+
+  it("sanitizes download failures before logging or failing the Convex job", async () => {
+    const previousGitHubActions = process.env.GITHUB_ACTIONS;
+    process.env.GITHUB_ACTIONS = "true";
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("forbidden", { status: 403 }));
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const client = {
+      action: vi.fn(async () => ({ retry: true })),
+    };
+
+    await expect(
+      processJob(
+        client,
+        "worker-token",
+        {
+          job: {
+            _id: "skillCardGenerationJobs:download-failed",
+            attempts: 2,
+            leaseToken: "lease-secret",
+            source: "scan",
+          },
+          target: {
+            evidence: {},
+            files: [
+              {
+                path: "SKILL.md",
+                sha256: "abc123",
+                size: 42,
+                url: "https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123",
+              },
+            ],
+            skill: { displayName: "Demo Skill", slug: "demo-skill" },
+            version: { version: "1.2.3" },
+          },
+        },
+        await tempDir(),
+      ),
+    ).resolves.toBe(false);
+
+    expect(client.action).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        error: "Download failed 403 for artifact file SKILL.md",
+      }),
+    );
+    const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(logged).toContain(
+      "::add-mask::https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123",
+    );
+    expect(logged).toContain("skill_card_job_failed");
+    expect(logged).toContain("Download failed 403 for artifact file SKILL.md");
+    const laterLogs = logged
+      .split("\n")
+      .filter((line) => !line.startsWith("::add-mask::"))
+      .join("\n");
+    expect(laterLogs).not.toContain("https://");
+    expect(laterLogs).not.toContain("signed.example.invalid");
+    expect(laterLogs).not.toContain("token=secret");
+    expect(laterLogs).not.toContain("X-Amz-Signature");
+
+    stdoutWrite.mockRestore();
+    if (previousGitHubActions === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = previousGitHubActions;
+    fetchMock.mockRestore();
+  });
+
+  it("sanitizes key-value secrets from non-download failures before logging or failing", async () => {
+    const previousGitHubActions = process.env.GITHUB_ACTIONS;
+    process.env.GITHUB_ACTIONS = "true";
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    const client = {
+      action: vi.fn(async (..._args: unknown[]) => ({ retry: true })),
+    };
+
+    await expect(
+      processJob(
+        client,
+        "worker-token",
+        {
+          job: {
+            _id: "skillCardGenerationJobs:path-failed",
+            attempts: 2,
+            leaseToken: "lease-secret",
+            source: "scan",
+          },
+          target: {
+            evidence: {},
+            files: [
+              {
+                path:
+                  "../OPENAI_API_KEY=skill-card-process-secret " +
+                  "CONVEX_DEPLOY_KEY=convex-process-secret.md",
+                sha256: "abc123",
+                size: 42,
+                url: "data:text/plain,%23%20Skill",
+              },
+            ],
+            skill: { displayName: "Demo Skill", slug: "demo-skill" },
+            version: { version: "1.2.3" },
+          },
+        },
+        await tempDir(),
+      ),
+    ).resolves.toBe(false);
+
+    const failArgs = client.action.mock.calls[0]?.[1] as { error?: unknown } | undefined;
+    const error = String(failArgs?.error);
+    expect(error).toBe("Unsafe artifact path: [redacted-path]");
+    expect(error).not.toContain("skill-card-process-secret");
+    expect(error).not.toContain("convex-process-secret");
+    const logged = stdoutWrite.mock.calls.map((call) => String(call[0])).join("\n");
+    expect(logged).toContain("skill_card_job_failed");
+    expect(logged).toContain("Unsafe artifact path: [redacted-path]");
+    expect(logged).not.toContain("skill-card-process-secret");
+    expect(logged).not.toContain("convex-process-secret");
+
+    stdoutWrite.mockRestore();
+    if (previousGitHubActions === undefined) delete process.env.GITHUB_ACTIONS;
+    else process.env.GITHUB_ACTIONS = previousGitHubActions;
   });
 });

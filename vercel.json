@@ -3,10 +3,6 @@
     {
       "source": "/(.*)",
       "headers": [
-        {
-          "key": "Content-Security-Policy",
-          "value": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob: https:; font-src 'self' data:; connect-src 'self' https: wss:; object-src 'none'; base-uri 'self'; frame-ancestors 'none'; form-action 'self' https://clawhub.ai https://documentation.openclaw.ai https://docs.openclaw.ai; upgrade-insecure-requests"
-        },
         { "key": "X-Content-Type-Options", "value": "nosniff" },
         { "key": "X-Frame-Options", "value": "DENY" },
         { "key": "Referrer-Policy", "value": "strict-origin-when-cross-origin" },
@@ -21,6 +17,16 @@
     }
   ],
   "redirects": [
+    {
+      "source": "/feeds/plugins",
+      "destination": "/v1/feeds/plugins",
+      "statusCode": 308
+    },
+    {
+      "source": "/feeds/skills",
+      "destination": "/v1/feeds/skills",
+      "statusCode": 308
+    },
     {
       "source": "/",
       "has": [
@@ -50,6 +56,14 @@
     {
       "source": "/api/:path*",
       "destination": "https://wry-manatee-359.convex.site/api/:path*"
+    },
+    {
+      "source": "/v1/feeds/plugins",
+      "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/plugins"
+    },
+    {
+      "source": "/v1/feeds/skills",
+      "destination": "https://wry-manatee-359.convex.site/api/v1/feeds/skills"
     }
   ],
   "images": {

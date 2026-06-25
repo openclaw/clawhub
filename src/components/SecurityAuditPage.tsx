@@ -1,4 +1,13 @@
-import { Check, Clock, Download, ExternalLink, Info, RefreshCw, TriangleAlert } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Clock,
+  Download,
+  ExternalLink,
+  Info,
+  RefreshCw,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Id } from "../../convex/_generated/dataModel";
 import { getRuntimeEnv } from "../lib/runtimeEnv";
@@ -263,46 +272,109 @@ const UTC_MONTH_LABELS = [
   "Dec",
 ] as const;
 
-function formatTime(value?: number | null) {
+function formatAuditSidebarTime(value?: number | null) {
   if (!value) return "Not checked yet";
   const date = new Date(value);
   const hour = date.getUTCHours();
   const hour12 = hour % 12 || 12;
   const minute = date.getUTCMinutes().toString().padStart(2, "0");
   const period = hour >= 12 ? "PM" : "AM";
-  return `${UTC_MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()} at ${hour12}:${minute} ${period} UTC`;
+  return `${UTC_MONTH_LABELS[date.getUTCMonth()]} ${date.getUTCDate()}, ${date.getUTCFullYear()} · ${hour12}:${minute} ${period} UTC`;
 }
 
-function extractDetailPathParts(detailPath: string) {
-  return detailPath.split("/").filter(Boolean).map(decodeURIComponent);
+function getSecurityAuditBackLabel(entity: EntityRef) {
+  return entity.kind === "plugin" ? "Back to plugin" : "Back to skill";
 }
 
-function getOwnerLabel(entity: EntityRef) {
-  if (entity.owner?.handle) return entity.owner.handle;
-  const parts = extractDetailPathParts(entity.detailPath);
-  if (entity.kind === "skill") return parts[0] ?? "unknown";
-  return entity.owner?._id ?? "plugins";
+function SecurityAuditSidebarActions({ props }: { props: SecurityAuditPageProps }) {
+  const [rescanState, setRescanState] = useState<"idle" | "submitting" | "queued" | "error">(
+    "idle",
+  );
+  const showActions = Boolean(props.canManageArtifact && props.onRequestRescan);
+  const isRescanBusy = rescanState === "submitting" || rescanState === "queued";
+
+  async function requestRescan() {
+    if (!props.onRequestRescan || isRescanBusy) return;
+    setRescanState("submitting");
+    try {
+      await props.onRequestRescan();
+      setRescanState("queued");
+    } catch {
+      setRescanState("error");
+    }
+  }
+
+  function downloadAuditExport() {
+    if (!showActions || typeof document === "undefined" || typeof URL === "undefined") return;
+    const zipBytes = buildSecurityAuditExportZip(props);
+    const filename = buildSecurityAuditExportFilename(props);
+    const url = URL.createObjectURL(new Blob([zipBytes], { type: "application/zip" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = filename;
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
+
+  if (!showActions) return null;
+
+  return (
+    <div className="skill-sidebar-actions skill-sidebar-actions-secondary security-audit-sidebar-actions">
+      <Button
+        type="button"
+        variant="outline"
+        className="skill-sidebar-action-button"
+        onClick={() => void requestRescan()}
+        disabled={isRescanBusy}
+        loading={isRescanBusy}
+        aria-label={isRescanBusy ? "Scanning" : "Rescan"}
+        title={isRescanBusy ? "Scanning" : "Rescan"}
+      >
+        {!isRescanBusy ? (
+          <RefreshCw className="security-audit-rescan-icon" aria-hidden="true" />
+        ) : null}
+        {isRescanBusy ? "Scanning" : "Rescan"}
+      </Button>
+      <Button
+        type="button"
+        variant="outline"
+        className="skill-sidebar-action-button"
+        onClick={downloadAuditExport}
+        aria-label="Download security audit"
+        title="Download"
+      >
+        <Download className="security-audit-action-icon" aria-hidden="true" />
+        Download
+      </Button>
+      {rescanState === "error" ? (
+        <span
+          className="security-audit-rescan-error security-audit-sidebar-action-status"
+          role="status"
+        >
+          Rescan could not be queued.
+        </span>
+      ) : null}
+    </div>
+  );
 }
 
 function SecurityAuditHero({ props }: { props: SecurityAuditPageProps }) {
-  const ownerLabel = getOwnerLabel(props.entity);
-  const listingLabel = props.entity.kind === "skill" ? "skills" : "plugins";
-  const ownerHref =
-    props.entity.kind === "skill" ? `/user/${encodeURIComponent(ownerLabel)}` : "/plugins";
-
   return (
     <header className="security-scan-hero">
-      <nav className="skill-hero-breadcrumbs" aria-label="Breadcrumb">
-        <a href={`/${listingLabel}`}>{listingLabel}</a>
-        <span aria-hidden="true">/</span>
-        <a href={ownerHref}>{ownerLabel}</a>
-        <span aria-hidden="true">/</span>
-        <a href={props.entity.detailPath}>{props.entity.name}</a>
-        <span aria-hidden="true">/</span>
-        <span>Security Audit</span>
-      </nav>
+      <a
+        href={props.entity.detailPath}
+        className="skill-settings-back-link security-audit-back-link"
+      >
+        <ArrowLeft size={16} aria-hidden="true" />
+        {getSecurityAuditBackLabel(props.entity)}
+      </a>
       <div className="security-scan-hero-heading">
-        <h1 className="skill-page-title">{props.entity.title}</h1>
+        <p className="security-audit-eyebrow">Security audit</p>
+        <div className="security-scan-hero-title-row">
+          <h1 className="skill-page-title">{props.entity.title}</h1>
+        </div>
         <p className="security-scan-hero-subtext">{SECURITY_AUDIT_SUBTEXT}</p>
       </div>
     </header>
@@ -739,75 +811,6 @@ function SecurityAuditScannerSection({
 function SecurityAuditSidebar(props: SecurityAuditPageProps) {
   const latestCheckedAt = getLatestAuditCheckedAt(props);
   const verdict = aggregateAuditVerdict(props);
-  const [rescanState, setRescanState] = useState<"idle" | "submitting" | "queued" | "error">(
-    "idle",
-  );
-  const showRescanButton = props.canManageArtifact && props.onRequestRescan;
-  const isRescanBusy = rescanState === "submitting" || rescanState === "queued";
-
-  async function requestRescan() {
-    if (!props.onRequestRescan || isRescanBusy) return;
-    setRescanState("submitting");
-    try {
-      await props.onRequestRescan();
-      setRescanState("queued");
-    } catch {
-      setRescanState("error");
-    }
-  }
-
-  function downloadAuditExport() {
-    if (!showRescanButton || typeof document === "undefined" || typeof URL === "undefined") return;
-    const zipBytes = buildSecurityAuditExportZip(props);
-    const filename = buildSecurityAuditExportFilename(props);
-    const url = URL.createObjectURL(new Blob([zipBytes], { type: "application/zip" }));
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = filename;
-    document.body.append(anchor);
-    anchor.click();
-    anchor.remove();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  const versionValue = (
-    <div className="security-audit-version-stack">
-      <span>{props.entity.version ?? "Latest"}</span>
-      {showRescanButton ? (
-        <>
-          <Button
-            type="button"
-            variant="outline"
-            className="skill-sidebar-action-button security-audit-rescan-button"
-            onClick={() => void requestRescan()}
-            disabled={isRescanBusy}
-            loading={isRescanBusy}
-            aria-label={isRescanBusy ? "Scanning" : "Rescan"}
-          >
-            {!isRescanBusy ? (
-              <RefreshCw className="security-audit-rescan-icon" aria-hidden="true" />
-            ) : null}
-            <span>{isRescanBusy ? "Scanning" : "Rescan"}</span>
-          </Button>
-          <Button
-            type="button"
-            variant="outline"
-            className="skill-sidebar-action-button security-audit-download-button"
-            onClick={downloadAuditExport}
-            aria-label="Download security audit"
-          >
-            <Download className="security-audit-action-icon" aria-hidden="true" />
-            <span>Download</span>
-          </Button>
-          {rescanState === "error" ? (
-            <span className="security-audit-rescan-error" role="status">
-              Rescan could not be queued.
-            </span>
-          ) : null}
-        </>
-      ) : null}
-    </div>
-  );
 
   return (
     <SidebarMetadata
@@ -821,13 +824,13 @@ function SecurityAuditSidebar(props: SecurityAuditPageProps) {
         {
           label: "Latest audit",
           value: (
-            <span className="sidebar-metadata-inline">
-              <Clock className="h-3.5 w-3.5" aria-hidden="true" />
-              {formatTime(latestCheckedAt)}
+            <span className="security-audit-latest-time">
+              <Clock className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+              <span>{formatAuditSidebarTime(latestCheckedAt)}</span>
             </span>
           ),
         },
-        { label: "Version", value: versionValue },
+        { label: "Version", value: props.entity.version ?? "Latest" },
       ]}
     />
   );
@@ -837,7 +840,7 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
   const orderedScanners = getAuditScannerOrder(props);
 
   return (
-    <main className="section detail-page-section security-report-section">
+    <main className="section detail-page-section security-report-section security-audit-page">
       <div className="security-report-shell">
         <SecurityAuditHero props={props} />
 
@@ -852,6 +855,7 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
           <aside className="security-report-sidebar" aria-label="Security audit metadata">
             <h2 className="sr-only">Security Audit Metadata</h2>
             <SecurityAuditSidebar {...props} />
+            <SecurityAuditSidebarActions props={props} />
           </aside>
         </div>
       </div>
@@ -861,7 +865,7 @@ export function SecurityAuditPage(props: SecurityAuditPageProps) {
 
 export function SecurityAuditPageSkeleton() {
   return (
-    <main className="section detail-page-section security-report-section">
+    <main className="section detail-page-section security-report-section security-audit-page security-audit-page-skeleton">
       <div
         className="security-report-shell security-scanner-skeleton"
         role="status"
@@ -869,31 +873,21 @@ export function SecurityAuditPageSkeleton() {
         aria-busy="true"
       >
         <header className="security-scan-hero">
-          <div className="skill-hero-breadcrumbs">
-            <Skeleton className="h-4 w-12" />
-            <Skeleton className="h-4 w-3" />
-            <Skeleton className="h-4 w-16" />
-            <Skeleton className="h-4 w-3" />
-            <Skeleton className="h-4 w-40 max-w-[42vw]" />
-            <Skeleton className="h-4 w-3" />
-            <Skeleton className="h-4 w-28" />
-          </div>
+          <Skeleton className="h-5 w-28" />
           <div className="security-scan-hero-heading">
+            <Skeleton className="h-4 w-24" />
             <Skeleton className="h-12 w-full max-w-[520px]" />
-            <div className="security-scan-hero-subtext">
-              <Skeleton className="h-8 w-24 rounded-[var(--r-pill)]" />
-              <Skeleton className="h-5 w-full max-w-[340px]" />
-            </div>
+            <Skeleton className="h-5 w-full max-w-[340px]" />
           </div>
         </header>
 
-        <div className="security-report-layout">
+        <div className="security-report-layout security-report-skeleton-layout">
           <div className="security-report-main">
             {Array.from({ length: 3 }).map((_, index) => (
               <section
                 // biome-ignore lint/suspicious/noArrayIndexKey: static skeleton placeholder count
                 key={index}
-                className="security-report-panel"
+                className="security-report-panel security-report-skeleton-panel"
               >
                 <div className="security-report-panel-header">
                   <Skeleton className="h-6 w-32" />
@@ -907,28 +901,22 @@ export function SecurityAuditPageSkeleton() {
             ))}
           </div>
 
-          <aside className="security-report-sidebar" aria-label="Security audit metadata">
+          <aside
+            className="security-report-sidebar security-report-skeleton-sidebar"
+            aria-label="Security audit metadata"
+          >
             <div className="sidebar-metadata sidebar-metadata-compact">
               <div className="sidebar-metadata-row">
-                <Skeleton className="h-3 w-16" />
-                <Skeleton className="h-5 w-40" />
-              </div>
-              <div className="sidebar-metadata-grid">
-                <div className="sidebar-metadata-row">
-                  <Skeleton className="h-3 w-16" />
-                  <Skeleton className="h-5 w-10" />
-                </div>
-                <div className="sidebar-metadata-row">
-                  <Skeleton className="h-3 w-14" />
-                  <Skeleton className="h-5 w-16" />
-                </div>
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-6 w-20 rounded-[var(--r-pill)]" />
               </div>
               <div className="sidebar-metadata-row">
-                <Skeleton className="h-3 w-24" />
-                <div className="security-report-badge-list">
-                  <Skeleton className="h-6 w-16 rounded-[var(--r-pill)]" />
-                  <Skeleton className="h-6 w-20 rounded-[var(--r-pill)]" />
-                </div>
+                <Skeleton className="h-3 w-20" />
+                <Skeleton className="h-5 w-32" />
+              </div>
+              <div className="sidebar-metadata-row">
+                <Skeleton className="h-3 w-14" />
+                <Skeleton className="h-5 w-16" />
               </div>
             </div>
           </aside>

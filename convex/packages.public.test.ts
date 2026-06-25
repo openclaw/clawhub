@@ -1122,6 +1122,7 @@ function makeDigestCtx(options: {
     isDone: boolean;
     continueCursor: string;
   }>;
+  categoryRows?: Array<Record<string, unknown>>;
   packagePages?: Array<{
     page: Array<Record<string, unknown>>;
     isDone: boolean;
@@ -1150,6 +1151,7 @@ function makeDigestCtx(options: {
     indexName: string;
     filters: Array<{ field: string; value: unknown }>;
   }> = [];
+  const searchIndexNames: string[] = [];
   const tableNames: string[] = [];
 
   const setPages = (
@@ -1184,6 +1186,9 @@ function makeDigestCtx(options: {
   setPages("packageCapabilitySearchDigest", options.capabilityPages ?? []);
   setPages("packageTopicSearchDigest", options.topicPages ?? []);
   setPages("packagePluginCategorySearchDigest", options.categoryPages ?? []);
+  if (options.categoryRows) {
+    rowsByTable.set("packagePluginCategorySearchDigest", options.categoryRows);
+  }
   setPages("packages", options.packagePages ?? []);
 
   const paginate = vi.fn();
@@ -1220,6 +1225,36 @@ function makeDigestCtx(options: {
     takeByTable.set(table, next);
     return next;
   };
+  const searchTake = vi.fn();
+  const stringifySearchValue = (value: unknown) =>
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+      ? String(value)
+      : "";
+  const makeSearchQuery = (table: string, searchField: string, query: string) => ({
+    take: vi.fn(async (limit: number) => {
+      searchTake(limit);
+      const queryTokens: string[] = query.toLowerCase().match(/[a-z0-9]+/g) ?? [];
+      if (queryTokens.length === 0) return [];
+      return [...(options.exactDigests ?? []), ...(rowsByTable.get(table) ?? [])]
+        .filter((row, index, rows) => {
+          const rowId = stringifySearchValue(row._id ?? row.packageId) || String(index);
+          return (
+            rows.findIndex(
+              (candidate) => stringifySearchValue(candidate._id ?? candidate.packageId) === rowId,
+            ) === index
+          );
+        })
+        .filter((row) => {
+          const text = stringifySearchValue(readTestField(row, searchField)).toLowerCase();
+          const textTokens: string[] = text.match(/[a-z0-9]+/g) ?? [];
+          return queryTokens.some((queryToken) => textTokens.includes(queryToken));
+        })
+        .slice(0, limit);
+    }),
+  });
 
   const withIndex = vi.fn((table: string, indexName: string) => {
     indexNames.push(indexName);
@@ -1240,9 +1275,11 @@ function makeDigestCtx(options: {
   return {
     indexNames,
     indexFilters,
+    searchIndexNames,
     tableNames,
     paginate,
     take,
+    searchTake,
     ctx: {
       db: {
         get: vi.fn(async (id: string) => {
@@ -1413,7 +1450,8 @@ function makeDigestCtx(options: {
                 }
                 if (
                   indexName === "by_active_normalized_name" ||
-                  indexName === "by_active_runtime_id"
+                  indexName === "by_active_runtime_id" ||
+                  indexName === "by_active_owner_handle"
                 ) {
                   let lowerBound = "";
                   let upperBound = "";
@@ -1433,14 +1471,43 @@ function makeDigestCtx(options: {
                     indexName === "by_active_normalized_name"
                       ? String(digest.normalizedName) >= lowerBound &&
                         String(digest.normalizedName) < upperBound
-                      : String(digest.runtimeId) >= lowerBound &&
-                        String(digest.runtimeId) < upperBound,
+                      : indexName === "by_active_runtime_id"
+                        ? String(digest.runtimeId) >= lowerBound &&
+                          String(digest.runtimeId) < upperBound
+                        : String(digest.ownerHandle) >= lowerBound &&
+                          String(digest.ownerHandle) < upperBound,
                   );
                   return {
                     take: vi.fn().mockResolvedValue(matches),
                   };
                 }
                 return withIndex(table, indexName);
+              },
+              withSearchIndex: (
+                indexName: string,
+                builder?: (q: {
+                  search: (
+                    field: string,
+                    query: string,
+                  ) => {
+                    eq: (field: string, value: string | undefined) => unknown;
+                  };
+                }) => unknown,
+              ) => {
+                searchIndexNames.push(indexName);
+                let searchField = "";
+                let query = "";
+                const queryBuilder = {
+                  search: (field: string, value: string) => {
+                    searchField = field;
+                    query = value;
+                    return {
+                      eq: () => queryBuilder,
+                    };
+                  },
+                };
+                builder?.(queryBuilder);
+                return makeSearchQuery(table, searchField, query);
               },
             };
           }
@@ -4833,6 +4900,192 @@ describe("packages public queries", () => {
     expect(result.continueCursor).toBe("");
   });
 
+  it("keeps community continuation when the bounded probe is saturated by excluded rows", async () => {
+    const officialDigest = makeDigest("official-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const excludedCommunityDigests = Array.from({ length: 200 }, (_, index) =>
+      makeDigest(`pending-community-security-${index}`, {
+        scanStatus: "pending",
+        pluginCategory: "security",
+        pluginCategoryTags: ["security"],
+      }),
+    );
+    const { ctx, paginate, take } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [officialDigest],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      categoryRows: excludedCommunityDigests,
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      excludedScanStatuses: ["pending"],
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
+    expect(result.isDone).toBe(false);
+    expect(result.continueCursor).toMatch(/^pkgofficialfirst:/);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledWith(200);
+  });
+
+  it("fills under-limit official-first category pages with community digests", async () => {
+    const officialDigest = makeDigest("official-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const firstCommunityDigest = makeDigest("community-security-one", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const secondCommunityDigest = makeDigest("community-security-two", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const { ctx, paginate, take } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [officialDigest],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      categoryRows: [officialDigest, firstCommunityDigest, secondCommunityDigest],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 3 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "official-security",
+      "community-security-one",
+      "community-security-two",
+    ]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps highlighted-only filtering while filling official-first category pages", async () => {
+    const officialHighlighted = makeDigest("official-highlighted-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const communityHighlighted = makeDigest("community-highlighted-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const communityUnhighlighted = makeDigest("community-unhighlighted-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const { ctx } = makeDigestCtx({
+      highlightedBadges: [
+        { packageId: officialHighlighted.packageId },
+        { packageId: communityHighlighted.packageId },
+      ],
+      exactDigests: [officialHighlighted, communityHighlighted],
+      categoryRows: [communityUnhighlighted],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      highlightedOnly: true,
+      paginationOpts: { cursor: null, numItems: 3 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual([
+      "official-highlighted-security",
+      "community-highlighted-security",
+    ]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
+  });
+
+  it("does not advertise unhighlighted community rows after a full highlighted official page", async () => {
+    const officialHighlighted = makeDigest("official-highlighted-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const communityUnhighlighted = makeDigest("community-unhighlighted-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const { ctx } = makeDigestCtx({
+      highlightedBadges: [{ packageId: officialHighlighted.packageId }],
+      exactDigests: [officialHighlighted],
+      categoryRows: [communityUnhighlighted],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      highlightedOnly: true,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-highlighted-security"]);
+    expect(result.isDone).toBe(true);
+    expect(result.continueCursor).toBe("");
+  });
+
+  it("checks official-first category community availability without a second paginate", async () => {
+    const officialDigest = makeDigest("official-security", {
+      isOfficial: true,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const communityDigest = makeDigest("community-security", {
+      isOfficial: false,
+      pluginCategory: "security",
+      pluginCategoryTags: ["security"],
+    });
+    const { ctx, paginate, take } = makeDigestCtx({
+      categoryPages: [
+        {
+          page: [officialDigest],
+          isDone: true,
+          continueCursor: "",
+        },
+      ],
+      categoryRows: [officialDigest, communityDigest],
+    });
+
+    const result = await listPublicPageHandler(ctx, {
+      category: "security",
+      officialFirst: true,
+      paginationOpts: { cursor: null, numItems: 1 },
+    });
+
+    expect(result.page.map((entry) => entry.name)).toEqual(["official-security"]);
+    expect(result.isDone).toBe(false);
+    expect(result.continueCursor).toMatch(/^pkgofficialfirst:/);
+    expect(paginate).toHaveBeenCalledTimes(1);
+    expect(take).toHaveBeenCalledTimes(1);
+  });
+
   it("uses plugin category digests for category-filtered search", async () => {
     const { ctx, indexNames, tableNames } = makeDigestCtx({
       categoryPages: [
@@ -5026,7 +5279,9 @@ describe("packages public queries", () => {
   });
 
   it("bounds fallback search to the first digest take window", async () => {
-    const olderMatch = makeDigest("demo-plugin", {
+    const olderMatch = makeDigest("old-package", {
+      displayName: "Old Package",
+      summary: "legacy helper",
       updatedAt: 10,
     });
     const { ctx, paginate, take } = makeDigestCtx({
@@ -5047,7 +5302,7 @@ describe("packages public queries", () => {
     });
 
     const result = await searchPublicHandler(ctx, {
-      query: "demo-plugin",
+      query: "legacy",
       limit: 10,
     });
 
@@ -5110,6 +5365,45 @@ describe("packages public queries", () => {
     expect(ctx.db.query).toHaveBeenCalledWith("packageSearchDigest");
   });
 
+  it("includes display-name matches before digest scanning", async () => {
+    const displayDigest = makeDigest("vpai-plugin", {
+      packageId: "packages:vpai-plugin",
+      displayName: "Vibe Prospecting",
+      ownerHandle: "vibeprospecting",
+    });
+    const { ctx, searchIndexNames } = makeDigestCtx({
+      pages: [],
+      exactDigests: [displayDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "vibe prospecting",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["vpai-plugin"]);
+    expect(searchIndexNames).toContain("search_by_display_name");
+  });
+
+  it("includes creator handle matches before digest scanning", async () => {
+    const ownerDigest = makeDigest("vpai-plugin", {
+      packageId: "packages:vpai-plugin",
+      displayName: "Vibe Prospecting",
+      ownerHandle: "vibeprospecting",
+    });
+    const { ctx } = makeDigestCtx({
+      pages: [],
+      exactDigests: [ownerDigest],
+    });
+
+    const result = await searchPublicHandler(ctx, {
+      query: "@vibeprospecting",
+      limit: 10,
+    });
+
+    expect(result.map((entry) => entry.package.name)).toEqual(["vpai-plugin"]);
+  });
+
   it("includes prefix package-name matches before digest scanning", async () => {
     const prefixPkg = makePackageDoc({
       _id: "packages:prefix",
@@ -5166,14 +5460,14 @@ describe("packages public queries", () => {
       pages: [
         {
           page: [
-            makeDigest("demo-alpha", { updatedAt: 20 }),
-            makeDigest("demo-beta", { updatedAt: 10 }),
+            makeDigest("alpha", { displayName: "Alpha", summary: "useful demo", updatedAt: 20 }),
+            makeDigest("beta", { displayName: "Beta", summary: "useful demo", updatedAt: 10 }),
           ],
           isDone: false,
           continueCursor: "cursor:1",
         },
         {
-          page: [makeDigest("demo-gamma")],
+          page: [makeDigest("gamma", { displayName: "Gamma", summary: "useful demo" })],
           isDone: true,
           continueCursor: "",
         },
@@ -5181,11 +5475,11 @@ describe("packages public queries", () => {
     });
 
     const result = await searchPublicHandler(ctx, {
-      query: "demo",
+      query: "useful",
       limit: 2,
     });
 
-    expect(result.map((entry) => entry.package.name)).toEqual(["demo-alpha", "demo-beta"]);
+    expect(result.map((entry) => entry.package.name)).toEqual(["alpha", "beta"]);
     expect(take).toHaveBeenCalledTimes(3);
     expect(take).toHaveBeenCalledWith(20);
     expect(take).toHaveBeenCalledWith(50);

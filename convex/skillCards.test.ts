@@ -664,6 +664,50 @@ describe("skillCards queue", () => {
       }),
     );
   });
+
+  it("redacts worker failure details before persistence", async () => {
+    const patch = vi.fn(async (_id: string, _patch: Record<string, unknown>) => undefined);
+    const ctx = {
+      db: completeDb({
+        get: vi.fn(async () => ({
+          _id: "skillCardGenerationJobs:1",
+          leaseToken: "lease",
+          attempts: 3,
+          nextRunAt: 1,
+        })),
+        patch,
+      }),
+    };
+
+    const result = await failHandler(ctx, {
+      jobId: "skillCardGenerationJobs:1",
+      leaseToken: "lease",
+      error:
+        "Download failed 403: https://signed.example.invalid/file?token=secret " +
+        "Authorization: Bearer worker-secret OPENAI_API_KEY=openai-runtime-secret " +
+        "path=artifacts/token=artifact-path-secret.json",
+    });
+
+    expect(result).toEqual({ ok: true, retry: false });
+    expect(patch).toHaveBeenCalledWith(
+      "skillCardGenerationJobs:1",
+      expect.objectContaining({
+        status: "failed",
+        lastError: expect.any(String),
+      }),
+    );
+    const patchPayload = patch.mock.calls[0]?.[1] as { lastError?: unknown } | undefined;
+    const lastError = String(patchPayload?.lastError);
+    expect(lastError).toContain("Download failed 403");
+    expect(lastError).not.toContain("https://");
+    expect(lastError).not.toContain("signed.example.invalid");
+    expect(lastError).not.toContain("token=secret");
+    expect(lastError).not.toContain("Authorization");
+    expect(lastError).not.toContain("worker-secret");
+    expect(lastError).not.toContain("openai-runtime-secret");
+    expect(lastError).not.toContain("artifact-path-secret");
+    expect(lastError).toContain("OPENAI_API_KEY=[redacted-secret]");
+  });
 });
 
 describe("skillCards attach", () => {

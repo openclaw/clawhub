@@ -42,6 +42,7 @@ import {
   cmdCreateOrg,
   cmdDeleteOrg,
   cmdListOfficialOrgs,
+  cmdReclaimDeletedOrgHandle,
   cmdRemoveOfficialOrg,
   cmdRemoveOrgMember,
   cmdRepairScopedPackages,
@@ -483,6 +484,19 @@ function registerOrgCommands(command: Command) {
     .action(async (handle, options) => {
       const opts = await resolveGlobalOpts();
       await cmdDeleteOrg(opts, handle, options);
+    });
+
+  command
+    .command("reclaim")
+    .description("Hard-delete an already-deleted empty org handle tombstone; defaults to dry-run")
+    .argument("<handle>", "Org publisher handle")
+    .requiredOption("--reason <reason>", "Audit reason")
+    .option("--apply", "Write changes; defaults to dry-run")
+    .option("--confirm <token>", "Confirmation token from dry-run output")
+    .option("--json", "Output JSON")
+    .action(async (handle, options) => {
+      const opts = await resolveGlobalOpts();
+      await cmdReclaimDeletedOrgHandle(opts, handle, options);
     });
 
   command

@@ -490,4 +490,292 @@ describe("downloads helpers", () => {
       }),
     );
   });
+
+  it.each(["clean", "suspicious"] as const)(
+    "returns a metered public GitHub handoff descriptor for %s scan without scan metadata",
+    async (scanStatus) => {
+      const commit = "1".repeat(40);
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        if ("slug" in args) {
+          return {
+            skill: {
+              _id: "skills:github",
+              ownerUserId: "users:1",
+              slug: "aiq-deploy",
+              tags: {},
+              latestVersionId: undefined,
+              installKind: "github",
+              githubPath: "skills/aiq-deploy",
+              githubCurrentCommit: commit,
+              githubCurrentContentHash: "hash-aiq-deploy",
+              githubCurrentStatus: "present",
+              githubScanStatus: scanStatus,
+            },
+            moderationInfo: null,
+          };
+        }
+        if ("skillId" in args) {
+          return {
+            installKind: "github",
+            repo: "NVIDIA/skills",
+            path: "skills/aiq-deploy",
+            commit,
+            contentHash: "hash-aiq-deploy",
+            currentStatus: "present",
+            scanStatus,
+            removedAt: null,
+          };
+        }
+        return null;
+      });
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        return null;
+      });
+      const runAfter = vi.fn();
+      const storageGet = vi.fn();
+
+      const response = await downloadZipHandler(
+        {
+          runQuery,
+          runMutation,
+          scheduler: { runAfter },
+          storage: { get: storageGet },
+        } as unknown as ActionCtx,
+        new Request("https://example.com/api/v1/download?slug=aiq-deploy", {
+          headers: { "cf-connecting-ip": "1.2.3.4" },
+        }),
+      );
+
+      expect(response.status).toBe(200);
+      expect(response.headers.get("Content-Type")).toBe("application/json");
+      expect(storageGet).not.toHaveBeenCalled();
+
+      const body = await response.json();
+      expect(body).toEqual({
+        sourceRef: "public-github",
+        repo: "NVIDIA/skills",
+        commit,
+        path: "skills/aiq-deploy",
+        contentHash: "hash-aiq-deploy",
+        archiveUrl: `https://api.github.com/repos/NVIDIA/skills/zipball/${commit}`,
+      });
+      expect(body).not.toHaveProperty("scan");
+      expect(body).not.toHaveProperty("scanStatus");
+
+      expect(runAfter).toHaveBeenCalledWith(
+        expect.any(Number),
+        expect.anything(),
+        expect.objectContaining({
+          target: { kind: "skill", id: "skills:github" },
+          identityKind: "ip",
+          identityHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        }),
+      );
+    },
+  );
+
+  it.each([
+    {
+      name: "pending scan",
+      skill: { githubCurrentStatus: "present", githubScanStatus: "pending" },
+      source: { repo: "NVIDIA/skills" },
+      status: 423,
+      message: "GitHub-backed skill security scan is in progress.",
+    },
+    {
+      name: "failed scan",
+      skill: { githubCurrentStatus: "present", githubScanStatus: "failed" },
+      source: { repo: "NVIDIA/skills" },
+      status: 403,
+      message: "GitHub-backed skill failed ClawHub security scanning.",
+    },
+    {
+      name: "malicious scan",
+      skill: { githubCurrentStatus: "present", githubScanStatus: "malicious" },
+      source: { repo: "NVIDIA/skills" },
+      status: 403,
+      message: "GitHub-backed skill failed ClawHub security scanning.",
+    },
+    {
+      name: "missing upstream path",
+      skill: { githubCurrentStatus: "missing", githubScanStatus: "clean" },
+      source: { repo: "NVIDIA/skills" },
+      status: 410,
+      message: "GitHub-backed skill path is missing upstream.",
+    },
+    {
+      name: "removed upstream path",
+      skill: { githubCurrentStatus: "present", githubRemovedAt: 123, githubScanStatus: "clean" },
+      source: { repo: "NVIDIA/skills" },
+      status: 410,
+      message: "GitHub-backed skill has been removed upstream.",
+    },
+    {
+      name: "unknown upstream freshness",
+      skill: { githubCurrentStatus: "unknown", githubScanStatus: "clean" },
+      source: { repo: "NVIDIA/skills" },
+      status: 423,
+      message: "GitHub-backed skill needs an upstream freshness check before download.",
+    },
+    {
+      name: "incomplete source",
+      skill: { githubCurrentStatus: "present", githubScanStatus: "clean" },
+      source: null,
+      status: 409,
+      message: "GitHub-backed skill source metadata is incomplete.",
+    },
+  ])(
+    "blocks $name GitHub handoffs without scheduling metrics",
+    async ({ skill, source, status, message }) => {
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        if ("slug" in args) {
+          return {
+            skill: {
+              _id: "skills:github",
+              ownerUserId: "users:1",
+              slug: "aiq-deploy",
+              tags: {},
+              latestVersionId: undefined,
+              installKind: "github",
+              githubPath: "skills/aiq-deploy",
+              githubCurrentCommit: "1".repeat(40),
+              githubCurrentContentHash: "hash-aiq-deploy",
+              ...skill,
+            },
+            moderationInfo: null,
+          };
+        }
+        if ("skillId" in args) {
+          if (!source) return null;
+          return {
+            installKind: "github",
+            repo: source.repo,
+            path: "skills/aiq-deploy",
+            commit: "1".repeat(40),
+            contentHash: "hash-aiq-deploy",
+            currentStatus: "present",
+            scanStatus: "clean",
+            removedAt: null,
+            ...skill,
+            ...(skill.githubCurrentStatus ? { currentStatus: skill.githubCurrentStatus } : {}),
+            ...(skill.githubScanStatus ? { scanStatus: skill.githubScanStatus } : {}),
+            ...(skill.githubRemovedAt ? { removedAt: skill.githubRemovedAt } : {}),
+          };
+        }
+        return null;
+      });
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        return null;
+      });
+      const runAfter = vi.fn();
+
+      const response = await downloadZipHandler(
+        {
+          runQuery,
+          runMutation,
+          scheduler: { runAfter },
+          storage: { get: vi.fn() },
+        } as unknown as ActionCtx,
+        new Request("https://example.com/api/v1/download?slug=aiq-deploy", {
+          headers: { "cf-connecting-ip": "1.2.3.4" },
+        }),
+      );
+
+      expect(response.status).toBe(status);
+      expect(await response.text()).toBe(message);
+      expect(runAfter).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([
+    {
+      name: "hidden by moderators",
+      moderationInfo: {
+        isPendingScan: false,
+        isMalwareBlocked: false,
+        isHiddenByMod: true,
+        isRemoved: false,
+      },
+      status: 403,
+      message: "This skill is currently unavailable.",
+    },
+    {
+      name: "removed by moderators",
+      moderationInfo: {
+        isPendingScan: false,
+        isMalwareBlocked: false,
+        isHiddenByMod: false,
+        isRemoved: true,
+      },
+      status: 410,
+      message: "This skill has been removed by a moderator.",
+    },
+  ])(
+    "blocks $name GitHub handoffs before source descriptor creation",
+    async ({ moderationInfo, status, message }) => {
+      const runQuery = vi.fn(async (_query: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        if ("slug" in args) {
+          return {
+            skill: {
+              _id: "skills:github",
+              ownerUserId: "users:1",
+              slug: "aiq-deploy",
+              tags: {},
+              latestVersionId: undefined,
+              installKind: "github",
+              githubPath: "skills/aiq-deploy",
+              githubCurrentCommit: "1".repeat(40),
+              githubCurrentContentHash: "hash-aiq-deploy",
+              githubCurrentStatus: "present",
+              githubScanStatus: "clean",
+            },
+            moderationInfo,
+          };
+        }
+        if ("skillId" in args) {
+          return {
+            installKind: "github",
+            repo: "NVIDIA/skills",
+            path: "skills/aiq-deploy",
+            commit: "1".repeat(40),
+            contentHash: "hash-aiq-deploy",
+            currentStatus: "present",
+            scanStatus: "clean",
+            removedAt: null,
+          };
+        }
+        return null;
+      });
+      const runMutation = vi.fn(async (_mutation: unknown, args: Record<string, unknown>) => {
+        if (isRateLimitArgs(args)) return okRate();
+        return null;
+      });
+      const runAfter = vi.fn();
+
+      const response = await downloadZipHandler(
+        {
+          runQuery,
+          runMutation,
+          scheduler: { runAfter },
+          storage: { get: vi.fn() },
+        } as unknown as ActionCtx,
+        new Request("https://example.com/api/v1/download?slug=aiq-deploy", {
+          headers: { "cf-connecting-ip": "1.2.3.4" },
+        }),
+      );
+
+      expect(response.status).toBe(status);
+      expect(await response.text()).toBe(message);
+      expect(runQuery).not.toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ skillId: "skills:github" }),
+      );
+      expect(runAfter).not.toHaveBeenCalled();
+    },
+  );
 });

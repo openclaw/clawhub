@@ -4,6 +4,7 @@ const port = Number(process.env.PLAYWRIGHT_PORT || 4173);
 const baseURL = process.env.PLAYWRIGHT_BASE_URL || `http://127.0.0.1:${port}`;
 const previewReadyURL = new URL("/favicon.ico", baseURL).toString();
 const workerCount = Number(process.env.PLAYWRIGHT_WORKERS ?? 2);
+const webServerTimeout = Number(process.env.PLAYWRIGHT_WEB_SERVER_TIMEOUT_MS ?? 300_000);
 
 export default defineConfig({
   testDir: "./e2e",
@@ -21,11 +22,13 @@ export default defineConfig({
   webServer: process.env.PLAYWRIGHT_BASE_URL
     ? undefined
     : {
-        command: "bun run preview -- --host 127.0.0.1 --port 4173",
+        command: "HOST=127.0.0.1 PORT=4173 bun .output/server/index.mjs",
         url: previewReadyURL,
         reuseExistingServer: !process.env.CI,
         stdout: "ignore",
         stderr: "pipe",
+        timeout:
+          Number.isFinite(webServerTimeout) && webServerTimeout > 0 ? webServerTimeout : 300_000,
       },
   projects: [
     {

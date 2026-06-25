@@ -1,8 +1,8 @@
 import { Resvg } from "@resvg/resvg-wasm";
 import { defineEventHandler, getQuery, setHeader } from "h3";
-import { fetchImageDataUrl } from "../../og/fetchImageDataUrl";
+import { fetchPublisherProfileImageDataUrl } from "../../og/fetchImageDataUrl";
 import { fetchPublisherOgMeta } from "../../og/fetchPublisherOgMeta";
-import { formatOgStat } from "../../og/formatOgStats";
+import { readOgDownloadsQuery, resolveOgDownloadsDisplay } from "../../og/formatOgStats";
 import {
   ensureResvgWasm,
   FONT_MONO,
@@ -13,11 +13,13 @@ import {
 } from "../../og/ogAssets";
 import { pngResponse } from "../../og/pngResponse";
 import { buildPublisherOgSvg } from "../../og/publisherOgSvg";
+import { buildOgDownloadsStat } from "../../og/registryOgSvg";
 
 type OgQuery = {
   handle?: string;
   title?: string;
   description?: string;
+  downloads?: string;
   installs?: string;
   kind?: string;
   avatar?: string;
@@ -43,11 +45,11 @@ export default defineEventHandler(async (event) => {
 
   const titleFromQuery = cleanString(query.title);
   const descriptionFromQuery = cleanString(query.description);
-  const installsFromQuery = cleanString(query.installs);
   const kindFromQuery = cleanString(query.kind);
   const avatarFromQuery = cleanString(query.avatar);
   const convexUrl = getConvexUrl();
-  const needFetch = !titleFromQuery || !descriptionFromQuery || !installsFromQuery;
+  const needFetch =
+    !titleFromQuery || !descriptionFromQuery || !readOgDownloadsQuery(query) || !avatarFromQuery;
   const meta = needFetch && convexUrl ? await fetchPublisherOgMeta(handle, convexUrl) : null;
   const handleLabel = `@${meta?.handle || handle}`;
   const title = titleFromQuery || meta?.displayName || handleLabel;
@@ -58,7 +60,7 @@ export default defineEventHandler(async (event) => {
     getWatermarkDataUrl(),
     ensureResvgWasm().then(() => getFontBuffers()),
   ]);
-  const avatarDataUrl = await fetchImageDataUrl(avatarFromQuery || meta?.image);
+  const avatarDataUrl = await fetchPublisherProfileImageDataUrl(avatarFromQuery || meta?.image);
 
   const svg = buildPublisherOgSvg({
     markDataUrl,
@@ -68,12 +70,7 @@ export default defineEventHandler(async (event) => {
     title,
     description,
     handleLabel,
-    stats: [
-      {
-        value: installsFromQuery || formatOgStat(meta?.stats.installs),
-        label: "Installs",
-      },
-    ],
+    stats: [buildOgDownloadsStat(resolveOgDownloadsDisplay(query, meta?.stats.downloads))],
   });
 
   const resvg = new Resvg(svg, {

@@ -1,6 +1,10 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { describe, expect, it, vi } from "vitest";
-import { assertCanManageOwnedResource, requirePublisherRole } from "./lib/publishers";
+import {
+  assertCanManageOwnedResource,
+  ensurePersonalPublisherForUser,
+  requirePublisherRole,
+} from "./lib/publishers";
 import {
   addMember,
   listPublicPage,
@@ -17,7 +21,9 @@ import {
   removeOrgPublisherMemberInternal,
   recoverPersonalPublisherInternal,
   createOrg,
+  createImageUpload,
   deleteOrg,
+  reclaimDeletedOrgHandleInternal,
   removeMember,
   addOfficialPublisherInternal,
   createOrgPublisherForUserInternal,
@@ -192,13 +198,16 @@ const listPublicPageHandler = (
   listPublicPage as unknown as WrappedHandler<
     {
       kind?: "user" | "org";
+      official?: boolean;
       query?: string;
       paginationOpts: { cursor: string | null; numItems: number };
     },
     {
       page: Array<{
         handle: string;
+        displayName?: string;
         kind: "user" | "org";
+        official?: boolean;
         stats: { downloads: number; installs: number };
         publishedItems: Array<{ displayName: string; installs: number; downloads: number }>;
       }>;
@@ -279,7 +288,13 @@ const updateProfileHandler = (
     displayName: string;
     bio?: string;
     image?: string;
+    imageStorageId?: string;
+    imageUploadTicket?: string;
   }>
+)._handler;
+
+const createImageUploadHandler = (
+  createImageUpload as unknown as WrappedHandler<{ publisherId: string }>
 )._handler;
 
 const setTrustedPublisherInternalHandler = (
@@ -349,6 +364,32 @@ const deleteSoleOwnerOrgsForAccountDeletionInternalHandler = (
       deletedOrgs: number;
       hiddenSkills: number;
       deletedPackages: number;
+    }
+  >
+)._handler;
+
+const reclaimDeletedOrgHandleInternalHandler = (
+  reclaimDeletedOrgHandleInternal as unknown as WrappedHandler<
+    {
+      actorUserId: string;
+      handle: string;
+      reason: string;
+      dryRun?: boolean;
+      confirmationToken?: string;
+    },
+    {
+      ok: true;
+      publisherId: string;
+      handle: string;
+      dryRun: boolean;
+      hardDeleted: boolean;
+      activeSkills: number;
+      activePackages: number;
+      memberCount: number;
+      githubSources: number;
+      githubSourceContents: number;
+      officialPublisher: boolean;
+      confirmationToken: string;
     }
   >
 )._handler;
@@ -809,6 +850,189 @@ describe("publishers membership controls", () => {
     ).rejects.toThrow("Only org owners can delete an organization");
     expect(patch).not.toHaveBeenCalled();
     expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  function makeReclaimDeletedOrgCtx(
+    options: {
+      publisher?: Record<string, unknown> | null;
+      activeSkills?: Array<Record<string, unknown>>;
+      activePackages?: Array<Record<string, unknown>>;
+    } = {},
+  ) {
+    const publisher = options.publisher ?? {
+      _id: "publishers:tencent",
+      kind: "org",
+      handle: "tencent",
+      displayName: "TENCENT",
+      deletedAt: 2_000,
+      deactivatedAt: 2_000,
+      createdAt: 1,
+      updatedAt: 2_000,
+    };
+    const members = [
+      {
+        _id: "publisherMembers:owner",
+        publisherId: "publishers:tencent",
+        userId: "users:spammer",
+        role: "owner",
+      },
+    ];
+    const deleted = vi.fn();
+    const insert = vi.fn();
+    const query = vi.fn((table: string) => {
+      if (table === "publishers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_handle") throw new Error(`unexpected index ${indexName}`);
+            return { unique: vi.fn(async () => publisher) };
+          }),
+        };
+      }
+      if (table === "skills") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_owner_publisher_active_updated") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { take: vi.fn(async () => options.activeSkills ?? []) };
+          }),
+        };
+      }
+      if (table === "packages") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_owner_publisher_active_updated") {
+              throw new Error(`unexpected index ${indexName}`);
+            }
+            return { take: vi.fn(async () => options.activePackages ?? []) };
+          }),
+        };
+      }
+      if (table === "publisherMembers") {
+        return {
+          withIndex: vi.fn((indexName: string) => {
+            if (indexName !== "by_publisher") throw new Error(`unexpected index ${indexName}`);
+            return { collect: vi.fn(async () => members) };
+          }),
+        };
+      }
+      if (table === "githubSkillSources" || table === "githubSkillContents") {
+        return emptyOwnedResourcesQuery();
+      }
+      if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+      throw new Error(`unexpected table ${table}`);
+    });
+    return {
+      ctx: {
+        scheduler: { runAfter: vi.fn() },
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "users:admin") return { _id: id, role: "admin" };
+            return null;
+          }),
+          query,
+          insert,
+          delete: deleted,
+          patch: vi.fn(),
+          replace: vi.fn(),
+          normalizeId: vi.fn(() => null),
+        },
+      },
+      deleted,
+      insert,
+    };
+  }
+
+  it("dry-runs hard deletion for a deleted empty org handle", async () => {
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+
+    const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      handle: "Tencent",
+      reason: "Free spam org handle",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      publisherId: "publishers:tencent",
+      handle: "tencent",
+      dryRun: true,
+      hardDeleted: false,
+      activeSkills: 0,
+      activePackages: 0,
+      memberCount: 1,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+    expect(deleted).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("requires the confirmation token before hard deleting", async () => {
+    const { ctx, deleted } = makeReclaimDeletedOrgCtx();
+
+    await expect(
+      reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+        dryRun: false,
+      }),
+    ).rejects.toThrow('Confirmation token must be "reclaim-deleted-org:tencent"');
+    expect(deleted).not.toHaveBeenCalled();
+  });
+
+  it("hard deletes the deleted org publisher row and records an audit log", async () => {
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+
+    const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+      actorUserId: "users:admin",
+      handle: "tencent",
+      reason: "Free spam org handle",
+      dryRun: false,
+      confirmationToken: "reclaim-deleted-org:tencent",
+    });
+
+    expect(result).toMatchObject({
+      dryRun: false,
+      hardDeleted: true,
+      memberCount: 1,
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        actorUserId: "users:admin",
+        action: "publisher.org.reclaim_deleted_handle",
+        targetType: "publisher",
+        targetId: "publishers:tencent",
+        metadata: expect.objectContaining({
+          handle: "tencent",
+          reason: "Free spam org handle",
+        }),
+      }),
+    );
+    expect(deleted).toHaveBeenCalledWith("publisherMembers:owner");
+    expect(deleted).toHaveBeenCalledWith("publishers:tencent");
+  });
+
+  it("refuses to reclaim an active org handle", async () => {
+    const { ctx } = makeReclaimDeletedOrgCtx({
+      publisher: {
+        _id: "publishers:tencent",
+        kind: "org",
+        handle: "tencent",
+        displayName: "TENCENT",
+        createdAt: 1,
+        updatedAt: 2,
+      },
+    });
+
+    await expect(
+      reclaimDeletedOrgHandleInternalHandler(ctx as never, {
+        actorUserId: "users:admin",
+        handle: "tencent",
+        reason: "Free spam org handle",
+      }),
+    ).rejects.toThrow("Publisher is active; use org delete before reclaiming the handle");
   });
 
   it("deletes sole-owner account orgs when other owner memberships are inactive", async () => {
@@ -1329,9 +1553,18 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
             const q = {
               eq: (field: string, value: unknown) => {
                 fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
                 return q;
               },
             };
@@ -1377,9 +1610,13 @@ describe("publishers membership controls", () => {
             }
             if (table === "publishers" && indexName === "by_active_kind_handle") {
               return {
-                collect: vi.fn(async () =>
-                  publisherRows.filter((publisher) => publisher.kind === fields.kind),
-                ),
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  return publisherRows.filter(
+                    (publisher) =>
+                      publisher.kind === fields.kind && publisher.handle.startsWith(prefix),
+                  );
+                }),
               };
             }
             if (
@@ -1406,6 +1643,255 @@ describe("publishers membership controls", () => {
     expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
     expect(result.globalCounts).toEqual({ all: 3, individuals: 2, organizations: 1 });
     expect(result.page.map((item) => item.handle)).toEqual(["alice"]);
+  });
+
+  it("finds publishers outside the popular install window via handle prefix search", async () => {
+    const popularRows = Array.from({ length: 500 }, (_, index) => ({
+      _id: `publishers:popular-${index}`,
+      _creationTime: index,
+      kind: "user" as const,
+      handle: `popular-${index}`,
+      displayName: `Popular ${index}`,
+      linkedUserId: `users:popular-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 500 - index,
+      totalDownloads: 500 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const vincentkoc = {
+      _id: "publishers:vincentkoc",
+      _creationTime: 1,
+      kind: "user" as const,
+      handle: "vincentkoc",
+      displayName: "Vincent Koc",
+      linkedUserId: "users:vincentkoc",
+      publishedSkills: 0,
+      publishedPackages: 0,
+      totalInstalls: 0,
+      totalDownloads: 0,
+      totalStars: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:vincentkoc") {
+            return { _id: id, image: "https://github.com/vincentkoc.png" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  fields.handle === "vincent"
+                    ? null
+                    : fields.handle === "vincentkoc"
+                      ? vincentkoc
+                      : null,
+                ),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_installs") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  const upper = (range.lt as { value: string } | undefined)?.value ?? "";
+                  if (fields.kind === "user" && prefix === "vincent" && upper === "vincent\uffff") {
+                    return [vincentkoc];
+                  }
+                  return [];
+                }),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_downloads"
+            ) {
+              return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      query: "vincent",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page.map((item) => item.handle)).toEqual(["vincentkoc"]);
+    expect(result.counts).toEqual({ all: 1, individuals: 1, organizations: 0 });
+  });
+
+  it("finds publishers with published skills outside the popular install window", async () => {
+    const popularRows = Array.from({ length: 500 }, (_, index) => ({
+      _id: `publishers:popular-${index}`,
+      _creationTime: index,
+      kind: "user" as const,
+      handle: `popular-${index}`,
+      displayName: `Popular ${index}`,
+      linkedUserId: `users:popular-${index}`,
+      publishedSkills: 1,
+      publishedPackages: 0,
+      totalInstalls: 500 - index,
+      totalDownloads: 500 - index,
+      totalStars: 1,
+      createdAt: 1,
+      updatedAt: 1,
+    }));
+    const vyctorbrzezowski = {
+      _id: "publishers:vyctorbrzezowski",
+      _creationTime: 1,
+      kind: "user" as const,
+      handle: "vyctorbrzezowski",
+      displayName: "Vyctor Brzezowski",
+      linkedUserId: "users:vyctorbrzezowski",
+      publishedSkills: 5,
+      publishedPackages: 1,
+      totalInstalls: 46,
+      totalDownloads: 1288,
+      totalStars: 0,
+      createdAt: 1,
+      updatedAt: 1,
+    };
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:vyctorbrzezowski") {
+            return { _id: id, image: "https://github.com/vyctorbrzezowski.png" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
+                return q;
+              },
+            };
+            buildQuery(q);
+            if (table === "publishers" && indexName === "by_handle") {
+              return {
+                unique: vi.fn(async () =>
+                  fields.handle === "vyctorbrzezowski" ? vyctorbrzezowski : null,
+                ),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_downloads") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_total_installs") {
+              return {
+                order: vi.fn(() => ({
+                  take: vi.fn(async () => popularRows),
+                })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => {
+                  const prefix = (range.gte as { value: string } | undefined)?.value ?? "";
+                  const upper = (range.lt as { value: string } | undefined)?.value ?? "";
+                  if (fields.kind === "user" && prefix === "vyctor" && upper === "vyctor\uffff") {
+                    return [vyctorbrzezowski];
+                  }
+                  return [];
+                }),
+              };
+            }
+            if (table === "skills" && indexName === "by_owner_publisher_active_downloads") {
+              return indexedRows([
+                {
+                  _id: "skills:vyctor-demo",
+                  ownerPublisherId: "publishers:vyctorbrzezowski",
+                  softDeletedAt: undefined,
+                  displayName: "Demo Skill",
+                  statsInstallsAllTime: 46,
+                  statsDownloads: 1288,
+                  statsStars: 0,
+                  updatedAt: 1,
+                },
+              ]);
+            }
+            if (table === "packages" && indexName === "by_owner_publisher_active_downloads") {
+              return indexedRows([]);
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return { unique: vi.fn(async () => null) };
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const prefixResult = await listPublicPageHandler(ctx as never, {
+      query: "vyctor",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+    const exactResult = await listPublicPageHandler(ctx as never, {
+      query: "vyctorbrzezowski",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(prefixResult.page.map((item) => item.handle)).toEqual(["vyctorbrzezowski"]);
+    expect(exactResult.page.map((item) => item.handle)).toEqual(["vyctorbrzezowski"]);
   });
 
   it("filters hidden legacy user publishers before counting and paginating public publisher pages", async () => {
@@ -1522,6 +2008,132 @@ describe("publishers membership controls", () => {
     expect(get).toHaveBeenCalledWith("users:proof-banned-builder");
     expect(get).toHaveBeenCalledWith("users:alice");
     expect(ownerPublisherQueries).toEqual(["publishers:alice", "publishers:alice"]);
+  });
+
+  it("lists official creators and organizations from the official publisher index", async () => {
+    const publishers = [
+      {
+        _id: "publishers:steipete",
+        _creationTime: 1,
+        kind: "user",
+        handle: "steipete",
+        displayName: "steipete",
+        linkedUserId: "users:steipete",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 85_400,
+        totalDownloads: 100_000,
+        totalStars: 100,
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      {
+        _id: "publishers:openclaw",
+        _creationTime: 2,
+        kind: "org",
+        handle: "openclaw",
+        displayName: "OpenClaw",
+        publishedSkills: 6,
+        publishedPackages: 59,
+        totalInstalls: 130,
+        totalDownloads: 95_000,
+        totalStars: 4,
+        createdAt: 2,
+        updatedAt: 2,
+      },
+      {
+        _id: "publishers:community",
+        _creationTime: 3,
+        kind: "org",
+        handle: "community",
+        displayName: "Community",
+        publishedSkills: 1,
+        publishedPackages: 0,
+        totalInstalls: 1_000,
+        totalDownloads: 1_000,
+        totalStars: 1,
+        createdAt: 3,
+        updatedAt: 3,
+      },
+    ];
+    const officialRows = [
+      {
+        _id: "officialPublishers:steipete",
+        publisherId: "publishers:steipete",
+        createdAt: 1,
+      },
+      {
+        _id: "officialPublishers:openclaw",
+        publisherId: "publishers:openclaw",
+        createdAt: 2,
+      },
+    ];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:steipete") {
+            return {
+              _id: id,
+              displayName: "Peter Steinberger",
+              image: "https://github.com/steipete.png",
+            };
+          }
+          return publishers.find((publisher) => publisher._id === id) ?? null;
+        }),
+        query: vi.fn((table: string) => ({
+          withIndex: vi.fn((indexName: string, buildQuery?: (q: unknown) => unknown) => {
+            const fields: Record<string, unknown> = {};
+            const q = {
+              eq: (field: string, value: unknown) => {
+                fields[field] = value;
+                return q;
+              },
+            };
+            buildQuery?.(q);
+
+            if (table === "officialPublishers" && indexName === "by_created") {
+              return {
+                order: vi.fn(() => ({ take: vi.fn(async () => officialRows) })),
+              };
+            }
+            if (table === "officialPublishers" && indexName === "by_publisher") {
+              return {
+                unique: vi.fn(async () =>
+                  officialRows.find((row) => row.publisherId === fields.publisherId),
+                ),
+              };
+            }
+            if (
+              (table === "skills" || table === "packages") &&
+              indexName === "by_owner_publisher_active_downloads"
+            ) {
+              return indexedRows([]);
+            }
+            throw new Error(`unexpected ${table} index ${indexName}`);
+          }),
+        })),
+      },
+    };
+
+    const result = await listPublicPageHandler(ctx as never, {
+      official: true,
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(result.page.map((publisher) => publisher.handle)).toEqual(["steipete", "openclaw"]);
+    expect(result.page.map((publisher) => publisher.kind)).toEqual(["user", "org"]);
+    expect(result.page[0]?.displayName).toBe("Peter Steinberger");
+    expect(result.page.every((publisher) => publisher.official)).toBe(true);
+    expect(result.isDone).toBe(true);
+
+    const creators = await listPublicPageHandler(ctx as never, {
+      official: true,
+      kind: "user",
+      paginationOpts: { cursor: null, numItems: 25 },
+    });
+
+    expect(creators.page.map((publisher) => publisher.handle)).toEqual(["steipete"]);
+    expect(creators.globalCounts).toEqual({ all: 2, individuals: 1, organizations: 1 });
   });
 
   it("orders and renders public publisher card previews by downloads", async () => {
@@ -1922,9 +2534,18 @@ describe("publishers membership controls", () => {
         query: vi.fn((table: string) => ({
           withIndex: vi.fn((indexName: string, buildQuery: (q: unknown) => unknown) => {
             const fields: Record<string, unknown> = {};
+            const range: Record<string, unknown> = {};
             const q = {
               eq: (field: string, value: unknown) => {
                 fields[field] = value;
+                return q;
+              },
+              gte: (field: string, value: unknown) => {
+                range.gte = { field, value };
+                return q;
+              },
+              lt: (field: string, value: unknown) => {
+                range.lt = { field, value };
                 return q;
               },
             };
@@ -1937,11 +2558,19 @@ describe("publishers membership controls", () => {
                 })),
               };
             }
+            if (table === "publishers" && indexName === "by_handle") {
+              return { unique: vi.fn(async () => null) };
+            }
             if (table === "publishers" && indexName === "by_active_total_installs") {
               return {
                 order: vi.fn(() => ({
                   take: vi.fn(async () => publisherRows),
                 })),
+              };
+            }
+            if (table === "publishers" && indexName === "by_active_kind_handle") {
+              return {
+                take: vi.fn(async () => []),
               };
             }
             if (
@@ -3315,7 +3944,6 @@ describe("publishers membership controls", () => {
           publisherId: "publishers:org",
           displayName: "Shopify",
           bio: "Commerce platform",
-          image: "https://cdn.example.com/shopify.png",
         } as never,
       ),
     ).resolves.toEqual({
@@ -3331,7 +3959,6 @@ describe("publishers membership controls", () => {
       expect.objectContaining({
         displayName: "Shopify",
         bio: "Commerce platform",
-        image: "https://cdn.example.com/shopify.png",
       }),
     );
     expect(insert).toHaveBeenCalledWith(
@@ -3343,7 +3970,229 @@ describe("publishers membership controls", () => {
     );
   });
 
-  it("rejects invalid org profile image URLs", async () => {
+  it("issues logo upload tickets only to org admins", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const insert = vi.fn(async () => "publisherImageUploadTickets:1");
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") {
+            return { _id: id, kind: "org", handle: "shopify", displayName: "Shopify" };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        insert,
+        patch: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: {
+        generateUploadUrl: vi.fn(async () => "https://storage.example/upload"),
+      },
+    };
+
+    await expect(
+      createImageUploadHandler(ctx as never, { publisherId: "publishers:org" }),
+    ).resolves.toEqual({
+      uploadUrl: "https://storage.example/upload",
+      uploadTicket: "publisherImageUploadTickets:1",
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "publisherImageUploadTickets",
+      expect.objectContaining({
+        publisherId: "publishers:org",
+        userId: "users:admin",
+        expiresAt: expect.any(Number),
+      }),
+    );
+  });
+
+  it("accepts a validated uploaded logo and removes the previous stored image", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const publisher = {
+      _id: "publishers:org",
+      kind: "org",
+      handle: "shopify",
+      displayName: "Shopify",
+      image: "https://storage.example/old",
+      imageStorageId: "storage:old",
+    };
+    let publisherReadCount = 0;
+    const patch = vi.fn(async () => {});
+    const insert = vi.fn(async () => "auditLogs:1");
+    const deleteStorage = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") {
+            publisherReadCount += 1;
+            return publisherReadCount === 1
+              ? publisher
+              : {
+                  ...publisher,
+                  image: "https://storage.example/new-logo",
+                  imageStorageId: "storage:new",
+                };
+          }
+          if (id === "publisherImageUploadTickets:1") {
+            return {
+              _id: id,
+              publisherId: "publishers:org",
+              userId: "users:admin",
+              createdAt: 10,
+              expiresAt: Date.now() + 10_000,
+            };
+          }
+          return null;
+        }),
+        system: {
+          get: vi.fn(async () => ({
+            _creationTime: 20,
+            contentType: "image/webp",
+            size: 1000,
+          })),
+        },
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch,
+        insert,
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: {
+        getUrl: vi.fn(async () => "https://storage.example/new-logo"),
+        delete: deleteStorage,
+      },
+    };
+
+    await expect(
+      updateProfileHandler(ctx as never, {
+        publisherId: "publishers:org",
+        displayName: "Shopify",
+        imageStorageId: "storage:new",
+        imageUploadTicket: "publisherImageUploadTickets:1",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      publisher: expect.objectContaining({
+        _id: "publishers:org",
+        image: "https://storage.example/new-logo",
+      }),
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publisherImageUploadTickets:1",
+      expect.objectContaining({ storageId: "storage:new", usedAt: expect.any(Number) }),
+    );
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:org",
+      expect.objectContaining({
+        image: "https://storage.example/new-logo",
+        imageStorageId: "storage:new",
+      }),
+    );
+    expect(deleteStorage).toHaveBeenCalledWith("storage:old");
+  });
+
+  it("preserves an existing stored logo during ordinary profile edits", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
+    const patch = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:admin") return { _id: id };
+          if (id === "publishers:org") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "shopify",
+              displayName: "Shopify Labs",
+              image: "https://storage.example/current-logo",
+              imageStorageId: "storage:current",
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue({
+                  publisherId: "publishers:org",
+                  userId: "users:admin",
+                  role: "admin",
+                }),
+              })),
+            };
+          }
+          if (table === "officialPublishers") return emptyOfficialPublishersQuery();
+          throw new Error(`unexpected table ${table}`);
+        }),
+        patch,
+        insert: vi.fn(),
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+      storage: {
+        delete: vi.fn(),
+      },
+    };
+
+    await expect(
+      updateProfileHandler(ctx as never, {
+        publisherId: "publishers:org",
+        displayName: "Shopify Labs",
+        image: "https://storage.example/current-logo",
+      }),
+    ).resolves.toEqual({
+      ok: true,
+      publisher: expect.objectContaining({
+        handle: "shopify",
+        image: "https://storage.example/current-logo",
+      }),
+    });
+    expect(patch).toHaveBeenCalledWith(
+      "publishers:org",
+      expect.objectContaining({
+        displayName: "Shopify Labs",
+        image: "https://storage.example/current-logo",
+        imageStorageId: "storage:current",
+      }),
+    );
+  });
+
+  it("rejects direct org profile image URL changes", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:admin" as never);
     const ctx = {
       db: {
@@ -3391,7 +4240,7 @@ describe("publishers membership controls", () => {
           image: "not-a-url",
         } as never,
       ),
-    ).rejects.toThrow("Image must be a valid URL");
+    ).rejects.toThrow("Logo changes require an uploaded image");
   });
 });
 
@@ -4030,6 +4879,65 @@ describe("publisher bootstrap", () => {
     ]);
   });
 
+  it("rejects personal publisher handles containing openclaw", async () => {
+    const inserts: Array<{ table: string; value: Record<string, unknown> }> = [];
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:openclaw-china") {
+            return {
+              _id: id,
+              _creationTime: 1,
+              handle: "openclaw-china",
+              displayName: "Openclaw China",
+              trustedPublisher: false,
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn((indexName: string) => {
+                if (indexName === "by_linked_user") {
+                  return { unique: vi.fn().mockResolvedValue(null) };
+                }
+                if (indexName === "by_handle") {
+                  return { unique: vi.fn().mockResolvedValue(null) };
+                }
+                throw new Error(`unexpected index ${indexName}`);
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        insert: vi.fn(async (table: string, value: Record<string, unknown>) => {
+          inserts.push({ table, value });
+          return `${table}:${inserts.length}`;
+        }),
+        patch: vi.fn(),
+      },
+    };
+
+    await expect(
+      ensurePersonalPublisherForUser(
+        ctx as never,
+        {
+          _id: "users:openclaw-china",
+          _creationTime: 1,
+          handle: "openclaw-china",
+          displayName: "Openclaw China",
+          trustedPublisher: false,
+          createdAt: 1,
+          updatedAt: 1,
+        } as never,
+      ),
+    ).rejects.toThrow('Handle "@openclaw-china" is reserved for OpenClaw publishers');
+    expect(inserts).toHaveLength(0);
+  });
+
   it("filters stale personal memberships from mine listings", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:friend" as never);
     const memberships = [
@@ -4433,6 +5341,19 @@ describe("self-serve org publisher creation", () => {
         handle: "opik",
       }),
     ).rejects.toThrow('Publisher "@opik" already exists');
+  });
+
+  it("rejects self-serve org handles containing openclaw", async () => {
+    const { ctx, inserts } = makeCreateOrgPublisherCtx({});
+
+    await expect(
+      createOrgPublisherForUserInternalHandler(ctx as never, {
+        actorUserId: "users:vincent",
+        handle: "openclaw-china",
+        displayName: "Openclaw China",
+      }),
+    ).rejects.toThrow('Handle "@openclaw-china" is reserved for OpenClaw publishers');
+    expect(inserts).toHaveLength(0);
   });
 
   it("rejects creation when the handle belongs to a user or personal publisher", async () => {
@@ -5422,7 +6343,7 @@ describe("legacy publisher migration", () => {
     expect(inserts).toHaveLength(0);
   });
 
-  it("lets admins create a missing org publisher with only the legacy package owner as owner", async () => {
+  it("lets admins create a missing reserved OpenClaw org publisher with only the legacy package owner as owner", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 
     const users = new Map<string, Record<string, unknown>>([
@@ -5552,8 +6473,8 @@ describe("legacy publisher migration", () => {
       } as never,
       {
         actorUserId: "users:admin",
-        handle: "opik",
-        displayName: "Opik",
+        handle: "openclaw",
+        displayName: "OpenClaw",
         memberHandle: "vincentkoc",
         memberRole: "owner",
       },
@@ -5561,7 +6482,7 @@ describe("legacy publisher migration", () => {
 
     expect(result).toMatchObject({
       ok: true,
-      handle: "opik",
+      handle: "openclaw",
       created: true,
       member: {
         userId: "users:vincent",
@@ -5572,7 +6493,11 @@ describe("legacy publisher migration", () => {
     expect(inserts).toContainEqual(
       expect.objectContaining({
         table: "publishers",
-        value: expect.objectContaining({ kind: "org", handle: "opik", displayName: "Opik" }),
+        value: expect.objectContaining({
+          kind: "org",
+          handle: "openclaw",
+          displayName: "OpenClaw",
+        }),
       }),
     );
     const memberInserts = inserts.filter(
@@ -5799,7 +6724,7 @@ describe("legacy publisher migration", () => {
     ).rejects.toThrow("Publisher must have at least one owner");
   });
 
-  it("converts a legacy personal publisher into an org and rehomes package ownership", async () => {
+  it("converts a reserved OpenClaw legacy personal publisher into an org with a safe default fallback", async () => {
     vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
 
     const users = new Map<string, Record<string, unknown>>([
@@ -5827,20 +6752,6 @@ describe("legacy publisher migration", () => {
           kind: "user",
           handle: "openclaw",
           displayName: "OpenClaw",
-          linkedUserId: "users:openclaw",
-          trustedPublisher: true,
-          createdAt: 1,
-          updatedAt: 1,
-        },
-      ],
-      [
-        "publishers:openclaw-user",
-        {
-          _id: "publishers:openclaw-user",
-          _creationTime: 1,
-          kind: "user",
-          handle: "openclaw-user",
-          displayName: "OpenClaw User",
           linkedUserId: "users:openclaw",
           trustedPublisher: true,
           createdAt: 1,
@@ -5891,7 +6802,7 @@ describe("legacy publisher migration", () => {
 
     const insert = vi.fn(async (table: string, value: Record<string, unknown>) => {
       if (table === "publishers") {
-        const id = "publishers:openclaw-user";
+        const id = "publishers:user";
         publishers.set(id, { _id: id, _creationTime: 1, ...value });
         return id;
       }
@@ -6049,7 +6960,10 @@ describe("legacy publisher migration", () => {
     const result = await migrateLegacyPublisherHandleToOrgInternalHandler(
       {
         db: {
-          get: vi.fn(async (id: string) => users.get(id) ?? publishers.get(id) ?? null),
+          get: vi.fn(async (...args: string[]) => {
+            const id = args.length === 2 ? args[1] : args[0];
+            return users.get(id) ?? publishers.get(id) ?? null;
+          }),
           query,
           patch,
           insert,
@@ -6061,7 +6975,6 @@ describe("legacy publisher migration", () => {
       {
         actorUserId: "users:admin",
         handle: "openclaw",
-        fallbackUserHandle: "openclaw-user",
         displayName: "OpenClaw",
       } as never,
     );
@@ -6071,15 +6984,15 @@ describe("legacy publisher migration", () => {
       handle: "openclaw",
       orgPublisherId: "publishers:openclaw",
       legacyUserId: "users:openclaw",
-      fallbackUserHandle: "openclaw-user",
-      personalPublisherId: "publishers:openclaw-user",
+      fallbackUserHandle: "user",
+      personalPublisherId: "publishers:user",
       convertedExistingPublisher: true,
       packagesMigrated: 1,
     });
     expect(users.get("users:openclaw")).toEqual(
       expect.objectContaining({
-        handle: "openclaw-user",
-        personalPublisherId: "publishers:openclaw-user",
+        handle: "user",
+        personalPublisherId: "publishers:user",
       }),
     );
     expect(publishers.get("publishers:openclaw")).toEqual(
@@ -6089,10 +7002,10 @@ describe("legacy publisher migration", () => {
         linkedUserId: undefined,
       }),
     );
-    expect(publishers.get("publishers:openclaw-user")).toEqual(
+    expect(publishers.get("publishers:user")).toEqual(
       expect.objectContaining({
         kind: "user",
-        handle: "openclaw-user",
+        handle: "user",
         linkedUserId: "users:openclaw",
       }),
     );

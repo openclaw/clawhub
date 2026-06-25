@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
-import type { PublicSkill } from "../lib/publicUser";
+import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { SkillListItem } from "./SkillListItem";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -27,16 +27,33 @@ describe("SkillListItem", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Official")).toBeTruthy();
-    expect(screen.queryByText("Official")).toBeNull();
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(screen.queryByText("Verified")).toBeNull();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
-  it("renders author topics", () => {
-    render(<SkillListItem skill={makeSkill({ topics: ["discord", "community"] })} />);
+  it("renders the compact official mark for skills owned by official publishers", () => {
+    const { container } = render(
+      <SkillListItem skill={makeSkill()} owner={makePublisher({ official: true })} />,
+    );
 
-    expect(screen.getByText("discord")).toBeTruthy();
-    expect(screen.getByText("community")).toBeTruthy();
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
+    expect(container.querySelector(".official-badge")).toBeTruthy();
+  });
+
+  it("renders up to two author topics in browse rows", () => {
+    render(<SkillListItem skill={makeSkill({ topics: ["discord", "community", "automation"] })} />);
+
+    expect(screen.getByText("#discord")).toBeTruthy();
+    expect(screen.getByText("#community")).toBeTruthy();
+    expect(screen.queryByText("#automation")).toBeNull();
+  });
+
+  it("keeps the creator inline without a second avatar", () => {
+    const { container } = render(<SkillListItem skill={makeSkill()} ownerHandle="creator" />);
+
+    expect(screen.getByText("@creator")).toBeTruthy();
+    expect(container.querySelector(".skill-list-item-main img")).toBeNull();
   });
 });
 
@@ -66,6 +83,20 @@ function makeSkill(overrides: Partial<PublicSkill> = {}): PublicSkill {
     isSuspicious: false,
     createdAt: 1,
     updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function makePublisher(overrides: Partial<PublicPublisher> = {}): PublicPublisher {
+  return {
+    _id: "publishers:owner" as Id<"publishers">,
+    _creationTime: 1,
+    kind: "org",
+    handle: "owner",
+    displayName: "Owner",
+    image: undefined,
+    bio: undefined,
+    linkedUserId: undefined,
     ...overrides,
   };
 }

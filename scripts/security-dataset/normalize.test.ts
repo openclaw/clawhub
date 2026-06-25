@@ -269,6 +269,32 @@ describe("security dataset normalizer", () => {
     ]);
   });
 
+  it("redacts secret-like public metadata and bundle paths", () => {
+    const rows = normalizeArtifactExport([
+      {
+        ...baseArtifact,
+        publicName: "Demo token=supersecretvalue123",
+        publicOwnerHandle: "ghp_abcdefghijklmnopqrstuvwxyz1234567890",
+        publicSlug: "sk-abcdefghijklmnopqrstuvwxyz",
+        bundleFilesRedacted: [
+          {
+            path: "config/sk-abcdefghijklmnopqrstuvwxyz/settings.json",
+            content: "echo safe\n",
+          },
+        ],
+      },
+    ]);
+
+    const artifact = rows.artifacts[0];
+    expect(artifact?.public_name).toBe("Demo [REDACTED_SECRET]");
+    expect(artifact?.public_owner_handle).toBe("[REDACTED_SECRET]");
+    expect(artifact?.public_slug).toBe("[REDACTED_SECRET]");
+    expect(artifact?.public_qualified_slug).toBe("[REDACTED_SECRET]/[REDACTED_SECRET]");
+    expect(artifact?.bundle_files_redacted?.[0]?.path).toBe(
+      "config/[REDACTED_SECRET]/settings.json",
+    );
+  });
+
   it("omits oversized redacted bundle files", () => {
     const rows = normalizeArtifactExport([
       {

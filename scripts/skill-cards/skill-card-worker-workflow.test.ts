@@ -3,6 +3,28 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { parse as parseYaml } from "yaml";
 
+type WorkflowStep = {
+  env?: Record<string, unknown>;
+  name?: string;
+  run?: string;
+  uses?: string;
+  with?: Record<string, unknown>;
+};
+
+function expectSecretStepAllowlist(
+  steps: WorkflowStep[],
+  secretName: string,
+  allowedStepNames: string[],
+) {
+  for (const step of steps) {
+    const stepName = step.name ?? step.uses ?? "<unnamed>";
+    const hasSecret =
+      Object.hasOwn(step.env ?? {}, secretName) ||
+      JSON.stringify(step).includes(`secrets.${secretName}`);
+    expect(hasSecret, `${secretName} on ${stepName}`).toBe(allowedStepNames.includes(stepName));
+  }
+}
+
 describe("skill-card-worker workflow", () => {
   it("does not expose OPENAI_API_KEY to the artifact-processing worker step", async () => {
     const workflow = parseYaml(
@@ -13,7 +35,7 @@ describe("skill-card-worker workflow", () => {
           env?: Record<string, unknown>;
           "timeout-minutes"?: number;
           strategy?: { matrix?: { shard?: number[] } };
-          steps: Array<{ name?: string; env?: Record<string, unknown> }>;
+          steps: WorkflowStep[];
         };
       };
       concurrency?: unknown;
@@ -45,11 +67,18 @@ describe("skill-card-worker workflow", () => {
       "github-actions:${{ github.run_id }}:${{ github.run_attempt }}:${{ matrix.shard }}",
     );
     expect(job.env).not.toHaveProperty("OPENAI_API_KEY");
+    expect(job.env).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
+    expectSecretStepAllowlist(job.steps, "OPENAI_API_KEY", ["Authenticate Codex CLI"]);
+    expectSecretStepAllowlist(job.steps, "SECURITY_SCAN_WORKER_TOKEN", ["Run Skill Card worker"]);
+    expect(job.steps.find((step) => step.name === "Check configuration")).toBeUndefined();
     expect(job.steps.find((step) => step.name === "Authenticate Codex CLI")?.env).toHaveProperty(
       "OPENAI_API_KEY",
     );
     expect(
       job.steps.find((step) => step.name === "Run Skill Card worker")?.env ?? {},
     ).not.toHaveProperty("OPENAI_API_KEY");
+    expect(job.steps.find((step) => step.name === "Run Skill Card worker")?.env).toHaveProperty(
+      "SECURITY_SCAN_WORKER_TOKEN",
+    );
   });
 });

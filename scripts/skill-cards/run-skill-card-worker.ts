@@ -8,6 +8,13 @@ import { ConvexHttpClient } from "convex/browser";
 import { api } from "../../convex/_generated/api";
 import type { Id } from "../../convex/_generated/dataModel";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
+import { createWorkerLogger } from "../lib/workerLogger";
+import {
+  maskGitHubActionsSecret,
+  maskKnownWorkerSecrets,
+  redactWorkerPublicErrorMessage,
+  safeWorkerArtifactPathLabel,
+} from "../lib/workerRedaction";
 
 type ClaimedSkillCardJob = {
   job: {
@@ -36,6 +43,7 @@ type CommandResult = {
 };
 
 type JsonRecord = Record<string, unknown>;
+type SkillCardWorkerClient = Pick<ConvexHttpClient, "action">;
 
 export const DEFAULT_BATCH_LIMIT = 4;
 export const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
@@ -47,6 +55,7 @@ const NVIDIA_SKILL_DIR = "nvidia-skill-card-generator";
 const SKILL_CARD_CONTEXT_FILE = "skill-card.context.json";
 const SKILL_CARD_OUTPUT_FILE = "skill-card.md";
 const LOCAL_CODEX_HOME = join(root, ".codex/runtime/codex-workers/skill-card");
+const logger = createWorkerLogger({ name: "skill-card-worker" });
 const NVIDIA_ONLY_PUBLIC_CARD_PATTERNS = [
   "NVIDIA believes",
   "For Release on NVIDIA Platforms Only",
@@ -127,14 +136,27 @@ function safeOutputPath(workspace: string, artifactPath: string) {
   const out = resolve(workspace, "artifact", normalized);
   const artifactRoot = resolve(workspace, "artifact");
   if (!out.startsWith(`${artifactRoot}/`) && out !== artifactRoot) {
-    throw new Error(`Unsafe artifact path: ${artifactPath}`);
+    throw new Error(`Unsafe artifact path: ${safeWorkerArtifactPathLabel(artifactPath)}`);
   }
   return out;
 }
 
-async function download(url: string) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Download failed ${response.status}: ${url}`);
+function artifactDownloadDescription(artifactPath: string) {
+  return `artifact file ${safeWorkerArtifactPathLabel(artifactPath)}`;
+}
+
+async function download(url: string, artifact: { path: string }) {
+  maskGitHubActionsSecret(url);
+  const description = artifactDownloadDescription(artifact.path);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new Error(`Download failed for ${description}: network error`, {
+      cause: new Error("network error"),
+    });
+  }
+  if (!response.ok) throw new Error(`Download failed ${response.status} for ${description}`);
   return Buffer.from(await response.arrayBuffer());
 }
 
@@ -324,7 +346,7 @@ export async function prepareNvidiaSkillCardSkill(workspace: string, toolDir: st
   return destination;
 }
 
-async function writeWorkspace(job: ClaimedSkillCardJob, workspace: string) {
+export async function writeWorkspace(job: ClaimedSkillCardJob, workspace: string) {
   await mkdir(join(workspace, "artifact"), { recursive: true });
   await writeFile(
     join(workspace, "evidence.json"),
@@ -333,7 +355,7 @@ async function writeWorkspace(job: ClaimedSkillCardJob, workspace: string) {
   for (const file of job.target.files) {
     const out = safeOutputPath(workspace, file.path);
     await mkdir(dirname(out), { recursive: true });
-    await writeFile(out, await download(file.url));
+    await writeFile(out, await download(file.url, { path: file.path }));
   }
 }
 
@@ -413,13 +435,14 @@ export function assertPublicSkillCardMarkdown(markdown: string) {
   }
 }
 
-async function processJob(
-  client: ConvexHttpClient,
+export async function processJob(
+  client: SkillCardWorkerClient,
   token: string,
   job: ClaimedSkillCardJob,
   toolDir: string,
 ) {
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-skill-card-${basename(job.job._id)}-`));
+  const startedAt = Date.now();
   try {
     await writeWorkspace(job, workspace);
     await prepareNvidiaSkillCardSkill(workspace, toolDir);
@@ -431,17 +454,40 @@ async function processJob(
       markdown,
       runId: process.env.GITHUB_RUN_ID,
     });
-    console.log(`completed ${job.job._id}: skill-card.md`);
+    logger.info(
+      {
+        durationMs: Date.now() - startedAt,
+        event: "skill_card_job_completed",
+        jobId: job.job._id,
+        scannerPhase: "complete",
+        skillSlug: job.target.skill.slug,
+      },
+      "skill card job completed",
+    );
     return true;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
+    const message = redactWorkerPublicErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    );
     const failResult = (await client.action(api.skillCards.failSkillCardJob, {
       token,
       jobId: job.job._id as Id<"skillCardGenerationJobs">,
       leaseToken: job.job.leaseToken,
       error: message,
     })) as { retry?: boolean } | undefined;
-    console.error(`failed ${job.job._id}: ${message}${failResult?.retry ? " (will retry)" : ""}`);
+    logger.error(
+      {
+        attempts: job.job.attempts,
+        durationMs: Date.now() - startedAt,
+        event: "skill_card_job_failed",
+        jobId: job.job._id,
+        publicReason: message,
+        retry: Boolean(failResult?.retry),
+        scannerPhase: "process",
+        skillSlug: job.target.skill.slug,
+      },
+      "skill card job failed",
+    );
     return false;
   } finally {
     await rm(workspace, { recursive: true, force: true });
@@ -451,6 +497,7 @@ async function processJob(
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, toolDir } = parseArgs();
   assertCodexWorkerExecutionAllowed(process.env);
+  maskKnownWorkerSecrets();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = workerToken();
@@ -466,13 +513,39 @@ async function main() {
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
     const claimLimit = Math.min(batchLimit, remainingJobs);
-    const jobs = (await client.action(api.skillCards.claimSkillCardJobs, {
-      token,
-      workerId,
-      limit: claimLimit,
-      leaseMs,
-    })) as ClaimedSkillCardJob[];
-    console.log(`claimed ${jobs.length} skill card job(s)`);
+    let jobs: ClaimedSkillCardJob[];
+    try {
+      jobs = (await client.action(api.skillCards.claimSkillCardJobs, {
+        token,
+        workerId,
+        limit: claimLimit,
+        leaseMs,
+      })) as ClaimedSkillCardJob[];
+    } catch (error) {
+      logger.error(
+        {
+          event: "skill_card_claim_failed",
+          publicReason: redactWorkerPublicErrorMessage(
+            error instanceof Error ? error.message : String(error),
+          ),
+          scannerPhase: "claim",
+          workerId,
+        },
+        "failed to claim skill card jobs",
+      );
+      totalFailed += 1;
+      break;
+    }
+    logger.info(
+      {
+        claimed: jobs.length,
+        claimLimit,
+        event: "skill_card_jobs_claimed",
+        leaseMs,
+        workerId,
+      },
+      "claimed skill card jobs",
+    );
     if (jobs.length === 0) break;
 
     totalClaimed += jobs.length;
@@ -484,10 +557,16 @@ async function main() {
     if (jobs.length < claimLimit) break;
   }
 
-  console.log(
-    `skill card worker summary: claimed=${totalClaimed} completed=${totalCompleted} failed=${totalFailed} elapsedMs=${
-      Date.now() - startedAt
-    }`,
+  logger.info(
+    {
+      elapsedMs: Date.now() - startedAt,
+      event: "skill_card_worker_summary",
+      totalClaimed,
+      totalCompleted,
+      totalFailed,
+      workerId,
+    },
+    "skill card worker summary",
   );
   if (totalFailed > 0) process.exitCode = 1;
 }

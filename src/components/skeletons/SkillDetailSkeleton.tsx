@@ -4,11 +4,70 @@ type SkillDetailSkeletonProps = {
   kind?: "skill" | "plugin";
 };
 
+function DetailTabsSkeleton({ count }: { count: number }) {
+  return (
+    <div className="tab-card detail-mobile-tabs detail-skeleton-tabs">
+      <div className="tab-header" aria-hidden="true">
+        {Array.from({ length: count }).map((_, index) => (
+          <Skeleton
+            // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder count
+            key={index}
+            className="h-8 w-20 shrink-0 rounded-[var(--r-pill)]"
+          />
+        ))}
+      </div>
+      <div className="tab-body">
+        <div className="space-y-3">
+          <Skeleton className="h-7 w-52 max-w-full" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-11/12" />
+          <Skeleton className="mt-5 h-5 w-44" />
+          <Skeleton className="h-4 w-full" />
+          <Skeleton className="h-4 w-3/4" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SidebarMetadataSkeleton() {
+  return (
+    <div className="sidebar-metadata sidebar-metadata-compact">
+      <div className="sidebar-metadata-row sidebar-metadata-row-large">
+        <Skeleton className="h-3 w-16" />
+        <Skeleton className="h-8 w-24" />
+      </div>
+      <div className="sidebar-metadata-row">
+        <Skeleton className="h-3 w-14" />
+        <div className="flex items-center gap-2">
+          <Skeleton className="h-7 w-7 rounded-full" />
+          <Skeleton className="h-5 w-32" />
+        </div>
+      </div>
+      <div className="sidebar-metadata-grid">
+        <div className="sidebar-metadata-row">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-5 w-16" />
+        </div>
+        <div className="sidebar-metadata-row">
+          <Skeleton className="h-3 w-12" />
+          <Skeleton className="h-5 w-20" />
+        </div>
+      </div>
+      <div className="sidebar-metadata-row">
+        <Skeleton className="h-3 w-20" />
+        <Skeleton className="h-5 w-28" />
+      </div>
+    </div>
+  );
+}
+
 export function SkillDetailSkeleton({ kind = "skill" }: SkillDetailSkeletonProps) {
-  const tabCount = kind === "plugin" ? 4 : 6;
+  const isPlugin = kind === "plugin";
 
   return (
-    <div className="skill-detail-stack">
+    <div className={`skill-detail-stack detail-skeleton detail-skeleton-${kind}`}>
       <div className="skill-hero">
         <div className="skill-hero-top">
           <div className="skill-hero-layout has-sidebar">
@@ -19,41 +78,37 @@ export function SkillDetailSkeleton({ kind = "skill" }: SkillDetailSkeletonProps
                   <Skeleton className="h-4 w-3" />
                   <Skeleton className="h-4 w-24" />
                   <Skeleton className="h-4 w-3" />
-                  {kind === "plugin" ? (
-                    <>
-                      <Skeleton className="h-4 w-14" />
-                      <Skeleton className="h-4 w-3" />
-                    </>
-                  ) : null}
                   <Skeleton className="h-4 w-36 max-w-[45vw]" />
                 </div>
 
-                <div className="skill-hero-title-row">
-                  <Skeleton className="h-12 w-full max-w-[430px]" />
-                  <Skeleton className="h-7 w-24 rounded-[var(--r-pill)]" />
+                <div className="skill-hero-heading-stack">
+                  <div className="skill-hero-title-row">
+                    <Skeleton className="h-12 w-full max-w-[430px]" />
+                    <Skeleton className="h-7 w-24 rounded-[var(--r-pill)]" />
+                  </div>
+                  {!isPlugin ? (
+                    <div className="skill-hero-mobile-creator detail-skeleton-mobile-creator">
+                      <Skeleton className="h-7 w-7 rounded-full" />
+                      <Skeleton className="h-4 w-28" />
+                    </div>
+                  ) : null}
                 </div>
 
                 <div className="space-y-3">
                   <Skeleton className="h-5 w-full max-w-[720px]" />
                   <Skeleton className="h-5 w-3/4 max-w-[560px]" />
                 </div>
-
-                {kind === "plugin" ? (
-                  <div className="skill-hero-badges">
-                    <Skeleton className="h-6 w-56 rounded-[var(--r-pill)]" />
-                  </div>
-                ) : null}
               </div>
+            </div>
 
-              <div className="skill-hero-lower has-sidebar">
-                <div className="skill-hero-main-extra">
-                  <Skeleton className="h-12 w-full rounded-[var(--r-sm)]" />
-
+            <div className="skill-hero-lower has-sidebar">
+              <div className="skill-hero-main-extra">
+                <div className="detail-mobile-install">
                   <article className="skill-install-command-card">
-                    <div className="skill-install-command-header">
+                    <div className="skill-install-command-header detail-hero-summary-row">
                       <Skeleton className="h-7 w-20" />
-                      {kind === "skill" ? (
-                        <div className="flex gap-2">
+                      {!isPlugin ? (
+                        <div className="detail-skeleton-install-tabs" aria-hidden="true">
                           <Skeleton className="h-8 w-14 rounded-[var(--r-pill)]" />
                           <Skeleton className="h-8 w-20 rounded-[var(--r-pill)]" />
                         </div>
@@ -61,77 +116,60 @@ export function SkillDetailSkeleton({ kind = "skill" }: SkillDetailSkeletonProps
                     </div>
                     <div className="skill-install-command-wrap">
                       <div className="skill-install-command-shell">
-                        <Skeleton className="h-5 w-full max-w-[520px]" />
+                        <span className="skill-install-command-prompt" aria-hidden="true">
+                          $
+                        </span>
+                        <Skeleton className="h-5 min-w-0 flex-1 max-w-[520px]" />
                         <Skeleton className="skill-install-command-inline-button h-[34px] rounded-[var(--r-btn)]" />
                       </div>
                     </div>
                   </article>
+                </div>
 
-                  <div className="tab-card">
-                    <div className="tab-header">
-                      {Array.from({ length: tabCount }).map((_, i) => (
-                        <Skeleton
-                          // biome-ignore lint/suspicious/noArrayIndexKey: static placeholder count
-                          key={i}
-                          className="h-9 w-24 shrink-0 rounded-none"
-                        />
-                      ))}
+                {!isPlugin ? (
+                  <div className="detail-mobile-master-tabs detail-skeleton-master-tabs">
+                    <div className="detail-mobile-master-tab-list" aria-hidden="true">
+                      <Skeleton className="h-[42px] w-full rounded-[var(--r-md)]" />
+                      <Skeleton className="h-[42px] w-full rounded-[var(--r-md)]" />
                     </div>
-                    <div className="tab-body">
-                      <div className="space-y-3">
-                        <Skeleton className="h-6 w-40" />
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-4 w-11/12" />
-                        <Skeleton className="h-4 w-5/6" />
-                        <Skeleton className="mt-5 h-5 w-52" />
-                        <Skeleton className="h-4 w-full" />
-                        <Skeleton className="h-4 w-3/4" />
+                    <div className="detail-mobile-master-panel detail-mobile-master-panel-content">
+                      <DetailTabsSkeleton count={5} />
+                    </div>
+                  </div>
+                ) : (
+                  <DetailTabsSkeleton count={7} />
+                )}
+              </div>
+
+              <aside className="skill-hero-sidebar">
+                <div className="skill-hero-sidebar-stack">
+                  {!isPlugin ? (
+                    <div className="skill-sidebar-star-band detail-hero-summary-row">
+                      <Skeleton className="h-5 w-full max-w-[220px]" />
+                    </div>
+                  ) : (
+                    <div className="skill-sidebar-mobile-priority">
+                      <div className="skill-sidebar-actions skill-sidebar-actions-primary">
+                        <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
+                        <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
                       </div>
+                    </div>
+                  )}
+
+                  <div
+                    className="detail-skeleton-deferred"
+                    data-kind={isPlugin ? "plugin" : "skill"}
+                  >
+                    <div className="detail-skeleton-deferred-summary" aria-hidden="true">
+                      <Skeleton className="h-5 w-28" />
+                      <Skeleton className="h-4 w-4" />
+                    </div>
+                    <div className="detail-skeleton-deferred-body">
+                      <SidebarMetadataSkeleton />
                     </div>
                   </div>
                 </div>
-
-                <aside className="skill-hero-sidebar">
-                  <div className="skill-hero-sidebar-stack">
-                    <div className="sidebar-metadata sidebar-metadata-compact">
-                      <div className="sidebar-metadata-row sidebar-metadata-row-large">
-                        <Skeleton className="h-3 w-16" />
-                        <Skeleton className="h-8 w-24" />
-                      </div>
-                      <div className="sidebar-metadata-row">
-                        <Skeleton className="h-3 w-14" />
-                        <div className="flex items-center gap-2">
-                          <Skeleton className="h-7 w-7 rounded-full" />
-                          <Skeleton className="h-5 w-32" />
-                        </div>
-                      </div>
-                      <div className="sidebar-metadata-grid">
-                        <div className="sidebar-metadata-row">
-                          <Skeleton className="h-3 w-24" />
-                          <Skeleton className="h-5 w-16" />
-                        </div>
-                        <div className="sidebar-metadata-row">
-                          <Skeleton className="h-3 w-12" />
-                          <Skeleton className="h-5 w-20" />
-                        </div>
-                      </div>
-                      <div className="sidebar-metadata-row">
-                        <Skeleton className="h-3 w-20" />
-                        <Skeleton className="h-5 w-28" />
-                      </div>
-                    </div>
-
-                    <div className="skill-sidebar-actions">
-                      <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
-                      <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
-                      {kind === "skill" ? (
-                        <Skeleton className="h-10 w-full rounded-[var(--r-btn)]" />
-                      ) : null}
-                    </div>
-                  </div>
-                </aside>
-              </div>
+              </aside>
             </div>
           </div>
         </div>

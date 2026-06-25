@@ -34,34 +34,27 @@ describe("top-level slug route loader", () => {
     resolveTopLevelSlugRouteMock.mockReset();
   });
 
-  it("redirects plugin slugs to plugin detail pages", async () => {
-    resolveTopLevelSlugRouteMock.mockResolvedValue({
-      kind: "plugin",
-      name: "@openclaw/codex",
-      href: "/plugins/@openclaw/codex",
-    });
+  it("returns not found for plugin aliases without matching publishers", async () => {
+    resolveTopLevelSlugRouteMock.mockResolvedValue(null);
 
-    expect(await runLoader("codex")).toEqual({
-      redirect: {
-        href: "/plugins/@openclaw/codex",
-        replace: true,
-      },
-    });
+    expect(await runLoader("codex")).toEqual({ notFound: true });
   });
 
-  it("redirects skill slugs to canonical owner pages", async () => {
+  it("returns not found for legacy bare skill slugs", async () => {
+    resolveTopLevelSlugRouteMock.mockResolvedValue(null);
+
+    expect(await runLoader("expedia")).toEqual({ notFound: true });
+  });
+
+  it("returns publisher profile data for canonical publisher paths", async () => {
     resolveTopLevelSlugRouteMock.mockResolvedValue({
-      kind: "skill",
-      owner: "ivangdavila",
-      slug: "codex",
+      kind: "publisher",
+      handle: "steipete",
+      publisher: { _id: "publishers:steipete", handle: "steipete" },
     });
 
-    expect(await runLoader("codex")).toEqual({
-      redirect: {
-        to: "/$owner/$slug",
-        params: { owner: "ivangdavila", slug: "codex" },
-        replace: true,
-      },
+    expect(await runLoader("steipete")).toEqual({
+      publisher: { _id: "publishers:steipete", handle: "steipete" },
     });
   });
 

@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { createRequire } from "node:module";
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
 import type { AnchorHTMLAttributes, ComponentType, ReactNode } from "react";
 import { toast } from "sonner";
@@ -78,6 +78,7 @@ vi.mock("@tanstack/react-router", () => ({
     select?: (state: { location: { pathname: string } }) => string;
   }) => (select ? select({ location: { pathname: pathnameMock } }) : pathnameMock),
   useRouter: () => ({ invalidate: routerInvalidateMock }),
+  redirect: (options: unknown) => ({ redirect: options }),
   Outlet: () => <div data-testid="nested-plugin-route" />,
   Link: ({
     children,
@@ -94,6 +95,9 @@ vi.mock("@tanstack/react-router", () => ({
 }));
 
 vi.mock("convex/react", () => ({
+  ConvexReactClient: class {
+    query = convexQueryMock;
+  },
   useConvex: () => convexClientMock,
   useQuery: (...args: unknown[]) => useQueryMock(...args),
   useMutation: (...args: unknown[]) => useMutationMock(...args),
@@ -147,8 +151,47 @@ async function loadRoute() {
   };
 }
 
+function openRelease(version: string) {
+  const versionPattern = new RegExp(`v${version.replaceAll(".", "\\.")}`);
+  const toggle = screen
+    .getAllByRole("button")
+    .find(
+      (button) =>
+        button.classList.contains("skill-version-release-toggle") &&
+        versionPattern.test(button.textContent ?? ""),
+    );
+  if (!toggle) {
+    throw new Error(`Version toggle for v${version} not found`);
+  }
+  fireEvent.click(toggle);
+}
+
 describe("plugin detail route", () => {
+  function setViewportWidth(width: number) {
+    vi.stubGlobal("matchMedia", (query: string) => {
+      const minWidth = /\(min-width:\s*(\d+)px\)/.exec(query)?.[1];
+      const maxWidth = /\(max-width:\s*(\d+)px\)/.exec(query)?.[1];
+      const matches = minWidth
+        ? width >= Number(minWidth)
+        : maxWidth
+          ? width <= Number(maxWidth)
+          : false;
+
+      return {
+        matches,
+        media: query,
+        onchange: null,
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      };
+    });
+  }
+
   beforeEach(() => {
+    setViewportWidth(1071);
     paramsMock = { name: "demo-plugin" };
     pathnameMock = "/plugins/demo-plugin";
     window.location.hash = "";
@@ -202,6 +245,46 @@ describe("plugin detail route", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+    vi.unstubAllGlobals();
+  });
+
+  it("uses mobile About and Stats tabs below 901px", async () => {
+    setViewportWidth(488);
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          latestVersion: "1.0.0",
+          stats: { downloads: 597, installs: 0, stars: 0, versions: 1 },
+        },
+        owner: { handle: "demo-owner", displayName: "Demo Owner", image: null },
+      },
+      version: loaderDataMock.version,
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const { container } = render(<Component />);
+
+    await waitFor(() => {
+      expect(container.querySelector(".detail-mobile-master-tab-list")).toBeTruthy();
+    });
+
+    expect(screen.getByRole("tab", { name: "About" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "Stats" }).getAttribute("aria-selected")).toBe("false");
+    expect(
+      container.querySelector("#plugin-mobile-master-panel-stats")?.hasAttribute("hidden"),
+    ).toBe(true);
+    expect(container.querySelector(".detail-sidebar-stats")).toBeNull();
+
+    fireEvent.click(screen.getByRole("tab", { name: "Stats" }));
+
+    expect(screen.getByRole("tab", { name: "Stats" }).getAttribute("aria-selected")).toBe("true");
+    expect(
+      container.querySelector("#plugin-mobile-master-panel-stats")?.hasAttribute("hidden"),
+    ).toBe(false);
+    expect(screen.getByText("Downloads")).toBeTruthy();
   });
 
   it("hides download actions when the plugin has no latest release", async () => {
@@ -230,8 +313,33 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Web Search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Research");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
+  });
+
+  it("renders hero category labels without comma separators", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        ...loaderDataMock.detail,
+        package: {
+          ...loaderDataMock.detail.package!,
+          categories: ["tools", "web", "channels"],
+          topics: ["Workflow"],
+        },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    const taxonomy = document.querySelector(".skill-category-meta-list");
+    expect(taxonomy).toBeTruthy();
+    expect(taxonomy?.textContent).toContain("Tools");
+    expect(taxonomy?.textContent).toContain("Web");
+    expect(taxonomy?.textContent).toContain("Channels");
+    expect(taxonomy?.textContent).not.toContain(",");
   });
 
   it("renders populated active release history on the versions tab", async () => {
@@ -269,8 +377,11 @@ describe("plugin detail route", () => {
     render(<Component />);
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByText(`v2.0.0 · ${new Date(publishedAt).toLocaleDateString()}`)).toBeTruthy();
+    expect(screen.getAllByText("v2.0.0").length).toBeGreaterThan(0);
+    expect(screen.getByText(new Date(publishedAt).toLocaleDateString())).toBeTruthy();
+    openRelease("2.0.0");
     expect(screen.getByText("Adds package release history.")).toBeTruthy();
+    openRelease("2.0.0-beta.1");
     expect(screen.getByText("Previews package release history.")).toBeTruthy();
     expect(screen.getByText("latest")).toBeTruthy();
     expect(screen.getByText("stable")).toBeTruthy();
@@ -280,7 +391,7 @@ describe("plugin detail route", () => {
         'a[href="/api/v1/packages/demo-plugin/download?version=2.0.0-beta.1"]',
       ),
     ).toBeNull();
-    expect(screen.queryByText("Zip")).toBeNull();
+    expect(screen.queryByText("Download .zip")).toBeNull();
   });
 
   it("loads and appends the next active release page", async () => {
@@ -323,18 +434,39 @@ describe("plugin detail route", () => {
       cursor: "versions:next",
       limit: 20,
     });
+    openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
+    await waitFor(() => {
+      expect(
+        screen
+          .getAllByRole("button", { hidden: true })
+          .some(
+            (button) =>
+              button.getAttribute("aria-controls") === "version-changelog-1.0.0" &&
+              button.classList.contains("skill-version-release-toggle"),
+          ),
+      ).toBe(true);
+    });
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded next page")).toBeTruthy();
     expect(
       document.querySelector('a[href="/api/v1/packages/demo-plugin/download?version=1.0.0"]'),
     ).toBeNull();
-    expect(screen.queryByText("Zip")).toBeNull();
+    expect(screen.queryByText("Download .zip")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
 
-    fireEvent.click(screen.getByRole("tab", { name: "README" }));
+    fireEvent.click(screen.getByRole("tab", { name: "README.md" }));
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
-    expect(screen.getByText("Loaded next page")).toBeTruthy();
+    expect(
+      screen
+        .getAllByRole("button", { hidden: true })
+        .some(
+          (button) =>
+            button.getAttribute("aria-controls") === "version-changelog-1.0.0" &&
+            button.classList.contains("skill-version-release-toggle"),
+        ),
+    ).toBe(true);
     expect(fetchPackageVersions).toHaveBeenCalledTimes(1);
   });
 
@@ -382,6 +514,7 @@ describe("plugin detail route", () => {
     await act(async () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
+    openRelease("1.0.0");
     expect(screen.getByText("Plugin A loaded release")).toBeTruthy();
 
     window.history.pushState(null, "", "/plugins/@scope/plugin-b");
@@ -411,12 +544,15 @@ describe("plugin detail route", () => {
     };
     rerender(<PluginDetailPage name="@scope/plugin-b" loaderData={loaderDataMock} />);
 
-    expect(screen.getByRole("tab", { name: "README" }).getAttribute("aria-selected")).toBe("true");
+    expect(screen.getByRole("tab", { name: "README.md" }).getAttribute("aria-selected")).toBe(
+      "true",
+    );
     expect(screen.getByText("Plugin B README")).toBeTruthy();
     expect(screen.queryByText("Plugin A loaded release")).toBeNull();
 
     fireEvent.click(screen.getByRole("tab", { name: "Versions" }));
 
+    openRelease("3.0.0");
     expect(screen.getByText("Plugin B release")).toBeTruthy();
     expect(screen.queryByText("Plugin A loaded release")).toBeNull();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
@@ -452,6 +588,7 @@ describe("plugin detail route", () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded after empty page")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Load more" })).toBeNull();
   });
@@ -521,14 +658,11 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
-      "README",
-      "Skills",
-      "MCP Servers",
-      "Configuration",
-      "Compatibility",
-      "Versions",
-    ]);
+    expect(
+      Array.from(document.querySelectorAll(".detail-mobile-tabs .tab-button"), (tab) =>
+        tab.textContent?.trim(),
+      ),
+    ).toEqual(["README.md", "Skills", "MCP Servers", "Configuration", "Compatibility", "Versions"]);
     expect(screen.getByRole("tab", { name: "Compatibility" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "Configuration" })).toBeTruthy();
     expect(screen.getByRole("tab", { name: "MCP Servers" })).toBeTruthy();
@@ -607,6 +741,7 @@ describe("plugin detail route", () => {
       fireEvent.click(screen.getByRole("button", { name: "Load more" }));
     });
 
+    openRelease("2.0.0");
     expect(screen.getByText("Current page")).toBeTruthy();
     expect(screen.getByRole("alert").textContent).toContain(
       "Could not load more releases. Try again.",
@@ -620,6 +755,7 @@ describe("plugin detail route", () => {
       cursor: "versions:next",
       limit: 20,
     });
+    openRelease("1.0.0");
     expect(screen.getByText("Loaded after retry")).toBeTruthy();
     expect(screen.queryByRole("alert")).toBeNull();
   });
@@ -688,6 +824,7 @@ describe("plugin detail route", () => {
       });
     });
 
+    openRelease("3.0.0");
     expect(screen.getByText("Second plugin release")).toBeTruthy();
     expect(screen.queryByText("Stale first plugin release")).toBeNull();
   });
@@ -717,6 +854,7 @@ describe("plugin detail route", () => {
     expect(screen.getByRole("tab", { name: "Versions" }).getAttribute("aria-selected")).toBe(
       "true",
     );
+    openRelease("1.0.0");
     expect(screen.getByText("Initial release")).toBeTruthy();
   });
 
@@ -790,11 +928,34 @@ describe("plugin detail route", () => {
     const { container } = render(<Component />);
 
     expect(
-      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/user/openclaw"]'),
+      container.querySelector('nav[aria-label="Plugin breadcrumbs"] a[href="/openclaw"]'),
     ).toBeTruthy();
   });
 
-  it("labels official packages as Official", async () => {
+  it("omits scoped package prefixes from plugin breadcrumbs", async () => {
+    loaderDataMock = {
+      ...loaderDataMock,
+      detail: {
+        package: {
+          ...loaderDataMock.detail.package!,
+          name: "@openclaw/firecrawl-plugin",
+          displayName: "OpenClaw Firecrawl Plugin",
+        },
+        owner: { handle: "openclaw", displayName: "OpenClaw", image: null },
+      },
+    };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const { container } = render(<Component />);
+
+    const packageCrumb = container.querySelector(
+      'nav[aria-label="Plugin breadcrumbs"] a[href="/openclaw/plugins/firecrawl-plugin"]',
+    );
+    expect(packageCrumb?.textContent).toBe("firecrawl-plugin");
+  });
+
+  it("labels official packages as Verified", async () => {
     loaderDataMock = {
       ...loaderDataMock,
       detail: {
@@ -809,10 +970,11 @@ describe("plugin detail route", () => {
     const route = await loadRoute();
     const Component = route.__config.component as ComponentType;
 
-    render(<Component />);
+    const { container } = render(<Component />);
 
-    expect(screen.getAllByText("Official").length).toBeGreaterThan(0);
-    expect(screen.getByLabelText("Official")).toBeTruthy();
+    expect(screen.getAllByLabelText("Verified").length).toBeGreaterThan(0);
+    expect(container.querySelector(".skill-hero-creator .official-badge-icon-only")).toBeTruthy();
+    expect(container.querySelector(".skill-hero-title-row .official-tag")).toBeNull();
     expect(screen.queryByText("Verified")).toBeNull();
   });
 
@@ -832,7 +994,7 @@ describe("plugin detail route", () => {
     const Component = route.__config.component as ComponentType;
     const { container } = render(<Component />);
 
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(1);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
@@ -854,8 +1016,8 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByLabelText("Topics").textContent).toContain("Web Search");
-    expect(screen.getByLabelText("Topics").textContent).toContain("Research");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#web-search");
+    expect(screen.getByLabelText("Topics").textContent).toContain("#research");
   });
 
   it("renders the plugin 30-day downloads graph from a deferred activity query", async () => {
@@ -867,7 +1029,11 @@ describe("plugin detail route", () => {
           latestVersion: "1.0.0",
           stats: { downloads: 1_234, installs: 9, stars: 0, versions: 1 },
         },
-        owner: null,
+        owner: {
+          handle: "demo-owner",
+          displayName: "Demo Owner",
+          image: null,
+        },
       },
     };
     convexQueryMock.mockResolvedValueOnce({
@@ -891,12 +1057,12 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const downloadsLabel = screen.getByText("30-day Downloads");
+    const downloadsLabel = screen.getByText("Downloads");
     const currentVersionLabel = screen.getByText("Current version");
     expect(downloadsLabel.compareDocumentPosition(currentVersionLabel)).toBe(
       Node.DOCUMENT_POSITION_FOLLOWING,
     );
-    expect(screen.getByText("30-day Downloads")).toBeTruthy();
+    expect(screen.getByText("Downloads")).toBeTruthy();
     expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
     await waitFor(() =>
       expect(
@@ -907,7 +1073,6 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("30-day Installs")).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.getByRole("img", { name: "Daily downloads over the last 30 days" })).toBeTruthy();
-    expect(screen.getAllByRole("button", { name: "About activity counts" })).toHaveLength(1);
     expect(
       convexQueryMock.mock.calls.some(([query, args]) => {
         return (
@@ -926,6 +1091,29 @@ describe("plugin detail route", () => {
         ([query]) => getFunctionName(query as never) === "packages:getActivityTrendForName",
       ),
     ).toBe(false);
+
+    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
+    expect(sidebarMetadata).toBeTruthy();
+    const sidebarRows = Array.from(
+      sidebarMetadata?.querySelectorAll(".sidebar-metadata-row") ?? [],
+      (row) => ({
+        text: row.textContent?.replace(/\s+/g, " ").trim() ?? "",
+        hasDownload: Boolean(row.querySelector(".plugin-sidebar-download-button")),
+      }),
+    );
+    const downloadsRow = sidebarRows.find((row) => row.text.includes("Downloads"));
+    const creatorRow = sidebarRows.find((row) => row.text.includes("Creator"));
+    const downloadOnlyRow = sidebarRows.find((row) => row.hasDownload);
+    const typeRow = sidebarRows.find((row) => row.text.includes("Code Plugin"));
+    expect(downloadsRow?.hasDownload).toBe(false);
+    expect(downloadOnlyRow).toBeTruthy();
+    expect(creatorRow).toBeUndefined();
+    expect(document.querySelector(".skill-hero-creator")?.textContent).toContain("Demo Owner");
+    expect(typeRow).toBeTruthy();
+    expect(sidebarRows.at(-1)).toEqual(downloadOnlyRow);
+    expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
+      "/api/v1/packages/demo-plugin/download?version=1.0.0",
+    );
   });
 
   it("falls back to all-time plugin stats when activity graphs are unavailable", async () => {
@@ -956,6 +1144,12 @@ describe("plugin detail route", () => {
     expect(container.querySelectorAll(".metric-trend-card-skeleton")).toHaveLength(0);
     expect(screen.queryByRole("img", { name: "Daily installs over the last 30 days" })).toBeNull();
     expect(screen.queryByRole("img", { name: "Daily downloads over the last 30 days" })).toBeNull();
+
+    const sidebarMetadata = document.querySelector('dl[aria-label="Plugin metadata"]');
+    const downloadsRow = sidebarMetadata?.querySelector(".sidebar-metadata-row-large");
+    expect(downloadsRow?.textContent).toContain("Downloads");
+    expect(downloadsRow?.querySelector(".plugin-sidebar-download-button")).toBeTruthy();
+    expect(sidebarMetadata?.querySelectorAll(".plugin-sidebar-download-button")).toHaveLength(1);
   });
 
   it("shows plugin settings when the viewer can manage the plugin", async () => {
@@ -1005,15 +1199,12 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    const downloadLink = screen.getByRole("link", { name: /download/i });
     const newVersionLink = screen.getByRole("link", { name: "New version" });
+    expect(screen.getByRole("link", { name: /download/i })).toBeTruthy();
     expect(newVersionLink.getAttribute("href")).toBe(
       "/plugins/publish?ownerHandle=demo-owner&name=demo-plugin&displayName=Demo+Plugin",
     );
     expect(screen.queryByRole("link", { name: /settings/i })).toBeNull();
-    expect(
-      downloadLink.compareDocumentPosition(newVersionLink) & Node.DOCUMENT_POSITION_FOLLOWING,
-    ).toBeTruthy();
     expect(useQueryMock).toHaveBeenCalledWith(expect.anything(), {
       name: "demo-plugin",
       candidateNames: ["@openclaw/demo-plugin", "demo-plugin"],
@@ -1379,7 +1570,8 @@ describe("plugin detail route", () => {
     expect(screen.getByText("ClawPack")).toBeTruthy();
     expect(screen.getByText("demo-plugin-1.0.0.tgz")).toBeTruthy();
     expect(screen.getByText("sha512-demo")).toBeTruthy();
-    expect(screen.getByText("openclaw plugins install clawhub:demo-plugin")).toBeTruthy();
+    expect(screen.getByText("openclaw plugins install")).toBeTruthy();
+    expect(screen.getByText("clawhub:demo-plugin")).toBeTruthy();
     expect(screen.getByRole("link", { name: /Download/i }).getAttribute("href")).toBe(
       "/api/v1/packages/demo-plugin/versions/1.0.0/artifact/download",
     );
@@ -1504,7 +1696,7 @@ describe("plugin detail route", () => {
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
   });
 
-  it("shows validation outputs to plugin managers on the validation tab", async () => {
+  it("shows validation outputs to plugin managers above the detail tabs", async () => {
     useAuthStatusMock.mockReturnValue({
       isAuthenticated: true,
       isLoading: false,
@@ -1604,32 +1796,61 @@ describe("plugin detail route", () => {
 
     render(<Component />);
 
-    expect(screen.getByRole("tab", { name: "Validation (1)" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Validation" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Validation", level: 2 })).toBeTruthy();
+    expect(screen.queryByRole("tab", { name: /Validation/ })).toBeNull();
     expect(screen.queryByRole("link", { name: "2 warnings" })).toBeNull();
-    expect(
-      screen.getByText(
-        /Validation outputs are only visible to plugin owners and admins. Run locally using the CLI:/,
-      ),
-    ).toBeTruthy();
+    expect(screen.getByText("Validate locally before publishing")).toBeTruthy();
     expect(screen.getByText("clawhub package validate <path-to-plugin>")).toBeTruthy();
+    expect(screen.getByRole("toolbar", { name: "Validation actions" })).toBeTruthy();
+    expect(document.getElementById("validation-toolbar-cli")?.getAttribute("aria-labelledby")).toBe(
+      "validation-toolbar-label",
+    );
+    const titleActions = document.querySelector(".plugin-validation-panel-title-actions");
+    expect(titleActions?.querySelector(".plugin-validation-panel-stats")).toBeTruthy();
+    expect(titleActions?.textContent).toMatch(/0 errors/);
+    expect(titleActions?.textContent).toMatch(/1 warning/);
+    expect(titleActions?.querySelector(".plugin-validation-panel-agent")).toBeNull();
+    const validationToolbar = screen.getByRole("toolbar", { name: "Validation actions" });
+    const commandBlock = validationToolbar.querySelector(".plugin-validation-command-block");
+    expect(commandBlock?.querySelector(".plugin-validation-toolbar-label")).toBeTruthy();
+    expect(validationToolbar.querySelector(":scope > .plugin-validation-toolbar-label")).toBeNull();
+    expect(validationToolbar.querySelector(".plugin-validation-toolbar-agent")).toBeTruthy();
+    expect(
+      within(validationToolbar as HTMLElement).getByRole("button", {
+        name: "Copy fix instructions",
+      }),
+    ).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy validate command" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Copy fix instructions" })).toBeTruthy();
+    expect(screen.getByText("Copy instructions")).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Agent" })).toBeNull();
     expect(screen.getByText("legacy-before-agent-start")).toBeTruthy();
+    expect(screen.getByText(/Deprecated API/)).toBeTruthy();
+    expect(screen.queryByText(/Warning · Deprecated API · P2/)).toBeNull();
+    expect(screen.queryByText("deprecation-warning")).toBeNull();
     expect(screen.queryByText("missing-expected-seam")).toBeNull();
     expect(screen.queryByText("registerTool is no longer available")).toBeNull();
     expect(screen.queryByText("Inspector")).toBeNull();
     expect(screen.queryByText("Scan")).toBeNull();
-    expect(screen.getByText("Fix")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "View fix guide ↗" }).getAttribute("href")).toBe(
+      "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
+    );
+    const validationRegion = screen.getByRole("region", { name: "Validation" });
+    expect(within(validationRegion).getByText("Release")).toBeTruthy();
+    expect(within(validationRegion).getByText("v1.0.0")).toBeTruthy();
+    expect(within(validationRegion).getByText("Target")).toBeTruthy();
+    expect(within(validationRegion).getByText("OpenClaw 0.9.0")).toBeTruthy();
+    expect(screen.getByText(/Legacy before_agent_start hook is deprecated\./)).toBeTruthy();
+    expect(screen.getByText(/Hey, we found/)).toBeTruthy();
+    expect(screen.getByText("1 issue")).toBeTruthy();
     expect(
-      screen.getByText("Replace the legacy before_agent_start hook with current prompt hooks."),
+      within(screen.getByRole("region", { name: "Validation" })).getByText("demo-plugin"),
     ).toBeTruthy();
+    expect(screen.getByText(/version 1\.0\.0/)).toBeTruthy();
     expect(
-      screen
-        .getByRole("link", {
-          name: "https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start",
-        })
-        .getAttribute("href"),
-    ).toBe("https://docs.openclaw.ai/clawhub/plugin-validation-fixes#legacy-before-agent-start");
-    expect(screen.getByText("Docs")).toBeTruthy();
-    expect(screen.getAllByText("OpenClaw 0.9.0").length).toBeGreaterThan(0);
+      screen.getByText(/Review the findings below, apply the fix, and upload a new version\./),
+    ).toBeTruthy();
   });
 
   it("does not show validation outputs to signed-out viewers when the hash changes", async () => {
@@ -1808,16 +2029,15 @@ describe("plugin detail route", () => {
     fetchPackageReadmeMock.mockResolvedValueOnce("README");
     fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
 
-    const result = await loader({ params: { name: "matrix" } });
+    await expect(loader({ params: { name: "matrix" } })).rejects.toEqual({
+      redirect: { href: "/openclaw/plugins/matrix", replace: true },
+    });
 
     expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageReadmeMock).toHaveBeenCalledWith("@openclaw/matrix");
     expect(fetchPackageVersionMock).toHaveBeenCalledWith("@openclaw/matrix", "2026.3.22");
     expect(fetchPackageVersions).toHaveBeenCalledWith("@openclaw/matrix", { limit: 20 });
-    expect(result.versions).toEqual(emptyVersions);
-    expect(result.detail.package?.name).toBe("@openclaw/matrix");
-    expect(result.rateLimited).toBeNull();
   });
 
   it("uses extension npm config for short plugin route candidates", async () => {
@@ -1851,7 +2071,9 @@ describe("plugin detail route", () => {
     fetchPackageReadmeMock.mockResolvedValueOnce("README");
     fetchPackageVersionMock.mockResolvedValueOnce({ package: null, version: null });
 
-    const result = await loader({ params: { name: "anthropic" } });
+    await expect(loader({ params: { name: "anthropic" } })).rejects.toEqual({
+      redirect: { href: "/openclaw/plugins/anthropic-provider", replace: true },
+    });
 
     expect(fetchPackageDetailMock).toHaveBeenCalledTimes(1);
     expect(fetchPackageDetailMock).toHaveBeenCalledWith("@openclaw/anthropic-provider");
@@ -1860,6 +2082,5 @@ describe("plugin detail route", () => {
       "@openclaw/anthropic-provider",
       "2026.3.22",
     );
-    expect(result.detail.package?.name).toBe("@openclaw/anthropic-provider");
   });
 });

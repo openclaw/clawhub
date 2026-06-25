@@ -34,6 +34,7 @@ const config = {
     ".": {
       entry: [
         "src/router.tsx!",
+        "src/server.ts!",
         "src/routes/**/*.{ts,tsx}!",
         "src/styles.css!",
         "server/**/*.{ts,tsx}!",
@@ -47,7 +48,6 @@ const config = {
               "src/__tests__/**/*.{ts,tsx}!",
               "convex/**/*.test.{ts,tsx}!",
               "emails/**/*.test.{ts,tsx}!",
-              "scripts/**/*.test.{ts,mjs,js}!",
               "server/**/*.test.{ts,tsx}!",
             ]
           : []),

@@ -12,6 +12,7 @@ import { isPackageBlockedFromPublic } from "./lib/packageSecurity";
 import { toPublicPublisher } from "./lib/public";
 import {
   formatReservedPublicOwnerHandleMessage,
+  isReservedOpenClawExtensionHandle,
   isReservedPublicOwnerHandle,
 } from "./lib/publicRouteReservations";
 import {
@@ -22,6 +23,7 @@ import {
 } from "./lib/publisherCatalogDisplay";
 import {
   canAccessPublisherOwnerScope,
+  assertPublisherHandleAllowed,
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
   getOwnerPublisher,
@@ -31,6 +33,7 @@ import {
   getPersonalPublisherForUser,
   isPublisherActive,
   isPublisherRoleAllowed,
+  isReservedOpenClawPublisherHandle,
   PUBLISHER_HANDLE_PATTERN,
   PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
@@ -45,9 +48,13 @@ import { adjustUserSkillStatsForSkillChange } from "./lib/userSkillStats";
 
 const MAX_PUBLIC_PUBLISHER_LIST_LIMIT = 500;
 const LEGACY_PUBLISHER_DOWNLOAD_FALLBACK_LIMIT = MAX_PUBLIC_PUBLISHER_LIST_LIMIT;
+const MAX_PUBLISHER_HANDLE_PREFIX_CANDIDATES = 100;
 const PUBLISHER_LIST_PREVIEW_LIMIT = 3;
 const GITHUB_AUTH_ACCOUNT_RECOVERY_MATCH_LIMIT = 10;
 const PERSONAL_PUBLISHER_RECOVERY_OWNER_MIGRATION_LIMIT = 100;
+const PUBLISHER_IMAGE_UPLOAD_TTL_MS = 15 * 60_000;
+const PUBLISHER_IMAGE_MAX_BYTES = 2 * 1024 * 1024;
+const PUBLISHER_IMAGE_CONTENT_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const publisherRoleValidator = v.union(
   v.literal("owner"),
   v.literal("admin"),
@@ -65,6 +72,12 @@ type PublisherListStats = {
 type PublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
+  summary?: string | null;
+  slug?: string;
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: Id<"skillVersions">;
+  inferredFromVersionId?: Id<"skillVersions">;
   installs: number;
   /** Legacy response field retained while older frontend bundles are cached. */
   downloads: number;
@@ -131,11 +144,17 @@ type PublisherListCounts = {
   organizations: number;
 };
 
-function validateHandle(rawHandle: string) {
+function validateHandle(
+  rawHandle: string,
+  options?: { allowReservedOpenClawPublisherHandle?: boolean },
+) {
   const handle = normalizePublisherHandle(rawHandle);
   if (!handle) throw new ConvexError("Handle is required");
   if (!PUBLISHER_HANDLE_PATTERN.test(handle)) {
     throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
+  }
+  if (!options?.allowReservedOpenClawPublisherHandle) {
+    assertPublisherHandleAllowed(handle);
   }
   if (isReservedPublicOwnerHandle(handle)) {
     throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
@@ -313,12 +332,19 @@ function getPublisherPublishedItems(
     ...rows.skills.map((skill) => ({
       kind: "skill" as const,
       displayName: skill.displayName,
+      summary: skill.summary,
+      slug: skill.slug,
+      categories: skill.categories,
+      inferredCategories: skill.inferredCategories,
+      latestVersionId: skill.latestVersionId,
+      inferredFromVersionId: skill.inferredFromVersionId,
       downloads: readCanonicalStat(skill, "downloads"),
       installs: readCanonicalStat(skill, "installsAllTime"),
     })),
     ...rows.packages.map((pkg) => ({
       kind: pkg.family === "skill" ? ("skill" as const) : ("plugin" as const),
       displayName: pkg.displayName,
+      categories: pkg.categories,
       downloads: pkg.stats.downloads,
       installs: pkg.stats.installs,
     })),
@@ -329,6 +355,12 @@ function getPublisherPublishedItems(
     .map((item) => ({
       kind: item.kind,
       displayName: item.displayName,
+      summary: item.summary,
+      slug: item.slug,
+      categories: item.categories,
+      inferredCategories: item.inferredCategories,
+      latestVersionId: item.latestVersionId,
+      inferredFromVersionId: item.inferredFromVersionId,
       installs: item.installs,
       downloads: item.downloads,
     }));
@@ -507,6 +539,7 @@ async function toPublisherListItem(
       : undefined;
   return {
     ...publicPublisher,
+    displayName: resolvePublisherDisplayName(publisher, linkedUser),
     image: publicPublisher.image ?? linkedUser?.image,
     bio: publicPublisher.bio ?? linkedUser?.bio,
     stats,
@@ -544,7 +577,14 @@ async function toVisiblePublisherListSummary(
   }
   const summary = toPublisherListSummary(visibility.publisher);
   if (!summary) return null;
-  return { ...summary, visibility };
+  return {
+    ...summary,
+    item: {
+      ...summary.item,
+      displayName: resolvePublisherDisplayName(visibility.publisher, visibility.linkedUser),
+    },
+    visibility,
+  };
 }
 
 function hasPublisherListContent(summary: PublisherListSummary) {
@@ -600,21 +640,30 @@ async function getActivePublisherRowsByDownloads(
   return mergePublisherRows(rankedRows, legacyRows);
 }
 
+function shouldIncludePublisherListSummary(
+  summary: PublisherListSummary,
+  options?: { includeEmptyPublishers?: boolean },
+) {
+  return options?.includeEmptyPublishers || hasPublisherListContent(summary);
+}
+
 async function getVisiblePublisherListSummaries(
   ctx: Pick<QueryCtx, "db">,
   publishers: Doc<"publishers">[],
+  options?: { includeEmptyPublishers?: boolean },
 ) {
   const summaries = await Promise.all(
     publishers.map((publisher) => toVisiblePublisherListSummary(ctx, publisher)),
   );
   return summaries
     .filter((summary): summary is PublisherListSummary => Boolean(summary))
-    .filter(hasPublisherListContent);
+    .filter((summary) => shouldIncludePublisherListSummary(summary, options));
 }
 
 async function hydratePublisherListSummaries(
   ctx: Pick<QueryCtx, "db">,
   summaries: PublisherListSummary[],
+  options?: { includeEmptyPublishers?: boolean },
 ) {
   const items = await Promise.all(
     summaries.map((summary) =>
@@ -626,7 +675,9 @@ async function hydratePublisherListSummaries(
   );
   return items
     .filter((item): item is PublisherListItem => Boolean(item))
-    .filter((item) => item.stats.skills + item.stats.packages > 0);
+    .filter(
+      (item) => options?.includeEmptyPublishers || item.stats.skills + item.stats.packages > 0,
+    );
 }
 
 async function getUserStarredCount(ctx: Pick<QueryCtx, "db">, userId: Id<"users">) {
@@ -706,6 +757,69 @@ function matchesPublisherQuery(publisher: PublisherListItem, queryText: string) 
   return haystack.includes(queryText);
 }
 
+function resolvePublisherDisplayName(
+  publisher: Pick<Doc<"publishers">, "kind" | "displayName">,
+  linkedUser: Pick<Doc<"users">, "displayName" | "name"> | null | undefined,
+) {
+  if (publisher.kind !== "user") return publisher.displayName;
+  return linkedUser?.displayName?.trim() || linkedUser?.name?.trim() || publisher.displayName;
+}
+
+function publisherHandlePrefixUpperBound(value: string) {
+  return `${value}\uffff`;
+}
+
+async function queryActivePublishersByHandlePrefix(
+  ctx: Pick<QueryCtx, "db">,
+  kind: PublicPublisherKindFilter,
+  handlePrefix: string,
+) {
+  return await ctx.db
+    .query("publishers")
+    .withIndex("by_active_kind_handle", (q) =>
+      q
+        .eq("deletedAt", undefined)
+        .eq("deactivatedAt", undefined)
+        .eq("kind", kind)
+        .gte("handle", handlePrefix)
+        .lt("handle", publisherHandlePrefixUpperBound(handlePrefix)),
+    )
+    .take(MAX_PUBLISHER_HANDLE_PREFIX_CANDIDATES);
+}
+
+async function collectActivePublisherRowsForListPage(
+  ctx: Pick<QueryCtx, "db">,
+  args: {
+    kindFilter?: PublicPublisherKindFilter;
+    queryText?: string;
+    browseRows?: Doc<"publishers">[];
+  },
+) {
+  const browseRows =
+    args.browseRows ?? (await getActivePublisherRowsByDownloads(ctx, args.kindFilter));
+  const normalizedQuery = args.queryText ? normalizePublisherHandle(args.queryText) : undefined;
+  if (!normalizedQuery) return browseRows;
+
+  const kinds: PublicPublisherKindFilter[] = args.kindFilter ? [args.kindFilter] : ["user", "org"];
+  const [exactMatch, ...prefixMatches] = await Promise.all([
+    getPublisherByHandle(ctx, normalizedQuery),
+    ...kinds.map((kind) => queryActivePublishersByHandlePrefix(ctx, kind, normalizedQuery)),
+  ]);
+  const merged = new Map<Id<"publishers">, Doc<"publishers">>();
+  for (const publisher of browseRows) {
+    merged.set(publisher._id, publisher);
+  }
+  if (exactMatch && isPublisherActive(exactMatch)) {
+    merged.set(exactMatch._id, exactMatch);
+  }
+  for (const rows of prefixMatches) {
+    for (const publisher of rows) {
+      merged.set(publisher._id, publisher);
+    }
+  }
+  return [...merged.values()];
+}
+
 function getPublisherListCounts(items: PublisherListItem[]): PublisherListCounts {
   const individualCount = items.filter((publisher) => publisher.kind === "user").length;
   const organizationCount = items.filter((publisher) => publisher.kind === "org").length;
@@ -742,6 +856,13 @@ async function resolveAvailableUserHandle(
   throw new ConvexError(`Unable to find an available fallback handle for "@${baseHandle}"`);
 }
 
+function deriveLegacyOrgFallbackHandle(orgHandle: string, explicitFallbackHandle?: string) {
+  return (
+    explicitFallbackHandle ??
+    (isReservedOpenClawPublisherHandle(orgHandle) ? "user" : `${orgHandle}-user`)
+  );
+}
+
 async function migrateLegacyPublisherHandleToOrgWithActor(
   ctx: Pick<MutationCtx, "db">,
   args: {
@@ -755,8 +876,10 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
   if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
   assertAdmin(actor);
 
-  const orgHandle = validateHandle(args.handle);
-  const fallbackBase = validateHandle(args.fallbackUserHandle ?? `${orgHandle}-user`);
+  const orgHandle = validateHandle(args.handle, { allowReservedOpenClawPublisherHandle: true });
+  const fallbackBase = validateHandle(
+    deriveLegacyOrgFallbackHandle(orgHandle, args.fallbackUserHandle),
+  );
   const now = Date.now();
 
   const handlePublisher = await getPublisherByHandle(ctx, orgHandle);
@@ -914,7 +1037,7 @@ async function ensureOrgPublisherHandleWithActor(
   if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
   assertAdmin(actor);
 
-  const handle = validateHandle(args.handle);
+  const handle = validateHandle(args.handle, { allowReservedOpenClawPublisherHandle: true });
   const now = Date.now();
   const existingPublisher = await getPublisherByHandle(ctx, handle);
   const existingUser = await getUserByHandle(ctx, handle);
@@ -975,6 +1098,9 @@ async function ensureOrgPublisherHandleWithActor(
 
   if (!normalizePublisherHandle(args.memberHandle)) {
     throw new ConvexError("memberHandle required when creating org publisher");
+  }
+  if (!existingPublisher && !existingUser && isReservedOpenClawExtensionHandle(handle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
   }
 
   const publisherId = await ctx.db.insert("publishers", {
@@ -1584,6 +1710,9 @@ async function createOrgPublisherForUser(
   if (await isHandleReservedForAnotherUser(ctx, handle, args.actorUserId)) {
     throw new ConvexError(`Handle "@${handle}" is reserved for another user`);
   }
+  if (isReservedOpenClawExtensionHandle(handle)) {
+    throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
+  }
 
   const now = Date.now();
   const publisherId = await ctx.db.insert("publishers", {
@@ -1622,7 +1751,7 @@ async function createOrgPublisherForUser(
   };
 }
 
-async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
+async function inspectPublisherHardDeleteRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
   const sources = await ctx.db
     .query("githubSkillSources")
     .withIndex("by_owner_publisher", (q) => q.eq("ownerPublisherId", publisherId))
@@ -1634,6 +1763,29 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
       .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
       .collect();
     sourceContents += contents.length;
+  }
+
+  const members = await ctx.db
+    .query("publisherMembers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .collect();
+
+  const official = await ctx.db
+    .query("officialPublishers")
+    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
+    .unique();
+
+  return { sources, sourceContents, members, official };
+}
+
+async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
+  const preview = await inspectPublisherHardDeleteRows(ctx, publisherId);
+
+  for (const source of preview.sources) {
+    const contents = await ctx.db
+      .query("githubSkillContents")
+      .withIndex("by_github_source", (q) => q.eq("githubSourceId", source._id))
+      .collect();
     for (const content of contents) await ctx.db.delete(content._id);
     await ctx.scheduler.runAfter(0, internal.githubSkillSources.cleanupDeletedSourceScansInternal, {
       sourceId: source._id,
@@ -1641,25 +1793,17 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
     await ctx.db.delete(source._id);
   }
 
-  const members = await ctx.db
-    .query("publisherMembers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
-    .collect();
-  for (const member of members) await ctx.db.delete(member._id);
+  for (const member of preview.members) await ctx.db.delete(member._id);
 
-  const official = await ctx.db
-    .query("officialPublishers")
-    .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
-    .unique();
-  if (official) await ctx.db.delete(official._id);
+  if (preview.official) await ctx.db.delete(preview.official._id);
 
   await ctx.db.delete(publisherId);
 
   return {
-    sources: sources.length,
-    sourceContents,
-    members: members.length,
-    official: Boolean(official),
+    sources: preview.sources.length,
+    sourceContents: preview.sourceContents,
+    members: preview.members.length,
+    official: Boolean(preview.official),
   };
 }
 
@@ -1886,7 +2030,10 @@ export const listMine = query({
           : null;
         if (!publicPublisher) return null;
         return {
-          publisher: publicPublisher,
+          publisher: {
+            ...publicPublisher,
+            imageStorageId: publisher?.imageStorageId,
+          },
           role: publisher?.kind === "user" ? "owner" : membership.role,
         };
       }),
@@ -1906,7 +2053,10 @@ export const listMine = query({
       !visiblePublishers.some((entry) => entry.publisher._id === personalPublisher._id)
     ) {
       visiblePublishers.unshift({
-        publisher: personalPublisher,
+        publisher: {
+          ...personalPublisher,
+          imageStorageId: personalPublisherDoc?.imageStorageId,
+        },
         role: "owner",
       });
     }
@@ -2159,6 +2309,7 @@ export const listPublic = query({
 export const listPublicPage = query({
   args: {
     kind: v.optional(v.union(v.literal("user"), v.literal("org"))),
+    official: v.optional(v.boolean()),
     query: v.optional(v.string()),
     paginationOpts: paginationOptsValidator,
   },
@@ -2168,8 +2319,35 @@ export const listPublicPage = query({
     const queryText = args.query?.trim();
     const offset = args.paginationOpts.cursor ? Number(args.paginationOpts.cursor) : 0;
     const safeOffset = Number.isFinite(offset) && offset > 0 ? Math.trunc(offset) : 0;
-    const activeRows = await getActivePublisherRowsByDownloads(ctx, kindFilter);
-    const publisherSummaries = await getVisiblePublisherListSummaries(ctx, activeRows);
+    const officialRows = args.official
+      ? (
+          await Promise.all(
+            (
+              await ctx.db
+                .query("officialPublishers")
+                .withIndex("by_created")
+                .order("desc")
+                .take(MAX_PUBLIC_PUBLISHER_LIST_LIMIT)
+            ).map((row) => ctx.db.get(row.publisherId)),
+          )
+        ).filter((publisher): publisher is Doc<"publishers"> =>
+          Boolean(publisher && !publisher.deletedAt && !publisher.deactivatedAt),
+        )
+      : undefined;
+    const browseRows = officialRows
+      ? officialRows.filter((publisher) => !kindFilter || publisher.kind === kindFilter)
+      : await getActivePublisherRowsByDownloads(ctx, kindFilter);
+    const activeRows = queryText
+      ? await collectActivePublisherRowsForListPage(ctx, {
+          kindFilter,
+          queryText,
+          browseRows,
+        })
+      : browseRows;
+    const includeEmptyPublishers = Boolean(queryText);
+    const publisherSummaries = await getVisiblePublisherListSummaries(ctx, activeRows, {
+      includeEmptyPublishers,
+    });
     const itemSummaries = publisherSummaries
       .filter(
         (summary) =>
@@ -2178,7 +2356,9 @@ export const listPublicPage = query({
       )
       .sort((a, b) => comparePublisherListItems(a.item, b.item));
     const globalPublisherSummaries = kindFilter
-      ? await getVisiblePublisherListSummaries(ctx, await getActivePublisherRowsByDownloads(ctx))
+      ? officialRows
+        ? await getVisiblePublisherListSummaries(ctx, officialRows)
+        : await getVisiblePublisherListSummaries(ctx, await getActivePublisherRowsByDownloads(ctx))
       : publisherSummaries;
     const globalCounts = getPublisherListSummaryCounts(globalPublisherSummaries);
     const counts = queryText ? getPublisherListSummaryCounts(itemSummaries) : globalCounts;
@@ -2186,6 +2366,7 @@ export const listPublicPage = query({
     const page = await hydratePublisherListSummaries(
       ctx,
       itemSummaries.slice(safeOffset, nextOffset),
+      { includeEmptyPublishers },
     );
 
     return {
@@ -2272,6 +2453,39 @@ export const deleteOrg = mutation({
   },
 });
 
+export const createImageUpload = mutation({
+  args: {
+    publisherId: v.id("publishers"),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requireUser(ctx);
+    const publisher = await ctx.db.get(args.publisherId);
+    if (!publisher || publisher.deletedAt || publisher.deactivatedAt) {
+      throw new ConvexError("Publisher not found");
+    }
+    if (publisher.kind !== "org") {
+      throw new ConvexError("Only org publishers can have a logo");
+    }
+
+    const membership = await getPublisherMembership(ctx, publisher._id, userId);
+    if (!membership || !isPublisherRoleAllowed(membership.role, ["admin"])) {
+      throw new ConvexError("Forbidden");
+    }
+
+    const now = Date.now();
+    const uploadTicket = await ctx.db.insert("publisherImageUploadTickets", {
+      publisherId: publisher._id,
+      userId,
+      createdAt: now,
+      expiresAt: now + PUBLISHER_IMAGE_UPLOAD_TTL_MS,
+    });
+    return {
+      uploadUrl: await ctx.storage.generateUploadUrl(),
+      uploadTicket,
+    };
+  },
+});
+
 export const hardDeletePublisherRowsInternal = internalMutation({
   args: { publisherId: v.id("publishers") },
   handler: async (ctx, args) => {
@@ -2285,6 +2499,8 @@ export const updateProfile = mutation({
     displayName: v.string(),
     bio: v.optional(v.string()),
     image: v.optional(v.string()),
+    imageStorageId: v.optional(v.id("_storage")),
+    imageUploadTicket: v.optional(v.id("publisherImageUploadTickets")),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireUser(ctx);
@@ -2304,10 +2520,61 @@ export const updateProfile = mutation({
     const displayName = args.displayName.trim() || publisher.handle;
     const bio = args.bio?.trim() || undefined;
     const image = args.image?.trim() || undefined;
-    if (image) {
+    const hasImageUpload = Boolean(args.imageUploadTicket);
+    if (hasImageUpload && !args.imageStorageId) {
+      throw new ConvexError("Image upload is incomplete");
+    }
+    if (!hasImageUpload && args.image !== undefined && image !== publisher.image) {
+      throw new ConvexError("Logo changes require an uploaded image");
+    }
+    let imageStorageId = args.imageStorageId;
+    if (
+      !hasImageUpload &&
+      !imageStorageId &&
+      image &&
+      image === publisher.image &&
+      publisher.imageStorageId
+    ) {
+      imageStorageId = publisher.imageStorageId;
+    }
+    let imageUrl = image;
+    if (hasImageUpload) {
+      const ticket = await ctx.db.get(args.imageUploadTicket!);
+      if (
+        !ticket ||
+        ticket.publisherId !== publisher._id ||
+        ticket.userId !== userId ||
+        ticket.usedAt ||
+        ticket.expiresAt <= Date.now()
+      ) {
+        throw new ConvexError("Image upload is missing or expired");
+      }
+      const metadata = await ctx.db.system.get("_storage", args.imageStorageId!);
+      if (
+        !metadata ||
+        metadata._creationTime < ticket.createdAt ||
+        metadata.size > PUBLISHER_IMAGE_MAX_BYTES ||
+        !metadata.contentType ||
+        !PUBLISHER_IMAGE_CONTENT_TYPES.has(metadata.contentType)
+      ) {
+        throw new ConvexError("Logo must be a PNG, JPEG, or WebP image smaller than 2 MB");
+      }
+      const uploadedImageUrl = await ctx.storage.getUrl(args.imageStorageId!);
+      if (!uploadedImageUrl) throw new ConvexError("Uploaded logo is no longer available");
+      imageUrl = uploadedImageUrl;
+      await ctx.db.patch(ticket._id, {
+        usedAt: Date.now(),
+        storageId: args.imageStorageId,
+      });
+    } else if (imageStorageId && imageStorageId !== publisher.imageStorageId) {
+      throw new ConvexError("Image storage does not belong to this publisher");
+    } else if (imageStorageId) {
+      imageUrl = publisher.image;
+    }
+    if (imageUrl) {
       let parsed: URL;
       try {
-        parsed = new URL(image);
+        parsed = new URL(imageUrl);
       } catch {
         throw new ConvexError("Image must be a valid URL");
       }
@@ -2320,9 +2587,17 @@ export const updateProfile = mutation({
     await ctx.db.patch(publisher._id, {
       displayName,
       bio,
-      image,
+      image: imageUrl,
+      imageStorageId,
       updatedAt: now,
     });
+    if (
+      publisher.imageStorageId &&
+      publisher.imageStorageId !== imageStorageId &&
+      publisher.imageStorageId !== args.imageStorageId
+    ) {
+      await ctx.storage.delete(publisher.imageStorageId);
+    }
     await ctx.db.insert("auditLogs", {
       actorUserId: userId,
       action: "publisher.profile.update",
@@ -2331,7 +2606,8 @@ export const updateProfile = mutation({
       metadata: {
         displayName,
         bio,
-        image,
+        image: imageUrl,
+        imageStorageId,
       },
       createdAt: now,
     });
@@ -2545,6 +2821,115 @@ export const deleteEmptyOrgPublisherInternal = internalMutation({
       activeSkills: 0,
       activePackages: 0,
       memberCount: members.length,
+    };
+  },
+});
+
+export const reclaimDeletedOrgHandleInternal = internalMutation({
+  args: {
+    actorUserId: v.id("users"),
+    handle: v.string(),
+    reason: v.string(),
+    dryRun: v.optional(v.boolean()),
+    confirmationToken: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const actor = await ctx.db.get(args.actorUserId);
+    if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
+    assertAdmin(actor);
+
+    const handle = normalizePublisherHandle(args.handle);
+    if (!handle || !PUBLISHER_HANDLE_PATTERN.test(handle)) {
+      throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
+    }
+    const reason = args.reason.trim();
+    if (!reason) throw new ConvexError("Reason is required");
+    if (reason.length > 500) throw new ConvexError("Reason too long (max 500 chars)");
+
+    const publisher = await getPublisherByHandle(ctx, handle);
+    if (!publisher) throw new ConvexError("Publisher not found");
+    if (publisher.kind !== "org") throw new ConvexError("Publisher is not an org");
+    if (!publisher.deletedAt && !publisher.deactivatedAt) {
+      throw new ConvexError("Publisher is active; use org delete before reclaiming the handle");
+    }
+
+    const [activeSkills, activePackages, preview] = await Promise.all([
+      ctx.db
+        .query("skills")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+        )
+        .take(1),
+      ctx.db
+        .query("packages")
+        .withIndex("by_owner_publisher_active_updated", (q) =>
+          q.eq("ownerPublisherId", publisher._id).eq("softDeletedAt", undefined),
+        )
+        .take(1),
+      inspectPublisherHardDeleteRows(ctx, publisher._id),
+    ]);
+
+    if (activeSkills.length > 0 || activePackages.length > 0) {
+      throw new ConvexError(
+        `Publisher has active skills or packages and cannot be reclaimed with this command`,
+      );
+    }
+
+    const confirmationToken = `reclaim-deleted-org:${handle}`;
+    const dryRun = args.dryRun !== false;
+    const baseResult = {
+      ok: true as const,
+      publisherId: publisher._id,
+      handle,
+      activeSkills: activeSkills.length,
+      activePackages: activePackages.length,
+      memberCount: preview.members.length,
+      githubSources: preview.sources.length,
+      githubSourceContents: preview.sourceContents,
+      officialPublisher: Boolean(preview.official),
+      confirmationToken,
+    };
+    if (dryRun) {
+      return {
+        ...baseResult,
+        dryRun: true,
+        hardDeleted: false,
+      };
+    }
+
+    if (args.confirmationToken !== confirmationToken) {
+      throw new ConvexError(`Confirmation token must be "${confirmationToken}"`);
+    }
+
+    const now = Date.now();
+    await ctx.db.insert("auditLogs", {
+      actorUserId: args.actorUserId,
+      action: "publisher.org.reclaim_deleted_handle",
+      targetType: "publisher",
+      targetId: publisher._id,
+      metadata: {
+        handle,
+        reason,
+        deletedAt: publisher.deletedAt,
+        deactivatedAt: publisher.deactivatedAt,
+        memberCount: preview.members.length,
+        githubSources: preview.sources.length,
+        githubSourceContents: preview.sourceContents,
+        officialPublisher: Boolean(preview.official),
+        source: "publisher.org.admin_reclaim",
+      },
+      createdAt: now,
+    });
+    const deletedRows = await hardDeletePublisherRows(ctx, publisher._id);
+
+    return {
+      ...baseResult,
+      dryRun: false,
+      hardDeleted: true,
+      memberCount: deletedRows.members,
+      githubSources: deletedRows.sources,
+      githubSourceContents: deletedRows.sourceContents,
+      officialPublisher: deletedRows.official,
     };
   },
 });

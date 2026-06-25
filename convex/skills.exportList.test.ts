@@ -66,6 +66,34 @@ describe("skills.listByDateRange export list", () => {
     getPageMock.mockResolvedValue({
       page: [
         digest({ slug: "exportable" }),
+        digest({
+          slug: "github-clean",
+          latestVersionId: undefined,
+          installKind: "github",
+          githubCurrentStatus: "present",
+          githubScanStatus: "clean",
+        }),
+        digest({
+          slug: "github-suspicious",
+          latestVersionId: undefined,
+          installKind: "github",
+          githubCurrentStatus: "present",
+          githubScanStatus: "suspicious",
+        }),
+        digest({
+          slug: "github-pending",
+          latestVersionId: undefined,
+          installKind: "github",
+          githubCurrentStatus: "present",
+          githubScanStatus: "pending",
+        }),
+        digest({
+          slug: "github-missing",
+          latestVersionId: undefined,
+          installKind: "github",
+          githubCurrentStatus: "missing",
+          githubScanStatus: "clean",
+        }),
         digest({ slug: "missing-version", latestVersionId: undefined }),
         digest({ slug: "hidden", moderationStatus: "hidden" }),
         digest({ slug: "malicious", moderationFlags: ["blocked.malware"] }),
@@ -77,7 +105,11 @@ describe("skills.listByDateRange export list", () => {
 
     const result = await listByDateRangeHandler({ db: {} }, { startDate: 1, endDate: 5 });
 
-    expect(result.page.map((item) => item.slug)).toEqual(["exportable"]);
+    expect(result.page.map((item) => item.slug)).toEqual([
+      "exportable",
+      "github-clean",
+      "github-suspicious",
+    ]);
     expect(getPageMock).toHaveBeenCalledWith(
       expect.anything(),
       expect.objectContaining({

@@ -14,6 +14,14 @@ import {
   SKILL_SECURITY_EVALUATOR_SYSTEM_PROMPT,
 } from "../../convex/lib/securityPrompt";
 import { assertCodexWorkerExecutionAllowed, resolveCodexWorkerHome } from "../codex-worker-guard";
+import { createWorkerLogger } from "../lib/workerLogger";
+import {
+  maskGitHubActionsSecret,
+  maskKnownWorkerSecrets,
+  redactWorkerPublicErrorMessage,
+  redactWorkerPublicText,
+  safeWorkerArtifactPathLabel,
+} from "../lib/workerRedaction";
 
 type ClaimedJob = {
   job: {
@@ -99,6 +107,8 @@ type JobDiagnosticInput = {
   status: "completed" | "failed";
 };
 
+type CodexScanWorkerClient = Pick<ConvexHttpClient, "action">;
+
 const DEFAULT_BATCH_LIMIT = 4;
 const DEFAULT_MAX_RUNTIME_MS = 40 * 60 * 1000;
 const DEFAULT_CODEX_SCAN_TIMEOUT_MS = 20 * 60 * 1000;
@@ -107,6 +117,7 @@ const MAX_STORED_SKILLSPECTOR_ISSUES = 25;
 const MAX_STORED_SKILLSPECTOR_TEXT_CHARS = 2_000;
 const MAX_STORED_SKILLSPECTOR_SHORT_TEXT_CHARS = 512;
 const DEFAULT_LEASE_MS = 60 * 60 * 1000;
+const logger = createWorkerLogger({ name: "security-scan-worker" });
 
 const root = resolve(new URL("../..", import.meta.url).pathname);
 const schemaPath = join(root, "scripts/security/codex-scan-output.schema.json");
@@ -183,23 +194,7 @@ function safeDiagnosticPathSegment(value: string) {
 }
 
 function redactDiagnosticText(value: string, maxChars = MAX_DIAGNOSTIC_TEXT_CHARS) {
-  const redacted = value
-    .replace(/https?:\/\/[^\s"')<>]+/g, "[redacted-url]")
-    .replace(
-      /\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]{12,}/gi,
-      (_match, scheme: string) => `${scheme} [redacted-secret]`,
-    )
-    .replace(
-      /\b(token|secret|password|api[_-]?key|authorization)(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      (_match, key: string, separator: string) => `${key}${separator}[redacted-secret]`,
-    )
-    .replace(
-      /\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|API[_-]?KEY|AUTHORIZATION))(["']?\s*[:=]\s*["']?)[^\s"',}]+/gi,
-      (_match, key: string, separator: string) => `${key}${separator}[redacted-secret]`,
-    )
-    .replace(/\b[A-Za-z0-9_+/=-]{64,}\b/g, "[redacted-secret]");
-  if (redacted.length <= maxChars) return redacted;
-  return `${redacted.slice(0, maxChars)}\n...[truncated ${redacted.length - maxChars} chars]`;
+  return redactWorkerPublicText(value, maxChars);
 }
 
 function redactDiagnosticError(value: string) {
@@ -209,46 +204,103 @@ function redactDiagnosticError(value: string) {
   );
 }
 
-const DIAGNOSTIC_CONTENT_KEY_PATTERN =
-  /^(code[_-]?snippet|content|detail|evidence|explanation|finding|findings|guidance|match|message|note|notes|output|rawResult|recommendation|result|snippet|stderr|stdout|summary|text|userImpact|user_impact)$/i;
-const DIAGNOSTIC_SECRET_KEY_PATTERN =
-  /(api[_-]?key|authorization|password|secret|token|webhook|credential)/i;
-const CODEX_EVENT_DIAGNOSTIC_TEXT_KEYS = new Set(["message", "text"]);
+function sanitizeWorkerErrorMessage(value: string) {
+  return redactWorkerPublicErrorMessage(redactDiagnosticError(value));
+}
 
-function redactDiagnosticValue(value: unknown, key = "", preserveDiagnosticText = false): unknown {
-  if (DIAGNOSTIC_SECRET_KEY_PATTERN.test(key)) return "[redacted-secret]";
+const DIAGNOSTIC_CONTENT_TEXT_KEYS = new Set([
+  "codesnippet",
+  "content",
+  "detail",
+  "evidence",
+  "explanation",
+  "finding",
+  "findings",
+  "guidance",
+  "match",
+  "message",
+  "note",
+  "notes",
+  "output",
+  "rawresult",
+  "recommendation",
+  "result",
+  "snippet",
+  "stderr",
+  "stdout",
+  "summary",
+  "text",
+  "userimpact",
+]);
+const DIAGNOSTIC_PUBLIC_TEXT_PATHS = new Set([
+  "codexresult.verdict",
+  "codexstdout.item.id",
+  "codexstdout.item.type",
+  "codexstdout.status",
+  "codexstdout.type",
+  "llmanalysis.confidence",
+  "llmanalysis.status",
+  "llmanalysis.verdict",
+  "skillspectoranalysis.issues.*.issueid",
+  "skillspectoranalysis.issues.*.severity",
+  "skillspectoranalysis.recommendation",
+  "skillspectoranalysis.scannerversion",
+  "skillspectoranalysis.severity",
+  "skillspectoranalysis.status",
+]);
+const DIAGNOSTIC_PUBLIC_TEXT_VALUE_PATTERN = /^[A-Za-z0-9_.:@/-]{1,160}$/;
+
+function normalizeDiagnosticKey(key: string) {
+  return key.replace(/[_-]/g, "").toLowerCase();
+}
+
+function diagnosticPathKey(path: string[]) {
+  return path.map((part) => (part === "*" ? part : normalizeDiagnosticKey(part))).join(".");
+}
+
+function isDiagnosticContentTextPath(path: string[]) {
+  const key = path.at(-1) ?? "";
+  return DIAGNOSTIC_CONTENT_TEXT_KEYS.has(normalizeDiagnosticKey(key));
+}
+
+function isDiagnosticSecretPath(path: string[]) {
+  const key = normalizeDiagnosticKey(path.at(-1) ?? "");
+  return /(apikey|authorization|credential|password|secret|token|webhook)/i.test(key);
+}
+
+function shouldPreserveDiagnosticText(path: string[], original: string, redacted: string) {
+  return (
+    original === redacted &&
+    DIAGNOSTIC_PUBLIC_TEXT_PATHS.has(diagnosticPathKey(path)) &&
+    DIAGNOSTIC_PUBLIC_TEXT_VALUE_PATTERN.test(redacted)
+  );
+}
+
+function redactDiagnosticValue(value: unknown, path: string[] = []): unknown {
+  if (isDiagnosticSecretPath(path)) return "[redacted-secret]";
   if (typeof value === "string") {
     const redacted = redactDiagnosticText(value, 2_000);
-    if (preserveDiagnosticText && CODEX_EVENT_DIAGNOSTIC_TEXT_KEYS.has(key)) return redacted;
-    if (!DIAGNOSTIC_CONTENT_KEY_PATTERN.test(key)) return redacted;
+    if (shouldPreserveDiagnosticText(path, value, redacted)) return redacted;
     return `[redacted ${redacted.length} chars]`;
   }
   if (Array.isArray(value)) {
-    if (DIAGNOSTIC_CONTENT_KEY_PATTERN.test(key)) return `[redacted ${value.length} item(s)]`;
-    return value.map((item) => redactDiagnosticValue(item, "", preserveDiagnosticText));
+    if (isDiagnosticContentTextPath(path)) return `[redacted ${value.length} item(s)]`;
+    return value.map((item) => redactDiagnosticValue(item, [...path, "*"]));
   }
   if (!value || typeof value !== "object") return value;
   return Object.fromEntries(
     Object.entries(value as Record<string, unknown>).map(([entryKey, entryValue]) => [
       entryKey,
-      redactDiagnosticValue(entryValue, entryKey, preserveDiagnosticText),
+      redactDiagnosticValue(entryValue, [...path, entryKey]),
     ]),
   );
 }
 
-function redactStructuredDiagnosticText(
-  value: string,
-  options?: { preserveDiagnosticText?: boolean },
-) {
+function redactStructuredDiagnosticText(value: string, rootKey: string) {
   const trimmed = value.trim();
-  const preserveDiagnosticText = options?.preserveDiagnosticText === true;
   if (!trimmed) return "";
   try {
-    return JSON.stringify(
-      redactDiagnosticValue(JSON.parse(trimmed), "", preserveDiagnosticText),
-      null,
-      2,
-    );
+    return JSON.stringify(redactDiagnosticValue(JSON.parse(trimmed), [rootKey]), null, 2);
   } catch {
     // Codex --json writes JSONL. Redact parseable lines structurally, then fall back to text redaction.
     const lines = value.split("\n");
@@ -257,9 +309,7 @@ function redactStructuredDiagnosticText(
         .map((line) => {
           if (!line.trim()) return line;
           try {
-            return JSON.stringify(
-              redactDiagnosticValue(JSON.parse(line), "", preserveDiagnosticText),
-            );
+            return JSON.stringify(redactDiagnosticValue(JSON.parse(line), [rootKey]));
           } catch {
             return redactDiagnosticText(line, 2_000);
           }
@@ -286,7 +336,10 @@ function sanitizedTargetForDiagnostic(target: ClaimedJob["target"]) {
     version: pickIdentity(target.version, ["_id", "version", "sha256hash"]),
     package: pickIdentity(target.package, ["_id", "name", "normalizedName"]),
     release: pickIdentity(target.release, ["_id", "version", "integritySha256"]),
-    files: target.files?.map(({ url: _url, ...file }) => file),
+    files: target.files?.map(({ url: _url, ...file }) => ({
+      ...file,
+      path: safeWorkerArtifactPathLabel(file.path),
+    })),
     clawpackUrl: Boolean(target.clawpackUrl),
     trustedOpenClawPlugin: target.trustedOpenClawPlugin,
   };
@@ -306,11 +359,14 @@ function sanitizedTargetForArtifactContext(target: ClaimedJob["target"]) {
   };
 }
 
-async function writeDiagnosticText(jobDir: string, fileName: string, value: string | undefined) {
+async function writeDiagnosticText(
+  jobDir: string,
+  fileName: string,
+  value: string | undefined,
+  rootKey: string,
+) {
   if (value === undefined) return undefined;
-  const redacted = redactStructuredDiagnosticText(value, {
-    preserveDiagnosticText: fileName === "codex.stdout.redacted.jsonl",
-  });
+  const redacted = redactStructuredDiagnosticText(value, rootKey);
   await writeFile(join(jobDir, fileName), redacted.endsWith("\n") ? redacted : `${redacted}\n`);
   return fileName;
 }
@@ -324,31 +380,37 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
     jobDir,
     "codex.stdout.redacted.jsonl",
     input.codex?.stdout,
+    "codexStdout",
   );
   const stderrPath = await writeDiagnosticText(
     jobDir,
     "codex.stderr.redacted.log",
     input.codex?.stderr,
+    "codexStderr",
   );
   const rawResultPath = await writeDiagnosticText(
     jobDir,
     "codex-result.redacted.json",
     input.codex?.rawResult,
+    "codexResult",
   );
   const skillSpectorStdoutPath = await writeDiagnosticText(
     jobDir,
     "skillspector.stdout.redacted.log",
     input.skillSpector?.stdout,
+    "skillSpectorStdout",
   );
   const skillSpectorStderrPath = await writeDiagnosticText(
     jobDir,
     "skillspector.stderr.redacted.log",
     input.skillSpector?.stderr,
+    "skillSpectorStderr",
   );
   const skillSpectorRawResultPath = await writeDiagnosticText(
     jobDir,
     "skillspector-result.redacted.json",
     input.skillSpector?.rawResult,
+    "skillSpectorResult",
   );
 
   const diagnostic = {
@@ -363,9 +425,11 @@ export async function writeJobDiagnostic(input: JobDiagnosticInput) {
       targetKind: input.job.job.targetKind,
       waitForVtUntil: input.job.job.waitForVtUntil,
     },
-    llmAnalysis: redactDiagnosticValue(input.llmAnalysis),
+    llmAnalysis: redactDiagnosticValue(input.llmAnalysis, ["llmAnalysis"]),
     runId: input.runId,
-    skillSpectorAnalysis: redactDiagnosticValue(input.skillSpectorAnalysis),
+    skillSpectorAnalysis: redactDiagnosticValue(input.skillSpectorAnalysis, [
+      "skillSpectorAnalysis",
+    ]),
     startedAt: input.startedAt,
     status: input.status,
     target: sanitizedTargetForDiagnostic(input.job.target),
@@ -393,14 +457,28 @@ function safeOutputPath(workspace: string, artifactPath: string) {
   const out = resolve(workspace, "artifact", normalized);
   const artifactRoot = resolve(workspace, "artifact");
   if (!out.startsWith(`${artifactRoot}/`) && out !== artifactRoot) {
-    throw new Error(`Unsafe artifact path: ${artifactPath}`);
+    throw new Error(`Unsafe artifact path: ${safeWorkerArtifactPathLabel(artifactPath)}`);
   }
   return out;
 }
 
-async function download(url: string) {
-  const response = await fetch(url);
-  if (!response.ok) throw new Error(`Download failed ${response.status}: ${url}`);
+function artifactDownloadDescription(kind: "file" | "clawpack", artifactPath: string) {
+  const safePath = safeWorkerArtifactPathLabel(artifactPath);
+  return kind === "file" ? `artifact file ${safePath}` : `artifact tarball ${safePath}`;
+}
+
+async function download(url: string, artifact: { kind: "file" | "clawpack"; path: string }) {
+  maskGitHubActionsSecret(url);
+  const description = artifactDownloadDescription(artifact.kind, artifact.path);
+  let response: Response;
+  try {
+    response = await fetch(url);
+  } catch {
+    throw new Error(`Download failed for ${description}: network error`, {
+      cause: new Error("network error"),
+    });
+  }
+  if (!response.ok) throw new Error(`Download failed ${response.status} for ${description}`);
   return Buffer.from(await response.arrayBuffer());
 }
 
@@ -422,12 +500,15 @@ export async function writeArtifactWorkspace(job: ClaimedJob, workspace: string)
   for (const file of job.target.files ?? []) {
     const out = safeOutputPath(workspace, file.path);
     await mkdir(dirname(out), { recursive: true });
-    await writeFile(out, await download(file.url));
+    await writeFile(out, await download(file.url, { kind: "file", path: file.path }));
   }
 
   if (job.target.clawpackUrl) {
     const tarballPath = join(workspace, "artifact.tgz");
-    await writeFile(tarballPath, await download(job.target.clawpackUrl));
+    await writeFile(
+      tarballPath,
+      await download(job.target.clawpackUrl, { kind: "clawpack", path: "artifact.tgz" }),
+    );
     const listing = await runCommand("tar", ["-tzf", tarballPath], {
       cwd: workspace,
       timeoutMs: 60_000,
@@ -1018,12 +1099,12 @@ async function runCodex(
   return toStoredLlmAnalysis(parsed);
 }
 
-async function processJob(
-  client: ConvexHttpClient,
+export async function processJob(
+  client: CodexScanWorkerClient,
   token: string,
   job: ClaimedJob,
   diagnosticsRoot: string | undefined,
-) {
+): Promise<boolean> {
   const workspace = await mkdtemp(join(tmpdir(), `clawhub-codex-scan-${basename(job.job._id)}-`));
   const startedAt = Date.now();
   const codex: CodexCommandDiagnostic = {};
@@ -1049,18 +1130,39 @@ async function processJob(
       runId: process.env.GITHUB_RUN_ID,
     });
     status = "completed";
-    console.log(`completed ${job.job._id}: ${llmAnalysis.status}`);
+    logger.info(
+      {
+        durationMs: Date.now() - startedAt,
+        event: "security_scan_job_completed",
+        jobId: job.job._id,
+        scannerPhase: "complete",
+        status: llmAnalysis.status,
+        targetKind: job.job.targetKind,
+      },
+      "security scan job completed",
+    );
     return true;
   } catch (error) {
-    errorMessage = error instanceof Error ? error.message : String(error);
+    errorMessage = sanitizeWorkerErrorMessage(
+      error instanceof Error ? error.message : String(error),
+    );
     const failResult = (await client.action(api.securityScan.failCodexScanJob, {
       token,
       jobId: job.job._id as Id<"securityScanJobs">,
       leaseToken: job.job.leaseToken,
       error: errorMessage,
     })) as { retry?: boolean } | undefined;
-    console.error(
-      `failed ${job.job._id}: ${errorMessage}${failResult?.retry ? " (will retry)" : ""}`,
+    logger.error(
+      {
+        durationMs: Date.now() - startedAt,
+        event: "security_scan_job_failed",
+        jobId: job.job._id,
+        publicReason: errorMessage,
+        retry: Boolean(failResult?.retry),
+        scannerPhase: "process",
+        targetKind: job.job.targetKind,
+      },
+      "security scan job failed",
     );
     return false;
   } finally {
@@ -1081,7 +1183,14 @@ async function processJob(
     } catch (diagnosticError) {
       const message =
         diagnosticError instanceof Error ? diagnosticError.message : String(diagnosticError);
-      console.error(`failed to write diagnostic for ${job.job._id}: ${message}`);
+      logger.error(
+        {
+          event: "security_scan_diagnostic_write_failed",
+          jobId: job.job._id,
+          publicReason: sanitizeWorkerErrorMessage(message),
+        },
+        "security scan diagnostic write failed",
+      );
     }
     await rm(workspace, { recursive: true, force: true });
   }
@@ -1092,17 +1201,28 @@ export async function claimCodexScanJobBatch(
   claimOne: () => Promise<ClaimedJob[]>,
 ) {
   const results = await Promise.allSettled(Array.from({ length: claimLimit }, () => claimOne()));
-  return results.flatMap((result) => {
+  let claimFailures = 0;
+  const jobs = results.flatMap((result) => {
     if (result.status === "fulfilled") return result.value;
+    claimFailures += 1;
     const message = result.reason instanceof Error ? result.reason.message : String(result.reason);
-    console.error(`failed to claim security scan job: ${message}`);
+    logger.error(
+      {
+        event: "security_scan_claim_failed",
+        publicReason: sanitizeWorkerErrorMessage(message),
+        scannerPhase: "claim",
+      },
+      "failed to claim security scan job",
+    );
     return [];
   });
+  return { claimFailures, jobs };
 }
 
 async function main() {
   const { batchLimit, maxJobs, maxRuntimeMs, leaseMs, diagnosticsRoot } = parseArgs();
   assertCodexWorkerExecutionAllowed(process.env);
+  maskKnownWorkerSecrets();
   const convexUrl = process.env.CONVEX_URL ?? process.env.VITE_CONVEX_URL;
   if (!convexUrl) throw new Error("CONVEX_URL or VITE_CONVEX_URL is required");
   const token = requireEnv("SECURITY_SCAN_WORKER_TOKEN");
@@ -1118,13 +1238,16 @@ async function main() {
   let totalCompleted = 0;
   let totalFailed = 0;
 
-  console.log(`diagnostics directory: ${diagnosticsRoot}`);
+  logger.info(
+    { diagnosticsRoot, event: "security_scan_diagnostics_directory", workerId },
+    "security scan diagnostics directory",
+  );
 
   while (Date.now() < claimDeadline) {
     const remainingJobs = maxJobs === undefined ? batchLimit : Math.max(0, maxJobs - totalClaimed);
     if (remainingJobs === 0) break;
     const claimLimit = Math.min(batchLimit, remainingJobs);
-    const jobs = await claimCodexScanJobBatch(
+    const claimBatch = await claimCodexScanJobBatch(
       claimLimit,
       async () =>
         (await client.action(api.securityScan.claimCodexScanJobs, {
@@ -1134,7 +1257,19 @@ async function main() {
           leaseMs,
         })) as ClaimedJob[],
     );
-    console.log(`claimed ${jobs.length} job(s)`);
+    const { claimFailures, jobs } = claimBatch;
+    totalFailed += claimFailures;
+    logger.info(
+      {
+        claimed: jobs.length,
+        claimFailures,
+        claimLimit,
+        event: "security_scan_jobs_claimed",
+        leaseMs,
+        workerId,
+      },
+      "claimed security scan jobs",
+    );
     if (jobs.length === 0) break;
 
     totalClaimed += jobs.length;
@@ -1147,10 +1282,16 @@ async function main() {
     if (jobs.length < claimLimit) break;
   }
 
-  console.log(
-    `worker summary: claimed=${totalClaimed} completed=${totalCompleted} failed=${totalFailed} elapsedMs=${
-      Date.now() - startedAt
-    }`,
+  logger.info(
+    {
+      elapsedMs: Date.now() - startedAt,
+      event: "security_scan_worker_summary",
+      totalClaimed,
+      totalCompleted,
+      totalFailed,
+      workerId,
+    },
+    "security scan worker summary",
   );
   if (totalFailed > 0) {
     process.exitCode = 1;

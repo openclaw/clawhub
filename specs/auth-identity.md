@@ -66,7 +66,15 @@ Permitted destinations (`src/lib/docsAuth.ts`):
   current app origin, not to a runtime env flag, so a public staging, preview,
   or misconfigured deployment can never POST the token to a localhost listener.
 
-The deployed Content-Security-Policy `form-action` (`vercel.json`) must stay
-aligned with this allowlist: it lists `'self'` plus the cross-origin docs hosts
-and must not include loopback origins in production. The CSP is the browser-side
-backstop if the application allowlist ever regresses.
+The deployed Content-Security-Policy `form-action`
+(`src/lib/securityHeaders.ts`) must stay aligned with this allowlist: it lists
+`'self'` plus the cross-origin docs hosts and must not include loopback origins
+in production. The CSP is the browser-side backstop if the application allowlist
+ever regresses.
+
+The production script CSP is emitted per request by the TanStack Start server
+entry so framework/runtime inline scripts can be nonce-tagged without reopening
+global inline execution. Do not reintroduce a static global Vercel CSP with
+script `'unsafe-inline'`. First-paint theme state is represented with a
+server-readable preference cookie plus CSS media queries, not a pre-hydration
+theme bootstrap script.

@@ -738,6 +738,13 @@ describe("public skill version queries", () => {
     const ctx = {
       db: {
         query: vi.fn((table: string) => {
+          if (table === "officialPublishers") {
+            return {
+              withIndex: vi.fn(() => ({
+                unique: vi.fn().mockResolvedValue(null),
+              })),
+            };
+          }
           if (table !== "skillBadges") throw new Error(`Unexpected table ${table}`);
           return {
             withIndex: vi.fn(() => ({

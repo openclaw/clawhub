@@ -12,7 +12,7 @@ const BYOS_ASCII = [
   "  hooks runners slash-commands skill.md templates scanners review-bots",
   "openclaw ecosystem    crabbox clickclack crawler packs gateway plugins",
   "---- downloads installs stars lineage ownership docs package integrity",
-  "  safe browse paths   official gateways   publisher handles   org trust",
+  "  safe browse paths   verified gateways   publisher handles   org trust",
 ];
 const BYOS_ASCII_FIELD = Array.from({ length: 56 }, (_, row) => {
   const a = BYOS_ASCII[row % BYOS_ASCII.length];

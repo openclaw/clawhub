@@ -671,7 +671,9 @@ describe("Upload route", () => {
       target: { value: "org-skill" },
     });
 
-    expect(screen.getByLabelText("Owner").textContent).toContain("@clawkit · ClawKit · admin");
+    expect(screen.getByLabelText("Publishing as").textContent).toContain(
+      "@clawkit · ClawKit · Admin",
+    );
     expect(document.querySelector('img[src="https://example.com/clawkit.png"]')).toBeTruthy();
     expect(screen.queryByText("Available")).toBeNull();
     expect(await screen.findByLabelText("Slug available")).toBeTruthy();
@@ -757,7 +759,7 @@ describe("Upload route", () => {
     const { rerender } = render(<Upload />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Owner").textContent).toContain("@local");
+      expect(screen.getByLabelText("Publishing as").textContent).toContain("@local");
     });
 
     memberships = [
@@ -774,7 +776,7 @@ describe("Upload route", () => {
     rerender(<Upload />);
 
     await waitFor(() => {
-      expect(screen.getByLabelText("Owner").textContent).toContain("@local-owner");
+      expect(screen.getByLabelText("Publishing as").textContent).toContain("@local-owner");
     });
 
     fireEvent.change(screen.getByPlaceholderText("skill-name"), {

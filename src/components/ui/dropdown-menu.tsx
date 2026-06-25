@@ -42,7 +42,7 @@ const DropdownMenuItem = React.forwardRef<
     data-inset={inset}
     data-variant={variant}
     className={cn(
-      "relative flex cursor-pointer select-none items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] outline-none transition-colors focus:bg-[color:var(--surface-muted)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset=true]:pl-8 data-[variant=destructive]:text-status-error-fg",
+      "relative flex cursor-pointer select-none items-center gap-2 rounded-[var(--radius-sm)] px-3 py-2 text-sm font-semibold text-[color:var(--ink)] outline-none transition-colors focus-visible:outline-none data-[highlighted]:bg-[color:var(--surface-muted)] data-[highlighted]:text-[color:var(--ink)] focus:bg-[color:var(--surface-muted)] data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset=true]:pl-8 data-[variant=destructive]:text-status-error-fg",
       className,
     )}
     {...props}

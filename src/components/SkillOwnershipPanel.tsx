@@ -146,7 +146,7 @@ export function SkillOwnershipPanel({
       await renameOwnedSkill({ slug, newSlug: nextSlug, ownerHandle: ownerHandle ?? undefined });
       toast.success(`Renamed to ${nextSlug}. Old slug will redirect.`);
       await navigate({
-        to: "/$owner/$slug",
+        to: "/$owner/skills/$slug",
         params: {
           owner: ownerHandle ?? String(ownerId ?? ""),
           slug: nextSlug,
@@ -174,7 +174,7 @@ export function SkillOwnershipPanel({
       });
       toast.success(`Merged into ${targetSlug}. This slug will redirect.`);
       await navigate({
-        to: "/$owner/$slug",
+        to: "/$owner/skills/$slug",
         params: {
           owner: ownerHandle ?? String(ownerId ?? ""),
           slug: targetSlug,

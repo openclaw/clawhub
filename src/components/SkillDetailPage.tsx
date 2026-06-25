@@ -17,8 +17,9 @@ import {
   isBannedAccountAuthError,
   routeToBannedAccountPage,
 } from "../lib/authErrorMessage";
-import { getSkillCategoryForSkill } from "../lib/categories";
+import { getSkillCategoriesForSkill, getSkillCategoryForSkill } from "../lib/categories";
 import { getUserFacingConvexError } from "../lib/convexError";
+import { buildSkillSecurityAuditHref } from "../lib/ownerRoute";
 import { canManageSkill, isModerator } from "../lib/roles";
 import { skillCardLoadKey } from "../lib/skillCards";
 import type { SkillBySlugResult, SkillPageInitialData } from "../lib/skillPage";
@@ -44,7 +45,6 @@ import { SkillOwnershipPanel } from "./SkillOwnershipPanel";
 import { SkillPublishSuccessDialog } from "./SkillPublishSuccessDialog";
 import { SkillRelatedSection, type RelatedSkillEntry } from "./SkillRelatedSection";
 import { SkillReportDialog } from "./SkillReportDialog";
-import { Alert, AlertDescription } from "./ui/alert";
 import { Button } from "./ui/button";
 import { Card } from "./ui/card";
 
@@ -72,7 +72,7 @@ function tabFromHash(hash: string): DetailTab {
   const normalized = hash.replace(/^#/, "").toLowerCase();
   if (normalized === "files") return "files";
   if (normalized === "skill-card" || normalized === "card") return "skill-card";
-  if (normalized === "compare") return "compare";
+  if (normalized === "compare" || normalized === "diff") return "compare";
   if (normalized === "versions") return "versions";
   if (
     normalized === "runtime" ||
@@ -215,7 +215,8 @@ export function SkillDetailPage({
   const publicResult = useQuery(api.skills.getBySlug, !isStaff ? skillLookupArgs : "skip") as
     | SkillBySlugResult
     | undefined;
-  const result = isStaff ? staffResult : publicResult === undefined ? initialResult : publicResult;
+  const liveResult = isStaff ? staffResult : publicResult;
+  const result = liveResult === undefined ? initialResult : liveResult;
 
   const toggleStar = useMutation(api.stars.toggle);
   const reportSkill = useMutation(api.skills.report);
@@ -250,12 +251,16 @@ export function SkillDetailPage({
     delta: number;
   } | null>(null);
 
-  const isLoadingSkill = isStaff ? staffResult === undefined : result === undefined;
+  const isLoadingSkill = result === undefined;
   const skill = result?.skill;
   const owner = result?.owner ?? null;
   const latestVersion = (result?.latestVersion ?? null) as SkillDetailVersion | null;
   const modInfo = result?.moderationInfo ?? null;
   const relatedCategory = useMemo(() => (skill ? getSkillCategoryForSkill(skill) : null), [skill]);
+  const relatedCategories = useMemo(
+    () => (skill ? getSkillCategoriesForSkill(skill).slice(0, 3) : []),
+    [skill],
+  );
   const suggestedCatalogCategories = useMemo(
     () => (skill ? resolveSkillCategories({ inferred: inferSkillCategories(skill) }) : undefined),
     [skill],
@@ -513,14 +518,14 @@ export function SkillDetailPage({
     const params = { owner: ownerParam, slug: redirectSlug };
     if (mode === "settings") {
       void navigate({
-        to: "/$owner/$slug/settings",
+        to: "/$owner/skills/$slug/settings",
         params,
         replace: true,
       });
       return;
     }
     void navigate({
-      to: "/$owner/$slug",
+      to: "/$owner/skills/$slug",
       params,
       replace: true,
     });
@@ -780,7 +785,7 @@ export function SkillDetailPage({
 
   if (isLoadingSkill || wantsCanonicalRedirect) {
     return (
-      <main className="section detail-page-section" aria-busy="true">
+      <main className="section detail-page-section skill-detail-page" aria-busy="true">
         <div role="status" aria-label="Loading skill details">
           <SkillDetailSkeleton />
         </div>
@@ -799,9 +804,7 @@ export function SkillDetailPage({
   const securitySummary =
     latestVersion || githubScanStatus ? (
       <DetailSecuritySummary
-        auditHref={`/${encodeURIComponent(ownerParam ?? ownerHandle ?? "unknown")}/${encodeURIComponent(
-          skill.slug,
-        )}/security-audit`}
+        auditHref={buildSkillSecurityAuditHref(ownerParam ?? ownerHandle ?? "unknown", skill.slug)}
         vtAnalysis={latestVersion?.vtAnalysis ?? null}
         llmAnalysis={latestVersion?.llmAnalysis ?? null}
         githubScanStatus={githubScanStatus}
@@ -809,10 +812,10 @@ export function SkillDetailPage({
       />
     ) : null;
   const staffVisibilityAlert = staffModerationNote ? (
-    <Alert variant="warn" className="skill-visibility-alert" role="status">
-      <TriangleAlert size={18} aria-hidden="true" />
-      <AlertDescription>{staffModerationNote}</AlertDescription>
-    </Alert>
+    <p className="skill-visibility-alert" role="status">
+      <TriangleAlert size={14} aria-hidden="true" />
+      <span>{staffModerationNote}</span>
+    </p>
   ) : null;
   const settingsPanel =
     canAccessSettings && skill ? (
@@ -839,7 +842,7 @@ export function SkillDetailPage({
 
   if (mode === "settings") {
     return (
-      <main className="section detail-page-section">
+      <main className="section detail-page-section skill-detail-page">
         <DetailPageShell className="skill-settings-page">
           <div className="skill-settings-page-header">
             <a href={detailHref} className="skill-settings-back-link">
@@ -878,7 +881,7 @@ export function SkillDetailPage({
   }
 
   return (
-    <main className="section detail-page-section">
+    <main className="section detail-page-section skill-detail-page">
       <DetailPageShell>
         <SkillHeader
           skill={displayedSkill}
@@ -909,7 +912,8 @@ export function SkillDetailPage({
           cliHelp={cliHelp}
           clawdis={clawdis}
           category={relatedCategory}
-          priorityContent={staffVisibilityAlert}
+          categories={relatedCategories}
+          staffVisibilityAlert={staffVisibilityAlert}
           securityAuditSummary={securitySummary}
           activityTrend={activityTrend}
           activityTrendLoading={activityTrendLoading}
@@ -955,11 +959,11 @@ export function SkillDetailPage({
             osLabels={osLabels}
             readmeHrefResolver={readmeHrefResolver}
           />
-
           <SkillRelatedSection
             category={relatedCategory}
             relatedSkills={relatedSkillsResult?.items ?? []}
             isLoading={shouldLoadRelatedSkills && relatedSkillsResult === undefined}
+            variant="compact"
           />
         </SkillHeader>
       </DetailPageShell>

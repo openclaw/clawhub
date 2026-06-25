@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Search, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { PluginListItem } from "../components/PluginListItem";
+import { PublisherListItem } from "../components/PublisherListItem";
 import { BrowseResultsSkeleton } from "../components/skeletons/BrowseResultsSkeleton";
 import { SkillListItem } from "../components/SkillListItem";
 import { Card } from "../components/ui/card";
@@ -9,6 +10,7 @@ import type { PublicSkill } from "../lib/publicUser";
 import {
   useUnifiedSearch,
   type UnifiedSearchType,
+  type UnifiedCreatorResult,
   type UnifiedPluginResult,
   type UnifiedSkillResult,
 } from "../lib/useUnifiedSearch";
@@ -23,7 +25,10 @@ type SearchState = {
 export const Route = createFileRoute("/search")({
   validateSearch: (search: Record<string, unknown>): SearchState => ({
     q: typeof search.q === "string" && search.q.trim() ? search.q : undefined,
-    type: search.type === "skills" || search.type === "plugins" ? search.type : undefined,
+    type:
+      search.type === "skills" || search.type === "plugins" || search.type === "creators"
+        ? search.type
+        : undefined,
   }),
   component: UnifiedSearchPage,
 });
@@ -47,27 +52,38 @@ function UnifiedSearchPage() {
     results: allResults,
     skillResults,
     pluginResults,
+    creatorResults,
     skillCount,
     pluginCount,
+    creatorCount,
     skillHasMore,
     pluginHasMore,
+    creatorHasMore,
     isSearching,
   } = useUnifiedSearch(search.q ?? "", "all", {
     limits: {
       skills: resultLimit,
       plugins: resultLimit,
+      creators: resultLimit,
     },
   });
-  const results: Array<UnifiedSkillResult | UnifiedPluginResult> =
-    activeType === "all" ? allResults : activeType === "skills" ? skillResults : pluginResults;
-  const allCount = skillCount + pluginCount;
-  const allHasMore = skillHasMore || pluginHasMore;
+  const results: Array<UnifiedSkillResult | UnifiedPluginResult | UnifiedCreatorResult> =
+    activeType === "all"
+      ? allResults
+      : activeType === "skills"
+        ? skillResults
+        : activeType === "plugins"
+          ? pluginResults
+          : creatorResults;
+  const allCount = skillCount + pluginCount + creatorCount;
+  const allHasMore = skillHasMore || pluginHasMore || creatorHasMore;
   const canLoadMore =
     search.q &&
     !isSearching &&
     ((activeType === "all" && allHasMore) ||
       (activeType === "skills" && skillHasMore) ||
-      (activeType === "plugins" && pluginHasMore));
+      (activeType === "plugins" && pluginHasMore) ||
+      (activeType === "creators" && creatorHasMore));
   const hasOtherTypeMatches = activeType !== "all" && allCount > 0;
 
   const handleSearch = (e: React.FormEvent) => {
@@ -119,7 +135,7 @@ function UnifiedSearchPage() {
           <input
             className="browse-search-input"
             type="text"
-            placeholder="Search skills and plugins..."
+            placeholder="Search skills, plugins, and creators..."
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             autoFocus
@@ -159,13 +175,20 @@ function UnifiedSearchPage() {
         >
           Plugins
         </button>
+        <button
+          className={`search-tab${activeType === "creators" ? " is-active" : ""}`}
+          type="button"
+          onClick={() => setType("creators")}
+        >
+          Creators
+        </button>
       </div>
 
       {isSearching ? (
         <BrowseResultsSkeleton count={activeType === "all" ? 8 : 6} />
       ) : !search.q ? (
         <Card className="text-center p-10">
-          <p className="text-ink-soft">Enter a search term to find skills and plugins</p>
+          <p className="text-ink-soft">Enter a search term to find skills, plugins, and creators</p>
         </Card>
       ) : results.length === 0 ? (
         <SearchEmptyState
@@ -192,14 +215,23 @@ function UnifiedSearchPage() {
                   ))}
                 </SearchResultSection>
               ) : null}
+              {creatorResults.length > 0 ? (
+                <SearchResultSection title="Creators">
+                  {creatorResults.map((item) => (
+                    <CreatorResultRow key={`creator-${item.creator._id}`} result={item} />
+                  ))}
+                </SearchResultSection>
+              ) : null}
             </div>
           ) : (
             <div className="results-list">
               {results.map((item) =>
                 item.type === "skill" ? (
                   <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
-                ) : (
+                ) : item.type === "plugin" ? (
                   <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
+                ) : (
+                  <CreatorResultRow key={`creator-${item.creator._id}`} result={item} />
                 ),
               )}
             </div>
@@ -232,8 +264,14 @@ function SearchEmptyState({
   onSearchAllTypes: () => void;
   query: string;
 }) {
-  const browseHref = activeType === "plugins" ? "/plugins" : "/skills";
-  const browseLabel = activeType === "plugins" ? "Show all plugins" : "Show all skills";
+  const browseHref =
+    activeType === "plugins" ? "/plugins" : activeType === "creators" ? "/creators" : "/skills";
+  const browseLabel =
+    activeType === "plugins"
+      ? "Show all plugins"
+      : activeType === "creators"
+        ? "Show all creators"
+        : "Show all skills";
 
   return (
     <Card className="search-empty-state">
@@ -265,9 +303,13 @@ function SearchResultSection({ children, title }: { children: React.ReactNode; t
 
 function SkillResultRow({ result }: { result: UnifiedSkillResult }) {
   const skill = result.skill as unknown as PublicSkill;
-  return <SkillListItem skill={skill} ownerHandle={result.ownerHandle} />;
+  return <SkillListItem skill={skill} ownerHandle={result.ownerHandle} owner={result.owner} />;
 }
 
 function PluginResultRow({ result }: { result: UnifiedPluginResult }) {
   return <PluginListItem item={result.plugin} />;
+}
+
+function CreatorResultRow({ result }: { result: UnifiedCreatorResult }) {
+  return <PublisherListItem publisher={result.creator} />;
 }

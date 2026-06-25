@@ -2,7 +2,7 @@ export declare const CATALOG_CATEGORY_LIMIT = 3;
 export declare const CATALOG_TOPIC_LIMIT = 5;
 export declare const CATALOG_TOPIC_MAX_LENGTH = 48;
 export declare const INTERNAL_UNCATEGORIZED_CATEGORY = "other";
-export declare const RESERVED_CATALOG_TOPIC_SLUGS: readonly ["featured", "official", "recommended", "staff-pick", "trusted-publisher", "verified"];
+export declare const RESERVED_CATALOG_TOPIC_SLUGS: readonly ["approved", "audited", "certified", "clawhub", "community", "curated", "endorsed", "featured", "official", "officials", "openclaw", "recommended", "staff-pick", "trusted", "trusted-publisher", "verified"];
 export declare const PLUGIN_CATEGORY_DEFINITIONS: readonly [{
     readonly slug: "channels";
     readonly label: "Channels";

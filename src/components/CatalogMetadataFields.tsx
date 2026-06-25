@@ -71,35 +71,37 @@ export function CatalogMetadataFields({
     onCategoriesChange([...specificCategories, slug]);
   };
 
+  const categoryToolbar = (
+    <div className="catalog-metadata-field-actions flex items-center gap-2">
+      {generatedCategories ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          disabled={disabled}
+          aria-label="Generate categories"
+          onClick={() =>
+            onCategoriesChange(
+              generatedCategories.length ? generatedCategories : [INTERNAL_UNCATEGORIZED_CATEGORY],
+            )
+          }
+        >
+          <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+          Generate
+        </Button>
+      ) : null}
+      <span className="text-xs font-medium text-[color:var(--ink-soft)]">
+        {selectedCategories.length}/{CATALOG_CATEGORY_LIMIT}
+      </span>
+    </div>
+  );
+
   return (
-    <>
-      <div className="flex min-w-0 flex-col gap-2">
-        <div className="flex flex-wrap items-center justify-between gap-2">
+    <div className="catalog-metadata-fields col-span-full">
+      <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
+        <div className="catalog-metadata-field-header">
           <Label htmlFor={`${fieldIdPrefix}Categories`}>Categories</Label>
-          <div className="flex items-center gap-2">
-            {generatedCategories ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="xs"
-                disabled={disabled}
-                aria-label="Generate categories"
-                onClick={() =>
-                  onCategoriesChange(
-                    generatedCategories.length
-                      ? generatedCategories
-                      : [INTERNAL_UNCATEGORIZED_CATEGORY],
-                  )
-                }
-              >
-                <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
-                Generate
-              </Button>
-            ) : null}
-            <span className="text-xs font-medium text-[color:var(--ink-soft)]">
-              {selectedCategories.length}/{CATALOG_CATEGORY_LIMIT}
-            </span>
-          </div>
+          {categoryToolbar}
         </div>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
@@ -120,7 +122,7 @@ export function CatalogMetadataFields({
           </DropdownMenuTrigger>
           <DropdownMenuContent
             align="start"
-            className="w-[var(--radix-dropdown-menu-trigger-width)]"
+            className="z-[90] w-[var(--radix-dropdown-menu-trigger-width)]"
           >
             {categories.map((category) => {
               const checked = selected.has(category.slug);
@@ -149,8 +151,14 @@ export function CatalogMetadataFields({
           </DropdownMenuContent>
         </DropdownMenu>
       </div>
-      <div className="flex flex-col gap-2">
-        <Label htmlFor={`${fieldIdPrefix}Topics`}>Topics</Label>
+      <div className="catalog-metadata-field flex min-w-0 flex-col gap-2">
+        <div className="catalog-metadata-field-header">
+          <Label htmlFor={`${fieldIdPrefix}Topics`}>Topics</Label>
+          <div
+            className="catalog-metadata-field-actions min-h-[30px] shrink-0"
+            aria-hidden="true"
+          />
+        </div>
         <CatalogTopicInput
           id={`${fieldIdPrefix}Topics`}
           value={topics}
@@ -158,6 +166,6 @@ export function CatalogMetadataFields({
           onChange={onTopicsChange}
         />
       </div>
-    </>
+    </div>
   );
 }

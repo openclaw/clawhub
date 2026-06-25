@@ -1,5 +1,6 @@
 import type { ClawdisSkillMetadata, SkillInstallSpec } from "clawhub-schema";
 import type { Id } from "../../convex/_generated/dataModel";
+import { buildSkillDetailHref } from "../lib/ownerRoute";
 import { getClawHubSiteUrl } from "../lib/site";
 
 export type SkillPromptMode = "install-only" | "install-and-setup";
@@ -26,7 +27,7 @@ export function buildSkillHref(
   slug: string,
 ) {
   const owner = ownerHandle?.trim() || (ownerId ? String(ownerId) : "unknown");
-  return `/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`;
+  return buildSkillDetailHref(owner, slug);
 }
 
 export function formatConfigSnippet(raw: string) {
@@ -126,23 +127,6 @@ export function formatOsList(os?: string[]) {
   });
 }
 
-function formatSystemsList(systems?: string[]): string[] {
-  if (!systems?.length) return [];
-  const labels: Record<string, string> = {
-    "aarch64-darwin": "macOS ARM64",
-    "x86_64-darwin": "macOS x86_64",
-    "aarch64-linux": "Linux ARM64",
-    "x86_64-linux": "Linux x86_64",
-  };
-  return systems.map((s) => labels[s.trim()] ?? s);
-}
-
-export function getPlatformLabels(os?: string[], systems?: string[]): string[] {
-  if (systems?.length) return formatSystemsList(systems);
-  if (os?.length) return formatOsList(os);
-  return [];
-}
-
 export function formatInstallLabel(spec: SkillInstallSpec) {
   if (spec.kind === "brew") return "Homebrew";
   if (spec.kind === "node") return "Node";
@@ -189,7 +173,7 @@ export function buildSkillPageUrl(
   const owner = handle || (ownerId ? String(ownerId) : null);
   if (!owner) return null;
 
-  const path = `/${encodeURIComponent(owner)}/${encodeURIComponent(slug)}`;
+  const path = buildSkillDetailHref(owner, slug);
   return new URL(path, getClawHubSiteUrl()).toString();
 }
 

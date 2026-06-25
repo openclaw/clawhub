@@ -7,6 +7,7 @@ import {
   getStoredThemeSelection,
   useThemeMode,
 } from "./theme";
+import { THEME_MODE_COOKIE } from "./themeCookie";
 
 describe("theme", () => {
   let store: Record<string, string>;
@@ -50,6 +51,7 @@ describe("theme", () => {
     delete document.documentElement.dataset.themeFamily;
     delete document.documentElement.dataset.themeMode;
     window.localStorage.clear();
+    document.cookie = `${THEME_MODE_COOKIE}=; Max-Age=0; path=/`;
     vi.unstubAllGlobals();
   });
 
@@ -74,6 +76,11 @@ describe("theme", () => {
     window.localStorage.clear();
     window.localStorage.setItem("clawdhub-theme", "openknot");
     expect(getStoredThemeSelection()).toEqual({ theme: "claw", mode: "system" });
+  });
+
+  it("falls back to the server-readable theme cookie when local storage has no preference", () => {
+    document.cookie = `${THEME_MODE_COOKIE}=dark; path=/`;
+    expect(getStoredThemeSelection()).toEqual({ theme: "claw", mode: "dark" });
   });
 
   it("clears custom overlay state and resets stale visual settings to system defaults", () => {
@@ -166,5 +173,6 @@ describe("theme", () => {
 
     expect(window.localStorage.getItem("clawhub-theme")).toBe("dark");
     expect(window.localStorage.getItem("clawhub-theme-name")).toBe("claw");
+    expect(document.cookie).toContain(`${THEME_MODE_COOKIE}=dark`);
   });
 });

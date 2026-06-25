@@ -79,6 +79,7 @@ import {
   summarizeReasonCodes,
   verdictFromCodes,
 } from "./lib/moderationReasonCodes";
+import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import {
   type HydratableSkill,
   type PublicPublisher,
@@ -2008,14 +2009,15 @@ async function buildPublicSkillEntries(
       ownerPublisherId,
       ownerUserId,
     }).then((ownerDoc) => {
-      const publicOwner = toPublicPublisher(ownerDoc);
-      if (!publicOwner) {
-        return { ownerHandle: null, owner: null };
-      }
-      return {
-        ownerHandle: publicOwner.handle ?? String(publicOwner._id),
-        owner: publicOwner,
-      };
+      return toPublicPublisherWithOfficial(ctx, ownerDoc).then((publicOwner) => {
+        if (!publicOwner) {
+          return { ownerHandle: null, owner: null };
+        }
+        return {
+          ownerHandle: publicOwner.handle ?? String(publicOwner._id),
+          owner: publicOwner,
+        };
+      });
     });
     ownerInfoCache.set(cacheKey, ownerPromise);
     return ownerPromise;
@@ -2740,6 +2742,26 @@ export const getBySlug = query({
           }
         : null,
       ambiguous: false as const,
+    };
+  },
+});
+
+export const getGitHubDownloadTargetInternal = internalQuery({
+  args: { skillId: v.id("skills") },
+  handler: async (ctx, args) => {
+    const skill = await ctx.db.get(args.skillId);
+    if (!skill || skill.installKind !== "github") return null;
+    const source = skill.githubSourceId ? await ctx.db.get(skill.githubSourceId) : null;
+
+    return {
+      installKind: "github" as const,
+      repo: source?.repo ?? null,
+      path: skill.githubPath ?? null,
+      commit: skill.githubCurrentCommit ?? null,
+      contentHash: skill.githubCurrentContentHash ?? null,
+      currentStatus: skill.githubCurrentStatus ?? null,
+      scanStatus: skill.githubScanStatus ?? null,
+      removedAt: skill.githubRemovedAt ?? null,
     };
   },
 });
@@ -5086,7 +5108,11 @@ export const listPublicPageV3 = query({
       if (!hydratable) continue;
       const publicSkill = toPublicSkill(hydratable);
       if (!publicSkill) continue;
-      const ownerInfo = digestToOwnerInfo(digest);
+      const ownerInfo = await addOfficialStatusToOwnerInfo(
+        ctx,
+        digestToOwnerInfo(digest),
+        digest.ownerPublisherId,
+      );
       if (!ownerInfo?.owner) continue;
       const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
       items.push({
@@ -5917,7 +5943,11 @@ async function buildPublicSkillEntryFromDigest(
   const hydratable = digestToHydratableSkill(digest);
   const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
-  const ownerInfo = digestToOwnerInfo(digest);
+  const ownerInfo = await addOfficialStatusToOwnerInfo(
+    ctx,
+    digestToOwnerInfo(digest),
+    digest.ownerPublisherId,
+  );
   if (!ownerInfo?.owner) return null;
   const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
   return {
@@ -5926,6 +5956,16 @@ async function buildPublicSkillEntryFromDigest(
     ownerHandle: ownerInfo.ownerHandle,
     owner: ownerInfo.owner,
   };
+}
+
+async function addOfficialStatusToOwnerInfo(
+  ctx: Pick<QueryCtx, "db">,
+  ownerInfo: { ownerHandle: string | null; owner: PublicPublisher | null } | null,
+  publisherId?: Id<"publishers">,
+) {
+  if (!ctx?.db || !ownerInfo?.owner || !publisherId) return ownerInfo;
+  const official = await hasOfficialPublisherRow(ctx, publisherId);
+  return official ? { ...ownerInfo, owner: { ...ownerInfo.owner, official: true } } : ownerInfo;
 }
 
 async function loadPublicLatestVersionForDigest(
@@ -9535,6 +9575,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     tags: v.optional(v.array(v.string())),
     categories: v.optional(v.array(v.string())),
     topics: v.optional(v.array(v.string())),
+    summary: v.optional(v.string()),
     forkOf: v.optional(
       v.object({
         slug: v.string(),
@@ -9561,7 +9602,7 @@ export const publishVersion: ReturnType<typeof action> = action({
       actorUserId: userId,
       ownerHandle: args.ownerHandle,
       minimumRole: "publisher",
-    })) as { publisherId: Id<"publishers"> };
+    })) as { publisherId: Id<"publishers">; handle: string };
     const sourceOwnerHandle =
       args.migrateOwner === true
         ? args.sourceOwnerHandle?.trim() || user.handle?.trim() || undefined
@@ -9577,6 +9618,7 @@ export const publishVersion: ReturnType<typeof action> = action({
     const { icon: _legacyIcon, ...publishArgs } = args;
     return publishVersionForUser(ctx, userId, publishArgs, {
       ownerPublisherId: target.publisherId,
+      ownerHandle: target.handle,
       sourceOwnerPublisherId: source?.publisherId,
       migrateOwner: args.migrateOwner,
     });
@@ -12764,10 +12806,22 @@ export const listByDateRange = internalQuery({
 function isExportableSkillDigest(
   skill: Pick<
     Doc<"skillSearchDigest">,
-    "latestVersionId" | "softDeletedAt" | "moderationStatus" | "moderationFlags"
+    | "latestVersionId"
+    | "installKind"
+    | "githubCurrentStatus"
+    | "githubScanStatus"
+    | "softDeletedAt"
+    | "moderationStatus"
+    | "moderationFlags"
   >,
 ) {
-  return Boolean(skill.latestVersionId) && isPublicSkillDoc(skill);
+  if (!isPublicSkillDoc(skill)) return false;
+  if (skill.latestVersionId) return true;
+  return (
+    skill.installKind === "github" &&
+    skill.githubCurrentStatus === "present" &&
+    (skill.githubScanStatus === "clean" || skill.githubScanStatus === "suspicious")
+  );
 }
 
 export const __test = {

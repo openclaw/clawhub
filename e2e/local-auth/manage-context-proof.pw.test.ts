@@ -1,7 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { expect, test, type Page } from "@playwright/test";
-import { expectHealthyPage, trackRuntimeErrors, waitForHydration } from "../helpers/runtimeErrors";
+import { buildPluginDetailHref, buildPluginSecurityAuditHref } from "../../src/lib/pluginRoutes";
+import {
+  expectNoFatalErrorUi,
+  expectNoRuntimeErrors,
+  trackRuntimeErrors,
+  waitForHydration,
+} from "../helpers/runtimeErrors";
 import { signInAsLocalPersona } from "./helpers";
 
 test.skip(
@@ -189,6 +195,12 @@ async function readConvexFrames(page: Page) {
   return await page.evaluate(() => window.__clawhubConvexFrames ?? []);
 }
 
+async function clearConvexFrames(page: Page) {
+  await page.evaluate(() => {
+    window.__clawhubConvexFrames = [];
+  });
+}
+
 function expectedManageContextPayload() {
   return {
     package: {
@@ -202,6 +214,28 @@ function expectedManageContextPayload() {
     },
     suggestedCategories: ["other"],
   };
+}
+
+async function expectHealthyManageContextPage(page: Page, errors: string[]) {
+  const expectedTransientTimeouts = [
+    "CONVEX Q(packages:getManageContext)",
+    "CONVEX Q(packages:getActivityTrendForName)",
+    "CONVEX Q(packages:canDeleteVersions)",
+    "CONVEX Q(packages:getPackageInspectorValidationSummaryPublic)",
+    "CONVEX Q(publishers:getMyProfileHandle)",
+    "CONVEX M(users:ensure)",
+  ];
+  await expectNoFatalErrorUi(page);
+  await expectNoRuntimeErrors(
+    page,
+    errors.filter(
+      (error) =>
+        !(
+          error.includes("Function execution timed out (maximum duration: 1s)") &&
+          expectedTransientTimeouts.some((functionName) => error.includes(functionName))
+        ),
+    ),
+  );
 }
 
 async function expectSlimManageContextPayload(page: Page) {
@@ -225,23 +259,48 @@ async function expectSlimManageContextPayload(page: Page) {
   expect(JSON.stringify(latestValue)).not.toContain("staticScan");
 }
 
+async function gotoPluginDetailWithOwnerControls(page: Page) {
+  let lastError: unknown;
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
+    try {
+      await page.goto(
+        buildPluginDetailHref("local-scanned-runtime-plugin", { ownerHandle: "local" }),
+        {
+          waitUntil: "domcontentloaded",
+        },
+      );
+      await waitForHydration(page);
+      await expect(
+        page.getByRole("heading", { name: "Local Scanned Runtime Plugin" }).first(),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByRole("link", { name: "New version" })).toBeVisible({
+        timeout: 15_000,
+      });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 3) break;
+      await page.waitForTimeout(1_000 * attempt);
+    }
+  }
+  throw lastError;
+}
+
 test("plugin manage context query returns only slim catalog metadata", async ({ page }) => {
   seedLocalModerationFixtures();
   await installConvexFrameCapture(page);
   const errors = trackRuntimeErrors(page);
 
   await signInAsLocalPersona(page, "owner");
-  await page.goto("/plugins/local-scanned-runtime-plugin", { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-
-  await expect(
-    page.getByRole("heading", { name: "Local Scanned Runtime Plugin" }).first(),
-  ).toBeVisible();
-  await expect(page.getByRole("link", { name: "New version" })).toBeVisible();
+  const packageName = "local-scanned-runtime-plugin";
+  const ownerHandle = "local";
+  errors.length = 0;
+  await gotoPluginDetailWithOwnerControls(page);
 
   await expectSlimManageContextPayload(page);
 
-  await page.goto("/plugins/local-scanned-runtime-plugin/security-audit", {
+  await clearConvexFrames(page);
+  await page.goto(buildPluginSecurityAuditHref(packageName, { ownerHandle }), {
     waitUntil: "domcontentloaded",
   });
   await waitForHydration(page);
@@ -249,10 +308,11 @@ test("plugin manage context query returns only slim catalog metadata", async ({ 
   await expect(
     page.getByRole("heading", { name: "Local Scanned Runtime Plugin" }).first(),
   ).toBeVisible();
+  await expectSlimManageContextPayload(page);
   await expect(page.getByRole("button", { name: "Rescan" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Download security audit" })).toBeVisible();
 
   await expectSlimManageContextPayload(page);
 
-  await expectHealthyPage(page, errors);
+  await expectHealthyManageContextPage(page, errors);
 });

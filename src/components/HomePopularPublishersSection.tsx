@@ -40,8 +40,8 @@ function PopularPublisherCard({
 
   return (
     <Link
-      to="/user/$handle"
-      params={{ handle: pinned.handle }}
+      to="/$slug"
+      params={{ slug: pinned.handle }}
       className="home-v2-popular-publisher-card"
       aria-label={`${name}, @${pinned.handle}`}
       draggable={false}
@@ -146,7 +146,7 @@ export function HomePopularPublishersSection() {
           <h2 id="popular-publishers-title">Popular creators</h2>
           <p>Explore skills and plugins from standout builders.</p>
         </div>
-        <Link to="/publishers" className="home-v2-popular-publishers-link">
+        <Link to="/creators" className="home-v2-popular-publishers-link">
           Browse creators <ArrowRight size={14} aria-hidden="true" />
         </Link>
       </header>

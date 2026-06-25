@@ -13,17 +13,29 @@ import {
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { resolveLocalAuthRunnerConfig } from "./playwright-local-auth-config";
+import {
+  resolveLocalAuthDeployment,
+  resolveLocalAuthRunnerConfig,
+} from "./playwright-local-auth-config";
 
-const DEFAULT_CONVEX_DEPLOYMENT = "anonymous-agent";
 const DEFAULT_DEV_AUTH_CONVEX_DEPLOYMENT = "anonymous:anonymous-agent";
 const DEFAULT_PLAYWRIGHT_PORT = 4173;
 const DEFAULT_E2E_WORKER_TOKEN = "local-e2e-worker-token";
-const START_TIMEOUT_MS = 120_000;
+const DEFAULT_START_TIMEOUT_MS = 300_000;
+const DEFAULT_REACHABILITY_REQUEST_TIMEOUT_MS = 5_000;
+const STOP_TIMEOUT_MS = 30_000;
 const FUNCTION_READY_TIMEOUT_MS = 120_000;
 const POLL_MS = 500;
 const LOCAL_CONVEX_STATE_DIR = ".convex/local/default";
 const LOCAL_ENV_FILE = ".env.local";
+const START_TIMEOUT_MS = readPositiveIntegerEnv(
+  "PLAYWRIGHT_WEB_SERVER_TIMEOUT_MS",
+  DEFAULT_START_TIMEOUT_MS,
+);
+const REACHABILITY_REQUEST_TIMEOUT_MS = readPositiveIntegerEnv(
+  "PLAYWRIGHT_WEB_SERVER_REQUEST_TIMEOUT_MS",
+  DEFAULT_REACHABILITY_REQUEST_TIMEOUT_MS,
+);
 
 type LocalDeploymentConfig = {
   adminKey: string;
@@ -39,27 +51,79 @@ const localEnvBackupFile = join(tempDir, ".env.local.backup");
 let backedUpLocalConvexState = false;
 let backedUpLocalEnvFile = false;
 let isolatedLocalState = false;
+let activeConvexUrl: string | null = null;
+let activePreviewUrl: string | null = null;
 
 function sleep(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-async function isReachable(url: string) {
+function readPositiveIntegerEnv(name: string, fallback: number) {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error(`${name} must be a positive integer number of milliseconds.`);
+  }
+  return value;
+}
+
+async function checkReachable(url: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REACHABILITY_REQUEST_TIMEOUT_MS);
   try {
-    const response = await fetch(url, { method: "GET" });
-    return response.status < 500;
-  } catch {
-    return false;
+    const response = await fetch(url, {
+      method: "GET",
+      signal: controller.signal,
+    });
+    return {
+      detail: `HTTP ${response.status}`,
+      reachable: response.status < 500,
+    };
+  } catch (error) {
+    if (error instanceof Error && error.name === "AbortError") {
+      return {
+        detail: `request timed out after ${REACHABILITY_REQUEST_TIMEOUT_MS}ms`,
+        reachable: false,
+      };
+    }
+    return {
+      detail: error instanceof Error ? error.message : String(error),
+      reachable: false,
+    };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
-async function waitUntilReachable(url: string, label: string) {
+async function isReachable(url: string) {
+  return (await checkReachable(url)).reachable;
+}
+
+async function waitUntilReachable(url: string, label: string, child?: ChildProcess) {
   const startedAt = Date.now();
+  let lastDetail = "not checked";
   while (Date.now() - startedAt < START_TIMEOUT_MS) {
-    if (await isReachable(url)) return;
+    const result = await checkReachable(url);
+    lastDetail = result.detail;
+    if (result.reachable) return;
+    if (child && (child.exitCode !== null || child.signalCode !== null)) {
+      throw new Error(
+        `${label} exited before it became reachable at ${url} (exit=${child.exitCode ?? "null"}, signal=${child.signalCode ?? "null"}, last=${lastDetail}).`,
+      );
+    }
     await sleep(POLL_MS);
   }
-  throw new Error(`${label} did not become reachable at ${url}.`);
+  throw new Error(`${label} did not become reachable at ${url} (last=${lastDetail}).`);
+}
+
+async function waitUntilUnreachable(url: string, label: string) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < STOP_TIMEOUT_MS) {
+    if (!(await isReachable(url))) return;
+    await sleep(POLL_MS);
+  }
+  throw new Error(`${label} did not stop serving at ${url}.`);
 }
 
 function canListen(port: number) {
@@ -150,12 +214,29 @@ function getLocalUrlPort(url: string, label: string) {
 function spawnManaged(command: string, args: string[], env: NodeJS.ProcessEnv) {
   const child = spawn(command, args, {
     cwd: process.cwd(),
+    detached: process.platform !== "win32",
     env,
     stdio: "inherit",
   });
   managedChildren.add(child);
   child.once("exit", () => managedChildren.delete(child));
   return child;
+}
+
+function signalManagedChild(child: ChildProcess, signal: NodeJS.Signals) {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+
+  try {
+    if (process.platform !== "win32" && child.pid) {
+      process.kill(-child.pid, signal);
+      return;
+    }
+    child.kill(signal);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ESRCH") {
+      throw error;
+    }
+  }
 }
 
 function waitForChildExit(child: ChildProcess, timeoutMs = 5_000) {
@@ -172,10 +253,17 @@ function waitForChildExit(child: ChildProcess, timeoutMs = 5_000) {
 
 async function stopManagedChildren() {
   const children = Array.from(managedChildren);
-  for (const child of managedChildren) {
-    if (!child.killed) child.kill("SIGTERM");
-  }
+  for (const child of children) signalManagedChild(child, "SIGTERM");
   await Promise.all(children.map((child) => waitForChildExit(child)));
+  for (const child of children) signalManagedChild(child, "SIGKILL");
+  await Promise.all(children.map((child) => waitForChildExit(child)));
+}
+
+async function stopManagedChild(child: ChildProcess) {
+  signalManagedChild(child, "SIGTERM");
+  await waitForChildExit(child);
+  signalManagedChild(child, "SIGKILL");
+  await waitForChildExit(child);
 }
 
 function isolateLocalState() {
@@ -208,9 +296,18 @@ function restoreLocalState() {
 }
 
 async function cleanup() {
-  await stopManagedChildren();
-  restoreLocalState();
-  rmSync(tempDir, { force: true, recursive: true });
+  try {
+    await stopManagedChildren();
+    await Promise.all([
+      activePreviewUrl
+        ? waitUntilUnreachable(activePreviewUrl, "Preview server")
+        : Promise.resolve(),
+      activeConvexUrl ? waitUntilUnreachable(activeConvexUrl, "Local Convex") : Promise.resolve(),
+    ]);
+  } finally {
+    restoreLocalState();
+    rmSync(tempDir, { force: true, recursive: true });
+  }
 }
 
 function runRequired(command: string, args: string[], env: NodeJS.ProcessEnv) {
@@ -237,6 +334,25 @@ function runBuffered(command: string, args: string[], env: NodeJS.ProcessEnv) {
   };
 }
 
+async function startLocalConvex(args: string[], env: NodeJS.ProcessEnv, convexUrl: string) {
+  const maxAttempts = 3;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    const child = spawnManaged("bunx", args, env);
+    try {
+      await waitUntilReachable(convexUrl, "Local Convex", child);
+      return;
+    } catch (error) {
+      await stopManagedChild(child);
+      rmSync(LOCAL_CONVEX_STATE_DIR, { force: true, recursive: true });
+      if (attempt >= maxAttempts) throw error;
+      console.log(
+        `Local Convex did not start cleanly on attempt ${attempt}; retrying with fresh isolated state...`,
+      );
+      await sleep(2_000 * attempt);
+    }
+  }
+}
+
 function isFunctionUnavailableOutput(output: string) {
   return (
     output.includes("Could not find function for") &&
@@ -247,8 +363,8 @@ function isFunctionUnavailableOutput(output: string) {
 function isLocalConvexModuleStillPreparingOutput(output: string) {
   return (
     output.includes("InvalidModules") &&
-    output.includes("ENOENT: no such file or directory") &&
-    output.includes("/modules/")
+    ((output.includes("ENOENT: no such file or directory") && output.includes("/modules/")) ||
+      (output.includes("Cannot find module") && output.includes("/modules/_deps/node/")))
   );
 }
 
@@ -337,8 +453,10 @@ async function main() {
   const runnerConfig = resolveLocalAuthRunnerConfig(process.env, process.argv.slice(2));
   const appPort = await resolveAppPort();
   const appUrl = `http://127.0.0.1:${appPort}`;
+  const previewReadyUrl = new URL("/robots.txt", appUrl).toString();
   const convexUrl = runnerConfig.convexUrl;
   const convexSiteUrl = runnerConfig.convexSiteUrl;
+  activePreviewUrl = previewReadyUrl;
   const convexCloudPort = String(getLocalUrlPort(convexUrl, "PLAYWRIGHT_LOCAL_AUTH_CONVEX_URL"));
   const convexSitePort = String(
     getLocalUrlPort(convexSiteUrl, "PLAYWRIGHT_LOCAL_AUTH_CONVEX_SITE_URL"),
@@ -352,8 +470,10 @@ async function main() {
   isolateLocalState();
 
   const authKeys = buildAuthKeys();
-  const deployment =
-    runnerConfig.convexDeployment ?? readLocalDeployment() ?? DEFAULT_CONVEX_DEPLOYMENT;
+  const deployment = resolveLocalAuthDeployment(
+    runnerConfig.convexDeployment,
+    readLocalDeployment(),
+  );
   const e2eEnv: NodeJS.ProcessEnv = {
     ...process.env,
     AUTH_GITHUB_ID: process.env.AUTH_GITHUB_ID ?? "local-dev",
@@ -403,8 +523,7 @@ async function main() {
   );
 
   console.log(`Starting local Convex at ${convexUrl} with isolated e2e state.`);
-  spawnManaged(
-    "bunx",
+  await startLocalConvex(
     [
       "convex",
       "dev",
@@ -420,8 +539,9 @@ async function main() {
       convexSitePort,
     ],
     e2eEnv,
+    convexUrl,
   );
-  await waitUntilReachable(convexUrl, "Local Convex");
+  activeConvexUrl = convexUrl;
 
   console.log("Configuring local Convex environment for local-auth Playwright e2e.");
   const localAuthDeployment =
@@ -446,18 +566,18 @@ async function main() {
   ]);
 
   console.log("Waiting for local Convex functions.");
-  await runConvexFunctionWhenReady("appMeta:getDeploymentInfo", {}, e2eEnv, { push: true });
+  await runConvexFunctionWhenReady("appMeta:getDeploymentInfo", {}, e2eEnv);
 
   console.log("Building ClawHub for local-auth Playwright e2e.");
   runRequired("bun", ["run", "build"], e2eEnv);
 
   console.log(`Starting preview server at ${appUrl}.`);
-  spawnManaged(
+  const previewProcess = spawnManaged(
     "bun",
     ["run", "preview", "--", "--host", "127.0.0.1", "--port", String(appPort)],
     e2eEnv,
   );
-  await waitUntilReachable(appUrl, "Preview server");
+  await waitUntilReachable(previewReadyUrl, "Preview server", previewProcess);
 
   runRequired("bunx", ["playwright", "test", ...runnerConfig.playwrightArgs], {
     ...e2eEnv,

@@ -21,6 +21,12 @@ type PublicPublisherStats = {
 export type PublicPublisherPublishedItem = {
   kind: "skill" | "plugin";
   displayName: string;
+  summary?: string | null;
+  slug?: string | null;
+  categories?: string[];
+  inferredCategories?: string[];
+  latestVersionId?: string | null;
+  inferredFromVersionId?: string | null;
   installs?: number;
   downloads?: number;
 };

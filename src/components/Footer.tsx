@@ -22,7 +22,7 @@ const FOOTER_EASTER_ASCII = [
   "  hooks runners slash-commands skill.md templates scanners review-bots",
   "openclaw ecosystem    crabbox clickclack crawler packs gateway plugins",
   "---- downloads installs stars lineage ownership docs package integrity",
-  "  safe browse paths   official gateways   publisher handles   org trust",
+  "  safe browse paths   verified gateways   publisher handles   org trust",
 ];
 const FOOTER_EASTER_ASCII_FIELD = Array.from({ length: 44 }, (_, row) => {
   const a = FOOTER_EASTER_ASCII[row % FOOTER_EASTER_ASCII.length];

@@ -89,6 +89,112 @@ description: Automation workflow for recurring reports.
         topics: undefined,
       }),
     );
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(0, expect.anything(), {
+      versionId: "skillVersions:demo",
+      source: "publish",
+    });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(2_000, expect.anything(), {
+      versionId: "skillVersions:demo",
+      source: "publish",
+      preserveActiveJob: true,
+      preserveExistingJob: true,
+    });
+    expect(ctx.scheduler.runAfter).toHaveBeenCalledWith(15_000, expect.anything(), {
+      versionId: "skillVersions:demo",
+      source: "publish",
+      preserveActiveJob: true,
+      preserveExistingJob: true,
+    });
+  });
+
+  it("resolves the target publisher handle before scheduling publish webhooks", async () => {
+    const previousWebhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    process.env.DISCORD_WEBHOOK_URL = "https://example.invalid/webhook";
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Org helper.
+---
+# Org Helper
+`,
+      ],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      return null;
+    });
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "actor", createdAt: 1 })
+        .mockResolvedValueOnce({ _id: "publishers:org", handle: "org-demo" })
+        .mockResolvedValueOnce({
+          skill: {
+            _id: "skills:demo",
+            slug: "org-helper",
+            displayName: "Org Helper",
+            summary: "Org helper",
+            tags: {},
+          },
+          owner: { handle: "org-demo" },
+        }),
+      runMutation,
+      scheduler: { runAfter: vi.fn() },
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    try {
+      await publishVersionForUser(
+        ctx as never,
+        "users:1" as never,
+        {
+          slug: "org-helper",
+          displayName: "Org Helper",
+          version: "1.0.0",
+          changelog: "Initial release",
+          files: [
+            {
+              path: "SKILL.md",
+              size: 70,
+              storageId: "_storage:skill" as never,
+              sha256: "a".repeat(64),
+              contentType: "text/markdown",
+            },
+          ],
+        },
+        {
+          bypassGitHubAccountAge: true,
+          bypassQualityGate: true,
+          ownerPublisherId: "publishers:org" as never,
+        },
+      );
+
+      await vi.waitFor(() => {
+        expect(ctx.runQuery).toHaveBeenCalledWith(expect.anything(), {
+          slug: "org-helper",
+          ownerHandle: "org-demo",
+        });
+      });
+    } finally {
+      if (previousWebhookUrl === undefined) {
+        delete process.env.DISCORD_WEBHOOK_URL;
+      } else {
+        process.env.DISCORD_WEBHOOK_URL = previousWebhookUrl;
+      }
+    }
   });
 
   it("uses Other when an existing skill has a retired stored category", async () => {
@@ -242,6 +348,89 @@ description: Research helper for literature reviews.
       expect.anything(),
       expect.objectContaining({
         categories: ["other"],
+      }),
+    );
+  });
+
+  it("schedules security scan enqueue after publish instead of awaiting it inline", async () => {
+    const storedFiles = new Map([
+      [
+        "_storage:skill",
+        `---
+description: Security scanner smoke fixture.
+---
+# Security Scanner Smoke
+`,
+      ],
+    ]);
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) => {
+      if ("version" in args && "embedding" in args) {
+        return {
+          skillId: "skills:demo",
+          versionId: "skillVersions:demo",
+          embeddingId: "skillEmbeddings:demo",
+        };
+      }
+      throw new Error("publish should not await follow-up scan enqueue mutations");
+    });
+    const scheduler = { runAfter: vi.fn() };
+    const ctx = {
+      runQuery: vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce({ _id: "users:1", handle: "demo", createdAt: 1 }),
+      runMutation,
+      scheduler,
+      storage: {
+        get: vi.fn(async (storageId: string) => {
+          const content = storedFiles.get(storageId);
+          return content === undefined ? null : new Blob([content]);
+        }),
+      },
+    };
+
+    await publishVersionForUser(
+      ctx as never,
+      "users:1" as never,
+      {
+        slug: "security-scanner-smoke",
+        displayName: "Security Scanner Smoke",
+        version: "1.0.0",
+        changelog: "Initial release",
+        files: [
+          {
+            path: "SKILL.md",
+            size: 90,
+            storageId: "_storage:skill" as never,
+            sha256: "a".repeat(64),
+            contentType: "text/markdown",
+          },
+        ],
+      },
+      {
+        bypassGitHubAccountAge: true,
+        bypassQualityGate: true,
+        skipWebhook: true,
+      },
+    );
+
+    expect(runMutation).toHaveBeenCalledTimes(1);
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      0,
+      expect.anything(),
+      expect.objectContaining({
+        versionId: "skillVersions:demo",
+        source: "publish",
+      }),
+    );
+    expect(scheduler.runAfter).toHaveBeenCalledWith(
+      15_000,
+      expect.anything(),
+      expect.objectContaining({
+        versionId: "skillVersions:demo",
+        source: "publish",
+        preserveActiveJob: true,
+        preserveExistingJob: true,
       }),
     );
   });

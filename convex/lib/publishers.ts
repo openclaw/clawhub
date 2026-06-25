@@ -48,8 +48,11 @@ export function derivePersonalPublisherHandle(user: Doc<"users">) {
   );
 }
 
-function synthesizePersonalPublisher(user: Doc<"users">): Doc<"publishers"> {
-  const handle = derivePersonalPublisherHandle(user);
+function synthesizePersonalPublisher(
+  user: Doc<"users">,
+  handleOverride?: string,
+): Doc<"publishers"> {
+  const handle = handleOverride ?? derivePersonalPublisherHandle(user);
   const now = user.updatedAt ?? user.createdAt ?? user._creationTime;
   const displayName = user.displayName?.trim() || user.name?.trim() || handle;
   const bio = user.bio?.trim() || undefined;
@@ -88,6 +91,20 @@ export async function getPersonalPublisherForUserOrFallback(ctx: DbCtx, user: Do
 export function normalizePublisherHandle(handle: string | undefined | null) {
   const normalized = handle?.trim().replace(/^@+/, "").toLowerCase();
   return normalized ? normalized : undefined;
+}
+
+export function isReservedOpenClawPublisherHandle(handle: string | undefined | null) {
+  return Boolean(normalizePublisherHandle(handle)?.includes("openclaw"));
+}
+
+export function assertPublisherHandleAllowed(handle: string) {
+  if (isReservedOpenClawPublisherHandle(handle)) {
+    throw new ConvexError(formatReservedOpenClawPublisherHandleMessage(handle));
+  }
+}
+
+export function formatReservedOpenClawPublisherHandleMessage(handle: string) {
+  return `Handle "@${handle}" is reserved for OpenClaw publishers`;
 }
 
 export function isPublisherActive(
@@ -230,6 +247,14 @@ export async function ensurePersonalPublisherForUser(
   } catch (error) {
     if (!isMissingPublisherTableError(error)) throw error;
     return synthesizePersonalPublisher(user);
+  }
+  if (isReservedOpenClawPublisherHandle(handle)) {
+    if (options?.handleConflict === "skip") {
+      return existing && isPublisherActive(existing)
+        ? existing
+        : synthesizePersonalPublisher(user, "user");
+    }
+    throw new ConvexError(formatReservedOpenClawPublisherHandleMessage(handle));
   }
   if (existing && isPublisherActive(existing)) {
     const existingPublisher = existing;

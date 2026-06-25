@@ -105,7 +105,7 @@ power is expected, disclosed, and proportionate.
 Artifact pages link to the full audit at:
 
 ```text
-/<owner>/<slug>/security-audit
+/<owner>/skills/<slug>/security-audit
 ```
 
 The audit page combines:

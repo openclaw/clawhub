@@ -125,6 +125,7 @@ const MAX_PUBLIC_LIST_FILTER_SCAN_PAGES = 6;
 const MAX_PLUGIN_EXPORT_LIST_LIMIT = 250;
 const MAX_SEARCH_PAGE_SIZE = 200;
 const MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES = 20;
+const MAX_DIRECT_PACKAGE_FULL_TEXT_CANDIDATES = 40;
 const MAX_PACKAGE_VERSION_DELETE_LOOKUP_CANDIDATES = 4;
 const MAX_POINTERLESS_RELEASE_SURVIVOR_SCAN = 100;
 const packageListScanStatusValidator = v.union(
@@ -1603,9 +1604,11 @@ function packageSearchMatch(
   const normalized = digest.normalizedName.toLowerCase();
   const display = digest.displayName.toLowerCase();
   const runtimeId = digest.runtimeId?.toLowerCase() ?? "";
+  const ownerHandle = digest.ownerHandle?.toLowerCase() ?? "";
   const nameTokens = tokenize(normalized);
   const displayTokens = tokenize(display);
   const runtimeTokens = tokenize(runtimeId);
+  const ownerHandleTokens = tokenize(ownerHandle);
   let score = 0;
   let rankTier = Number.POSITIVE_INFINITY;
 
@@ -1626,17 +1629,23 @@ function packageSearchMatch(
   else if (runtimeId.startsWith(needle)) setMatch(1, 90);
   else if (runtimeId.includes(needle)) setMatch(1, 45);
 
+  if (ownerHandle === needle || `@${ownerHandle}` === needle) setMatch(1, 60);
+  else if (ownerHandle.startsWith(needle) || `@${ownerHandle}`.startsWith(needle)) setMatch(1, 35);
+  else if (ownerHandle.includes(needle)) setMatch(1, 20);
+
   if (
     matchesAllTokens(
       queryTokens,
-      [...nameTokens, ...displayTokens, ...runtimeTokens],
+      [...nameTokens, ...displayTokens, ...runtimeTokens, ...ownerHandleTokens],
       (a, b) => a === b,
     )
   ) {
     setMatch(1, 65);
   } else if (
-    matchesAllTokens(queryTokens, [...nameTokens, ...displayTokens, ...runtimeTokens], (a, b) =>
-      a.startsWith(b),
+    matchesAllTokens(
+      queryTokens,
+      [...nameTokens, ...displayTokens, ...runtimeTokens, ...ownerHandleTokens],
+      (a, b) => a.startsWith(b),
     )
   ) {
     setMatch(1, 35);
@@ -1719,7 +1728,15 @@ async function resolveDirectPackageSearchDigests(
       : undefined;
   const queryTokens = tokenize(queryText).filter((token) => token.length > 1);
   const runtimePrefix = queryTokens.length === 1 ? queryTokens[0] : queryText;
-  const [nameDigests, runtimeDigests, exactTopicDigests, categoryDigests] = await Promise.all([
+  const ownerHandlePrefix = queryTokens.length === 1 ? queryTokens[0] : null;
+  const [
+    nameDigests,
+    runtimeDigests,
+    displayNameDigests,
+    ownerHandleDigests,
+    exactTopicDigests,
+    categoryDigests,
+  ] = await Promise.all([
     normalizedQuery
       ? ctx.db
           .query("packageSearchDigest")
@@ -1739,6 +1756,23 @@ async function resolveDirectPackageSearchDigests(
               .eq("softDeletedAt", undefined)
               .gte("runtimeId", runtimePrefix)
               .lt("runtimeId", prefixUpperBound(runtimePrefix)),
+          )
+          .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
+      : Promise.resolve([]),
+    ctx.db
+      .query("packageSearchDigest")
+      .withSearchIndex("search_by_display_name", (q) =>
+        q.search("displayName", queryText).eq("softDeletedAt", undefined),
+      )
+      .take(MAX_DIRECT_PACKAGE_FULL_TEXT_CANDIDATES),
+    ownerHandlePrefix
+      ? ctx.db
+          .query("packageSearchDigest")
+          .withIndex("by_active_owner_handle", (q) =>
+            q
+              .eq("softDeletedAt", undefined)
+              .gte("ownerHandle", ownerHandlePrefix)
+              .lt("ownerHandle", prefixUpperBound(ownerHandlePrefix)),
           )
           .take(MAX_DIRECT_PACKAGE_SEARCH_CANDIDATES)
       : Promise.resolve([]),
@@ -1777,6 +1811,8 @@ async function resolveDirectPackageSearchDigests(
   return [
     ...nameDigests,
     ...runtimeDigests,
+    ...displayNameDigests,
+    ...ownerHandleDigests,
     ...exactTopicDigests,
     ...prefixTopicDigests,
     ...categoryDigests,
@@ -2244,6 +2280,123 @@ function buildPackageTopicDigestQuery(
     .withIndex("by_active_topic_updated", (q) =>
       q.eq("softDeletedAt", undefined).eq("topic", args.topic),
     );
+}
+
+async function mayHaveVisiblePackageCategoryDigest(
+  ctx: DbReaderCtx,
+  args: {
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    category: PluginCategorySlug;
+    topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
+    sort?: "updated" | "downloads" | "recommended" | "installs";
+    viewerUserId?: Id<"users">;
+  },
+) {
+  const membershipCache = new Map<string, Promise<boolean>>();
+  const digests = await (
+    args.topic
+      ? buildPackageTopicDigestQuery(ctx, {
+          topic: args.topic,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          sort: args.sort,
+        })
+      : buildPackagePluginCategoryDigestQuery(ctx, {
+          category: args.category,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          sort: args.sort,
+        })
+  )
+    .order("desc")
+    .take(MAX_PUBLIC_LIST_PAGE_SIZE);
+
+  for (const digest of digests as PackageDigestLike[]) {
+    if (args.family && digest.family !== args.family) continue;
+    if (args.channel && digest.channel !== args.channel) continue;
+    if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
+    if (!digestMatchesFilters(digest, args)) continue;
+    if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
+    return true;
+  }
+  // A saturated bounded probe cannot prove that later rows are also invisible.
+  return digests.length >= MAX_PUBLIC_LIST_PAGE_SIZE;
+}
+
+async function takeVisiblePackageCategoryDigestPage(
+  ctx: DbReaderCtx,
+  args: {
+    family?: PackageFamily;
+    channel?: PackageChannel;
+    isOfficial?: boolean;
+    category: PluginCategorySlug;
+    topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
+    sort?: "updated" | "downloads" | "recommended" | "installs";
+    viewerUserId?: Id<"users">;
+    numItems: number;
+  },
+): Promise<PublicPackageListPage> {
+  const targetCount = Math.max(0, Math.min(args.numItems, MAX_PUBLIC_LIST_PAGE_SIZE));
+  if (targetCount === 0) {
+    return { page: [], isDone: true, continueCursor: "" };
+  }
+  const membershipCache = new Map<string, Promise<boolean>>();
+  const scanPageSize = MAX_PUBLIC_LIST_PAGE_SIZE;
+  const digests = await (
+    args.topic
+      ? buildPackageTopicDigestQuery(ctx, {
+          topic: args.topic,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          sort: args.sort,
+        })
+      : buildPackagePluginCategoryDigestQuery(ctx, {
+          category: args.category,
+          family: args.family,
+          channel: args.channel,
+          isOfficial: args.isOfficial,
+          sort: args.sort,
+        })
+  )
+    .order("desc")
+    .take(scanPageSize);
+
+  const page: PublicPackageListItem[] = [];
+  let consumed = 0;
+  for (let index = 0; index < digests.length; index += 1) {
+    consumed = index + 1;
+    const digest = digests[index] as PackageDigestLike;
+    if (args.family && digest.family !== args.family) continue;
+    if (args.channel && digest.channel !== args.channel) continue;
+    if (typeof args.isOfficial === "boolean" && digest.isOfficial !== args.isOfficial) continue;
+    if (!digestMatchesFilters(digest, args)) continue;
+    if (!(await canViewerReadPackage(ctx, digest, args.viewerUserId, membershipCache))) continue;
+    page.push(await toPublicPackageListItem(ctx, digest));
+    if (page.length >= targetCount) break;
+  }
+
+  const hasMore = consumed < digests.length || digests.length >= scanPageSize;
+  return {
+    page,
+    isDone: !hasMore,
+    continueCursor: hasMore
+      ? encodePublicPageCursor({
+          cursor: null,
+          offset: consumed,
+          pageSize: scanPageSize,
+          done: false,
+          mode: "digest",
+          sort: args.sort,
+        })
+      : "",
+  };
 }
 
 async function fetchHighlightedPackageDigests(
@@ -3756,6 +3909,7 @@ async function listOfficialFirstPackageCategoryPage(
     highlightedOnly?: boolean;
     category: PluginCategorySlug;
     topic?: string;
+    excludedScanStatuses?: PackageListScanStatus[];
     sort?: "updated" | "downloads" | "recommended" | "installs";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
@@ -3787,27 +3941,59 @@ async function listOfficialFirstPackageCategoryPage(
       };
     }
     if (collected.length >= targetCount) {
-      const communityProbe = await listPackagePageImpl(ctx, {
-        ...args,
-        officialFirst: false,
-        isOfficial: false,
-        paginationOpts: {
-          cursor: null,
-          numItems: 1,
-        },
-      });
-      const hasCommunityPage = communityProbe.page.length > 0 || !communityProbe.isDone;
+      const mayHaveCommunityPage = args.highlightedOnly
+        ? (
+            await listPackagePageImpl(ctx, {
+              ...args,
+              officialFirst: false,
+              isOfficial: false,
+              paginationOpts: {
+                cursor: null,
+                numItems: 1,
+              },
+            })
+          ).page.length > 0
+        : await mayHaveVisiblePackageCategoryDigest(ctx, {
+            ...args,
+            isOfficial: false,
+          });
       return {
         page: collected,
-        isDone: !hasCommunityPage,
-        continueCursor: hasCommunityPage
+        isDone: !mayHaveCommunityPage,
+        continueCursor: mayHaveCommunityPage
           ? encodeOfficialFirstPackageCategoryCursor({
               phase: "community",
-              cursor: communityProbe.page.length > 0 ? null : communityProbe.continueCursor,
+              cursor: null,
             })
           : "",
       };
     }
+    const communityPage = args.highlightedOnly
+      ? await listPackagePageImpl(ctx, {
+          ...args,
+          officialFirst: false,
+          isOfficial: false,
+          paginationOpts: {
+            cursor: null,
+            numItems: targetCount - collected.length,
+          },
+        })
+      : await takeVisiblePackageCategoryDigestPage(ctx, {
+          ...args,
+          isOfficial: false,
+          numItems: targetCount - collected.length,
+        });
+    collected.push(...communityPage.page);
+    return {
+      page: collected,
+      isDone: communityPage.isDone,
+      continueCursor: communityPage.isDone
+        ? ""
+        : encodeOfficialFirstPackageCategoryCursor({
+            phase: "community",
+            cursor: communityPage.continueCursor,
+          }),
+    };
   }
 
   const communityPage = await listPackagePageImpl(ctx, {

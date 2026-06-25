@@ -15,7 +15,7 @@ OpenAPI: `/api/v1/openapi.json`.
 
 ## Public catalog reuse
 
-Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing (`https://clawhub.ai/<owner>/<slug>`), and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
+Third-party directories may use the public read endpoints to list or search ClawHub skills. Please cache results, honor `429`/`Retry-After`, link users back to the canonical ClawHub listing (`https://clawhub.ai/<owner>/skills/<slug>`), and avoid implying ClawHub endorsement of the third-party site. Do not attempt to mirror hidden, private, or moderation-blocked content outside the public API surface.
 
 Web slug shortcuts resolve across registry families, but API clients should use
 the canonical URLs returned by read endpoints instead of reconstructing route
@@ -492,8 +492,8 @@ Response:
       "version": "1.2.3",
       "createdAt": 0,
       "checkedAt": 0,
-      "skillUrl": "https://clawhub.ai/steipete/gifgrep",
-      "securityAuditUrl": "https://clawhub.ai/steipete/gifgrep/security-audit?version=1.2.3",
+      "skillUrl": "https://clawhub.ai/steipete/skills/gifgrep",
+      "securityAuditUrl": "https://clawhub.ai/steipete/skills/gifgrep/security-audit?version=1.2.3",
       "security": {
         "status": "clean",
         "passed": true,
@@ -610,6 +610,43 @@ Legacy v1 filter aliases remain accepted on read endpoints:
 - `dev-tools` resolves to `runtime`.
 
 Legacy aliases are not accepted as stored or author-declared category values.
+
+### `GET /api/v1/skills/export`
+
+Bulk export of latest public skills for offline analysis.
+
+Auth:
+
+- API token required.
+
+Query params:
+
+- `startDate` (required): Unix milliseconds lower bound for skill `updatedAt`.
+- `endDate` (required): Unix milliseconds upper bound for skill `updatedAt`.
+- `limit` (optional): integer (1-250), default `250`.
+- `cursor` (optional): pagination cursor from the previous response.
+
+Response:
+
+- Body: ZIP archive.
+- Each exported skill is rooted at `{publisher}/{slug}/`.
+- Hosted skills include the latest stored version files and are listed in
+  `_manifest.json` with `sourceRef: "public-clawhub"`.
+- Current GitHub-backed skills with a `clean` or `suspicious` scan include
+  `_source_handoff.json` with `sourceRef: "public-github"`, repo, commit, path,
+  content hash, and archive URL. They do not include ClawHub-hosted source files.
+- Each skill includes `_export_skill_meta.json`.
+- `_manifest.json` is always included at the ZIP root.
+- `_errors.json` is included when individual skills or files could not be
+  exported.
+
+Headers:
+
+- `X-Next-Cursor`
+- `X-Has-More`
+- `X-Total-Returned`
+- `X-Date-Range`
+- `X-Export-Errors`
 
 ### `GET /api/v1/plugins/export`
 
@@ -1235,7 +1272,9 @@ Response:
 
 ### `GET /api/v1/download`
 
-Downloads a zip of a skill version.
+Downloads a hosted skill version ZIP, or returns a GitHub source handoff for a
+current GitHub-backed skill with a `clean` or `suspicious` scan and no hosted
+version.
 
 Query params:
 
@@ -1247,7 +1286,11 @@ Notes:
 
 - If neither `version` nor `tag` is provided, the latest version is used.
 - Soft-deleted versions return `410`.
-- Download stats are counted as unique identities per hour (`userId` when API token is valid, otherwise IP).
+- GitHub-backed skill handoffs do not proxy or mirror bytes. The JSON response
+  includes `sourceRef: "public-github"`, `repo`, `commit`, `path`, `contentHash`,
+  and `archiveUrl`; scan/current state is a gate and is not included as success
+  payload metadata.
+- Download stats are counted as unique identities per UTC day (`userId` when API token is valid, otherwise IP).
 
 ## Auth endpoints (Bearer token)
 

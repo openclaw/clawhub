@@ -42,12 +42,14 @@ import {
 import { assertValidSkillSlug, normalizeSkillSlug } from "./skillSlugValidator";
 import { generateSkillSummary } from "./skillSummary";
 import { runStaticPublishScan } from "./staticPublishScan";
-import type { WebhookSkillPayload } from "./webhooks";
+import { getWebhookConfig, type WebhookSkillPayload } from "./webhooks";
 
 const MAX_FILES_FOR_EMBEDDING = 40;
 const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
+const MAX_PUBLISH_SUMMARY_LENGTH = 200;
 
 type FingerprintFile = { path: string; sha256: string };
 type SafePublishFile = PublishVersionArgs["files"][number] & { path: string };
@@ -76,6 +78,7 @@ export type PublishVersionArgs = {
   tags?: string[];
   categories?: string[];
   topics?: string[];
+  summary?: string;
   forkOf?: { slug: string; ownerHandle?: string; version?: string };
   source?: {
     kind: "github";
@@ -100,6 +103,7 @@ export type PublishOptions = {
   bypassNewSkillRateLimit?: boolean;
   bypassQualityGate?: boolean;
   skipWebhook?: boolean;
+  ownerHandle?: string;
   ownerPublisherId?: Id<"publishers">;
   sourceOwnerPublisherId?: Id<"publishers">;
   sourceProvenance?: PublishVersionArgs["source"];
@@ -200,12 +204,18 @@ export async function publishVersionForUser(
   // Prioritize the new description from frontmatter over the existing skill summary
   // This ensures updates to the description are reflected on subsequent publishes (#301)
   const summaryFromFrontmatter = metadataDescription ?? directDescription;
-  const summary = await generateSkillSummary({
-    slug,
-    displayName,
-    readmeText,
-    currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
-  });
+  const explicitSummary = args.summary?.trim();
+  if (explicitSummary && explicitSummary.length > MAX_PUBLISH_SUMMARY_LENGTH) {
+    throw new ConvexError(`Summary must be ${MAX_PUBLISH_SUMMARY_LENGTH} characters or less`);
+  }
+  const summary =
+    explicitSummary ||
+    (await generateSkillSummary({
+      slug,
+      displayName,
+      readmeText,
+      currentSummary: summaryFromFrontmatter ?? existingSkill?.summary ?? undefined,
+    }));
 
   let qualityAssessment: QualityAssessment | null = null;
   if (isNewSkill && !options.bypassQualityGate) {
@@ -371,21 +381,36 @@ export async function publishVersionForUser(
     versionId: publishResult.versionId,
   });
 
-  await ctx.runMutation(internal.securityScan.enqueueSkillVersionScanInternal, {
+  await ctx.scheduler.runAfter(0, internal.securityScan.enqueueSkillVersionScanInternal, {
     versionId: publishResult.versionId,
     source: "publish",
   });
+  await ctx.scheduler.runAfter(2_000, internal.securityScan.enqueueSkillVersionScanInternal, {
+    versionId: publishResult.versionId,
+    source: "publish",
+    preserveActiveJob: true,
+    preserveExistingJob: true,
+  });
+  await ctx.scheduler.runAfter(
+    SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS,
+    internal.securityScan.enqueueSkillVersionScanInternal,
+    {
+      versionId: publishResult.versionId,
+      source: "publish",
+      preserveActiveJob: true,
+      preserveExistingJob: true,
+    },
+  );
 
-  const targetPublisher =
-    options.ownerPublisherId !== undefined
-      ? ((await ctx.runQuery(internal.publishers.getByIdInternal, {
-          publisherId: options.ownerPublisherId,
-        })) as Doc<"publishers"> | null)
-      : null;
-  const ownerHandle =
-    targetPublisher?.handle ?? owner?.handle ?? owner?.displayName ?? owner?.name ?? "unknown";
-
-  if (!options.skipWebhook) {
+  if (!options.skipWebhook && getWebhookConfig().url) {
+    let ownerHandle = options.ownerHandle;
+    if (!ownerHandle && options.ownerPublisherId !== undefined) {
+      const targetPublisher = (await ctx.runQuery(internal.publishers.getByIdInternal, {
+        publisherId: options.ownerPublisherId,
+      })) as Doc<"publishers"> | null;
+      ownerHandle = targetPublisher?.handle;
+    }
+    ownerHandle ??= owner?.handle ?? owner?.displayName ?? owner?.name;
     void schedulePublishWebhook(ctx, {
       slug,
       version,

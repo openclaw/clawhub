@@ -7,7 +7,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const navigateMock = vi.fn();
 let searchMock: {
   q?: string;
-  type?: "all" | "skills" | "plugins";
+  type?: "all" | "skills" | "plugins" | "creators";
 } = {};
 const useUnifiedSearchMock = vi.fn();
 
@@ -27,8 +27,27 @@ vi.mock("../components/PluginListItem", () => ({
   PluginListItem: ({ item }: { item: { name: string } }) => <div>{item.name}</div>,
 }));
 
+vi.mock("../components/PublisherListItem", () => ({
+  PublisherListItem: ({ publisher }: { publisher: { handle: string; displayName: string } }) => (
+    <div>
+      {publisher.displayName} @{publisher.handle}
+    </div>
+  ),
+}));
+
 vi.mock("../components/SkillListItem", () => ({
-  SkillListItem: ({ skill }: { skill: { slug: string } }) => <div>{skill.slug}</div>,
+  SkillListItem: ({
+    skill,
+    owner,
+  }: {
+    skill: { slug: string };
+    owner?: { official?: boolean } | null;
+  }) => (
+    <div>
+      {skill.slug}
+      {owner?.official ? <span data-testid="skill-official-badge" /> : null}
+    </div>
+  ),
 }));
 
 vi.mock("../components/ui/card", () => ({
@@ -54,10 +73,13 @@ describe("search route", () => {
       results: [],
       skillResults: [],
       pluginResults: [],
+      creatorResults: [],
       skillCount: 0,
       pluginCount: 0,
+      creatorCount: 0,
       skillHasMore: false,
       pluginHasMore: false,
+      creatorHasMore: false,
       isSearching: false,
     });
   });
@@ -67,7 +89,9 @@ describe("search route", () => {
     const Component = route.__config.component as ComponentType;
     const rendered = render(<Component />);
 
-    const input = screen.getByPlaceholderText("Search skills and plugins...") as HTMLInputElement;
+    const input = screen.getByPlaceholderText(
+      "Search skills, plugins, and creators...",
+    ) as HTMLInputElement;
     expect(input.value).toBe("first");
 
     fireEvent.change(input, { target: { value: "draft" } });
@@ -77,7 +101,8 @@ describe("search route", () => {
     rendered.rerender(<Component />);
 
     expect(
-      (screen.getByPlaceholderText("Search skills and plugins...") as HTMLInputElement).value,
+      (screen.getByPlaceholderText("Search skills, plugins, and creators...") as HTMLInputElement)
+        .value,
     ).toBe("second");
   });
 
@@ -95,8 +120,10 @@ describe("search route", () => {
       results: [],
       skillResults: [],
       pluginResults: [],
+      creatorResults: [],
       skillCount: 0,
       pluginCount: 0,
+      creatorCount: 0,
       isSearching: true,
     });
     const route = await loadRoute();
@@ -113,10 +140,13 @@ describe("search route", () => {
       results: [],
       skillResults: [],
       pluginResults: [{ type: "plugin", plugin: { name: "github-plugin" } }],
+      creatorResults: [],
       skillCount: 0,
       pluginCount: 3,
+      creatorCount: 0,
       skillHasMore: false,
       pluginHasMore: false,
+      creatorHasMore: false,
       isSearching: false,
     });
     const route = await loadRoute();
@@ -127,6 +157,7 @@ describe("search route", () => {
     expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Skills" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Plugins" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Creators" })).toBeTruthy();
     expect(screen.queryByText("0")).toBeNull();
     expect(screen.queryByText("3")).toBeNull();
   });
@@ -166,10 +197,13 @@ describe("search route", () => {
       results: skills,
       skillResults: skills,
       pluginResults: [],
+      creatorResults: [],
       skillCount: 25,
       pluginCount: 0,
+      creatorCount: 0,
       skillHasMore: true,
       pluginHasMore: false,
+      creatorHasMore: false,
       isSearching: false,
     });
     const route = await loadRoute();
@@ -178,13 +212,13 @@ describe("search route", () => {
     render(<Component />);
 
     expect(useUnifiedSearchMock).toHaveBeenCalledWith("weather", "all", {
-      limits: { skills: 25, plugins: 25 },
+      limits: { skills: 25, plugins: 25, creators: 25 },
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Load more" }));
 
     expect(useUnifiedSearchMock).toHaveBeenCalledWith("weather", "all", {
-      limits: { skills: 50, plugins: 50 },
+      limits: { skills: 50, plugins: 50, creators: 50 },
     });
   });
 
@@ -225,10 +259,30 @@ describe("search route", () => {
         },
       ],
       pluginResults: [{ type: "plugin", plugin: { name: "weather-plugin" } }],
+      creatorResults: [
+        {
+          type: "creator",
+          creator: {
+            _id: "publishers:weather",
+            _creationTime: 1,
+            kind: "org",
+            handle: "weather",
+            displayName: "Weather Creator",
+            image: undefined,
+            bio: "Weather creator",
+            linkedUserId: undefined,
+            official: true,
+            stats: { skills: 0, packages: 0, installs: 0, downloads: 0, stars: 0 },
+            publishedItems: [],
+          },
+        },
+      ],
       skillCount: 1,
       pluginCount: 1,
+      creatorCount: 1,
       skillHasMore: false,
       pluginHasMore: false,
+      creatorHasMore: false,
       isSearching: false,
     });
     const route = await loadRoute();
@@ -238,8 +292,48 @@ describe("search route", () => {
 
     expect(screen.getByRole("button", { name: "All" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Plugins" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Creators" })).toBeTruthy();
     expect(screen.getByText("weather")).toBeTruthy();
     expect(screen.queryByText("weather-plugin")).toBeNull();
+    expect(screen.queryByText("Weather Creator @weather")).toBeNull();
+  });
+
+  it("passes official owner metadata to skill search rows", async () => {
+    searchMock = { q: "weather", type: "skills" };
+    const skill = {
+      type: "skill",
+      skill: {
+        _id: "skill-weather",
+        slug: "weather",
+        displayName: "Weather",
+        ownerUserId: "users:1",
+        stats: { downloads: 0, stars: 0 },
+        updatedAt: 1,
+        createdAt: 1,
+      },
+      ownerHandle: "openclaw",
+      owner: { official: true },
+      score: 1,
+    };
+    useUnifiedSearchMock.mockReturnValue({
+      results: [skill],
+      skillResults: [skill],
+      pluginResults: [],
+      creatorResults: [],
+      skillCount: 1,
+      pluginCount: 0,
+      creatorCount: 0,
+      skillHasMore: false,
+      pluginHasMore: false,
+      creatorHasMore: false,
+      isSearching: false,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByTestId("skill-official-badge")).toBeTruthy();
   });
 
   it("does not render partial count labels when more results are available", async () => {
@@ -247,10 +341,13 @@ describe("search route", () => {
       results: [],
       skillResults: [],
       pluginResults: [{ type: "plugin", plugin: { name: "github-plugin" } }],
+      creatorResults: [],
       skillCount: 0,
       pluginCount: 25,
+      creatorCount: 0,
       skillHasMore: false,
       pluginHasMore: true,
+      creatorHasMore: false,
       isSearching: false,
     });
     const route = await loadRoute();
@@ -282,10 +379,13 @@ describe("search route", () => {
       })),
       skillResults: [],
       pluginResults: [],
+      creatorResults: [],
       skillCount: 25,
       pluginCount: 0,
+      creatorCount: 0,
       skillHasMore: false,
       pluginHasMore: false,
+      creatorHasMore: false,
       isSearching: false,
     });
     const route = await loadRoute();
@@ -308,7 +408,23 @@ describe("search route", () => {
       "/skills",
     );
     expect(screen.queryByRole("link", { name: "Show all plugins" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Show all creators" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Search all types" })).toBeNull();
+  });
+
+  it("links to creators browse when creator search has no matches", async () => {
+    searchMock = { q: "zzzz", type: "creators" };
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByText('No matches for "zzzz"')).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Show all creators" }).getAttribute("href")).toBe(
+      "/creators",
+    );
+    expect(screen.queryByRole("link", { name: "Show all skills" })).toBeNull();
+    expect(screen.queryByRole("link", { name: "Show all plugins" })).toBeNull();
   });
 
   it("offers all-types recovery when the active type is empty but another type matched", async () => {
@@ -317,10 +433,13 @@ describe("search route", () => {
       results: [{ type: "plugin", plugin: { name: "weather-plugin" } }],
       skillResults: [],
       pluginResults: [{ type: "plugin", plugin: { name: "weather-plugin" } }],
+      creatorResults: [],
       skillCount: 0,
       pluginCount: 1,
+      creatorCount: 0,
       skillHasMore: false,
       pluginHasMore: false,
+      creatorHasMore: false,
       isSearching: false,
     });
     const route = await loadRoute();
@@ -346,8 +465,79 @@ describe("search route", () => {
     render(<Component />);
 
     expect(useUnifiedSearchMock).toHaveBeenLastCalledWith("hello", "all", {
-      limits: { skills: 25, plugins: 25 },
+      limits: { skills: 25, plugins: 25, creators: 25 },
     });
+  });
+
+  it("renders creators as their own all-results section and active tab", async () => {
+    searchMock = { q: "weather" };
+    useUnifiedSearchMock.mockReturnValue({
+      results: [
+        {
+          type: "creator",
+          creator: {
+            _id: "publishers:weather",
+            _creationTime: 1,
+            kind: "org",
+            handle: "weather",
+            displayName: "Weather Creator",
+            image: undefined,
+            bio: "Weather creator",
+            linkedUserId: undefined,
+            official: true,
+            stats: { skills: 0, packages: 0, installs: 0, downloads: 0, stars: 0 },
+            publishedItems: [],
+          },
+        },
+      ],
+      skillResults: [],
+      pluginResults: [],
+      creatorResults: [
+        {
+          type: "creator",
+          creator: {
+            _id: "publishers:weather",
+            _creationTime: 1,
+            kind: "org",
+            handle: "weather",
+            displayName: "Weather Creator",
+            image: undefined,
+            bio: "Weather creator",
+            linkedUserId: undefined,
+            official: true,
+            stats: { skills: 0, packages: 0, installs: 0, downloads: 0, stars: 0 },
+            publishedItems: [],
+          },
+        },
+      ],
+      skillCount: 0,
+      pluginCount: 0,
+      creatorCount: 1,
+      skillHasMore: false,
+      pluginHasMore: false,
+      creatorHasMore: false,
+      isSearching: false,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    const rendered = render(<Component />);
+
+    expect(screen.getByRole("button", { name: "Creators" })).toBeTruthy();
+    expect(screen.getByRole("region", { name: "Creators" })).toBeTruthy();
+    expect(screen.getByText("Weather Creator @weather")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Creators" }));
+    expect(navigateMock).toHaveBeenCalledWith({
+      to: "/search",
+      search: { q: "weather", type: "creators" },
+      replace: true,
+    });
+
+    searchMock = { q: "weather", type: "creators" };
+    rendered.rerender(<Component />);
+
+    expect(screen.getByText("Weather Creator @weather")).toBeTruthy();
   });
 
   it("does not render a warning-filter chip on the plugins tab", async () => {

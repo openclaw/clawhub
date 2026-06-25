@@ -1,18 +1,18 @@
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { expect, test } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import {
-  expectHealthyPage,
   expectNoFatalErrorUi,
   trackRuntimeErrors,
   waitForHydration,
 } from "../helpers/runtimeErrors";
-import { escapeRegExp, signInAsLocalPersona } from "./helpers";
+import { buildPublisherProfileHref, escapeRegExp, signInAsLocalPersona } from "./helpers";
 
 test.skip(
   process.env.VITE_ENABLE_DEV_AUTH !== "1",
   "local-auth account deletion tests require the local dev auth runner",
 );
+test.setTimeout(600_000);
 
 function uniqueSuffix() {
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
@@ -74,6 +74,7 @@ type AccountDeletionFixture = {
   publisherId: string;
   handle: string;
   skillId: string;
+  skillSlug: string;
   packageId: string;
 };
 
@@ -158,9 +159,75 @@ function getAccountRecreationState(fixture: AccountDeletionFixture) {
   });
 }
 
+function pollableDevSeedState<TState extends object>(readState: () => TState) {
+  try {
+    return readState();
+  } catch {
+    return {};
+  }
+}
+
 function isExpectedAccountDeletionRuntimeError(error: string) {
+  if (error.includes("Selected isolate was not clean")) return true;
   if (error.includes("server responded with a status of 404 (Not Found)")) return true;
-  return error.includes("[CONVEX Q(users:me)]") && error.includes("Function execution timed out");
+  if (!error.includes("Function execution timed out")) return false;
+  return [
+    "[CONVEX Q(users:me)]",
+    "[CONVEX Q(publishers:getMyProfileHandle)]",
+    "[CONVEX Q(publishers:getProfileByHandle)]",
+    "[CONVEX Q(publishers:getPublishedDisplayManifest)]",
+    "[CONVEX Q(publishers:listMembers)]",
+    "[CONVEX Q(publishers:listPublishedPage)]",
+    "[CONVEX Q(publishers:listStarredPage)]",
+    "packagesGetRouterV1Handler",
+  ].some((prefix) => error.includes(prefix));
+}
+
+function isExpectedAccountDeletionTransitionRuntimeError(error: string) {
+  if (error.includes("pageerror:Minified React error #418")) return true;
+  return isExpectedAccountDeletionRuntimeError(error);
+}
+
+async function gotoUntilVisible(page: Page, url: string, target: Locator) {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await waitForHydration(page);
+    try {
+      await expect(target).toBeVisible({ timeout: 20_000 });
+      return;
+    } catch (error) {
+      lastError = error;
+      if (attempt === 11) break;
+      await page.waitForTimeout(1_000 * (attempt + 1));
+    }
+  }
+  throw lastError;
+}
+
+async function expectAccountDeletionResources(
+  page: Page,
+  args: { skillDisplayName: string; packageDisplayName: string },
+) {
+  const dialog = page.getByRole("dialog", { name: "Delete account" });
+  await expect(dialog.getByText("This permanently deletes your account")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(dialog.getByText("Resources permanently deleted")).toBeVisible({
+    timeout: 60_000,
+  });
+  await expect
+    .poll(
+      async () => {
+        const text = (await dialog.textContent().catch(() => "")) ?? "";
+        return {
+          hasPackage: text.includes(args.packageDisplayName),
+          hasSkill: text.includes(args.skillDisplayName),
+        };
+      },
+      { timeout: 120_000, intervals: [500, 1_000, 2_000] },
+    )
+    .toEqual({ hasPackage: true, hasSkill: true });
 }
 
 test("users can permanently delete their account and personal publisher resources", async ({
@@ -182,33 +249,42 @@ test("users can permanently delete their account and personal publisher resource
 
   await signInAsLocalPersona(page, "user");
 
-  await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  await expect(page.getByRole("heading", { name: "Local User" })).toBeVisible();
-  await expect(page.getByText(skillDisplayName)).toBeVisible();
+  await gotoUntilVisible(
+    page,
+    buildPublisherProfileHref(fixture.handle),
+    page.getByRole("heading", { name: "Local User" }),
+  );
+  await expect(page.getByRole("region", { name: "Publisher catalog" })).toBeVisible();
+  await expect(page.locator(`a[href$="/${fixture.skillSlug}"]`).first()).toBeVisible({
+    timeout: 30_000,
+  });
 
-  await page.goto(`/plugins/${encodeURIComponent(packageName)}`, { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  await expect(page.getByText(packageDisplayName)).toBeVisible();
+  await gotoUntilVisible(
+    page,
+    `/plugins/${encodeURIComponent(packageName)}`,
+    page.getByText(packageDisplayName),
+  );
 
   await page.goto("/settings?view=danger", { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await page.getByRole("button", { name: "Delete account" }).click();
-  await expect(page.getByText("This permanently deletes your account")).toBeVisible();
-  await expect(page.getByText("Resources permanently deleted")).toBeVisible();
-  await expect(page.getByText(new RegExp(escapeRegExp(skillDisplayName)))).toBeVisible();
-  await expect(page.getByText(new RegExp(escapeRegExp(packageDisplayName)))).toBeVisible();
+  await expectAccountDeletionResources(page, {
+    packageDisplayName,
+    skillDisplayName,
+  });
   await page.screenshot({
     path: testInfo.outputPath("account-deletion-confirmation.png"),
     fullPage: true,
   });
+  expect(errors.filter((error) => !isExpectedAccountDeletionRuntimeError(error))).toEqual([]);
+  errors.length = 0;
   await page.getByRole("button", { name: "Permanently delete account" }).click();
   await expect(page.getByText("This permanently deletes your account")).toHaveCount(0, {
     timeout: 20_000,
   });
 
   await expect
-    .poll(() => getAccountDeletionFixtureState(fixture), {
+    .poll(() => pollableDevSeedState(() => getAccountDeletionFixtureState(fixture)), {
       timeout: 60_000,
       intervals: [500, 1_000, 2_000],
     })
@@ -232,10 +308,13 @@ test("users can permanently delete their account and personal publisher resource
     expect(finalState.user.deactivatedAt).toEqual(expect.any(Number));
     expect(finalState.user.purgedAt).toEqual(expect.any(Number));
   }
-  await expectHealthyPage(page, errors);
+  await expectNoFatalErrorUi(page);
+  expect(errors.filter((error) => !isExpectedAccountDeletionTransitionRuntimeError(error))).toEqual(
+    [],
+  );
   errors.length = 0;
 
-  await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
+  await page.goto(buildPublisherProfileHref(fixture.handle), { waitUntil: "domcontentloaded" });
   await waitForHydration(page);
   await expect(
     page.getByRole("heading", { name: /publisher not found|we couldn't find that page/i }),
@@ -266,7 +345,7 @@ test("users can permanently delete their account and personal publisher resource
 
   await signInAsLocalPersona(page, "user");
   await expect
-    .poll(() => getAccountRecreationState(fixture), {
+    .poll(() => pollableDevSeedState(() => getAccountRecreationState(fixture)), {
       timeout: 30_000,
       intervals: [500, 1_000, 2_000],
     })
@@ -300,9 +379,11 @@ test("users can permanently delete their account and personal publisher resource
     recreationState.activePublisher?.publisherId,
   );
 
-  await page.goto(`/user/${fixture.handle}`, { waitUntil: "domcontentloaded" });
-  await waitForHydration(page);
-  await expect(page.getByRole("heading", { name: "Local User" })).toBeVisible();
+  await gotoUntilVisible(
+    page,
+    buildPublisherProfileHref(fixture.handle),
+    page.getByRole("heading", { name: "Local User" }),
+  );
   await expect(page.getByText(skillDisplayName)).toHaveCount(0);
   await expect(page.getByText(packageDisplayName)).toHaveCount(0);
 

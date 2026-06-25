@@ -14,7 +14,7 @@ rights, submit a [ClawHub Content Rights Request](https://forms.openclaw.ai/claw
 
 Include:
 
-- one or more exact `https://clawhub.ai/<owner>/<skill>` URLs
+- one or more exact `https://clawhub.ai/<owner>/skills/<skill>` URLs
 - your name, organization, and contact email
 - a brief explanation of the rights concern
 - supporting evidence, if available

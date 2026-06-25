@@ -14,7 +14,6 @@ query-filters:
       security-severity: /([7-9]|10)\.(\d)+/
 
 paths:
-  - scripts/check-staged-secrets.mjs
   - scripts/clawhub-cli-npm-release-check.mjs
   - scripts/github
   - scripts/verify-convex-contract.ts

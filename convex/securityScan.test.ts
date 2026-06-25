@@ -8,7 +8,9 @@ import {
   claimQueuedJobsInternal,
   completeCodexScanJob,
   enqueueBulkSkillRescanBatchForAdminInternal,
+  enqueueSkillVersionScanInternal,
   failCodexScanJob,
+  failJobInternal,
   finalizeGitHubSkillScanRequestInternal,
   getJobTargetInternal,
   getBulkSkillRescanBatchStatusForAdminInternal,
@@ -16,6 +18,8 @@ import {
   getStoredScanReportForUserInternal,
   prepareGitHubSkillScanRequestInternal,
   pruneExpiredSkillScanRequestsInternal,
+  recordGitHubSkillScanResultInternal,
+  recordSkillScanRequestFailedInternal,
   requestPackageRescanForUserInternal,
   requestPackageRescan,
   requestSkillRescanForUserInternal,
@@ -51,6 +55,110 @@ const failCodexScanJobHandler = (
     { ok: true; retry: boolean }
   >
 )._handler;
+
+const failJobInternalHandler = (
+  failJobInternal as unknown as WrappedHandler<
+    { jobId: string; leaseToken: string; error: string },
+    { ok: true; retry: boolean }
+  >
+)._handler;
+
+const recordSkillScanRequestFailedInternalHandler = (
+  recordSkillScanRequestFailedInternal as unknown as WrappedHandler<
+    { scanId: string; error: string; llmAnalysis?: { status: string; checkedAt: number } },
+    { ok: true }
+  >
+)._handler;
+
+const recordGitHubSkillScanResultInternalHandler = (
+  recordGitHubSkillScanResultInternal as unknown as WrappedHandler<
+    {
+      githubSkillScanId: string;
+      scanStatus: "clean" | "suspicious" | "malicious" | "pending" | "failed";
+      error?: string;
+    },
+    { ok: true; skipped?: string }
+  >
+)._handler;
+
+function fakeLeakyWorkerError() {
+  return (
+    `Download failed 403: https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123 ` +
+    `Authorization: Bearer abc OPENAI_API_KEY=openai-runtime-secret ` +
+    `GITHUB_TOKEN=github-runtime-secret CONVEX_DEPLOY_KEY=convex-deploy-secret ` +
+    `api_key=plugin-api-token sha256=${"a".repeat(64)}`
+  );
+}
+
+function expectNoLeakedWorkerErrorSecrets(error: string) {
+  expect(error).toContain("Download failed 403");
+  expect(error).not.toContain("https://");
+  expect(error).not.toContain("signed.example.invalid");
+  expect(error).not.toContain("token=secret");
+  expect(error).not.toContain("X-Amz-Signature");
+  expect(error).not.toContain("Authorization");
+  expect(error).not.toContain("Bearer abc");
+  expect(error).not.toContain("openai-runtime-secret");
+  expect(error).not.toContain("github-runtime-secret");
+  expect(error).not.toContain("convex-deploy-secret");
+  expect(error).not.toContain("plugin-api-token");
+  expect(error).toContain("OPENAI_API_KEY=[redacted-secret]");
+  expect(error).toContain("GITHUB_TOKEN=[redacted-secret]");
+  expect(error).toContain("CONVEX_DEPLOY_KEY=[redacted-secret]");
+  expect(error).toContain("api_key=[redacted-secret]");
+}
+
+function makeFailurePersistenceCtx(docs: Record<string, Record<string, unknown>>) {
+  const records = new Map<string, Record<string, unknown>>(Object.entries(docs));
+  const patches: Array<{ id: string; patch: Record<string, unknown> }> = [];
+  const get = vi.fn(async (id: string) => records.get(id) ?? null);
+  const insert = vi.fn(async (table: string, doc: Record<string, unknown>) => {
+    const id = `${table}:inserted-${records.size + 1}`;
+    records.set(id, { _id: id, ...doc });
+    return id;
+  });
+  const patch = vi.fn(async (id: string, next: Record<string, unknown>) => {
+    patches.push({ id, patch: next });
+    const doc = records.get(id);
+    if (!doc) return;
+    for (const [key, value] of Object.entries(next)) {
+      if (value === undefined) delete doc[key];
+      else doc[key] = value;
+    }
+  });
+  const replace = vi.fn(async (id: string, doc: Record<string, unknown>) => {
+    records.set(id, { _id: id, ...doc });
+  });
+  const deleteDoc = vi.fn(async (id: string) => {
+    records.delete(id);
+  });
+  const query = vi.fn(() => ({
+    withIndex: vi.fn(() => ({
+      collect: vi.fn(async () => []),
+      take: vi.fn(async () => []),
+      unique: vi.fn(async () => null),
+    })),
+  }));
+  const normalizeId = vi.fn((table: string, id: string) =>
+    id.startsWith(`${table}:`) ? id : null,
+  );
+  return {
+    ctx: {
+      db: {
+        get,
+        insert,
+        patch,
+        query,
+        replace,
+        delete: deleteDoc,
+        normalizeId,
+        system: {},
+      },
+    },
+    patches,
+    records,
+  };
+}
 
 const completeCodexScanJobHandler = (
   completeCodexScanJob as unknown as WrappedHandler<
@@ -215,6 +323,20 @@ const requestPackageRescanForUserInternalHandler = (
   requestPackageRescanForUserInternal as unknown as WrappedHandler<
     { actorUserId: string; name: string; version?: string },
     { jobId: string; alreadyQueued: boolean; packageReleaseId: string }
+  >
+)._handler;
+
+const enqueueSkillVersionScanInternalHandler = (
+  enqueueSkillVersionScanInternal as unknown as WrappedHandler<
+    {
+      versionId: string;
+      source: "publish";
+      priority?: number;
+      waitForVtMs?: number;
+      preserveActiveJob?: boolean;
+      preserveExistingJob?: boolean;
+    },
+    { ok: true; skipped?: string; jobId?: string; alreadyQueued?: boolean }
   >
 )._handler;
 
@@ -875,6 +997,39 @@ describe("securityScan", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
     vi.mocked(getAuthUserId).mockReset();
+  });
+
+  it("does not enqueue a duplicate publish scan after the backup delay if the first scan already finished", async () => {
+    const existingJob = makeScanJob({
+      _id: "securityScanJobs:fast-publish",
+      status: "succeeded",
+      source: "publish",
+      skillVersionId: "skillVersions:fast-publish",
+    });
+    const { ctx, inserts, patches } = makeRescanCtx({
+      actorId: "users:owner",
+      docs: {
+        "skillVersions:fast-publish": {
+          _id: "skillVersions:fast-publish",
+          skillId: "skills:fast-publish",
+          version: "1.0.0",
+        },
+      },
+      activeJobs: [existingJob],
+    });
+
+    const result = await enqueueSkillVersionScanInternalHandler(ctx, {
+      versionId: "skillVersions:fast-publish",
+      source: "publish",
+      preserveExistingJob: true,
+    });
+
+    expect(result).toMatchObject({
+      jobId: "securityScanJobs:fast-publish",
+      alreadyQueued: true,
+    });
+    expect(inserts.filter((entry) => entry.table === "securityScanJobs")).toEqual([]);
+    expect(patches).toEqual([]);
   });
 
   it("lets platform moderators request skill rescans", async () => {
@@ -2866,7 +3021,7 @@ describe("securityScan", () => {
         jobId: "securityScanJobs:1",
         leaseToken: "lease-token",
         error:
-          "Download failed https://signed.example.invalid/file?token=secret Authorization: Bearer sk-short-secret OPENAI_API_KEY=sk-short-secret",
+          "Download failed https://signed.example.invalid/file?token=secret Authorization: Bearer auth-secret",
       },
     );
 
@@ -2897,7 +3052,7 @@ describe("securityScan", () => {
       | undefined;
     expect(llmAnalysis?.findings).toContain("Worker error");
     expect(llmAnalysis?.findings).not.toContain("token=secret");
-    expect(llmAnalysis?.findings).not.toContain("sk-short-secret");
+    expect(llmAnalysis?.findings).not.toContain("Bearer auth-secret");
   });
 
   it("completes skill scans without directly enqueueing duplicate Skill Card jobs", async () => {
@@ -3417,6 +3572,199 @@ describe("securityScan", () => {
         error: "worker failed",
       }),
     );
+  });
+
+  it("sanitizes worker errors before patching failed job and scan request records", async () => {
+    const { ctx, records } = makeFailurePersistenceCtx({
+      "securityScanJobs:1": {
+        _id: "securityScanJobs:1",
+        attempts: 3,
+        leaseToken: "lease-token",
+        nextRunAt: 123,
+        skillScanRequestId: "skillScanRequests:1",
+        status: "running",
+        targetKind: "skillScanRequest",
+      },
+      "skillScanRequests:1": {
+        _id: "skillScanRequests:1",
+        status: "running",
+      },
+    });
+
+    const result = await failJobInternalHandler(ctx, {
+      jobId: "securityScanJobs:1",
+      leaseToken: "lease-token",
+      error: fakeLeakyWorkerError(),
+    });
+
+    expect(result).toEqual({ ok: true, retry: false });
+    const jobError = String(records.get("securityScanJobs:1")?.lastError);
+    const requestError = String(records.get("skillScanRequests:1")?.lastError);
+    expectNoLeakedWorkerErrorSecrets(jobError);
+    expectNoLeakedWorkerErrorSecrets(requestError);
+  });
+
+  it("sanitizes worker errors before patching failed scan result records", async () => {
+    const { ctx, records } = makeFailurePersistenceCtx({
+      "githubSkillScans:1": {
+        _id: "githubSkillScans:1",
+        contentHash: "content-hash",
+        skillId: "skills:missing",
+        status: "pending",
+      },
+      "skillScanRequests:1": {
+        _id: "skillScanRequests:1",
+        status: "running",
+      },
+    });
+
+    await expect(
+      recordSkillScanRequestFailedInternalHandler(ctx, {
+        scanId: "skillScanRequests:1",
+        error: fakeLeakyWorkerError(),
+      }),
+    ).resolves.toEqual({ ok: true });
+
+    await expect(
+      recordGitHubSkillScanResultInternalHandler(ctx, {
+        githubSkillScanId: "githubSkillScans:1",
+        scanStatus: "failed",
+        error: fakeLeakyWorkerError(),
+      }),
+    ).resolves.toMatchObject({ ok: true });
+
+    const requestError = String(records.get("skillScanRequests:1")?.lastError);
+    const githubScanError = String(records.get("githubSkillScans:1")?.lastError);
+    expectNoLeakedWorkerErrorSecrets(requestError);
+    expectNoLeakedWorkerErrorSecrets(githubScanError);
+  });
+
+  it("redacts signed artifact URLs from persisted worker failure fields", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const leakyError =
+      `Download failed 403: https://signed.example.invalid/file?token=secret&X-Amz-Signature=abc123 ` +
+      `Authorization: Bearer abc OPENAI_API_KEY=openai-runtime-secret ` +
+      `GITHUB_TOKEN=github-runtime-secret CONVEX_DEPLOY_KEY=convex-deploy-secret ` +
+      "api_key=plugin-api-token";
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+      "error" in args ? { ok: true, retry: false } : { ok: true },
+    );
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "skillScanRequest",
+      },
+      scanRequest: {
+        _id: "skillScanRequests:1",
+        sourceKind: "github",
+        githubSkillScanId: "githubSkillScans:1",
+      },
+      githubScan: {
+        _id: "githubSkillScans:1",
+        skillId: "skills:1",
+        contentHash: "content-hash",
+      },
+    }));
+
+    await failCodexScanJobHandler(
+      { runQuery, runMutation },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        error: leakyError,
+      },
+    );
+
+    const persistedErrorArgs = runMutation.mock.calls
+      .map(([, args]) => args)
+      .filter((args): args is Record<string, unknown> => {
+        return typeof args === "object" && args !== null && "error" in args;
+      });
+    expect(persistedErrorArgs).toHaveLength(3);
+    for (const args of persistedErrorArgs) {
+      expect(args.error).toBeTypeOf("string");
+      const error = String(args.error);
+      expect(error).toContain("Download failed 403");
+      expect(error).not.toContain("https://");
+      expect(error).not.toContain("signed.example.invalid");
+      expect(error).not.toContain("token=secret");
+      expect(error).not.toContain("X-Amz-Signature");
+      expect(error).not.toContain("Authorization");
+      expect(error).not.toContain("Bearer abc");
+      expect(error).not.toContain("openai-runtime-secret");
+      expect(error).not.toContain("github-runtime-secret");
+      expect(error).not.toContain("convex-deploy-secret");
+      expect(error).not.toContain("plugin-api-token");
+      expect(error).toContain("OPENAI_API_KEY=[redacted-secret]");
+      expect(error).toContain("GITHUB_TOKEN=[redacted-secret]");
+      expect(error).toContain("CONVEX_DEPLOY_KEY=[redacted-secret]");
+      expect(error).toContain("api_key=[redacted-secret]");
+    }
+
+    const llmAnalyses = runMutation.mock.calls
+      .map(([, args]) => {
+        if (!args || typeof args !== "object" || !("llmAnalysis" in args)) return undefined;
+        const analysis = args.llmAnalysis;
+        if (!analysis || typeof analysis !== "object" || !("findings" in analysis)) {
+          return undefined;
+        }
+        return typeof analysis.findings === "string" ? analysis : undefined;
+      })
+      .filter((analysis) => analysis !== undefined);
+    for (const analysis of llmAnalyses) {
+      expect(analysis?.findings).toContain("Download failed 403");
+      expect(analysis?.findings).not.toContain("https://");
+      expect(analysis?.findings).not.toContain("signed.example.invalid");
+      expect(analysis?.findings).not.toContain("token=secret");
+      expect(analysis?.findings).not.toContain("X-Amz-Signature");
+      expect(analysis?.findings).not.toContain("Authorization");
+      expect(analysis?.findings).not.toContain("Bearer abc");
+      expect(analysis?.findings).not.toContain("openai-runtime-secret");
+      expect(analysis?.findings).not.toContain("github-runtime-secret");
+      expect(analysis?.findings).not.toContain("convex-deploy-secret");
+      expect(analysis?.findings).not.toContain("plugin-api-token");
+      expect(analysis?.findings).toContain("OPENAI_API_KEY=[redacted-secret]");
+      expect(analysis?.findings).toContain("GITHUB_TOKEN=[redacted-secret]");
+      expect(analysis?.findings).toContain("CONVEX_DEPLOY_KEY=[redacted-secret]");
+      expect(analysis?.findings).toContain("api_key=[redacted-secret]");
+    }
+  });
+
+  it("redacts signed artifact URLs from package failure analysis fields", async () => {
+    vi.stubEnv("SECURITY_SCAN_WORKER_TOKEN", "worker-secret");
+
+    const runMutation = vi.fn(async (_ref: unknown, args: Record<string, unknown>) =>
+      "error" in args ? { ok: true, retry: false } : { ok: true },
+    );
+    const runQuery = vi.fn(async () => ({
+      job: {
+        _id: "securityScanJobs:1",
+        targetKind: "packageRelease",
+      },
+      release: {
+        _id: "packageReleases:1",
+      },
+    }));
+
+    await failCodexScanJobHandler(
+      { runMutation, runQuery },
+      {
+        token: "worker-secret",
+        jobId: "securityScanJobs:1",
+        leaseToken: "lease-token",
+        error: fakeLeakyWorkerError(),
+      },
+    );
+
+    const packageFailureCall = runMutation.mock.calls.find(([, args]) => {
+      return args && typeof args === "object" && "releaseId" in args && "llmAnalysis" in args;
+    });
+    expect(packageFailureCall).toBeDefined();
+    const llmAnalysis = packageFailureCall?.[1].llmAnalysis as { findings?: string } | undefined;
+    expect(llmAnalysis?.findings).toBeTypeOf("string");
+    expectNoLeakedWorkerErrorSecrets(llmAnalysis?.findings ?? "");
   });
 
   it("preserves a prior blocking skill ClawScan verdict when worker retries are exhausted", async () => {

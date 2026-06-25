@@ -175,6 +175,9 @@ const config = defineConfig({
       "convex/browser": convexBrowserPath,
       "convex/values": convexValuesPath,
       "@convex-dev/auth/react": convexAuthReactPath,
+      // MarkdownPreview uses Shiki's JavaScript engine; keep rehype from
+      // selecting the WASM-only `shiki/core` export condition.
+      "shiki/core": "shiki/dist/core.mjs",
     },
     // Use native Vite tsconfig paths resolution instead of the plugin
     tsconfigPaths: true,

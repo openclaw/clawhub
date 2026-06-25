@@ -1,4 +1,5 @@
 import { expect, test } from "@playwright/test";
+import { stubExternalMediaInVitePreview } from "./helpers/externalMedia";
 import { expectHealthyPage, trackRuntimeErrors } from "./helpers/runtimeErrors";
 
 test("public navigation routes render without runtime errors", async ({ browser }) => {
@@ -9,6 +10,7 @@ test("public navigation routes render without runtime errors", async ({ browser 
 
   for (const route of routes) {
     const page = await browser.newPage();
+    await stubExternalMediaInVitePreview(page);
     const errors = trackRuntimeErrors(page);
 
     await page.goto(route.path, { waitUntil: "domcontentloaded" });
@@ -19,6 +21,7 @@ test("public navigation routes render without runtime errors", async ({ browser 
 });
 
 test("signed-out publish entry renders", async ({ page }) => {
+  await stubExternalMediaInVitePreview(page);
   const errors = trackRuntimeErrors(page);
 
   await page.goto("/upload", { waitUntil: "domcontentloaded" });

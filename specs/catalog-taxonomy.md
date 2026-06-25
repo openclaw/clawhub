@@ -32,8 +32,13 @@
 ## Topics
 
 - Authors may supply up to five topics through CLI or UI publish and edit surfaces.
-- Stored topics preserve author-facing labels. Lookup uses normalized topic slugs.
-- Reserved platform trust labels such as `official`, `featured`, and `verified` are rejected.
+- UI topic inputs commit new values as normalized lowercase hyphenated slugs so saved metadata
+  matches browse URLs. Existing stored labels remain unchanged until an author replaces them.
+  Lookup always uses normalized topic slugs.
+- Reserved platform trust labels such as `official`, `officials`, `featured`, `verified`,
+  `trusted`, `curated`, and brand or channel slugs such as `openclaw`, `clawhub`, and `community`
+  are rejected. The canonical list lives in `RESERVED_CATALOG_TOPIC_SLUGS` inside
+  `clawhub-schema`.
 - Topics are separate from release tags and remain available to search.
 - Browse sidebars do not enumerate the global topic space because it is open-ended and
   author-facing labels may use different casing. Selecting a category reveals at most five

@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
+import {
+  createThemeModeCookie,
+  getThemeModeFromCookieHeader,
+  normalizeThemeMode,
+  VALID_THEME_MODES,
+  type ThemeMode,
+} from "./themeCookie";
 
 type ThemeName = "claw";
-type ThemeMode = "system" | "light" | "dark";
 type ResolvedTheme = "light" | "dark";
 
 type ThemeSelection = {
@@ -20,7 +26,6 @@ const LEGACY_CUSTOM_THEME_STYLE_ID = "clawhub-custom-theme-style";
 const LEGACY_CUSTOM_THEME_FONT_LINK_ID = "clawhub-custom-theme-fonts";
 
 const VALID_THEME_NAMES = new Set<ThemeName>(["claw"]);
-const VALID_THEME_MODES = new Set<ThemeMode>(["system", "light", "dark"]);
 const DEFAULT_THEME_SELECTION: ThemeSelection = { theme: "claw", mode: "system" };
 const LEGACY_VISUAL_STORAGE_KEYS = [LEGACY_CUSTOM_THEME_KEY, LEGACY_PREFERENCES_KEY] as const;
 const LEGACY_VISUAL_COOKIE_KEYS = [
@@ -57,6 +62,7 @@ function persistThemeSelection(selection: ThemeSelection) {
   window.localStorage.setItem(THEME_SELECTION_KEY, JSON.stringify(selection));
   window.localStorage.setItem(THEME_KEY, selection.mode);
   window.localStorage.setItem(THEME_NAME_KEY, selection.theme);
+  document.cookie = createThemeModeCookie(selection.mode);
 }
 
 function safeGetLocalStorageItem(key: string): string | null {
@@ -189,7 +195,13 @@ export function getStoredThemeSelection(): ThemeSelection {
     return parseThemeSelection(legacy, undefined);
   }
 
-  return DEFAULT_THEME_SELECTION;
+  return {
+    theme: "claw",
+    mode:
+      typeof document === "undefined"
+        ? DEFAULT_THEME_SELECTION.mode
+        : getThemeModeFromCookieHeader(document.cookie),
+  };
 }
 
 export function getStoredTheme(): ThemeMode {
@@ -201,6 +213,7 @@ export function getStoredThemeName(): ThemeName {
 }
 
 function resolveMode(mode: ThemeMode): ResolvedTheme {
+  mode = normalizeThemeMode(mode);
   if (mode !== "system") return mode;
   if (typeof window === "undefined" || typeof window.matchMedia !== "function") return "light";
   return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
