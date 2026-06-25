@@ -193,15 +193,12 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Short summary") as HTMLTextAreaElement).value).toBe(
+      expect((screen.getByLabelText("Summary") as HTMLTextAreaElement).value).toBe(
         "Automate recurring workflows.",
       );
-      expect(screen.getByText(/^Make it discoverable!$/i)).toBeTruthy();
-      expect(screen.getByText(/Imported from your SKILL\.md/i)).toBeTruthy();
-      expect(screen.getByText(/where people decide whether to try your skill/i)).toBeTruthy();
-      expect(screen.getByText(/For better discovery/i)).toBeTruthy();
-      expect(screen.getByText(/Say what it does/i)).toBeTruthy();
-      expect(screen.getByText(/Edits here only affect ClawHub/i)).toBeTruthy();
+      expect(screen.getByRole("note").textContent).toContain("Pulled from your SKILL.md.");
+      expect(screen.getByRole("note").textContent).toContain("cards and search");
+      expect(screen.queryByText(/Imported from your SKILL\.md/i)).toBeNull();
     });
   });
 
@@ -217,7 +214,7 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
 
     await waitFor(() => {
-      const summary = screen.getByLabelText("Short summary") as HTMLTextAreaElement;
+      const summary = screen.getByLabelText("Summary") as HTMLTextAreaElement;
       expect(summary.value).toHaveLength(300);
       expect(summary.value).toBe("a".repeat(300));
     });
@@ -234,13 +231,13 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [file] } });
 
     await waitFor(() => {
-      expect(screen.getByText(/^Make it discoverable!$/i)).toBeTruthy();
+      expect(screen.getByRole("note").textContent).toContain("Pulled from your SKILL.md.");
     });
 
     fireEvent.click(screen.getByRole("button", { name: "Dismiss summary recommendation" }));
 
-    expect(screen.queryByText(/^Make it discoverable!$/i)).toBeNull();
-    expect((screen.getByLabelText("Short summary") as HTMLTextAreaElement).value).toBe(
+    expect(screen.queryByRole("note")).toBeNull();
+    expect((screen.getByLabelText("Summary") as HTMLTextAreaElement).value).toBe(
       "Automate recurring workflows.",
     );
   });
@@ -254,16 +251,16 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [firstFile] } });
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Short summary") as HTMLTextAreaElement).value).toBe(
+      expect((screen.getByLabelText("Summary") as HTMLTextAreaElement).value).toBe(
         "First description.",
       );
     });
 
-    fireEvent.change(screen.getByLabelText("Short summary"), {
+    fireEvent.change(screen.getByLabelText("Summary"), {
       target: { value: "Custom summary." },
     });
 
-    expect(screen.queryByText(/^Make it discoverable!$/i)).toBeNull();
+    expect(screen.queryByRole("note")).toBeNull();
 
     const secondFile = new File(
       ["---\ndescription: Second description.\n---\n# Second"],
@@ -273,7 +270,7 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [secondFile] } });
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Short summary") as HTMLTextAreaElement).value).toBe(
+      expect((screen.getByLabelText("Summary") as HTMLTextAreaElement).value).toBe(
         "Custom summary.",
       );
     });
@@ -288,12 +285,12 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [firstFile] } });
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Short summary") as HTMLTextAreaElement).value).toBe(
+      expect((screen.getByLabelText("Summary") as HTMLTextAreaElement).value).toBe(
         "First description.",
       );
     });
 
-    fireEvent.change(screen.getByLabelText("Short summary"), {
+    fireEvent.change(screen.getByLabelText("Summary"), {
       target: { value: "Custom summary." },
     });
 
@@ -305,10 +302,10 @@ describe("Upload route", () => {
     fireEvent.change(screen.getByTestId("upload-input"), { target: { files: [secondFile] } });
 
     await waitFor(() => {
-      expect((screen.getByLabelText("Short summary") as HTMLTextAreaElement).value).toBe(
+      expect((screen.getByLabelText("Summary") as HTMLTextAreaElement).value).toBe(
         "Second description.",
       );
-      expect(screen.getByText(/^Make it discoverable!$/i)).toBeTruthy();
+      expect(screen.getByRole("note").textContent).toContain("Pulled from your SKILL.md.");
     });
   });
 

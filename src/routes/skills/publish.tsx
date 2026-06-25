@@ -1123,7 +1123,7 @@ export function Upload() {
                 />
               </div>
 
-              <div className="border-t border-[color:var(--line)] pt-5">
+              <div>
                 <CatalogMetadataFields
                   kind="skill"
                   categories={categories}
