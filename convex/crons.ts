@@ -20,6 +20,20 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
+    "package-trending-leaderboard",
+    { minutes: 60 },
+    internal.packageLeaderboards.rebuildTrendingLeaderboardAction,
+    { limit: 200 },
+  );
+
+  crons.interval(
+    "recommendation-score-refresh",
+    { hours: 6 },
+    internal.statsMaintenance.runRecommendationScoreBackfillInternal,
+    { batchSize: 500, maxBatches: 50 },
+  );
+
+  crons.interval(
     "skill-stats-backfill",
     { hours: 6 },
     internal.statsMaintenance.runSkillStatBackfillInternal,

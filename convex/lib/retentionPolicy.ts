@@ -134,6 +134,10 @@ export const RETENTION_POLICIES = {
     retention: "Processed and older than 7 days.",
   }),
   packageDailyStats: permanent("Daily aggregate package stats are product analytics."),
+  packageLeaderboards: derived(
+    "Package trending snapshots can be rebuilt from packageDailyStats.",
+    "packageDailyStats",
+  ),
   packageTrustedPublishers: permanent("Trusted publishing configuration."),
   packagePublishTokens: ephemeral("Package publish tokens expire and can be revoked.", {
     expirationField: "expiresAt",

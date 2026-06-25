@@ -93,11 +93,17 @@ export function extractDigestFields(skill: Doc<"skills">): SkillSearchDigestFiel
     statsStars,
     statsInstallsCurrent,
     statsInstallsAllTime,
-    recommendedScore: computeRecommendationScore({
-      downloads: statsDownloads,
-      installs: statsInstallsAllTime,
-      stars: statsStars,
-    }),
+    recommendedScore: computeRecommendationScore(
+      {
+        downloads: statsDownloads,
+        installs: statsInstallsAllTime,
+        stars: statsStars,
+      },
+      {
+        createdAt: skill.createdAt,
+        updatedAt: skill.updatedAt,
+      },
+    ),
     recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
     skillId: skill._id,
     normalizedSlug: normalizeSkillSearchText(skill.slug),

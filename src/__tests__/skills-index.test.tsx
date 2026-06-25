@@ -87,7 +87,7 @@ describe("SkillsIndex", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Skill view" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Top", "Most starred", "Featured"]);
+    expect(sortOptions).toEqual(["All", "Trending", "Top", "Most starred", "Featured"]);
   });
 
   it("offers Top without exposing downloads as a browse view", async () => {
@@ -108,7 +108,7 @@ describe("SkillsIndex", () => {
     fireEvent.click(screen.getByRole("combobox", { name: "Sort" }));
     const sortOptions = screen.getAllByRole("option").map((option) => option.textContent);
 
-    expect(views).toEqual(["All", "Top", "Most starred", "Featured"]);
+    expect(views).toEqual(["All", "Trending", "Top", "Most starred", "Featured"]);
     expect(sortOptions).toEqual(["Recently updated", "Newest", "Name"]);
   });
 

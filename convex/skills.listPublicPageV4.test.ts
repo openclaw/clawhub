@@ -146,8 +146,8 @@ describe("skills.listPublicPageV4", () => {
 
     expect(result.page.map((entry) => entry.skill.slug)).toEqual([
       "downloads-skill",
-      "updated-skill",
       "installs-skill",
+      "updated-skill",
       "stars-skill",
     ]);
   });

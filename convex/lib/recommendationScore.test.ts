@@ -44,4 +44,32 @@ describe("recommendationScore", () => {
 
     expect(secondThousand - firstThousand).toBeLessThan(firstThousand);
   });
+
+  it("gives fresh items a bounded discovery boost", () => {
+    const now = Date.UTC(2026, 5, 25);
+    const fresh = computeRecommendationScore(
+      { downloads: 0, installs: 0, stars: 0 },
+      { createdAt: now, updatedAt: now, now },
+    );
+    const stale = computeRecommendationScore(
+      { downloads: 0, installs: 0, stars: 0 },
+      { createdAt: now - 365 * 86_400_000, updatedAt: now - 365 * 86_400_000, now },
+    );
+
+    expect(fresh).toBeGreaterThan(stale);
+    expect(fresh).toBeLessThan(200);
+  });
+
+  it("reduces historical download dominance", () => {
+    const recentInstall = computeRecommendationScore(
+      { downloads: 100, installs: 100, stars: 5 },
+      { updatedAt: Date.UTC(2026, 5, 25), now: Date.UTC(2026, 5, 25) },
+    );
+    const staleDownload = computeRecommendationScore(
+      { downloads: 1_000, installs: 0, stars: 0 },
+      { updatedAt: Date.UTC(2024, 0, 1), now: Date.UTC(2026, 5, 25) },
+    );
+
+    expect(recentInstall).toBeGreaterThan(staleDownload);
+  });
 });

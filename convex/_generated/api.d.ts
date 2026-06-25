@@ -133,6 +133,7 @@ import type * as packageInspectorHttp from "../packageInspectorHttp.js";
 import type * as packageInspectorNode from "../packageInspectorNode.js";
 import type * as packagePublishTokens from "../packagePublishTokens.js";
 import type * as packages from "../packages.js";
+import type * as packageLeaderboards from "../packageLeaderboards.js";
 import type * as publisherAbuse from "../publisherAbuse.js";
 import type * as publisherAbuseDevSeed from "../publisherAbuseDevSeed.js";
 import type * as publishers from "../publishers.js";
@@ -287,6 +288,7 @@ declare const fullApi: ApiFromModules<{
   packageInspectorNode: typeof packageInspectorNode;
   packagePublishTokens: typeof packagePublishTokens;
   packages: typeof packages;
+  packageLeaderboards: typeof packageLeaderboards;
   publisherAbuse: typeof publisherAbuse;
   publisherAbuseDevSeed: typeof publisherAbuseDevSeed;
   publishers: typeof publishers;

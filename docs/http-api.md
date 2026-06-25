@@ -548,7 +548,7 @@ Query params:
 - `family` (optional): `skill`, `code-plugin`, or `bundle-plugin`
 - `channel` (optional): `official`, `community`, or `private`
 - `isOfficial` (optional): `true` or `false`
-- `sort` (optional): `updated` (default), `recommended`, `downloads`, legacy alias `installs`
+- `sort` (optional): `updated` (default), `recommended`, `trending`, `downloads`, legacy alias `installs`
 - `category` (optional): plugin category filter. Supported only when the
   request is scoped to plugin packages (`/api/v1/plugins`,
   `/api/v1/code-plugins`, `/api/v1/bundle-plugins`, or package endpoints with
@@ -598,7 +598,7 @@ Query params:
 - `limit` (optional): integer (1-100)
 - `cursor` (optional): pagination cursor
 - `isOfficial` (optional): `true` or `false`
-- `sort` (optional): `recommended` (default), `downloads`, `updated`, legacy alias `installs`
+- `sort` (optional): `recommended` (default), `trending`, `downloads`, `updated`, legacy alias `installs`
 - `category` (optional): plugin category filter. Current values:
   `channels`, `models`, `memory`, `context`, `voice`, `media`, `web`,
   `tools`, `runtime`, `gateway`, `security`, `other`.
@@ -608,6 +608,10 @@ Legacy v1 filter aliases remain accepted on read endpoints:
 - `mcp-tooling`, `data`, and `automation` resolve to `tools`.
 - `observability` and `deployment` resolve to `gateway`.
 - `dev-tools` resolves to `runtime`.
+
+`trending` is a seven-day install/download leaderboard and does not use all-time totals.
+On the unified `/api/v1/packages` endpoint it is plugin-only; use
+`/api/v1/skills?sort=trending` for the skill catalog.
 
 Legacy aliases are not accepted as stored or author-declared category values.
 

@@ -30,6 +30,7 @@ import {
 
 const SKILLS_VIEW_OPTIONS = [
   { value: "all", label: "All" },
+  { value: "trending", label: "Trending" },
   { value: "top", label: "Top" },
   { value: "stars", label: "Most starred" },
   { value: "featured", label: "Featured" },
@@ -86,11 +87,13 @@ export function SkillsIndex() {
 
   const activeView = model.featuredOnly
     ? "featured"
-    : model.sort === "downloads"
-      ? "top"
-      : model.sort === "stars"
-        ? "stars"
-        : "all";
+    : model.sort === "trending"
+      ? "trending"
+      : model.sort === "downloads"
+        ? "top"
+        : model.sort === "stars"
+          ? "stars"
+          : "all";
   const activeSort = ["updated", "newest", "name"].includes(model.sort) ? model.sort : undefined;
   const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly;
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
@@ -109,6 +112,15 @@ export function SkillsIndex() {
     (value: string) => {
       void navigate({
         search: (prev: SkillsSearchState) => {
+          if (value === "trending") {
+            return {
+              ...prev,
+              sort: "trending",
+              dir: "desc",
+              featured: undefined,
+              highlighted: undefined,
+            };
+          }
           if (value === "top" || value === "stars") {
             const sort = value === "top" ? "downloads" : "stars";
             return {

@@ -1806,7 +1806,24 @@ const packageDailyStats = defineTable({
   downloads: v.number(),
   installs: v.number(),
   updatedAt: v.number(),
-}).index("by_package_day", ["packageId", "day"]);
+})
+  .index("by_package_day", ["packageId", "day"])
+  .index("by_day", ["day"]);
+
+const packageLeaderboards = defineTable({
+  kind: v.string(),
+  generatedAt: v.number(),
+  rangeStartDay: v.number(),
+  rangeEndDay: v.number(),
+  items: v.array(
+    v.object({
+      packageId: v.id("packages"),
+      score: v.number(),
+      installs: v.number(),
+      downloads: v.number(),
+    }),
+  ),
+}).index("by_kind", ["kind", "generatedAt"]);
 
 const packageTrustedPublishers = defineTable({
   packageId: v.id("packages"),
@@ -2914,6 +2931,7 @@ export default defineSchema({
   skillCardGenerationJobs,
   packageStatEvents,
   packageDailyStats,
+  packageLeaderboards,
   packageTrustedPublishers,
   packagePublishTokens,
   packagePublishUploadTickets,

@@ -408,13 +408,13 @@ describe("plugins route", () => {
       expect.objectContaining({
         cursor: "cursor:current",
         limit: 25,
-        sort: "downloads",
+        sort: "recommended",
       }),
     );
     expect(fetchPluginCatalogMock.mock.calls[0]?.[0]).not.toHaveProperty("family");
   });
 
-  it("uses downloads as the plugin browse ranking", async () => {
+  it("uses recommendation ranking as the plugin browse default", async () => {
     fetchPluginCatalogMock.mockResolvedValue({ items: [], nextCursor: null });
     const { loadPluginsPageData } = await import("../routes/plugins/index");
 
@@ -422,7 +422,7 @@ describe("plugins route", () => {
 
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        sort: "downloads",
+        sort: "recommended",
         limit: 25,
       }),
     );
@@ -434,7 +434,7 @@ describe("plugins route", () => {
 
     await loadPluginsPageData({
       q: "security",
-      sort: "downloads",
+      sort: "recommended",
       cursor: "cursor:search",
     });
 
@@ -453,12 +453,12 @@ describe("plugins route", () => {
     const { loadPluginsPageData } = await import("../routes/plugins/index");
 
     await loadPluginsPageData({
-      sort: "downloads",
+      sort: "recommended",
     });
 
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
-        sort: "downloads",
+        sort: "recommended",
         limit: 25,
       }),
     );
@@ -578,7 +578,7 @@ describe("plugins route", () => {
       expect.objectContaining({
         category: "security",
         cursor: "cursor:next",
-        sort: "downloads",
+        sort: "recommended",
       }),
     );
     expect(navigateMock).not.toHaveBeenCalled();
@@ -927,7 +927,7 @@ describe("plugins route", () => {
     expect(fetchPluginCatalogMock).toHaveBeenCalledWith(
       expect.objectContaining({
         isOfficial: true,
-        sort: "downloads",
+        sort: "recommended",
         limit: 25,
       }),
     );
@@ -959,7 +959,7 @@ describe("plugins route", () => {
       family: undefined,
       cursor: undefined,
       featured: true,
-      sort: "downloads",
+      sort: "recommended",
     });
   });
 
@@ -982,7 +982,7 @@ describe("plugins route", () => {
       cursor: undefined,
       family: undefined,
       featured: undefined,
-      sort: "downloads",
+      sort: "recommended",
     });
   });
 
@@ -1318,7 +1318,7 @@ describe("plugins route", () => {
       featured: true,
       cursor: undefined,
       family: undefined,
-      sort: "downloads",
+      sort: "recommended",
     });
   });
 
@@ -1339,7 +1339,7 @@ describe("plugins route", () => {
       cursor: undefined,
       family: undefined,
       featured: undefined,
-      sort: "downloads",
+      sort: undefined,
     });
   });
 
@@ -1443,7 +1443,7 @@ describe("plugins route", () => {
     const sortOptions = Array.from(
       screen.getByRole("radiogroup", { name: "Sort order" }).querySelectorAll('[role="radio"]'),
     ).map((option) => option.textContent);
-    expect(sortOptions).toEqual(["All", "Verified", "Updated"]);
+    expect(sortOptions).toEqual(["All", "Trending", "Verified", "Updated"]);
     expect(screen.queryByRole("radio", { name: "Most downloaded" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Newest" })).toBeNull();
     expect(screen.queryByRole("radio", { name: "Name" })).toBeNull();

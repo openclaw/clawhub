@@ -310,7 +310,13 @@ async function getOptionalViewerUserIdForRequest(ctx: ActionCtx, request: Reques
 const PACKAGE_FAMILY_VALUES = ["skill", "code-plugin", "bundle-plugin"] as const;
 const PLUGIN_EXPORT_FAMILY_VALUES = ["code-plugin", "bundle-plugin"] as const;
 const PACKAGE_CHANNEL_VALUES = ["official", "community", "private"] as const;
-const PACKAGE_LIST_SORT_VALUES = ["updated", "recommended", "downloads", "installs"] as const;
+const PACKAGE_LIST_SORT_VALUES = [
+  "updated",
+  "recommended",
+  "downloads",
+  "installs",
+  "trending",
+] as const;
 const PACKAGE_SCAN_STATUS_VALUES = [
   "clean",
   "suspicious",
@@ -1587,6 +1593,13 @@ async function listPackages(
       rate.headers,
     );
   }
+  if (effectiveSort === "trending" && includeSkills) {
+    return text(
+      "Trending sort is only supported for plugin package endpoints; use /api/v1/skills?sort=trending for skills.",
+      400,
+      rate.headers,
+    );
+  }
 
   if (effectiveFamily === "skill") {
     const cursor = isLegacyInstallSortRequest
@@ -1731,6 +1744,32 @@ async function listPackages(
       {
         items,
         nextCursor: isDoneAll ? null : encodeUnifiedCatalogCursor(nextState),
+      },
+      200,
+      rate.headers,
+    );
+  }
+
+  if (!effectiveFamily && options?.pluginFamilies?.length && effectiveSort === "trending") {
+    const result = await runQueryRef<{
+      page: CatalogListItem[];
+      isDone: boolean;
+      continueCursor: string | null;
+    }>(ctx, internalRefs.packages.listPageForViewerInternal, {
+      channel: channelParam.value,
+      isOfficial: isOfficial.value,
+      highlightedOnly: highlightedOnly || undefined,
+      category,
+      topic,
+      excludedScanStatuses: excludedScanStatuses.value,
+      sort: "trending",
+      viewerUserId: viewerUserId ?? undefined,
+      paginationOpts: { cursor: rawCursor, numItems: limit },
+    });
+    return json(
+      {
+        items: result.page,
+        nextCursor: result.isDone ? null : result.continueCursor,
       },
       200,
       rate.headers,

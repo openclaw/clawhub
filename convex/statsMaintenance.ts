@@ -408,19 +408,31 @@ function buildSkillStatPatch(skill: Doc<"skills">) {
 }
 
 function computeSkillDigestRecommendationScore(digest: Doc<"skillSearchDigest">) {
-  return computeRecommendationScore({
-    downloads: digest.statsDownloads ?? digest.stats.downloads,
-    installs: digest.statsInstallsAllTime ?? digest.stats.installsAllTime ?? 0,
-    stars: digest.statsStars ?? digest.stats.stars,
-  });
+  return computeRecommendationScore(
+    {
+      downloads: digest.statsDownloads ?? digest.stats.downloads,
+      installs: digest.statsInstallsAllTime ?? digest.stats.installsAllTime ?? 0,
+      stars: digest.statsStars ?? digest.stats.stars,
+    },
+    {
+      createdAt: digest.createdAt,
+      updatedAt: digest.updatedAt,
+    },
+  );
 }
 
 function computePackageRecommendationScore(pkg: Doc<"packages">) {
-  return computeRecommendationScore({
-    downloads: pkg.stats.downloads,
-    installs: pkg.stats.installs,
-    stars: pkg.stats.stars,
-  });
+  return computeRecommendationScore(
+    {
+      downloads: pkg.stats.downloads,
+      installs: pkg.stats.installs,
+      stars: pkg.stats.stars,
+    },
+    {
+      createdAt: pkg.createdAt ?? pkg._creationTime,
+      updatedAt: pkg.updatedAt,
+    },
+  );
 }
 
 /**

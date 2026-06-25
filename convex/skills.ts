@@ -5848,9 +5848,23 @@ export const listPublicTrendingPage = query({
   args: {
     limit: v.optional(v.number()),
     nonSuspiciousOnly: v.optional(v.boolean()),
+    categorySlug: v.optional(v.string()),
+    topic: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const limit = clampInt(args.limit ?? 25, 1, MAX_PUBLIC_LIST_LIMIT);
+    const normalizedCategorySlug = args.categorySlug?.trim().toLowerCase();
+    const categorySlug =
+      args.categorySlug === undefined
+        ? undefined
+        : normalizedCategorySlug && isSkillCategorySlug(normalizedCategorySlug)
+          ? normalizedCategorySlug
+          : null;
+    if (args.categorySlug !== undefined && categorySlug === null) {
+      return { items: [], nextCursor: null };
+    }
+    const topic = args.topic === undefined ? undefined : normalizeCatalogTopic(args.topic);
+    if (args.topic !== undefined && !topic) return { items: [], nextCursor: null };
     const kind = args.nonSuspiciousOnly
       ? TRENDING_NON_SUSPICIOUS_LEADERBOARD_KIND
       : TRENDING_LEADERBOARD_KIND;
@@ -5870,6 +5884,8 @@ export const listPublicTrendingPage = query({
         .unique();
       if (!digest) continue;
       if (args.nonSuspiciousOnly && digest.isSuspicious) continue;
+      if (categorySlug && !resolveStoredSkillCategories(digest).includes(categorySlug)) continue;
+      if (topic && !getCatalogTopicSlugs(digest.topics).includes(topic)) continue;
       const item = await buildPublicSkillEntryFromDigest(ctx, digest);
       if (!item) continue;
       items.push(item);
@@ -6965,11 +6981,17 @@ function readDigestRecommendationScore(digest: Doc<"skillSearchDigest">): number
     (digest.recommendedScoreVersion === RECOMMENDATION_SCORE_VERSION
       ? digest.recommendedScore
       : undefined) ??
-    computeRecommendationScore({
-      downloads: readDigestRankStat(digest, "downloads"),
-      installs: readDigestRankStat(digest, "installsAllTime"),
-      stars: readDigestRankStat(digest, "stars"),
-    })
+    computeRecommendationScore(
+      {
+        downloads: readDigestRankStat(digest, "downloads"),
+        installs: readDigestRankStat(digest, "installsAllTime"),
+        stars: readDigestRankStat(digest, "stars"),
+      },
+      {
+        createdAt: digest.createdAt,
+        updatedAt: digest.updatedAt,
+      },
+    )
   );
 }
 

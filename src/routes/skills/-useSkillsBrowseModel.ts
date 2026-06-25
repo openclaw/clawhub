@@ -87,7 +87,7 @@ export function useSkillsBrowseModel({
       : requestedSort === "recommended" && hasQuery
         ? "relevance"
         : (requestedSort ?? (hasQuery ? "relevance" : "recommended"));
-  const listSort = toListSort(sort);
+  const listSort = sort === "trending" ? undefined : toListSort(sort);
   const dir = sort === "relevance" ? "desc" : parseDir(search.dir, sort);
   const searchKey = hasQuery
     ? `${trimmedQuery}::${featuredOnly ? "1" : "0"}::${activeCategory?.slug ?? ""}::${activeTopic ?? ""}`
@@ -105,6 +105,20 @@ export function useSkillsBrowseModel({
       let pageCursor = cursor;
       let consecutiveEmptyPages = 0;
       try {
+        if (sort === "trending") {
+          const result = await convexHttp.query(api.skills.listPublicTrendingPage, {
+            limit: pageSize,
+            nonSuspiciousOnly: true,
+            categorySlug: activeCategory?.slug,
+            topic: activeTopic,
+          });
+          if (generation !== fetchGeneration.current) return;
+          setListResults(result.items);
+          setListCursor(null);
+          setListAutoLoadPaused(false);
+          setListStatus("done");
+          return;
+        }
         while (true) {
           const result = await convexHttp.query(api.skills.listPublicPageV4, {
             cursor: pageCursor ?? undefined,
@@ -158,6 +172,7 @@ export function useSkillsBrowseModel({
       excludeCategoryKeywords,
       featuredOnly,
       listSort,
+      sort,
     ],
   );
 

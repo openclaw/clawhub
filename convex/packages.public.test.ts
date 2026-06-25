@@ -6446,7 +6446,8 @@ describe("packages public queries", () => {
         isOfficial: false,
         tags: {},
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-        recommendedScore: 0,
+        recommendedScore: 170,
+        recommendedScoreVersion: 4,
       }),
     );
     expect(insert).not.toHaveBeenCalledWith("packageReleases", expect.anything());

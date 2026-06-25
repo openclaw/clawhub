@@ -228,6 +228,14 @@ function comparePopularityStats(a: PopularityStats, b: PopularityStats) {
   return b.stars - a.stars || (b.installsAllTime ?? 0) - (a.installsAllTime ?? 0);
 }
 
+function compareSkillTrustAndUsage(a: SkillSearchEntry, b: SkillSearchEntry) {
+  return (
+    Number(Boolean(b.owner?.official)) - Number(Boolean(a.owner?.official)) ||
+    comparePopularityStats(a.skill.stats, b.skill.stats) ||
+    (b.skill.stats.downloads ?? 0) - (a.skill.stats.downloads ?? 0)
+  );
+}
+
 function mergeUniqueBySkillId(primary: SkillSearchEntry[], fallback: SkillSearchEntry[]) {
   if (fallback.length === 0) return primary;
   const out = [...primary];
@@ -488,7 +496,7 @@ export const searchSkills: ReturnType<typeof action> = action({
         (a, b) =>
           a.rankTier - b.rankTier ||
           b.score - a.score ||
-          comparePopularityStats(a.skill.stats, b.skill.stats) ||
+          compareSkillTrustAndUsage(a, b) ||
           b.skill.updatedAt - a.skill.updatedAt,
       )
       .slice(0, limit);

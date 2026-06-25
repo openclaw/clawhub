@@ -117,6 +117,7 @@ import { matchesAllTokens, matchesExploratoryTokenPrefixes, tokenize } from "./l
 import { hashSkillFiles } from "./lib/skills";
 import { buildDeterministicPackageZip } from "./lib/skillZip";
 import { runStaticPublishScan } from "./lib/staticPublishScan";
+import { PACKAGE_TRENDING_LEADERBOARD_KIND } from "./packageLeaderboards";
 import schema from "./schema";
 
 const MAX_PUBLIC_LIST_PAGE_SIZE = 200;
@@ -150,17 +151,26 @@ const INITIAL_PACKAGE_VT_SCAN_DELAY_MS = 30_000;
 const PLUGIN_EXPORT_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
 const GET_PAGE_TIEBREAKER_FIELD_COUNT = 2;
 
-function computePackageRecommendationScore(stats: Doc<"packages">["stats"]) {
-  return computeRecommendationScore({
-    downloads: stats.downloads,
-    installs: stats.installs,
-    stars: stats.stars,
-  });
+function computePackageRecommendationScore(
+  stats: Doc<"packages">["stats"],
+  context?: { createdAt?: number; updatedAt?: number; now?: number },
+) {
+  return computeRecommendationScore(
+    {
+      downloads: stats.downloads,
+      installs: stats.installs,
+      stars: stats.stars,
+    },
+    context,
+  );
 }
 
-function computePackageRecommendationPatch(stats: Doc<"packages">["stats"]) {
+function computePackageRecommendationPatch(
+  stats: Doc<"packages">["stats"],
+  context?: { createdAt?: number; updatedAt?: number; now?: number },
+) {
   return {
-    recommendedScore: computePackageRecommendationScore(stats),
+    recommendedScore: computePackageRecommendationScore(stats, context),
     recommendedScoreVersion: RECOMMENDATION_SCORE_VERSION,
   };
 }
@@ -901,7 +911,7 @@ type PublicPageCursorState = {
   pageSize: number | null;
   done: boolean;
   mode?: "packages" | "digest";
-  sort?: "updated" | "downloads" | "recommended" | "installs";
+  sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
   packageIndex?: "family-official-downloads";
 };
 const PUBLIC_PAGE_CURSOR_PREFIX = "pkgpage:";
@@ -1548,7 +1558,8 @@ function decodePublicPageCursor(raw: string | null | undefined): PublicPageCurso
         parsed.sort === "updated" ||
         parsed.sort === "downloads" ||
         parsed.sort === "recommended" ||
-        parsed.sort === "installs"
+        parsed.sort === "installs" ||
+        parsed.sort === "trending"
           ? parsed.sort
           : undefined,
       packageIndex:
@@ -1683,12 +1694,30 @@ function packageSearchMatch(
 }
 
 function comparePackageSearchMatches<
-  T extends PackageSearchMatch & { package: Pick<PackageDigestLike, "isOfficial" | "updatedAt"> },
+  T extends PackageSearchMatch & {
+    package: {
+      isOfficial: boolean;
+      updatedAt: number;
+      verificationTier?: PackageDigestLike["verificationTier"] | null;
+      stats?: { downloads: number; installs: number; stars: number } | null;
+    };
+  },
 >(a: T, b: T) {
+  const verificationRank = (tier: PackageDigestLike["verificationTier"] | null) => {
+    if (tier === "rebuild-verified") return 4;
+    if (tier === "provenance-verified") return 3;
+    if (tier === "source-linked") return 2;
+    if (tier === "structural") return 1;
+    return 0;
+  };
   return (
     a.rankTier - b.rankTier ||
     b.score - a.score ||
     Number(b.package.isOfficial) - Number(a.package.isOfficial) ||
+    verificationRank(b.package.verificationTier) - verificationRank(a.package.verificationTier) ||
+    (b.package.stats?.stars ?? 0) - (a.package.stats?.stars ?? 0) ||
+    (b.package.stats?.installs ?? 0) - (a.package.stats?.installs ?? 0) ||
+    (b.package.stats?.downloads ?? 0) - (a.package.stats?.downloads ?? 0) ||
     b.package.updatedAt - a.package.updatedAt
   );
 }
@@ -1888,7 +1917,7 @@ function buildPackagePluginCategoryDigestQuery(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    sort?: "updated" | "downloads" | "recommended" | "installs";
+    sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
   },
 ) {
   const family = args.family;
@@ -2114,7 +2143,7 @@ function buildPackageTopicDigestQuery(
     family?: PackageFamily;
     channel?: PackageChannel;
     isOfficial?: boolean;
-    sort?: "updated" | "downloads" | "recommended" | "installs";
+    sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
   },
 ) {
   const family = args.family;
@@ -2291,7 +2320,7 @@ async function mayHaveVisiblePackageCategoryDigest(
     category: PluginCategorySlug;
     topic?: string;
     excludedScanStatuses?: PackageListScanStatus[];
-    sort?: "updated" | "downloads" | "recommended" | "installs";
+    sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
     viewerUserId?: Id<"users">;
   },
 ) {
@@ -2337,7 +2366,7 @@ async function takeVisiblePackageCategoryDigestPage(
     category: PluginCategorySlug;
     topic?: string;
     excludedScanStatuses?: PackageListScanStatus[];
-    sort?: "updated" | "downloads" | "recommended" | "installs";
+    sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
     viewerUserId?: Id<"users">;
     numItems: number;
   },
@@ -2440,7 +2469,7 @@ async function fetchHighlightedPackagePage(
     category?: string;
     topic?: string;
     officialFirst?: boolean;
-    sort?: "updated" | "downloads" | "recommended" | "installs";
+    sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
     viewerUserId?: Id<"users">;
     numItems: number;
   },
@@ -3062,6 +3091,7 @@ export const listPublicPage = query({
         v.literal("downloads"),
         v.literal("recommended"),
         v.literal("installs"),
+        v.literal("trending"),
       ),
     ),
     paginationOpts: paginationOptsValidator,
@@ -3539,6 +3569,7 @@ export const listPageForViewerInternal = internalQuery({
         v.literal("downloads"),
         v.literal("recommended"),
         v.literal("installs"),
+        v.literal("trending"),
       ),
     ),
     viewerUserId: v.optional(v.id("users")),
@@ -3592,7 +3623,7 @@ async function listPackagePageImpl(
     topic?: string;
     officialFirst?: boolean;
     excludedScanStatuses?: PackageListScanStatus[];
-    sort?: "updated" | "downloads" | "recommended" | "installs";
+    sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
@@ -3613,6 +3644,45 @@ async function listPackagePageImpl(
   const hasCatalogMetadataFilter = Boolean(category || topic);
   if (args.topic !== undefined && !topic) {
     return { page: [], isDone: true, continueCursor: "" };
+  }
+
+  if (args.sort === "trending") {
+    const leaderboard = await ctx.db
+      .query("packageLeaderboards")
+      .withIndex("by_kind", (q) => q.eq("kind", PACKAGE_TRENDING_LEADERBOARD_KIND))
+      .order("desc")
+      .first();
+    if (!leaderboard) return { page: [], isDone: true, continueCursor: "" };
+
+    const cursorState = decodePublicPageCursor(args.paginationOpts.cursor);
+    const startIndex = cursorState.sort === "trending" ? cursorState.offset : 0;
+    const page: PublicPackageListItem[] = [];
+    let nextOffset = startIndex;
+    for (let index = startIndex; index < leaderboard.items.length; index += 1) {
+      const entry = leaderboard.items[index];
+      nextOffset = index + 1;
+      const pkg = await ctx.db.get(entry.packageId);
+      if (!pkg || pkg.softDeletedAt) continue;
+      if (!(await canViewerReadPackage(ctx, pkg, viewerUserId, membershipCache))) continue;
+      if (!packageMatchesListFilters(pkg, { ...args, category, topic })) continue;
+      page.push(await toPublicPackageListItemFromPackage(ctx, pkg));
+      if (page.length >= targetCount) break;
+    }
+    const isDone = nextOffset >= leaderboard.items.length;
+    return {
+      page,
+      isDone,
+      continueCursor: isDone
+        ? ""
+        : encodePublicPageCursor({
+            cursor: null,
+            offset: nextOffset,
+            pageSize: targetCount,
+            done: false,
+            mode: "packages",
+            sort: "trending",
+          }),
+    };
   }
 
   if (args.officialFirst && category && typeof args.isOfficial !== "boolean") {
@@ -3910,7 +3980,7 @@ async function listOfficialFirstPackageCategoryPage(
     category: PluginCategorySlug;
     topic?: string;
     excludedScanStatuses?: PackageListScanStatus[];
-    sort?: "updated" | "downloads" | "recommended" | "installs";
+    sort?: "updated" | "downloads" | "recommended" | "installs" | "trending";
     viewerUserId?: Id<"users">;
     paginationOpts: { cursor: string | null; numItems: number };
   },
@@ -4420,7 +4490,11 @@ export const processPackageStatEventsInternal = internalMutation({
       };
       await ctx.db.patch(pkg._id, {
         stats: nextStats,
-        ...computePackageRecommendationPatch(nextStats),
+        ...computePackageRecommendationPatch(nextStats, {
+          createdAt: pkg.createdAt ?? pkg._creationTime,
+          updatedAt: pkg.updatedAt,
+          now,
+        }),
       });
       packagesUpdated += 1;
     }
@@ -7827,12 +7901,19 @@ export const reservePackageNameInternal = internalMutation({
       isOfficial: false,
       tags: {},
       stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-      ...computePackageRecommendationPatch({
-        downloads: 0,
-        installs: 0,
-        stars: 0,
-        versions: 0,
-      }),
+      ...computePackageRecommendationPatch(
+        {
+          downloads: 0,
+          installs: 0,
+          stars: 0,
+          versions: 0,
+        },
+        {
+          createdAt: now,
+          updatedAt: now,
+          now,
+        },
+      ),
       createdAt: now,
       updatedAt: now,
     });
@@ -8902,12 +8983,19 @@ export const insertReleaseInternal = internalMutation({
         verification: args.verification,
         scanStatus: args.verification?.scanStatus,
         stats: { downloads: 0, installs: 0, stars: 0, versions: 0 },
-        ...computePackageRecommendationPatch({
-          downloads: 0,
-          installs: 0,
-          stars: 0,
-          versions: 0,
-        }),
+        ...computePackageRecommendationPatch(
+          {
+            downloads: 0,
+            installs: 0,
+            stars: 0,
+            versions: 0,
+          },
+          {
+            createdAt: now,
+            updatedAt: now,
+            now,
+          },
+        ),
         createdAt: now,
         updatedAt: now,
       }));

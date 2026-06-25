@@ -29,7 +29,7 @@ import {
 } from "../../lib/packageApi";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 
-type VisiblePluginSort = "recommended" | "updated" | "downloads";
+type VisiblePluginSort = "recommended" | "updated" | "downloads" | "trending";
 type PluginSort = VisiblePluginSort | "relevance";
 type LegacyPluginSort = PluginSort | "newest" | "name" | "installs";
 type PluginBrowseTab = VisiblePluginSort | "official";
@@ -52,7 +52,8 @@ type PluginView = "list" | "grid";
 type LegacyPluginView = PluginView | "cards";
 
 const PLUGIN_BROWSE_TABS = [
-  { value: "downloads", label: "All" },
+  { value: "recommended", label: "All" },
+  { value: "trending", label: "Trending" },
   {
     value: "official",
     label: "Verified",
@@ -115,6 +116,7 @@ function parsePluginSort(value: unknown): LegacyPluginSort | undefined {
     value === "relevance" ||
     value === "updated" ||
     value === "downloads" ||
+    value === "trending" ||
     value === "installs" ||
     value === "newest" ||
     value === "name"
@@ -151,7 +153,7 @@ function normalizeActivePluginSort(sort: LegacyPluginSort | undefined): PluginSo
 function getDefaultPluginBrowseSort(
   _args: Pick<PluginsPageDataRequest, "category" | "featured" | "official">,
 ): VisiblePluginSort {
-  return "downloads";
+  return "recommended";
 }
 
 function hasPersistentPluginBrowseFilter(
@@ -179,6 +181,7 @@ export async function loadPluginsPageData(
       ...(!args.q &&
       (args.sort === "downloads" ||
         args.sort === "updated" ||
+        args.sort === "trending" ||
         !args.sort ||
         args.sort === "recommended")
         ? { sort: args.sort ?? getDefaultPluginBrowseSort(args) }
@@ -271,6 +274,7 @@ export const Route = createFileRoute("/plugins/")({
       search.sort !== "recommended" &&
       search.sort !== "updated" &&
       search.sort !== "downloads" &&
+      search.sort !== "trending" &&
       !(hasQuery && search.sort === "relevance");
     const staleFeatured = Boolean(hasQuery && search.featured);
     if (incompatibleSort || staleFeatured) {
@@ -300,7 +304,7 @@ function PluginsIndexPending() {
           <BrowseTabs
             ariaLabel="Sort order"
             options={PLUGIN_BROWSE_TABS}
-            value="downloads"
+            value="recommended"
             onChange={() => {}}
           />
           <BrowseActions>
@@ -430,11 +434,7 @@ function PluginsIndex() {
       : search.sort === "relevance" || search.sort === "newest" || search.sort === "name"
         ? "recommended"
         : (search.sort ?? (hasQuery ? "recommended" : getDefaultPluginBrowseSort(search)));
-  const activeBrowseTab: PluginBrowseTab = search.official
-    ? "official"
-    : activeSort === "recommended"
-      ? "downloads"
-      : activeSort;
+  const activeBrowseTab: PluginBrowseTab = search.official ? "official" : activeSort;
   const visibleItems = useMemo(() => {
     return hasQuery ? sortPluginSearchItems(items, activeSort) : items;
   }, [activeSort, hasQuery, items]);
@@ -453,11 +453,11 @@ function PluginsIndex() {
       return;
     }
 
-    handleSortChange(value ?? "downloads");
+    handleSortChange(value ?? "recommended");
   };
 
   const handleSortChange = (value: string) => {
-    const nextSort = parsePluginSort(value) ?? "downloads";
+    const nextSort = parsePluginSort(value) ?? "recommended";
 
     void navigate({
       search: (prev: PluginSearchState) => {
@@ -466,8 +466,8 @@ function PluginsIndex() {
         const sort =
           isExplicitFilteredRecommendation || nextSort === "downloads"
             ? nextSort
-            : nextSort === "updated"
-              ? "updated"
+            : nextSort === "updated" || nextSort === "trending"
+              ? nextSort
               : undefined;
         const nextSearch: PluginSearchState = {
           ...prev,

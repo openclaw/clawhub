@@ -27,3 +27,19 @@ only category or topic filter because limited global results can under-fill scop
 stop at an explicit safety scan budget, but the result limit applies after scoped matches are found.
 
 Search result counts in the web UI should describe what is known from the current request. Do not label a page-size-limited result length as a total corpus count. Prefer `N+`, "shown", or no count unless an indexed/materialized total is available.
+
+## Browse Discovery Ranking
+
+Browse defaults are a discovery surface, not a proxy for lifetime downloads. The materialized
+recommendation score combines sublinear installs, downloads, and stars with a decaying freshness
+signal and a bounded boost for newly published items. Download weight is intentionally lower than
+install, star, and freshness signals so a large historical footprint cannot permanently occupy the
+default page. Recommendation scores are refreshed by maintenance jobs because freshness changes even
+when an item receives no new events.
+
+Trending is a separate seven-day activity leaderboard built from daily install and download
+aggregates. It must not be derived from all-time totals. Skills and plugins expose the same
+trending concept; suspicious or unavailable items are filtered before public display.
+
+Publisher diversity is a product follow-up for browse ranking. The current contract guarantees
+freshness and bounded novelty, while preserving stable cursor pagination and trust filters.

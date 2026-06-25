@@ -32,8 +32,12 @@ vi.mock("./_generated/api", () => ({
   internal: {
     githubSkillSyncNode: { syncGitHubSkillSourcesInternal: mocks.githubSkillSyncRef },
     leaderboards: { rebuildTrendingLeaderboardAction: Symbol("trending-leaderboard") },
+    packageLeaderboards: {
+      rebuildTrendingLeaderboardAction: Symbol("package-trending-leaderboard"),
+    },
     statsMaintenance: {
       runSkillStatBackfillInternal: Symbol("skill-stats-backfill"),
+      runRecommendationScoreBackfillInternal: Symbol("recommendation-score-refresh"),
       updateGlobalStatsAction: Symbol("global-stats-update"),
     },
     skillStatEvents: {
