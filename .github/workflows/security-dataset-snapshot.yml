@@ -292,6 +292,8 @@ jobs:
           python - <<'PY'
           import json
           import os
+          import shutil
+          import tempfile
           import urllib.request
           from pathlib import Path
           from huggingface_hub import HfApi
@@ -339,33 +341,35 @@ jobs:
           )
           api = HfApi(token=token)
 
-          data_commit = api.upload_folder(
-              folder_path=str(snapshot_dir / "hf-dataset" / "data"),
-              path_in_repo="data",
-              repo_id=repo_id,
-              repo_type="dataset",
-              revision=revision,
-              delete_patterns="data/*.jsonl",
-              commit_message="Update nightly ClawHub security dataset splits",
-          )
-
           manifest_path = snapshot_dir / "manifest.json"
           manifest = json.loads(manifest_path.read_text())
-          manifest["huggingface_dataset"]["commit"] = data_commit.oid
+          manifest["huggingface_dataset"]["commit"] = None
           manifest["huggingface_dataset"]["revision"] = revision
           manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
 
-          manifest_commit = api.upload_file(
-              path_or_fileobj=str(manifest_path),
-              path_in_repo="metadata/latest-manifest.json",
-              repo_id=repo_id,
-              repo_type="dataset",
-              revision=revision,
-              commit_message="Update nightly ClawHub security dataset manifest",
-          )
+          with tempfile.TemporaryDirectory(prefix="clawhub-hf-upload-") as staging_root:
+              staging_dir = Path(staging_root)
+              shutil.copytree(
+                  snapshot_dir / "hf-dataset" / "data",
+                  staging_dir / "data",
+              )
+              (staging_dir / "metadata").mkdir()
+              shutil.copy2(
+                  manifest_path,
+                  staging_dir / "metadata" / "latest-manifest.json",
+              )
+              commit = api.upload_folder(
+                  folder_path=str(staging_dir),
+                  path_in_repo="",
+                  repo_id=repo_id,
+                  repo_type="dataset",
+                  revision=revision,
+                  delete_patterns="data/*.jsonl",
+                  commit_message="Update nightly ClawHub security dataset and manifest",
+              )
+
           print(json.dumps({
-              "data_commit": data_commit.oid,
-              "manifest_commit": manifest_commit.oid,
+              "commit": commit.oid,
               "repo": repo_id,
               "revision": revision,
           }, indent=2))
