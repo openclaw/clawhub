@@ -23,10 +23,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          OPENCLAW_DOCS_SYNC_TOKEN="${OPENCLAW_GH_TOKEN:-${LEGACY_TOKEN:-}}"
-
-          if [ -z "${OPENCLAW_DOCS_SYNC_TOKEN:-}" ]; then
-            echo "::error::OPENCLAW_GH_TOKEN or legacy token is required"
+          if [ -z "${LEGACY_TOKEN:-}" ] && [ -z "${OPENCLAW_GH_TOKEN:-}" ]; then
+            echo "::error::OPENCLAW_DOCS_SYNC_TOKEN or OPENCLAW_GH_TOKEN"
+            echo "::error::is required to dispatch docs sync."
             echo "::error::to dispatch openclaw/openclaw docs sync."
             exit 1
           fi
@@ -34,10 +33,25 @@ jobs:
           dispatch_url="https://api.github.com/repos/openclaw/openclaw"
           dispatch_url+="/actions/workflows/docs-sync-publish.yml/dispatches"
 
-          curl --fail-with-body --silent --show-error \
-            --request POST \
-            --header "Authorization: Bearer ${OPENCLAW_DOCS_SYNC_TOKEN}" \
-            --header "Accept: application/vnd.github+json" \
-            --header "X-GitHub-Api-Version: 2022-11-28" \
-            "${dispatch_url}" \
-            --data '{"ref":"main"}'
+          dispatch_with_token() {
+            local token="$1"
+            curl --fail-with-body --silent --show-error \
+              --request POST \
+              --header "Authorization: Bearer ${token}" \
+              --header "Accept: application/vnd.github+json" \
+              --header "X-GitHub-Api-Version: 2022-11-28" \
+              "${dispatch_url}" \
+              --data '{"ref":"main"}'
+          }
+
+          if dispatch_with_token "${OPENCLAW_GH_TOKEN:-}"; then
+            exit 0
+          fi
+
+          if dispatch_with_token "${LEGACY_TOKEN:-}"; then
+            exit 0
+          fi
+
+          echo "::error::Both docs-sync credentials were rejected."
+          echo "::error::Rotate one of the repository secrets."
+          exit 1
