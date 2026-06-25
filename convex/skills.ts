@@ -79,6 +79,7 @@ import {
   summarizeReasonCodes,
   verdictFromCodes,
 } from "./lib/moderationReasonCodes";
+import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import {
   type HydratableSkill,
   type PublicPublisher,
@@ -2008,14 +2009,15 @@ async function buildPublicSkillEntries(
       ownerPublisherId,
       ownerUserId,
     }).then((ownerDoc) => {
-      const publicOwner = toPublicPublisher(ownerDoc);
-      if (!publicOwner) {
-        return { ownerHandle: null, owner: null };
-      }
-      return {
-        ownerHandle: publicOwner.handle ?? String(publicOwner._id),
-        owner: publicOwner,
-      };
+      return toPublicPublisherWithOfficial(ctx, ownerDoc).then((publicOwner) => {
+        if (!publicOwner) {
+          return { ownerHandle: null, owner: null };
+        }
+        return {
+          ownerHandle: publicOwner.handle ?? String(publicOwner._id),
+          owner: publicOwner,
+        };
+      });
     });
     ownerInfoCache.set(cacheKey, ownerPromise);
     return ownerPromise;
@@ -5106,7 +5108,11 @@ export const listPublicPageV3 = query({
       if (!hydratable) continue;
       const publicSkill = toPublicSkill(hydratable);
       if (!publicSkill) continue;
-      const ownerInfo = digestToOwnerInfo(digest);
+      const ownerInfo = await addOfficialStatusToOwnerInfo(
+        ctx,
+        digestToOwnerInfo(digest),
+        digest.ownerPublisherId,
+      );
       if (!ownerInfo?.owner) continue;
       const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
       items.push({
@@ -5937,7 +5943,11 @@ async function buildPublicSkillEntryFromDigest(
   const hydratable = digestToHydratableSkill(digest);
   const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
-  const ownerInfo = digestToOwnerInfo(digest);
+  const ownerInfo = await addOfficialStatusToOwnerInfo(
+    ctx,
+    digestToOwnerInfo(digest),
+    digest.ownerPublisherId,
+  );
   if (!ownerInfo?.owner) return null;
   const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
   return {
@@ -5946,6 +5956,16 @@ async function buildPublicSkillEntryFromDigest(
     ownerHandle: ownerInfo.ownerHandle,
     owner: ownerInfo.owner,
   };
+}
+
+async function addOfficialStatusToOwnerInfo(
+  ctx: Pick<QueryCtx, "db">,
+  ownerInfo: { ownerHandle: string | null; owner: PublicPublisher | null } | null,
+  publisherId?: Id<"publishers">,
+) {
+  if (!ctx?.db || !ownerInfo?.owner || !publisherId) return ownerInfo;
+  const official = await hasOfficialPublisherRow(ctx, publisherId);
+  return official ? { ...ownerInfo, owner: { ...ownerInfo.owner, official: true } } : ownerInfo;
 }
 
 async function loadPublicLatestVersionForDigest(
