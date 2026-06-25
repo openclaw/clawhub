@@ -2,7 +2,7 @@ import { Link } from "@tanstack/react-router";
 import type { ReactNode } from "react";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
 import { getSkillCategoryForSkill } from "../lib/categories";
-import type { PublicSkill } from "../lib/publicUser";
+import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { truncateText } from "../lib/truncateText";
 import { CatalogTopicList } from "./CatalogTopicList";
 import { MarketplaceIcon } from "./MarketplaceIcon";
@@ -19,6 +19,7 @@ type SkillCardProps = {
   href?: string;
   className?: string;
   ownerHandle?: string | null;
+  owner?: PublicPublisher | null;
 };
 
 export function SkillCard({
@@ -31,12 +32,18 @@ export function SkillCard({
   href,
   className,
   ownerHandle,
+  owner,
 }: SkillCardProps) {
-  const owner = encodeURIComponent(String(skill.ownerUserId));
-  const link = href ?? `/${owner}/${skill.slug}`;
+  const ownerSegment = encodeURIComponent(String(skill.ownerUserId));
+  const link = href ?? `/${ownerSegment}/${skill.slug}`;
   const badges = Array.isArray(badge) ? badge : badge ? [badge] : [];
-  const isOfficial = badges.includes("Verified");
-  const visibleBadges = ownerHandle ? badges.filter((label) => label !== "Verified") : badges;
+  const isOfficial = badges.includes("Verified") || owner?.official === true;
+  const nonOfficialBadges = badges.filter((label) => label !== "Verified");
+  const visibleBadges = ownerHandle
+    ? nonOfficialBadges
+    : isOfficial
+      ? ["Verified", ...nonOfficialBadges]
+      : badges;
   const primaryCategory = getSkillCategoryForSkill(skill);
   const hasSecondaryTags =
     visibleBadges.length || chip || platformLabels?.length || skill.topics?.length;

@@ -36,7 +36,18 @@ vi.mock("../components/PublisherListItem", () => ({
 }));
 
 vi.mock("../components/SkillListItem", () => ({
-  SkillListItem: ({ skill }: { skill: { slug: string } }) => <div>{skill.slug}</div>,
+  SkillListItem: ({
+    skill,
+    owner,
+  }: {
+    skill: { slug: string };
+    owner?: { official?: boolean } | null;
+  }) => (
+    <div>
+      {skill.slug}
+      {owner?.official ? <span data-testid="skill-official-badge" /> : null}
+    </div>
+  ),
 }));
 
 vi.mock("../components/ui/card", () => ({
@@ -285,6 +296,44 @@ describe("search route", () => {
     expect(screen.getByText("weather")).toBeTruthy();
     expect(screen.queryByText("weather-plugin")).toBeNull();
     expect(screen.queryByText("Weather Creator @weather")).toBeNull();
+  });
+
+  it("passes official owner metadata to skill search rows", async () => {
+    searchMock = { q: "weather", type: "skills" };
+    const skill = {
+      type: "skill",
+      skill: {
+        _id: "skill-weather",
+        slug: "weather",
+        displayName: "Weather",
+        ownerUserId: "users:1",
+        stats: { downloads: 0, stars: 0 },
+        updatedAt: 1,
+        createdAt: 1,
+      },
+      ownerHandle: "openclaw",
+      owner: { official: true },
+      score: 1,
+    };
+    useUnifiedSearchMock.mockReturnValue({
+      results: [skill],
+      skillResults: [skill],
+      pluginResults: [],
+      creatorResults: [],
+      skillCount: 1,
+      pluginCount: 0,
+      creatorCount: 0,
+      skillHasMore: false,
+      pluginHasMore: false,
+      creatorHasMore: false,
+      isSearching: false,
+    });
+    const route = await loadRoute();
+    const Component = route.__config.component as ComponentType;
+
+    render(<Component />);
+
+    expect(screen.getByTestId("skill-official-badge")).toBeTruthy();
   });
 
   it("does not render partial count labels when more results are available", async () => {

@@ -75,6 +75,7 @@ export function SkillsResults({
                     <span className="skill-card-updated">Updated {timeAgo(skill.updatedAt)}</span>
                   </div>
                 }
+                owner={entry.owner}
               />
             );
           })}
