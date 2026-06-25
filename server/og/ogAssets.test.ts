@@ -61,6 +61,26 @@ describe("ogAssets", () => {
     expect(String(readFileMock.mock.calls[1]?.[0])).toContain("public/clawd-logo.png");
   });
 
+  it("loads the fixed ClawHub logo from clawd-logo.png", async () => {
+    readFileMock.mockImplementation(async (input: unknown) => {
+      const path = String(input);
+      if (path.includes("public/clawd-logo.png")) {
+        return Buffer.from("clawhub-logo");
+      }
+      if (path.endsWith("clawd-logo.png")) {
+        throw new Error("missing root logo");
+      }
+      throw new Error(`unexpected read: ${path}`);
+    });
+
+    const { getClawHubLogoDataUrl } = await import("./ogAssets");
+
+    await expect(getClawHubLogoDataUrl()).resolves.toBe("data:image/png;base64,Y2xhd2h1Yi1sb2dv");
+    expect(readFileMock).toHaveBeenCalledTimes(2);
+    expect(String(readFileMock.mock.calls[0]?.[0])).toContain("clawd-logo.png");
+    expect(String(readFileMock.mock.calls[1]?.[0])).toContain("public/clawd-logo.png");
+  });
+
   it("initializes resvg wasm only once per process", async () => {
     readFileMock.mockImplementation(async (input: unknown) => {
       const path = String(input);
@@ -90,13 +110,14 @@ describe("ogAssets", () => {
     const first = await getFontBuffers();
     const second = await getFontBuffers();
 
-    expect(first).toHaveLength(5);
+    expect(first).toHaveLength(6);
     expect(first[0]).toBeInstanceOf(Uint8Array);
     expect(second).toEqual(first);
-    expect(readFileMock).toHaveBeenCalledTimes(5);
+    expect(readFileMock).toHaveBeenCalledTimes(6);
     expect(readFileMock.mock.calls.map((call) => String(call[0]))).toEqual(
       expect.arrayContaining([
         expect.stringContaining("bricolage-grotesque-latin-800-normal.woff2"),
+        expect.stringContaining("bricolage-grotesque-latin-700-normal.woff2"),
         expect.stringContaining("bricolage-grotesque-latin-500-normal.woff2"),
         expect.stringContaining("ibm-plex-mono-latin-500-normal.woff2"),
         expect.stringContaining("noto-sans-sc-chinese-simplified-800-normal.woff2"),

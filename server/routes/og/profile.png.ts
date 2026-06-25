@@ -8,9 +8,8 @@ import {
   ensureResvgWasm,
   FONT_MONO,
   FONT_SANS,
+  getClawHubLogoDataUrl,
   getFontBuffers,
-  getMarkDataUrl,
-  getWatermarkDataUrl,
 } from "../../og/ogAssets";
 import { pngResponse } from "../../og/pngResponse";
 import { buildPublisherOgSvg } from "../../og/publisherOgSvg";
@@ -19,7 +18,6 @@ import { buildOgDownloadsStat } from "../../og/registryOgSvg";
 type OgQuery = {
   handle?: string;
   title?: string;
-  description?: string;
   downloads?: string;
   installs?: string;
   kind?: string;
@@ -63,14 +61,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const titleFromQuery = cleanString(query.title);
-  const descriptionFromQuery = cleanString(query.description);
   const kindFromQuery = cleanString(query.kind);
   const avatarFromQuery = cleanString(query.avatar);
   const organizationImagesFromQuery = readOrganizationImagesQuery(query.orgImages);
   const convexUrl = getConvexUrl();
   const needFetch =
     !titleFromQuery ||
-    !descriptionFromQuery ||
     !readOgDownloadsQuery(query) ||
     !avatarFromQuery ||
     !cleanString(query.official) ||
@@ -79,11 +75,9 @@ export default defineEventHandler(async (event) => {
   const meta = needFetch && convexUrl ? await fetchPublisherOgMeta(handle, convexUrl) : null;
   const handleLabel = `@${meta?.handle || handle}`;
   const title = titleFromQuery || meta?.displayName || handleLabel;
-  const description = descriptionFromQuery || meta?.bio || "Publisher on ClawHub.";
 
-  const [markDataUrl, watermarkDataUrl, fontBuffers] = await Promise.all([
-    getMarkDataUrl(),
-    getWatermarkDataUrl(),
+  const [clawHubLogoDataUrl, fontBuffers] = await Promise.all([
+    getClawHubLogoDataUrl(),
     ensureResvgWasm().then(() => getFontBuffers()),
   ]);
   const avatarDataUrl = await fetchPublisherProfileImageDataUrl(avatarFromQuery || meta?.image);
@@ -104,13 +98,11 @@ export default defineEventHandler(async (event) => {
   ).filter((imageUrl): imageUrl is string => Boolean(imageUrl));
 
   const svg = buildPublisherOgSvg({
-    markDataUrl,
-    watermarkDataUrl,
+    clawHubLogoDataUrl,
     avatarDataUrl,
     avatarShape: kindFromQuery === "org" || meta?.kind === "org" ? "rounded" : "circle",
     official: cleanString(query.official) ? readBooleanQuery(query.official) : meta?.official,
     title,
-    description,
     handleLabel,
     organizationLogos: organizationLogoDataUrls,
     stats: [buildOgDownloadsStat(resolveOgDownloadsDisplay(query, meta?.stats.downloads))],

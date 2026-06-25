@@ -1,14 +1,12 @@
 import { FONT_SANS } from "./ogAssets";
-import { escapeXml, OPENCLAW_RED, type RegistryOgStat } from "./registryOgSvg";
+import { escapeXml, type RegistryOgStat } from "./registryOgSvg";
 
 export type PublisherOgSvgParams = {
-  markDataUrl: string;
-  watermarkDataUrl?: string | null;
+  clawHubLogoDataUrl: string;
   avatarDataUrl?: string | null;
   avatarShape?: "circle" | "rounded";
   official?: boolean;
   title: string;
-  description: string;
   handleLabel: string;
   organizationLogos?: string[];
   stats?: RegistryOgStat[];
@@ -17,6 +15,19 @@ export type PublisherOgSvgParams = {
 const OFFICIAL_BLUE = "#60A5FA";
 const OFFICIAL_BADGE_SIZE = 42;
 const OFFICIAL_BADGE_STROKE = 1.71;
+const OFFICIAL_BADGE_VISIBLE_LEFT_INSET = (3.85 / 24) * OFFICIAL_BADGE_SIZE;
+const OFFICIAL_BADGE_VISIBLE_CENTER_INSET = (12 / 24) * OFFICIAL_BADGE_SIZE;
+const OFFICIAL_BADGE_VISIBLE_GAP = 32;
+const OFFICIAL_BADGE_TRUNCATED_VISIBLE_GAP = 80;
+const LONG_LAYOUT_BADGE_MAX_X = 1084;
+const NORMAL_TITLE_WIDTH_SCALE = 0.94;
+const TITLE_VISUAL_CENTER_FROM_BASELINE = 0.33;
+const PUBLISHER_RED = "#BB3D34";
+const PUBLISHER_GRADIENT_RED = "#7F1D2D";
+const PUBLISHER_GRADIENT_FADE = "#6C1B2B";
+const PUBLISHER_TEXT_WEIGHT = 700;
+const PUBLISHER_LABEL_SIZE = 24;
+const PUBLISHER_VALUE_SIZE = 44;
 
 function estimateTextWidth(value: string, fontSize: number) {
   return [...value].reduce((width, char) => {
@@ -36,8 +47,38 @@ function estimateBadgeX(
   maxX: number,
   estimateScale: number,
 ) {
-  const estimatedWidth = estimateTextWidth(value, fontSize) * estimateScale;
-  return Math.min(maxX, Math.round(x + estimatedWidth + 19));
+  const estimatedTextEnd = x + estimateTextWidth(value, fontSize) * estimateScale;
+  const visibleGap = value.endsWith("...")
+    ? OFFICIAL_BADGE_TRUNCATED_VISIBLE_GAP
+    : OFFICIAL_BADGE_VISIBLE_GAP;
+  const badgeX = estimatedTextEnd + visibleGap - OFFICIAL_BADGE_VISIBLE_LEFT_INSET;
+  return Math.min(maxX, Math.round(badgeX * 100) / 100);
+}
+
+function normalOfficialTitleMaxWidth(contentWidth: number) {
+  return Math.min(
+    contentWidth,
+    (contentWidth -
+      OFFICIAL_BADGE_SIZE -
+      OFFICIAL_BADGE_VISIBLE_GAP +
+      OFFICIAL_BADGE_VISIBLE_LEFT_INSET) /
+      NORMAL_TITLE_WIDTH_SCALE,
+  );
+}
+
+function longOfficialTitleMaxWidth(titleX: number, contentWidth: number) {
+  return Math.min(
+    contentWidth,
+    LONG_LAYOUT_BADGE_MAX_X +
+      OFFICIAL_BADGE_VISIBLE_LEFT_INSET -
+      OFFICIAL_BADGE_TRUNCATED_VISIBLE_GAP -
+      titleX,
+  );
+}
+
+function estimateBadgeY(titleBaselineY: number, fontSize: number) {
+  const titleVisualCenterY = titleBaselineY - fontSize * TITLE_VISUAL_CENTER_FROM_BASELINE;
+  return Math.round((titleVisualCenterY - OFFICIAL_BADGE_VISIBLE_CENTER_INSET) * 100) / 100;
 }
 
 function officialBadge(x: number, y: number) {
@@ -156,8 +197,8 @@ function statColumn(
   options?: { truncateWithDots?: boolean },
 ) {
   const valueFontSize = options?.truncateWithDots
-    ? 46
-    : fitSingleLineText(value, valueMaxWidth, 46, 18);
+    ? PUBLISHER_VALUE_SIZE
+    : fitSingleLineText(value, valueMaxWidth, PUBLISHER_VALUE_SIZE, 18);
   const displayValue =
     options?.truncateWithDots && estimateTextWidth(value, valueFontSize) > valueMaxWidth
       ? truncateWithDots(value, valueMaxWidth, valueFontSize)
@@ -165,18 +206,18 @@ function statColumn(
   return `<g>
     <text x="${x}" y="${y}"
       fill="#9D9692"
-      font-size="32"
-      font-weight="700"
+      font-size="${PUBLISHER_LABEL_SIZE}"
+      font-weight="${PUBLISHER_TEXT_WEIGHT}"
       font-family="${FONT_SANS}, sans-serif">${escapeXml(label)}</text>
     <text x="${x}" y="${y + 63}"
       fill="#F7F1EA"
       font-size="${valueFontSize}"
-      font-weight="800"
+      font-weight="${PUBLISHER_TEXT_WEIGHT}"
       font-family="${FONT_SANS}, sans-serif">${escapeXml(displayValue)}</text>
   </g>`;
 }
 
-function orgLogoTiles(logos: string[], markDataUrl: string, x: number, yOffset: number) {
+function orgLogoTiles(logos: string[], fallbackLogoDataUrl: string, x: number, yOffset: number) {
   const visibleLogos = logos.slice(0, 5);
   if (visibleLogos.length === 0) return "";
   const y = 459 + yOffset;
@@ -190,15 +231,15 @@ function orgLogoTiles(logos: string[], markDataUrl: string, x: number, yOffset: 
         <clipPath id="${clipId}">
           <rect x="${tileX}" y="${y}" width="${size}" height="${size}" rx="8"/>
         </clipPath>
-        <image href="${logo || markDataUrl}" x="${tileX}" y="${y}" width="${size}" height="${size}" clip-path="url(#${clipId})" preserveAspectRatio="xMidYMid slice"/>
+        <image href="${logo || fallbackLogoDataUrl}" x="${tileX}" y="${y}" width="${size}" height="${size}" clip-path="url(#${clipId})" preserveAspectRatio="xMidYMid slice"/>
       </g>`;
     })
     .join("");
   return `<g>
     <text x="${x}" y="${438 + yOffset}"
-      fill="${OPENCLAW_RED}"
-      font-size="32"
-      font-weight="800"
+      fill="${PUBLISHER_RED}"
+      font-size="${PUBLISHER_LABEL_SIZE}"
+      font-weight="${PUBLISHER_TEXT_WEIGHT}"
       font-family="${FONT_SANS}, sans-serif">Organizations</text>
     ${tiles}
   </g>`;
@@ -206,7 +247,7 @@ function orgLogoTiles(logos: string[], markDataUrl: string, x: number, yOffset: 
 
 export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
   const rawTitle = params.title.trim() || params.handleLabel;
-  const avatar = params.avatarDataUrl || params.markDataUrl;
+  const avatar = params.avatarDataUrl || params.clawHubLogoDataUrl;
   const avatarShape = params.avatarShape ?? "circle";
   const organizationLogos = params.organizationLogos?.filter(Boolean) ?? [];
   const hasOrganizations = organizationLogos.length > 0;
@@ -230,15 +271,12 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
         downloadsWidth: 190,
       };
   const normalTitleMaxWidth = params.official
-    ? hasOrganizations
-      ? normalLayout.contentWidth - 78
-      : normalLayout.contentWidth
+    ? normalOfficialTitleMaxWidth(normalLayout.contentWidth)
     : normalLayout.contentWidth;
   const titleNeedsOverflow = wrapTextWithoutEllipsis(rawTitle, normalTitleMaxWidth, 72).length > 1;
   const creatorNeedsOverflow =
     estimateTextWidth(params.handleLabel, 46) > normalLayout.creatorWidth;
   const usesLongLayout = titleNeedsOverflow || creatorNeedsOverflow;
-  const contentYOffset = 0;
   const organizationExtraGap = usesLongLayout ? 41 : 0;
   const layout = usesLongLayout
     ? {
@@ -253,10 +291,8 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
     : normalLayout;
   const titleMaxWidth = params.official
     ? usesLongLayout
-      ? layout.contentWidth
-      : hasOrganizations
-        ? layout.contentWidth - 78
-        : layout.contentWidth
+      ? longOfficialTitleMaxWidth(layout.titleX, layout.contentWidth)
+      : normalOfficialTitleMaxWidth(layout.contentWidth)
     : layout.contentWidth;
   const title = usesLongLayout
     ? fitMultilineTextWithDots(rawTitle, titleMaxWidth, 2, 66)
@@ -274,43 +310,33 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
     ? 151
     : hasOrganizations
       ? titleLines.length > 1
-        ? 138 + contentYOffset
-        : 190 + contentYOffset
+        ? 138
+        : 190
       : titleLines.length > 1
-        ? 195 + contentYOffset
-        : 243 + contentYOffset;
+        ? 195
+        : 243;
   const lastTitleLine = titleLines.at(-1) ?? rawTitle;
-  const badgeX =
-    params.official && !hasOrganizations && !usesLongLayout && titleLines.length === 1
-      ? 1040
-      : params.official && hasOrganizations && !usesLongLayout && titleLines.length === 1
-        ? 1007
-        : estimateBadgeX(
-            lastTitleLine,
-            layout.titleX,
-            titleFontSize,
-            usesLongLayout ? 1084 : layout.titleX + layout.contentWidth - OFFICIAL_BADGE_SIZE,
-            titleLines.length > 1 ? 1 : 0.875,
-          );
-  const badgeY =
-    params.official && !hasOrganizations && !usesLongLayout && titleLines.length === 1
-      ? 198
-      : params.official && hasOrganizations && !usesLongLayout && titleLines.length === 1
-        ? 145
-        : usesLongLayout
-          ? 143
-          : titleY + (titleLines.length - 1) * titleLineHeight - 45;
+  const badgeX = estimateBadgeX(
+    lastTitleLine,
+    layout.titleX,
+    titleFontSize,
+    usesLongLayout
+      ? LONG_LAYOUT_BADGE_MAX_X
+      : layout.titleX + layout.contentWidth - OFFICIAL_BADGE_SIZE,
+    titleLines.length > 1 ? 1 : NORMAL_TITLE_WIDTH_SCALE,
+  );
   const titleLastBaselineY = titleY + (titleLines.length - 1) * titleLineHeight;
+  const badgeY = estimateBadgeY(titleLastBaselineY, titleFontSize);
   const taglineY = titleLastBaselineY + 60;
   const detailY = taglineY + 77;
   const downloadsStat = params.stats?.[0] ?? { label: "Downloads", value: "0" };
   const avatarCircle = hasOrganizations
     ? usesLongLayout
       ? { cx: 249, cy: 222, imageX: 87, imageY: 60 }
-      : { cx: 308, cy: 262 + contentYOffset, imageX: 146, imageY: 100 + contentYOffset }
+      : { cx: 308, cy: 262, imageX: 146, imageY: 100 }
     : usesLongLayout
       ? { cx: 249, cy: 222, imageX: 87, imageY: 60 }
-      : { cx: 276, cy: 315 + contentYOffset, imageX: 114, imageY: 153 + contentYOffset };
+      : { cx: 276, cy: 315, imageX: 114, imageY: 153 };
   const statsMarkup = usesLongLayout
     ? `${statColumn("Creator", params.handleLabel, layout.detailX, detailY, layout.creatorWidth, { truncateWithDots: true })}
     ${statColumn(downloadsStat.label, downloadsStat.value, layout.downloadsX, detailY + 112, layout.downloadsWidth)}`
@@ -335,16 +361,16 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
       <stop offset="1" stop-color="#050505"/>
     </linearGradient>
     <radialGradient id="bgAccent" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1064 78) rotate(152) scale(520 260)">
-      <stop stop-color="${OPENCLAW_RED}" stop-opacity="0.17"/>
-      <stop offset="1" stop-color="${OPENCLAW_RED}" stop-opacity="0"/>
+      <stop stop-color="${PUBLISHER_GRADIENT_RED}" stop-opacity="0.17"/>
+      <stop offset="1" stop-color="${PUBLISHER_GRADIENT_FADE}" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="bgDepth" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(178 590) rotate(-18) scale(600 250)">
       <stop stop-color="#12090A" stop-opacity="0.08"/>
       <stop offset="1" stop-color="#12090A" stop-opacity="0"/>
     </radialGradient>
     <radialGradient id="bgCorner" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(96 84) rotate(24) scale(440 240)">
-      <stop stop-color="#7F1D2D" stop-opacity="0.2"/>
-      <stop offset="1" stop-color="#6C1B2B" stop-opacity="0"/>
+      <stop stop-color="${PUBLISHER_GRADIENT_RED}" stop-opacity="0.2"/>
+      <stop offset="1" stop-color="${PUBLISHER_GRADIENT_FADE}" stop-opacity="0"/>
     </radialGradient>
     <clipPath id="publisherAvatarCircleClip">
       <circle cx="${avatarCircle.cx}" cy="${avatarCircle.cy}" r="139"/>
@@ -362,29 +388,29 @@ export function buildPublisherOgSvg(params: PublisherOgSvgParams) {
     <g>${avatarFrame}</g>
 
     <g>
-      <image href="${params.markDataUrl}" x="958" y="34" width="44" height="44" opacity="0.92" preserveAspectRatio="xMidYMid meet"/>
+      <image href="${params.clawHubLogoDataUrl}" x="958" y="34" width="44" height="44" opacity="0.92" preserveAspectRatio="xMidYMid meet"/>
       <text x="1016" y="66"
         fill="#F7F1EA"
         font-size="28"
-        font-weight="800"
+        font-weight="${PUBLISHER_TEXT_WEIGHT}"
         font-family="${FONT_SANS}, sans-serif">ClawHub</text>
     </g>
 
     <text x="${layout.titleX}" y="${titleY}"
       fill="#F7F1EA"
       font-size="${titleFontSize}"
-      font-weight="800"
+      font-weight="${PUBLISHER_TEXT_WEIGHT}"
       font-family="${FONT_SANS}, sans-serif">${titleTspans}</text>
     ${params.official ? officialBadge(badgeX, badgeY) : ""}
 
     <text x="${layout.subtitleX}" y="${taglineY}"
-      fill="${OPENCLAW_RED}"
+      fill="${PUBLISHER_RED}"
       font-size="44"
-      font-weight="800"
+      font-weight="${PUBLISHER_TEXT_WEIGHT}"
       font-family="${FONT_SANS}, sans-serif">on ClawHub</text>
 
     ${statsMarkup}
-    ${orgLogoTiles(organizationLogos, params.markDataUrl, orgLogosX, contentYOffset + organizationExtraGap)}
+    ${orgLogoTiles(organizationLogos, params.clawHubLogoDataUrl, orgLogosX, organizationExtraGap)}
   </g>
 </svg>`;
 }

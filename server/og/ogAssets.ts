@@ -10,6 +10,7 @@ type GlobalNitroMain = {
 };
 
 let markDataUrlPromise: Promise<string> | null = null;
+let clawHubLogoDataUrlPromise: Promise<string> | null = null;
 let watermarkDataUrlPromise: Promise<string> | null = null;
 let resvgWasmPromise: Promise<Uint8Array> | null = null;
 let fontBuffersPromise: Promise<Uint8Array[]> | null = null;
@@ -31,48 +32,47 @@ function getServerUrl(pathname: string) {
   return new URL(pathname.replace(/^\//, ""), getServerRootUrl());
 }
 
+async function readFirstDataUrl(candidates: URL[]) {
+  let lastError: unknown = null;
+  for (const url of candidates) {
+    try {
+      const buffer = await readFile(url);
+      return `data:image/png;base64,${buffer.toString("base64")}`;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError;
+}
+
+export async function getClawHubLogoDataUrl() {
+  if (!clawHubLogoDataUrlPromise) {
+    clawHubLogoDataUrlPromise = readFirstDataUrl([
+      getServerUrl("clawd-logo.png"),
+      getServerUrl("public/clawd-logo.png"),
+    ]);
+  }
+  return clawHubLogoDataUrlPromise;
+}
+
 export async function getMarkDataUrl() {
   if (!markDataUrlPromise) {
-    markDataUrlPromise = (async () => {
-      const candidates = [
-        getServerUrl("clawd-logo.png"),
-        getServerUrl("public/clawd-logo.png"),
-        getServerUrl("clawd-mark.png"),
-        getServerUrl("public/clawd-mark.png"),
-      ];
-      let lastError: unknown = null;
-      for (const url of candidates) {
-        try {
-          const buffer = await readFile(url);
-          return `data:image/png;base64,${buffer.toString("base64")}`;
-        } catch (error) {
-          lastError = error;
-        }
-      }
-      throw lastError;
-    })();
+    markDataUrlPromise = readFirstDataUrl([
+      getServerUrl("clawd-logo.png"),
+      getServerUrl("public/clawd-logo.png"),
+      getServerUrl("clawd-mark.png"),
+      getServerUrl("public/clawd-mark.png"),
+    ]);
   }
   return markDataUrlPromise;
 }
 
 export async function getWatermarkDataUrl() {
   if (!watermarkDataUrlPromise) {
-    watermarkDataUrlPromise = (async () => {
-      const candidates = [
-        getServerUrl("og-clawhub-watermark.png"),
-        getServerUrl("public/og-clawhub-watermark.png"),
-      ];
-      let lastError: unknown = null;
-      for (const url of candidates) {
-        try {
-          const buffer = await readFile(url);
-          return `data:image/png;base64,${buffer.toString("base64")}`;
-        } catch (error) {
-          lastError = error;
-        }
-      }
-      throw lastError;
-    })();
+    watermarkDataUrlPromise = readFirstDataUrl([
+      getServerUrl("og-clawhub-watermark.png"),
+      getServerUrl("public/og-clawhub-watermark.png"),
+    ]);
   }
   return watermarkDataUrlPromise;
 }
@@ -99,6 +99,11 @@ export async function getFontBuffers() {
       readFile(
         getServerUrl(
           "node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-800-normal.woff2",
+        ),
+      ),
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-700-normal.woff2",
         ),
       ),
       readFile(

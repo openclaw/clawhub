@@ -3,14 +3,23 @@ import { buildPublisherOgSvg } from "./publisherOgSvg";
 
 const transparentPixel =
   "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+const clawHubLogoDataUrl = "data:image/png;base64,Y2xhd2h1Yi1sb2dv";
+
+function readOfficialBadgeX(svg: string) {
+  const match = /<svg x="([^"]+)" y="[^"]+" width="42" height="42"/.exec(svg);
+  return match ? Number.parseFloat(match[1]) : null;
+}
+
+function readTitleLastLine(svg: string) {
+  const matches = [...svg.matchAll(/<tspan x="[^"]+" dy="[^"]+">([^<]+)<\/tspan>/g)];
+  return matches.at(-1)?.[1] ?? "";
+}
 
 function buildSvg(overrides: Partial<Parameters<typeof buildPublisherOgSvg>[0]> = {}) {
   return buildPublisherOgSvg({
-    markDataUrl: transparentPixel,
-    watermarkDataUrl: transparentPixel,
+    clawHubLogoDataUrl,
     avatarDataUrl: transparentPixel,
     title: "Matt Van Horn",
-    description: "Publisher @mvanhorn on ClawHub.",
     handleLabel: "@mvanhorn",
     ...overrides,
   });
@@ -28,6 +37,20 @@ describe("buildPublisherOgSvg", () => {
     expect(svg).not.toContain("Organization");
   });
 
+  it("always renders the fixed ClawHub logo next to the ClawHub header text", () => {
+    const svg = buildSvg({
+      avatarDataUrl: "data:image/png;base64,YXZhdGFy",
+      organizationLogos: ["data:image/png;base64,b3Jn"],
+    });
+
+    expect(svg).toContain(
+      `<image href="${clawHubLogoDataUrl}" x="958" y="34" width="44" height="44"`,
+    );
+    expect(svg).toContain(">ClawHub</text>");
+    expect(svg).not.toContain('<image href="data:image/png;base64,YXZhdGFy" x="958" y="34"');
+    expect(svg).not.toContain('<image href="data:image/png;base64,b3Jn" x="958" y="34"');
+  });
+
   it("renders the verified badge when official", () => {
     const svg = buildSvg({ official: true });
     expect(svg).toContain("#60A5FA");
@@ -39,15 +62,73 @@ describe("buildPublisherOgSvg", () => {
   it("keeps the no-organization verified badge on the guide title line without shrinking text", () => {
     const svg = buildSvg({ official: true });
     expect(svg).toContain('font-size="72"');
+    expect(svg).toContain('font-family="Bricolage Grotesque, sans-serif"');
+    expect(svg).toContain('font-weight="700"');
+    expect(svg).toContain('fill="#BB3D34"');
+    expect(svg).toContain('gradientTransform="translate(96 84) rotate(24) scale(440 240)"');
+    expect(svg).toContain('stop-color="#7F1D2D" stop-opacity="0.2"');
+    expect(svg).toContain('stop-color="#6C1B2B" stop-opacity="0"');
+    expect(svg).not.toContain("#D4453A");
     expect(svg).toContain('<tspan x="542" dy="0">Matt Van Horn</tspan>');
-    expect(svg).toContain('<svg x="1040" y="198" width="42" height="42"');
+    expect(svg).toContain('<svg x="1061.33" y="198.24" width="42" height="42"');
   });
 
   it("keeps the organization verified badge on the guide title line", () => {
     const svg = buildSvg({ official: true, organizationLogos: [transparentPixel] });
     expect(svg).toContain('font-size="72"');
     expect(svg).toContain('<tspan x="509" dy="0">Matt Van Horn</tspan>');
-    expect(svg).toContain('<svg x="1007" y="145" width="42" height="42"');
+    expect(svg).toContain('<svg x="1028.33" y="145.24" width="42" height="42"');
+  });
+
+  it("positions the official badge from the current one-line title length", () => {
+    const shortTitleBadgeX = readOfficialBadgeX(buildSvg({ official: true, title: "Matt" }));
+    const normalTitleBadgeX = readOfficialBadgeX(
+      buildSvg({ official: true, organizationLogos: [transparentPixel] }),
+    );
+    const longerTitleBadgeX = readOfficialBadgeX(
+      buildSvg({
+        official: true,
+        title: "Matt Van Horn!",
+        organizationLogos: [transparentPixel],
+      }),
+    );
+
+    expect(shortTitleBadgeX).toBeLessThan(normalTitleBadgeX ?? 0);
+    expect(longerTitleBadgeX).toBeGreaterThan(normalTitleBadgeX ?? 0);
+  });
+
+  it("adds extra badge spacing after truncated title dots", () => {
+    const svg = buildSvg({
+      official: true,
+      title: "Matt Van Horn lalalallalalalalalallallalalalalalalalala",
+      handleLabel: "@mvanhornfgfgfgfgfggfgfgfgfgfgsd",
+      organizationLogos: [transparentPixel],
+    });
+
+    expect(readTitleLastLine(svg)).toMatch(/\.\.\.$/);
+    expect(readOfficialBadgeX(svg)).toBe(1056.18);
+  });
+
+  it("keeps fixed labels anchored when variable publisher text changes", () => {
+    const normalSvg = buildSvg({ official: true });
+    const variableSvg = buildSvg({
+      official: true,
+      title: "Ana",
+      handleLabel: "@ana-tools",
+      stats: [{ label: "Downloads", value: "9.8m" }],
+    });
+
+    for (const stableMarkup of [
+      '<text x="542" y="303"',
+      ">on ClawHub</text>",
+      '<text x="542" y="380"',
+      ">Creator</text>",
+      '<text x="913" y="380"',
+      ">Downloads</text>",
+    ]) {
+      expect(normalSvg).toContain(stableMarkup);
+      expect(variableSvg).toContain(stableMarkup);
+    }
   });
 
   it("renders organization state when affiliations exist", () => {
@@ -97,7 +178,8 @@ describe("buildPublisherOgSvg", () => {
     expect(svg).toContain("Matt Van Horn");
     expect(svg).not.toContain("lalalallalalalalalallallalalalalalalalala</tspan>");
     expect(svg).toContain("#60A5FA");
-    expect(svg).toContain('font-size="46"');
+    expect(svg).toContain('font-size="44"');
+    expect(svg).toContain('font-size="24"');
     expect(svg).toMatch(/@mvanhornfgfgfgfgfgg.*\.\.\./);
     expect(svg).toContain("...");
     expect(svg).not.toContain("…");
