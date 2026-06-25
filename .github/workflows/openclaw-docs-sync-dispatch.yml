@@ -16,14 +16,27 @@ jobs:
   dispatch-openclaw-docs-sync:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/create-github-app-token@v3
+        id: barnacle-token
+        continue-on-error: true
+        with:
+          app-id: "2729701"
+          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
+          owner: openclaw
+          repositories: openclaw
+          permission-actions: write
+
       - name: Dispatch OpenClaw docs sync
         env:
+          BARNACLE_TOKEN: ${{ steps.barnacle-token.outputs.token }}
           OPENCLAW_GH_TOKEN: ${{ secrets.OPENCLAW_GH_TOKEN }}
           LEGACY_TOKEN: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
         run: |
           set -euo pipefail
 
-          if [ -z "${LEGACY_TOKEN:-}" ] && [ -z "${OPENCLAW_GH_TOKEN:-}" ]; then
+          if [ -z "${BARNACLE_TOKEN:-}" ] &&
+            [ -z "${LEGACY_TOKEN:-}" ] &&
+            [ -z "${OPENCLAW_GH_TOKEN:-}" ]; then
             echo "::warning::Skipping OpenClaw docs sync dispatch because no cross-repo token is configured."
             exit 0
           fi
@@ -66,6 +79,17 @@ jobs:
 
           auth_rejected=false
 
+          if [ -n "${BARNACLE_TOKEN:-}" ]; then
+            if dispatch_with_token "Barnacle GitHub App" "${BARNACLE_TOKEN}"; then
+              exit 0
+            fi
+            status="$?"
+            if [ "${status}" != "2" ]; then
+              exit "${status}"
+            fi
+            auth_rejected=true
+          fi
+
           if [ -n "${OPENCLAW_GH_TOKEN:-}" ]; then
             if dispatch_with_token "OPENCLAW_GH_TOKEN" "${OPENCLAW_GH_TOKEN}"; then
               exit 0
@@ -90,7 +114,7 @@ jobs:
 
           if [ "${auth_rejected}" = "true" ]; then
             echo "::warning::All configured OpenClaw docs sync credentials were rejected."
-            echo "::warning::Refresh OPENCLAW_GH_TOKEN or OPENCLAW_DOCS_SYNC_TOKEN to restore automatic docs sync."
+            echo "::warning::Check Barnacle permissions or refresh a docs-sync token."
             exit 0
           fi
 
