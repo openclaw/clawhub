@@ -287,6 +287,12 @@ rows. Public member add mutations must not treat personal publishers as
 organizations; remove mutations may only let the linked user clean up stale
 extra membership rows.
 
+Self-serve org membership must be recipient-accepted. Org owners/admins may
+update roles for existing accepted members, but they must not be able to create
+a first membership row for an arbitrary user handle. Direct staff repair paths
+are allowed only through admin-gated tooling that requires a reason and writes
+an audit event.
+
 Skill slug merges are content-management operations. They must authorize through
 publisher ownership, not only `ownerUserId`, so org owners/admins can merge two
 skills owned by the same manageable publisher. Merge aliases must keep both

@@ -3691,7 +3691,7 @@ describe("publishers membership controls", () => {
     ).rejects.toThrow("Publisher must have at least one owner");
   });
 
-  it("adds a member when the requested handle resolves via a personal publisher", async () => {
+  it("prevents adding a new org member without invitation acceptance", async () => {
     vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
     const publisherMembers: Array<Record<string, unknown>> = [
       {
@@ -3879,14 +3879,209 @@ describe("publishers membership controls", () => {
         ctx as never,
         { publisherId: "publishers:org", userHandle: "jaredforreal", role: "admin" } as never,
       ),
-    ).resolves.toEqual({ ok: true });
+    ).rejects.toThrow(
+      "New organization members must accept an invitation before they can be added",
+    );
 
-    expect(insert).toHaveBeenCalledWith(
-      "publisherMembers",
-      expect.objectContaining({
+    expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
+    expect(ctx.db.patch).not.toHaveBeenCalled();
+  });
+
+  it("lets org owners update an existing member role", async () => {
+    vi.mocked(getAuthUserId).mockResolvedValue("users:owner" as never);
+    const publisherMembers: Array<Record<string, unknown>> = [
+      {
+        _id: "publisherMembers:owner",
+        publisherId: "publishers:org",
+        userId: "users:owner",
+        role: "owner",
+      },
+      {
+        _id: "publisherMembers:jared",
         publisherId: "publishers:org",
         userId: "users:jared",
-        role: "admin",
+        role: "publisher",
+      },
+    ];
+    const insert = vi.fn(async (table: string) => {
+      if (table === "auditLogs") return "auditLogs:1";
+      throw new Error(`unexpected insert ${table}`);
+    });
+    const patch = vi.fn(async () => {});
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "users:owner") return { _id: id };
+          if (id === "users:jared") {
+            return {
+              _id: id,
+              _creationTime: 1,
+              handle: "jaredforreal",
+              name: "JaredForReal",
+              displayName: "Jared",
+              trustedPublisher: false,
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          if (id === "publishers:org") {
+            return {
+              _id: id,
+              kind: "org",
+              handle: "zai-org",
+              displayName: "ZAI Org",
+            };
+          }
+          if (id === "publishers:jaredforreal") {
+            return {
+              _id: id,
+              _creationTime: 1,
+              kind: "user",
+              handle: "jaredforreal",
+              displayName: "Jared",
+              linkedUserId: "users:jared",
+              trustedPublisher: false,
+              createdAt: 1,
+              updatedAt: 1,
+            };
+          }
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherMembers") {
+            return {
+              withIndex: vi.fn(
+                (
+                  indexName: string,
+                  builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  if (indexName !== "by_publisher_user") {
+                    throw new Error(`unexpected index ${indexName}`);
+                  }
+                  let publisherId = "";
+                  let userId = "";
+                  const q = {
+                    eq: (field: string, value: string) => {
+                      if (field === "publisherId") publisherId = value;
+                      if (field === "userId") userId = value;
+                      return q;
+                    },
+                  };
+                  builder?.(q);
+                  return {
+                    unique: vi.fn(
+                      async () =>
+                        publisherMembers.find(
+                          (member) =>
+                            member.publisherId === publisherId && member.userId === userId,
+                        ) ?? null,
+                    ),
+                  };
+                },
+              ),
+            };
+          }
+          if (table === "users") {
+            return {
+              withIndex: vi.fn(
+                (
+                  indexName: string,
+                  builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  if (indexName !== "handle") {
+                    throw new Error(`unexpected index ${indexName}`);
+                  }
+                  let handle = "";
+                  const q = {
+                    eq: (field: string, value: string) => {
+                      if (field === "handle") handle = value;
+                      return q;
+                    },
+                  };
+                  builder?.(q);
+                  return {
+                    unique: vi.fn(async () =>
+                      handle === "jaredforreal"
+                        ? {
+                            _id: "users:jared",
+                            handle: "jaredforreal",
+                            displayName: "Jared",
+                          }
+                        : null,
+                    ),
+                  };
+                },
+              ),
+            };
+          }
+          if (table === "publishers") {
+            return {
+              withIndex: vi.fn(
+                (
+                  indexName: string,
+                  builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+                ) => {
+                  let linkedUserId = "";
+                  const q = {
+                    eq: (field: string, value: string) => {
+                      if (field === "linkedUserId") linkedUserId = value;
+                      return q;
+                    },
+                  };
+                  builder?.(q);
+                  return {
+                    unique: vi.fn(async () => {
+                      if (indexName === "by_linked_user" && linkedUserId === "users:jared") {
+                        return {
+                          _id: "publishers:jaredforreal",
+                          _creationTime: 1,
+                          kind: "user",
+                          handle: "jaredforreal",
+                          displayName: "Jared",
+                          linkedUserId: "users:jared",
+                          trustedPublisher: false,
+                          createdAt: 1,
+                          updatedAt: 1,
+                        };
+                      }
+                      return null;
+                    }),
+                  };
+                },
+              ),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+        insert,
+        patch,
+        delete: vi.fn(),
+        replace: vi.fn(),
+        normalizeId: vi.fn(),
+      },
+    };
+
+    await expect(
+      addMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:org", userHandle: "jaredforreal", role: "admin" } as never,
+      ),
+    ).resolves.toEqual({ ok: true });
+
+    expect(patch).toHaveBeenCalledWith(
+      "publisherMembers:jared",
+      expect.objectContaining({ role: "admin" }),
+    );
+    expect(insert).toHaveBeenCalledWith(
+      "auditLogs",
+      expect.objectContaining({
+        action: "publisher.member.upsert",
+        targetId: "publishers:org",
+        metadata: {
+          memberUserId: "users:jared",
+          memberHandle: "jaredforreal",
+          role: "admin",
+        },
       }),
     );
   });

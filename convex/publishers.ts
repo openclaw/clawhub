@@ -3193,23 +3193,14 @@ export const addMember = mutation({
     if (!targetUser) {
       throw new ConvexError(`User "@${handle}" not found`);
     }
-    await ensurePersonalPublisherForUser(ctx, targetUser, {
-      actorUserId: userId,
-      source: "publisher.member.upsert",
-    });
     const existing = await getPublisherMembership(ctx, publisher._id, targetUser._id);
-    const now = Date.now();
-    if (existing) {
-      await ctx.db.patch(existing._id, { role: args.role, updatedAt: now });
-    } else {
-      await ctx.db.insert("publisherMembers", {
-        publisherId: publisher._id,
-        userId: targetUser._id,
-        role: args.role,
-        createdAt: now,
-        updatedAt: now,
-      });
+    if (!existing) {
+      throw new ConvexError(
+        "New organization members must accept an invitation before they can be added",
+      );
     }
+    const now = Date.now();
+    await ctx.db.patch(existing._id, { role: args.role, updatedAt: now });
     await ctx.db.insert("auditLogs", {
       actorUserId: userId,
       action: "publisher.member.upsert",

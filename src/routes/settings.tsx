@@ -252,7 +252,6 @@ export function Settings() {
   const deleteOrg = useMutation(api.publishers.deleteOrg);
   const createOrgImageUpload = useMutation(api.publishers.createImageUpload);
   const updateOrgProfile = useMutation(api.publishers.updateProfile);
-  const addOrgMember = useMutation(api.publishers.addMember);
   const removeOrgMember = useMutation(api.publishers.removeMember);
   const configureGitHubSource = useAction(api.githubSkillSync.configurePublicGitHubSkillSource);
   const deleteGitHubSource = useMutation(api.githubSkillSources.deleteForPublisher);
@@ -271,8 +270,6 @@ export function Settings() {
   const [selectedOrgImageFile, setSelectedOrgImageFile] = useState<File | null>(null);
   const [selectedOrgImagePreview, setSelectedOrgImagePreview] = useState<string | null>(null);
   const [isUploadingOrgImage, setIsUploadingOrgImage] = useState(false);
-  const [memberHandle, setMemberHandle] = useState("");
-  const [memberRole, setMemberRole] = useState<"owner" | "admin" | "publisher">("publisher");
   const [selectedSourcePublisherId, setSelectedSourcePublisherId] = useState("");
   const [githubRepo, setGithubRepo] = useState("");
   const [isSyncingSource, setIsSyncingSource] = useState(false);
@@ -281,7 +278,6 @@ export function Settings() {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteOrgDialogOpen, setDeleteOrgDialogOpen] = useState(false);
   const [createOrgDialogOpen, setCreateOrgDialogOpen] = useState(false);
-  const [addMemberDialogOpen, setAddMemberDialogOpen] = useState(false);
   const [revokeTokenId, setRevokeTokenId] = useState<Id<"apiTokens"> | null>(null);
   const { activeView, navigateToView, ownerHandle: requestedOwnerHandle } = useActiveSettingsView();
   const orgs = (publisherMemberships ?? []).filter((entry) => entry.publisher.kind === "org");
@@ -1016,80 +1012,6 @@ export function Settings() {
                                 </div>
                               </div>
                             </div>
-                            <Dialog
-                              open={addMemberDialogOpen}
-                              onOpenChange={setAddMemberDialogOpen}
-                            >
-                              <DialogTrigger asChild>
-                                <Button
-                                  type="button"
-                                  className="h-10 w-auto shrink-0 px-3 text-sm sm:h-11 sm:px-4"
-                                >
-                                  <Users size={16} />
-                                  Add member
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent>
-                                <DialogHeader>
-                                  <DialogTitle>Add member</DialogTitle>
-                                  <DialogDescription>
-                                    Give a user access to @{selectedOrg.publisher.handle}.
-                                  </DialogDescription>
-                                </DialogHeader>
-                                <div className="grid gap-4">
-                                  <Field label="User handle" htmlFor="settings-add-member">
-                                    <Input
-                                      id="settings-add-member"
-                                      value={memberHandle}
-                                      onChange={(event) => setMemberHandle(event.target.value)}
-                                      placeholder="@username"
-                                    />
-                                  </Field>
-                                  <Field label="Role" htmlFor="settings-member-role">
-                                    <Select
-                                      value={memberRole}
-                                      onValueChange={(value) =>
-                                        setMemberRole(value as "owner" | "admin" | "publisher")
-                                      }
-                                    >
-                                      <SelectTrigger id="settings-member-role">
-                                        <SelectValue />
-                                      </SelectTrigger>
-                                      <SelectContent>
-                                        <SelectItem value="publisher">Publisher</SelectItem>
-                                        <SelectItem value="admin">Admin</SelectItem>
-                                        <SelectItem value="owner">Owner</SelectItem>
-                                      </SelectContent>
-                                    </Select>
-                                  </Field>
-                                </div>
-                                <DialogFooter>
-                                  <Button
-                                    variant="ghost"
-                                    onClick={() => setAddMemberDialogOpen(false)}
-                                  >
-                                    Cancel
-                                  </Button>
-                                  <Button
-                                    type="button"
-                                    disabled={!memberHandle.trim()}
-                                    onClick={() =>
-                                      void addOrgMember({
-                                        publisherId: selectedOrg.publisher._id,
-                                        userHandle: memberHandle,
-                                        role: memberRole,
-                                      }).then(() => {
-                                        setMemberHandle("");
-                                        setAddMemberDialogOpen(false);
-                                      })
-                                    }
-                                  >
-                                    <Users size={16} />
-                                    Add member
-                                  </Button>
-                                </DialogFooter>
-                              </DialogContent>
-                            </Dialog>
                           </div>
 
                           <div className="flex min-w-0 flex-col gap-4">
