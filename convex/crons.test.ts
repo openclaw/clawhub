@@ -7,7 +7,6 @@ const mocks = vi.hoisted(() => {
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const publisherAbuseAutobanRef = Symbol("publisher-abuse-autobans");
   const publisherAbuseScoreRefreshRef = Symbol("publisher-abuse-score-refresh");
-  const publisherTemporalScanCandidatePruneRef = Symbol("publisher-temporal-scan-candidate-prune");
   const publisherTemporalAbuseScanRef = Symbol("publisher-temporal-abuse-scan");
   const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
@@ -20,7 +19,6 @@ const mocks = vi.hoisted(() => {
     installTelemetryDedupePruneRef,
     publisherAbuseAutobanRef,
     publisherAbuseScoreRefreshRef,
-    publisherTemporalScanCandidatePruneRef,
     publisherTemporalAbuseScanRef,
     rateLimitCountersPruneRef,
     skillStatEventPruneRef,
@@ -58,8 +56,6 @@ vi.mock("./_generated/api", () => ({
       runPublisherAbuseScoreRunInternal: mocks.publisherAbuseScoreRefreshRef,
       runTemporalPublisherAbuseScanInternal: mocks.publisherTemporalAbuseScanRef,
       processPublisherAbuseAutobansInternal: mocks.publisherAbuseAutobanRef,
-      pruneStaleTemporalPublisherAbuseScanCandidatesInternal:
-        mocks.publisherTemporalScanCandidatePruneRef,
     },
     vt: {
       pollPendingScans: Symbol("vt-pending-scans"),
@@ -169,14 +165,6 @@ describe("crons", () => {
       {
         batchSize: 1,
         maxPages: 50,
-      },
-    );
-    expect(mocks.interval).toHaveBeenCalledWith(
-      "publisher-temporal-scan-candidate-prune",
-      { hours: 24 },
-      mocks.publisherTemporalScanCandidatePruneRef,
-      {
-        batchSize: 500,
       },
     );
   });

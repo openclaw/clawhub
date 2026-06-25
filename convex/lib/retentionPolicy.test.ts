@@ -38,12 +38,6 @@ describe("retention policies", () => {
       expirationField: "expiresAt",
       expirationIndex: "by_expires_at",
     });
-    expect(getRetentionPolicy("publisherAbuseTemporalScanCandidates")).toMatchObject({
-      classification: "ephemeral",
-      expirationField: "createdAt",
-      expirationIndex: "by_created_at",
-      prune: "publisherAbuse.pruneStaleTemporalPublisherAbuseScanCandidatesInternal",
-    });
   });
 
   it("documents package daily stats as durable analytics", () => {

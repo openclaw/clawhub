@@ -2522,9 +2522,6 @@ const publisherAbuseScoreRuns = defineTable({
   stdDevLogPressure: v.optional(v.number()),
   temporalMode: v.optional(v.union(v.literal("current"), v.literal("backfill"))),
   temporalScanComplete: v.optional(v.boolean()),
-  temporalFinalizationStage: v.optional(v.union(v.literal("aggregating"), v.literal("ranking"))),
-  temporalHighSkillCount: v.optional(v.number()),
-  temporalFlaggedPublishers: v.optional(v.number()),
   temporalBenchmark: v.optional(
     v.object({
       sampleSize: v.number(),
@@ -2632,53 +2629,6 @@ const publisherAbuseScores = defineTable({
   .index("by_owner_key_and_created_at", ["ownerKey", "createdAt"])
   .index("by_owner_key_and_model_version", ["ownerKey", "modelVersion"])
   .index("by_label_and_z_score", ["label", "zScore"]);
-
-const publisherAbuseTemporalScanCandidates = defineTable({
-  runId: v.id("publisherAbuseScoreRuns"),
-  candidate: v.object({
-    ownerKey: v.string(),
-    ownerPublisherId: v.optional(v.id("publishers")),
-    ownerUserId: v.optional(v.id("users")),
-    handleSnapshot: v.string(),
-    skillId: v.id("skills"),
-    slug: v.string(),
-    displayName: v.string(),
-    totalDownloads: v.number(),
-    totalInstalls: v.number(),
-    temporalScore: v.object({
-      spike: v.boolean(),
-      sustained: v.boolean(),
-      nearConversion: v.boolean(),
-      pressure: v.number(),
-      recent7Downloads: v.number(),
-      recent7Installs: v.number(),
-      previous30Downloads: v.number(),
-      baseline7Downloads: v.number(),
-      spikeMultiplier: v.number(),
-      recent30Downloads: v.number(),
-      recent30Installs: v.number(),
-      downloadInstallRatio30: v.number(),
-      downloads30dCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
-      spikeMultiplierCohortBand: v.optional(v.union(v.literal("p95"), v.literal("p99"))),
-      downloads30dVsPeerP95: v.optional(v.number()),
-      spikeMultiplierVsPeerP95: v.optional(v.number()),
-      installDownloadRatio7: v.number(),
-      installDownloadRatio30: v.number(),
-      installDownloadExcessZScore7: v.number(),
-      installDownloadExcessZScore30: v.number(),
-      spikeWindowStartDay: v.optional(v.number()),
-      spikeWindowEndDay: v.optional(v.number()),
-      sustainedWindowStartDay: v.optional(v.number()),
-      sustainedWindowEndDay: v.optional(v.number()),
-      nearConversionWindowStartDay: v.optional(v.number()),
-      nearConversionWindowEndDay: v.optional(v.number()),
-      reasonCodes: v.array(v.string()),
-    }),
-  }),
-  createdAt: v.number(),
-})
-  .index("by_run", ["runId"])
-  .index("by_created_at", ["createdAt"]);
 
 const publisherAbuseReviewNominations = defineTable({
   ownerKey: v.string(),
@@ -3018,7 +2968,6 @@ export default defineSchema({
   systemSettings,
   publisherAbuseScoreRuns,
   publisherAbuseScores,
-  publisherAbuseTemporalScanCandidates,
   publisherAbuseReviewNominations,
   publisherAbuseReviewEvents,
   vtScanLogs,
