@@ -67,6 +67,32 @@ describe("rateLimitedHttpAction", () => {
     expect(response.headers.get("RateLimit-Limit")).toBe(String(RATE_LIMITS.read.ip));
   });
 
+  it("preserves multiple Set-Cookie headers on successful responses", async () => {
+    const action = httpAction(async () => {
+      const headers = new Headers({ "X-App": "1" });
+      headers.append("Set-Cookie", "oauth_state=abc; HttpOnly; Path=/");
+      headers.append("Set-Cookie", "redirect_to=%2Fdashboard; HttpOnly; Path=/");
+      return new Response("ok", { headers });
+    }) as unknown as Parameters<typeof rateLimitedHttpAction>[0];
+    const wrapped = rateLimitedHttpAction(action, {
+      resolveRateLimit: () => ({ kind: "read" }),
+    }) as unknown as WrappedHttpAction;
+    const { ctx } = makeCtx();
+
+    const response = await wrapped._handler(
+      ctx,
+      new Request("https://example.com/api/auth/signin"),
+    );
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("X-App")).toBe("1");
+    expect(response.headers.get("RateLimit-Limit")).toBe(String(RATE_LIMITS.read.ip));
+    expect([...response.headers.entries()].filter(([key]) => key === "set-cookie")).toEqual([
+      ["set-cookie", "oauth_state=abc; HttpOnly; Path=/"],
+      ["set-cookie", "redirect_to=%2Fdashboard; HttpOnly; Path=/"],
+    ]);
+  });
+
   it("supports dynamic route-specific rate limit overrides", async () => {
     const action = httpAction(async () => new Response("ok")) as unknown as Parameters<
       typeof rateLimitedHttpAction
@@ -210,8 +236,26 @@ describe("installRateLimitedRoutes", () => {
       "/api/v1/packages/demo/versions/1.0.0/artifact",
       RATE_LIMITS.download.ip,
     ],
+    [
+      "scoped package named download",
+      "/api/v1/packages/",
+      "/api/v1/packages/@scope/download",
+      RATE_LIMITS.read.ip,
+    ],
+    [
+      "scoped package named artifact",
+      "/api/v1/packages/",
+      "/api/v1/packages/@scope/artifact",
+      RATE_LIMITS.read.ip,
+    ],
     ["npm metadata", "/api/npm/", "/api/npm/demo", RATE_LIMITS.read.ip],
     ["npm tarball", "/api/npm/", "/api/npm/demo/-/demo-1.0.0.tgz", RATE_LIMITS.download.ip],
+    [
+      "npm tarball with encoded separator",
+      "/api/npm/",
+      "/api/npm/demo/%2D/demo-1.0.0.tgz",
+      RATE_LIMITS.download.ip,
+    ],
   ])(
     "classifies central prefix policy for %s",
     async (_name, pathPrefix, requestPath, expectedLimit) => {

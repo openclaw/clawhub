@@ -7,6 +7,7 @@ import { requireApiTokenUser, requirePackagePublishAuth } from "../lib/apiTokenA
 import { corsHeaders, mergeHeaders } from "../lib/httpHeaders";
 import { getPublishFileSizeError, MAX_PUBLISH_FILE_BYTES } from "../lib/publishLimits";
 import { isMacJunkPath } from "../lib/skills";
+export { getPathSegments, parsePackagePathSegments } from "../lib/httpPathSegments";
 
 export const MAX_RAW_FILE_BYTES = 200 * 1024;
 const DEFAULT_PUBLIC_SITE_URL = "https://clawhub.ai";
@@ -218,17 +219,6 @@ export function requireAdminOrResponse(user: Doc<"users">, headers: HeadersInit)
   } catch {
     return { ok: false as const, response: text("Admin role required.", 403, headers) };
   }
-}
-
-export function getPathSegments(request: Request, prefix: string) {
-  const pathname = new URL(request.url).pathname;
-  if (!pathname.startsWith(prefix)) return [];
-  const rest = pathname.slice(prefix.length);
-  return rest
-    .split("/")
-    .map((segment) => segment.trim())
-    .filter(Boolean)
-    .map((segment) => decodeURIComponent(segment));
 }
 
 export function toOptionalNumber(value: string | null) {

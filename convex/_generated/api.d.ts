@@ -70,6 +70,7 @@ import type * as lib_githubSkillScans from "../lib/githubSkillScans.js";
 import type * as lib_githubSkillSync from "../lib/githubSkillSync.js";
 import type * as lib_globalStats from "../lib/globalStats.js";
 import type * as lib_httpHeaders from "../lib/httpHeaders.js";
+import type * as lib_httpPathSegments from "../lib/httpPathSegments.js";
 import type * as lib_httpRateLimit from "../lib/httpRateLimit.js";
 import type * as lib_httpRouteRateLimit from "../lib/httpRouteRateLimit.js";
 import type * as lib_httpUtils from "../lib/httpUtils.js";
@@ -219,6 +220,7 @@ declare const fullApi: ApiFromModules<{
   "lib/githubSkillSync": typeof lib_githubSkillSync;
   "lib/globalStats": typeof lib_globalStats;
   "lib/httpHeaders": typeof lib_httpHeaders;
+  "lib/httpPathSegments": typeof lib_httpPathSegments;
   "lib/httpRateLimit": typeof lib_httpRateLimit;
   "lib/httpRouteRateLimit": typeof lib_httpRouteRateLimit;
   "lib/httpUtils": typeof lib_httpUtils;

@@ -1,4 +1,4 @@
-import { LegacyApiRoutes } from "clawhub-schema";
+import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 /* @vitest-environment node */
 import { describe, expect, it } from "vitest";
 import { vi } from "vitest";
@@ -9,6 +9,8 @@ import { RATE_LIMITS } from "./lib/httpRateLimit";
 type WrappedHttpAction = {
   _handler: (ctx: ActionCtx, request: Request) => Promise<Response>;
 };
+
+type RateLimitBucketName = `${"read" | "write" | "trustedPublish" | "download" | "export"}Ip`;
 
 function makeDeniedRateLimitCtx() {
   const runQuery = vi.fn(async (_fn: unknown, args: Record<string, unknown>) => {
@@ -51,26 +53,83 @@ function makeAllowedRateLimitCtx() {
   };
 }
 
+async function expectRouteUsesIpBucket({
+  path,
+  method,
+  requestUrl = `https://example.com${path}`,
+  bucket,
+  rate,
+}: {
+  path: string;
+  method: "GET" | "POST";
+  requestUrl?: string;
+  bucket: RateLimitBucketName;
+  rate: number;
+}) {
+  const route = http.lookup(path, method);
+  if (!route) throw new Error(`Expected route for ${method} ${path}`);
+  const [action] = route;
+  const { ctx, runMutation } = makeDeniedRateLimitCtx();
+
+  const response = await (action as unknown as WrappedHttpAction)._handler(
+    ctx,
+    new Request(requestUrl, { method }),
+  );
+
+  expect(response.status).toBe(429);
+  expect(runMutation).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({
+      name: bucket,
+      config: expect.objectContaining({ rate }),
+    }),
+  );
+}
+
 describe("HTTP route rate limit defaults", () => {
   it("registers package version downloads behind the download limit", async () => {
-    const route = http.lookup("/api/v1/packages/demo/versions/1.0.0/download", "GET");
-    if (!route) throw new Error("Expected package version download route");
-    const [action] = route;
-    const { ctx, runMutation } = makeDeniedRateLimitCtx();
+    await expectRouteUsesIpBucket({
+      path: "/api/v1/packages/demo/versions/1.0.0/download",
+      method: "GET",
+      bucket: "downloadIp",
+      rate: RATE_LIMITS.download.ip,
+    });
+  });
 
-    const response = await (action as unknown as WrappedHttpAction)._handler(
-      ctx,
-      new Request("https://example.com/api/v1/packages/demo/versions/1.0.0/download"),
-    );
+  it.each([
+    ["legacy download", LegacyApiRoutes.download, "downloadIp", RATE_LIMITS.download.ip],
+    ["plugins export", ApiRoutes.pluginsExport, "exportIp", RATE_LIMITS.export.ip],
+    [
+      "package inspector artifact",
+      "/api/v1/package-inspector/artifact",
+      "downloadIp",
+      RATE_LIMITS.download.ip,
+    ],
+    [
+      "package artifact download",
+      "/api/v1/packages/demo/versions/1.0.0/artifact/download",
+      "downloadIp",
+      RATE_LIMITS.download.ip,
+    ],
+  ] as const)(
+    "registers %s behind the central special-case bucket",
+    async (_name, path, bucket, rate) => {
+      await expectRouteUsesIpBucket({
+        path,
+        method: "GET",
+        bucket,
+        rate,
+      });
+    },
+  );
 
-    expect(response.status).toBe(429);
-    expect(runMutation).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        name: "downloadIp",
-        config: expect.objectContaining({ rate: RATE_LIMITS.download.ip }),
-      }),
-    );
+  it("registers security verdict submission behind the read limit", async () => {
+    await expectRouteUsesIpBucket({
+      path: `${ApiRoutes.skills}/-/security-verdicts`,
+      method: "POST",
+      bucket: "readIp",
+      rate: RATE_LIMITS.read.ip,
+    });
   });
 
   it("registers auth sign-in routes behind the router-level default limit", async () => {
@@ -147,5 +206,21 @@ describe("HTTP route rate limit defaults", () => {
         config: expect.objectContaining({ rate: RATE_LIMITS.read.ip }),
       }),
     );
+  });
+
+  it("leaves API preflights unmetered", async () => {
+    const route = http.lookup("/api/v1/skills", "OPTIONS");
+    if (!route) throw new Error("Expected API preflight route");
+    const [action] = route;
+    const { ctx, runQuery, runMutation } = makeDeniedRateLimitCtx();
+
+    const response = await (action as unknown as WrappedHttpAction)._handler(
+      ctx,
+      new Request("https://example.com/api/v1/skills", { method: "OPTIONS" }),
+    );
+
+    expect(response.status).toBe(204);
+    expect(runQuery).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
   });
 });

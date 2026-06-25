@@ -160,6 +160,13 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
     internal.rateLimits.pruneRateLimitCountersInternal,
     { batchSize: RETENTION_STANDARD_BATCH_SIZE },
   );
+
+  crons.interval(
+    "http-rate-limit-keys-prune",
+    { hours: 1 },
+    internal.rateLimits.pruneHttpRateLimitKeysInternal,
+    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
+  );
 }
 
 export default crons;

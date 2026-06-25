@@ -38,6 +38,12 @@ describe("retention policies", () => {
       expirationField: "expiresAt",
       expirationIndex: "by_expires_at",
     });
+    expect(getRetentionPolicy("httpRateLimitKeys")).toMatchObject({
+      classification: "ephemeral",
+      expirationField: "expiresAt",
+      expirationIndex: "by_expires_at",
+      prune: "rateLimits.pruneHttpRateLimitKeysInternal",
+    });
   });
 
   it("documents package daily stats as durable analytics", () => {

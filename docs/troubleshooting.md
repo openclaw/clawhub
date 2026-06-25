@@ -31,7 +31,8 @@ clawhub login --token clh_...
 Read the retry information in the response:
 
 - `Retry-After`: seconds to wait before retrying.
-- `RateLimit-Remaining` and `RateLimit-Limit`: your current budget.
+- `RateLimit-Limit`: the limit applied to this request.
+- `RateLimit-Remaining`: your exact remaining budget when the header is present. On `429`, it is `0`.
 - `RateLimit-Reset` or `X-RateLimit-Reset`: reset timing.
 
 If many users share one egress IP, anonymous IP limits can be hit even when each

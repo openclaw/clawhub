@@ -1,14 +1,13 @@
 import { ApiRoutes, LegacyApiRoutes } from "clawhub-schema";
 import type { HttpRouter, PublicHttpAction, RouteSpec } from "convex/server";
-import type { ActionCtx } from "../_generated/server";
 import { httpAction } from "../functions";
-import { mergeHeaders } from "./httpHeaders";
+import { getPathSegments, parsePackagePathSegments } from "./httpPathSegments";
 import { applyRateLimit, markRateLimitApplied, RATE_LIMITS } from "./httpRateLimit";
 
-type HttpHandler = (ctx: ActionCtx, request: Request) => Promise<Response>;
+type HttpHandler = Parameters<typeof httpAction>[0];
 
-type RegisteredHttpAction = PublicHttpAction & {
-  _handler?: HttpHandler;
+type ConvexHttpActionWithHandler = PublicHttpAction & {
+  readonly _handler: HttpHandler;
 };
 
 type RouteRateLimitKind = keyof typeof RATE_LIMITS;
@@ -84,7 +83,7 @@ function defaultRouteRateLimitKind(method: RouteSpec["method"]): RouteRateLimitD
 }
 
 export function rateLimitedHttpAction(
-  action: RegisteredHttpAction,
+  action: PublicHttpAction,
   options: RateLimitedHttpActionOptions,
 ): PublicHttpAction {
   const handler = getRegisteredHttpHandler(action);
@@ -100,19 +99,39 @@ export function rateLimitedHttpAction(
     markRateLimitApplied(request, rate.headers);
 
     const response = await handler(ctx, request);
-    return new Response(response.body, {
-      status: response.status,
-      statusText: response.statusText,
-      headers: mergeHeaders(rate.headers, response.headers),
-    });
+    return addRateLimitHeaders(response, rate.headers);
   });
 }
 
-function getRegisteredHttpHandler(action: RegisteredHttpAction): HttpHandler {
-  if (typeof action._handler !== "function") {
+function addRateLimitHeaders(response: Response, headers: HeadersInit): Response {
+  const rateHeaders = new Headers(headers);
+  try {
+    for (const [key, value] of rateHeaders) {
+      response.headers.set(key, value);
+    }
+    return response;
+  } catch {
+    const mergedHeaders = new Headers(response.headers);
+    for (const [key, value] of rateHeaders) {
+      mergedHeaders.set(key, value);
+    }
+    return new Response(response.body, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: mergedHeaders,
+    });
+  }
+}
+
+function getRegisteredHttpHandler(action: PublicHttpAction): HttpHandler {
+  if (!hasRegisteredHttpHandler(action)) {
     throw new Error("HTTP action is missing its registered handler");
   }
   return action._handler;
+}
+
+function hasRegisteredHttpHandler(action: PublicHttpAction): action is ConvexHttpActionWithHandler {
+  return typeof (action as { _handler?: unknown })._handler === "function";
 }
 
 function getRoutedPath(spec: RouteSpec): string {
@@ -120,11 +139,15 @@ function getRoutedPath(spec: RouteSpec): string {
 }
 
 function packageReadRouteRateLimitKind(request: Request): RouteRateLimitDecision {
-  const path = new URL(request.url).pathname;
+  const packageRoute = parsePackagePathSegments(getPathSegments(request, `${ApiRoutes.packages}/`));
+  const packageSegments = packageRoute?.rest ?? [];
   if (
-    path.endsWith("/download") ||
-    path.endsWith("/artifact") ||
-    path.endsWith("/artifact/download")
+    packageSegments[0] === "download" ||
+    (packageSegments[0] === "versions" &&
+      packageSegments[1] &&
+      (packageSegments[2] === "download" ||
+        packageSegments[2] === "artifact" ||
+        packageSegments[3] === "download"))
   ) {
     return { kind: "download" };
   }
@@ -132,5 +155,8 @@ function packageReadRouteRateLimitKind(request: Request): RouteRateLimitDecision
 }
 
 function npmMirrorRouteRateLimitKind(request: Request): RouteRateLimitDecision {
-  return new URL(request.url).pathname.includes("/-/") ? { kind: "download" } : { kind: "read" };
+  const packageRoute = parsePackagePathSegments(getPathSegments(request, "/api/npm/"));
+  return packageRoute?.rest[0] === "-" && packageRoute.rest[1]
+    ? { kind: "download" }
+    : { kind: "read" };
 }

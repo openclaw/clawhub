@@ -1,5 +1,5 @@
-import { MINUTE, RateLimiter, type RateLimitConfig } from "@convex-dev/rate-limiter";
-import { components } from "../_generated/api";
+import { MINUTE, type RateLimitConfig } from "@convex-dev/rate-limiter";
+import { internal } from "../_generated/api";
 import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
@@ -15,9 +15,13 @@ export const RATE_LIMITS = {
 } as const;
 
 const HTTP_RATE_LIMIT_SHARDS = 16;
+const HTTP_RATE_LIMIT_MIN_SHARD_CAPACITY = 10;
+const HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 
 type RateLimitResult = {
   allowed: boolean;
+  // The component does not expose an exact global remaining count for sharded
+  // buckets, so successful responses omit this instead of guessing.
   remaining?: number;
   limit: number;
   resetAt: number;
@@ -31,16 +35,21 @@ export type ApplyRateLimitResult =
 type RateLimitKind = keyof typeof RATE_LIMITS;
 type RateLimitSubject = "ip" | "key" | "adminKey";
 type HttpRateLimitName = `${RateLimitKind}${Capitalize<RateLimitSubject>}`;
+type FixedWindowRateLimitConfig = Extract<RateLimitConfig, { kind: "fixed window" }>;
 
 const preappliedRateLimitHeaders = new WeakMap<Request, HeadersInit>();
 
-function fixedWindowRateLimit(rate: number): RateLimitConfig {
+function fixedWindowRateLimit(rate: number): FixedWindowRateLimitConfig {
+  const shards = Math.max(
+    1,
+    Math.min(HTTP_RATE_LIMIT_SHARDS, Math.floor(rate / HTTP_RATE_LIMIT_MIN_SHARD_CAPACITY)),
+  );
   return {
     kind: "fixed window",
     rate,
     period: MINUTE,
     start: 0,
-    shards: HTTP_RATE_LIMIT_SHARDS,
+    shards,
   };
 }
 
@@ -61,8 +70,6 @@ const HTTP_RATE_LIMIT_CONFIGS = {
   exportKey: fixedWindowRateLimit(RATE_LIMITS.export.key),
   exportAdminKey: fixedWindowRateLimit(RATE_LIMITS.export.adminKey),
 } as const satisfies Record<HttpRateLimitName, RateLimitConfig>;
-
-const httpRateLimiter = new RateLimiter(components.rateLimiter, HTTP_RATE_LIMIT_CONFIGS);
 
 export function markRateLimitApplied(request: Request, headers: HeadersInit): void {
   preappliedRateLimitHeaders.set(request, headers);
@@ -207,7 +214,13 @@ async function checkRateLimit(
 ): Promise<RateLimitResult> {
   const now = Date.now();
   try {
-    const status = await httpRateLimiter.limit(ctx, name, { key });
+    const status = await ctx.runMutation(internal.rateLimits.consumeHttpRateLimitKeyInternal, {
+      name,
+      key,
+      config: HTTP_RATE_LIMIT_CONFIGS[name],
+      now,
+      ttlMs: HTTP_RATE_LIMIT_KEY_TTL_MS,
+    });
     if (!status.ok) {
       return {
         allowed: false,
@@ -310,7 +323,9 @@ function shouldTrustClientIpHeaders() {
 function isRateLimitWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    (error.message.includes("rateLimitCounters") || error.message.includes("rateLimits")) &&
+    (error.message.includes("rateLimitCounters") ||
+      error.message.includes("rateLimits") ||
+      error.message.includes("httpRateLimitKeys")) &&
     error.message.includes("changed while this mutation was being run")
   );
 }

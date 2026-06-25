@@ -1,19 +1,7 @@
+import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ActionCtx } from "./_generated/server";
 import { __test, downloadZipHandler } from "./downloads";
-
-type RateLimitConfig = {
-  kind: "fixed window" | "token bucket";
-  rate: number;
-  period: number;
-  shards?: number;
-};
-
-type RateLimitArgs = {
-  name: string;
-  key?: string;
-  config: RateLimitConfig;
-};
 
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
@@ -24,13 +12,13 @@ function isRateLimitArgs(args: unknown): args is RateLimitArgs {
     (!("key" in value) || typeof value.key === "string") &&
     !!config &&
     typeof config === "object" &&
-    typeof config.kind === "string" &&
+    (config.kind === "fixed window" || config.kind === "token bucket") &&
     typeof config.rate === "number" &&
     typeof config.period === "number"
   );
 }
 
-const okRate = () => ({
+const okRate = (): RateLimitReturns => ({
   ok: true,
 });
 

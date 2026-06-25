@@ -1,4 +1,5 @@
 /* @vitest-environment node */
+import type { RateLimitArgs, RateLimitReturns } from "@convex-dev/rate-limiter";
 import { gzipSync, strFromU8, unzipSync } from "fflate";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api, internal } from "./_generated/api";
@@ -41,19 +42,6 @@ const { __handlers } = await import("./httpApiV1");
 
 type ActionCtx = import("./_generated/server").ActionCtx;
 
-type RateLimitConfig = {
-  kind: "fixed window" | "token bucket";
-  rate: number;
-  period: number;
-  shards?: number;
-};
-
-type RateLimitArgs = {
-  name: string;
-  key?: string;
-  config: RateLimitConfig;
-};
-
 function isRateLimitArgs(args: unknown): args is RateLimitArgs {
   if (!args || typeof args !== "object") return false;
   const value = args as Record<string, unknown>;
@@ -63,7 +51,7 @@ function isRateLimitArgs(args: unknown): args is RateLimitArgs {
     (!("key" in value) || typeof value.key === "string") &&
     !!config &&
     typeof config === "object" &&
-    typeof config.kind === "string" &&
+    (config.kind === "fixed window" || config.kind === "token bucket") &&
     typeof config.rate === "number" &&
     typeof config.period === "number"
   );
@@ -258,11 +246,11 @@ function makeCtx(partial: Record<string, unknown>) {
   return { ...partial, runQuery, runMutation } as unknown as ActionCtx;
 }
 
-const okRate = () => ({
+const okRate = (): RateLimitReturns => ({
   ok: true,
 });
 
-const blockedRate = () => ({
+const blockedRate = (): RateLimitReturns => ({
   ok: false,
   retryAfter: 60_000,
 });

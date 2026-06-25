@@ -39,14 +39,17 @@ Enforcement model:
 
 Headers:
 
-- Legacy compatibility: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
-- Standardized: `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`
+- Legacy compatibility: `X-RateLimit-Limit`, `X-RateLimit-Reset`
+- Standardized: `RateLimit-Limit`, `RateLimit-Reset`
+- On `429`: `X-RateLimit-Remaining: 0` and `RateLimit-Remaining: 0`
 - On `429`: `Retry-After`
 
 Header semantics:
 
 - `X-RateLimit-Reset`: absolute Unix epoch seconds
 - `RateLimit-Reset`: seconds until reset (delay)
+- `X-RateLimit-Remaining` / `RateLimit-Remaining`: exact remaining budget when present.
+  Sharded successful requests omit this header instead of returning an approximate global value.
 - `Retry-After`: seconds to wait before retry (delay) on `429`
 
 Example `429` response:

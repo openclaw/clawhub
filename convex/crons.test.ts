@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => {
   const githubSkillSyncRef = Symbol("github-skill-source-sync");
   const installTelemetryDedupePruneRef = Symbol("install-telemetry-dedupe-prune");
   const rateLimitCountersPruneRef = Symbol("rate-limit-counters-prune");
+  const httpRateLimitKeysPruneRef = Symbol("http-rate-limit-keys-prune");
   const skillStatEventPruneRef = Symbol("skill-stat-event-prune");
   const packageStatEventPruneRef = Symbol("package-stat-event-prune");
   const authSessionsPruneRef = Symbol("auth-sessions-prune");
@@ -15,6 +16,7 @@ const mocks = vi.hoisted(() => {
     githubSkillSyncRef,
     installTelemetryDedupePruneRef,
     rateLimitCountersPruneRef,
+    httpRateLimitKeysPruneRef,
     skillStatEventPruneRef,
     packageStatEventPruneRef,
     authSessionsPruneRef,
@@ -64,6 +66,7 @@ vi.mock("./_generated/api", () => ({
     },
     rateLimits: {
       pruneRateLimitCountersInternal: mocks.rateLimitCountersPruneRef,
+      pruneHttpRateLimitKeysInternal: mocks.httpRateLimitKeysPruneRef,
     },
     retention: {
       pruneExpiredAuthSessionsInternal: mocks.authSessionsPruneRef,
@@ -131,6 +134,17 @@ describe("crons", () => {
       "rate-limit-counters-prune",
       { minutes: 15 },
       mocks.rateLimitCountersPruneRef,
+      { batchSize: 500 },
+    );
+  });
+
+  it("prunes stale component HTTP rate limit keys hourly", async () => {
+    await import("./crons");
+
+    expect(mocks.interval).toHaveBeenCalledWith(
+      "http-rate-limit-keys-prune",
+      { hours: 1 },
+      mocks.httpRateLimitKeysPruneRef,
       { batchSize: 500 },
     );
   });

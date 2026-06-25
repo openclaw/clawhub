@@ -2696,6 +2696,17 @@ const rateLimitCounters = defineTable({
   .index("by_key_window_shard", ["key", "windowStart", "shard"])
   .index("by_expires_at", ["expiresAt"]);
 
+const httpRateLimitKeys = defineTable({
+  name: v.string(),
+  key: v.string(),
+  shard: v.optional(v.number()),
+  lastTouchedAt: v.number(),
+  expiresAt: v.number(),
+})
+  .index("by_name_and_key_and_shard", ["name", "key", "shard"])
+  .index("by_name_and_key_and_expires_at", ["name", "key", "expiresAt"])
+  .index("by_expires_at", ["expiresAt"]);
+
 const downloadMetricTargetKind = v.union(v.literal("skill"), v.literal("package"));
 const downloadMetricIdentityKind = v.union(v.literal("user"), v.literal("ip"));
 
@@ -2910,6 +2921,7 @@ export default defineSchema({
   apiTokens,
   cliDeviceCodes,
   rateLimitCounters,
+  httpRateLimitKeys,
   downloadMetricDedupes,
   packageInstallMetricDedupes,
   installTelemetryDedupes,

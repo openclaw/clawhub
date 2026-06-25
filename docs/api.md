@@ -41,12 +41,16 @@ Auth-aware enforcement:
 - Write: 300/min per IP, 3000/min per key
 - Download: 1200/min per IP, 6000/min per key
 
-Headers: `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`, `RateLimit-Limit`, `RateLimit-Remaining`, `RateLimit-Reset`, `Retry-After` (on 429).
+Headers: `X-RateLimit-Limit`, `X-RateLimit-Reset`, `RateLimit-Limit`, `RateLimit-Reset`;
+`X-RateLimit-Remaining`, `RateLimit-Remaining`, and `Retry-After` are included on `429`.
 
 Semantics:
 
 - `X-RateLimit-Reset`: Unix epoch seconds (absolute reset time)
 - `RateLimit-Reset`: delay seconds until reset
+- `X-RateLimit-Remaining` / `RateLimit-Remaining`: exact remaining budget when
+  present; sharded successful requests omit it rather than returning an approximate
+  global value
 - `Retry-After`: delay seconds to wait on `429`
 
 Example `429`:
