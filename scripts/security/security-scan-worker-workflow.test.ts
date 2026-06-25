@@ -36,6 +36,7 @@ describe("security-scan-codex workflow", () => {
         "codex-security-scan": {
           env?: Record<string, unknown>;
           steps: WorkflowStep[];
+          "timeout-minutes"?: number;
         };
       };
     };
@@ -61,6 +62,13 @@ describe("security-scan-codex workflow", () => {
       "${{ !cancelled() && steps.diagnostics_secret_scan.outcome == 'success' }}",
     );
     expect(uploadStep?.with?.path).toBe("${{ env.CODEX_SECURITY_SCAN_DIAGNOSTICS_DIR }}");
+    expect(workflow.jobs["codex-security-scan"]["timeout-minutes"]).toBe(20);
+    expect(jobEnv.CODEX_SECURITY_SCAN_MAX_RUNTIME_MINUTES).toBe(
+      "${{ inputs['max-runtime-minutes'] || '8' }}",
+    );
+    expect(jobEnv.CODEX_SECURITY_SCAN_TIMEOUT_MS).toBe(
+      "${{ vars.CODEX_SECURITY_SCAN_TIMEOUT_MS || '240000' }}",
+    );
     expect(jobEnv).not.toHaveProperty("OPENAI_API_KEY");
     expect(jobEnv).not.toHaveProperty("SECURITY_SCAN_WORKER_TOKEN");
     expectSecretStepAllowlist(steps, "OPENAI_API_KEY", [
