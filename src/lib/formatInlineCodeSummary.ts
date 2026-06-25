@@ -1,6 +1,4 @@
-export type InlineCodeSummarySegment =
-  | { type: "text"; value: string }
-  | { type: "code"; value: string };
+type InlineCodeSummarySegment = { type: "text"; value: string } | { type: "code"; value: string };
 
 const INLINE_CODE_PATTERN = /`([^`\n]+)`/g;
 

@@ -18,11 +18,11 @@ import {
   useBrowseSearchDisclosure,
 } from "../../components/BrowseControls";
 import { formatBrowseCount } from "../../lib/browseCount";
-import { parseBrowseTopicFromSearchInput, sanitizeBrowseTopicSearch } from "../../lib/browseTopicSearch";
 import {
-  resolveSkillBrowseCategorySlug,
-  SKILL_CATEGORIES,
-} from "../../lib/categories";
+  parseBrowseTopicFromSearchInput,
+  sanitizeBrowseTopicSearch,
+} from "../../lib/browseTopicSearch";
+import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
 import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
@@ -101,10 +101,7 @@ export function SkillsIndex() {
           : "all";
   const activeSort = ["updated", "newest", "name"].includes(model.sort) ? model.sort : undefined;
   const hasActiveFilters =
-    model.hasQuery ||
-    Boolean(model.activeCategory) ||
-    Boolean(activeTopic) ||
-    model.featuredOnly;
+    model.hasQuery || Boolean(model.activeCategory) || Boolean(activeTopic) || model.featuredOnly;
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
   const categoryTopics = useQuery(
     api.catalogTopics.listTopByCategory,

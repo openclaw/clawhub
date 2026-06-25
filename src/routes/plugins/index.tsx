@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { isPluginCategorySlug, normalizeCatalogTopic } from "clawhub-schema";
+import { isPluginCategorySlug } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { BadgeCheck, PackageSearch, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,14 +21,17 @@ import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { formatBrowseCount } from "../../lib/browseCount";
+import {
+  parseBrowseTopicFromSearchInput,
+  sanitizeBrowseTopicSearch,
+} from "../../lib/browseTopicSearch";
 import { PLUGIN_CATEGORIES, resolvePluginBrowseCategorySlug } from "../../lib/categories";
-import { parseBrowseTopicFromSearchInput, sanitizeBrowseTopicSearch } from "../../lib/browseTopicSearch";
-import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
   type PackageListItem,
 } from "../../lib/packageApi";
+import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 
 type VisiblePluginSort = "recommended" | "updated" | "downloads" | "trending";

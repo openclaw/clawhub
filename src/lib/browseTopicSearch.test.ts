@@ -21,7 +21,9 @@ describe("browseTopicSearch", () => {
   });
 
   it("removes malformed topic keys when sanitizing search state", () => {
-    expect(sanitizeBrowseTopicSearch({ "topic=github": "", category: "development" }, "github")).toEqual({
+    expect(
+      sanitizeBrowseTopicSearch({ "topic=github": "", category: "development" }, "github"),
+    ).toEqual({
       category: "development",
       topic: "github",
     });

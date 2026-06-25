@@ -280,7 +280,9 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
                 ) : null}
               </div>
             </div>
-            <div className={`file-viewer-body${isViewerLoading ? " file-viewer-body-loading" : ""}`}>
+            <div
+              className={`file-viewer-body${isViewerLoading ? " file-viewer-body-loading" : ""}`}
+            >
               {isViewerLoading ? (
                 <FileViewerSkeleton />
               ) : fileError ? (

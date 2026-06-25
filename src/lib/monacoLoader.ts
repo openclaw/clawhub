@@ -2,11 +2,12 @@ import { loader } from "@monaco-editor/react";
 import * as monaco from "monaco-editor";
 import editorWorker from "monaco-editor/esm/vs/editor/editor.worker?worker";
 
-type MonacoWindow = Window & typeof globalThis & {
-  MonacoEnvironment?: {
-    getWorker: () => Worker;
+type MonacoWindow = Window &
+  typeof globalThis & {
+    MonacoEnvironment?: {
+      getWorker: () => Worker;
+    };
   };
-};
 
 const browserWindow = typeof window !== "undefined" ? (window as MonacoWindow) : undefined;
 

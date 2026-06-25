@@ -4,7 +4,6 @@ import { describe, expect, it, vi } from "vitest";
 import { useBrowseTopicSearch } from "./useBrowseTopicSearch";
 
 const useRouterStateMock = vi.fn();
-const navigateMock = vi.fn();
 
 vi.mock("@tanstack/react-router", () => ({
   useRouterState: (options: { select: (state: unknown) => unknown }) =>
@@ -23,7 +22,9 @@ describe("useBrowseTopicSearch", () => {
 
   it("falls back to malformed topic%3Dgithub query strings", () => {
     useRouterStateMock.mockReturnValue("?topic%3Dgithub");
-    const { result } = renderHook(() => useBrowseTopicSearch({ "topic=github": "" }));
+    const { result } = renderHook(() =>
+      useBrowseTopicSearch<{ topic?: string; "topic=github"?: string }>({ "topic=github": "" }),
+    );
     expect(result.current.activeTopic).toBe("github");
     expect(result.current.search.topic).toBe("github");
   });

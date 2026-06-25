@@ -7,7 +7,12 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges, isSkillOfficial } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
-import { buildSkillCategoryBrowseHref, buildSkillTopicBrowseHref, formatCatalogTopicLabel, type SkillCategory } from "../lib/categories";
+import {
+  buildSkillCategoryBrowseHref,
+  buildSkillTopicBrowseHref,
+  formatCatalogTopicLabel,
+  type SkillCategory,
+} from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
@@ -15,10 +20,10 @@ import { timeAgo } from "../lib/timeAgo";
 import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
 import { useMediaQuery } from "../lib/useMediaQuery";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
-import { InlineCodeSummary } from "./InlineCodeSummary";
 import { DetailHero, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
+import { InlineCodeSummary } from "./InlineCodeSummary";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";

@@ -55,10 +55,7 @@ export function parseBrowseTopicFromSearchString(searchStr: string | undefined) 
   return parseTopicFromSearchParams(new URLSearchParams(normalized));
 }
 
-export function hasMalformedBrowseTopicSearch(
-  search: Record<string, unknown>,
-  searchStr?: string,
-) {
+export function hasMalformedBrowseTopicSearch(search: Record<string, unknown>, searchStr?: string) {
   if (Object.keys(search).some((key) => key.startsWith("topic="))) {
     return true;
   }
