@@ -228,9 +228,9 @@ function UnifiedSearchPage() {
               {results.map((item) =>
                 item.type === "skill" ? (
                   <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
-                ) : (
+                ) : item.type === "plugin" ? (
                   <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
-                ),
+                ) : null,
               )}
             </div>
           )}
@@ -340,4 +340,3 @@ function SkillResultRow({ result }: { result: UnifiedSkillResult }) {
 function PluginResultRow({ result }: { result: UnifiedPluginResult }) {
   return <PluginListItem item={result.plugin} />;
 }
-

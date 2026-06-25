@@ -556,8 +556,7 @@ export function PublisherProfilePage({
     () => Boolean(myPublisherMemberships?.some((entry) => entry.publisher.handle === handle)),
     [myPublisherMemberships, handle],
   );
-  const viewerCanSeeOrgRoles =
-    isAdmin(me) || (me?.handle != null && me.handle === publisher.handle);
+  const viewerCanSeeOrgRoles = isAdmin(me) || (me?.handle != null && me.handle === handle);
 
   const {
     results: publishedResults,
