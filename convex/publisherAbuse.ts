@@ -448,6 +448,11 @@ export const banPublisherAbuseOwner = mutation({
     if (!nomination.ownerUserId) {
       throw new Error("Cannot ban publisher abuse nomination without a linked user");
     }
+    const ownerUser = await ctx.db.get(nomination.ownerUserId);
+    if (!ownerUser) throw new Error("Publisher abuse nomination owner not found");
+    if (ownerUser.role === "admin" || ownerUser.role === "moderator") {
+      throw new Error("Cannot ban staff accounts through publisher abuse workflow");
+    }
     await requirePublisherAbuseNominationNotExcluded(ctx, nomination);
     await requirePublisherAbuseNominationStillTargetsLinkedUser(ctx, nomination);
 

@@ -545,7 +545,7 @@ export function Management() {
 
   const banPublisherAbuseOwner = (item: PublisherAbuseReviewItem) => {
     const ownerUser = item.ownerUser;
-    if (!ownerUser || !canBanPublisherAbuseOwner(item, me?._id ?? null, admin)) return;
+    if (!ownerUser || !canBanPublisherAbuseOwner(item, me?._id ?? null)) return;
     const label = `@${ownerUser.handle ?? ownerUser.name ?? item.nomination.handleSnapshot}`;
     // The review notes box above the Ban button is the ban reason — no separate prompt.
     const reason = publisherAbuseNotes.trim() || undefined;

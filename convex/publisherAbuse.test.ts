@@ -985,7 +985,10 @@ describe("publisher abuse dry-run persistence", () => {
               });
             }
             if (id === publisher._id) return publisher;
-            return extraGet?.(id) ?? null;
+            const extra = extraGet?.(id);
+            if (extra) return extra;
+            if (id === publisher.linkedUserId) return { _id: id, role: "user" };
+            return null;
           }),
           insert,
           patch,
@@ -1037,7 +1040,7 @@ describe("publisher abuse dry-run persistence", () => {
           expectedUpdatedAt: 1,
           reason: "confirmed spam",
         }),
-      ).rejects.toThrow(/excluded publisher/i);
+      ).rejects.toThrow(/excluded publisher|staff accounts/i);
 
       expect(runMutation).not.toHaveBeenCalled();
       expect(patch).not.toHaveBeenCalled();
@@ -1075,6 +1078,9 @@ describe("publisher abuse dry-run persistence", () => {
               kind: "user",
               linkedUserId: "users:new-owner",
             };
+          }
+          if (id === "users:previous-owner") {
+            return { _id: "users:previous-owner", role: "user" };
           }
           if (id === "users:new-owner") return { _id: "users:new-owner", role: "user" };
           return null;
@@ -1125,6 +1131,7 @@ describe("publisher abuse dry-run persistence", () => {
               updatedAt: 1,
             };
           }
+          if (id === "users:owner") return { _id: "users:owner", role: "user" };
           return null;
         }),
         insert,
@@ -1165,6 +1172,54 @@ describe("publisher abuse dry-run persistence", () => {
     );
   });
 
+  it.each(["admin", "moderator"] as const)(
+    "rejects direct ban actions for %s owners without a publisher row",
+    async (role) => {
+      vi.mocked(requireUser).mockResolvedValue({
+        userId: "users:admin",
+        user: { _id: "users:admin", role: "admin" },
+      } as never);
+      const runMutation = vi.fn(async () => ({ ok: true }));
+      const patch = vi.fn(async () => null);
+      const insert = vi.fn(async (table: string) => `${table}:new`);
+      const ctx = {
+        runMutation,
+        db: {
+          get: vi.fn(async (id: string) => {
+            if (id === "publisherAbuseReviewNominations:nomination") {
+              return {
+                _id: "publisherAbuseReviewNominations:nomination",
+                ownerKey: "user:staff",
+                ownerUserId: "users:staff",
+                latestScoreId: "publisherAbuseScores:score",
+                label: "potential_ban_candidate",
+                status: "pending",
+                updatedAt: 1,
+              };
+            }
+            if (id === "users:staff") return { _id: "users:staff", role };
+            return null;
+          }),
+          insert,
+          patch,
+        },
+      };
+
+      await expect(
+        banPublisherAbuseOwnerHandler(ctx, {
+          nominationId: "publisherAbuseReviewNominations:nomination",
+          expectedLatestScoreId: "publisherAbuseScores:score",
+          expectedUpdatedAt: 1,
+          reason: "confirmed spam",
+        }),
+      ).rejects.toThrow(/staff accounts/i);
+
+      expect(runMutation).not.toHaveBeenCalled();
+      expect(patch).not.toHaveBeenCalled();
+      expect(insert).not.toHaveBeenCalled();
+    },
+  );
+
   it("uses publisher abuse email context for manual bans without notes", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
@@ -1188,6 +1243,7 @@ describe("publisher abuse dry-run persistence", () => {
               updatedAt: 1,
             };
           }
+          if (id === "users:owner") return { _id: "users:owner", role: "user" };
           return null;
         }),
         insert,

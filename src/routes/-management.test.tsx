@@ -879,4 +879,46 @@ describe("Management", () => {
     });
     expect(banUser).not.toHaveBeenCalled();
   });
+
+  it("does not offer publisher abuse bans for staff owners", () => {
+    const banPublisherAbuseOwner = vi.fn(async () => ({ ok: true }));
+    const item = makePublisherAbuseItem({
+      handle: "staff-pub",
+      ownerRole: "moderator",
+      ownerUserId: "users:staff",
+    });
+    useMutationMock.mockImplementation((mutation) => {
+      if (getFunctionName(mutation) === "publisherAbuse:banPublisherAbuseOwner") {
+        return banPublisherAbuseOwner;
+      }
+      return vi.fn(async () => ({ ok: true }));
+    });
+    useQueryMock.mockImplementation((query, args) => {
+      if (args === "skip") return undefined;
+      const name = getFunctionName(query);
+      if (name === "skills:listRecentVersions") return [];
+      if (name === "skills:listReportedSkills") return [];
+      if (name === "skills:listDuplicateCandidates") return [];
+      if (name === "publisherAbuse:listReviewDashboard") {
+        return {
+          latestRun: null,
+          pendingItems: [],
+          pendingPotentialBanCandidateItems: [item],
+          pendingReviewItems: [],
+          recentResolvedItems: [],
+        };
+      }
+      if (name === "users:list") return { items: [], total: 0 };
+      return undefined;
+    });
+
+    render(<Management />);
+
+    fireEvent.click(screen.getByText("staff-pub"));
+
+    const banButton = screen.getByRole("button", { name: "Ban user" }) as HTMLButtonElement;
+    expect(banButton.disabled).toBe(true);
+    fireEvent.click(banButton);
+    expect(banPublisherAbuseOwner).not.toHaveBeenCalled();
+  });
 });

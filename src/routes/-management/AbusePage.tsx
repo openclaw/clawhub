@@ -85,7 +85,7 @@ export function AbusePage({
   const latestRun = dashboard?.latestRun ?? null;
   const selectedScore = selectedItem?.latestScore ?? null;
   const selectedPublisher = selectedItem?.publisher ?? null;
-  const canBanSelectedUser = canBanPublisherAbuseOwner(selectedItem, currentUserId, admin);
+  const canBanSelectedUser = canBanPublisherAbuseOwner(selectedItem, currentUserId);
   const visiblePending = dashboard ? getPublisherAbuseVisiblePendingItems(dashboard) : [];
   const totalPending = visiblePending.length;
   const potentialBan = visiblePending.filter(
@@ -654,12 +654,11 @@ function isVisiblePublisherAbuseItem(item: PublisherAbuseReviewItem) {
 export function canBanPublisherAbuseOwner(
   item: PublisherAbuseReviewItem | null,
   currentUserId: Id<"users"> | null,
-  admin: boolean,
 ) {
   const ownerUser = item?.ownerUser;
   if (!ownerUser?._id) return false;
   if (ownerUser._id === currentUserId) return false;
-  if (ownerUser.role === "admin" && !admin) return false;
+  if (ownerUser.role === "admin" || ownerUser.role === "moderator") return false;
   return true;
 }
 
