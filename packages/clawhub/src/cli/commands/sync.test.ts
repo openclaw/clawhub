@@ -368,6 +368,51 @@ describe("cmdSync", () => {
     );
   });
 
+  it("does not report a raced unchanged publish as uploaded", async () => {
+    interactive = false;
+    const stdoutWrite = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {
+      if (args.path?.startsWith("/api/v1/resolve?")) {
+        const u = new URL(`https://x.test${args.path}`);
+        const slug = u.searchParams.get("slug");
+        if (slug === "new-skill") throw new Error("Skill not found");
+        if (slug === "synced-skill") {
+          return { match: { version: "1.2.3" }, latestVersion: { version: "1.2.3" } };
+        }
+        if (slug === "update-skill") {
+          return { match: null, latestVersion: { version: "1.0.0" } };
+        }
+      }
+      throw new Error(`Unexpected apiRequest: ${String(args.path)}`);
+    });
+    mockCmdPublish.mockImplementation(
+      (_opts: unknown, _folder: unknown, options?: { slug?: string; version?: string }) =>
+        options?.slug === "new-skill"
+          ? { status: "unchanged", version: options.version }
+          : { status: "published", version: options?.version },
+    );
+
+    let output = "";
+    try {
+      await cmdSync(makeOpts(), { root: ["/scan"], all: true, json: true }, false);
+      output = String(stdoutWrite.mock.calls[0]?.[0] ?? "");
+    } finally {
+      stdoutWrite.mockRestore();
+    }
+
+    const parsed = JSON.parse(output);
+    expect(parsed.summary).toMatchObject({ published: 1, alreadySynced: 2, failed: 0 });
+    expect(parsed.published).toEqual([
+      expect.objectContaining({ slug: "update-skill", version: "1.0.1" }),
+    ]);
+    expect(parsed.alreadySynced).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ slug: "synced-skill", version: "1.2.3" }),
+        expect.objectContaining({ slug: "new-skill", version: "1.0.0" }),
+      ]),
+    );
+  });
+
   it("requires --all for non-interactive publish mode", async () => {
     interactive = false;
     mockApiRequest.mockImplementation(async (_registry: string, args: { path?: string }) => {

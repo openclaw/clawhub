@@ -209,6 +209,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
   const tags = options.tags ?? "latest";
   const failedUploads: Array<{ slug: string; message: string }> = [];
   const published: Array<{ slug: string; folder: string; version: string }> = [];
+  const racedNoOps: Array<{ slug: string; folder: string; version: string }> = [];
 
   for (const { skill, source } of plannedPublishes) {
     const { publishVersion, changelog } = resolvePublishMeta(skill, {
@@ -245,6 +246,14 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
         });
         continue;
       }
+      if (result?.status === "unchanged") {
+        racedNoOps.push({
+          slug: skill.slug,
+          folder: skill.folder,
+          version: result.version ?? publishVersion,
+        });
+        continue;
+      }
       published.push({
         slug: skill.slug,
         folder: skill.folder,
@@ -265,7 +274,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
           roots: outputRoots,
           owner: ownerHandle,
           duplicates: deduped.duplicates,
-          alreadySynced: synced.map(formatSyncedJson),
+          alreadySynced: [...synced.map(formatSyncedJson), ...racedNoOps],
           wouldPublish: [],
           published,
           failed: failedUploads,
@@ -297,7 +306,7 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
         roots: outputRoots,
         owner: ownerHandle,
         duplicates: deduped.duplicates,
-        alreadySynced: synced.map(formatSyncedJson),
+        alreadySynced: [...synced.map(formatSyncedJson), ...racedNoOps],
         wouldPublish: [],
         published,
         failed: [],
@@ -306,7 +315,13 @@ export async function cmdSync(opts: GlobalOpts, options: SyncOptions, inputAllow
     return;
   }
 
-  outro(`Published ${selected.length} skill(s).`);
+  if (racedNoOps.length > 0) {
+    outro(
+      `Published ${published.length} of ${selected.length} skill(s). ${racedNoOps.length} already synced.`,
+    );
+  } else {
+    outro(`Published ${published.length} skill(s).`);
+  }
 }
 
 function writeNoActionOutput(params: {
