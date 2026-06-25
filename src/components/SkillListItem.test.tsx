@@ -4,7 +4,7 @@ import { render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import type { Id } from "../../convex/_generated/dataModel";
-import type { PublicSkill } from "../lib/publicUser";
+import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { SkillListItem } from "./SkillListItem";
 
 vi.mock("@tanstack/react-router", () => ({
@@ -29,6 +29,15 @@ describe("SkillListItem", () => {
 
     expect(screen.getByLabelText("Verified")).toBeTruthy();
     expect(screen.queryByText("Verified")).toBeNull();
+    expect(container.querySelector(".official-badge")).toBeTruthy();
+  });
+
+  it("renders the compact official mark for skills owned by official publishers", () => {
+    const { container } = render(
+      <SkillListItem skill={makeSkill()} owner={makePublisher({ official: true })} />,
+    );
+
+    expect(screen.getByLabelText("Verified")).toBeTruthy();
     expect(container.querySelector(".official-badge")).toBeTruthy();
   });
 
@@ -74,6 +83,20 @@ function makeSkill(overrides: Partial<PublicSkill> = {}): PublicSkill {
     isSuspicious: false,
     createdAt: 1,
     updatedAt: 1,
+    ...overrides,
+  };
+}
+
+function makePublisher(overrides: Partial<PublicPublisher> = {}): PublicPublisher {
+  return {
+    _id: "publishers:owner" as Id<"publishers">,
+    _creationTime: 1,
+    kind: "org",
+    handle: "owner",
+    displayName: "Owner",
+    image: undefined,
+    bio: undefined,
+    linkedUserId: undefined,
     ...overrides,
   };
 }
