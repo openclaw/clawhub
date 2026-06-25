@@ -15,6 +15,12 @@ function parseMetadata(value: unknown) {
   }
 }
 
+export function truncateSkillPublishSummary(value: string, maxLength: number) {
+  const trimmed = value.trim();
+  if (!trimmed || trimmed.length <= maxLength) return trimmed;
+  return trimmed.slice(0, maxLength).trimEnd();
+}
+
 export function extractSkillFrontmatterDescription(content: string) {
   const normalized = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   if (!normalized.startsWith("---")) return undefined;

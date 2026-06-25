@@ -49,7 +49,7 @@ const QUALITY_WINDOW_MS = 24 * 60 * 60 * 1000;
 const QUALITY_ACTIVITY_LIMIT = 60;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
 const SECURITY_SCAN_ENQUEUE_BACKUP_DELAY_MS = 15_000;
-const MAX_PUBLISH_SUMMARY_LENGTH = 200;
+const MAX_PUBLISH_SUMMARY_LENGTH = 300;
 
 type FingerprintFile = { path: string; sha256: string };
 type SafePublishFile = PublishVersionArgs["files"][number] & { path: string };

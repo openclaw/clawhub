@@ -12,7 +12,6 @@ import {
   CircleX,
   ExternalLink,
   FolderOpen,
-  Info,
   Lock,
   Upload as UploadIcon,
   X,
@@ -48,7 +47,10 @@ import { Textarea } from "../../components/ui/textarea";
 import { UploadDropzoneDecor } from "../../components/UploadDropzoneDecor";
 import { VersionInput } from "../../components/VersionInput";
 import { setPostPublishFlash } from "../../lib/postPublishFlash";
-import { extractSkillFrontmatterDescription } from "../../lib/skillFrontmatter";
+import {
+  extractSkillFrontmatterDescription,
+  truncateSkillPublishSummary,
+} from "../../lib/skillFrontmatter";
 import { getPublicSlugCollision } from "../../lib/slugCollision";
 import { expandDroppedItems, expandFilesWithReport } from "../../lib/uploadFiles";
 import { useAuthStatus } from "../../lib/useAuthStatus";
@@ -132,7 +134,6 @@ export function Upload() {
     tags: false,
     license: false,
   });
-  const [metadataPrefillNote, setMetadataPrefillNote] = useState<string | null>(null);
   const [version, setVersion] = useState("1.0.0");
   const [tags, setTags] = useState("latest");
   const [categories, setCategories] = useState<string[]>([]);
@@ -144,6 +145,7 @@ export function Upload() {
   const categoriesTouchedRef = useRef(false);
   const topicsTouchedRef = useRef(false);
   const summaryTouchedRef = useRef(false);
+  const [summaryRecommendationDismissed, setSummaryRecommendationDismissed] = useState(false);
   const [changelogStatus, setChangelogStatus] = useState<"idle" | "loading" | "ready" | "error">(
     "idle",
   );
@@ -346,7 +348,12 @@ export function Upload() {
   useEffect(() => {
     if (summaryTouchedRef.current) return;
     if (!uploadedSkillSummary) return;
-    setSummary((current) => (current === uploadedSkillSummary ? current : uploadedSkillSummary));
+    const nextSummary = truncateSkillPublishSummary(
+      uploadedSkillSummary,
+      SKILL_PUBLISH_SUMMARY_MAX_LENGTH,
+    );
+    if (!nextSummary) return;
+    setSummary((current) => (current === nextSummary ? current : nextSummary));
   }, [uploadedSkillSummary]);
 
   useEffect(() => {
@@ -609,12 +616,17 @@ export function Upload() {
     );
   }
 
+  function resetSummaryPrefillState() {
+    summaryTouchedRef.current = false;
+    setSummaryRecommendationDismissed(false);
+  }
+
   async function applyExpandedFiles(selected: File[]) {
     const report = await expandFilesWithReport(selected);
+    resetSummaryPrefillState();
     setFiles(report.files);
     setIgnoredLocalMetadataPaths(report.ignoredLocalMetadataPaths);
     setPendingFileRemovalIndex(null);
-    setMetadataPrefillNote(null);
     resetFileInput();
 
     if (updateSlug) return;
@@ -624,17 +636,11 @@ export function Upload() {
 
     const nextSlug = slugFromFolderName(folderName);
     const nextDisplayName = displayNameFromFolderName(folderName);
-    const prefilled: string[] = [];
     if (nextSlug && !dirtyFields.slug && !trimmedSlug) {
       setSlug(nextSlug);
-      prefilled.push("slug");
     }
     if (nextDisplayName && !dirtyFields.displayName && !trimmedName) {
       setDisplayName(nextDisplayName);
-      prefilled.push("display name");
-    }
-    if (prefilled.length > 0) {
-      setMetadataPrefillNote(`Suggested ${prefilled.join(" and ")} from the selected folder.`);
     }
   }
 
@@ -651,10 +657,10 @@ export function Upload() {
   }
 
   function clearSelectedFiles() {
+    resetSummaryPrefillState();
     setFiles([]);
     setIgnoredLocalMetadataPaths([]);
     setPendingFileRemovalIndex(null);
-    setMetadataPrefillNote(null);
     resetFileInput();
   }
 
@@ -1045,7 +1051,6 @@ export function Upload() {
                     }
                     onChange={(event) => {
                       markFieldDirty("displayName");
-                      setMetadataPrefillNote(null);
                       setDisplayName(event.target.value);
                     }}
                     placeholder="My skill"
@@ -1067,7 +1072,6 @@ export function Upload() {
                       className={showSlugStatusIcon ? "pr-10" : undefined}
                       onChange={(event) => {
                         markFieldDirty("slug");
-                        setMetadataPrefillNote(null);
                         setSlug(event.target.value);
                       }}
                       placeholder="skill-name"
@@ -1103,20 +1107,46 @@ export function Upload() {
                   id="skillSummary"
                   value={summary}
                   disabled={isSubmitting}
+                  recommendation={
+                    files.length > 0 &&
+                    Boolean(uploadedSkillSummary) &&
+                    !summaryTouchedRef.current &&
+                    !summaryRecommendationDismissed
+                  }
+                  onDismissRecommendation={() => {
+                    setSummaryRecommendationDismissed(true);
+                  }}
                   onChange={(nextSummary) => {
                     summaryTouchedRef.current = true;
                     setSummary(nextSummary);
                   }}
                 />
               </div>
-              {metadataPrefillNote ? (
-                <p
-                  className="flex items-center gap-1.5 text-sm leading-5 text-[#1f6feb] dark:text-[#8fbdff]"
-                  role="status"
-                >
-                  <Info className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
-                  <span className="leading-5">{metadataPrefillNote}</span>
-                </p>
+
+              <div className="border-t border-[color:var(--line)] pt-5">
+                <CatalogMetadataFields
+                  kind="skill"
+                  categories={categories}
+                  suggestedCategories={suggestedCategories}
+                  topics={topics}
+                  disabled={isSubmitting}
+                  onCategoriesChange={(nextCategories) => {
+                    categoriesTouchedRef.current = true;
+                    setCategories(nextCategories);
+                  }}
+                  onTopicsChange={(nextTopics) => {
+                    topicsTouchedRef.current = true;
+                    setTopics(nextTopics);
+                  }}
+                />
+              </div>
+
+              {visibleMetadataIssues.length > 0 ? (
+                <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
+                  {visibleMetadataIssues.map((issue) => (
+                    <li key={issue}>{issue}</li>
+                  ))}
+                </ul>
               ) : null}
 
               <div className="flex flex-col gap-2">
@@ -1153,69 +1183,41 @@ export function Upload() {
                 ) : null}
                 <InlineValidationMessage id="owner-validation-error" message={ownerIssue} />
               </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="version">Version</Label>
-                <VersionInput
-                  id="version"
-                  value={version}
-                  aria-invalid={Boolean(versionIssue)}
-                  aria-describedby={versionIssue ? "version-validation-error" : undefined}
-                  onValueChange={(nextVersion) => {
-                    markFieldDirty("version");
-                    setVersion(nextVersion);
-                  }}
-                  placeholder="1.0.0"
-                />
-                <InlineValidationMessage id="version-validation-error" message={versionIssue} />
-              </div>
-
-              <div className="flex flex-col gap-2">
-                <Label htmlFor="tags">Release tags</Label>
-                <Input
-                  id="tags"
-                  value={tags}
-                  onChange={(event) => {
-                    markFieldDirty("tags");
-                    setTags(event.target.value);
-                  }}
-                  placeholder="latest, stable"
-                />
-              </div>
-
-              {visibleMetadataIssues.length > 0 ? (
-                <ul className="flex flex-col gap-1 list-disc pl-5 text-sm text-[color:var(--ink-soft)]">
-                  {visibleMetadataIssues.map((issue) => (
-                    <li key={issue}>{issue}</li>
-                  ))}
-                </ul>
-              ) : null}
             </CardContent>
           </Card>
 
           <Card>
             <CardContent className="gap-4">
-              <div>
-                <CardTitle>Catalog metadata</CardTitle>
-                <p className="text-sm text-[color:var(--ink-soft)]">
-                  Choose browse categories and author topics for this skill.
-                </p>
+              <div className="grid gap-x-4 gap-y-4 md:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="version">Version</Label>
+                  <VersionInput
+                    id="version"
+                    value={version}
+                    aria-invalid={Boolean(versionIssue)}
+                    aria-describedby={versionIssue ? "version-validation-error" : undefined}
+                    onValueChange={(nextVersion) => {
+                      markFieldDirty("version");
+                      setVersion(nextVersion);
+                    }}
+                    placeholder="1.0.0"
+                  />
+                  <InlineValidationMessage id="version-validation-error" message={versionIssue} />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <Label htmlFor="tags">Release tags</Label>
+                  <Input
+                    id="tags"
+                    value={tags}
+                    onChange={(event) => {
+                      markFieldDirty("tags");
+                      setTags(event.target.value);
+                    }}
+                    placeholder="latest, stable"
+                  />
+                </div>
               </div>
-              <CatalogMetadataFields
-                kind="skill"
-                categories={categories}
-                suggestedCategories={suggestedCategories}
-                topics={topics}
-                disabled={isSubmitting}
-                onCategoriesChange={(nextCategories) => {
-                  categoriesTouchedRef.current = true;
-                  setCategories(nextCategories);
-                }}
-                onTopicsChange={(nextTopics) => {
-                  topicsTouchedRef.current = true;
-                  setTopics(nextTopics);
-                }}
-              />
             </CardContent>
           </Card>
 
