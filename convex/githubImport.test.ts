@@ -1,4 +1,5 @@
 /* @vitest-environment node */
+import { generateKeyPairSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { internal } from "./_generated/api";
 import { __test } from "./githubImport";
@@ -16,10 +17,18 @@ vi.mock("./_generated/api", () => ({
 }));
 
 const originalGitHubToken = process.env.GITHUB_TOKEN;
+const originalGitHubAppEnv = {
+  appId: process.env.GITHUB_APP_ID,
+  installationId: process.env.GITHUB_APP_INSTALLATION_ID,
+  privateKey: process.env.GITHUB_APP_PRIVATE_KEY,
+};
 
 describe("githubImport", () => {
   beforeEach(() => {
     delete process.env.GITHUB_TOKEN;
+    delete process.env.GITHUB_APP_ID;
+    delete process.env.GITHUB_APP_INSTALLATION_ID;
+    delete process.env.GITHUB_APP_PRIVATE_KEY;
   });
 
   afterEach(() => {
@@ -27,6 +36,14 @@ describe("githubImport", () => {
       process.env.GITHUB_TOKEN = originalGitHubToken;
     } else {
       delete process.env.GITHUB_TOKEN;
+    }
+    for (const [key, value] of [
+      ["GITHUB_APP_ID", originalGitHubAppEnv.appId],
+      ["GITHUB_APP_INSTALLATION_ID", originalGitHubAppEnv.installationId],
+      ["GITHUB_APP_PRIVATE_KEY", originalGitHubAppEnv.privateKey],
+    ] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
     }
   });
 
@@ -518,6 +535,68 @@ describe("githubImport", () => {
         headers: expect.objectContaining({ Authorization: "Bearer github-token" }),
       }),
     );
+  });
+
+  it("falls back from an out-of-scope GitHub App token for public repo lookup", async () => {
+    const { privateKey } = generateKeyPairSync("rsa", {
+      modulusLength: 2048,
+      privateKeyEncoding: { type: "pkcs1", format: "pem" },
+      publicKeyEncoding: { type: "spki", format: "pem" },
+    });
+    process.env.GITHUB_APP_ID = "3536245";
+    process.env.GITHUB_APP_INSTALLATION_ID = "987654";
+    process.env.GITHUB_APP_PRIVATE_KEY = privateKey;
+
+    const ctx = {
+      runQuery: vi.fn().mockResolvedValue("123"),
+    };
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        Response.json({
+          token: "ghs_app_token",
+          expires_at: "2027-02-02T13:00:00Z",
+        }),
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          id: 123,
+          login: "vyctorbrzezowski",
+          avatar_url: "https://avatars.githubusercontent.com/u/123?v=4",
+        }),
+      )
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(
+        Response.json({
+          name: "public-skill",
+          full_name: "vyctorbrzezowski/public-skill",
+          private: false,
+          visibility: "public",
+          owner: { id: 123, login: "vyctorbrzezowski" },
+        }),
+      );
+
+    await expect(
+      __test.requireOwnedPublicGitHubRepoForImport(
+        ctx as never,
+        "users:1" as never,
+        "vyctorbrzezowski",
+        "public-skill",
+        fetchMock as never,
+      ),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        full_name: "vyctorbrzezowski/public-skill",
+      }),
+    );
+
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock.mock.calls[2]?.[1]).toEqual(
+      expect.objectContaining({
+        headers: expect.objectContaining({ Authorization: "Bearer ghs_app_token" }),
+      }),
+    );
+    expect(fetchMock.mock.calls[3]?.[1]?.headers).not.toHaveProperty("Authorization");
   });
 
   it("falls back to the repo archive when GitHub truncates the discovery tree", async () => {

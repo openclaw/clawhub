@@ -6,6 +6,7 @@ import type { Id } from "./_generated/dataModel";
 import type { ActionCtx } from "./_generated/server";
 import { action } from "./functions";
 import { requireUserFromAction } from "./lib/access";
+import { buildGitHubApiHeaders, isGitHubAppConfigured } from "./lib/githubAuth";
 import {
   buildGitHubImportFileList,
   computeDefaultSelectedPaths,
@@ -431,7 +432,7 @@ async function listOwnedPublicGitHubReposForUser(
   url.searchParams.set("per_page", String(fallbackPerPage));
   url.searchParams.set("page", String(page));
 
-  const response = await fetcher(url.toString(), { headers: buildGitHubHeaders() });
+  const response = await fetchGitHubApi(url.toString(), fetcher, undefined, false);
   if (!response.ok) throwGitHubApiError(response.status);
 
   const payload = (await response.json()) as unknown;
@@ -505,9 +506,7 @@ async function requireCurrentGitHubIdentity(
   if (!providerAccountId) throw new ConvexError("GitHub account required");
   assertGitHubNumericId(providerAccountId);
 
-  const response = await fetcher(`${GITHUB_API}/user/${providerAccountId}`, {
-    headers: buildGitHubHeaders(),
-  });
+  const response = await fetchGitHubApi(`${GITHUB_API}/user/${providerAccountId}`, fetcher);
   if (!response.ok) throwGitHubApiError(response.status);
 
   const payload = (await response.json()) as GitHubUserPayload;
@@ -523,7 +522,7 @@ async function requireCurrentGitHubIdentity(
 
 async function fetchGitHubRepoMetadata(owner: string, repo: string, fetcher: typeof fetch) {
   const url = `${GITHUB_API}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`;
-  const response = await fetcher(url, { headers: buildGitHubHeaders() });
+  const response = await fetchGitHubApi(url, fetcher);
   if (!response.ok) {
     if (response.status === 404) throw new ConvexError(OWNED_PUBLIC_REPO_ONLY_ERROR);
     throwGitHubApiError(response.status);
@@ -631,7 +630,7 @@ async function listOwnedPublicSkillCandidatesWithCodeSearch(
       url.searchParams.set("per_page", String(args.perPage));
       url.searchParams.set("page", String(args.page));
 
-      const response = await fetcher(url.toString(), { headers: buildGitHubHeaders() });
+      const response = await fetchGitHubApi(url.toString(), fetcher, undefined, false);
       if (!response.ok) throwGitHubApiError(response.status);
 
       const payload = (await response.json()) as GitHubCodeSearchPayload;
@@ -747,7 +746,7 @@ async function fetchGitHubBlobBytes(
   fetcher: typeof fetch,
 ) {
   const url = `${GITHUB_API}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/git/blobs/${encodeURIComponent(sha)}`;
-  const response = await fetcher(url, { headers: buildGitHubRawHeaders() });
+  const response = await fetchGitHubApi(url, fetcher, "application/vnd.github.raw");
   if (!response.ok) throwGitHubApiError(response.status);
   return new Uint8Array(await response.arrayBuffer());
 }
@@ -778,7 +777,7 @@ async function fetchGitHubRepoTreeResult(
   );
   url.searchParams.set("recursive", "1");
 
-  const response = await fetcher(url.toString(), { headers: buildGitHubHeaders() });
+  const response = await fetchGitHubApi(url.toString(), fetcher);
   if (response.status === 404 || response.status === 409) return null;
   if (!response.ok) throwGitHubApiError(response.status);
 
@@ -833,24 +832,41 @@ function toOwnedPublicSkillCandidate(repo: OwnedPublicRepoListItem, skillPath: s
   };
 }
 
-function buildGitHubHeaders() {
-  const headers: Record<string, string> = {
-    Accept: "application/vnd.github+json",
-    "User-Agent": "clawhub/github-import",
-  };
-  const token = process.env.GITHUB_TOKEN;
-  if (token) headers.Authorization = `Bearer ${token}`;
-  return headers;
+async function fetchGitHubApi(
+  url: string,
+  fetcher: typeof fetch,
+  accept = "application/vnd.github+json",
+  useGitHubApp = true,
+) {
+  const headers = await buildGitHubApiHeaders({
+    userAgent: "clawhub/github-import",
+    accept,
+    fetchImpl: fetcher,
+    useGitHubApp,
+  });
+  const response = await fetcher(url, { headers });
+  if (
+    useGitHubApp &&
+    !response.ok &&
+    isGitHubAppConfigured() &&
+    headers.Authorization &&
+    (response.status === 401 || response.status === 403 || response.status === 404)
+  ) {
+    const fallbackHeaders = await buildGitHubApiHeaders({
+      userAgent: "clawhub/github-import",
+      accept,
+      fetchImpl: fetcher,
+      useGitHubApp: false,
+    });
+    if (fallbackHeaders.Authorization !== headers.Authorization) {
+      return await fetcher(url, { headers: fallbackHeaders });
+    }
+  }
+  return response;
 }
 
 function hasGitHubApiToken() {
   return Boolean(process.env.GITHUB_TOKEN?.trim());
-}
-
-function buildGitHubRawHeaders() {
-  const headers = buildGitHubHeaders();
-  headers.Accept = "application/vnd.github.raw";
-  return headers;
 }
 
 function assertGitHubNumericId(providerAccountId: string) {
