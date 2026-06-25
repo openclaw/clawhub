@@ -23,6 +23,7 @@ import {
 } from "./lib/publisherCatalogDisplay";
 import {
   canAccessPublisherOwnerScope,
+  assertPublisherHandleAllowed,
   ensurePersonalPublisherForUser,
   getActiveUserByHandleOrPersonalPublisher,
   getOwnerPublisher,
@@ -32,6 +33,7 @@ import {
   getPersonalPublisherForUser,
   isPublisherActive,
   isPublisherRoleAllowed,
+  isReservedOpenClawPublisherHandle,
   PUBLISHER_HANDLE_PATTERN,
   PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE,
   normalizePublisherHandle,
@@ -142,11 +144,17 @@ type PublisherListCounts = {
   organizations: number;
 };
 
-function validateHandle(rawHandle: string) {
+function validateHandle(
+  rawHandle: string,
+  options?: { allowReservedOpenClawPublisherHandle?: boolean },
+) {
   const handle = normalizePublisherHandle(rawHandle);
   if (!handle) throw new ConvexError("Handle is required");
   if (!PUBLISHER_HANDLE_PATTERN.test(handle)) {
     throw new ConvexError(PUBLISHER_HANDLE_REQUIREMENTS_MESSAGE);
+  }
+  if (!options?.allowReservedOpenClawPublisherHandle) {
+    assertPublisherHandleAllowed(handle);
   }
   if (isReservedPublicOwnerHandle(handle)) {
     throw new ConvexError(formatReservedPublicOwnerHandleMessage(handle));
@@ -848,6 +856,13 @@ async function resolveAvailableUserHandle(
   throw new ConvexError(`Unable to find an available fallback handle for "@${baseHandle}"`);
 }
 
+function deriveLegacyOrgFallbackHandle(orgHandle: string, explicitFallbackHandle?: string) {
+  return (
+    explicitFallbackHandle ??
+    (isReservedOpenClawPublisherHandle(orgHandle) ? "user" : `${orgHandle}-user`)
+  );
+}
+
 async function migrateLegacyPublisherHandleToOrgWithActor(
   ctx: Pick<MutationCtx, "db">,
   args: {
@@ -861,8 +876,10 @@ async function migrateLegacyPublisherHandleToOrgWithActor(
   if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
   assertAdmin(actor);
 
-  const orgHandle = validateHandle(args.handle);
-  const fallbackBase = validateHandle(args.fallbackUserHandle ?? `${orgHandle}-user`);
+  const orgHandle = validateHandle(args.handle, { allowReservedOpenClawPublisherHandle: true });
+  const fallbackBase = validateHandle(
+    deriveLegacyOrgFallbackHandle(orgHandle, args.fallbackUserHandle),
+  );
   const now = Date.now();
 
   const handlePublisher = await getPublisherByHandle(ctx, orgHandle);
@@ -1020,7 +1037,7 @@ async function ensureOrgPublisherHandleWithActor(
   if (!actor || actor.deletedAt || actor.deactivatedAt) throw new ConvexError("Unauthorized");
   assertAdmin(actor);
 
-  const handle = validateHandle(args.handle);
+  const handle = validateHandle(args.handle, { allowReservedOpenClawPublisherHandle: true });
   const now = Date.now();
   const existingPublisher = await getPublisherByHandle(ctx, handle);
   const existingUser = await getUserByHandle(ctx, handle);

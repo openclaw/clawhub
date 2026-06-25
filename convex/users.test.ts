@@ -711,6 +711,39 @@ describe("ensureHandler", () => {
     },
   );
 
+  it("falls back when a derived handle and email local part contain openclaw", async () => {
+    const { ctx, insert, patch } = makeCtx();
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:openclaw-china",
+      user: {
+        _id: "users:openclaw-china",
+        _creationTime: 1,
+        handle: undefined,
+        displayName: undefined,
+        name: "openclaw-china",
+        email: "openclaw-china@example.com",
+        role: "user",
+        createdAt: 1,
+      },
+    } as never);
+
+    await ensureHandler(ctx);
+
+    expect(patch).toHaveBeenCalledWith("users:openclaw-china", {
+      handle: "user",
+      displayName: "user",
+      updatedAt: expect.any(Number),
+    });
+    expect(insert).toHaveBeenCalledWith(
+      "publishers",
+      expect.objectContaining({
+        kind: "user",
+        handle: "user",
+        linkedUserId: "users:openclaw-china",
+      }),
+    );
+  });
+
   it("repairs an existing handle that is no longer claimable", async () => {
     const { ctx, patch, query } = makeCtx();
     query.mockImplementation(((table: string) => {
@@ -743,12 +776,12 @@ describe("ensureHandler", () => {
             if (name === "by_handle") {
               return {
                 unique: vi.fn(async () => {
-                  if (handle === "openclaw") {
+                  if (handle === "acme-tools") {
                     return {
-                      _id: "publishers:openclaw",
+                      _id: "publishers:acme-tools",
                       kind: "org",
-                      handle: "openclaw",
-                      displayName: "OpenClaw",
+                      handle: "acme-tools",
+                      displayName: "Acme Tools",
                     };
                   }
                   return null;
@@ -760,11 +793,11 @@ describe("ensureHandler", () => {
                 unique: vi.fn(async () =>
                   linkedUserId === "users:owner"
                     ? {
-                        _id: "publishers:openclaw-user",
+                        _id: "publishers:acme-tools-user",
                         kind: "user",
-                        handle: "openclaw-user",
+                        handle: "acme-tools-user",
                         linkedUserId: "users:owner",
-                        displayName: "OpenClaw User",
+                        displayName: "Acme Tools User",
                       }
                     : null,
                 ),
@@ -801,21 +834,21 @@ describe("ensureHandler", () => {
       user: {
         _id: "users:owner",
         _creationTime: 1,
-        handle: "openclaw",
-        displayName: "openclaw",
-        name: "openclaw",
+        handle: "acme-tools",
+        displayName: "acme-tools",
+        name: "acme-tools",
         email: "owner@example.com",
         role: "user",
         createdAt: 1,
-        personalPublisherId: "publishers:openclaw-user",
+        personalPublisherId: "publishers:acme-tools-user",
       },
     } as never);
 
     await ensureHandler(ctx);
 
     expect(patch).toHaveBeenCalledWith("users:owner", {
-      handle: "openclaw-2",
-      displayName: "openclaw-2",
+      handle: "acme-tools-2",
+      displayName: "acme-tools-2",
       updatedAt: expect.any(Number),
     });
   });
@@ -834,7 +867,7 @@ describe("ensureHandler", () => {
               take: async () => [
                 {
                   _id: "reservedHandles:1",
-                  handle: "openclaw",
+                  handle: "acme-tools",
                   rightfulOwnerUserId: "users:owner",
                   releasedAt: undefined,
                   createdAt: 1,
@@ -853,7 +886,7 @@ describe("ensureHandler", () => {
         _creationTime: 1,
         handle: undefined,
         displayName: undefined,
-        name: "openclaw",
+        name: "acme-tools",
         email: undefined,
         role: "user",
         createdAt: 1,
@@ -897,12 +930,12 @@ describe("ensureHandler", () => {
             if (name === "by_handle") {
               return {
                 unique: vi.fn(async () =>
-                  handle === "openclaw"
+                  handle === "acme-tools"
                     ? {
-                        _id: "publishers:openclaw",
+                        _id: "publishers:acme-tools",
                         kind: "org",
-                        handle: "openclaw",
-                        displayName: "OpenClaw",
+                        handle: "acme-tools",
+                        displayName: "Acme Tools",
                       }
                     : null,
                 ),
@@ -913,11 +946,11 @@ describe("ensureHandler", () => {
                 unique: vi.fn(async () =>
                   linkedUserId === "users:other"
                     ? {
-                        _id: "publishers:openclaw-user",
+                        _id: "publishers:acme-tools-user",
                         kind: "user",
-                        handle: "openclaw-user",
+                        handle: "acme-tools-user",
                         linkedUserId: "users:other",
-                        displayName: "OpenClaw User",
+                        displayName: "Acme Tools User",
                       }
                     : null,
                 ),
@@ -956,7 +989,7 @@ describe("ensureHandler", () => {
         _creationTime: 1,
         handle: undefined,
         displayName: undefined,
-        name: "openclaw",
+        name: "acme-tools",
         email: undefined,
         role: "user",
         createdAt: 1,
@@ -967,7 +1000,7 @@ describe("ensureHandler", () => {
 
     expect(patch).not.toHaveBeenCalledWith(
       "users:other",
-      expect.objectContaining({ handle: "openclaw" }),
+      expect.objectContaining({ handle: "acme-tools" }),
     );
   });
 
