@@ -14,6 +14,7 @@ let clawHubLogoDataUrlPromise: Promise<string> | null = null;
 let watermarkDataUrlPromise: Promise<string> | null = null;
 let resvgWasmPromise: Promise<Uint8Array> | null = null;
 let fontBuffersPromise: Promise<Uint8Array[]> | null = null;
+let publisherFontBuffersPromise: Promise<Uint8Array[]> | null = null;
 let resvgInitPromise: Promise<void> | null = null;
 
 function getServerRootUrl() {
@@ -129,4 +130,42 @@ export async function getFontBuffers() {
     ]).then((buffers) => buffers.map((buffer) => new Uint8Array(buffer)));
   }
   return fontBuffersPromise;
+}
+
+export async function getPublisherFontBuffers() {
+  if (!publisherFontBuffersPromise) {
+    publisherFontBuffersPromise = Promise.all([
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-700-normal.woff2",
+        ),
+      ),
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-800-normal.woff2",
+        ),
+      ),
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/bricolage-grotesque/files/bricolage-grotesque-latin-500-normal.woff2",
+        ),
+      ),
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/ibm-plex-mono/files/ibm-plex-mono-latin-500-normal.woff2",
+        ),
+      ),
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-800-normal.woff2",
+        ),
+      ),
+      readFile(
+        getServerUrl(
+          "node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-chinese-simplified-500-normal.woff2",
+        ),
+      ),
+    ]).then((buffers) => buffers.map((buffer) => new Uint8Array(buffer)));
+  }
+  return publisherFontBuffersPromise;
 }

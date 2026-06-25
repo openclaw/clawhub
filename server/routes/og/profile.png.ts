@@ -9,7 +9,7 @@ import {
   FONT_MONO,
   FONT_SANS,
   getClawHubLogoDataUrl,
-  getFontBuffers,
+  getPublisherFontBuffers,
 } from "../../og/ogAssets";
 import { pngResponse } from "../../og/pngResponse";
 import { buildPublisherOgSvg } from "../../og/publisherOgSvg";
@@ -78,7 +78,7 @@ export default defineEventHandler(async (event) => {
 
   const [clawHubLogoDataUrl, fontBuffers] = await Promise.all([
     getClawHubLogoDataUrl(),
-    ensureResvgWasm().then(() => getFontBuffers()),
+    ensureResvgWasm().then(() => getPublisherFontBuffers()),
   ]);
   const avatarDataUrl = await fetchPublisherProfileImageDataUrl(avatarFromQuery || meta?.image);
   const organizationImageUrls =

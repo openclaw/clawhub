@@ -125,4 +125,23 @@ describe("ogAssets", () => {
       ]),
     );
   });
+
+  it("loads publisher fonts with Bricolage 700 first", async () => {
+    readFileMock.mockResolvedValue(Buffer.from([9, 8, 7]));
+
+    const { getPublisherFontBuffers } = await import("./ogAssets");
+
+    const first = await getPublisherFontBuffers();
+    const second = await getPublisherFontBuffers();
+
+    expect(first).toHaveLength(6);
+    expect(second).toEqual(first);
+    expect(readFileMock).toHaveBeenCalledTimes(6);
+    expect(String(readFileMock.mock.calls[0]?.[0])).toContain(
+      "bricolage-grotesque-latin-700-normal.woff2",
+    );
+    expect(String(readFileMock.mock.calls[1]?.[0])).toContain(
+      "bricolage-grotesque-latin-800-normal.woff2",
+    );
+  });
 });
