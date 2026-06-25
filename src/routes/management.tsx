@@ -71,6 +71,7 @@ const MANAGEMENT_VIEWS = new Set<string>([
   "duplicates",
   "recent",
   "audit",
+  "system",
   "settings",
 ]);
 
@@ -343,8 +344,15 @@ export function Management() {
     const stillVisible = filteredPublisherAbuseItems.some(
       (item) => item.nomination._id === selectedPublisherAbuseNominationId,
     );
-    if (!stillVisible) setSelectedPublisherAbuseNominationId(null);
+    if (!stillVisible) {
+      setPublisherAbuseNotes("");
+      setSelectedPublisherAbuseNominationId(null);
+    }
   }, [filteredPublisherAbuseItems, selectedPublisherAbuseNominationId]);
+
+  useEffect(() => {
+    setPublisherAbuseNotes("");
+  }, [selectedPublisherAbuseNominationId]);
 
   if (isAuthLoading) {
     return <ManagementSkeleton />;
@@ -635,8 +643,14 @@ export function Management() {
                 },
               });
             }}
-            onClose={() => setSelectedPublisherAbuseNominationId(null)}
-            onSelect={setSelectedPublisherAbuseNominationId}
+            onClose={() => {
+              setPublisherAbuseNotes("");
+              setSelectedPublisherAbuseNominationId(null);
+            }}
+            onSelect={(nominationId) => {
+              setPublisherAbuseNotes("");
+              setSelectedPublisherAbuseNominationId(nominationId);
+            }}
           />
         ) : null}
 
@@ -760,6 +774,12 @@ export function Management() {
           <ManagementPlaceholder
             title="Audit log"
             description="Audit log exploration is still handled inside individual tools for now."
+          />
+        ) : null}
+        {activeView === "system" ? (
+          <ManagementPlaceholder
+            title="System"
+            description="System maintenance shortcuts can be added here without crowding moderation queues."
           />
         ) : null}
         {activeView === "settings" ? (
@@ -916,6 +936,7 @@ const MANAGEMENT_VIEW_LABELS: Record<ManagementView, string> = {
   duplicates: "Duplicate candidates",
   recent: "Recent pushes",
   audit: "Audit log",
+  system: "System",
   settings: "Settings",
 };
 

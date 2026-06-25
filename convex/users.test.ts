@@ -3324,37 +3324,15 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
     };
   }
 
-  afterEach(() => {
-    vi.restoreAllMocks();
-  });
+  const publisherAbuseAutobanArgs = {
+    ownerUserId: "users:target",
+    nominationId: "publisherAbuseReviewNominations:candidate",
+    scoreId: "publisherAbuseScores:candidate",
+    reason: "publisher_abuse: potential ban candidate",
+  };
 
-  it("bans publisher abuse candidates with appeal email and audit context", async () => {
-    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
-    const { ctx, get, patch, insert, query, runMutation, runAfter } = makeBanCtx();
-
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return { _id: "publishers:candidate", linkedUserId: "users:target" };
-      }
-      return null;
-    });
-    runMutation
-      .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
-      .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
-      .mockResolvedValueOnce(undefined);
-
-    const handler = (
+  function publisherAbuseAutobanHandler() {
+    return (
       autobanPublisherAbuseOwnerInternal as unknown as {
         _handler: (
           ctx: unknown,
@@ -3367,14 +3345,74 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
         ) => Promise<unknown>;
       }
     )._handler;
+  }
+
+  function expectNoPublisherAbuseBanSideEffects({
+    patch,
+    insert,
+    runMutation,
+    runAfter,
+  }: Pick<ReturnType<typeof makeBanCtx>, "patch" | "insert" | "runMutation" | "runAfter">) {
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+    expect(runAfter).not.toHaveBeenCalled();
+  }
+
+  function mockPublisherAbuseAutobanDocs(
+    get: ReturnType<typeof makeBanCtx>["get"],
+    {
+      targetUser = {},
+      nomination = {},
+      publisher = {},
+      extra,
+    }: {
+      targetUser?: Record<string, unknown>;
+      nomination?: Record<string, unknown>;
+      publisher?: Record<string, unknown>;
+      extra?: (id: string) => Record<string, unknown> | null | undefined;
+    } = {},
+  ) {
+    get.mockImplementation(async (id: string) => {
+      if (id === "users:target") {
+        return {
+          _id: "users:target",
+          role: "user",
+          handle: "target-user",
+          email: "target@example.com",
+          ...targetUser,
+        };
+      }
+      if (id === "publisherAbuseReviewNominations:candidate") {
+        return publisherAbuseAutobanNomination(nomination);
+      }
+      if (id === "publishers:candidate") {
+        return {
+          _id: "publishers:candidate",
+          linkedUserId: "users:target",
+          ...publisher,
+        };
+      }
+      return extra?.(id) ?? null;
+    });
+  }
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("bans publisher abuse candidates with appeal email and audit context", async () => {
+    vi.spyOn(Date, "now").mockReturnValue(1_700_000_000_000);
+    const { ctx, get, patch, insert, query, runMutation, runAfter } = makeBanCtx();
+
+    mockPublisherAbuseAutobanDocs(get);
+    runMutation
+      .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
+      .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
+      .mockResolvedValueOnce(undefined);
 
     await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
+      publisherAbuseAutobanHandler()(ctx, publisherAbuseAutobanArgs),
     ).resolves.toMatchObject({
       ok: true,
       alreadyBanned: false,
@@ -3437,243 +3475,60 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
     expect(patch).toHaveBeenCalledWith("apiTokens:1", { revokedAt: 1_700_000_000_000 });
   });
 
-  it("does not ban protected staff accounts", async () => {
-    const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx();
-
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "moderator",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return { _id: "publishers:candidate", linkedUserId: "users:target" };
-      }
-      return null;
-    });
-
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
+  it.each([
+    {
+      name: "protected staff accounts",
+      ctxOptions: {},
+      docs: { targetUser: { role: "moderator" } },
+      expected: { ok: false, reason: "protected_role" },
+    },
+    {
+      name: "publisher abuse nominations relinked to another user",
+      ctxOptions: {},
+      docs: { publisher: { linkedUserId: "users:new-owner" } },
+      expected: { ok: false, reason: "nomination_not_actionable" },
+    },
+    {
+      name: "publishers that became official before final autoban",
+      ctxOptions: { officialPublisherIds: ["publishers:candidate"] },
+      docs: { publisher: { kind: "user" } },
+      expected: { ok: false, reason: "nomination_not_actionable" },
+    },
+    {
+      name: "org publishers that gained a staff manager before final autoban",
+      ctxOptions: {
+        publisherMembers: [
+          {
+            _id: "publisherMembers:staff-owner",
+            publisherId: "publishers:candidate",
+            userId: "users:staff-owner",
+            role: "owner",
           },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+        ],
+      },
+      docs: {
+        publisher: { kind: "org" },
+        extra: (id: string) =>
+          id === "users:staff-owner"
+            ? {
+                _id: "users:staff-owner",
+                role: "admin",
+                handle: "staff-owner",
+                email: "staff@example.com",
+              }
+            : undefined,
+      },
+      expected: { ok: false, reason: "nomination_not_actionable" },
+    },
+  ])("does not ban $name", async ({ ctxOptions, docs, expected }) => {
+    const mocks = makeBanCtx(ctxOptions);
+    mockPublisherAbuseAutobanDocs(mocks.get, docs);
 
     await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "protected_role" });
+      publisherAbuseAutobanHandler()(mocks.ctx, publisherAbuseAutobanArgs),
+    ).resolves.toEqual(expected);
 
-    expect(runMutation).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-    expect(runAfter).not.toHaveBeenCalled();
-  });
-
-  it("does not ban when the publisher abuse nomination was relinked to another user", async () => {
-    const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx();
-
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return { _id: "publishers:candidate", linkedUserId: "users:new-owner" };
-      }
-      return null;
-    });
-    runMutation
-      .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
-      .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
-      .mockResolvedValueOnce(undefined);
-
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
-
-    await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "nomination_not_actionable" });
-
-    expect(runMutation).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-    expect(runAfter).not.toHaveBeenCalled();
-  });
-
-  it("does not ban when the publisher became official before final autoban", async () => {
-    const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx({
-      officialPublisherIds: ["publishers:candidate"],
-    });
-
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return {
-          _id: "publishers:candidate",
-          kind: "user",
-          linkedUserId: "users:target",
-        };
-      }
-      return null;
-    });
-    runMutation
-      .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
-      .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
-      .mockResolvedValueOnce(undefined);
-
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
-
-    await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "nomination_not_actionable" });
-
-    expect(runMutation).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-    expect(runAfter).not.toHaveBeenCalled();
-  });
-
-  it("does not ban when an org publisher gained a staff manager before final autoban", async () => {
-    const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx({
-      publisherMembers: [
-        {
-          _id: "publisherMembers:staff-owner",
-          publisherId: "publishers:candidate",
-          userId: "users:staff-owner",
-          role: "owner",
-        },
-      ],
-    });
-
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id === "users:staff-owner") {
-        return {
-          _id: "users:staff-owner",
-          role: "admin",
-          handle: "staff-owner",
-          email: "staff@example.com",
-        };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return {
-          _id: "publishers:candidate",
-          kind: "org",
-          linkedUserId: "users:target",
-        };
-      }
-      return null;
-    });
-    runMutation
-      .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
-      .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
-      .mockResolvedValueOnce(undefined);
-
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
-
-    await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "nomination_not_actionable" });
-
-    expect(runMutation).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-    expect(runAfter).not.toHaveBeenCalled();
+    expectNoPublisherAbuseBanSideEffects(mocks);
   });
 
   it("bans large non-staff org publisher candidates", async () => {
@@ -3695,56 +3550,17 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
       ],
     });
 
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id === "users:community-admin") {
-        return { _id: id, role: "user" };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return {
-          _id: "publishers:candidate",
-          kind: "org",
-          linkedUserId: "users:target",
-        };
-      }
-      return null;
+    mockPublisherAbuseAutobanDocs(get, {
+      publisher: { kind: "org" },
+      extra: (id) => (id === "users:community-admin" ? { _id: id, role: "user" } : undefined),
     });
     runMutation
       .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
       .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
       .mockResolvedValueOnce(undefined);
 
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
-
     await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
+      publisherAbuseAutobanHandler()(ctx, publisherAbuseAutobanArgs),
     ).resolves.toMatchObject({
       ok: true,
       alreadyBanned: false,
@@ -3787,65 +3603,25 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
       })),
     });
 
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id === "users:community-admin-100") {
-        return { _id: id, role: "moderator" };
-      }
-      if (id.startsWith("users:community-admin-")) {
-        return { _id: id, role: "user" };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return {
-          _id: "publishers:candidate",
-          kind: "org",
-          linkedUserId: "users:target",
-        };
-      }
-      return null;
+    mockPublisherAbuseAutobanDocs(get, {
+      publisher: { kind: "org" },
+      extra: (id) => {
+        if (id === "users:community-admin-100") return { _id: id, role: "moderator" };
+        if (id.startsWith("users:community-admin-")) return { _id: id, role: "user" };
+        return undefined;
+      },
     });
     runMutation
       .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
       .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
       .mockResolvedValueOnce(undefined);
 
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    await expect(publisherAbuseAutobanHandler()(ctx, publisherAbuseAutobanArgs)).resolves.toEqual({
+      ok: false,
+      reason: "nomination_not_actionable",
+    });
 
-    await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "nomination_not_actionable" });
-
-    expect(runMutation).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-    expect(runAfter).not.toHaveBeenCalled();
+    expectNoPublisherAbuseBanSideEffects({ patch, insert, runMutation, runAfter });
   });
 
   it("does not ban when final staff-manager scan exhausts its budget", async () => {
@@ -3858,109 +3634,36 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
       })),
     });
 
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id.startsWith("users:community-admin-")) {
-        return { _id: id, role: "user" };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return {
-          _id: "publishers:candidate",
-          kind: "org",
-          linkedUserId: "users:target",
-        };
-      }
-      return null;
+    mockPublisherAbuseAutobanDocs(get, {
+      publisher: { kind: "org" },
+      extra: (id) =>
+        id.startsWith("users:community-admin-") ? { _id: id, role: "user" } : undefined,
     });
     runMutation
       .mockResolvedValueOnce({ hiddenCount: 3, scheduled: false })
       .mockResolvedValueOnce({ deletedCount: 2, revokedTokenCount: 1, scheduled: false })
       .mockResolvedValueOnce(undefined);
 
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    await expect(publisherAbuseAutobanHandler()(ctx, publisherAbuseAutobanArgs)).resolves.toEqual({
+      ok: false,
+      reason: "nomination_not_actionable",
+    });
 
-    await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "nomination_not_actionable" });
-
-    expect(runMutation).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-    expect(runAfter).not.toHaveBeenCalled();
+    expectNoPublisherAbuseBanSideEffects({ patch, insert, runMutation, runAfter });
   });
 
   it("reruns package cleanup for already-banned publisher abuse owners", async () => {
     const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx();
 
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-          deletedAt: 1_650_000_000_000,
-        };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination();
-      }
-      if (id === "publishers:candidate") {
-        return { _id: "publishers:candidate", linkedUserId: "users:target" };
-      }
-      return null;
+    mockPublisherAbuseAutobanDocs(get, {
+      targetUser: { deletedAt: 1_650_000_000_000 },
     });
     runMutation.mockResolvedValue({ deletedCount: 1, revokedTokenCount: 1, scheduled: false });
 
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
-
-    await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
-    ).resolves.toEqual({ ok: true, alreadyBanned: true });
+    await expect(publisherAbuseAutobanHandler()(ctx, publisherAbuseAutobanArgs)).resolves.toEqual({
+      ok: true,
+      alreadyBanned: true,
+    });
 
     expect(runMutation).toHaveBeenCalledWith(expect.anything(), {
       ownerUserId: "users:target",
@@ -3991,51 +3694,16 @@ describe("users.autobanPublisherAbuseOwnerInternal", () => {
   it("does not ban when the publisher abuse nomination is no longer pending", async () => {
     const { ctx, get, patch, insert, runMutation, runAfter } = makeBanCtx();
 
-    get.mockImplementation(async (id: string) => {
-      if (id === "users:target") {
-        return {
-          _id: "users:target",
-          role: "user",
-          handle: "target-user",
-          email: "target@example.com",
-        };
-      }
-      if (id === "publisherAbuseReviewNominations:candidate") {
-        return publisherAbuseAutobanNomination({ status: "reviewed_no_action" });
-      }
-      if (id === "publishers:candidate") {
-        return { _id: "publishers:candidate", linkedUserId: "users:target" };
-      }
-      return null;
+    mockPublisherAbuseAutobanDocs(get, {
+      nomination: { status: "reviewed_no_action" },
     });
 
-    const handler = (
-      autobanPublisherAbuseOwnerInternal as unknown as {
-        _handler: (
-          ctx: unknown,
-          args: {
-            ownerUserId: string;
-            nominationId: string;
-            scoreId: string;
-            reason: string;
-          },
-        ) => Promise<unknown>;
-      }
-    )._handler;
+    await expect(publisherAbuseAutobanHandler()(ctx, publisherAbuseAutobanArgs)).resolves.toEqual({
+      ok: false,
+      reason: "nomination_not_actionable",
+    });
 
-    await expect(
-      handler(ctx, {
-        ownerUserId: "users:target",
-        nominationId: "publisherAbuseReviewNominations:candidate",
-        scoreId: "publisherAbuseScores:candidate",
-        reason: "publisher_abuse: potential ban candidate",
-      }),
-    ).resolves.toEqual({ ok: false, reason: "nomination_not_actionable" });
-
-    expect(runMutation).not.toHaveBeenCalled();
-    expect(patch).not.toHaveBeenCalled();
-    expect(insert).not.toHaveBeenCalled();
-    expect(runAfter).not.toHaveBeenCalled();
+    expectNoPublisherAbuseBanSideEffects({ patch, insert, runMutation, runAfter });
   });
 });
 

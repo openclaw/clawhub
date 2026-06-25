@@ -2495,9 +2495,7 @@ const systemSettings = defineTable({
   enabled: v.boolean(),
   updatedAt: v.number(),
   updatedByUserId: v.optional(v.id("users")),
-})
-  .index("by_key", ["key"])
-  .index("by_key_and_updated_at", ["key", "updatedAt"]);
+}).index("by_key_and_updated_at", ["key", "updatedAt"]);
 
 const publisherAbuseScoreRuns = defineTable({
   modelVersion: v.string(),

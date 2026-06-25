@@ -42,9 +42,9 @@ See also: [acceptable-usage.md](./acceptable-usage.md) for the marketplace polic
 
 ## Publisher abuse scoring
 
-- Publisher abuse scoring is a staff review signal for bulk-publishing abuse.
-  Scheduled pressure and temporal scoring runs weekly. The `review` label
-  remains a calibration/manual-review signal. The
+- Publisher abuse scoring classifies bulk-publishing abuse for staff review and
+  warning-first automatic enforcement. Scheduled pressure and temporal scoring
+  runs weekly. The `review` label remains a calibration/manual-review signal. The
   `potential_ban_candidate` label is an enforcement signal: the first eligible
   enforcement sweep must warn the linked non-staff user by email and persist the
   warning score/run/deadline on the nomination. A later sweep may automatically

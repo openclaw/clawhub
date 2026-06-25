@@ -136,20 +136,19 @@ describe("crons", () => {
     );
   });
 
-  it("runs publisher abuse scoring weekly", async () => {
+  it("registers publisher abuse cron jobs", async () => {
     await import("./crons");
 
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-abuse-score-refresh",
       { hours: 168 },
       mocks.publisherAbuseScoreRefreshRef,
-      { batchSize: 250, maxPages: 5, trigger: "cron" },
+      {
+        batchSize: 250,
+        maxPages: 5,
+        trigger: "cron",
+      },
     );
-  });
-
-  it("runs publisher temporal abuse scanning weekly", async () => {
-    await import("./crons");
-
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-temporal-abuse-scan",
       { hours: 168 },
@@ -163,27 +162,22 @@ describe("crons", () => {
         trigger: "cron",
       },
     );
-  });
-
-  it("runs publisher abuse autobans in one-account mutation pages", async () => {
-    await import("./crons");
-
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-abuse-autobans",
       { hours: 24 },
       mocks.publisherAbuseAutobanRef,
-      { batchSize: 1, maxPages: 50 },
+      {
+        batchSize: 1,
+        maxPages: 50,
+      },
     );
-  });
-
-  it("prunes stale publisher temporal scan candidates daily", async () => {
-    await import("./crons");
-
     expect(mocks.interval).toHaveBeenCalledWith(
       "publisher-temporal-scan-candidate-prune",
       { hours: 24 },
       mocks.publisherTemporalScanCandidatePruneRef,
-      { batchSize: 500 },
+      {
+        batchSize: 500,
+      },
     );
   });
 

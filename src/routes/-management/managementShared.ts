@@ -37,6 +37,7 @@ export type ManagementView =
   | "duplicates"
   | "recent"
   | "audit"
+  | "system"
   | "settings";
 
 export type ManagementOwnerOption = {

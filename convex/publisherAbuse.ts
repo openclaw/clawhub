@@ -49,7 +49,7 @@ const MAX_BAN_REASON_LENGTH = 500;
 const DEFAULT_TEMPORAL_BATCH_SIZE = 50;
 const MAX_TEMPORAL_BATCH_SIZE = 100;
 const DEFAULT_TEMPORAL_CANDIDATE_LIMIT = 1000;
-const MAX_TEMPORAL_CANDIDATE_LIMIT = 1000;
+const MAX_TEMPORAL_CANDIDATE_LIMIT = 8_000;
 const DEFAULT_TEMPORAL_MAX_PAGES = 20;
 const MAX_TEMPORAL_MAX_PAGES = 100;
 const CURRENT_TEMPORAL_LOOKBACK_DAYS = 37;
@@ -89,7 +89,6 @@ const FAILED_SCORE_RUN_AUTOBAN_SKIP_NOTE =
 const FAILED_TEMPORAL_RUN_NOMINATION_NOTE =
   "Publisher abuse temporal score run failed before completion; rerun required.";
 const PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY = "publisherAbuseAutobanEnabled" as const;
-const PUBLISHER_ABUSE_AUTOBAN_SETTING_READ_LIMIT = 32;
 const FAILED_TEMPORAL_CLEANUP_LABELS = [
   "potential_ban_candidate",
   "review",
@@ -298,22 +297,6 @@ const temporalCandidateValidator = v.object({
   temporalScore: temporalScoreValidator,
 });
 
-const temporalPublisherAggregateValidator = v.object({
-  ownerKey: v.string(),
-  ownerPublisherId: v.optional(v.id("publishers")),
-  ownerUserId: v.optional(v.id("users")),
-  handleSnapshot: v.string(),
-  highTemporalSkillCount: v.number(),
-  p99TemporalSkillCount: v.number(),
-  spikeSkillCount: v.number(),
-  sustainedSkillCount: v.number(),
-  maxTemporalPressure: v.number(),
-  totalDownloads: v.number(),
-  totalInstalls: v.number(),
-  reasonCodes: v.array(v.string()),
-  evidence: v.array(temporalCandidateValidator),
-});
-
 type PublisherSkillMetricsOptions =
   | {
       allowActiveSkillScan: false;
@@ -430,23 +413,17 @@ export const setPublisherAbuseAutobanEnabled = mutation({
     assertAdmin(user);
 
     const now = Date.now();
-    const existingSettings = await getPublisherAbuseAutobanSettingDocs(ctx);
-    const existing = existingSettings[0] ?? null;
-    if (existing && existingSettings.every((setting) => setting.enabled === args.enabled)) {
+    const existing = await getPublisherAbuseAutobanSettingDoc(ctx);
+    if (existing?.enabled === args.enabled) {
       return summarizePublisherAbuseAutobanSetting(existing);
     }
 
-    if (existingSettings.length > 0) {
-      for (const setting of existingSettings) {
-        if (setting.enabled === args.enabled && setting.updatedByUserId === user._id) {
-          continue;
-        }
-        await ctx.db.patch(setting._id, {
-          enabled: args.enabled,
-          updatedAt: now,
-          updatedByUserId: user._id,
-        });
-      }
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        enabled: args.enabled,
+        updatedAt: now,
+        updatedByUserId: user._id,
+      });
     } else {
       await ctx.db.insert("systemSettings", {
         key: PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY,
@@ -1121,20 +1098,14 @@ export const getPublisherAbuseAutobanEnabledInternal = internalQuery({
   },
 });
 
-async function getPublisherAbuseAutobanSettingDocs(
-  ctx: Pick<QueryCtx | MutationCtx, "db">,
-): Promise<PublisherAbuseAutobanSettingDoc[]> {
-  return await ctx.db
-    .query("systemSettings")
-    .withIndex("by_key_and_updated_at", (q) => q.eq("key", PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY))
-    .order("desc")
-    .take(PUBLISHER_ABUSE_AUTOBAN_SETTING_READ_LIMIT);
-}
-
 async function getPublisherAbuseAutobanSettingDoc(
   ctx: Pick<QueryCtx | MutationCtx, "db">,
 ): Promise<PublisherAbuseAutobanSettingDoc | null> {
-  const settings = await getPublisherAbuseAutobanSettingDocs(ctx);
+  const settings = await ctx.db
+    .query("systemSettings")
+    .withIndex("by_key_and_updated_at", (q) => q.eq("key", PUBLISHER_ABUSE_AUTOBAN_SETTING_KEY))
+    .order("desc")
+    .take(1);
   return settings[0] ?? null;
 }
 
@@ -1306,17 +1277,6 @@ export const persistTemporalPublisherAbuseCandidatesInternal = internalMutation(
     scanComplete: v.boolean(),
   },
   handler: persistTemporalPublisherAbuseCandidatesInternalHandler,
-});
-
-export const persistTemporalPublisherAbuseAggregateInternal = internalMutation({
-  args: {
-    runId: v.id("publisherAbuseScoreRuns"),
-    aggregate: temporalPublisherAggregateValidator,
-    rank: v.number(),
-    benchmark: temporalAbuseCohortBenchmarkValidator,
-    scanComplete: v.boolean(),
-  },
-  handler: persistTemporalPublisherAbuseAggregateInternalHandler,
 });
 
 export const storePersistedTemporalPublisherAbuseBenchmarkInternal = internalMutation({
@@ -2346,38 +2306,6 @@ export async function storePersistedTemporalPublisherAbuseBenchmarkInternalHandl
     updatedAt: Date.now(),
   });
   return { ok: true as const };
-}
-
-export async function persistTemporalPublisherAbuseAggregateInternalHandler(
-  ctx: MutationCtx,
-  args: {
-    runId: Id<"publisherAbuseScoreRuns">;
-    aggregate: TemporalPublisherAggregate;
-    rank: number;
-    benchmark: TemporalAbuseCohortBenchmark;
-    scanComplete: boolean;
-  },
-) {
-  const run = await ctx.db.get(args.runId);
-  if (!run) throw new Error("Temporal publisher abuse score run not found");
-  const now = Date.now();
-  const result = await persistTemporalPublisherAbuseAggregate(ctx, {
-    runId: args.runId,
-    nominationRun: { ...run, temporalScanComplete: args.scanComplete } as ScoreRun,
-    aggregate: args.aggregate,
-    rank: args.rank,
-    benchmark: args.benchmark,
-    now,
-  });
-  await ctx.db.patch(args.runId, {
-    finalizedScores: run.finalizedScores + 1,
-    nominatedPublishers: run.nominatedPublishers + (result.nominated ? 1 : 0),
-    reviewCount: run.reviewCount + (result.label === "review" ? 1 : 0),
-    potentialBanCandidateCount:
-      run.potentialBanCandidateCount + (result.label === "potential_ban_candidate" ? 1 : 0),
-    updatedAt: now,
-  });
-  return result;
 }
 
 export async function materializePersistedTemporalPublisherAbuseAggregatesPageInternalHandler(
