@@ -24,6 +24,7 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
           owner: openclaw
           repositories: openclaw
+          permission-actions: write
 
       - uses: actions/create-github-app-token@v3
         id: app-token-fallback
@@ -34,6 +35,7 @@ jobs:
           private-key: ${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}
           owner: openclaw
           repositories: openclaw
+          permission-actions: write
 
       - name: Dispatch OpenClaw docs sync
         env:
