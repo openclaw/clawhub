@@ -4,7 +4,6 @@ import type { Doc } from "../_generated/dataModel";
 import type { ActionCtx } from "../_generated/server";
 import { getOptionalApiTokenUser } from "./apiTokenAuth";
 import { corsHeaders, mergeHeaders } from "./httpHeaders";
-import { RATE_LIMIT_WINDOW_MS } from "./rateLimitConfig";
 
 export const RATE_LIMITS = {
   read: { ip: 3000, key: 12000, adminKey: 120000 },
@@ -14,6 +13,7 @@ export const RATE_LIMITS = {
   export: { ip: 10, key: 60, adminKey: 60 },
 } as const;
 
+const RATE_LIMIT_WINDOW_MS = 60_000;
 const HTTP_RATE_LIMIT_SHARDS = 16;
 const HTTP_RATE_LIMIT_MIN_SHARD_CAPACITY = 10;
 const HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
@@ -323,9 +323,7 @@ function shouldTrustClientIpHeaders() {
 function isRateLimitWriteConflict(error: unknown) {
   if (!(error instanceof Error)) return false;
   return (
-    (error.message.includes("rateLimitCounters") ||
-      error.message.includes("rateLimits") ||
-      error.message.includes("httpRateLimitKeys")) &&
+    (error.message.includes("rateLimits") || error.message.includes("httpRateLimitKeys")) &&
     error.message.includes("changed while this mutation was being run")
   );
 }

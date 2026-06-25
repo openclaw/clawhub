@@ -155,13 +155,6 @@ if (process.env.CLAWHUB_DISABLE_CRONS !== "1") {
   );
 
   crons.interval(
-    "rate-limit-counters-prune",
-    { minutes: 15 },
-    internal.rateLimits.pruneRateLimitCountersInternal,
-    { batchSize: RETENTION_STANDARD_BATCH_SIZE },
-  );
-
-  crons.interval(
     "http-rate-limit-keys-prune",
     { hours: 1 },
     internal.rateLimits.pruneHttpRateLimitKeysInternal,

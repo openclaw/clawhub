@@ -224,9 +224,7 @@ describe("applyRateLimit headers", () => {
       runMutation: vi
         .fn()
         .mockRejectedValue(
-          new Error(
-            'Document in table "rateLimitCounters" changed while this mutation was being run',
-          ),
+          new Error('Document in table "rateLimits" changed while this mutation was being run'),
         ),
     } as unknown as Parameters<typeof applyRateLimit>[0];
     const request = new Request("https://example.com", {

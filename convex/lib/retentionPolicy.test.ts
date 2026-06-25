@@ -33,11 +33,6 @@ describe("retention policies", () => {
   });
 
   it("documents active expiring operational tables", () => {
-    expect(getRetentionPolicy("rateLimitCounters")).toMatchObject({
-      classification: "ephemeral",
-      expirationField: "expiresAt",
-      expirationIndex: "by_expires_at",
-    });
     expect(getRetentionPolicy("httpRateLimitKeys")).toMatchObject({
       classification: "ephemeral",
       expirationField: "expiresAt",

@@ -4,8 +4,6 @@ import type { MutationCtx } from "./_generated/server";
 import { internalMutation } from "./functions";
 import { RETENTION_STANDARD_BATCH_SIZE } from "./lib/retentionPolicy";
 
-const DEFAULT_PRUNE_RATE_LIMIT_COUNTERS_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
-const MAX_PRUNE_RATE_LIMIT_COUNTERS_BATCH_SIZE = 1_000;
 const DEFAULT_HTTP_RATE_LIMIT_KEY_TTL_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE = RETENTION_STANDARD_BATCH_SIZE;
 const MAX_PRUNE_HTTP_RATE_LIMIT_KEYS_BATCH_SIZE = 1_000;
@@ -217,37 +215,5 @@ export const pruneHttpRateLimitKeysInternal = internalMutation({
     }
 
     return { deleted, hasMore };
-  },
-});
-
-// The active HTTP limiter now uses @convex-dev/rate-limiter. Keep this cleanup
-// while old rateLimitCounters rows from prior deployments age out.
-export const pruneRateLimitCountersInternal = internalMutation({
-  args: {
-    batchSize: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const batchSize = clampBatchSize(
-      args.batchSize,
-      DEFAULT_PRUNE_RATE_LIMIT_COUNTERS_BATCH_SIZE,
-      MAX_PRUNE_RATE_LIMIT_COUNTERS_BATCH_SIZE,
-    );
-    const stale = await ctx.db
-      .query("rateLimitCounters")
-      .withIndex("by_expires_at", (q) => q.lt("expiresAt", Date.now()))
-      .take(batchSize);
-
-    for (const row of stale) {
-      await ctx.db.delete(row._id);
-    }
-
-    const hasMore = stale.length === batchSize;
-    if (hasMore) {
-      await ctx.scheduler.runAfter(0, internal.rateLimits.pruneRateLimitCountersInternal, {
-        batchSize,
-      });
-    }
-
-    return { deleted: stale.length, hasMore };
   },
 });
