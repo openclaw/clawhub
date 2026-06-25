@@ -39,6 +39,12 @@ const MAX_MAX_BATCHES = 200;
 const DEFAULT_EMPTY_SKILL_MAX_README_BYTES = 8000;
 const DEFAULT_EMPTY_SKILL_NOMINATION_THRESHOLD = 3;
 const PLATFORM_SKILL_LICENSE = "MIT-0" as const;
+const LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM = "repair-legacy-plugin-skillspector";
+const LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES = ["code-plugin", "bundle-plugin"] as const;
+const legacyPluginSkillSpectorRepairFamilyValidator = v.union(
+  v.literal("code-plugin"),
+  v.literal("bundle-plugin"),
+);
 
 type BackfillStats = {
   skillsScanned: number;
@@ -114,6 +120,51 @@ type LegacyPublisherOwnershipForUserRepairResult = {
   cursor: string | null;
   isDone: boolean;
   nextPhase?: LegacyPublisherOwnershipTargetPhase;
+};
+
+type LegacyPluginSkillSpectorRepairFamily =
+  (typeof LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES)[number];
+
+type LegacyPluginSkillSpectorRepairPageItem = {
+  packageId: Id<"packages">;
+  packageName: string;
+  releaseId: Id<"packageReleases">;
+  version: string;
+  bundledSkillCount: number;
+};
+
+type LegacyPluginSkillSpectorRepairPageResult = {
+  items: LegacyPluginSkillSpectorRepairPageItem[];
+  scanned: number;
+  cursor: string | null;
+  isDone: boolean;
+};
+
+type LegacyPluginSkillSpectorRepairStats = {
+  packagesScanned: number;
+  staleReleases: number;
+  staleReleasesWithoutBundledSkills: number;
+  bundledSkillReleases: number;
+  releasesCleared: number;
+  rescansQueued: number;
+  rescansAlreadyQueued: number;
+};
+
+type LegacyPluginSkillSpectorRepairActionResult = {
+  ok: true;
+  dryRun: boolean;
+  confirmRequired?: typeof LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM;
+  family: LegacyPluginSkillSpectorRepairFamily | null;
+  cursor: string | null;
+  isDone: boolean;
+  stats: LegacyPluginSkillSpectorRepairStats;
+  samples: Array<{
+    packageName: string;
+    version: string;
+    releaseId: Id<"packageReleases">;
+    bundledSkillCount: number;
+    action: "clear" | "rescan";
+  }>;
 };
 
 export const getSkillBackfillPageInternal = internalQuery({
@@ -654,6 +705,218 @@ export const continueSkillSummaryBackfillJobInternal = internalAction({
     }
 
     return result;
+  },
+});
+
+export const getLegacyPluginSkillSpectorRepairPageInternal = internalQuery({
+  args: {
+    family: legacyPluginSkillSpectorRepairFamilyValidator,
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<LegacyPluginSkillSpectorRepairPageResult> => {
+    const batchSize = clampInt(args.batchSize ?? DEFAULT_BATCH_SIZE, 1, MAX_BATCH_SIZE);
+    const page = await ctx.db
+      .query("packages")
+      .withIndex("by_family_updated", (q) => q.eq("family", args.family))
+      .paginate({ cursor: args.cursor ?? null, numItems: batchSize });
+
+    const items: LegacyPluginSkillSpectorRepairPageItem[] = [];
+    for (const pkg of page.page) {
+      if (pkg.softDeletedAt !== undefined || !pkg.latestReleaseId) continue;
+      const release = await ctx.db.get(pkg.latestReleaseId);
+      if (
+        !release ||
+        release.softDeletedAt !== undefined ||
+        release.skillSpectorAnalysis === undefined
+      ) {
+        continue;
+      }
+      items.push({
+        packageId: pkg._id,
+        packageName: pkg.name,
+        releaseId: release._id,
+        version: release.version,
+        bundledSkillCount: Array.isArray(release.pluginManifestSummary?.bundledSkills)
+          ? release.pluginManifestSummary.bundledSkills.length
+          : 0,
+      });
+    }
+
+    return {
+      items,
+      scanned: page.page.length,
+      cursor: page.continueCursor,
+      isDone: page.isDone,
+    };
+  },
+});
+
+function emptyLegacyPluginSkillSpectorRepairStats(): LegacyPluginSkillSpectorRepairStats {
+  return {
+    packagesScanned: 0,
+    staleReleases: 0,
+    staleReleasesWithoutBundledSkills: 0,
+    bundledSkillReleases: 0,
+    releasesCleared: 0,
+    rescansQueued: 0,
+    rescansAlreadyQueued: 0,
+  };
+}
+
+type LegacyPluginSkillSpectorRepairBatchArgs = {
+  dryRun?: boolean;
+  confirm?: string;
+  family: LegacyPluginSkillSpectorRepairFamily;
+  cursor?: string;
+  batchSize?: number;
+};
+
+export async function repairLegacyPluginSkillSpectorBatchInternalHandler(
+  ctx: Pick<MutationCtx, "runQuery" | "runMutation">,
+  args: LegacyPluginSkillSpectorRepairBatchArgs,
+): Promise<LegacyPluginSkillSpectorRepairActionResult> {
+  const dryRun = args.dryRun !== false;
+  if (!dryRun && args.confirm !== LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM) {
+    throw new ConvexError(`Pass confirm="${LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM}" to apply.`);
+  }
+
+  const page = (await ctx.runQuery(
+    internal.maintenance.getLegacyPluginSkillSpectorRepairPageInternal,
+    {
+      family: args.family,
+      cursor: args.cursor,
+      batchSize: args.batchSize,
+    },
+  )) as LegacyPluginSkillSpectorRepairPageResult;
+  const stats = emptyLegacyPluginSkillSpectorRepairStats();
+  stats.packagesScanned = page.scanned;
+  stats.staleReleases = page.items.length;
+  const samples: LegacyPluginSkillSpectorRepairActionResult["samples"] = [];
+
+  for (const item of page.items) {
+    const repairAction = item.bundledSkillCount > 0 ? "rescan" : "clear";
+    if (item.bundledSkillCount > 0) {
+      stats.bundledSkillReleases += 1;
+    } else {
+      stats.staleReleasesWithoutBundledSkills += 1;
+    }
+    if (samples.length < 20) {
+      samples.push({
+        packageName: item.packageName,
+        version: item.version,
+        releaseId: item.releaseId,
+        bundledSkillCount: item.bundledSkillCount,
+        action: repairAction,
+      });
+    }
+    if (dryRun) continue;
+
+    if (item.bundledSkillCount > 0) {
+      const queued = (await ctx.runMutation(
+        internal.securityScan.enqueuePackageReleaseScanInternal,
+        {
+          releaseId: item.releaseId,
+          source: "backfill",
+          priority: 40,
+          waitForVtMs: 0,
+        },
+      )) as { alreadyQueued?: boolean; jobId?: Id<"securityScanJobs"> };
+      if (queued.alreadyQueued) {
+        stats.rescansAlreadyQueued += 1;
+      } else if (queued.jobId) {
+        stats.rescansQueued += 1;
+      }
+    }
+
+    await ctx.runMutation(internal.packages.updateReleaseSkillSpectorAnalysisInternal, {
+      releaseId: item.releaseId,
+    });
+    stats.releasesCleared += 1;
+  }
+
+  return {
+    ok: true as const,
+    dryRun,
+    confirmRequired: dryRun ? LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM : undefined,
+    family: args.family,
+    cursor: page.cursor,
+    isDone: page.isDone,
+    stats,
+    samples,
+  };
+}
+
+export const repairLegacyPluginSkillSpectorBatchInternal = internalMutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    family: legacyPluginSkillSpectorRepairFamilyValidator,
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+  },
+  handler: repairLegacyPluginSkillSpectorBatchInternalHandler,
+});
+
+export const repairLegacyPluginSkillSpectorInternal = internalAction({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    confirm: v.optional(v.string()),
+    family: v.optional(legacyPluginSkillSpectorRepairFamilyValidator),
+    cursor: v.optional(v.string()),
+    batchSize: v.optional(v.number()),
+    maxBatches: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<LegacyPluginSkillSpectorRepairActionResult> => {
+    const dryRun = args.dryRun !== false;
+    const maxBatches = clampInt(args.maxBatches ?? 1, 1, MAX_MAX_BATCHES);
+    let family: LegacyPluginSkillSpectorRepairFamily | null = args.family ?? "code-plugin";
+    let cursor: string | null = args.cursor ?? null;
+    const stats = emptyLegacyPluginSkillSpectorRepairStats();
+    const samples: LegacyPluginSkillSpectorRepairActionResult["samples"] = [];
+
+    for (let batchIndex = 0; family && batchIndex < maxBatches; batchIndex += 1) {
+      const result = (await ctx.runMutation(
+        internal.maintenance.repairLegacyPluginSkillSpectorBatchInternal,
+        {
+          dryRun,
+          confirm: args.confirm,
+          family,
+          cursor: cursor ?? undefined,
+          batchSize: args.batchSize,
+        },
+      )) as LegacyPluginSkillSpectorRepairActionResult;
+
+      stats.packagesScanned += result.stats.packagesScanned;
+      stats.staleReleases += result.stats.staleReleases;
+      stats.staleReleasesWithoutBundledSkills += result.stats.staleReleasesWithoutBundledSkills;
+      stats.bundledSkillReleases += result.stats.bundledSkillReleases;
+      stats.releasesCleared += result.stats.releasesCleared;
+      stats.rescansQueued += result.stats.rescansQueued;
+      stats.rescansAlreadyQueued += result.stats.rescansAlreadyQueued;
+      samples.push(...result.samples.slice(0, 20 - samples.length));
+
+      if (!result.isDone) {
+        cursor = result.cursor;
+        break;
+      }
+      family =
+        LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES[
+          LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_FAMILIES.indexOf(family) + 1
+        ] ?? null;
+      cursor = null;
+    }
+
+    return {
+      ok: true as const,
+      dryRun,
+      confirmRequired: dryRun ? LEGACY_PLUGIN_SKILLSPECTOR_REPAIR_CONFIRM : undefined,
+      family,
+      cursor,
+      isDone: family === null,
+      stats,
+      samples,
+    };
   },
 });
 

@@ -38,6 +38,12 @@ vi.mock("./_generated/api", () => ({
       nominateUserForEmptySkillSpamInternal: Symbol("nominateUserForEmptySkillSpamInternal"),
       cleanupEmptySkillsInternal: Symbol("cleanupEmptySkillsInternal"),
       nominateEmptySkillSpammersInternal: Symbol("nominateEmptySkillSpammersInternal"),
+      getLegacyPluginSkillSpectorRepairPageInternal: Symbol(
+        "getLegacyPluginSkillSpectorRepairPageInternal",
+      ),
+      repairLegacyPluginSkillSpectorBatchInternal: Symbol(
+        "repairLegacyPluginSkillSpectorBatchInternal",
+      ),
     },
     skills: {
       backfillLatestSkillModerationInternal: Symbol("skills.backfillLatestSkillModerationInternal"),
@@ -46,6 +52,14 @@ vi.mock("./_generated/api", () => ({
     },
     users: {
       getByIdInternal: Symbol("users.getByIdInternal"),
+    },
+    packages: {
+      updateReleaseSkillSpectorAnalysisInternal: Symbol(
+        "packages.updateReleaseSkillSpectorAnalysisInternal",
+      ),
+    },
+    securityScan: {
+      enqueuePackageReleaseScanInternal: Symbol("securityScan.enqueuePackageReleaseScanInternal"),
     },
   },
 }));
@@ -63,6 +77,7 @@ const {
   backfillUserStatsInternalHandler,
   cleanupEmptySkillsInternalHandler,
   nominateEmptySkillSpammersInternalHandler,
+  repairLegacyPluginSkillSpectorBatchInternalHandler,
   repairLegacyPublisherOwnershipForUserHandler,
   resyncPluginCatalogMetadataDigestsBatchInternal,
   resyncPluginCatalogMetadataDigestsInternal,
@@ -1113,6 +1128,113 @@ describe("maintenance plugin catalog metadata digest resync", () => {
         "code-plugin": { scanned: 1, matched: 1, mutated: 0 },
         "bundle-plugin": { scanned: 2, matched: 1, mutated: 0 },
       },
+    });
+  });
+});
+
+describe("maintenance legacy plugin SkillSpector repair", () => {
+  const handler = repairLegacyPluginSkillSpectorBatchInternalHandler;
+
+  function page() {
+    return {
+      items: [
+        {
+          packageId: "packages:no-skills",
+          packageName: "no-skills",
+          releaseId: "packageReleases:no-skills",
+          version: "1.0.0",
+          bundledSkillCount: 0,
+        },
+        {
+          packageId: "packages:bundled",
+          packageName: "bundled",
+          releaseId: "packageReleases:bundled",
+          version: "2.0.0",
+          bundledSkillCount: 2,
+        },
+      ],
+      scanned: 10,
+      cursor: "next",
+      isDone: false,
+    };
+  }
+
+  it("requires confirmation before applying", async () => {
+    await expect(
+      handler(
+        {
+          runQuery: vi.fn(),
+          runMutation: vi.fn(),
+        },
+        {
+          family: "code-plugin",
+          dryRun: false,
+        },
+      ),
+    ).rejects.toThrow('Pass confirm="repair-legacy-plugin-skillspector" to apply.');
+  });
+
+  it("dry-runs without queueing or clearing releases", async () => {
+    const runQuery = vi.fn().mockResolvedValue(page());
+    const runMutation = vi.fn();
+
+    const result = await handler(
+      { runQuery, runMutation },
+      {
+        family: "code-plugin",
+        dryRun: true,
+        batchSize: 10,
+      },
+    );
+
+    expect(result.stats).toEqual({
+      packagesScanned: 10,
+      staleReleases: 2,
+      staleReleasesWithoutBundledSkills: 1,
+      bundledSkillReleases: 1,
+      releasesCleared: 0,
+      rescansQueued: 0,
+      rescansAlreadyQueued: 0,
+    });
+    expect(runMutation).not.toHaveBeenCalled();
+  });
+
+  it("queues bundled releases before clearing their stale analysis", async () => {
+    const runQuery = vi.fn().mockResolvedValue(page());
+    const runMutation = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true })
+      .mockResolvedValueOnce({ jobId: "securityScanJobs:bundled", alreadyQueued: false })
+      .mockResolvedValue({ ok: true });
+
+    const result = await handler(
+      { runQuery, runMutation },
+      {
+        family: "code-plugin",
+        dryRun: false,
+        confirm: "repair-legacy-plugin-skillspector",
+        batchSize: 10,
+      },
+    );
+
+    expect(result.stats).toMatchObject({
+      releasesCleared: 2,
+      rescansQueued: 1,
+      rescansAlreadyQueued: 0,
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(1, expect.anything(), {
+      releaseId: "packageReleases:no-skills",
+    });
+    expect(runMutation).toHaveBeenNthCalledWith(
+      2,
+      expect.anything(),
+      expect.objectContaining({
+        releaseId: "packageReleases:bundled",
+        source: "backfill",
+      }),
+    );
+    expect(runMutation).toHaveBeenNthCalledWith(3, expect.anything(), {
+      releaseId: "packageReleases:bundled",
     });
   });
 });
