@@ -16,40 +16,18 @@ jobs:
   dispatch-openclaw-docs-sync:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/create-github-app-token@v3
-        id: app-token
-        continue-on-error: true
-        with:
-          app-id: "2729701"
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY }}
-          owner: openclaw
-          repositories: openclaw
-          permission-actions: write
-
-      - uses: actions/create-github-app-token@v3
-        id: app-token-fallback
-        continue-on-error: true
-        if: steps.app-token.outcome == 'failure'
-        with:
-          app-id: "2971289"
-          private-key: ${{ secrets.GH_APP_PRIVATE_KEY_FALLBACK }}
-          owner: openclaw
-          repositories: openclaw
-          permission-actions: write
-
       - name: Dispatch OpenClaw docs sync
         env:
-          APP_TOKEN: ${{ steps.app-token.outputs.token }}
-          FALLBACK_APP_TOKEN: ${{ steps.app-token-fallback.outputs.token }}
+          OPENCLAW_GH_TOKEN: ${{ secrets.OPENCLAW_GH_TOKEN }}
           LEGACY_TOKEN: ${{ secrets.OPENCLAW_DOCS_SYNC_TOKEN }}
         run: |
           set -euo pipefail
 
-          OPENCLAW_DOCS_SYNC_TOKEN="${APP_TOKEN:-${FALLBACK_APP_TOKEN:-${LEGACY_TOKEN:-}}}"
+          OPENCLAW_DOCS_SYNC_TOKEN="${OPENCLAW_GH_TOKEN:-${LEGACY_TOKEN:-}}"
 
           if [ -z "${OPENCLAW_DOCS_SYNC_TOKEN:-}" ]; then
-            echo "::error::GitHub App auth or token is required to dispatch"
-            echo "::error::openclaw/openclaw docs sync."
+            echo "::error::OPENCLAW_GH_TOKEN or legacy token is required"
+            echo "::error::to dispatch openclaw/openclaw docs sync."
             exit 1
           fi
 
