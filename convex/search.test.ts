@@ -708,7 +708,7 @@ describe("search helpers", () => {
     );
   });
 
-  it("preserves suspicious lexical fallback results when nonSuspiciousOnly is unset", async () => {
+  it("excludes suspicious lexical fallback results from public search", async () => {
     const clean = makeSkillDoc({ id: "skills:clean", slug: "orf-clean", displayName: "ORF Clean" });
     const suspicious = makeSkillDoc({
       id: "skills:suspicious",
@@ -727,7 +727,7 @@ describe("search helpers", () => {
       limit: 10,
     });
 
-    expect(result.map((entry) => entry.skill.slug)).toEqual(["orf-clean", "orf-suspicious"]);
+    expect(result.map((entry) => entry.skill.slug)).toEqual(["orf-clean"]);
     expect(ctx.usedIndexes).toEqual(
       expect.arrayContaining(["by_active_updated", "by_active_created"]),
     );

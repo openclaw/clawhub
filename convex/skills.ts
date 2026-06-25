@@ -88,6 +88,12 @@ import {
   toPublicUser,
 } from "./lib/public";
 import {
+  hasPriorApprovedPublicSkillVersion,
+  isSkillPendingPublicReview,
+  resolvePublicBrowseVersionForSkill,
+  shouldExcludeSkillFromPublicBrowse,
+} from "./lib/publicBrowse";
+import {
   assertCanManageOwnedResource,
   canAccessPublisherOwnerScope,
   ensurePersonalPublisherForUser,
@@ -5423,16 +5429,10 @@ export const listPublicPageV4 = query({
     }
 
     if (officialFirstCursor && categorySlug) {
-      const sort =
-        officialFirstCursor.sort ??
-        (requestedSort === "recommended" &&
-        (await hasMissingRecommendedScores(ctx, args.nonSuspiciousOnly ?? false, null))
-          ? "updated"
-          : requestedSort);
       return await listOfficialFirstSkillCategoryPage(ctx, {
-        state: { ...officialFirstCursor, sort },
-        sort,
-        dir: resolvePublicListDir(sort, args.dir),
+        state: { ...officialFirstCursor, sort: officialFirstCursor.sort ?? requestedSort },
+        sort: officialFirstCursor.sort ?? requestedSort,
+        dir: resolvePublicListDir(officialFirstCursor.sort ?? requestedSort, args.dir),
         numItems,
         topic,
         categorySlug,
@@ -5713,20 +5713,9 @@ async function listSkillTopicFilteredPage(
       allowLegacyArray: false,
     });
   const recommendedCursor = opts.sort === "recommended" ? decodeTopicCursor("recommended") : null;
-  const updatedCursor = opts.sort === "recommended" ? decodeTopicCursor("updated") : null;
-  const useUpdatedRecommendationFallback =
-    opts.sort === "recommended" &&
-    (Boolean(updatedCursor) ||
-      (!recommendedCursor &&
-        (await hasMissingRecommendedScores(ctx, opts.nonSuspiciousOnly, null))));
-  const sort = useUpdatedRecommendationFallback ? "updated" : opts.sort;
+  const sort = opts.sort;
   const indexName = getTopicIndexName(sort);
-  const decodedCursor =
-    opts.sort === "recommended"
-      ? sort === "updated"
-        ? updatedCursor
-        : recommendedCursor
-      : decodeTopicCursor(sort);
+  const decodedCursor = opts.sort === "recommended" ? recommendedCursor : decodeTopicCursor(sort);
   const items: PublicSkillEntry[] = [];
   let scanCursor = decodedCursor ?? eqPrefix;
   let scanInclusive = !decodedCursor;
@@ -5986,6 +5975,7 @@ async function buildPublicSkillEntryFromDigest(
   digest: Doc<"skillSearchDigest">,
 ): Promise<PublicSkillEntry | null> {
   const hydratable = digestToHydratableSkill(digest);
+  if (shouldExcludeSkillFromPublicBrowse(hydratable)) return null;
   const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
   const ownerInfo = await addOfficialStatusToOwnerInfo(
@@ -6020,6 +6010,13 @@ async function loadPublicLatestVersionForDigest(
   if (!digest.latestVersionId) return null;
   if (digest.latestVersionSkillId !== undefined && digest.latestVersionSkillId !== digest.skillId) {
     return null;
+  }
+  const skill = await ctx.db.get(digest.skillId);
+  if (skill && isSkillPendingPublicReview(skill) && hasPriorApprovedPublicSkillVersion(skill)) {
+    const version = await resolvePublicBrowseVersionForSkill(ctx, skill);
+    return version && isPublicSkillVersionAvailableForSkill(version, digest.skillId)
+      ? version
+      : null;
   }
   const version = await ctx.db.get(digest.latestVersionId);
   return isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
@@ -6306,6 +6303,7 @@ function skillCatalogMatchesFilters(
   },
 ) {
   if (!isVisibleSkillCatalogDigest(digest)) return false;
+  if (shouldExcludeSkillFromPublicBrowse(digestToHydratableSkill(digest))) return false;
   if (args.channel === "private") return false;
   const isOfficial = isSkillCatalogOfficial(digest);
   const channel = getSkillCatalogChannel(digest);
@@ -6366,15 +6364,7 @@ async function listSkillPackageCatalogTopicPage(
   let done = decodedCursor.done;
   let loops = 0;
   let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
-  const isFreshRecommendedRequest =
-    args.sort === "recommended" && args.paginationOpts.cursor === null;
-  const recommendedFallback =
-    args.sort === "recommended"
-      ? (decodedCursor.recommendedFallback ??
-        (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))
-          ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
-          : undefined))
-      : undefined;
+  const recommendedFallback = decodedCursor.recommendedFallback;
   const catalogSort = recommendedFallback ?? args.sort;
 
   while (
@@ -6588,15 +6578,7 @@ export const listPackageCatalogPage = query({
     let done = decodedCursor.done;
     let loops = 0;
     let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
-    const isFreshRecommendedRequest =
-      args.sort === "recommended" && args.paginationOpts.cursor === null;
-    const recommendedFallback =
-      args.sort === "recommended"
-        ? (decodedCursor.recommendedFallback ??
-          (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))
-            ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
-            : undefined))
-        : undefined;
+    const recommendedFallback = decodedCursor.recommendedFallback;
     const catalogSort = recommendedFallback ?? args.sort;
 
     while (
@@ -6925,7 +6907,7 @@ function resolveRecommendedPublicListQuery({
     return { sort: "updated", indexName: updatedIndexName, decodedCursor: updatedCursor };
   }
   if (hasMissingScores) {
-    return { sort: "updated", indexName: updatedIndexName, decodedCursor: null };
+    return { sort: "recommended", indexName: rankIndexName, decodedCursor: null };
   }
   return { sort: "recommended", indexName: scoreIndexName, decodedCursor: null };
 }
