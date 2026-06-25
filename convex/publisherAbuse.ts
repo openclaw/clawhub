@@ -2940,6 +2940,10 @@ function isPublisherAbuseLabelEscalation(
 
 type PublisherAbuseReviewItem = Awaited<ReturnType<typeof summarizePublisherAbuseReviewNomination>>;
 type PendingPublisherAbuseReviewLabel = Exclude<PublisherAbuseLabel, "pass">;
+type PublisherAbuseReviewVisibilityOptions = {
+  staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget;
+  includeInactiveTargets?: boolean;
+};
 
 async function getPendingPublisherAbuseReviewItemsForLabel(
   ctx: QueryCtx,
@@ -3029,7 +3033,11 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromScoreRank(
       continue;
     }
     const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
-    if (!(await isVisiblePublisherAbuseReviewItem(ctx, item, args.staffManagerExclusionBudget))) {
+    if (
+      !(await isVisiblePublisherAbuseReviewItem(ctx, item, {
+        staffManagerExclusionBudget: args.staffManagerExclusionBudget,
+      }))
+    ) {
       continue;
     }
     items.push(item);
@@ -3058,7 +3066,11 @@ async function getPendingPublisherAbuseReviewItemsForLabelFromLastScoredAt(
     .take(scanLimit);
   const pageItems = await summarizePublisherAbuseReviewNominations(ctx, nominations);
   for (const item of pageItems) {
-    if (!(await isVisiblePublisherAbuseReviewItem(ctx, item, args.staffManagerExclusionBudget))) {
+    if (
+      !(await isVisiblePublisherAbuseReviewItem(ctx, item, {
+        staffManagerExclusionBudget: args.staffManagerExclusionBudget,
+      }))
+    ) {
       continue;
     }
     items.push(item);
@@ -3111,12 +3123,10 @@ async function getRecentResolvedPublisherAbuseReviewItems(
     nominations.push(...page);
   }
   nominations.sort((left, right) => (right.reviewedAt ?? 0) - (left.reviewedAt ?? 0));
-  return await summarizeVisiblePublisherAbuseReviewNominations(
-    ctx,
-    nominations,
-    limit,
+  return await summarizeVisiblePublisherAbuseReviewNominations(ctx, nominations, limit, {
     staffManagerExclusionBudget,
-  );
+    includeInactiveTargets: true,
+  });
 }
 
 async function summarizePublisherAbuseReviewNominations(
@@ -3134,12 +3144,12 @@ async function summarizeVisiblePublisherAbuseReviewNominations(
   ctx: QueryCtx,
   nominations: Doc<"publisherAbuseReviewNominations">[],
   limit?: number,
-  staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget,
+  visibilityOptions: PublisherAbuseReviewVisibilityOptions = {},
 ) {
   const items = [];
   for (const nomination of nominations) {
     const item = await summarizePublisherAbuseReviewNomination(ctx, nomination);
-    if (await isVisiblePublisherAbuseReviewItem(ctx, item, staffManagerExclusionBudget)) {
+    if (await isVisiblePublisherAbuseReviewItem(ctx, item, visibilityOptions)) {
       items.push(item);
     }
     if (limit && items.length >= limit) break;
@@ -3170,15 +3180,18 @@ async function summarizePublisherAbuseReviewNomination(
 async function isVisiblePublisherAbuseReviewItem(
   ctx: QueryCtx,
   item: PublisherAbuseReviewItem,
-  staffManagerExclusionBudget?: StaffPublisherManagerExclusionBudget,
+  options: PublisherAbuseReviewVisibilityOptions = {},
 ) {
+  const targetIsInactive =
+    item.ownerUser?.deletedAt ||
+    item.ownerUser?.deactivatedAt ||
+    item.publisher?.deletedAt ||
+    item.publisher?.deactivatedAt;
+
   return (
     item.nomination.label !== "pass" &&
-    !item.ownerUser?.deletedAt &&
-    !item.ownerUser?.deactivatedAt &&
-    !item.publisher?.deletedAt &&
-    !item.publisher?.deactivatedAt &&
-    !(await isPublisherAbuseExcludedReviewItem(ctx, item, staffManagerExclusionBudget))
+    (options.includeInactiveTargets || !targetIsInactive) &&
+    !(await isPublisherAbuseExcludedReviewItem(ctx, item, options.staffManagerExclusionBudget))
   );
 }
 

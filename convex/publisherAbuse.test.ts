@@ -2171,6 +2171,22 @@ describe("publisher abuse dry-run persistence", () => {
       reviewedAt: 100,
       updatedAt: 10_000,
     };
+    const bannedResolution = {
+      _id: "publisherAbuseReviewNominations:banned-resolution",
+      ownerKey: "user:banned-resolution",
+      ownerPublisherId: undefined,
+      ownerUserId: "users:banned-resolution",
+      handleSnapshot: "banned-resolution",
+      latestScoreId: "publisherAbuseScores:banned-resolution",
+      modelVersion: "publisher-abuse-pressure.v2",
+      label: "potential_ban_candidate",
+      status: "banned",
+      openedAt: 1,
+      openedByRunId: "publisherAbuseScoreRuns:run",
+      lastScoredAt: 6_000,
+      reviewedAt: 6_000,
+      updatedAt: 6_000,
+    };
     const query = vi.fn((table: string) => {
       if (table === "publisherAbuseReviewNominations") {
         return {
@@ -2198,9 +2214,11 @@ describe("publisher abuse dry-run persistence", () => {
                 order: () => ({
                   take: async (limit: number) => {
                     expect(limit).toBe(90);
-                    return constraints.status === "reviewed_no_action"
-                      ? [rescoredOldResolution, resolvedNomination]
-                      : [];
+                    if (constraints.status === "banned") return [bannedResolution];
+                    if (constraints.status === "reviewed_no_action") {
+                      return [rescoredOldResolution, resolvedNomination];
+                    }
+                    return [];
                   },
                 }),
               };
@@ -2273,6 +2291,41 @@ describe("publisher abuse dry-run persistence", () => {
               createdAt: 1,
             };
           }
+          if (id === "publisherAbuseScores:banned-resolution") {
+            return {
+              _id: id,
+              runId: "publisherAbuseScoreRuns:run",
+              ownerKey: "user:banned-resolution",
+              ownerPublisherId: undefined,
+              ownerUserId: "users:banned-resolution",
+              handleSnapshot: "banned-resolution",
+              modelVersion: "publisher-abuse-pressure.v2",
+              label: "potential_ban_candidate",
+              rank: 3,
+              pressure: 110,
+              logPressure: 2.1,
+              zScore: 2.1,
+              publishedSkills: 110,
+              totalInstalls: 1,
+              totalStars: 0,
+              totalDownloads: 11,
+              installsPerSkill: 0.01,
+              starsPerSkill: 0,
+              downloadsPerSkill: 0.1,
+              reasonCodes: ["high_catalog_volume"],
+              createdAt: 1,
+            };
+          }
+          if (id === "users:banned-resolution") {
+            return {
+              _id: id,
+              handle: "banned-resolution",
+              name: "Banned Resolution",
+              displayName: "Banned Resolution",
+              role: "user",
+              deletedAt: 6_000,
+            };
+          }
           if (id === "publisherAbuseScoreRuns:run") {
             return {
               _id: id,
@@ -2297,22 +2350,27 @@ describe("publisher abuse dry-run persistence", () => {
       },
     };
 
-    await expect(listDashboardHandler(ctx, { limit: 2 })).resolves.toEqual(
+    const result = await listDashboardHandler(ctx, { limit: 2 });
+    expect(result.recentResolvedItems).toEqual([
       expect.objectContaining({
-        recentResolvedItems: [
-          expect.objectContaining({
-            nomination: expect.objectContaining({
-              _id: "publisherAbuseReviewNominations:fresh-resolution",
-            }),
-          }),
-          expect.objectContaining({
-            nomination: expect.objectContaining({
-              _id: "publisherAbuseReviewNominations:old-resolution",
-            }),
-          }),
-        ],
+        nomination: expect.objectContaining({
+          _id: "publisherAbuseReviewNominations:banned-resolution",
+        }),
+        ownerUser: expect.objectContaining({
+          deletedAt: 6_000,
+        }),
       }),
-    );
+      expect.objectContaining({
+        nomination: expect.objectContaining({
+          _id: "publisherAbuseReviewNominations:fresh-resolution",
+        }),
+      }),
+      expect.objectContaining({
+        nomination: expect.objectContaining({
+          _id: "publisherAbuseReviewNominations:old-resolution",
+        }),
+      }),
+    ]);
   });
 
   it("collects score rows without patching enforcement tables", async () => {
