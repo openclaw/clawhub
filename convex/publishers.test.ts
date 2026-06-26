@@ -4164,6 +4164,24 @@ describe("publishers membership controls", () => {
     );
   });
 
+  it("rejects invitations for unresolved handles", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert } = makeInviteCtx();
+    try {
+      await expect(
+        createMemberInviteHandler(
+          ctx as never,
+          { publisherId: "publishers:org", userHandle: "typo-target", role: "admin" } as never,
+        ),
+      ).rejects.toThrow('User "@typo-target" not found');
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).not.toHaveBeenCalledWith("publisherInvites", expect.anything());
+    expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
+  });
+
   it("rejects duplicate active member invitations", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx } = makeInviteCtx({

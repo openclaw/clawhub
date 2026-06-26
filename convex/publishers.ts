@@ -3319,10 +3319,11 @@ export const createMemberInvite = mutation({
     if (!targetHandle) throw new ConvexError("User handle is required");
     const now = Date.now();
     const targetUser = await getActiveUserByHandleOrPersonalPublisher(ctx, targetHandle);
-    if (targetUser) {
-      const existing = await getPublisherMembership(ctx, publisher._id, targetUser._id);
-      if (existing) throw new ConvexError(`@${targetHandle} is already a member`);
+    if (!targetUser) {
+      throw new ConvexError(`User "@${targetHandle}" not found`);
     }
+    const existing = await getPublisherMembership(ctx, publisher._id, targetUser._id);
+    if (existing) throw new ConvexError(`@${targetHandle} is already a member`);
 
     const activePending = await ctx.db
       .query("publisherInvites")
