@@ -462,7 +462,7 @@ function makeEmptyPublisherMembersQuery() {
     withIndex: (indexName: string) => {
       expect(indexName).toBe("by_publisher_and_role");
       return {
-        paginate: async () => ({ page: [], isDone: true, continueCursor: "" }),
+        take: async () => [],
       };
     },
   };
@@ -1137,8 +1137,8 @@ describe("publisher abuse dry-run persistence", () => {
                 withIndex: (indexName: string) => {
                   expect(indexName).toBe("by_publisher_and_role");
                   return {
-                    paginate: async () => ({
-                      page: staffManaged
+                    take: async () =>
+                      staffManaged
                         ? [
                             {
                               _id: "publisherMembers:staff-manager",
@@ -1148,9 +1148,6 @@ describe("publisher abuse dry-run persistence", () => {
                             },
                           ]
                         : [],
-                      isDone: true,
-                      continueCursor: "",
-                    }),
                   };
                 },
               };
@@ -1944,11 +1941,7 @@ describe("publisher abuse dry-run persistence", () => {
           if (table === "publisherMembers") {
             return {
               withIndex: () => ({
-                paginate: async () => ({
-                  page: testCase.staffMember ? [testCase.staffMember] : [],
-                  isDone: true,
-                  continueCursor: "",
-                }),
+                take: async () => (testCase.staffMember ? [testCase.staffMember] : []),
               }),
             };
           }
@@ -2900,6 +2893,88 @@ describe("publisher abuse dry-run persistence", () => {
     expect(nominationsPaginate).toHaveBeenCalledWith({ numItems: 2, cursor: null });
   });
 
+  it("excludes staff-managed org rows without a second paginated query", async () => {
+    vi.mocked(requireUser).mockResolvedValue({
+      userId: "users:moderator",
+      user: { _id: "users:moderator", role: "moderator" },
+    } as never);
+    const nomination = makeNomination({
+      _id: "publisherAbuseReviewNominations:staff-org",
+      ownerKey: "publisher:publishers:staff-org",
+      ownerPublisherId: "publishers:staff-org",
+      ownerUserId: "users:owner",
+      latestScoreId: "publisherAbuseScores:staff-org",
+      label: "potential_ban_candidate",
+      status: "pending",
+    });
+    const nominationsPaginate = vi.fn(async () => ({
+      page: [nomination],
+      isDone: true,
+      continueCursor: "",
+    }));
+    const publisherMembersTake = vi.fn(async () => [
+      {
+        _id: "publisherMembers:staff",
+        publisherId: "publishers:staff-org",
+        userId: "users:staff",
+        role: "owner",
+      },
+    ]);
+    const ctx = {
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === "publishers:staff-org") {
+            return {
+              _id: "publishers:staff-org",
+              kind: "org",
+              handle: "staff-org",
+              displayName: "Staff Org",
+              linkedUserId: "users:owner",
+            };
+          }
+          if (id === "users:owner") return { _id: "users:owner", role: "user" };
+          if (id === "users:staff") return { _id: "users:staff", role: "moderator" };
+          return null;
+        }),
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseReviewNominations") {
+            return {
+              withIndex: () => ({
+                order: () => ({
+                  paginate: nominationsPaginate,
+                }),
+              }),
+            };
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          if (table === "publisherMembers") {
+            return {
+              withIndex: () => ({
+                take: publisherMembersTake,
+              }),
+            };
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(
+      listReviewItemsPageHandler(ctx, {
+        tab: "potential_ban_candidate",
+        paginationOpts: { numItems: 1, cursor: null },
+      }),
+    ).resolves.toEqual(
+      expect.objectContaining({
+        page: [],
+        isDone: true,
+        continueCursor: "",
+      }),
+    );
+    expect(nominationsPaginate).toHaveBeenCalledWith({ numItems: 1, cursor: null });
+    expect(publisherMembersTake).toHaveBeenCalledWith(100);
+  });
+
   it("normalizes absent optional publisher and user fields in nomination rows", async () => {
     vi.mocked(requireUser).mockResolvedValue({
       userId: "users:moderator",
@@ -3621,13 +3696,7 @@ describe("publisher abuse dry-run persistence", () => {
                 };
                 build(q);
                 return {
-                  paginate: async ({
-                    cursor,
-                    numItems,
-                  }: {
-                    cursor: string | null;
-                    numItems: number;
-                  }) => {
+                  take: async (numItems: number) => {
                     const members =
                       constraints.publisherId === largeCommunityOrgPublisher._id &&
                       constraints.role === "admin"
@@ -3648,14 +3717,7 @@ describe("publisher abuse dry-run persistence", () => {
                               role: "admin",
                             }))
                           : [];
-                    const offset = cursor ? Number(cursor) : 0;
-                    const page = members.slice(offset, offset + numItems);
-                    const nextOffset = offset + page.length;
-                    return {
-                      page,
-                      isDone: nextOffset >= members.length,
-                      continueCursor: String(nextOffset),
-                    };
+                    return members.slice(0, numItems);
                   },
                 };
               },
@@ -3677,7 +3739,7 @@ describe("publisher abuse dry-run persistence", () => {
       largeCommunityOrgPublisher._id,
       tooManyManagerOrgPublisher._id,
     ]);
-    expect(insert).toHaveBeenCalledTimes(3);
+    expect(insert).toHaveBeenCalledTimes(2);
     expect(insert).toHaveBeenCalledWith(
       "publisherAbuseScores",
       expect.objectContaining({
@@ -3708,18 +3770,17 @@ describe("publisher abuse dry-run persistence", () => {
         ownerPublisherId: staffPublisher._id,
       }),
     );
-    expect(insert).toHaveBeenCalledWith(
+    expect(insert).not.toHaveBeenCalledWith(
       "publisherAbuseScores",
       expect.objectContaining({
         ownerPublisherId: tooManyManagerOrgPublisher._id,
-        handleSnapshot: tooManyManagerOrgPublisher.handle,
       }),
     );
     expect(patch).toHaveBeenCalledWith(
       "publisherAbuseScoreRuns:run",
       expect.objectContaining({
         scannedPublishers: 5,
-        scoredPublishers: 3,
+        scoredPublishers: 2,
       }),
     );
   });
@@ -6848,27 +6909,16 @@ describe("publisher abuse dry-run persistence", () => {
                 expect(indexName).toBe("by_publisher_and_role");
                 callback(indexBuilder);
                 return {
-                  paginate: async ({
-                    cursor,
-                    numItems,
-                  }: {
-                    cursor: string | null;
-                    numItems: number;
-                  }) => {
+                  take: async (numItems: number) => {
                     expect(numItems).toBe(100);
-                    expect(cursor).toBeNull();
-                    return {
-                      page: [
-                        {
-                          _id: "publisherMembers:staff-owner",
-                          publisherId: staffOrgPublisher._id,
-                          userId: "users:staff-owner",
-                          role: "owner",
-                        },
-                      ],
-                      isDone: true,
-                      continueCursor: "",
-                    };
+                    return [
+                      {
+                        _id: "publisherMembers:staff-owner",
+                        publisherId: staffOrgPublisher._id,
+                        userId: "users:staff-owner",
+                        role: "owner",
+                      },
+                    ];
                   },
                 };
               },

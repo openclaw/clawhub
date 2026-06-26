@@ -2486,36 +2486,31 @@ async function hasStaffPublisherManager(
 ) {
   const scanBudget = budget ?? createStaffPublisherManagerExclusionBudget();
   for (const role of STAFF_PUBLISHER_MANAGER_ROLES) {
-    let cursor: string | null = null;
-    do {
-      if (scanBudget.remainingDocReads <= 0) return true;
-      const memberTakeLimit = Math.min(
-        MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN,
-        scanBudget.remainingDocReads,
-      );
-      const page = await ctx.db
-        .query("publisherMembers")
-        .withIndex("by_publisher_and_role", (q) =>
-          q.eq("publisherId", publisherId).eq("role", role),
-        )
-        .paginate({ cursor, numItems: memberTakeLimit });
-      scanBudget.remainingDocReads -= page.page.length;
+    if (scanBudget.remainingDocReads <= 0) return true;
+    const memberTakeLimit = Math.min(
+      MAX_STAFF_PUBLISHER_MANAGER_EXCLUSION_SCAN,
+      scanBudget.remainingDocReads,
+    );
+    const members = await ctx.db
+      .query("publisherMembers")
+      .withIndex("by_publisher_and_role", (q) => q.eq("publisherId", publisherId).eq("role", role))
+      .take(memberTakeLimit);
+    scanBudget.remainingDocReads -= members.length;
 
-      for (const member of page.page) {
-        const cached = scanBudget.userStaffCache.get(member.userId);
-        if (cached !== undefined) {
-          if (cached) return true;
-          continue;
-        }
-        if (scanBudget.remainingDocReads <= 0) return true;
-        scanBudget.remainingDocReads -= 1;
-        const user = await ctx.db.get(member.userId);
-        const isStaff = user?.role === "admin" || user?.role === "moderator";
-        scanBudget.userStaffCache.set(member.userId, isStaff);
-        if (isStaff) return true;
+    for (const member of members) {
+      const cached = scanBudget.userStaffCache.get(member.userId);
+      if (cached !== undefined) {
+        if (cached) return true;
+        continue;
       }
-      cursor = page.isDone ? null : page.continueCursor;
-    } while (cursor !== null);
+      if (scanBudget.remainingDocReads <= 0) return true;
+      scanBudget.remainingDocReads -= 1;
+      const user = await ctx.db.get(member.userId);
+      const isStaff = user?.role === "admin" || user?.role === "moderator";
+      scanBudget.userStaffCache.set(member.userId, isStaff);
+      if (isStaff) return true;
+    }
+    if (members.length >= memberTakeLimit) return true;
   }
   return false;
 }
