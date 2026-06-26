@@ -92,13 +92,22 @@ jobs:
           EOF
           )"
 
-          if npm view "clawhub@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+          NPM_VIEW_ERROR="$(mktemp)"
+          trap 'rm -f "$NPM_VIEW_ERROR"' EXIT
+          if npm view "clawhub@${PACKAGE_VERSION}" version >/dev/null 2>"$NPM_VIEW_ERROR"; then
             if [[ "${PREFLIGHT_ONLY}" == "true" ]]; then
               echo "clawhub@${PACKAGE_VERSION} is already published on npm; continuing because preflight_only=true."
               exit 0
             fi
             echo "clawhub@${PACKAGE_VERSION} is already published on npm."
             exit 1
+          else
+            NPM_VIEW_STATUS=$?
+            if ! grep -Eq '(^|[[:space:]])E404([[:space:]]|$)' "$NPM_VIEW_ERROR"; then
+              echo "Unable to determine whether clawhub@${PACKAGE_VERSION} is published because npm view failed." >&2
+              cat "$NPM_VIEW_ERROR" >&2 || true
+              exit "$NPM_VIEW_STATUS"
+            fi
           fi
 
           echo "Publishing clawhub@${PACKAGE_VERSION}"
@@ -238,9 +247,18 @@ jobs:
           EOF
           )"
 
-          if npm view "clawhub@${PACKAGE_VERSION}" version >/dev/null 2>&1; then
+          NPM_VIEW_ERROR="$(mktemp)"
+          trap 'rm -f "$NPM_VIEW_ERROR"' EXIT
+          if npm view "clawhub@${PACKAGE_VERSION}" version >/dev/null 2>"$NPM_VIEW_ERROR"; then
             echo "clawhub@${PACKAGE_VERSION} is already published on npm."
             exit 1
+          else
+            NPM_VIEW_STATUS=$?
+            if ! grep -Eq '(^|[[:space:]])E404([[:space:]]|$)' "$NPM_VIEW_ERROR"; then
+              echo "Unable to determine whether clawhub@${PACKAGE_VERSION} is published because npm view failed." >&2
+              cat "$NPM_VIEW_ERROR" >&2 || true
+              exit "$NPM_VIEW_STATUS"
+            fi
           fi
 
           echo "Publishing clawhub@${PACKAGE_VERSION}"
