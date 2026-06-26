@@ -634,6 +634,17 @@ function emptyOwnedResourcesQuery() {
   };
 }
 
+function emptyPublisherInvitesQuery() {
+  return {
+    withIndex: vi.fn((indexName: string) => {
+      if (indexName !== "by_publisher_status_expires") {
+        throw new Error(`unexpected publisherInvites index ${indexName}`);
+      }
+      return { collect: vi.fn(async () => []) };
+    }),
+  };
+}
+
 function makeResolvePublishTargetCtx(options: {
   targetPublisher: Record<string, unknown>;
   targetMembership?: Record<string, unknown> | null;
@@ -770,6 +781,9 @@ describe("publishers membership controls", () => {
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
           }
+          if (table === "publisherInvites") {
+            return emptyPublisherInvitesQuery();
+          }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
             withIndex: vi.fn((indexName: string) => ({
@@ -865,6 +879,9 @@ describe("publishers membership controls", () => {
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
           }
+          if (table === "publisherInvites") {
+            return emptyPublisherInvitesQuery();
+          }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
             withIndex: vi.fn(() => ({
@@ -897,6 +914,7 @@ describe("publishers membership controls", () => {
       publisher?: Record<string, unknown> | null;
       activeSkills?: Array<Record<string, unknown>>;
       activePackages?: Array<Record<string, unknown>>;
+      invites?: Array<Record<string, unknown>>;
     } = {},
   ) {
     const publisher = options.publisher ?? {
@@ -954,6 +972,36 @@ describe("publishers membership controls", () => {
             if (indexName !== "by_publisher") throw new Error(`unexpected index ${indexName}`);
             return { collect: vi.fn(async () => members) };
           }),
+        };
+      }
+      if (table === "publisherInvites") {
+        return {
+          withIndex: vi.fn(
+            (
+              indexName: string,
+              builder?: (q: { eq: (field: string, value: string) => unknown }) => unknown,
+            ) => {
+              if (indexName !== "by_publisher_status_expires") {
+                throw new Error(`unexpected index ${indexName}`);
+              }
+              const fields: Record<string, string> = {};
+              const q = {
+                eq: (field: string, value: string) => {
+                  fields[field] = value;
+                  return q;
+                },
+              };
+              builder?.(q);
+              return {
+                collect: vi.fn(async () =>
+                  (options.invites ?? []).filter(
+                    (invite) =>
+                      invite.publisherId === fields.publisherId && invite.status === fields.status,
+                  ),
+                ),
+              };
+            },
+          ),
         };
       }
       if (table === "githubSkillSources" || table === "githubSkillContents") {
@@ -1022,7 +1070,15 @@ describe("publishers membership controls", () => {
   });
 
   it("hard deletes the deleted org publisher row and records an audit log", async () => {
-    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx();
+    const { ctx, deleted, insert } = makeReclaimDeletedOrgCtx({
+      invites: [
+        {
+          _id: "publisherInvites:pending",
+          publisherId: "publishers:tencent",
+          status: "pending",
+        },
+      ],
+    });
 
     const result = await reclaimDeletedOrgHandleInternalHandler(ctx as never, {
       actorUserId: "users:admin",
@@ -1036,6 +1092,7 @@ describe("publishers membership controls", () => {
       dryRun: false,
       hardDeleted: true,
       memberCount: 1,
+      inviteCount: 1,
     });
     expect(insert).toHaveBeenCalledWith(
       "auditLogs",
@@ -1051,6 +1108,7 @@ describe("publishers membership controls", () => {
       }),
     );
     expect(deleted).toHaveBeenCalledWith("publisherMembers:owner");
+    expect(deleted).toHaveBeenCalledWith("publisherInvites:pending");
     expect(deleted).toHaveBeenCalledWith("publishers:tencent");
   });
 
@@ -1118,6 +1176,9 @@ describe("publishers membership controls", () => {
           }
           if (table === "officialPublishers") {
             return emptyOfficialPublishersQuery();
+          }
+          if (table === "publisherInvites") {
+            return emptyPublisherInvitesQuery();
           }
           if (table !== "publisherMembers") throw new Error(`unexpected table ${table}`);
           return {
@@ -3934,6 +3995,7 @@ describe("publishers membership controls", () => {
     strangerHandle?: string;
     targetIsMember?: boolean;
     targetRole?: "owner" | "admin" | "publisher";
+    inactiveOwnerMember?: boolean;
   }) {
     const publisherMembers: Array<Record<string, unknown>> = [
       {
@@ -3949,6 +4011,14 @@ describe("publishers membership controls", () => {
         publisherId: "publishers:org",
         userId: "users:target",
         role: options.targetRole ?? "publisher",
+      });
+    }
+    if (options?.inactiveOwnerMember) {
+      publisherMembers.push({
+        _id: "publisherMembers:inactive-owner",
+        publisherId: "publishers:org",
+        userId: "users:inactive-owner",
+        role: "owner",
       });
     }
     const publisherInvites = new Map<string, Record<string, unknown>>();
@@ -3987,6 +4057,14 @@ describe("publishers membership controls", () => {
         get: vi.fn(async (id: string) => {
           if (id === "users:owner") return { _id: id, handle: "owner", displayName: "Owner" };
           if (id === "users:target") return { _id: id, handle: "target", displayName: "Target" };
+          if (id === "users:inactive-owner") {
+            return {
+              _id: id,
+              handle: "inactive-owner",
+              displayName: "Inactive Owner",
+              deactivatedAt: 9_000,
+            };
+          }
           if (id === "users:stranger") {
             return {
               _id: id,
@@ -4213,6 +4291,24 @@ describe("publishers membership controls", () => {
     );
   });
 
+  it("prevents admins from inviting new org owners", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert } = makeInviteCtx({ actorRole: "admin" });
+    try {
+      await expect(
+        createMemberInviteHandler(
+          ctx as never,
+          { publisherId: "publishers:org", userHandle: "target", role: "owner" } as never,
+        ),
+      ).rejects.toThrow("Only org owners can invite new owners");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).not.toHaveBeenCalledWith("publisherInvites", expect.anything());
+    expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
+  });
+
   it("prevents admins from demoting org owners through member role updates", async () => {
     const { ctx, patch } = makeInviteCtx({
       actorRole: "admin",
@@ -4232,6 +4328,19 @@ describe("publishers membership controls", () => {
 
   it("prevents demoting the last remaining org owner through member role updates", async () => {
     const { ctx, patch } = makeInviteCtx();
+
+    await expect(
+      addMemberHandler(
+        ctx as never,
+        { publisherId: "publishers:org", userHandle: "owner", role: "admin" } as never,
+      ),
+    ).rejects.toThrow("Publisher must have at least one owner");
+
+    expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("ignores inactive owner rows when demoting org owners", async () => {
+    const { ctx, patch } = makeInviteCtx({ inactiveOwnerMember: true });
 
     await expect(
       addMemberHandler(

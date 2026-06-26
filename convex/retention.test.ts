@@ -191,7 +191,8 @@ describe("auth retention", () => {
     const ctx = {
       db: makeDb({
         query: vi.fn(() => ({
-          withIndex: vi.fn((_indexName: string, build: (q: unknown) => unknown) => {
+          withIndex: vi.fn((indexName: string, build: (q: unknown) => unknown) => {
+            expect(indexName).toBe("by_expires_at");
             build({ lt });
             return { take: vi.fn(async () => rows) };
           }),

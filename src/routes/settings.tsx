@@ -1,6 +1,7 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Link, createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useAction, useMutation, useQuery } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import {
   Building2,
   Check,
@@ -143,34 +144,8 @@ type OrgMembersResult = {
   }>;
 };
 
-type PublisherInviteRole = "owner" | "admin" | "publisher";
-
-type PublisherInvite = {
-  _id: Id<"publisherInvites">;
-  publisher: {
-    _id: Id<"publishers">;
-    handle: string;
-    displayName: string;
-    image: string | null;
-  };
-  targetHandle: string;
-  targetUser: {
-    _id: Id<"users">;
-    handle: string | null;
-    displayName: string | null;
-    image: string | null;
-  } | null;
-  role: PublisherInviteRole;
-  status: "pending" | "accepted" | "declined" | "revoked";
-  createdAt: number;
-  expiresAt: number;
-  inviter: {
-    _id: Id<"users">;
-    handle: string | null;
-    displayName: string | null;
-    image: string | null;
-  } | null;
-};
+type PublisherInvite = FunctionReturnType<typeof api.publishers.listMyInvites>[number];
+type PublisherInviteRole = PublisherInvite["role"];
 
 type InviteResponseState = {
   inviteId: Id<"publisherInvites">;

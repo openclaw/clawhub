@@ -1839,12 +1839,25 @@ async function inspectPublisherHardDeleteRows(ctx: MutationCtx, publisherId: Id<
     .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
     .collect();
 
+  const invites = (
+    await Promise.all(
+      (["pending", "accepted", "declined", "revoked"] as const).map((status) =>
+        ctx.db
+          .query("publisherInvites")
+          .withIndex("by_publisher_status_expires", (q) =>
+            q.eq("publisherId", publisherId).eq("status", status),
+          )
+          .collect(),
+      ),
+    )
+  ).flat();
+
   const official = await ctx.db
     .query("officialPublishers")
     .withIndex("by_publisher", (q) => q.eq("publisherId", publisherId))
     .unique();
 
-  return { sources, sourceContents, members, official };
+  return { sources, sourceContents, members, invites, official };
 }
 
 async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publishers">) {
@@ -1863,6 +1876,7 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
   }
 
   for (const member of preview.members) await ctx.db.delete(member._id);
+  for (const invite of preview.invites) await ctx.db.delete(invite._id);
 
   if (preview.official) await ctx.db.delete(preview.official._id);
 
@@ -1872,6 +1886,7 @@ async function hardDeletePublisherRows(ctx: MutationCtx, publisherId: Id<"publis
     sources: preview.sources.length,
     sourceContents: preview.sourceContents,
     members: preview.members.length,
+    invites: preview.invites.length,
     official: Boolean(preview.official),
   };
 }
@@ -3017,6 +3032,7 @@ export const reclaimDeletedOrgHandleInternal = internalMutation({
       activeSkills: activeSkills.length,
       activePackages: activePackages.length,
       memberCount: preview.members.length,
+      inviteCount: preview.invites.length,
       githubSources: preview.sources.length,
       githubSourceContents: preview.sourceContents,
       officialPublisher: Boolean(preview.official),
@@ -3046,6 +3062,7 @@ export const reclaimDeletedOrgHandleInternal = internalMutation({
         deletedAt: publisher.deletedAt,
         deactivatedAt: publisher.deactivatedAt,
         memberCount: preview.members.length,
+        inviteCount: preview.invites.length,
         githubSources: preview.sources.length,
         githubSourceContents: preview.sourceContents,
         officialPublisher: Boolean(preview.official),
@@ -3060,6 +3077,7 @@ export const reclaimDeletedOrgHandleInternal = internalMutation({
       dryRun: false,
       hardDeleted: true,
       memberCount: deletedRows.members,
+      inviteCount: deletedRows.invites,
       githubSources: deletedRows.sources,
       githubSourceContents: deletedRows.sourceContents,
       officialPublisher: deletedRows.official,
@@ -3241,13 +3259,13 @@ export const createOrgPublisherForUserInternal = internalMutation({
   handler: async (ctx, args) => await createOrgPublisherForUser(ctx, args),
 });
 
-async function hasOtherActiveOwner(
+async function hasActiveOwnerExcept(
   ctx: MutationCtx,
   members: Array<Doc<"publisherMembers">>,
-  actorUserId: Id<"users">,
+  excludedUserId: Id<"users">,
 ) {
   for (const member of members) {
-    if (member.role !== "owner" || member.userId === actorUserId) continue;
+    if (member.role !== "owner" || member.userId === excludedUserId) continue;
     const user = await ctx.db.get(member.userId);
     if (user && !user.deletedAt && !user.deactivatedAt) return true;
   }
@@ -3283,7 +3301,7 @@ export const deleteSoleOwnerOrgsForAccountDeletionInternal = internalMutation({
         .query("publisherMembers")
         .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
         .collect();
-      if (await hasOtherActiveOwner(ctx, members, args.actorUserId)) continue;
+      if (await hasActiveOwnerExcept(ctx, members, args.actorUserId)) continue;
 
       const result = await deleteOrgPublisherForOwner(ctx, {
         actorUserId: args.actorUserId,
@@ -3543,10 +3561,7 @@ export const addMember = mutation({
         .query("publisherMembers")
         .withIndex("by_publisher", (q) => q.eq("publisherId", publisher._id))
         .collect();
-      const remainingOwners = members.filter(
-        (member) => member.role === "owner" && member.userId !== targetUser._id,
-      );
-      if (remainingOwners.length === 0) {
+      if (!(await hasActiveOwnerExcept(ctx, members, targetUser._id))) {
         throw new ConvexError("Publisher must have at least one owner");
       }
     }

@@ -1,10 +1,12 @@
 /* @vitest-environment jsdom */
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { getFunctionName } from "convex/server";
+import type { FunctionReturnType } from "convex/server";
 import type { ReactNode } from "react";
 import { toast } from "sonner";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../convex/_generated/api";
+import type { Id } from "../../convex/_generated/dataModel";
 import { Settings } from "./settings";
 
 const useQueryMock = vi.fn();
@@ -97,32 +99,35 @@ const orgMembers = {
   ],
 };
 
-type PublisherInviteFixture = {
-  _id: string;
-  publisher: {
-    _id: string;
-    handle: string;
-    displayName: string;
-    image: string | null;
+type PublisherInviteFixture = FunctionReturnType<typeof api.publishers.listMyInvites>[number];
+
+function makePublisherInviteFixture(
+  overrides: Partial<PublisherInviteFixture> = {},
+): PublisherInviteFixture {
+  const createdAt = Date.now();
+  return {
+    _id: "publisherInvites:invite-1" as Id<"publisherInvites">,
+    publisher: {
+      _id: "publisher_openclaw" as Id<"publishers">,
+      handle: "openclaw",
+      displayName: "OpenClaw Team",
+      image: null,
+    },
+    targetHandle: "dallin",
+    targetUser: null,
+    role: "publisher",
+    status: "pending",
+    createdAt,
+    expiresAt: createdAt + 60 * 60 * 1000,
+    inviter: {
+      _id: "user_123" as Id<"users">,
+      handle: "patrick",
+      displayName: "Patrick",
+      image: null,
+    },
+    ...overrides,
   };
-  targetHandle: string;
-  targetUser: {
-    _id: string;
-    handle: string | null;
-    displayName: string | null;
-    image: string | null;
-  } | null;
-  role: "owner" | "admin" | "publisher";
-  status: "pending" | "accepted" | "declined" | "revoked";
-  createdAt: number;
-  expiresAt: number;
-  inviter: {
-    _id: string;
-    handle: string | null;
-    displayName: string | null;
-    image: string | null;
-  } | null;
-};
+}
 
 function mockSignedInSettings({
   search = {},
@@ -725,27 +730,9 @@ describe("Settings", () => {
     mockSignedInSettings({
       search: { view: "organizations" },
       pendingInvites: [
-        {
-          _id: "publisherInvites:1",
-          publisher: {
-            _id: "publisher_openclaw",
-            handle: "openclaw",
-            displayName: "OpenClaw Team",
-            image: null,
-          },
-          targetHandle: "dallin",
-          targetUser: null,
-          role: "publisher",
-          status: "pending",
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 60 * 60 * 1000,
-          inviter: {
-            _id: "user_123",
-            handle: "patrick",
-            displayName: "Patrick",
-            image: null,
-          },
-        },
+        makePublisherInviteFixture({
+          _id: "publisherInvites:1" as Id<"publisherInvites">,
+        }),
       ],
     });
 
@@ -769,27 +756,10 @@ describe("Settings", () => {
       search: { view: "organizations" },
       memberships: [adminMembership],
       pendingInvites: [
-        {
-          _id: "publisherInvites:owner",
-          publisher: {
-            _id: "publisher_openclaw",
-            handle: "openclaw",
-            displayName: "OpenClaw Team",
-            image: null,
-          },
-          targetHandle: "dallin",
-          targetUser: null,
+        makePublisherInviteFixture({
+          _id: "publisherInvites:owner" as Id<"publisherInvites">,
           role: "owner",
-          status: "pending",
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 60 * 60 * 1000,
-          inviter: {
-            _id: "user_123",
-            handle: "patrick",
-            displayName: "Patrick",
-            image: null,
-          },
-        },
+        }),
       ],
     });
 
@@ -811,32 +781,22 @@ describe("Settings", () => {
       search: { view: "organizations" },
       memberships: [personalMembership],
       myInvites: [
-        {
-          _id: "publisherInvites:invite-1",
-          publisher: {
-            _id: "publisher_openclaw",
-            handle: "openclaw",
-            displayName: "OpenClaw Team",
-            image: null,
-          },
+        makePublisherInviteFixture({
           targetHandle: "patrick",
           targetUser: {
-            _id: "user_123",
+            _id: "user_123" as Id<"users">,
             handle: "patrick",
             displayName: "Patrick",
             image: null,
           },
           role: "admin",
-          status: "pending",
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 60 * 60 * 1000,
           inviter: {
-            _id: "user_other",
+            _id: "user_other" as Id<"users">,
             handle: "dallin",
             displayName: "Dallin",
             image: null,
           },
-        },
+        }),
       ],
     });
 
@@ -863,32 +823,22 @@ describe("Settings", () => {
       search: { view: "organizations" },
       memberships: [personalMembership],
       myInvites: [
-        {
-          _id: "publisherInvites:invite-1",
-          publisher: {
-            _id: "publisher_openclaw",
-            handle: "openclaw",
-            displayName: "OpenClaw Team",
-            image: null,
-          },
+        makePublisherInviteFixture({
           targetHandle: "patrick",
           targetUser: {
-            _id: "user_123",
+            _id: "user_123" as Id<"users">,
             handle: "patrick",
             displayName: "Patrick",
             image: null,
           },
           role: "admin",
-          status: "pending",
-          createdAt: Date.now(),
-          expiresAt: Date.now() + 60 * 60 * 1000,
           inviter: {
-            _id: "user_other",
+            _id: "user_other" as Id<"users">,
             handle: "dallin",
             displayName: "Dallin",
             image: null,
           },
-        },
+        }),
       ],
     });
 
