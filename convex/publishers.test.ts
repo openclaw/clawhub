@@ -8,6 +8,7 @@ import {
 import {
   addMember,
   acceptMemberInvite,
+  listInvitesForPublisher,
   listMyInvites,
   listPublicPage,
   listPublic,
@@ -76,6 +77,13 @@ const declineMemberInviteHandler = (
 
 const acceptMemberInviteHandler = (
   acceptMemberInvite as unknown as WrappedHandler<{ inviteId: string }, { ok: true }>
+)._handler;
+
+const listInvitesForPublisherHandler = (
+  listInvitesForPublisher as unknown as WrappedHandler<
+    { publisherId: string },
+    Array<{ _id: string; targetHandle: string }>
+  >
 )._handler;
 
 const listMyInvitesHandler = (
@@ -4062,6 +4070,24 @@ describe("publishers membership controls", () => {
               }
               if (
                 table === "publisherInvites" &&
+                indexName === "by_publisher_status_expires"
+              ) {
+                return {
+                  take: vi.fn(async (limit: number) =>
+                    [...publisherInvites.values()]
+                      .filter(
+                        (invite) =>
+                          invite.publisherId === fields.publisherId &&
+                          invite.status === fields.status &&
+                          Number(invite.expiresAt) >= lowerBounds.expiresAt,
+                      )
+                      .sort((left, right) => Number(left.expiresAt) - Number(right.expiresAt))
+                      .slice(0, limit),
+                  ),
+                };
+              }
+              if (
+                table === "publisherInvites" &&
                 indexName === "by_publisher_target_status_expires"
               ) {
                 return {
@@ -4276,6 +4302,46 @@ describe("publishers membership controls", () => {
     expect(insert).not.toHaveBeenCalledWith("publisherInvites", expect.anything());
   });
 
+  it("allows a fresh invitation when the only matching pending invite is expired", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert } = makeInviteCtx({
+      invites: [
+        {
+          _id: "publisherInvites:expired",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "publisher",
+          status: "pending",
+          createdAt: 1_000,
+          updatedAt: 1_000,
+          expiresAt: 9_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        createMemberInviteHandler(
+          ctx as never,
+          { publisherId: "publishers:org", userHandle: "target", role: "admin" } as never,
+        ),
+      ).resolves.toEqual({ ok: true, inviteId: "publisherInvites:2" });
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).toHaveBeenCalledWith(
+      "publisherInvites",
+      expect.objectContaining({
+        publisherId: "publishers:org",
+        targetHandle: "target",
+        targetUserId: "users:target",
+        role: "admin",
+      }),
+    );
+  });
+
   it("rejects duplicate active invitations for the same resolved user", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert } = makeInviteCtx({
@@ -4395,6 +4461,42 @@ describe("publishers membership controls", () => {
         acceptedByUserId: "users:target",
       }),
     );
+  });
+
+  it("rejects accepting expired pending invitations before they are pruned", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert, patch } = makeInviteCtx({
+      authUserId: "users:target",
+      invites: [
+        {
+          _id: "publisherInvites:expired",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "admin",
+          status: "pending",
+          createdAt: 1_000,
+          updatedAt: 1_000,
+          expiresAt: 9_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        acceptMemberInviteHandler(
+          ctx as never,
+          {
+            inviteId: "publisherInvites:expired",
+          } as never,
+        ),
+      ).rejects.toThrow("Invitation has expired");
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).not.toHaveBeenCalledWith("publisherMembers", expect.anything());
+    expect(patch).not.toHaveBeenCalled();
   });
 
   it("does not let stale invitations overwrite an existing member role", async () => {
@@ -4695,6 +4797,82 @@ describe("publishers membership controls", () => {
     }
 
     expect(patch).not.toHaveBeenCalled();
+  });
+
+  it("lists only pending non-expired publisher invitations for org managers", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx } = makeInviteCtx({
+      invites: [
+        {
+          _id: "publisherInvites:active",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "admin",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+        {
+          _id: "publisherInvites:expired",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "publisher",
+          status: "pending",
+          createdAt: 1_000,
+          updatedAt: 1_000,
+          expiresAt: 9_000,
+        },
+        {
+          _id: "publisherInvites:revoked",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:target",
+          role: "publisher",
+          status: "revoked",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        listInvitesForPublisherHandler(ctx as never, {
+          publisherId: "publishers:org",
+        } as never),
+      ).resolves.toEqual([
+        expect.objectContaining({
+          _id: "publisherInvites:active",
+          targetHandle: "target",
+          role: "admin",
+          publisher: expect.objectContaining({ handle: "acme" }),
+          inviter: expect.objectContaining({ handle: "owner" }),
+          targetUser: expect.objectContaining({ handle: "target" }),
+        }),
+      ]);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("prevents publisher-role members from listing pending publisher invitations", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx } = makeInviteCtx({ actorRole: "publisher" });
+    try {
+      await expect(
+        listInvitesForPublisherHandler(ctx as never, {
+          publisherId: "publishers:org",
+        } as never),
+      ).rejects.toThrow("Forbidden");
+    } finally {
+      nowSpy.mockRestore();
+    }
   });
 
   it("lets org owners update an existing member role", async () => {

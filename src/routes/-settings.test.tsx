@@ -569,17 +569,6 @@ describe("Settings", () => {
     expect(navigateMock).toHaveBeenCalledWith({ search: { view: "tokens" }, replace: true });
   });
 
-  it("loads pending invites and the viewer's invitations on the organizations view", () => {
-    mockSignedInSettings({ search: { view: "organizations" } });
-
-    render(<Settings />);
-
-    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listInvitesForPublisher, {
-      publisherId: "publisher_openclaw",
-    });
-    expect(useQueryMock).toHaveBeenCalledWith(api.publishers.listMyInvites, {});
-  });
-
   it("creates a member invite from the Members block invite dialog", async () => {
     const createInvite = vi.fn().mockResolvedValue({ ok: true, inviteId: "publisherInvites:1" });
     useMutationMock.mockImplementation((mutation) =>
@@ -794,13 +783,11 @@ describe("Settings", () => {
     expect(screen.queryByRole("button", { name: /Revoke/i })).toBeNull();
   });
 
-  it("accepts and declines invitations addressed to the viewer", async () => {
+  it("accepts invitations addressed to the viewer", async () => {
     const acceptInvite = vi.fn().mockResolvedValue({ ok: true });
-    const declineInvite = vi.fn().mockResolvedValue({ ok: true });
     useMutationMock.mockImplementation((mutation) => {
       const name = getFunctionName(mutation);
       if (name === "publishers:acceptMemberInvite") return acceptInvite;
-      if (name === "publishers:declineMemberInvite") return declineInvite;
       return vi.fn();
     });
     mockSignedInSettings({
@@ -848,6 +835,51 @@ describe("Settings", () => {
       expect(acceptInvite).toHaveBeenCalledWith({ inviteId: "publisherInvites:invite-1" });
     });
     expect(toast.success).toHaveBeenCalledWith("Joined @openclaw");
+  });
+
+  it("declines invitations addressed to the viewer", async () => {
+    const declineInvite = vi.fn().mockResolvedValue({ ok: true });
+    useMutationMock.mockImplementation((mutation) =>
+      getFunctionName(mutation) === "publishers:declineMemberInvite" ? declineInvite : vi.fn(),
+    );
+    mockSignedInSettings({
+      search: { view: "organizations" },
+      memberships: [personalMembership],
+      myInvites: [
+        {
+          _id: "publisherInvites:invite-1",
+          publisher: {
+            _id: "publisher_openclaw",
+            handle: "openclaw",
+            displayName: "OpenClaw Team",
+            image: null,
+          },
+          targetHandle: "patrick",
+          targetUser: {
+            _id: "user_123",
+            handle: "patrick",
+            displayName: "Patrick",
+            image: null,
+          },
+          role: "admin",
+          status: "pending",
+          createdAt: Date.now(),
+          expiresAt: Date.now() + 60 * 60 * 1000,
+          inviter: {
+            _id: "user_other",
+            handle: "dallin",
+            displayName: "Dallin",
+            image: null,
+          },
+        },
+      ],
+    });
+
+    render(<Settings />);
+
+    expect(screen.getByRole("heading", { name: "Invitations" })).toBeTruthy();
+    expect(screen.getByText("OpenClaw Team")).toBeTruthy();
+    expect(screen.getByText(/invited by @dallin/)).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: /Decline/i }));
 
