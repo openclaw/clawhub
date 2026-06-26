@@ -529,7 +529,7 @@ function makePublisherAbuseAutobanSettingQuery(setting: unknown) {
 }
 
 describe("publisher abuse dry-run persistence", () => {
-  it("guards staff-only review entrypoints with moderator access", async () => {
+  it("keeps read-only dashboard entrypoints empty for non-staff while guarding writes", async () => {
     const user = { _id: "users:viewer", role: "user" };
     vi.mocked(assertModerator).mockImplementation(() => {
       throw new Error("Forbidden");
@@ -545,13 +545,28 @@ describe("publisher abuse dry-run persistence", () => {
       const dbQuery = vi.fn();
       const runMutation = vi.fn();
 
-      await expect(listDashboardHandler({ db: {} }, {})).rejects.toThrow("Forbidden");
+      await expect(
+        listDashboardHandler({ db: { get: dbGet, query: dbQuery } }, {}),
+      ).resolves.toEqual({
+        latestRun: null,
+        pendingItems: [],
+        pendingPotentialBanCandidateItems: [],
+        pendingReviewItems: [],
+        recentResolvedItems: [],
+      });
+      await expect(
+        getPublisherAbuseAutobanSettingHandler({ db: { query: dbQuery } }, {}),
+      ).resolves.toEqual({
+        enabled: false,
+        updatedAt: null,
+        updatedByUserId: null,
+      });
       await expect(
         getReviewNominationDetailHandler(
           { db: { get: dbGet, query: dbQuery } },
           { nominationId: "publisherAbuseReviewNominations:nomination" },
         ),
-      ).rejects.toThrow("Forbidden");
+      ).resolves.toBeNull();
       await expect(
         banPublisherAbuseOwnerHandler(
           { db: { get: dbGet }, runMutation },
@@ -632,7 +647,7 @@ describe("publisher abuse dry-run persistence", () => {
       updatedByUserId: null,
     });
 
-    expect(assertModerator).toHaveBeenCalledWith(user);
+    expect(ctx.db.query).toHaveBeenCalledWith("systemSettings");
   });
 
   it("lets admins enable publisher abuse autobans with an audit log", async () => {

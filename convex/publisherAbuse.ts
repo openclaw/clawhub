@@ -294,8 +294,6 @@ export const listReviewDashboard = query({
   handler: async (ctx, args) => {
     const auth = await requirePublisherAbuseDashboardUser(ctx);
     if (!auth) return emptyPublisherAbuseReviewDashboard();
-    const { user } = auth;
-    assertModerator(user);
 
     const limit = clampInt(args.limit ?? 150, 1, 250);
     const dashboardExclusionBudget = createStaffPublisherManagerExclusionBudget();
@@ -344,8 +342,6 @@ export const getReviewNominationDetail = query({
   handler: async (ctx, args) => {
     const auth = await requirePublisherAbuseDashboardUser(ctx);
     if (!auth) return null;
-    const { user } = auth;
-    assertModerator(user);
 
     const nomination = await ctx.db.get(args.nominationId);
     if (!nomination) return null;
@@ -378,8 +374,6 @@ export const getPublisherAbuseAutobanSetting = query({
   handler: async (ctx) => {
     const auth = await requirePublisherAbuseDashboardUser(ctx);
     if (!auth) return summarizePublisherAbuseAutobanSetting(null);
-    const { user } = auth;
-    assertModerator(user);
 
     const setting = await getPublisherAbuseAutobanSettingDoc(ctx);
     return summarizePublisherAbuseAutobanSetting(setting);
@@ -388,7 +382,8 @@ export const getPublisherAbuseAutobanSetting = query({
 
 async function requirePublisherAbuseDashboardUser(ctx: QueryCtx) {
   try {
-    return await requireUser(ctx);
+    const auth = await requireUser(ctx);
+    return auth.user.role === "admin" || auth.user.role === "moderator" ? auth : null;
   } catch (error) {
     if (error instanceof Error && error.message === "Unauthorized") return null;
     throw error;
