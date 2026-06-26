@@ -408,7 +408,7 @@ describe("moderation notification email copy", () => {
       "ClawHub's publisher abuse detection flagged the publisher profile @bulkpub.",
     );
     expect(email.text).toContain(
-      "The warning threshold starts at 2.5 standard deviations above the normal range for scanned ClawHub publishers.",
+      "This profile is well outside normal ClawHub publishing patterns for scanned publishers.",
     );
     expect(email.text).toContain("The biggest signals were:");
     expect(email.text).toContain("- Unusually large number of published listings.");

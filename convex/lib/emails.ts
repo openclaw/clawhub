@@ -549,7 +549,7 @@ export async function buildPublisherAbuseWarningEmail(args: PublisherAbuseWarnin
   const body = [
     `ClawHub's publisher abuse detection flagged the publisher profile ${publisherLabel}.`,
     "",
-    "This profile is far outside normal ClawHub publishing patterns. The warning threshold starts at 2.5 standard deviations above the normal range for scanned ClawHub publishers.",
+    "This profile is well outside normal ClawHub publishing patterns for scanned publishers.",
     "",
     "The biggest signals were:",
     ...signalLines,
