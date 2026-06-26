@@ -4308,6 +4308,46 @@ describe("publishers membership controls", () => {
     expect(insert).not.toHaveBeenCalledWith("publisherInvites", expect.anything());
   });
 
+  it("allows a fresh invitation when a handle was reclaimed from another pending invite target", async () => {
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
+    const { ctx, insert } = makeInviteCtx({
+      invites: [
+        {
+          _id: "publisherInvites:old-target",
+          publisherId: "publishers:org",
+          inviterUserId: "users:owner",
+          targetHandle: "target",
+          targetUserId: "users:stranger",
+          role: "publisher",
+          status: "pending",
+          createdAt: 9_000,
+          updatedAt: 9_000,
+          expiresAt: 20_000,
+        },
+      ],
+    });
+    try {
+      await expect(
+        createMemberInviteHandler(
+          ctx as never,
+          { publisherId: "publishers:org", userHandle: "target", role: "admin" } as never,
+        ),
+      ).resolves.toEqual({ ok: true, inviteId: "publisherInvites:2" });
+    } finally {
+      nowSpy.mockRestore();
+    }
+
+    expect(insert).toHaveBeenCalledWith(
+      "publisherInvites",
+      expect.objectContaining({
+        publisherId: "publishers:org",
+        targetHandle: "target",
+        targetUserId: "users:target",
+        role: "admin",
+      }),
+    );
+  });
+
   it("accepts a matching invitation and creates the membership row", async () => {
     const nowSpy = vi.spyOn(Date, "now").mockReturnValue(10_000);
     const { ctx, insert, patch } = makeInviteCtx({
