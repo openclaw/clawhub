@@ -72,7 +72,7 @@ with tempfile.TemporaryDirectory(prefix="clawhub-hf-upload-") as staging_root:
         manifest_path,
         staging_dir / "metadata" / "latest-manifest.json",
     )
-    commit = api.upload_folder(
+    dataset_commit = api.upload_folder(
         folder_path=str(staging_dir),
         path_in_repo="",
         repo_id=repo_id,
@@ -81,11 +81,24 @@ with tempfile.TemporaryDirectory(prefix="clawhub-hf-upload-") as staging_root:
         delete_patterns="data/*.jsonl",
         commit_message="Update nightly ClawHub security dataset and manifest",
     )
+    manifest["huggingface_dataset"]["commit"] = dataset_commit.oid
+    (staging_dir / "metadata" / "latest-manifest.json").write_text(
+        json.dumps(manifest, indent=2) + "\n"
+    )
+    manifest_commit = api.upload_file(
+        path_or_fileobj=str(staging_dir / "metadata" / "latest-manifest.json"),
+        path_in_repo="metadata/latest-manifest.json",
+        repo_id=repo_id,
+        repo_type="dataset",
+        revision=revision,
+        commit_message="Record ClawHub security dataset upload commit",
+    )
 
 print(
     json.dumps(
         {
-            "commit": commit.oid,
+            "commit": dataset_commit.oid,
+            "manifest_commit": manifest_commit.oid,
             "repo": repo_id,
             "revision": revision,
         },
