@@ -161,12 +161,28 @@ export function getScanStatusInfo(status: string) {
         className: "scan-status-malicious",
         badgeVariant: "destructive",
       };
+    case "critical":
+    case "high":
+      return {
+        label: status.toLowerCase() === "critical" ? "Critical" : "High",
+        className: "scan-status-malicious",
+        badgeVariant: "destructive",
+      };
     case "review":
     case "suspicious":
       return { label: "Review", className: "scan-status-warn", badgeVariant: "warning" };
+    case "medium":
     case "warn":
     case "warning":
-      return { label: "Warn", className: "scan-status-warn", badgeVariant: "warning" };
+      return {
+        label: status.toLowerCase() === "medium" ? "Medium" : "Warn",
+        className: "scan-status-warn",
+        badgeVariant: "warning",
+      };
+    case "low":
+      return { label: "Low", className: "scan-status-unknown", badgeVariant: "review" };
+    case "info":
+      return { label: "Info", className: "scan-status-unknown", badgeVariant: "compact" };
     case "advisory":
       return { label: "Advisory", className: "scan-status-unknown", badgeVariant: "compact" };
     case "loading":
@@ -295,15 +311,6 @@ function getDimensionIcon(rating: string) {
 
 function getVisibleAgenticRiskFindings(analysis?: LlmAnalysis | null) {
   return (analysis?.agenticRiskFindings ?? []).filter(isVisibleAgenticRiskFinding);
-}
-
-function getVisibleClawScanFindingCount(analysis?: LlmAnalysis | null) {
-  return getVisibleAgenticRiskFindings(analysis).length;
-}
-
-export function hasClawScanRiskReview(analysis?: LlmAnalysis | null) {
-  if (!analysis) return false;
-  return getVisibleClawScanFindingCount(analysis) > 0;
 }
 
 function getFindingSeverityBadgeMeta(severity: string): {
@@ -547,7 +554,7 @@ function AgenticRiskFindingCard({
   );
 }
 
-export function ClawScanRiskReview({
+function ClawScanRiskReview({
   analysis,
   showTitle = true,
   findingsTitle = "Findings",

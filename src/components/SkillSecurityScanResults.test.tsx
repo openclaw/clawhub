@@ -411,7 +411,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("Findings")).toBeNull();
   });
 
-  it("shows ClawScan buckets on the dedicated security audit page", () => {
+  it("uses ClawScan for audit overview without rendering a Risk analysis section", () => {
     const { container } = render(
       <SecurityAuditPage
         entity={{
@@ -437,7 +437,7 @@ describe("SecurityScanResults static guidance", () => {
     );
     expect(screen.queryByText(/Current verdict/i)).toBeNull();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
-    expect(screen.getByRole("heading", { name: "Risk analysis" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Risk analysis" })).toBeNull();
     expect(screen.queryByRole("heading", { name: "ClawScan" })).toBeNull();
     expect(screen.getByText(/Collects workspace secrets/i)).toBeTruthy();
     expect(screen.queryByRole("heading", { name: "Findings (2)" })).toBeNull();
@@ -446,20 +446,10 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.queryByText("Scanner")).toBeNull();
     expect(screen.queryByText("Review scope")).toBeNull();
     expect(screen.queryByText("Permission boundary")).toBeNull();
-    expect(
-      screen.getByText("ASI03: Identity and Privilege Abuse").closest("a")?.getAttribute("href"),
-    ).toBeUndefined();
-    expect(
-      screen
-        .getByRole("button", {
-          name: "ClawHub reviews SkillSpector, VirusTotal, and artifact evidence before producing the final verdict.",
-        })
-        .tagName.toLowerCase(),
-    ).toBe("button");
-    expect(screen.getByText("ASI03: Identity and Privilege Abuse")).toBeTruthy();
+    expect(screen.queryByText("ASI03: Identity and Privilege Abuse")).toBeNull();
     expect(screen.queryByText("metadata")).toBeNull();
-    expect(screen.getAllByText("Skill content").length).toBeGreaterThan(0);
-    expect(screen.getByText("requires.env: TODOIST_API_TOKEN")).toBeTruthy();
+    expect(screen.queryByText("Skill content")).toBeNull();
+    expect(screen.queryByText("requires.env: TODOIST_API_TOKEN")).toBeNull();
     expect(screen.queryByText("Confidence")).toBeNull();
     expect(screen.getByRole("link", { name: "Back to skill" }).getAttribute("href")).toBe(
       "/local/todo-guard",
@@ -474,7 +464,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "VirusTotal", "Risk analysis"]);
+    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
   it("renders SkillSpector findings as the agentic-risk finding source", () => {
@@ -707,7 +697,7 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeNull();
   });
 
-  it("adds in-page permalinks to dedicated ClawScan findings", () => {
+  it("does not render legacy ClawScan finding permalinks on audit pages", () => {
     render(
       <SecurityAuditPage
         entity={{
@@ -721,16 +711,13 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    const permalink = screen.getByRole("link", {
+    const permalink = screen.queryByRole("link", {
       name: "Link to ASI03: Identity and Privilege Abuse",
     });
-    expect(permalink.textContent).toBe("#");
-    expect(permalink.getAttribute("href")).toBe(
-      "#clawscan-finding-asi03-identity-and-privilege-abuse-1",
-    );
+    expect(permalink).toBeNull();
     expect(
       document.getElementById("clawscan-finding-asi03-identity-and-privilege-abuse-1"),
-    ).toBeTruthy();
+    ).toBeNull();
   });
 
   it("does not prompt publishers to add notes on review ClawScan reports", () => {
@@ -1117,8 +1104,8 @@ describe("SecurityScanResults static guidance", () => {
     expect(JSON.parse(decode("virustotal.json")).engineStats.malicious).toBe(1);
   });
 
-  it("shows plugins with legacy ClawScan analysis in the new ClawScan report shell", () => {
-    render(
+  it("shows plugin static findings as their own security audit section", () => {
+    const { container } = render(
       <SecurityAuditPage
         entity={{
           kind: "plugin",
@@ -1128,6 +1115,7 @@ describe("SecurityScanResults static guidance", () => {
           detailPath: "/plugins/plugin-guard",
         }}
         llmAnalysis={legacyClawScanAnalysis}
+        staticScan={staticScan}
       />,
     );
 
@@ -1138,14 +1126,73 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByText("Legacy plugin guidance.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Risk analysis" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "Static analysis" })).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
     expect(screen.queryByText("[legacy.rule] expected: Legacy finding text.")).toBeNull();
     expect(screen.queryByText("Review Dimensions")).toBeNull();
     expect(screen.queryByText("Purpose & Capability")).toBeNull();
+    expect(screen.queryByText("Legacy dimension detail.")).toBeNull();
+    expect(screen.getByText("Static analysis found an external network request.")).toBeTruthy();
+    expect(screen.getByText("static.network_request")).toBeTruthy();
+    expect(screen.getByText("Network request found in skill instructions.")).toBeTruthy();
+    expect(
+      Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["Overview", "VirusTotal", "Static analysis"]);
   });
 
-  it("shows skills with legacy-only ClawScan analysis in the new ClawScan report shell", () => {
+  it("lets static scan risk override a clean legacy ClawScan outcome", () => {
     render(
+      <SecurityAuditPage
+        entity={{
+          kind: "plugin",
+          title: "Static Risk Plugin",
+          name: "static-risk-plugin",
+          version: "2.0.0",
+          detailPath: "/plugins/static-risk-plugin",
+        }}
+        llmAnalysis={{
+          ...legacyClawScanAnalysis,
+          status: "clean",
+          verdict: "benign",
+          summary: "Legacy scan was clean.",
+        }}
+        staticScan={{
+          ...staticScan,
+          status: "malicious",
+          findings: [{ ...staticScan.findings[0], severity: "critical" }],
+        }}
+      />,
+    );
+
+    expect(screen.getByText("Malicious")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Static analysis" })).toBeTruthy();
+    expect(screen.getByText("Critical")).toBeTruthy();
+  });
+
+  it("does not let static scan review status downgrade a malicious ClawScan outcome", () => {
+    render(
+      <SecurityAuditPage
+        entity={{
+          kind: "plugin",
+          title: "Mixed Risk Plugin",
+          name: "mixed-risk-plugin",
+          version: "2.0.0",
+          detailPath: "/plugins/mixed-risk-plugin",
+        }}
+        llmAnalysis={{ ...legacyClawScanAnalysis, status: "malicious", verdict: "malicious" }}
+        staticScan={staticScan}
+      />,
+    );
+
+    expect(screen.getByText("Malicious")).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Static analysis" })).toBeTruthy();
+  });
+
+  it("does not render a scanner section for legacy-only ClawScan analysis", () => {
+    const { container } = render(
       <SecurityAuditPage
         entity={{
           kind: "skill",
@@ -1164,9 +1211,17 @@ describe("SecurityScanResults static guidance", () => {
     ).toBeTruthy();
     expect(screen.getByText("Legacy plugin analysis summary.")).toBeTruthy();
     expect(screen.getByRole("heading", { name: "Overview" })).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Risk analysis" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Static analysis" })).toBeNull();
     expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
     expect(screen.queryByText("Review Dimensions")).toBeNull();
     expect(screen.queryByText("Purpose & Capability")).toBeNull();
+    expect(screen.queryByText("[legacy.rule] expected: Legacy finding text.")).toBeNull();
+    expect(
+      Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
+        node.textContent?.trim(),
+      ),
+    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
     expect(screen.getByRole("link", { name: "Back to skill" }).getAttribute("href")).toBe(
       "/local/legacy-skill",
     );
@@ -1191,7 +1246,7 @@ describe("SecurityScanResults static guidance", () => {
       screen.getByText("Security checks across malware telemetry and agentic risk"),
     ).toBeTruthy();
     expect(screen.getAllByText("Pending").length).toBeGreaterThan(0);
-    expect(screen.getByText("No risk analysis has been recorded yet.")).toBeTruthy();
+    expect(screen.getByText("No security analysis has been recorded yet.")).toBeTruthy();
     expect(
       screen.getByText("VirusTotal findings are pending for this skill version."),
     ).toBeTruthy();
@@ -1213,7 +1268,7 @@ describe("SecurityScanResults static guidance", () => {
     expect(screen.getByRole("heading", { name: "Security Audit Metadata" })).toBeTruthy();
   });
 
-  it("shows only legacy Risk analysis when legacy agentic-risk findings exist without SkillSpector", () => {
+  it("does not add a Risk analysis section for legacy agentic-risk findings", () => {
     const { container } = render(
       <SecurityAuditPage
         entity={{
@@ -1227,8 +1282,8 @@ describe("SecurityScanResults static guidance", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Risk analysis" })).toBeTruthy();
-    expect(screen.queryByRole("heading", { name: "SkillSpector" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Risk analysis" })).toBeNull();
+    expect(screen.getByRole("heading", { name: "SkillSpector" })).toBeTruthy();
     expect(
       screen.queryByText(/Legacy ClawScan findings remain available under Risk analysis/i),
     ).toBeNull();
@@ -1236,7 +1291,7 @@ describe("SecurityScanResults static guidance", () => {
       Array.from(container.querySelectorAll(".security-report-main > section h2")).map((node) =>
         node.textContent?.trim(),
       ),
-    ).toEqual(["Overview", "VirusTotal", "Risk analysis"]);
+    ).toEqual(["Overview", "SkillSpector", "VirusTotal"]);
   });
 
   it("lets skill managers enqueue a security rescan from the audit sidebar", async () => {

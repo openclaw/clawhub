@@ -27,10 +27,8 @@ import {
 } from "./securityAuditModel";
 import { SidebarMetadata } from "./SidebarMetadata";
 import {
-  ClawScanRiskReview,
   getSkillSpectorOverviewCopy,
   getSkillSpectorIssueCount,
-  hasClawScanRiskReview,
   hasSkillSpectorFindings,
   ScanResultBadge,
   SkillSpectorFindings,
@@ -41,7 +39,6 @@ import {
 } from "./SkillSecurityScanResults";
 import { Button } from "./ui/button";
 import { Skeleton } from "./ui/skeleton";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "./ui/tooltip";
 
 type OwnerRef = {
   _id?: string;
@@ -74,8 +71,6 @@ type SecurityAuditPageProps = {
 
 const EMPTY_SKILLSPECTOR_ISSUES: SkillSpectorIssue[] = [];
 const SKILLSPECTOR_VISIBLE_CHECK_LIMIT = 5;
-const RISK_ANALYSIS_SCOPE_COPY =
-  "ClawHub reviews SkillSpector, VirusTotal, and artifact evidence before producing the final verdict.";
 const SKILLSPECTOR_CLEAN_CHECKS = [
   {
     category: "Prompt Injection",
@@ -500,18 +495,76 @@ function SecurityAuditOverview(props: SecurityAuditPageProps) {
   );
 }
 
-function ClawScanSection(props: SecurityAuditPageProps) {
-  const riskAnalysis =
-    props.llmAnalysis && !props.skillSpectorAnalysis && hasClawScanRiskReview(props.llmAnalysis)
-      ? props.llmAnalysis
-      : null;
-  if (!riskAnalysis) return null;
+function hasStaticScanDetails(staticScan?: StaticScan | null): staticScan is StaticScan {
+  return Boolean(staticScan?.summary?.trim() || staticScan?.findings?.length);
+}
 
+function formatStaticScanSeverity(value: string) {
+  return value
+    .trim()
+    .split(/[-_\s]+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function StaticScanDetails({ staticScan }: { staticScan: StaticScan }) {
+  const findings = staticScan.findings ?? [];
   return (
     <div className="security-report-panel-body security-report-panel-body-findings">
-      <ClawScanRiskReview analysis={riskAnalysis} showTitle={false} />
+      {staticScan.summary?.trim() ? (
+        <div className="security-report-overview-body">
+          <p>{staticScan.summary}</p>
+        </div>
+      ) : null}
+      {findings.length ? (
+        <div className="static-analysis-findings">
+          {findings.map((finding, index) => (
+            <article
+              key={`${finding.code}-${finding.file}-${finding.line}-${index}`}
+              className="static-analysis-finding"
+            >
+              <div className="static-analysis-finding-header">
+                <h3 className="agentic-risk-finding-title">{finding.message}</h3>
+                <div className="agentic-risk-finding-badges">
+                  <ScanResultBadge
+                    status={finding.severity}
+                    label={formatStaticScanSeverity(finding.severity)}
+                  />
+                </div>
+              </div>
+              <dl className="static-analysis-finding-details">
+                <div>
+                  <dt>Code</dt>
+                  <dd>{finding.code}</dd>
+                </div>
+                <div>
+                  <dt>Location</dt>
+                  <dd>
+                    {finding.file}:{finding.line}
+                  </dd>
+                </div>
+                {finding.evidence?.trim() ? (
+                  <div>
+                    <dt>Evidence</dt>
+                    <dd>
+                      <pre className="agentic-risk-evidence-snippet">{finding.evidence}</pre>
+                    </dd>
+                  </div>
+                ) : null}
+              </dl>
+            </article>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
+}
+
+function StaticScanSection(props: SecurityAuditPageProps) {
+  const staticScan = hasStaticScanDetails(props.staticScan) ? props.staticScan : null;
+  if (!staticScan) return null;
+  return <StaticScanDetails staticScan={staticScan} />;
 }
 
 function VirusTotalSection(props: SecurityAuditPageProps) {
@@ -769,27 +822,6 @@ function useSkillSpectorContentSnippets(entity: EntityRef, issues: SkillSpectorI
   return snippets;
 }
 
-function RiskAnalysisInfoLink() {
-  return (
-    <TooltipProvider delayDuration={400}>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button
-            type="button"
-            className="security-report-title-info-link"
-            aria-label={RISK_ANALYSIS_SCOPE_COPY}
-          >
-            <Info size={15} aria-hidden="true" />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent side="top" align="start" className="security-report-title-tooltip">
-          {RISK_ANALYSIS_SCOPE_COPY}
-        </TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
 function SecurityAuditScannerSection({
   kind,
   props,
@@ -808,11 +840,10 @@ function SecurityAuditScannerSection({
           <h2 id={`${kind}-heading`} className="skill-install-panel-title">
             {label}
           </h2>
-          {kind === "clawscan" ? <RiskAnalysisInfoLink /> : null}
           {kind === "skillspector" ? <SkillSpectorAttribution /> : null}
         </div>
       </div>
-      {kind === "clawscan" ? <ClawScanSection {...props} /> : null}
+      {kind === "static" ? <StaticScanSection {...props} /> : null}
       {kind === "virustotal" ? <VirusTotalSection {...props} /> : null}
       {kind === "skillspector" ? <SkillSpectorSection {...props} /> : null}
     </section>
