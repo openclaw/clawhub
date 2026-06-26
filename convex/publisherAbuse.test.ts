@@ -1789,6 +1789,29 @@ describe("publisher abuse dry-run persistence", () => {
       },
     },
     {
+      name: "staff-managed org publisher",
+      publisher: {
+        _id: "publishers:candidate",
+        kind: "org",
+        handle: "candidate",
+        linkedUserId: "users:candidate",
+      },
+      users: {
+        "users:candidate": { _id: "users:candidate", handle: "candidate", role: "user" },
+        "users:staff-manager": {
+          _id: "users:staff-manager",
+          handle: "staff-manager",
+          role: "moderator",
+        },
+      },
+      staffMember: {
+        _id: "publisherMembers:staff-manager",
+        publisherId: "publishers:candidate",
+        userId: "users:staff-manager",
+        role: "owner",
+      },
+    },
+    {
       name: "relinked publisher",
       publisher: {
         _id: "publishers:candidate",
@@ -1850,6 +1873,17 @@ describe("publisher abuse dry-run persistence", () => {
               };
             }
             return makeEmptyOfficialPublishersQuery();
+          }
+          if (table === "publisherMembers") {
+            return {
+              withIndex: () => ({
+                paginate: async () => ({
+                  page: testCase.staffMember ? [testCase.staffMember] : [],
+                  isDone: true,
+                  continueCursor: "",
+                }),
+              }),
+            };
           }
           throw new Error(`unexpected table ${table}`);
         }),
@@ -2003,6 +2037,98 @@ describe("publisher abuse dry-run persistence", () => {
       }),
       ownerUserId: "users:candidate",
       createdAt: 1,
+    };
+    const publisher = {
+      _id: "publishers:candidate",
+      kind: "user",
+      handle: "candidate",
+      linkedUserId: "users:candidate",
+    };
+    const runMutation = vi.fn();
+    const scheduler = { runAfter: vi.fn(async () => null) };
+    const patch = vi.fn();
+    const insert = vi.fn();
+    const ctx = {
+      scheduler,
+      runMutation,
+      db: {
+        get: vi.fn(async (id: string) => {
+          if (id === score._id) return score;
+          if (id === "publisherAbuseScoreRuns:latest") return makeCompletedPressureScoreRun();
+          if (id === publisher._id) return publisher;
+          if (id === "users:candidate") {
+            return {
+              _id: "users:candidate",
+              handle: "candidate",
+              email: "candidate@example.test",
+              role: "user",
+            };
+          }
+          return null;
+        }),
+        patch,
+        insert,
+        query: vi.fn((table: string) => {
+          if (table === "publisherAbuseReviewNominations") {
+            return makeAutoBanNominationQuery([nomination]);
+          }
+          if (table === "officialPublishers") return makeEmptyOfficialPublishersQuery();
+          if (table === "systemSettings") {
+            return makePublisherAbuseAutobanSettingQuery({
+              key: "publisherAbuseAutobanEnabled",
+              enabled: true,
+              updatedAt: 1,
+              updatedByUserId: "users:admin",
+            });
+          }
+          throw new Error(`unexpected table ${table}`);
+        }),
+      },
+    };
+
+    await expect(autoBanPublisherAbuseCandidatesPageHandler(ctx, {})).resolves.toEqual({
+      ok: true,
+      processed: 1,
+      warned: 0,
+      banned: 0,
+      alreadyBanned: 0,
+      skipped: 0,
+      isDone: true,
+    });
+
+    expect(scheduler.runAfter).not.toHaveBeenCalled();
+    expect(runMutation).not.toHaveBeenCalled();
+    expect(patch).not.toHaveBeenCalled();
+    expect(insert).not.toHaveBeenCalled();
+  });
+
+  it("does not ban when the newer score was created before the warning deadline", async () => {
+    const nomination = {
+      ...makeNomination({
+        _id: "publisherAbuseReviewNominations:candidate",
+        ownerKey: "publisher:publishers:candidate",
+        ownerPublisherId: "publishers:candidate",
+        ownerUserId: "users:candidate",
+        latestScoreId: "publisherAbuseScores:new",
+        handleSnapshot: "candidate",
+        label: "potential_ban_candidate",
+        status: "pending",
+        lastScoredAt: 2,
+        updatedAt: 2,
+      }),
+      warningSentAt: 1,
+      warningExpiresAt: 3,
+      warningScoreId: "publisherAbuseScores:old",
+      warningRunId: "publisherAbuseScoreRuns:old",
+    };
+    const score = {
+      ...makeScore({
+        _id: "publisherAbuseScores:new",
+        ownerKey: "publisher:publishers:candidate",
+        ownerPublisherId: "publishers:candidate",
+      }),
+      ownerUserId: "users:candidate",
+      createdAt: 2,
     };
     const publisher = {
       _id: "publishers:candidate",
