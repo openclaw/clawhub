@@ -13,8 +13,13 @@ describe("security-dataset-snapshot workflow", () => {
           strategy?: { "max-parallel"?: number };
         };
         "plan-security-dataset": {
+          if?: string;
           env?: Record<string, unknown>;
           steps: Array<{ id?: string; run?: string }>;
+        };
+        "publish-existing-security-dataset-shards": {
+          if?: string;
+          steps: Array<{ name?: string; run?: string }>;
         };
       };
       on?: {
@@ -22,13 +27,18 @@ describe("security-dataset-snapshot workflow", () => {
           inputs?: Record<string, { default?: string }>;
         };
       };
+      permissions?: Record<string, string>;
     };
 
     const planJob = workflow.jobs["plan-security-dataset"];
     const exportJob = workflow.jobs["export-security-dataset-shards"];
+    const publishExistingJob = workflow.jobs["publish-existing-security-dataset-shards"];
     const planStep = planJob.steps.find((step) => step.id === "plan");
 
+    expect(workflow.permissions?.actions).toBe("read");
     expect(workflow.on?.workflow_dispatch?.inputs?.shards?.default).toBe("12");
+    expect(workflow.on?.workflow_dispatch?.inputs?.["reuse-shards-run-id"]?.default).toBe("");
+    expect(planJob.if).toContain("reuse-shards-run-id");
     expect(planJob.env?.SNAPSHOT_SHARDS).toBe("${{ inputs.shards || '12' }}");
     expect(planJob.env?.SNAPSHOT_MAX_SHARDS_PER_SOURCE).toBe(
       "${{ vars.SECURITY_DATASET_MAX_SHARDS_PER_SOURCE || '16' }}",
@@ -48,5 +58,10 @@ describe("security-dataset-snapshot workflow", () => {
     expect(planStep?.run).toContain("planned ${shardCount} dataset shard jobs");
     expect(planStep?.run).toContain("BigInt(shardCount) > BigInt(maxJobs)");
     expect(exportJob.strategy?.["max-parallel"]).toBe(12);
+    expect(publishExistingJob.if).toContain("reuse-shards-run-id");
+    expect(
+      publishExistingJob.steps.find((step) => step.name === "Download existing shard artifacts")
+        ?.run,
+    ).toContain('gh run download "$SOURCE_SHARDS_RUN_ID"');
   });
 });

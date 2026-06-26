@@ -140,7 +140,7 @@ describe("package publish workflow", () => {
     expect(workflow).toContain("INPUT_PACKAGE_ARTIFACT_PATH");
     expect(workflow).toContain("package_artifact_path=");
     expect(workflow).toContain("PREBUILT_PACKAGE_ARTIFACT_PATH");
-    expect(workflow).toContain("tarfile.open(archive_path, mode=\"r:gz\")");
+    expect(workflow).toContain('tarfile.open(archive_path, mode="r:gz")');
     expect(workflow).toContain("archive.extractall(destination, members=safe_members)");
     expect(workflow).not.toContain("tar -xzf");
     expect(workflow).toContain("cmd_source = prebuilt_artifact_path or source");

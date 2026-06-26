@@ -43,10 +43,15 @@ on:
         description: "Created-at shards per source kind"
         required: true
         default: "12"
+      reuse-shards-run-id:
+        description: "Optional previous successful shard run id to merge/publish without re-exporting"
+        required: false
+        default: ""
   schedule:
     - cron: "17 9 * * *"
 
 permissions:
+  actions: read
   contents: read
 
 concurrency:
@@ -56,6 +61,7 @@ concurrency:
 jobs:
   plan-security-dataset:
     name: Plan sanitized security dataset shards
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs['reuse-shards-run-id'] == '' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     environment: Production
@@ -289,91 +295,97 @@ jobs:
         if: ${{ env.HF_UPLOAD == 'true' }}
         run: |
           set -euo pipefail
-          python - <<'PY'
-          import json
-          import os
-          import shutil
-          import tempfile
-          import urllib.request
-          from pathlib import Path
-          from huggingface_hub import HfApi
+          python scripts/security-dataset/upload-huggingface.py
 
-          def get_github_oidc_token() -> str:
-              request_url = os.environ["ACTIONS_ID_TOKEN_REQUEST_URL"]
-              separator = "&" if "?" in request_url else "?"
-              request = urllib.request.Request(
-                  f"{request_url}{separator}audience=https://huggingface.co",
-                  headers={
-                      "Authorization": f"bearer {os.environ['ACTIONS_ID_TOKEN_REQUEST_TOKEN']}",
-                      "Accept": "application/json",
-                  },
-              )
-              with urllib.request.urlopen(request) as response:
-                  payload = json.loads(response.read().decode("utf-8"))
-              return payload["value"]
+      - name: Upload sanitized summary artifact
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-dataset-summary-${{ github.run_id }}
+          path: |
+            ${{ env.SANITIZED_OUT_DIR }}/summary.json
+            ${{ env.SNAPSHOT_DIR }}/manifest.json
+          if-no-files-found: ignore
 
-          def exchange_hugging_face_token(oidc_token: str, resource: str) -> str:
-              body = json.dumps({
-                  "grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
-                  "subject_token_type": "urn:ietf:params:oauth:token-type:id_token",
-                  "subject_token": oidc_token,
-                  "resource": resource,
-              }).encode("utf-8")
-              request = urllib.request.Request(
-                  "https://huggingface.co/oauth/token",
-                  data=body,
-                  headers={
-                      "Content-Type": "application/json",
-                      "Accept": "application/json",
-                  },
-                  method="POST",
-              )
-              with urllib.request.urlopen(request) as response:
-                  payload = json.loads(response.read().decode("utf-8"))
-              return payload["access_token"]
+      - name: Cleanup transient dataset files
+        if: ${{ always() }}
+        run: rm -rf "$WORK_DIR"
 
-          snapshot_dir = Path(os.environ["SNAPSHOT_DIR"])
-          repo_id = os.environ["HF_DATASET_REPO"]
-          revision = os.environ["HF_REVISION"]
-          token = exchange_hugging_face_token(
-              get_github_oidc_token(),
-              os.environ["HF_OIDC_RESOURCE"],
-          )
-          api = HfApi(token=token)
+  publish-existing-security-dataset-shards:
+    name: Publish existing sanitized security dataset shards
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs['reuse-shards-run-id'] != '' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    environment: Production
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      HF_DATASET_REPO: OpenClaw/clawhub-security-signals
+      HF_OIDC_RESOURCE: datasets/OpenClaw/clawhub-security-signals
+      HF_REVISION: ${{ inputs['hf-revision'] || 'main' }}
+      HF_UPLOAD: ${{ inputs.upload == 'true' }}
+      SANITIZED_OUT_DIR: /tmp/clawhub-security-dataset/sanitized
+      SOURCE_SHARDS_RUN_ID: ${{ inputs['reuse-shards-run-id'] }}
+      WORK_DIR: /tmp/clawhub-security-dataset
+    steps:
+      - uses: actions/checkout@v7
 
-          manifest_path = snapshot_dir / "manifest.json"
-          manifest = json.loads(manifest_path.read_text())
-          manifest["huggingface_dataset"]["commit"] = None
-          manifest["huggingface_dataset"]["revision"] = revision
-          manifest_path.write_text(json.dumps(manifest, indent=2) + "\n")
+      - uses: ./.github/actions/setup-bun
 
-          with tempfile.TemporaryDirectory(prefix="clawhub-hf-upload-") as staging_root:
-              staging_dir = Path(staging_root)
-              shutil.copytree(
-                  snapshot_dir / "hf-dataset" / "data",
-                  staging_dir / "data",
-              )
-              (staging_dir / "metadata").mkdir()
-              shutil.copy2(
-                  manifest_path,
-                  staging_dir / "metadata" / "latest-manifest.json",
-              )
-              commit = api.upload_folder(
-                  folder_path=str(staging_dir),
-                  path_in_repo="",
-                  repo_id=repo_id,
-                  repo_type="dataset",
-                  revision=revision,
-                  delete_patterns="data/*.jsonl",
-                  commit_message="Update nightly ClawHub security dataset and manifest",
-              )
+      - uses: actions/setup-python@v6
+        if: ${{ env.HF_UPLOAD == 'true' }}
+        with:
+          python-version: "3.12"
 
-          print(json.dumps({
-              "commit": commit.oid,
-              "repo": repo_id,
-              "revision": revision,
-          }, indent=2))
-          PY
+      - name: Download existing shard artifacts
+        run: |
+          set -euo pipefail
+          mkdir -p "$WORK_DIR/shards"
+          gh run download "$SOURCE_SHARDS_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --pattern "security-dataset-shard-*" \
+            --dir "$WORK_DIR/shards"
+          find "$WORK_DIR/shards" -name manifest.json | wc -l
+
+      - name: Merge sanitized shard outputs
+        run: |
+          set -euo pipefail
+          mkdir -p "$SANITIZED_OUT_DIR"
+          source_snapshot_id="reused-run-${SOURCE_SHARDS_RUN_ID}-publish-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          bun scripts/security-dataset/merge-snapshots.ts \
+            --shards-dir "$WORK_DIR/shards" \
+            --out-dir "$SANITIZED_OUT_DIR" \
+            --source-snapshot-id "$source_snapshot_id" \
+            --hf-repo "$HF_DATASET_REPO" \
+            --hf-revision "$HF_REVISION" | tee "$SANITIZED_OUT_DIR/summary.json"
+          snapshot_dir="$(jq -r '.snapshotDir' "$SANITIZED_OUT_DIR/summary.json")"
+          if [[ -z "$snapshot_dir" || "$snapshot_dir" == "null" ]]; then
+            echo "::error::merge summary did not include snapshotDir"
+            exit 1
+          fi
+          echo "SNAPSHOT_DIR=$snapshot_dir" >> "$GITHUB_ENV"
+          jq '.manifest.row_counts, .manifest.huggingface_dataset' "$SANITIZED_OUT_DIR/summary.json"
+
+      - name: Validate sanitized output guardrails
+        run: |
+          set -euo pipefail
+          bun scripts/security-dataset/validate-guardrails.ts --snapshot-dir "$SNAPSHOT_DIR"
+
+      - name: Install Hugging Face uploader
+        if: ${{ env.HF_UPLOAD == 'true' }}
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip
+          python -m pip install 'huggingface_hub[hf_xet]'
+
+      - name: Upload sanitized dataset to Hugging Face
+        if: ${{ env.HF_UPLOAD == 'true' }}
+        run: |
+          set -euo pipefail
+          python scripts/security-dataset/upload-huggingface.py
 
       - name: Upload sanitized summary artifact
         if: ${{ !cancelled() }}
