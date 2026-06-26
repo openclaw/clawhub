@@ -41,6 +41,8 @@ export function InstallCopyButton({
   tooltip,
   className,
   showLabel = true,
+  variant = "outline",
+  size = "sm",
 }: {
   text: string;
   label?: string;
@@ -49,6 +51,8 @@ export function InstallCopyButton({
   tooltip?: string;
   className?: string;
   showLabel?: boolean;
+  variant?: "default" | "primary" | "secondary" | "destructive" | "ghost" | "outline" | "link";
+  size?: "default" | "xs" | "sm" | "lg" | "icon" | "icon-xs" | "icon-sm" | "icon-lg";
 }) {
   const [copyState, setCopyState] = useState<CopyState>("idle");
   const resetTimeoutRef = useRef<number | null>(null);
@@ -79,8 +83,8 @@ export function InstallCopyButton({
   const button = (
     <Button
       type="button"
-      size="sm"
-      variant="outline"
+      size={size}
+      variant={variant}
       className={cn("skill-install-copy-button", className)}
       aria-label={ariaLabel ?? label}
       title={tooltip ? undefined : title}

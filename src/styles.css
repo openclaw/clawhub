@@ -2982,6 +2982,18 @@ code {
   margin-bottom: 0;
 }
 
+.skill-summary-line .skill-summary-inline-code {
+  padding: 0.12em 0.35em;
+  border-radius: var(--r-xs);
+  background: color-mix(in srgb, var(--surface-muted) 74%, var(--ink) 6%);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--line) 56%, transparent);
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  font-size: 0.88em;
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
 .skill-summary-line.line-clamp-2 {
   display: -webkit-box;
   overflow: hidden;
@@ -6245,6 +6257,26 @@ code {
   text-decoration: none;
 }
 
+.skill-hero-creator .user-badge-link {
+  border-radius: var(--r-pill);
+  padding: 4px 10px 4px 4px;
+  margin-left: -4px;
+  transition:
+    background-color 0.18s ease,
+    color 0.18s ease;
+}
+
+.skill-hero-creator .user-badge-link .user-avatar {
+  transition:
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
+}
+
+.skill-hero-creator .user-badge-link .user-name,
+.skill-hero-creator .user-badge-link .user-handle {
+  transition: color 0.18s ease;
+}
+
 .skill-hero-creator .user-avatar {
   grid-column: 1;
   grid-row: 1 / span 2;
@@ -6288,13 +6320,30 @@ code {
 
 .skill-hero-creator .user-badge-link:hover,
 .skill-hero-creator .user-badge-link:focus-visible {
+  background: var(--hover-bg);
   text-decoration: none;
+  outline: none;
+}
+
+.skill-hero-creator .user-badge-link:focus-visible {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ink) 14%, transparent);
+}
+
+.skill-hero-creator .user-badge-link:hover .user-avatar,
+.skill-hero-creator .user-badge-link:focus-visible .user-avatar {
+  border-color: color-mix(in srgb, var(--ink-soft) 42%, var(--line));
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--ink) 6%, transparent);
 }
 
 .skill-hero-creator .user-badge-link:hover .user-name,
-.skill-hero-creator .user-badge-link:focus-visible .user-name,
+.skill-hero-creator .user-badge-link:focus-visible .user-name {
+  color: var(--ink);
+  text-decoration: none;
+}
+
 .skill-hero-creator .user-badge-link:hover .user-handle,
 .skill-hero-creator .user-badge-link:focus-visible .user-handle {
+  color: color-mix(in srgb, var(--ink) 68%, var(--ink-soft));
   text-decoration: none;
 }
 
@@ -6489,6 +6538,7 @@ code {
   line-height: 1.05;
   font-weight: 700;
   color: var(--ink);
+  text-wrap: balance;
 }
 
 .skill-title-actions {
@@ -6615,9 +6665,10 @@ code {
 }
 
 .skill-category-meta-list {
+  --skill-category-meta-gap: 6px;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: var(--skill-category-meta-gap);
   min-width: 0;
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
 }
@@ -6625,7 +6676,7 @@ code {
 .skill-category-meta-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--skill-category-meta-gap);
   min-width: 0;
   color: color-mix(in srgb, var(--ink-soft) 76%, var(--bg));
   font-size: 12px;
@@ -6666,6 +6717,13 @@ code {
   font-weight: 520;
   line-height: 1;
   white-space: nowrap;
+  text-decoration: none;
+}
+
+.skill-hero-topic:hover,
+.skill-hero-topic:focus-visible {
+  color: var(--ink);
+  text-decoration: none;
 }
 
 .skill-settings-link {
@@ -7674,7 +7732,7 @@ code {
   background: #161619;
 }
 
-.skill-install-copy-button {
+.skill-install-copy-button:not(.skill-install-command-inline-button) {
   border-color: rgba(255, 255, 255, 0.12);
   background: rgba(255, 255, 255, 0.02);
   color: var(--ink);
@@ -7686,17 +7744,17 @@ code {
   touch-action: manipulation;
 }
 
-[data-theme-resolved="light"] .skill-install-copy-button {
+[data-theme-resolved="light"] .skill-install-copy-button:not(.skill-install-command-inline-button) {
   border-color: rgba(15, 12, 10, 0.12);
   background: rgba(255, 255, 255, 0.62);
 }
 
-.skill-install-copy-button[data-copy-state="copied"] {
+.skill-install-copy-button:not(.skill-install-command-inline-button)[data-copy-state="copied"] {
   border-color: rgba(34, 197, 94, 0.36);
   color: var(--status-success-fg);
 }
 
-.skill-install-copy-button[data-copy-state="failed"] {
+.skill-install-copy-button:not(.skill-install-command-inline-button)[data-copy-state="failed"] {
   border-color: rgba(239, 68, 68, 0.32);
   color: var(--status-error-fg);
 }
@@ -7949,45 +8007,71 @@ code {
   overflow: visible;
   text-overflow: clip;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .skill-install-command-wrap .skill-install-prompt-compact code {
   overflow: visible;
   text-overflow: clip;
   white-space: pre-wrap;
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
+  word-break: normal;
 }
 
-.skill-install-command-inline-button {
+.skill-install-command-inline-button.skill-install-copy-button {
   position: absolute;
+  right: 10px;
+  border: 0 !important;
+  background: transparent !important;
+  color: color-mix(in srgb, var(--ink-soft) 88%, transparent);
+  box-shadow: none;
+  transition: color 0.18s ease !important;
+}
+
+.skill-install-command-shell-cli .skill-install-command-inline-button.skill-install-copy-button {
   top: 50%;
-  right: 12px;
-  width: 34px;
-  min-width: 34px;
-  max-width: 34px;
-  height: 34px;
-  min-height: 34px;
-  padding-inline: 0;
-  padding-block: 0;
   transform: translateY(-50%);
 }
 
 .skill-install-command-shell:not(.skill-install-command-shell-cli)
-  .skill-install-command-inline-button {
+  .skill-install-command-inline-button.skill-install-copy-button {
   top: 12px;
   transform: none;
 }
 
-[data-theme-resolved="dark"] .skill-install-command-inline-button {
-  border-color: color-mix(in srgb, var(--line) 68%, transparent);
-  background: color-mix(in srgb, var(--surface-muted) 44%, var(--bg) 56%);
-  color: color-mix(in srgb, var(--ink) 82%, var(--ink-soft) 18%);
+.skill-install-command-inline-button.skill-install-copy-button:hover:not(:disabled),
+.skill-install-command-inline-button.skill-install-copy-button:focus-visible {
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--ink);
+  box-shadow: none;
 }
 
-[data-theme-resolved="dark"] .skill-install-command-inline-button:hover {
-  border-color: color-mix(in srgb, var(--line) 90%, var(--accent) 10%);
-  background: color-mix(in srgb, var(--surface-muted) 58%, var(--bg) 42%);
+.skill-install-command-shell-cli
+  .skill-install-command-inline-button.skill-install-copy-button:hover:not(:disabled),
+.skill-install-command-shell-cli
+  .skill-install-command-inline-button.skill-install-copy-button:focus-visible {
+  transform: translateY(-50%);
+}
+
+.skill-install-command-shell-cli
+  .skill-install-command-inline-button.skill-install-copy-button[data-copy-state="copied"],
+.skill-install-command-shell-cli
+  .skill-install-command-inline-button.skill-install-copy-button[data-copy-state="failed"] {
+  transform: translateY(-50%);
+}
+
+.skill-install-command-inline-button.skill-install-copy-button[data-copy-state="copied"] {
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--status-success-fg);
+}
+
+.skill-install-command-inline-button.skill-install-copy-button[data-copy-state="failed"] {
+  border: 0 !important;
+  background: transparent !important;
+  color: var(--status-error-fg);
 }
 
 .skill-install-command-caption {
@@ -8229,6 +8313,10 @@ code {
     min-width: 0;
   }
 
+  .skill-detail-page .detail-mobile-install {
+    margin-top: 14px;
+  }
+
   .detail-mobile-install .skill-install-command-card {
     --detail-mobile-install-border: color-mix(in srgb, var(--ink-soft) 30%, transparent);
     position: relative;
@@ -8299,18 +8387,56 @@ code {
   }
 
   .detail-mobile-install .skill-install-command-shell-cli .skill-install-command-inline-button {
-    position: absolute;
     top: 50%;
-    right: 12px;
-    width: 34px;
-    height: 34px;
-    min-height: 34px !important;
-    max-width: 34px;
+    right: 10px;
     margin-top: 0;
-    padding: 0 !important;
     transform: translateY(-50%);
     flex: none;
     justify-content: center;
+  }
+
+  .detail-mobile-install .skill-install-command-shell:not(.skill-install-command-shell-cli) {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px 48px 12px 14px;
+  }
+
+  .detail-mobile-install
+    .skill-install-command-shell:not(.skill-install-command-shell-cli)
+    .skill-install-command {
+    display: block;
+    flex: none;
+    width: 100%;
+    max-width: 100%;
+    min-width: 0;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+    overflow-x: hidden;
+  }
+
+  .detail-mobile-install
+    .skill-install-command-shell:not(.skill-install-command-shell-cli)
+    .skill-install-command
+    code {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
+  }
+
+  .detail-mobile-install
+    .skill-install-command-shell:not(.skill-install-command-shell-cli)
+    .skill-install-command-inline-button {
+    position: absolute;
+    top: 12px;
+    right: 10px;
+    align-self: auto;
+    width: auto;
+    margin-top: 0;
+    transform: none;
   }
 
   .skill-hero-main-extra
@@ -8358,6 +8484,37 @@ code {
 
   :is(.skill-detail-page, .plugin-detail-page) .skill-hero-creator {
     margin-top: 18px;
+  }
+
+  .skill-detail-page .skill-hero-creator {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+    gap: 12px;
+  }
+
+  .skill-detail-page .skill-hero-creator .user-badge,
+  .skill-detail-page .skill-hero-creator .user-badge-link {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .skill-detail-page .skill-hero-creator-star {
+    display: flex;
+    flex: 0 0 auto;
+    align-items: center;
+    margin-left: auto;
+  }
+
+  .skill-detail-page .skill-hero-creator-star .skill-sidebar-star-action {
+    min-height: 0;
+    justify-content: flex-end;
+  }
+
+  .skill-detail-page .skill-hero-creator-star .skill-sidebar-star-action:hover,
+  .skill-detail-page .skill-hero-creator-star .skill-sidebar-star-action:focus-visible {
+    text-decoration: none;
   }
 
   .skill-detail-page .skill-hero-lower.has-sidebar {
@@ -8737,7 +8894,7 @@ code {
 }
 
 .detail-skeleton .skill-install-command-inline-button {
-  width: 34px;
+  width: auto;
 }
 
 .detail-skeleton-deferred-summary {
@@ -10754,8 +10911,74 @@ code {
   border: 1px solid var(--line);
   background: var(--surface);
   display: grid;
-  grid-template-rows: auto 1fr auto;
+  grid-template-rows: auto auto auto;
   overflow: hidden;
+}
+
+.file-viewer.is-loading {
+  grid-template-rows: auto 1fr auto;
+}
+
+.file-viewer.is-loading .file-viewer-body-loading {
+  display: flex;
+  flex-direction: column;
+  max-height: none;
+  min-height: 0;
+}
+
+.file-viewer-skeleton {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 100%;
+}
+
+.file-viewer-skeleton-line,
+.file-viewer-skeleton-fill,
+.file-viewer-skeleton-hash {
+  border-radius: var(--r-xs);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--ink) 7%, transparent),
+    color-mix(in srgb, var(--ink) 14%, transparent),
+    color-mix(in srgb, var(--ink) 7%, transparent)
+  );
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.15s ease-in-out infinite;
+}
+
+.file-viewer-skeleton-line {
+  display: block;
+  height: 11px;
+}
+
+.file-viewer-skeleton-line:nth-child(3n + 1) {
+  width: 96%;
+}
+
+.file-viewer-skeleton-line:nth-child(3n + 2) {
+  width: 88%;
+}
+
+.file-viewer-skeleton-line:nth-child(3n) {
+  width: 72%;
+}
+
+.file-viewer-skeleton-fill {
+  flex: 1;
+  min-height: 12px;
+  width: 100%;
+}
+
+.file-viewer-meta-skeleton {
+  min-height: 42px;
+}
+
+.file-viewer-skeleton-hash {
+  display: block;
+  width: min(100%, 420px);
+  height: 12px;
 }
 
 .file-viewer-header {
@@ -11069,10 +11292,7 @@ code {
 }
 
 .skill-versions-list {
-  --skill-versions-grid-columns: minmax(150px, 176px) minmax(180px, 220px) fit-content(168px)
-    minmax(0, 1fr) minmax(44px, max-content) 36px;
   display: grid;
-  grid-template-columns: var(--skill-versions-grid-columns);
   gap: 0;
   border: 1px solid color-mix(in srgb, var(--line) 92%, transparent);
   border-radius: var(--r-md);
@@ -11080,16 +11300,22 @@ code {
   background: color-mix(in srgb, var(--surface) 28%, transparent);
 }
 
-.skill-versions-list-without-checks {
-  --skill-versions-grid-columns: minmax(150px, 176px) fit-content(168px) minmax(0, 1fr)
-    minmax(154px, max-content) 36px;
+.skill-versions-list-skills {
+  --skill-versions-grid-columns: minmax(0, 1fr) max-content max-content 36px;
+  grid-template-columns: var(--skill-versions-grid-columns);
+}
+
+.skill-versions-list-plugins {
+  --skill-versions-grid-columns: minmax(0, 1fr) minmax(88px, max-content) max-content max-content
+    36px;
+  grid-template-columns: var(--skill-versions-grid-columns);
 }
 
 .skill-versions-column-header {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
-  gap: 10px;
+  column-gap: 16px;
   align-items: center;
   padding: 10px 16px;
   border-bottom: 1px solid color-mix(in srgb, var(--line) 66%, transparent);
@@ -11101,56 +11327,56 @@ code {
   text-transform: uppercase;
 }
 
-.skill-versions-column-header > span:nth-child(1) {
+.skill-versions-col-version {
   grid-column: 1;
   justify-self: start;
 }
 
-.skill-versions-column-header > span:nth-child(2) {
+.skill-versions-col-tags {
   grid-column: 2;
   justify-self: start;
 }
 
-.skill-versions-column-header > span:nth-child(3) {
-  grid-column: 3;
+.skill-versions-col-release {
   justify-self: start;
 }
 
-.skill-versions-column-header > span:nth-child(4) {
-  grid-column: 5;
-  justify-self: center;
+.skill-versions-column-header-skills .skill-versions-col-release {
+  grid-column: 2;
 }
 
-.skill-versions-column-header-download {
+.skill-versions-column-header-plugins .skill-versions-col-release {
+  grid-column: 3;
+}
+
+.skill-versions-col-download {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 28px;
+  justify-content: flex-end;
+  justify-self: end;
   min-height: 22px;
   color: color-mix(in srgb, var(--ink-soft) 72%, transparent);
 }
 
-.skill-versions-list-without-checks .skill-versions-column-header > span:nth-child(2) {
-  grid-column: 2;
+.skill-versions-column-header-skills .skill-versions-col-download {
+  grid-column: 3;
 }
 
-.skill-versions-list-without-checks .skill-versions-column-header > span:nth-child(3) {
+.skill-versions-column-header-plugins .skill-versions-col-download {
   grid-column: 4;
-  justify-self: center;
+  width: 28px;
 }
 
-.skill-versions-list-without-checks .skill-versions-column-header > span:nth-child(4) {
+.skill-versions-col-expand {
+  justify-self: end;
+}
+
+.skill-versions-column-header-skills .skill-versions-col-expand {
+  grid-column: 4;
+}
+
+.skill-versions-column-header-plugins .skill-versions-col-expand {
   grid-column: 5;
-  justify-self: end;
-}
-
-.skill-versions-list-without-checks .skill-versions-column-header-download {
-  width: auto;
-}
-
-.skill-versions-column-header > span:nth-child(5) {
-  grid-column: 6;
-  justify-self: end;
 }
 
 .skill-version-release {
@@ -11177,11 +11403,11 @@ code {
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: subgrid;
-  gap: 10px;
+  column-gap: 16px;
   align-items: center;
   min-width: 0;
-  min-height: 72px;
-  padding: 14px 16px;
+  min-height: 64px;
+  padding: 12px 16px;
   transition: background-color 160ms ease;
 }
 
@@ -11248,7 +11474,6 @@ code {
 }
 
 .skill-version-release-chevron-button {
-  grid-column: 6;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -11340,20 +11565,22 @@ code {
 }
 
 .skill-version-release-scan {
-  grid-column: 2;
   display: flex;
   flex-direction: row;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-start;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
   min-width: 0;
   min-height: 22px;
 }
 
+.skill-versions-list-plugins .skill-version-release-scan {
+  grid-column: 2;
+}
+
 .skill-version-release-tags {
-  grid-column: 3;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -11364,15 +11591,31 @@ code {
   min-height: 22px;
 }
 
+.skill-versions-list-skills .skill-version-release-tags {
+  grid-column: 2;
+}
+
+.skill-versions-list-plugins .skill-version-release-tags {
+  grid-column: 3;
+}
+
 .skill-version-release-actions {
-  grid-column: 5;
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-end;
   gap: 8px;
   width: 100%;
   min-width: 0;
+  justify-self: end;
+}
+
+.skill-versions-list-skills .skill-version-release-actions {
+  grid-column: 3;
+}
+
+.skill-versions-list-plugins .skill-version-release-actions {
+  grid-column: 4;
 }
 
 .skill-version-release-download {
@@ -11410,15 +11653,11 @@ code {
   white-space: nowrap;
 }
 
-.skill-versions-list-without-checks .skill-version-release-tags {
-  grid-column: 2;
-}
-
-.skill-versions-list-without-checks .skill-version-release-actions {
+.skill-versions-list-skills .skill-version-release-chevron-button {
   grid-column: 4;
 }
 
-.skill-versions-list-without-checks .skill-version-release-chevron-button {
+.skill-versions-list-plugins .skill-version-release-chevron-button {
   grid-column: 5;
 }
 
@@ -15577,15 +15816,9 @@ a.agentic-risk-finding-title:focus-visible {
   }
 
   .skill-install-command-shell-cli .skill-install-command-inline-button {
-    position: absolute;
     top: 50%;
     right: 10px;
-    width: 34px;
-    height: 34px;
-    min-height: 34px !important;
-    max-width: 34px;
     margin-top: 0;
-    padding: 0 !important;
     transform: translateY(-50%);
     flex: none;
     justify-content: center;
@@ -15596,24 +15829,33 @@ a.agentic-risk-finding-title:focus-visible {
     overflow: visible;
     text-overflow: clip;
     white-space: pre-wrap;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
 
   .skill-install-command-shell:not(.skill-install-command-shell-cli) .skill-install-command code {
     overflow: visible;
     text-overflow: clip;
     white-space: pre-wrap;
-    overflow-wrap: anywhere;
+    overflow-wrap: break-word;
+    word-break: normal;
   }
 
   .skill-install-command-shell:not(.skill-install-command-shell-cli) {
-    padding-right: 18px;
+    flex-direction: column;
+    align-items: stretch;
+    padding-right: 48px;
   }
 
   .skill-install-command-shell:not(.skill-install-command-shell-cli)
     .skill-install-command-inline-button {
-    position: static;
-    width: 100%;
-    margin-top: 8px;
+    position: absolute;
+    top: 12px;
+    right: 10px;
+    width: auto;
+    align-self: auto;
+    margin-top: 0;
+    transform: none;
     justify-content: center;
   }
 
@@ -17321,6 +17563,13 @@ body:has(.browse-page-borderless-header) .navbar {
   margin-bottom: 18px;
 }
 
+.browse-page-header-main {
+  display: grid;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+}
+
 .browse-page-search {
   display: flex;
   align-items: center;
@@ -17948,6 +18197,7 @@ body:has(.browse-page-borderless-header) .navbar {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  gap: 4px;
   min-height: 30px;
   padding: 0 10px;
   border: 1px solid var(--line);
@@ -17959,6 +18209,39 @@ body:has(.browse-page-borderless-header) .navbar {
   font-size: 12px;
   font-weight: 600;
   white-space: nowrap;
+}
+
+.browse-topic-chip-label {
+  line-height: 1;
+}
+
+.browse-topic-chip-clear {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: color-mix(in srgb, var(--ink-soft) 82%, transparent);
+  cursor: pointer;
+  transition:
+    background-color 0.14s ease,
+    color 0.14s ease;
+}
+
+.browse-topic-chip-clear:hover,
+.browse-topic-chip-clear:focus-visible {
+  background: color-mix(in srgb, var(--ink) 8%, transparent);
+  color: var(--ink);
+  outline: none;
+}
+
+.browse-topic-chip.is-active {
+  padding-right: 6px;
+  cursor: default;
 }
 
 .browse-topic-chip:hover,
@@ -28224,11 +28507,22 @@ a[class*="rounded-full"] {
   line-height: 1.45;
 }
 
-.navbar-search-typeahead-status.is-empty {
+.navbar-search-typeahead-status.is-empty,
+.navbar-search-typeahead-status.is-loading {
   display: flex;
   align-items: center;
   gap: 10px;
   padding: 14px;
+}
+
+.navbar-search-typeahead-status-spinner {
+  animation: navbar-search-typeahead-spin 0.75s linear infinite;
+}
+
+@keyframes navbar-search-typeahead-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .navbar-search-typeahead-status-icon {

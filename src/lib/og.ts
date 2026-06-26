@@ -34,6 +34,13 @@ type PublisherMetaSource = {
   bio?: string | null;
   image?: string | null;
   kind?: "user" | "org";
+  official?: boolean | null;
+  affiliations?: Array<{
+    publisher?: {
+      displayName?: string | null;
+      image?: string | null;
+    } | null;
+  }> | null;
   downloads?: number | null;
 };
 
@@ -46,7 +53,7 @@ type BasicMeta = {
 
 const OG_SKILL_IMAGE_LAYOUT_VERSION = "10";
 const OG_PLUGIN_IMAGE_LAYOUT_VERSION = "5";
-const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "7";
+const OG_PUBLISHER_IMAGE_LAYOUT_VERSION = "8";
 
 function getSiteUrl() {
   return getClawHubSiteUrl();
@@ -141,6 +148,18 @@ export function buildPublisherMeta(source: PublisherMetaSource): BasicMeta {
   imageParams.set("title", displayName);
   imageParams.set("description", truncate(description, 200));
   if (source.kind === "org") imageParams.set("kind", "org");
+  imageParams.set("official", source.official ? "1" : "0");
+  const organizationCount = source.affiliations?.length ?? 0;
+  imageParams.set("orgState", organizationCount > 1 ? "many" : String(organizationCount));
+  const organizationImages =
+    source.affiliations
+      ?.map((affiliation) => clean(affiliation.publisher?.image))
+      .map((imageUrl) => imageUrl.replace(/\|/g, ""))
+      .filter(Boolean) ?? [];
+  imageParams.set(
+    "orgImages",
+    organizationImages.length > 0 ? organizationImages.slice(0, 5).join("|") : "0",
+  );
   if (image) imageParams.set("avatar", image);
   if (typeof source.downloads === "number" && Number.isFinite(source.downloads)) {
     imageParams.set("downloads", String(Math.max(0, Math.trunc(source.downloads))));

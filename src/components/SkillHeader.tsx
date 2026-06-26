@@ -7,16 +7,23 @@ import type { Doc, Id } from "../../convex/_generated/dataModel";
 import type { ActivityTrend } from "../lib/activityTrend";
 import { getSkillBadges, isSkillOfficial } from "../lib/badges";
 import { BrowseCategoryIcon } from "../lib/browseCategoryIcons";
-import { buildSkillCategoryBrowseHref, type SkillCategory } from "../lib/categories";
+import {
+  buildSkillCategoryBrowseHref,
+  buildSkillTopicBrowseHref,
+  formatCatalogTopicLabel,
+  type SkillCategory,
+} from "../lib/categories";
 import { formatSkillStatsTriplet } from "../lib/numberFormat";
 import { buildPublisherProfileHref } from "../lib/ownerRoute";
 import type { PublicPublisher, PublicSkill } from "../lib/publicUser";
 import { timeAgo } from "../lib/timeAgo";
 import { useHeroCreatorPublisher } from "../lib/useHeroCreatorPublisher";
+import { useMediaQuery } from "../lib/useMediaQuery";
 import { ActivityMetricLabel } from "./ActivityMetricLabel";
 import { DetailHero, DETAIL_HERO_TOPIC_LIMIT } from "./DetailPageShell";
 import { DetailSecuritySummaryLabel } from "./DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "./DownloadsMetricCard";
+import { InlineCodeSummary } from "./InlineCodeSummary";
 import { SidebarMetadata } from "./SidebarMetadata";
 import { buildSkillHref } from "./skillDetailUtils";
 import { SkillCommandLineCard } from "./SkillInstallSurface";
@@ -53,7 +60,7 @@ const SUMMARY_COLLAPSE_THRESHOLD = 220;
 type MobileDetailPanel = "content" | "stats";
 
 function formatHeaderTopic(topic: string) {
-  return `#${topic.trim().toLowerCase().replace(/\s+/g, "-")}`;
+  return formatCatalogTopicLabel(topic);
 }
 
 type SkillHeaderLatestVersion =
@@ -189,6 +196,7 @@ export function SkillHeader({
   const hasSummaryToggle = headerDescription.length > SUMMARY_COLLAPSE_THRESHOLD;
   const [isSummaryExpanded, setIsSummaryExpanded] = useState(false);
   const [mobileDetailPanel, setMobileDetailPanel] = useState<MobileDetailPanel>("content");
+  const isMobileDetailLayout = useMediaQuery("(max-width: 900px)");
 
   const renderStarAction = () => (
     <SignedInActionTooltip
@@ -342,9 +350,11 @@ export function SkillHeader({
         topClassName={hasPluginBundle ? "has-plugin" : undefined}
         sidebar={
           <div className="skill-hero-sidebar-stack">
-            <div className="skill-sidebar-star-band detail-hero-summary-row">
-              {renderStarAction()}
-            </div>
+            {!isMobileDetailLayout ? (
+              <div className="skill-sidebar-star-band detail-hero-summary-row">
+                {renderStarAction()}
+              </div>
+            ) : null}
             <div className="detail-sidebar-stats">{desktopStatsContent}</div>
           </div>
         }
@@ -394,9 +404,14 @@ export function SkillHeader({
                     {headerTopics.length > 0 ? (
                       <div className="skill-hero-topic-list" aria-label="Topics">
                         {headerTopics.map((topic) => (
-                          <span className="skill-hero-topic" key={topic}>
+                          <a
+                            key={topic}
+                            className="skill-hero-topic"
+                            href={buildSkillTopicBrowseHref(topic)}
+                            aria-label={`View skills tagged ${formatHeaderTopic(topic)}`}
+                          >
                             {formatHeaderTopic(topic)}
-                          </span>
+                          </a>
                         ))}
                       </div>
                     ) : null}
@@ -447,7 +462,7 @@ export function SkillHeader({
                     hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
                   }`}
                 >
-                  {headerDescription}
+                  <InlineCodeSummary>{headerDescription}</InlineCodeSummary>
                 </p>
                 {hasSummaryToggle ? (
                   <button
@@ -473,6 +488,9 @@ export function SkillHeader({
                     stackMutedHandleBelowName
                     disableTooltip
                   />
+                  {isMobileDetailLayout ? (
+                    <div className="skill-hero-creator-star">{renderStarAction()}</div>
+                  ) : null}
                 </div>
               ) : null}
 

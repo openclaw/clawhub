@@ -23,9 +23,11 @@ import {
   selectDefaultFilePath,
   sortVersionsBySemver,
 } from "../lib/diffing";
+import { ensureMonacoLoader } from "../lib/monacoLoader";
 import { isDarkThemeResolved, onThemeChange } from "../lib/theme";
 import { ClientOnly } from "./ClientOnly";
 import { Button } from "./ui/button";
+import { Skeleton } from "./ui/skeleton";
 
 type SkillDiffCardProps = {
   skill: Doc<"skills">;
@@ -109,6 +111,34 @@ function useCompactDiffLayout(threshold = COMPACT_DIFF_THRESHOLD) {
   return { ref, isCompact };
 }
 
+function DiffViewerLoading() {
+  return (
+    <div
+      className="diff-skeleton-editor diff-skeleton-editor-embedded"
+      role="status"
+      aria-label="Loading diff"
+    >
+      <div className="diff-skeleton-gutter" aria-hidden="true">
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+        <Skeleton />
+      </div>
+      <div className="diff-skeleton-code" aria-hidden="true">
+        <Skeleton className="w-[18%]" />
+        <Skeleton className="w-[58%]" />
+        <Skeleton className="w-[82%]" />
+        <Skeleton className="w-[72%]" />
+        <Skeleton className="mt-4 w-[34%]" />
+        <Skeleton className="w-[66%]" />
+        <Skeleton className="w-[48%]" />
+      </div>
+    </div>
+  );
+}
+
 export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCardProps) {
   const getFileText = useAction(api.skills.getFileText);
   const monaco = useMonaco();
@@ -121,6 +151,8 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
   const [rightText, setRightText] = useState(EMPTY_DIFF_TEXT);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [monacoReady, setMonacoReady] = useState(false);
+  const [monacoError, setMonacoError] = useState<string | null>(null);
   const [sizeWarning, setSizeWarning] = useState<SizeWarning | null>(null);
   const cacheRef = useRef(new Map<string, string>());
   const userSelectedViewModeRef = useRef(false);
@@ -350,6 +382,24 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
       cancelled = true;
     };
   }, [getFileText, leftVersionId, rightVersionId, selectedItem]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void ensureMonacoLoader()
+      .then(() => {
+        if (!cancelled) setMonacoReady(true);
+      })
+      .catch((loadError) => {
+        if (!cancelled) {
+          setMonacoError(
+            loadError instanceof Error ? loadError.message : "Failed to load diff viewer",
+          );
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     if (!monaco || typeof document === "undefined") return () => {};
@@ -593,18 +643,20 @@ export function SkillDiffCard({ skill, versions, variant = "card" }: SkillDiffCa
             <div className="diff-empty">Select two versions.</div>
           ) : !fileSelected ? (
             <div className="diff-empty">Select a file.</div>
+          ) : monacoError ? (
+            <div className="diff-empty">{monacoError}</div>
+          ) : !monacoReady || isLoading ? (
+            <DiffViewerLoading />
           ) : (
-            <ClientOnly fallback={<div className="diff-empty">Preparing diff…</div>}>
+            <ClientOnly fallback={<DiffViewerLoading />}>
               <DiffEditor
                 className={`diff-monaco diff-monaco-${viewMode}`}
                 original={leftText}
                 modified={rightText}
                 theme={getMonacoThemeName()}
-                loading={<div className="diff-empty">Loading diff…</div>}
                 options={diffOptions}
                 onMount={handleDiffMount}
               />
-              {isLoading ? <div className="diff-loading">Loading…</div> : null}
             </ClientOnly>
           )}
         </div>

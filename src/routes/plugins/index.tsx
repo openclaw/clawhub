@@ -1,5 +1,5 @@
 import { createFileRoute, Link, redirect } from "@tanstack/react-router";
-import { isPluginCategorySlug, normalizeCatalogTopic } from "clawhub-schema";
+import { isPluginCategorySlug } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { BadgeCheck, PackageSearch, Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -21,12 +21,17 @@ import { PluginListItem } from "../../components/PluginListItem";
 import { BrowseResultsSkeleton } from "../../components/skeletons/BrowseResultsSkeleton";
 import { Button } from "../../components/ui/button";
 import { formatBrowseCount } from "../../lib/browseCount";
+import {
+  parseBrowseTopicFromSearchInput,
+  sanitizeBrowseTopicSearch,
+} from "../../lib/browseTopicSearch";
 import { PLUGIN_CATEGORIES, resolvePluginBrowseCategorySlug } from "../../lib/categories";
 import {
   fetchPluginCatalog,
   isRateLimitedPackageApiError,
   type PackageListItem,
 } from "../../lib/packageApi";
+import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import { useMediaQuery } from "../../lib/useMediaQuery";
 
 type VisiblePluginSort = "recommended" | "updated" | "downloads" | "trending";
@@ -253,7 +258,7 @@ export const Route = createFileRoute("/plugins/")({
     return {
       q,
       category,
-      topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
+      topic: parseBrowseTopicFromSearchInput(search as Record<string, unknown>),
       cursor:
         !legacyInstallSort &&
         !staleImplicitFilteredCursor &&
@@ -331,8 +336,9 @@ function PluginsIndexPending() {
 }
 
 function PluginsIndex() {
-  const search = Route.useSearch();
+  const routeSearch = Route.useSearch();
   const navigate = Route.useNavigate();
+  const { search, activeTopic } = useBrowseTopicSearch(routeSearch, navigate);
   const initialLoaderData = Route.useLoaderData() as PluginsLoaderData | undefined;
   const [catalogData, setCatalogData] = useState<PluginsLoaderData>(
     () => initialLoaderData ?? createPluginsLoadingData(),
@@ -369,7 +375,7 @@ function PluginsIndex() {
   const hasActiveFilters =
     hasQuery ||
     Boolean(search.category) ||
-    Boolean(search.topic) ||
+    Boolean(activeTopic) ||
     Boolean(search.official) ||
     Boolean(search.featured);
   const formattedCount = !hasActiveFilters ? formatBrowseCount(totalCount) : null;
@@ -501,12 +507,15 @@ function PluginsIndex() {
 
   const handleTopicChange = (topic: string | undefined) => {
     void navigate({
-      search: (prev: PluginSearchState) => ({
-        ...prev,
-        cursor: undefined,
-        family: undefined,
-        topic,
-      }),
+      search: (prev: PluginSearchState) =>
+        sanitizeBrowseTopicSearch(
+          {
+            ...prev,
+            cursor: undefined,
+            family: undefined,
+          },
+          topic ?? null,
+        ),
       replace: true,
     });
   };
@@ -635,15 +644,17 @@ function PluginsIndex() {
   return (
     <main className="browse-page browse-page-borderless-header">
       <div className="browse-page-header">
-        <h1 className="browse-title">
-          Plugins
-          {formattedCount ? (
-            <>
-              {" "}
-              <span className="browse-count">{formattedCount}</span>
-            </>
-          ) : null}
-        </h1>
+        <div className="browse-page-header-main">
+          <h1 className="browse-title">
+            Plugins
+            {formattedCount ? (
+              <>
+                {" "}
+                <span className="browse-count">{formattedCount}</span>
+              </>
+            ) : null}
+          </h1>
+        </div>
       </div>
       <BrowseControls>
         <BrowseControlsRow>
@@ -681,7 +692,7 @@ function PluginsIndex() {
         </BrowseControlsRow>
         <BrowseTopicChips
           topics={categoryTopics ?? []}
-          activeTopic={search.topic}
+          activeTopic={activeTopic}
           onChange={handleTopicChange}
         />
       </BrowseControls>

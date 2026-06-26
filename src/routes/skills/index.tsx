@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { normalizeCatalogTopic } from "clawhub-schema";
 import { useQuery } from "convex/react";
 import { useCallback, useRef } from "react";
 import { api } from "../../../convex/_generated/api";
@@ -19,7 +18,12 @@ import {
   useBrowseSearchDisclosure,
 } from "../../components/BrowseControls";
 import { formatBrowseCount } from "../../lib/browseCount";
+import {
+  parseBrowseTopicFromSearchInput,
+  sanitizeBrowseTopicSearch,
+} from "../../lib/browseTopicSearch";
 import { resolveSkillBrowseCategorySlug, SKILL_CATEGORIES } from "../../lib/categories";
+import { useBrowseTopicSearch } from "../../lib/useBrowseTopicSearch";
 import { parseDir, parseSort } from "./-params";
 import { SkillsResults } from "./-SkillsResults";
 import {
@@ -61,7 +65,7 @@ export const Route = createFileRoute("/skills/")({
           ? true
           : undefined,
       category: parseSkillCategorySlug(search.category),
-      topic: typeof search.topic === "string" ? normalizeCatalogTopic(search.topic) : undefined,
+      topic: parseBrowseTopicFromSearchInput(search as Record<string, unknown>),
       view: normalizeSkillsView(search.view),
       focus: search.focus === "search" ? "search" : undefined,
     };
@@ -71,7 +75,8 @@ export const Route = createFileRoute("/skills/")({
 
 export function SkillsIndex() {
   const navigate = Route.useNavigate();
-  const search = Route.useSearch();
+  const routeSearch = Route.useSearch();
+  const { search, activeTopic } = useBrowseTopicSearch(routeSearch, navigate);
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   const model = useSkillsBrowseModel({
@@ -95,7 +100,8 @@ export function SkillsIndex() {
           ? "stars"
           : "all";
   const activeSort = ["updated", "newest", "name"].includes(model.sort) ? model.sort : undefined;
-  const hasActiveFilters = model.hasQuery || Boolean(model.activeCategory) || model.featuredOnly;
+  const hasActiveFilters =
+    model.hasQuery || Boolean(model.activeCategory) || Boolean(activeTopic) || model.featuredOnly;
   const totalSkillsCount = useQuery(api.skills.countPublicSkills, {});
   const categoryTopics = useQuery(
     api.catalogTopics.listTopByCategory,
@@ -198,12 +204,15 @@ export function SkillsIndex() {
   const handleTopicChange = useCallback(
     (topic: string | undefined) => {
       void navigate({
-        search: (prev: SkillsSearchState) => ({
-          ...prev,
-          topic,
-          featured: undefined,
-          highlighted: undefined,
-        }),
+        search: (prev: SkillsSearchState) =>
+          sanitizeBrowseTopicSearch(
+            {
+              ...prev,
+              featured: undefined,
+              highlighted: undefined,
+            },
+            topic ?? null,
+          ),
         replace: true,
       });
     },
@@ -213,15 +222,17 @@ export function SkillsIndex() {
   return (
     <main className="browse-page browse-page-borderless-header">
       <div className="browse-page-header">
-        <h1 className="browse-title">
-          Skills
-          {formattedCount ? (
-            <>
-              {" "}
-              <span className="browse-count">{formattedCount}</span>
-            </>
-          ) : null}
-        </h1>
+        <div className="browse-page-header-main">
+          <h1 className="browse-title">
+            Skills
+            {formattedCount ? (
+              <>
+                {" "}
+                <span className="browse-count">{formattedCount}</span>
+              </>
+            ) : null}
+          </h1>
+        </div>
       </div>
       <BrowseControls>
         <BrowseControlsRow>
@@ -266,7 +277,7 @@ export function SkillsIndex() {
         </BrowseControlsRow>
         <BrowseTopicChips
           topics={categoryTopics ?? []}
-          activeTopic={model.activeTopic}
+          activeTopic={activeTopic}
           onChange={handleTopicChange}
         />
       </BrowseControls>

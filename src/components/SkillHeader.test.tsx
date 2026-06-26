@@ -501,6 +501,20 @@ describe("SkillHeader", () => {
     expect(container.querySelector(".skill-hero-title-row .skill-title-actions")).toBeNull();
   });
 
+  it("places Star on the creator row on mobile detail layout", () => {
+    setViewportWidth(390);
+    const { container } = renderHeader();
+
+    expect(container.querySelector(".skill-sidebar-star-band")).toBeNull();
+    const creator = container.querySelector(".skill-hero-creator");
+    expect(creator).toBeTruthy();
+    const starButton = within(creator as HTMLElement).getByRole("button", {
+      name: "Star skill",
+    });
+    expect(starButton.className).toContain("skill-sidebar-star-action");
+    expect(starButton.closest(".skill-hero-creator-star")).toBeTruthy();
+  });
+
   it("does not render a separate warning banner for scanner warnings", () => {
     renderHeader({
       modInfo: {

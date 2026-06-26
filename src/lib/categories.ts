@@ -1,6 +1,7 @@
 import {
   isPluginCategorySlug,
   isSkillCategorySlug,
+  normalizeCatalogTopic,
   PLUGIN_CATEGORY_DEFINITIONS,
   resolveStoredSkillCategories,
   SKILL_CATEGORY_DEFINITIONS,
@@ -143,5 +144,24 @@ export function buildSkillCategoryBrowseHref(category: SkillCategory) {
 
 export function buildPluginCategoryBrowseHref(category: BrowseCategory) {
   const params = new URLSearchParams({ category: category.slug });
+  return `/plugins?${params.toString()}`;
+}
+
+export function formatCatalogTopicLabel(topic: string) {
+  const normalized = normalizeCatalogTopic(topic);
+  return `#${normalized ?? topic.trim().normalize("NFKC").toLocaleLowerCase("en-US")}`;
+}
+
+export function buildSkillTopicBrowseHref(topic: string) {
+  const normalized = normalizeCatalogTopic(topic);
+  if (!normalized) return "/skills";
+  const params = new URLSearchParams({ topic: normalized });
+  return `/skills?${params.toString()}`;
+}
+
+export function buildPluginTopicBrowseHref(topic: string) {
+  const normalized = normalizeCatalogTopic(topic);
+  if (!normalized) return "/plugins";
+  const params = new URLSearchParams({ topic: normalized });
   return `/plugins?${params.toString()}`;
 }

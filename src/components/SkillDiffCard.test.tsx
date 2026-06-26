@@ -13,6 +13,10 @@ vi.mock("convex/react", () => ({
   useAction: () => getFileTextMock,
 }));
 
+vi.mock("../lib/monacoLoader", () => ({
+  ensureMonacoLoader: () => Promise.resolve(),
+}));
+
 vi.mock("@monaco-editor/react", () => ({
   DiffEditor: ({
     className,

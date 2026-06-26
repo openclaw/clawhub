@@ -16,6 +16,10 @@ import { generateEmbedding } from "./lib/embeddings";
 import { hasOfficialPublisherRow, toPublicPublisherWithOfficial } from "./lib/officialPublishers";
 import type { HydratableSkill, PublicPublisher } from "./lib/public";
 import { toPublicSkill } from "./lib/public";
+import {
+  hasResolvablePublicBrowseVersion,
+  shouldExcludeSkillFromPublicBrowse,
+} from "./lib/publicBrowse";
 import { getOwnerPublisher } from "./lib/publishers";
 import {
   matchesAllTokens,
@@ -270,6 +274,7 @@ function matchesCatalogFilters(
 }
 
 function toPublicSearchSkill(skill: HydratableSkill) {
+  if (shouldExcludeSkillFromPublicBrowse(skill)) return null;
   return toPublicSkill({
     ...skill,
     categories: resolveStoredSkillCategories(skill),
@@ -576,10 +581,15 @@ export const directPrefixSkillMatches = internalQuery({
         ...(digest.categories ?? []),
         ...(digest.topics ?? []),
       ]);
-    const matchesDirectRecallFilters = (digest: Doc<"skillSearchDigest">) =>
-      (!args.highlightedOnly || isSkillHighlighted(digestToHydratableSkill(digest))) &&
-      passesAllQueryTokens(digest) &&
-      matchesCatalogFilters(digest, categorySlug, topic);
+    const matchesDirectRecallFilters = (digest: Doc<"skillSearchDigest">) => {
+      const skill = digestToHydratableSkill(digest);
+      return (
+        !shouldExcludeSkillFromPublicBrowse(skill) &&
+        (!args.highlightedOnly || isSkillHighlighted(skill)) &&
+        passesAllQueryTokens(digest) &&
+        matchesCatalogFilters(skill, categorySlug, topic)
+      );
+    };
     const needsExpandedRecall = Boolean(
       categorySlug || topic || args.highlightedOnly || queryTokens.length > 1,
     );
@@ -894,8 +904,10 @@ export const hydrateResults = internalQuery({
         const resolved = preResolved?.owner
           ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+        if (!resolved.owner) return null;
+        if (!(await hasResolvablePublicBrowseVersion(ctx, { ...skill, _id: skillId }))) return null;
         const publicSkill = toPublicSearchSkill(skill);
-        if (!publicSkill || !resolved.owner) return null;
+        if (!publicSkill) return null;
         return {
           embeddingId,
           skill: publicSkill,
@@ -950,7 +962,7 @@ export const lexicalFallbackSkills = internalQuery({
         .take(MAX_EXACT_SLUG_MATCHES);
       for (const exactSlugSkill of exactSlugSkills) {
         if (
-          !exactSlugSkill.softDeletedAt &&
+          !shouldExcludeSkillFromPublicBrowse(exactSlugSkill) &&
           (!args.nonSuspiciousOnly || !isSkillSuspicious(exactSlugSkill)) &&
           (!args.excludePendingScan || exactSlugSkill.githubScanStatus !== "pending") &&
           matchesCatalogFilters(exactSlugSkill, categorySlug, topic)
@@ -994,6 +1006,7 @@ export const lexicalFallbackSkills = internalQuery({
     const matchesFallbackRecallFilters = (digest: Doc<"skillSearchDigest">) => {
       const skill = digestToHydratableSkill(digest);
       return (
+        !shouldExcludeSkillFromPublicBrowse(skill) &&
         (!args.highlightedOnly || isSkillHighlighted(skill)) &&
         (!args.excludePendingScan || skill.githubScanStatus !== "pending") &&
         matchesCatalogFilters(skill, categorySlug, topic) &&
@@ -1056,8 +1069,11 @@ export const lexicalFallbackSkills = internalQuery({
         const resolved = preResolved?.owner
           ? await withOfficialOwnerInfo(ctx, preResolved)
           : await getOwnerInfo(skill.ownerUserId, skill.ownerPublisherId);
+        if (!resolved.owner) return null;
+        if (!(await hasResolvablePublicBrowseVersion(ctx, { ...skill, _id: skill._id })))
+          return null;
         const publicSkill = toPublicSearchSkill(skill);
-        if (!publicSkill || !resolved.owner) return null;
+        if (!publicSkill) return null;
         return {
           skill: publicSkill,
           version: null as Doc<"skillVersions"> | null,

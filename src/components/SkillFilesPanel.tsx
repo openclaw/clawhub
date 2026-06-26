@@ -97,6 +97,19 @@ function getFileTreeLevelStyle(level: number) {
   return { "--file-tree-level": level } as CSSProperties;
 }
 
+const FILE_VIEWER_SKELETON_LINES = 10;
+
+function FileViewerSkeleton() {
+  return (
+    <div className="file-viewer-skeleton" role="status" aria-label="Loading file">
+      {Array.from({ length: FILE_VIEWER_SKELETON_LINES }, (_, index) => (
+        <span key={index} className="file-viewer-skeleton-line" />
+      ))}
+      <span className="file-viewer-skeleton-fill" aria-hidden="true" />
+    </div>
+  );
+}
+
 export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps) {
   const getFileText = useAction(api.skills.getFileText);
   const [selectedPath, setSelectedPath] = useState<string | null>(null);
@@ -144,18 +157,19 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
 
       requestId.current += 1;
       const current = requestId.current;
-      if (fileListRef.current) {
-        setViewerMinHeight(fileListRef.current.offsetHeight);
-      }
       setSelectedPath(path);
       setFileError(null);
       if (cached) {
+        setViewerMinHeight(undefined);
         setFileContent(cached.text);
         setFileMeta({ size: cached.size, sha256: cached.sha256 });
         setIsLoading(false);
         return;
       }
 
+      if (fileListRef.current) {
+        setViewerMinHeight(fileListRef.current.offsetHeight);
+      }
       setFileContent(null);
       setFileMeta(null);
       setIsLoading(true);
@@ -167,12 +181,14 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
           setFileContent(data.text);
           setFileMeta({ size: data.size, sha256: data.sha256 });
           setIsLoading(false);
+          setViewerMinHeight(undefined);
         })
         .catch((error) => {
           if (!isMounted.current) return;
           if (requestId.current !== current) return;
           setFileError(error instanceof Error ? error.message : "Failed to load file");
           setIsLoading(false);
+          setViewerMinHeight(undefined);
         });
     },
     [fileContent, getFileText, isLoading, selectedPath, versionId],
@@ -187,6 +203,8 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
     setIsLoading(false);
     setViewerMinHeight(undefined);
   };
+
+  const isViewerLoading = isLoading && fileContent === null && fileError === null;
 
   const selectedFileSize =
     fileMeta?.size ?? latestFiles.find((file) => file.path === selectedPath)?.size;
@@ -230,8 +248,8 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
       <div className={`file-browser${selectedPath ? " is-viewing-file" : ""}`}>
         {selectedPath ? (
           <div
-            className="file-viewer"
-            style={viewerMinHeight ? { minHeight: viewerMinHeight } : undefined}
+            className={`file-viewer${isViewerLoading ? " is-loading" : ""}`}
+            style={isViewerLoading && viewerMinHeight ? { minHeight: viewerMinHeight } : undefined}
           >
             <div className="file-viewer-header">
               <button
@@ -262,9 +280,11 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
                 ) : null}
               </div>
             </div>
-            <div className="file-viewer-body">
-              {isLoading ? (
-                <div className="stat">Loading…</div>
+            <div
+              className={`file-viewer-body${isViewerLoading ? " file-viewer-body-loading" : ""}`}
+            >
+              {isViewerLoading ? (
+                <FileViewerSkeleton />
               ) : fileError ? (
                 <div className="stat">Failed to load file: {fileError}</div>
               ) : fileContent !== null ? (
@@ -273,7 +293,11 @@ export function SkillFilesPanel({ versionId, latestFiles }: SkillFilesPanelProps
                 </pre>
               ) : null}
             </div>
-            {fileMeta ? (
+            {isViewerLoading ? (
+              <div className="file-viewer-meta file-viewer-meta-skeleton" aria-hidden="true">
+                <span className="file-viewer-skeleton-hash" />
+              </div>
+            ) : fileMeta ? (
               <div className="file-viewer-meta">
                 <Fingerprint size={14} className="file-viewer-hash-icon" aria-hidden="true" />
                 <span className="file-viewer-hash">{fileMeta.sha256}</span>

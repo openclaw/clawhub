@@ -87,7 +87,7 @@ describe("skills.listPublicPageV4", () => {
     });
   });
 
-  it("falls back to updated results while recommendation scores are missing", () => {
+  it("falls back to the recommended rank index while recommendation scores are missing", () => {
     expect(
       __test.resolveRecommendedPublicListQuery({
         scoreIndexName: "by_active_recommended_score",
@@ -99,8 +99,8 @@ describe("skills.listPublicPageV4", () => {
         hasMissingScores: true,
       }),
     ).toEqual({
-      sort: "updated",
-      indexName: "by_active_updated",
+      sort: "recommended",
+      indexName: "by_active_recommended_rank",
       decodedCursor: null,
     });
   });

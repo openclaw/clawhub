@@ -55,6 +55,49 @@ describe("SkillFilesPanel", () => {
     });
   });
 
+  it("shows a loading skeleton while fetching uncached file content", () => {
+    getFileTextMock.mockImplementation(
+      () =>
+        new Promise<{ text: string; size: number; sha256: string }>(() => {
+          /* never resolves */
+        }),
+    );
+
+    const { container } = render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        latestFiles={[makeFile("scripts/run.sh", 10)]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /scripts\/run\.sh/i }));
+
+    expect(container.querySelector(".file-viewer.is-loading")).not.toBeNull();
+    expect(container.querySelector(".file-viewer-skeleton")).not.toBeNull();
+    expect(screen.getByRole("status", { name: "Loading file" })).toBeTruthy();
+  });
+
+  it("clears the loading min-height after file content resolves", async () => {
+    getFileTextMock.mockResolvedValue({
+      text: "echo hello",
+      size: 10,
+      sha256: "a".repeat(64),
+    });
+
+    const { container } = render(
+      <SkillFilesPanel
+        versionId={"skillVersions:1" as Id<"skillVersions">}
+        latestFiles={[makeFile("scripts/run.sh", 10)]}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /scripts\/run\.sh/i }));
+    await screen.findByText("echo hello");
+
+    expect(container.querySelector(".file-viewer.is-loading")).toBeNull();
+    expect(container.querySelector(".file-viewer")?.getAttribute("style")).toBeNull();
+  });
+
   it("renders an empty file after it loads", async () => {
     const { container } = render(
       <SkillFilesPanel

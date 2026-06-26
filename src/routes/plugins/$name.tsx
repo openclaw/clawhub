@@ -40,6 +40,7 @@ import {
 } from "../../components/DetailSecuritySummary";
 import { useDownloadsSidebarMetricBlock } from "../../components/DownloadsMetricCard";
 import { EmptyState } from "../../components/EmptyState";
+import { InlineCodeSummary } from "../../components/InlineCodeSummary";
 import { InstallCopyButton } from "../../components/InstallCopyButton";
 import { Container } from "../../components/layout/Container";
 import { MarkdownPreview } from "../../components/MarkdownPreview";
@@ -66,6 +67,8 @@ import { getActivityTrendEndDay } from "../../lib/activityTrend";
 import { BrowseCategoryIcon } from "../../lib/browseCategoryIcons";
 import {
   buildPluginCategoryBrowseHref,
+  buildPluginTopicBrowseHref,
+  formatCatalogTopicLabel,
   PLUGIN_CATEGORIES,
   resolvePluginBrowseCategorySlug,
 } from "../../lib/categories";
@@ -1627,9 +1630,14 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     {headerTopics.length > 0 ? (
                       <div className="skill-hero-topic-list" aria-label="Topics">
                         {headerTopics.map((topic) => (
-                          <span className="skill-hero-topic" key={topic}>
-                            #{topic.toLowerCase().replace(/\s+/g, "-")}
-                          </span>
+                          <a
+                            key={topic}
+                            className="skill-hero-topic"
+                            href={buildPluginTopicBrowseHref(topic)}
+                            aria-label={`View plugins tagged ${formatCatalogTopicLabel(topic)}`}
+                          >
+                            {formatCatalogTopicLabel(topic)}
+                          </a>
                         ))}
                       </div>
                     ) : null}
@@ -1650,7 +1658,7 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                     hasSummaryToggle && !isSummaryExpanded ? " line-clamp-2" : ""
                   }`}
                 >
-                  {headerSummary}
+                  <InlineCodeSummary>{headerSummary}</InlineCodeSummary>
                 </p>
                 {hasSummaryToggle ? (
                   <button
@@ -1744,6 +1752,8 @@ function PluginDetailPageContent({ name, loaderData }: PluginDetailPageProps) {
                           text={installSnippet}
                           ariaLabel="Copy plugin install command"
                           showLabel={false}
+                          variant="ghost"
+                          size="icon-sm"
                           className="skill-install-command-inline-button"
                         />
                       </div>

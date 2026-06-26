@@ -382,7 +382,7 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
-  it("keeps topic recommendation fallback cursors on the updated index", async () => {
+  it("keeps topic recommended browse on the recommended score index when scores are missing", async () => {
     const firstDigest = makeSearchDigest({
       skillId: "skills:calendar-one",
       slug: "calendar-one",
@@ -452,12 +452,12 @@ describe("public skill list deterministic cursors", () => {
     expect(first.nextCursor).not.toBeNull();
     expect(second.nextCursor).toBeNull();
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
-      index: "by_active_topic_updated",
+      index: "by_active_topic_recommended_score",
       startIndexKey: [undefined, "calendar"],
       startInclusive: true,
     });
     expect(getPageMock.mock.calls[1]?.[1]).toMatchObject({
-      index: "by_active_topic_updated",
+      index: "by_active_topic_recommended_score",
       startIndexKey: firstIndexKey,
       startInclusive: false,
     });
@@ -543,7 +543,7 @@ describe("public skill list deterministic cursors", () => {
     });
   });
 
-  it("falls back to the updated index while recommendation scores are missing", async () => {
+  it("falls back to the recommended rank index while recommendation scores are missing", async () => {
     const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
 
     await listPublicPageV4Handler(ctx, {
@@ -555,14 +555,14 @@ describe("public skill list deterministic cursors", () => {
     ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
-      index: "by_active_updated",
+      index: "by_active_recommended_rank",
       startIndexKey: [undefined],
       endIndexKey: [undefined],
       startInclusive: true,
     });
   });
 
-  it("falls back to the non-suspicious updated index while recommendation scores are missing", async () => {
+  it("falls back to the non-suspicious recommended rank index while recommendation scores are missing", async () => {
     const { ctx, withIndex } = makeMissingRecommendedScoresCtx();
 
     await listPublicApiPageV1Handler(ctx, {
@@ -576,7 +576,7 @@ describe("public skill list deterministic cursors", () => {
     ]);
     expect(getPageMock).toHaveBeenCalledTimes(1);
     expect(getPageMock.mock.calls[0]?.[1]).toMatchObject({
-      index: "by_nonsuspicious_updated",
+      index: "by_nonsuspicious_recommended_rank",
       startIndexKey: [undefined, false],
       endIndexKey: [undefined, false],
       startInclusive: true,

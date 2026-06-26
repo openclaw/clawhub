@@ -54,6 +54,8 @@ vi.mock("@tanstack/react-router", () => ({
       useSearch: () => searchMock,
       useLoaderData: () => loaderDataMock,
     }),
+  useRouterState: (options: { select: (state: unknown) => unknown }) =>
+    options.select({ location: { searchStr: "" } }),
   Link: (props: { children: ReactNode }) => <a href="/">{props.children}</a>,
   redirect: (args: unknown) => redirectMock(args),
 }));

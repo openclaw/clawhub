@@ -216,13 +216,13 @@ function UnifiedSearchPage() {
                 </SearchResultSection>
               ) : null}
               {creatorResults.length > 0 ? (
-                <SearchResultSection title="Creators">
-                  {creatorResults.map((item) => (
-                    <CreatorResultRow key={`creator-${item.creator._id}`} result={item} />
-                  ))}
+                <SearchResultSection title="Creators" bare>
+                  <CreatorResultsList results={creatorResults} />
                 </SearchResultSection>
               ) : null}
             </div>
+          ) : activeType === "creators" ? (
+            <CreatorResultsList results={creatorResults} />
           ) : (
             <div className="results-list">
               {results.map((item) =>
@@ -230,9 +230,7 @@ function UnifiedSearchPage() {
                   <SkillResultRow key={`skill-${item.skill._id}`} result={item} />
                 ) : item.type === "plugin" ? (
                   <PluginResultRow key={`plugin-${item.plugin.name}`} result={item} />
-                ) : (
-                  <CreatorResultRow key={`creator-${item.creator._id}`} result={item} />
-                ),
+                ) : null,
               )}
             </div>
           )}
@@ -297,14 +295,40 @@ function SearchEmptyState({
   );
 }
 
-function SearchResultSection({ children, title }: { children: React.ReactNode; title: string }) {
+function SearchResultSection({
+  bare = false,
+  children,
+  title,
+}: {
+  bare?: boolean;
+  children: React.ReactNode;
+  title: string;
+}) {
   return (
     <section className="search-results-section" aria-label={title}>
       <div className="search-results-section-header">
         <h2 className="search-results-section-title">{title}</h2>
       </div>
-      <div className="results-list">{children}</div>
+      {bare ? children : <div className="results-list">{children}</div>}
     </section>
+  );
+}
+
+function CreatorResultsList({ results }: { results: UnifiedCreatorResult[] }) {
+  if (results.length === 0) return null;
+
+  return (
+    <div className="browse-list-stack">
+      <div className="publisher-directory-list">
+        {results.map((item) => (
+          <PublisherListItem
+            key={`creator-${item.creator._id}`}
+            publisher={item.creator}
+            variant="list"
+          />
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -315,8 +339,4 @@ function SkillResultRow({ result }: { result: UnifiedSkillResult }) {
 
 function PluginResultRow({ result }: { result: UnifiedPluginResult }) {
   return <PluginListItem item={result.plugin} />;
-}
-
-function CreatorResultRow({ result }: { result: UnifiedCreatorResult }) {
-  return <PublisherListItem publisher={result.creator} />;
 }

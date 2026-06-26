@@ -53,6 +53,7 @@
         "remark-gfm": "4.0.1",
         "resend": "6.14.0",
         "semver": "7.8.5",
+        "sharp": "0.34.5",
         "shiki": "4.2.0",
         "sonner": "2.0.7",
         "tailwind-merge": "3.6.0",

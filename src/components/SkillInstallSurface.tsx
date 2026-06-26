@@ -273,6 +273,8 @@ export function SkillCommandLineCard({
             }
             className="skill-install-command-inline-button"
             showLabel={false}
+            variant="ghost"
+            size="icon-sm"
           />
         </div>
       </div>

@@ -88,6 +88,12 @@ import {
   toPublicUser,
 } from "./lib/public";
 import {
+  hostedSkillMayHavePriorApprovedVersion,
+  isHostedSkillPendingPublicReview,
+  resolvePublicBrowseVersionForSkill,
+  shouldExcludeSkillFromPublicBrowse,
+} from "./lib/publicBrowse";
+import {
   assertCanManageOwnedResource,
   canAccessPublisherOwnerScope,
   ensurePersonalPublisherForUser,
@@ -5115,6 +5121,7 @@ export const listPublicPageV3 = query({
       );
       if (!ownerInfo?.owner) continue;
       const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
+      if (isHostedSkillPendingPublicReview(hydratable) && !latestVersion) continue;
       items.push({
         skill: publicSkill,
         latestVersion,
@@ -5423,16 +5430,10 @@ export const listPublicPageV4 = query({
     }
 
     if (officialFirstCursor && categorySlug) {
-      const sort =
-        officialFirstCursor.sort ??
-        (requestedSort === "recommended" &&
-        (await hasMissingRecommendedScores(ctx, args.nonSuspiciousOnly ?? false, null))
-          ? "updated"
-          : requestedSort);
       return await listOfficialFirstSkillCategoryPage(ctx, {
-        state: { ...officialFirstCursor, sort },
-        sort,
-        dir: resolvePublicListDir(sort, args.dir),
+        state: { ...officialFirstCursor, sort: officialFirstCursor.sort ?? requestedSort },
+        sort: officialFirstCursor.sort ?? requestedSort,
+        dir: resolvePublicListDir(officialFirstCursor.sort ?? requestedSort, args.dir),
         numItems,
         topic,
         categorySlug,
@@ -5713,20 +5714,9 @@ async function listSkillTopicFilteredPage(
       allowLegacyArray: false,
     });
   const recommendedCursor = opts.sort === "recommended" ? decodeTopicCursor("recommended") : null;
-  const updatedCursor = opts.sort === "recommended" ? decodeTopicCursor("updated") : null;
-  const useUpdatedRecommendationFallback =
-    opts.sort === "recommended" &&
-    (Boolean(updatedCursor) ||
-      (!recommendedCursor &&
-        (await hasMissingRecommendedScores(ctx, opts.nonSuspiciousOnly, null))));
-  const sort = useUpdatedRecommendationFallback ? "updated" : opts.sort;
+  const sort = opts.sort;
   const indexName = getTopicIndexName(sort);
-  const decodedCursor =
-    opts.sort === "recommended"
-      ? sort === "updated"
-        ? updatedCursor
-        : recommendedCursor
-      : decodeTopicCursor(sort);
+  const decodedCursor = opts.sort === "recommended" ? recommendedCursor : decodeTopicCursor(sort);
   const items: PublicSkillEntry[] = [];
   let scanCursor = decodedCursor ?? eqPrefix;
   let scanInclusive = !decodedCursor;
@@ -5986,6 +5976,7 @@ async function buildPublicSkillEntryFromDigest(
   digest: Doc<"skillSearchDigest">,
 ): Promise<PublicSkillEntry | null> {
   const hydratable = digestToHydratableSkill(digest);
+  if (shouldExcludeSkillFromPublicBrowse(hydratable)) return null;
   const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
   const ownerInfo = await addOfficialStatusToOwnerInfo(
@@ -5995,6 +5986,7 @@ async function buildPublicSkillEntryFromDigest(
   );
   if (!ownerInfo?.owner) return null;
   const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
+  if (isHostedSkillPendingPublicReview(hydratable) && !latestVersion) return null;
   return {
     skill: publicSkill,
     latestVersion,
@@ -6015,59 +6007,86 @@ async function addOfficialStatusToOwnerInfo(
 
 async function loadPublicLatestVersionForDigest(
   ctx: Pick<QueryCtx, "db">,
-  digest: Pick<Doc<"skillSearchDigest">, "skillId" | "latestVersionId" | "latestVersionSkillId">,
+  digest: Pick<
+    Doc<"skillSearchDigest">,
+    | "skillId"
+    | "latestVersionId"
+    | "latestVersionSkillId"
+    | "moderationReason"
+    | "moderationFlags"
+    | "stats"
+    | "installKind"
+  >,
 ) {
   if (!digest.latestVersionId) return null;
   if (digest.latestVersionSkillId !== undefined && digest.latestVersionSkillId !== digest.skillId) {
     return null;
   }
-  const version = await ctx.db.get(digest.latestVersionId);
-  return isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
-}
 
-function toDigestLatestVersionForSkill(digest: Doc<"skillSearchDigest">) {
-  if (!digest.latestVersionSummary || !digest.latestVersionId) {
-    return null;
+  const needsApprovedSnapshot =
+    isHostedSkillPendingPublicReview(digest) && hostedSkillMayHavePriorApprovedVersion(digest);
+
+  if (!needsApprovedSnapshot) {
+    const version = await ctx.db.get(digest.latestVersionId);
+    return isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
   }
-  if (digest.latestVersionSkillId !== digest.skillId) {
-    return null;
-  }
-  return toPublicSkillListVersionFromSummary(
-    digest.latestVersionSummary,
-    digest.latestVersionId,
-    digest.skillId,
-  );
+
+  const skill = await ctx.db.get(digest.skillId);
+  if (!skill) return null;
+  const version = await resolvePublicBrowseVersionForSkill(ctx, skill);
+  return version && isPublicSkillVersionAvailableForSkill(version, digest.skillId) ? version : null;
 }
 
 async function resolveDigestLatestVersionForSkill(
   ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
 ) {
-  if (!digest.latestVersionSummary || !digest.latestVersionId) {
-    return null;
+  const needsApprovedSnapshot =
+    isHostedSkillPendingPublicReview(digest) && hostedSkillMayHavePriorApprovedVersion(digest);
+
+  if (
+    !needsApprovedSnapshot &&
+    digest.latestVersionSummary &&
+    digest.latestVersionId &&
+    (digest.latestVersionSkillId === undefined || digest.latestVersionSkillId === digest.skillId)
+  ) {
+    return toPublicSkillListVersionFromSummary(
+      digest.latestVersionSummary,
+      digest.latestVersionId,
+      digest.skillId,
+    );
   }
-  if (digest.latestVersionSkillId === undefined) {
-    const latestVersion = await loadPublicLatestVersionForDigest(ctx, digest);
-    return latestVersion
-      ? toPublicSkillListVersionFromSummary(
-          digest.latestVersionSummary,
-          digest.latestVersionId,
-          digest.skillId,
-        )
-      : null;
+
+  const version = await loadPublicLatestVersionForDigest(ctx, digest);
+  if (!version) return null;
+
+  if (
+    digest.latestVersionSummary &&
+    digest.latestVersionId === version._id &&
+    (digest.latestVersionSkillId === undefined || digest.latestVersionSkillId === digest.skillId)
+  ) {
+    return toPublicSkillListVersionFromSummary(
+      digest.latestVersionSummary,
+      version._id,
+      digest.skillId,
+    );
   }
-  return toDigestLatestVersionForSkill(digest);
+
+  return toPublicSkillListVersion(version);
 }
 
 async function buildPublicSkillApiListEntryFromDigest(
   ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
 ) {
-  const publicSkill = toPublicSkill(digestToHydratableSkill(digest));
+  const hydratable = digestToHydratableSkill(digest);
+  if (shouldExcludeSkillFromPublicBrowse(hydratable)) return null;
+  const publicSkill = toPublicSkill(hydratable);
   if (!publicSkill) return null;
   const ownerInfo = digestToOwnerInfo(digest);
   if (!ownerInfo?.owner) return null;
   const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
+  if (isHostedSkillPendingPublicReview(hydratable) && !latestVersion) return null;
 
   return {
     skill: {
@@ -6306,6 +6325,7 @@ function skillCatalogMatchesFilters(
   },
 ) {
   if (!isVisibleSkillCatalogDigest(digest)) return false;
+  if (shouldExcludeSkillFromPublicBrowse(digestToHydratableSkill(digest))) return false;
   if (args.channel === "private") return false;
   const isOfficial = isSkillCatalogOfficial(digest);
   const channel = getSkillCatalogChannel(digest);
@@ -6319,9 +6339,11 @@ function skillCatalogMatchesFilters(
 async function toPublicSkillCatalogItem(
   ctx: Pick<QueryCtx, "db">,
   digest: Doc<"skillSearchDigest">,
-): Promise<PublicSkillCatalogItem> {
+): Promise<PublicSkillCatalogItem | null> {
+  const hydratable = digestToHydratableSkill(digest);
   const ownerInfo = digestToOwnerInfo(digest);
   const latestVersion = await resolveDigestLatestVersionForSkill(ctx, digest);
+  if (isHostedSkillPendingPublicReview(hydratable) && !latestVersion) return null;
   return {
     name: digest.slug,
     displayName: digest.displayName,
@@ -6366,15 +6388,7 @@ async function listSkillPackageCatalogTopicPage(
   let done = decodedCursor.done;
   let loops = 0;
   let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
-  const isFreshRecommendedRequest =
-    args.sort === "recommended" && args.paginationOpts.cursor === null;
-  const recommendedFallback =
-    args.sort === "recommended"
-      ? (decodedCursor.recommendedFallback ??
-        (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))
-          ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
-          : undefined))
-      : undefined;
+  const recommendedFallback = decodedCursor.recommendedFallback;
   const catalogSort = recommendedFallback ?? args.sort;
 
   while (
@@ -6415,7 +6429,9 @@ async function listSkillPackageCatalogTopicPage(
         .withIndex("by_skill", (q) => q.eq("skillId", topicDigest.skillId))
         .unique();
       if (!digest || !skillCatalogMatchesFilters(digest, args)) continue;
-      collected.push(await toPublicSkillCatalogItem(ctx, digest));
+      const item = await toPublicSkillCatalogItem(ctx, digest);
+      if (!item) continue;
+      collected.push(item);
       if (collected.length >= targetCount) {
         const nextOffset = index + 1;
         if (nextOffset < page.page.length) {
@@ -6588,15 +6604,7 @@ export const listPackageCatalogPage = query({
     let done = decodedCursor.done;
     let loops = 0;
     let remainingScanBudget = MAX_SKILL_CATALOG_SCAN_DOCUMENTS;
-    const isFreshRecommendedRequest =
-      args.sort === "recommended" && args.paginationOpts.cursor === null;
-    const recommendedFallback =
-      args.sort === "recommended"
-        ? (decodedCursor.recommendedFallback ??
-          (isFreshRecommendedRequest && (await hasMissingRecommendedScores(ctx, false, null))
-            ? SKILL_CATALOG_RECOMMENDED_FALLBACK_SORT
-            : undefined))
-        : undefined;
+    const recommendedFallback = decodedCursor.recommendedFallback;
     const catalogSort = recommendedFallback ?? args.sort;
 
     while (
@@ -6633,7 +6641,9 @@ export const listPackageCatalogPage = query({
       for (let index = offset; index < page.page.length; index += 1) {
         const digest = page.page[index];
         if (!skillCatalogMatchesFilters(digest, args)) continue;
-        collected.push(await toPublicSkillCatalogItem(ctx, digest));
+        const item = await toPublicSkillCatalogItem(ctx, digest);
+        if (!item) continue;
+        collected.push(item);
         if (collected.length >= targetCount) {
           const nextOffset = index + 1;
           if (nextOffset < page.page.length) {
@@ -6725,10 +6735,13 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
       const match = skillCatalogSearchMatch(exactDigest, queryText);
       if (match) {
         seen.add(exactDigest.skillId);
-        matches.push({
-          ...match,
-          package: await toPublicSkillCatalogItem(ctx, exactDigest),
-        });
+        const catalogItem = await toPublicSkillCatalogItem(ctx, exactDigest);
+        if (catalogItem) {
+          matches.push({
+            ...match,
+            package: catalogItem,
+          });
+        }
       }
     }
   }
@@ -6769,9 +6782,11 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
         const match = skillCatalogSearchMatch(digest, queryText);
         if (!match || seen.has(digest.skillId)) continue;
         seen.add(digest.skillId);
+        const catalogItem = await toPublicSkillCatalogItem(ctx, digest);
+        if (!catalogItem) continue;
         matches.push({
           ...match,
-          package: await toPublicSkillCatalogItem(ctx, digest),
+          package: catalogItem,
         });
         if (matches.length >= targetCount) break;
       }
@@ -6810,9 +6825,11 @@ async function searchPackageCatalogImpl(ctx: QueryCtx, args: SkillPackageCatalog
       const match = skillCatalogSearchMatch(digest, queryText);
       if (!match || seen.has(digest.skillId)) continue;
       seen.add(digest.skillId);
+      const catalogItem = await toPublicSkillCatalogItem(ctx, digest);
+      if (!catalogItem) continue;
       matches.push({
         ...match,
-        package: await toPublicSkillCatalogItem(ctx, digest),
+        package: catalogItem,
       });
     }
   }
@@ -6925,7 +6942,7 @@ function resolveRecommendedPublicListQuery({
     return { sort: "updated", indexName: updatedIndexName, decodedCursor: updatedCursor };
   }
   if (hasMissingScores) {
-    return { sort: "updated", indexName: updatedIndexName, decodedCursor: null };
+    return { sort: "recommended", indexName: rankIndexName, decodedCursor: null };
   }
   return { sort: "recommended", indexName: scoreIndexName, decodedCursor: null };
 }

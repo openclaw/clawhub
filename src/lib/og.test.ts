@@ -51,19 +51,41 @@ describe("og helpers", () => {
       bio: "maton.ai",
       image: "https://example.com/logo.png",
       kind: "org",
+      official: true,
+      affiliations: [
+        { publisher: { displayName: "OpenClaw", image: "https://example.com/openclaw.png" } },
+      ],
       downloads: 1200,
     });
     expect(meta.title).toBe("byungkyu — ClawHub");
     expect(meta.description).toBe("maton.ai");
     expect(meta.url).toBe("https://clawhub.ai/byungkyu");
     expect(meta.image).toContain("/og/profile?");
-    expect(meta.image).toContain("v=7");
+    expect(meta.image).toContain("v=8");
     expect(meta.image).toContain("handle=byungkyu");
     expect(meta.image).toContain("title=byungkyu");
     expect(meta.image).toContain("description=maton.ai");
     expect(meta.image).toContain("kind=org");
+    expect(meta.image).toContain("official=1");
+    expect(meta.image).toContain("orgState=1");
+    expect(meta.image).not.toContain("OpenClaw");
+    expect(meta.image).toContain("orgImages=https%3A%2F%2Fexample.com%2Fopenclaw.png");
     expect(meta.image).toContain("avatar=https%3A%2F%2Fexample.com%2Flogo.png");
     expect(meta.image).toContain("downloads=1200");
+  });
+
+  it("builds no-badge no-organization publisher metadata explicitly", () => {
+    const meta = buildPublisherMeta({
+      handle: "mvanhorn",
+      displayName: "Matt Van Horn",
+      bio: "Publisher @mvanhorn on ClawHub.",
+      kind: "user",
+      official: false,
+      affiliations: [],
+    });
+    expect(meta.image).toContain("official=0");
+    expect(meta.image).toContain("orgState=0");
+    expect(meta.image).not.toContain("kind=org");
   });
 
   it("uses defaults when owner and summary are missing", () => {
