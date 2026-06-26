@@ -25,7 +25,7 @@ type StoredVtAnalysis = Doc<"skillVersions">["vtAnalysis"];
 type StoredSkillSpectorAnalysis = Doc<"skillVersions">["skillSpectorAnalysis"];
 type StoredLlmAnalysis = Doc<"skillVersions">["llmAnalysis"];
 type ArtifactExportRow =
-  | Awaited<ReturnType<typeof skillVersionPageToExportRows>>[number]
+  | Awaited<ReturnType<typeof skillVersionPageToLatestExportRows>>[number]
   | Awaited<ReturnType<typeof packageReleasePageToExportRows>>[number];
 type ArtifactExportPage = {
   page: ArtifactExportRow[];
@@ -74,7 +74,7 @@ export const listArtifactExportPageInternal = internalQuery({
         .order("asc")
         .paginate(paginationOpts);
       return {
-        page: await skillVersionPageToExportRows(ctx, page.page),
+        page: await skillVersionPageToLatestExportRows(ctx, page.page),
         isDone: page.isDone,
         continueCursor: page.continueCursor,
         exportMode: args.mode ?? "public",
@@ -212,11 +212,14 @@ async function getActiveCreatedBounds(ctx: QueryCtx, sourceKind: "skill" | "pack
   };
 }
 
-async function skillVersionPageToExportRows(ctx: QueryCtx, versions: Array<Doc<"skillVersions">>) {
+export async function skillVersionPageToLatestExportRows(
+  ctx: Pick<QueryCtx, "db">,
+  versions: Array<Doc<"skillVersions">>,
+) {
   const rows = [];
   for (const version of versions) {
     const skill = await ctx.db.get(version.skillId);
-    if (!skill || skill.softDeletedAt) continue;
+    if (!skill || skill.softDeletedAt || skill.latestVersionId !== version._id) continue;
     const publicOwnerHandle = await getPublicOwnerHandle(ctx, skill);
     rows.push({
       sourceKind: "skill" as const,
@@ -462,7 +465,7 @@ function normalizeLlmAnalysis(analysis: StoredLlmAnalysis) {
 }
 
 async function getPublicOwnerHandle(
-  ctx: QueryCtx,
+  ctx: Pick<QueryCtx, "db">,
   source: Pick<Doc<"skills"> | Doc<"packages">, "ownerPublisherId" | "ownerUserId">,
 ) {
   const owner = await getOwnerPublisher(ctx, {
