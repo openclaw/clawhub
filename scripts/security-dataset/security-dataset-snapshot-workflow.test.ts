@@ -41,10 +41,10 @@ describe("security-dataset-snapshot workflow", () => {
     expect(planJob.if).toContain("reuse-shards-run-id");
     expect(planJob.env?.SNAPSHOT_SHARDS).toBe("${{ inputs.shards || '12' }}");
     expect(planJob.env?.SNAPSHOT_MAX_SHARDS_PER_SOURCE).toBe(
-      "${{ vars.SECURITY_DATASET_MAX_SHARDS_PER_SOURCE || '16' }}",
+      "${{ vars.SECURITY_DATASET_MAX_SHARDS_PER_SOURCE || '128' }}",
     );
     expect(planJob.env?.SNAPSHOT_MAX_MATRIX_JOBS).toBe(
-      "${{ vars.SECURITY_DATASET_MAX_MATRIX_JOBS || '32' }}",
+      "${{ vars.SECURITY_DATASET_MAX_MATRIX_JOBS || '256' }}",
     );
     expect(planJob.steps.find((step) => step.run?.includes("Maximum matrix jobs"))?.run).toContain(
       "requested ${shards} shards per source kind",
