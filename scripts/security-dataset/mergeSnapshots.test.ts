@@ -78,6 +78,12 @@ describe("security dataset snapshot merge CLI", () => {
         readFile(join(summary.snapshotDir, "hf-dataset", "data", "train.jsonl"), "utf8"),
       ).resolves.toContain('"id":"row-a"');
       await expect(
+        readFile(join(summary.snapshotDir, "hf-dataset", "data", "train.jsonl"), "utf8"),
+      ).resolves.toContain("[REDACTED_SECRET]");
+      await expect(
+        readFile(join(summary.snapshotDir, "hf-dataset", "data", "train.jsonl"), "utf8"),
+      ).resolves.not.toContain("supersecretvalue123");
+      await expect(
         readFile(join(summary.snapshotDir, "hf-dataset", "data", "test.jsonl"), "utf8"),
       ).resolves.toContain('"id":"row-b"');
     } finally {
@@ -112,7 +118,17 @@ async function writeShardSnapshot(
   for (const split of ["train", "validation", "test", "eval_holdout"]) {
     const rowCount = split === input.split ? input.sourceArtifacts : 0;
     const rows = Array.from({ length: rowCount }, (_, index) =>
-      JSON.stringify({ id: index === 0 ? input.rowId : `${input.rowId}-${index}` }),
+      JSON.stringify({
+        id: index === 0 ? input.rowId : `${input.rowId}-${index}`,
+        skill_slug: "owner/sk-abcdefghijklmnopqrstuvwxyz",
+        skill_md_content: "Use this skill. skill secret: supersecretvalue123",
+        skill_bundle_content: [
+          {
+            path: "config/sk-abcdefghijklmnopqrstuvwxyz/settings.json",
+            content: "password=supersecretvalue123\n",
+          },
+        ],
+      }),
     );
     await writeFile(join(dir, "hf-dataset", "data", `${split}.jsonl`), rows.join("\n"));
   }
